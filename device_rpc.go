@@ -1009,6 +1009,12 @@ func (self *DeviceRemote) run() {
 				defer self.stateLock.Unlock()
 
 				self.lastKnownState = syncResponse.State
+				if self.hasPendingConnectStateWithLock() {
+					// a connect write made while this sync was in flight is not
+					// in its reply; it stays last known until a sync takes it
+					// (device_remote_connect_state.go)
+					self.recordPendingConnectWriteWithLock(&self.state)
+				}
 				self.syncProviderStateWithLock(syncResponse.ProviderState)
 				self.contractStatusRevision++
 				self.syncError = ""
@@ -2599,6 +2605,12 @@ func (self *DeviceRemote) AddVpnInterfaceWhileOfflineChangeListener(listener Vpn
 }
 
 func (self *DeviceRemote) AddConnectChangeListener(listener ConnectChangeListener) Sub {
+	// the listener seeds itself from the getters (device_remote_connect_state.go)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.forgetToldConnectEnabledWithLock()
+	}()
 	return addListener(
 		self,
 		listener,
@@ -2629,6 +2641,12 @@ func (self *DeviceRemote) AddBlockerEnabledChangeListener(listener BlockerEnable
 }
 
 func (self *DeviceRemote) AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub {
+	// the listener seeds itself from the getters (device_remote_connect_state.go)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.forgetToldConnectLocationWithLock()
+	}()
 	return addListener(
 		self,
 		listener,
@@ -4413,26 +4431,6 @@ func (self *DeviceRemote) blockerEnabledChanged(blockerEnabled bool) {
 	for _, blockerEnabledChangeListener := range listenerList {
 		connect.HandleError(func() {
 			blockerEnabledChangeListener.BlockerEnabledChanged(blockerEnabled)
-		})
-	}
-}
-
-// Delivers a location to the listeners unconditionally. The device's reports
-// and the local writes go through device_remote_connect_state.go instead, which
-// keeps the listeners' view consistent; this bypasses it.
-func (self *DeviceRemote) connectLocationChanged(deviceRemoteLocation *DeviceRemoteConnectLocation) {
-	listenerList := func() []ConnectLocationChangeListener {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.lastKnownState.Location.Set(deviceRemoteLocation)
-		self.lastKnownState.Destination.Unset()
-		self.lastKnownState.RemoveDestination.Unset()
-		return listenerList(self.connectLocationChangeListeners)
-	}()
-	location := deviceRemoteLocation.toConnectLocation()
-	for _, connectLocationChangeListener := range listenerList {
-		connect.HandleError(func() {
-			connectLocationChangeListener.ConnectLocationChanged(cloneConnectLocation(location))
 		})
 	}
 }

@@ -4,6 +4,8 @@
 package sdk
 
 import (
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -80,4 +82,42 @@ func TestDeviceRemoteConnectStateReconnectTellsUnchangedLocation(t *testing.T) {
 		"location:tapped", "connect:true",
 		"location:tapped",
 	})
+}
+
+// Exits its goroutine (runtime.Goexit) the first time it hears connect
+// enabled, as t.FailNow does in a test listener.
+type testingGoexitConnectListener struct {
+	once sync.Once
+}
+
+func (self *testingGoexitConnectListener) ConnectChanged(connectEnabled bool) {
+	exit := false
+	if connectEnabled {
+		self.once.Do(func() { exit = true })
+	}
+	if exit {
+		runtime.Goexit()
+	}
+}
+
+// A listener that exits the delivering goroutine ends that delivery, not the
+// later ones: panic containment does not catch runtime.Goexit.
+func TestDeviceRemoteConnectStateDeliveryResumesAfterListenerGoexit(t *testing.T) {
+	deviceRemote, recorder := testingConnectStateRemote(t)
+	sub := deviceRemote.AddConnectChangeListener(&testingGoexitConnectListener{})
+	defer sub.Close()
+
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		deviceRemote.Reconnect(testingConnectStateLocation("tapped"))
+	}()
+	select {
+	case <-written:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the write never returned")
+	}
+
+	deviceRemote.SetConnectLocation(nil)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "nil", false)
 }

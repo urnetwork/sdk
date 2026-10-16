@@ -12,18 +12,23 @@
 //
 // The device then reports its state. A report equal to what the listeners were
 // last told changes nothing and is not told again; any other report is the
-// device's own change and is told. A report that arrives while a local write is
-// still pending was made before the device had the write (the replay of a sync
-// that started before the tap, or a push still in flight), so it is dropped:
-// the next sync applies the write over it, and telling it would flip the view
-// back until then. The pending write is kept as last known instead, so the
-// getters answer with it while that sync is in flight.
+// device's own change and is told. A listener that registers seeds itself from
+// the getters, and the device pushes nothing while the remote has no listener,
+// so registering forgets what was told: the next report is told whatever it
+// is. A report that arrives while a local write is still pending was made
+// before the device had the write (the replay of a sync that started before
+// the tap, or a push still in flight), so it is dropped: the next sync applies
+// the write over it, and telling it would flip the view back until then. The
+// pending write is kept as last known instead, also over the reply of a sync
+// that was in flight when it was made, so the getters answer with it until a
+// sync delivers it.
 //
 // One caller at a time delivers to the listeners, always the latest told
 // state, so the listeners hear the changes in order and the latest last, even
 // when writes and reports race on several goroutines. A caller that finds a
 // delivery running leaves its newer state to that delivery, which also keeps a
-// listener that writes from its callback from deadlocking.
+// listener that writes from its callback from deadlocking. A delivery that
+// ends abnormally (a listener exits its goroutine) still lets the next one run.
 //
 // The state below is guarded by `DeviceRemote.stateLock`.
 package sdk
@@ -83,6 +88,17 @@ func (self *DeviceRemote) recordPendingConnectWriteWithLock(write *DeviceRemoteS
 	self.lastKnownState.ConnectEnabled.Set(connectEnabled)
 }
 
+// A registering listener seeds itself from the getters, so the device's next
+// report is told whatever was told before. Must be called with stateLock.
+func (self *DeviceRemote) forgetToldConnectLocationWithLock() {
+	self.connectTold.locationSet = false
+}
+
+// must be called with stateLock
+func (self *DeviceRemote) forgetToldConnectEnabledWithLock() {
+	self.connectTold.connectEnabledSet = false
+}
+
 // Tells the listeners a local write and returns whether a delivery is due.
 // A rebuild (Reconnect) tells its location even when unchanged: it is a new
 // connection, and the view builds a new grid for it. Must be called with
@@ -130,12 +146,20 @@ func (self *DeviceRemote) deliverConnectState() {
 		return
 	}
 	told.delivering = true
+	locked := true
+	defer func() {
+		// also when a listener exits the goroutine (runtime.Goexit), which the
+		// listeners' panic containment does not catch
+		if !locked {
+			self.stateLock.Lock()
+		}
+		told.delivering = false
+		self.stateLock.Unlock()
+	}()
 	for {
 		locationDue := told.locationDelivered != told.locationSequence
 		connectEnabledDue := told.connectEnabledDelivered != told.connectEnabledSequence
 		if !locationDue && !connectEnabledDue {
-			told.delivering = false
-			self.stateLock.Unlock()
 			return
 		}
 		location := cloneConnectLocation(told.location)
@@ -150,9 +174,10 @@ func (self *DeviceRemote) deliverConnectState() {
 		if connectEnabledDue {
 			connectListeners = listenerList(self.connectChangeListeners)
 		}
+		locked = false
 		self.stateLock.Unlock()
 
-		// listener panics are contained, so the delivery always resumes here
+		// listener panics are contained, so the delivery resumes here
 		for _, connectLocationChangeListener := range connectLocationListeners {
 			connect.HandleError(func() {
 				connectLocationChangeListener.ConnectLocationChanged(cloneConnectLocation(location))
@@ -165,6 +190,7 @@ func (self *DeviceRemote) deliverConnectState() {
 		}
 
 		self.stateLock.Lock()
+		locked = true
 	}
 }
 

@@ -55,6 +55,17 @@ func (self *testingConnectStateRecorder) ConnectChanged(connectEnabled bool) {
 // A remote whose lifecycle never reaches a device: every write is pending.
 func testingConnectStateRemote(t *testing.T) (*DeviceRemote, *testingConnectStateRecorder) {
 	t.Helper()
+	deviceRemote := testingConnectStateRemoteWithoutListeners(t)
+	recorder := &testingConnectStateRecorder{}
+	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
+	t.Cleanup(connectLocationSub.Close)
+	connectSub := deviceRemote.AddConnectChangeListener(recorder)
+	t.Cleanup(connectSub.Close)
+	return deviceRemote, recorder
+}
+
+func testingConnectStateRemoteWithoutListeners(t *testing.T) *DeviceRemote {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -80,13 +91,7 @@ func testingConnectStateRemote(t *testing.T) (*DeviceRemote, *testingConnectStat
 		t.Fatal(err)
 	}
 	t.Cleanup(deviceRemote.Close)
-
-	recorder := &testingConnectStateRecorder{}
-	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
-	t.Cleanup(connectLocationSub.Close)
-	connectSub := deviceRemote.AddConnectChangeListener(recorder)
-	t.Cleanup(connectSub.Close)
-	return deviceRemote, recorder
+	return deviceRemote
 }
 
 // Delivers device reports through the production reverse rpc handlers and
@@ -256,9 +261,18 @@ func (self *testingConnectTapDeviceRpc) RemoveDestination(_ RpcNoArg, _ RpcVoid)
 // does. The remote's own lifecycle stays parked in its blocked dial.
 func testingInstallConnectTapService(t *testing.T, deviceRemote *DeviceRemote, server *testingConnectTapDeviceRpc) {
 	t.Helper()
+	testingInstallFakeDeviceService(t, deviceRemote, server)
+	// before the server joins, so a held write cannot pin it
+	t.Cleanup(server.releaseWrites)
+}
+
+// Serves the receiver as DeviceLocalRpc and publishes it as the remote's live
+// service.
+func testingInstallFakeDeviceService(t *testing.T, deviceRemote *DeviceRemote, receiver any) {
+	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	rpcServer := rpc.NewServer()
-	if err := rpcServer.RegisterName("DeviceLocalRpc", server); err != nil {
+	if err := rpcServer.RegisterName("DeviceLocalRpc", receiver); err != nil {
 		t.Fatal(err)
 	}
 	service := &rpcClient{
@@ -279,12 +293,9 @@ func testingInstallConnectTapService(t *testing.T, deviceRemote *DeviceRemote, s
 		select {
 		case <-done:
 		case <-time.After(15 * time.Second):
-			t.Error("fake device rpc server did not join")
+			t.Error("the fake device rpc server did not join")
 		}
 	})
-
-	// before the server joins, so a held write cannot pin it
-	t.Cleanup(server.releaseWrites)
 
 	deviceRemote.stateLock.Lock()
 	defer deviceRemote.stateLock.Unlock()
@@ -432,11 +443,19 @@ func (self *testingHeldSyncConn) Write(b []byte) (int, error) {
 	return self.Conn.Write(b)
 }
 
+func testingNewHeldSyncConn() *testingHeldSyncConn {
+	return &testingHeldSyncConn{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+// Holds the sync of each of the first dials, one held stream per dial in turn.
 type testingHeldSyncDialer struct {
 	dialer deviceRpcDialer
 
 	stateLock sync.Mutex
-	held      *testingHeldSyncConn
+	helds     []*testingHeldSyncConn
 }
 
 func (self *testingHeldSyncDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
@@ -446,8 +465,9 @@ func (self *testingHeldSyncDialer) Dial(ctx context.Context) (net.Conn, net.Conn
 	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	if held := self.held; held != nil {
-		self.held = nil
+	if 0 < len(self.helds) {
+		held := self.helds[0]
+		self.helds = self.helds[1:]
 		held.Conn = forwardConn
 		return held, reverseConn, nil
 	}
@@ -482,16 +502,12 @@ func TestDeviceRemoteConnectTapDuringSyncReachesDevice(t *testing.T) {
 	settings := defaultDeviceRpcSettings()
 	settings.DisableLogging = true
 
-	held := &testingHeldSyncConn{
-		entered: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	var releaseOnce sync.Once
-	releaseSync := func() { releaseOnce.Do(func() { close(held.release) }) }
+	held := testingNewHeldSyncConn()
+	releaseSync := sync.OnceFunc(func() { close(held.release) })
 	defer releaseSync()
 	dialer := &testingHeldSyncDialer{
 		dialer: testing_deviceRpcDialer(settings),
-		held:   held,
+		helds:  []*testingHeldSyncConn{held},
 	}
 	deviceRemote, err := newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
 	if err != nil {
@@ -719,4 +735,306 @@ func TestDeviceRemoteConcurrentConnectWritesTellTheLatestLast(t *testing.T) {
 		t.Fatalf("the connect listener last heard %v; the device is disconnected", events)
 	}
 	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), false)
+}
+
+// A fake live device that holds a connect location, answers the getters from
+// it, applies connect writes to it, and registers listeners without replaying
+// the current state, as DeviceLocalRpc does while the rpc is live.
+type testingConnectStateFakeDevice struct {
+	stateLock sync.Mutex
+	location  *ConnectLocation
+}
+
+func (self *testingConnectStateFakeDevice) set(location *ConnectLocation) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.location = location
+}
+
+func (self *testingConnectStateFakeDevice) get() *ConnectLocation {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.location
+}
+
+func (self *testingConnectStateFakeDevice) SetConnectLocation(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
+	self.set(location.toConnectLocation())
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) Reconnect(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
+	self.set(location.toConnectLocation())
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) RemoveDestination(_ RpcNoArg, _ RpcVoid) error {
+	self.set(nil)
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) GetConnectLocation(_ RpcNoArg, location **DeviceRemoteConnectLocation) error {
+	*location = newDeviceRemoteConnectLocation(self.get())
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) GetConnectEnabled(_ RpcNoArg, connectEnabled *bool) error {
+	*connectEnabled = self.get() != nil
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) AddConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) RemoveConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) AddConnectChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+func (self *testingConnectStateFakeDevice) RemoveConnectChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+// While the remote has no connect listener the device pushes nothing, so what
+// the remote last told can go stale. A consumer that registers later and seeds
+// itself from the getters, as the ConnectViewController and the apps' view
+// models do, must still hear the device's next change.
+func TestDeviceRemoteConnectListenerGapThenDeviceDisconnectIsTold(t *testing.T) {
+	deviceRemote := testingConnectStateRemoteWithoutListeners(t)
+	device := &testingConnectStateFakeDevice{}
+	testingInstallFakeDeviceService(t, deviceRemote, device)
+
+	location := testingConnectStateLocation("tapped")
+
+	// a first consumer; the user connects, then disconnects, from the app
+	first := &testingConnectStateRecorder{}
+	firstLocationSub := deviceRemote.AddConnectLocationChangeListener(first)
+	firstConnectSub := deviceRemote.AddConnectChangeListener(first)
+	deviceRemote.Reconnect(location)
+	deviceRemote.SetConnectLocation(nil)
+	// the device's report of the disconnect
+	testingReportConnectState(t, deviceRemote, nil, false)
+	testingAssertConnectStateLastHeard(t, deviceRemote, first, "nil", false)
+
+	// the consumer goes away
+	firstLocationSub.Close()
+	firstConnectSub.Close()
+
+	// with no remote listener the device connects on its own (a widget, a
+	// shortcut, on demand) and pushes nothing
+	device.set(location)
+
+	// a new consumer registers and seeds itself from the getters
+	second := &testingConnectStateRecorder{}
+	secondLocationSub := deviceRemote.AddConnectLocationChangeListener(second)
+	defer secondLocationSub.Close()
+	secondConnectSub := deviceRemote.AddConnectChangeListener(second)
+	defer secondConnectSub.Close()
+	second.ConnectLocationChanged(deviceRemote.GetConnectLocation())
+	second.ConnectChanged(deviceRemote.GetConnectEnabled())
+	testingAssertConnectStateLastHeard(t, deviceRemote, second, "tapped", true)
+
+	// the device disconnects on its own and reports it
+	device.set(nil)
+	testingReportConnectState(t, deviceRemote, nil, false)
+	testingAssertConnectStateLastHeard(t, deviceRemote, second, "nil", false)
+}
+
+// End to end over the device rpc. The device is connected. A disconnect tap
+// lands while the first sync is in flight, so it is pending and the first
+// sync's replay is dropped. The first sync's reply (still connected) must not
+// replace the pending tap as last known: the next sync takes the tap, and while
+// it is in flight a view opened then seeds itself from the getters. The
+// device's replay of the applied disconnect equals what the listeners were
+// told and is not told again, so the view must already seed disconnected.
+func TestDeviceRemoteViewOpenedDuringFollowUpSyncEndsDisconnected(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientId := connect.NewId()
+	instanceId := NewId()
+	settings := defaultDeviceRpcSettings()
+	settings.DisableLogging = true
+
+	firstSync := testingNewHeldSyncConn()
+	followUpSync := testingNewHeldSyncConn()
+	releaseFirstSync := sync.OnceFunc(func() { close(firstSync.release) })
+	defer releaseFirstSync()
+	releaseFollowUpSync := sync.OnceFunc(func() { close(followUpSync.release) })
+	defer releaseFollowUpSync()
+	dialer := &testingHeldSyncDialer{
+		dialer: testing_deviceRpcDialer(settings),
+		helds:  []*testingHeldSyncConn{firstSync, followUpSync},
+	}
+	deviceRemote, err := newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceRemote.Close()
+
+	recorder := &testingConnectStateRecorder{}
+	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
+	defer connectLocationSub.Close()
+	connectSub := deviceRemote.AddConnectChangeListener(recorder)
+	defer connectSub.Close()
+	barrier := &testingDefaultLocationBarrier{reached: make(chan struct{})}
+	barrierSub := deviceRemote.AddDefaultLocationChangeListener(barrier)
+	defer barrierSub.Close()
+
+	deviceLocalSettings := testDeviceLocalSettingsRpc()
+	deviceLocalSettings.DisableLogging = true
+	deviceLocal, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", instanceId, deviceLocalSettings, clientId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceLocal.Close()
+	deviceLocal.SetConnectLocation(testingConnectStateLocation("connected"))
+	deviceRemote.Sync()
+
+	select {
+	case <-firstSync.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the first sync never started")
+	}
+	// the disconnect tap, while the first sync is in flight
+	deviceRemote.SetConnectLocation(nil)
+	releaseFirstSync()
+
+	select {
+	case <-followUpSync.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the follow-up sync never started")
+	}
+	// the follow-up sync took the tap and is in flight
+	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), false)
+	if location := deviceRemote.GetConnectLocation(); location != nil {
+		t.Fatalf("during the follow-up sync the remote answers the location %q", location.Name)
+	}
+	controller := deviceRemote.OpenConnectViewController()
+	defer deviceRemote.CloseViewController(controller)
+	releaseFollowUpSync()
+
+	applied := testing_waitFor(30*time.Second, func() bool {
+		return deviceRemote.GetRemoteConnected() && deviceLocal.GetConnectLocation() == nil
+	})
+	if !applied {
+		t.Fatal("the device never applied the disconnect")
+	}
+	// the device's pushes keep their first-queued order and the default
+	// location is replayed after the connect state, so once the remote hears
+	// this later default location the replay has been handled
+	deviceLocal.SetDefaultLocation(testingConnectStateLocation("barrier"))
+	select {
+	case <-barrier.reached:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the remote never heard the device's later default location")
+	}
+	if controller.GetConnected() {
+		t.Fatalf("the view shows connected (status %s) while the device is disconnected", controller.GetConnectionStatus())
+	}
+	connect.AssertEqual(t, controller.GetConnectionStatus(), Disconnected)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "nil", false)
+}
+
+// Records remote connection changes and resets of one window, in order.
+type testingRpcReconnectLog struct {
+	stateLock sync.Mutex
+	events    []string
+}
+
+func (self *testingRpcReconnectLog) add(event string) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.events = append(self.events, event)
+}
+
+func (self *testingRpcReconnectLog) RemoteChanged(remoteConnected bool) {
+	self.add(fmt.Sprintf("remote:%t", remoteConnected))
+}
+
+func (self *testingRpcReconnectLog) get() []string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return slices.Clone(self.events)
+}
+
+// whether a window reset followed the remote going down
+func (self *testingRpcReconnectLog) resetAfterReconnect() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	down := slices.Index(self.events, "remote:false")
+	return 0 <= down &&
+		slices.Contains(self.events[down:], "remote:true") &&
+		slices.Contains(self.events[down:], "window:reset")
+}
+
+// End to end over the device rpc: across an rpc reconnect, the device's replay
+// of the connect location it already told is not told again, so the view keeps
+// its grid, and the device's reset snapshot at the end of the sync reaches the
+// kept grid's window.
+func TestDeviceRemoteConnectGridKeptAcrossRpcReconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	deviceLocal, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
+	recorder := &testingConnectStateRecorder{}
+	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
+	defer connectLocationSub.Close()
+	barrier := &testingDefaultLocationBarrier{reached: make(chan struct{})}
+	barrierSub := deviceRemote.AddDefaultLocationChangeListener(barrier)
+	defer barrierSub.Close()
+	controller := deviceRemote.OpenConnectViewController()
+	defer deviceRemote.CloseViewController(controller)
+
+	location := testingConnectStateLocation("connected")
+	controller.Connect(location)
+	grid := controller.GetGrid()
+	if grid == nil {
+		t.Fatal("the connect built no grid")
+	}
+	// the device's echo of the connect is handled before its later default
+	// location (see TestDeviceRemoteConnectTapDuringSyncReachesDevice)
+	deviceLocal.SetDefaultLocation(testingConnectStateLocation("barrier"))
+	select {
+	case <-barrier.reached:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the remote never heard the device's later default location")
+	}
+	connect.AssertEqual(t, recorder.get(), []string{"location:connected"})
+	if controller.GetGrid() != grid {
+		t.Fatal("the device's echo of the connect replaced the grid")
+	}
+
+	log := &testingRpcReconnectLog{}
+	remoteSub := deviceRemote.AddRemoteChangeListener(log)
+	defer remoteSub.Close()
+	unsubscribeWindow := grid.windowMonitor.AddMonitorEventCallback(func(
+		windowExpandEvent *connect.WindowExpandEvent,
+		providerEvents map[connect.Id]*connect.ProviderEvent,
+		reset bool,
+	) {
+		if reset {
+			log.add("window:reset")
+		}
+	})
+	defer unsubscribeWindow()
+
+	// a resync request tears the live rpc down and syncs again
+	deviceRemote.Sync()
+	if !testing_waitFor(30*time.Second, log.resetAfterReconnect) {
+		t.Fatalf("no window reset after the rpc reconnect: %v", log.get())
+	}
+
+	if controller.GetGrid() != grid {
+		t.Fatal("the view replaced its grid across the rpc reconnect")
+	}
+	connect.AssertEqual(t, recorder.get(), []string{"location:connected"})
+	connect.AssertEqual(t, deviceRemote.GetConnectLocation().Name, "connected")
 }
