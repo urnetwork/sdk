@@ -950,6 +950,7 @@ test("a load's streams keep the host's port, and a bufferedAmount that never cou
   // ever held a stream back
   assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
   // and with no report from the extender, the streams sent no more than
-  // they may before its first (sixteen messages)
-  assert.ok(0 < uploadedBytes && uploadedBytes <= 16 * 65536, `${uploadedBytes} bytes sent`);
+  // they may before its first: a message each, the start a download this
+  // slow gives (S5)
+  assert.ok(0 < uploadedBytes && uploadedBytes <= 2 * 65536, `${uploadedBytes} bytes sent`);
 });
