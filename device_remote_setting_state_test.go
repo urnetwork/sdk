@@ -80,6 +80,10 @@ func (self *testingSettingRecorder) BlockerEnabledChanged(blockerEnabled bool) {
 	self.add(fmt.Sprintf("blockerEnabled:%t", blockerEnabled))
 }
 
+func (self *testingSettingRecorder) ProvideChanged(provideEnabled bool) {
+	self.add(fmt.Sprintf("provide:%t", provideEnabled))
+}
+
 // The name a provide mode is spelled with in the tests.
 func testingProvideModeName(provideMode ProvideMode) string {
 	switch provideMode {
@@ -528,6 +532,19 @@ func (self *testingSettingFakeDevice) GetBlockerEnabled(_ RpcNoArg, blockerEnabl
 	return nil
 }
 
+func (self *testingSettingFakeDevice) GetProvideEnabled(_ RpcNoArg, provideEnabled *bool) error {
+	*provideEnabled = self.value("ProvideEnabled") == "true"
+	return nil
+}
+
+func (self *testingSettingFakeDevice) AddProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+func (self *testingSettingFakeDevice) RemoveProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
 func (self *testingSettingFakeDevice) AddProvideModeChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	return nil
 }
@@ -960,6 +977,77 @@ func TestDeviceRemoteAutoConnectTapTellsPublicProvideMode(t *testing.T) {
 
 	// the control mode is the device's throughout
 	connect.AssertEqual(t, deviceRemote.GetProvideControlMode(), ProvideControlModeAuto)
+}
+
+// A destination written under the auto control mode with the rpc down. The
+// device connects a destination by its spec list and provides publicly while
+// connected (DeviceLocal.applyDestination), so the provide mode the getters
+// derive and the listeners hear must follow what GetConnectEnabled answers: a
+// custom destination given by its specs alone, with no display location, is
+// public, and a display location without specs is idle.
+func TestDeviceRemoteAutoDestinationProvideModeFollowsTheSpecs(t *testing.T) {
+	for _, testCase := range []struct {
+		name           string
+		location       *ConnectLocation
+		specs          []*ProviderSpec
+		connectEnabled bool
+		provideMode    string
+	}{
+		{
+			name:           "SpecsWithoutLocation",
+			location:       nil,
+			specs:          []*ProviderSpec{{BestAvailable: true}},
+			connectEnabled: true,
+			provideMode:    "public",
+		},
+		{
+			name:           "LocationWithoutSpecs",
+			location:       testingConnectStateLocation("display"),
+			specs:          nil,
+			connectEnabled: false,
+			provideMode:    "network",
+		},
+		{
+			name:           "SpecsAndLocation",
+			location:       testingConnectStateLocation("display"),
+			specs:          []*ProviderSpec{{BestAvailable: true}},
+			connectEnabled: true,
+			provideMode:    "public",
+		},
+	} {
+		func() {
+			deviceRemote := testingConnectStateRemoteWithoutListeners(t)
+			provideRecorder := &testingSettingRecorder{}
+			provideSub := deviceRemote.AddProvideModeChangeListener(provideRecorder)
+			defer provideSub.Close()
+
+			// the device's state before the write: auto, idle, providing to
+			// network peers
+			testingReportSetting(t, deviceRemote, testingRemoteSettingNamed(t, "ProvideControlMode"), ProvideControlModeAuto)
+			testingReportSetting(t, deviceRemote, testingRemoteSettingNamed(t, "ProvideMode"), "network")
+			testingReportConnectState(t, deviceRemote, nil, false)
+			if events := provideRecorder.get(); !slices.Equal(events, []string{"provideMode:network"}) {
+				t.Errorf("%s: before the write the provide mode listeners heard %v", testCase.name, events)
+				return
+			}
+
+			specs := NewProviderSpecList()
+			for _, spec := range testCase.specs {
+				specs.Add(spec)
+			}
+			deviceRemote.SetDestination(testCase.location, specs)
+
+			if connectEnabled := deviceRemote.GetConnectEnabled(); connectEnabled != testCase.connectEnabled {
+				t.Errorf("%s: connect enabled reads %t, want %t", testCase.name, connectEnabled, testCase.connectEnabled)
+			}
+			if provideMode := testingProvideModeName(deviceRemote.GetProvideMode()); provideMode != testCase.provideMode {
+				t.Errorf("%s: the provide mode reads %s, want %s", testCase.name, provideMode, testCase.provideMode)
+			}
+			if last := provideRecorder.last(); last != "provideMode:"+testCase.provideMode {
+				t.Errorf("%s: the provide mode listeners last heard %q of %v, want %s", testCase.name, last, provideRecorder.get(), testCase.provideMode)
+			}
+		}()
+	}
 }
 
 // Upgrading to Pro must never change the provide control mode (owner rule

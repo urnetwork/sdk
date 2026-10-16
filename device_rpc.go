@@ -2904,14 +2904,14 @@ func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 
 // While the rpc is live the device applies the mode's provide mapping and
 // reports the provide mode; while the write is pending the listeners are told
-// the provide mode the getters derive from it.
+// the provide mode and provide enabled state the getters derive from it.
 func (self *DeviceRemote) SetProvideControlMode(mode ProvideControlMode) {
 	if self.hostedIncompatibleGuarded("SetProvideControlMode") {
 		return
 	}
 	controlModeDeliver := false
 	provideModeDeliver := false
-	pending := false
+	provideEnabledDeliver := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -2930,12 +2930,14 @@ func (self *DeviceRemote) SetProvideControlMode(mode ProvideControlMode) {
 		if success {
 			self.state.ProvideControlMode.Unset()
 		} else {
-			pending = true
 			self.state.ProvideControlMode.Set(mode)
 		}
 		self.lastKnownState.ProvideControlMode.Set(mode)
 		controlModeDeliver = self.settingsTold.provideControlMode.tellWithLock(mode)
 		provideModeDeliver = self.tellPendingProvideModeWithLock()
+		if !success {
+			provideEnabledDeliver = self.tellPendingProvideEnabledWithLock()
+		}
 	}()
 	if controlModeDeliver {
 		self.deliverProvideControlMode()
@@ -2943,14 +2945,20 @@ func (self *DeviceRemote) SetProvideControlMode(mode ProvideControlMode) {
 	if provideModeDeliver {
 		self.deliverProvideMode()
 	}
-	if pending {
-		self.provideChanged(self.GetProvideEnabled())
+	if provideEnabledDeliver {
+		self.deliverProvideEnabled()
 	}
 }
 
 func (self *DeviceRemote) GetProvideEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write the state follows is the device's state once delivered;
+	// the device's own answer predates it
+	if self.provideQueuedWithLock() {
+		return self.derivedProvideEnabledWithLock()
+	}
 
 	provideEnabled, success := func() (bool, bool) {
 		if self.service == nil {
@@ -2967,41 +2975,47 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 	if success {
 		return provideEnabled
 	} else {
-		if self.lastProviderState != nil && !self.provideQueuedWithLock() {
-			// a browser-state remote holds what the device pushed, which a
-			// derivation from its last control mode would only guess at
-			return self.lastProviderState.ProvideEnabled
-		}
-		provideControlMode := self.state.ProvideControlMode.Get(
-			self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
-		)
-		switch provideControlMode {
-		case ProvideControlModeNever:
-			return false
-		case ProvideControlModeAlways:
-			return true
-		case ProvideControlModeNetwork:
-			// the private provider is always on (peers only)
-			return true
-		case ProvideControlModeAuto:
-			// auto always provides: public while connected, network
-			// (peer-reachable) while idle — the provider exists either way
-			return true
-		case ProvideControlModeManual:
-			// manual: a queued explicit provide mode is the truth — the
-			// provider exists for any mode but none (per-case; bit set)
-			if self.state.ProvideMode.IsSet {
-				switch self.state.ProvideMode.Value {
-				case ProvideModeNetwork, ProvideModeFriendsAndFamily, ProvideModePublic:
-					return true
-				default:
-					return false
-				}
+		return self.derivedProvideEnabledWithLock()
+	}
+}
+
+// The provide enabled state the getters answer without the device. Must be
+// called with stateLock.
+func (self *DeviceRemote) derivedProvideEnabledWithLock() bool {
+	if self.lastProviderState != nil && !self.provideQueuedWithLock() {
+		// a browser-state remote holds what the device pushed, which a
+		// derivation from its last control mode would only guess at
+		return self.lastProviderState.ProvideEnabled
+	}
+	provideControlMode := self.state.ProvideControlMode.Get(
+		self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
+	)
+	switch provideControlMode {
+	case ProvideControlModeNever:
+		return false
+	case ProvideControlModeAlways:
+		return true
+	case ProvideControlModeNetwork:
+		// the private provider is always on (peers only)
+		return true
+	case ProvideControlModeAuto:
+		// auto always provides: public while connected, network
+		// (peer-reachable) while idle — the provider exists either way
+		return true
+	case ProvideControlModeManual:
+		// manual: a queued explicit provide mode is the truth — the
+		// provider exists for any mode but none (per-case; bit set)
+		if self.state.ProvideMode.IsSet {
+			switch self.state.ProvideMode.Value {
+			case ProvideModeNetwork, ProvideModeFriendsAndFamily, ProvideModePublic:
+				return true
+			default:
+				return false
 			}
-			return self.lastKnownState.ProvideEnabled.Get(false)
-		default:
-			return false
 		}
+		return self.lastKnownState.ProvideEnabled.Get(false)
+	default:
+		return false
 	}
 }
 
@@ -3035,13 +3049,14 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 }
 
 // While the write is pending, or another write the provide mode follows is,
-// the listeners are told the mode the getters derive from the pending writes.
+// the listeners are told the mode the getters derive from the pending writes;
+// while it is pending, also the provide enabled state.
 func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 	if self.hostedIncompatibleGuarded("SetProvideMode") {
 		return
 	}
 	deliver := false
-	pending := false
+	provideEnabledDeliver := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3060,7 +3075,6 @@ func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 		if success {
 			self.state.ProvideMode.Unset()
 		} else {
-			pending = true
 			self.state.ProvideMode.Set(provideMode)
 		}
 		self.lastKnownState.ProvideMode.Set(provideMode)
@@ -3070,12 +3084,15 @@ func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 			// the device applied the mode as written
 			deliver = self.settingsTold.provideMode.tellWithLock(provideMode)
 		}
+		if !success {
+			provideEnabledDeliver = self.tellPendingProvideEnabledWithLock()
+		}
 	}()
 	if deliver {
 		self.deliverProvideMode()
 	}
-	if pending {
-		self.provideChanged(self.GetProvideEnabled())
+	if provideEnabledDeliver {
+		self.deliverProvideEnabled()
 	}
 }
 
@@ -3137,15 +3154,12 @@ func (self *DeviceRemote) derivedProvideModeWithLock() ProvideMode {
 		// the private provider is always on (peers only)
 		return ProvideModeNetwork
 	case ProvideControlModeAuto:
-		// public while connected; network (peer-reachable) while idle
-		connected := false
-		if self.state.Location.IsSet {
-			connected = self.state.Location.Value.ConnectLocation != nil
-		} else if self.state.Destination.IsSet {
-			connected = self.state.Destination.Value.Location.ConnectLocation != nil
-		} else if self.state.RemoveDestination.IsSet {
-			connected = false
-		} else {
+		// public while connected; network (peer-reachable) while idle.
+		// Connected is what GetConnectEnabled answers: the device connects a
+		// destination by its spec list, which a custom destination gives
+		// without a display location
+		connected, known := deviceRemoteStateConnectEnabled(&self.state)
+		if !known {
 			connected = self.lastKnownState.ConnectEnabled.Get(false)
 		}
 		if connected {
@@ -3413,11 +3427,12 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 // device applied it, or at once while the rpc is down and the write is pending
 // until the next sync (device_remote_connect_state.go). A pending write also
 // tells the provide mode the getters derive from it, which under the auto
-// control mode follows the connect state (device_remote_setting_state.go).
+// control mode follows the connect state (device_remote_setting_state.go), and
+// a pending RemoveDestination or SetDestination the provide enabled state.
 func (self *DeviceRemote) RemoveDestination() {
 	deliver := false
 	provideModeDeliver := false
-	pending := false
+	provideEnabledDeliver := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3448,7 +3463,6 @@ func (self *DeviceRemote) RemoveDestination() {
 			self.lastKnownState.Destination.Unset()
 			self.lastKnownState.Location.Unset()
 		} else {
-			pending = true
 			self.state.RemoveDestination.Set(true)
 			self.state.Destination.Unset()
 			self.state.Location.Unset()
@@ -3460,6 +3474,9 @@ func (self *DeviceRemote) RemoveDestination() {
 		}
 		deliver = self.tellConnectWriteWithLock(&write, false)
 		provideModeDeliver = self.tellPendingProvideModeWithLock()
+		if !success {
+			provideEnabledDeliver = self.tellPendingProvideEnabledWithLock()
+		}
 	}()
 	if deliver {
 		self.deliverConnectState()
@@ -3467,8 +3484,8 @@ func (self *DeviceRemote) RemoveDestination() {
 	if provideModeDeliver {
 		self.deliverProvideMode()
 	}
-	if pending {
-		self.provideChanged(self.GetProvideEnabled())
+	if provideEnabledDeliver {
+		self.deliverProvideEnabled()
 	}
 }
 
@@ -3483,7 +3500,7 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 	}
 	deliver := false
 	provideModeDeliver := false
-	pending := false
+	provideEnabledDeliver := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3519,7 +3536,6 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 			self.lastKnownState.RemoveDestination.Unset()
 			self.lastKnownState.Location.Unset()
 		} else {
-			pending = true
 			self.state.Destination.Set(destination)
 			self.state.RemoveDestination.Unset()
 			self.state.Location.Unset()
@@ -3531,6 +3547,9 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 		}
 		deliver = self.tellConnectWriteWithLock(&write, false)
 		provideModeDeliver = self.tellPendingProvideModeWithLock()
+		if !success {
+			provideEnabledDeliver = self.tellPendingProvideEnabledWithLock()
+		}
 	}()
 	if deliver {
 		self.deliverConnectState()
@@ -3538,8 +3557,8 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 	if provideModeDeliver {
 		self.deliverProvideMode()
 	}
-	if pending {
-		self.provideChanged(self.GetProvideEnabled())
+	if provideEnabledDeliver {
+		self.deliverProvideEnabled()
 	}
 }
 
@@ -4323,20 +4342,6 @@ func listenerList[T any](listenerMap map[connect.Id]T) []T {
 		listeners[i] = listenerMap[orderedKeys[i]]
 	}
 	return listeners
-}
-
-func (self *DeviceRemote) provideChanged(provideEnabled bool) {
-	listenerList := func() []ProvideChangeListener {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.lastKnownState.ProvideEnabled.Set(provideEnabled)
-		return listenerList(self.provideChangeListeners)
-	}()
-	for _, provideChangeListener := range listenerList {
-		connect.HandleError(func() {
-			provideChangeListener.ProvideChanged(provideEnabled)
-		})
-	}
 }
 
 func (self *DeviceRemote) canShowRatingDialogChanged(canShowRatingDialog bool) {
@@ -10745,6 +10750,12 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 
 // hostedIncompatibleRpcGuarded reports whether a hosted-incompatible rpc setter
 // should be skipped. Getters and listeners are never guarded.
+//
+// A skipped setter still answers success, and no report follows. A remote
+// tells its listeners a live write once the rpc returns, so one that sent a
+// guarded write would leave them at the written value until a resync
+// (device_remote_setting_state.go). None sends one: every remote to a hosted
+// device sets DisableHostedIncompatible and drops the write itself.
 func (self *DeviceLocalRpc) hostedIncompatibleRpcGuarded(name string) bool {
 	if self.settings.DisableHostedIncompatible {
 		self.deviceLocal.log.Infof("[dlrpc]hosted incompatible: %s ignored\n", name)
@@ -13801,7 +13812,7 @@ func (self *DeviceRemoteRpc) dispatch(callback func()) {
 func (self *DeviceRemoteRpc) ProvideChanged(provideEnabled bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ProvideChanged provideEnabled=%t", provideEnabled)
 	self.dispatch(func() {
-		self.deviceRemote.provideChanged(provideEnabled)
+		self.deviceRemote.provideEnabledReported(provideEnabled)
 	})
 	return nil
 }
