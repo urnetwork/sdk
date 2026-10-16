@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerTsResolve } from "../ts-resolve.ts";
 import { startMockExtender, type MockExtender } from "./client_mock_extender.ts";
-import type { LagSessionEvent } from "../../src/lag/client.ts";
+import type { LagSession, LagSessionEvent } from "../../src/lag/client.ts";
 import type { LagDownloadToPage, LagDownloadToWorker } from "../../src/lag/download.ts";
 
 registerTsResolve();
@@ -48,8 +48,12 @@ interface FakeWorkerOptions {
   deliveryDelayMs?: number;
   /** never say ready */
   silent?: boolean;
-  /** fail once this many messages after "ready" have reached the page */
-  failAfterMessages?: number;
+  /**
+   * fail, in place of the next message, once this many messages carrying
+   * chunks have reached the page: part way through a download, however many
+   * batches went before its first chunk came
+   */
+  failAfterChunkMessages?: number;
 }
 
 type Listener = (event: { data: LagDownloadToPage }) => void;
@@ -58,11 +62,14 @@ type Listener = (event: { data: LagDownloadToPage }) => void;
 // same messages and events a real one has.
 class FakeWorker {
   readonly sent: LagDownloadToWorker[] = [];
+  /** each flush the page asked for: when, and when its "flushed" reached the page (performance.now()) */
+  readonly flushes: Array<{ askedAt: number; answeredAt?: number }> = [];
   readonly options: FakeWorkerOptions;
   private readonly messageListeners: Listener[] = [];
   private readonly errorListeners: Array<(event: unknown) => void> = [];
   private readonly host: InstanceType<typeof LagDownloadWorkerHost>;
   private readonly ids = new Set<number>();
+  // messages carrying chunks that have reached the page
   private delivered = 0;
   terminated = false;
 
@@ -87,6 +94,9 @@ class FakeWorker {
     if (message.type === "start") {
       this.ids.add(message.id);
     }
+    if (message.type === "flush") {
+      this.flushes.push({ askedAt: performance.now() });
+    }
     setTimeout(() => {
       if (!this.terminated) {
         this.host.receive(message);
@@ -109,20 +119,25 @@ class FakeWorker {
     if (this.terminated) {
       return;
     }
-    if (message.type !== "ready") {
-      this.delivered += 1;
-    }
-    const n = this.delivered;
     setTimeout(() => {
       if (this.terminated) {
         return;
       }
-      const failAfter = this.options.failAfterMessages;
-      if (failAfter !== undefined && message.type !== "ready" && failAfter < n) {
+      const failAfter = this.options.failAfterChunkMessages;
+      if (failAfter !== undefined && message.type !== "ready" && failAfter <= this.delivered) {
         for (const listener of this.errorListeners) {
           listener(new Error("the download worker failed"));
         }
         return;
+      }
+      if (message.type !== "ready" && message.type !== "ended" && 0 < message.items.length) {
+        this.delivered += 1;
+      }
+      if (message.type === "flushed") {
+        const flush = this.flushes.find((asked) => asked.answeredAt === undefined);
+        if (flush !== undefined) {
+          flush.answeredAt = performance.now();
+        }
       }
       for (const listener of this.messageListeners) {
         listener({ data: message });
@@ -261,16 +276,68 @@ test("a download that takes its whole extra second to be final still has its upl
   // and the Worker hands chunks over 100 ms late, as to a busy page. Opened
   // 1 s before the window's end, the first socket would wait over 2 s and be
   // refused; it reaches the extender about 250 ms before the end instead.
+  //
+  // A socket's wait also holds what this machine adds when it is busy: the
+  // timer that finds the window final firing late, the Worker's hand-overs
+  // coming late, and the extender getting to the upload message late. So
+  // the mock holds the sockets for as long as the page takes, and each
+  // wait, less those delays as measured, must be under the 2 s.
+  const deliveryDelayMs = 100;
   const options = {
     hello: { downloadMs: 2000 },
     downloadPauseMs: 20,
     slowDownloadStream: { stream: 2, pauseMs: 5000 },
     downloadOverrunMs: 2000,
     uploadBytesPerSecond: 4 << 20,
+    streamWaitMs: 30_000,
   };
   await withMock(options, async (mock) => {
-    const { session, events } = openWithWorker(mock, "ticket-worker-slow-final", { deliveryDelayMs: 100 });
+    // when the page made its first upload socket, and sent the upload message
+    let firstUploadSocketAt: number | undefined;
+    let uploadSentAt: number | undefined;
+    class TimedWebSocket extends WebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (String(url).includes("/lag/v1/up")) {
+          firstUploadSocketAt ??= performance.now();
+        }
+      }
+      send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+        if (typeof data === "string" && data.includes('"phase":"upload"')) {
+          uploadSentAt ??= performance.now();
+        }
+        super.send(data);
+      }
+    }
+    // the window's end on this clock, and the session's lowest round trip
+    // as the page timed its sockets by it, both as of the first byte
+    let windowEnd: number | undefined;
+    let rttMs: number | undefined;
+    const workers: FakeWorker[] = [];
+    const events: LagSessionEvent[] = [];
+    let session!: LagSession;
+    session = openLagSession({
+      host: mock.origin,
+      ticket: "ticket-worker-slow-final",
+      WebSocket: TimedWebSocket,
+      downloadWorker: () => {
+        const worker = new FakeWorker({ deliveryDelayMs });
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "load" && event.phase === "download") {
+          windowEnd = performance.now() - (Date.now() - event.at) + session.hello!.downloadMs;
+          rttMs = Math.min(...session.pings.roundTrips());
+        }
+      },
+    });
     const hello = await session.ready;
+    // round trips to time the sockets by
+    while (session.pings.roundTrips().length < 2) {
+      await sleep(10);
+    }
     const result = await session.startLoad();
     const record = mock.sessions[0];
     assert.equal(result.endReason, "complete");
@@ -278,20 +345,29 @@ test("a download that takes its whole extra second to be final still has its upl
     assert.equal(record.uploadStreams, 4);
     assert.equal(result.upload.streams, 4);
     // the window was final 1 s after its end, when the upload began
-    const windowEnd = result.download.startedAt! + hello.downloadMs;
     const upload = ofType(events, "load").find((event) => event.phase === "upload")!;
-    assert.ok(SPREAD_MAX_MS - 50 <= upload.at - windowEnd, `the upload began ${upload.at - windowEnd} ms after the download's window ended`);
-    // the first socket came about 250 ms before the window ended, the
-    // sockets having started two of the session's round trips sooner, not
-    // 1 s before it
-    const rttMs = Math.min(...session.pings.roundTrips());
-    const requested = record.uploadRequestedAt.filter((at) => at !== undefined).map((at) => performance.timeOrigin + at);
-    assert.equal(requested.length, 4);
-    const before = windowEnd - Math.min(...requested);
-    assert.ok(before <= 250 + 2 * rttMs + 100, `the first upload socket came ${before} ms before the window's end, the round trip ${rttMs} ms`);
-    // and none was held as long as the 2 s the extender allows
+    const end = result.download.startedAt! + hello.downloadMs;
+    assert.ok(SPREAD_MAX_MS - 50 <= upload.at - end, `the upload began ${upload.at - end} ms after the download's window ended`);
+    // the page made its first upload socket 250 ms and two round trips
+    // before the window's end, not 1 s before it (a busy machine only makes
+    // it later)
+    assert.ok(firstUploadSocketAt !== undefined && windowEnd !== undefined && rttMs !== undefined);
+    const lead = windowEnd - firstUploadSocketAt;
+    assert.ok(lead <= 250 + 2 * rttMs + 5, `the first upload socket was made ${lead} ms before the window's end, the round trip ${rttMs} ms`);
+    // and every socket that came before its phase waited, less this
+    // machine's delays, under the 2 s the extender allows
+    const flush = workers[0].flushes[0];
+    assert.ok(flush?.answeredAt !== undefined && uploadSentAt !== undefined && record.uploadPhaseAt !== undefined);
+    const delays = {
+      final: Math.max(0, flush.askedAt - (windowEnd + SPREAD_MAX_MS)),
+      handOver: Math.max(0, Math.min(flush.answeredAt, uploadSentAt) - flush.askedAt - deliveryDelayMs),
+      extender: Math.max(0, record.uploadPhaseAt - uploadSentAt),
+    };
+    const late = delays.final + delays.handOver + delays.extender;
+    assert.equal(record.uploadRequestedAt.filter((at) => at !== undefined).length, 4);
     record.uploadOpenedAt.forEach((openedAt, k) => {
-      assert.ok(openedAt - record.uploadRequestedAt[k] < 2000, `upload stream ${k} waited ${openedAt - record.uploadRequestedAt[k]} ms`);
+      const waited = openedAt - record.uploadRequestedAt[k];
+      assert.ok(waited - late < 2000, `upload stream ${k} waited ${waited} ms, of it this machine's delays ${JSON.stringify(delays)}`);
     });
     session.close();
   });
@@ -351,7 +427,7 @@ test("a Worker that fails during the download ends it with what it had, and late
   await withMock({ uploadBytesPerSecond: 16 << 20 }, async (mock) => {
     const workers: FakeWorker[] = [];
     const factory = () => {
-      const worker = new FakeWorker({ failAfterMessages: 3 });
+      const worker = new FakeWorker({ failAfterChunkMessages: 3 });
       workers.push(worker);
       return worker as unknown as Worker;
     };
@@ -399,45 +475,79 @@ test("a page that brings its own fetch reads the download itself", { timeout: 30
   });
 });
 
-test("the Worker hands over a download's first chunk at once and the rest in batches; a flush hands over the rest; a close ends it", { timeout: 10_000 }, async () => {
-  // one stream of ten chunks 40 ms apart, from a fetch of its own
+test("the Worker hands over a download's first chunk at once and the rest in batches; a flush hands over the rest; a close ends it", { timeout: 10_000 }, async (t) => {
+  // On the test's own clock (its timers and Date), so how busy this machine
+  // is changes nothing: the Worker's ticker and the stream's chunks run only
+  // as the test moves time, and every hand-over is timed exactly.
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  // the fetch, its reads and their hand-overs are promises only: they run
+  // without time passing
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const advance = async (ms: number) => {
+    for (let i = 0; i < ms; i += 1) {
+      t.mock.timers.tick(1);
+      await settle();
+    }
+  };
+  // one stream of ten chunks 25 ms apart, from a fetch of its own; none
+  // falls on a batch's tick, so each belongs to one batch
   const fetchImpl = (async () =>
     new Response(
       new ReadableStream<Uint8Array>({
         async start(controller) {
           for (let i = 0; i < 10; i += 1) {
             controller.enqueue(new Uint8Array(1000));
-            await sleep(40);
+            await sleep(25);
           }
           controller.close();
         },
       }),
     )) as typeof fetch;
-  const posted: Array<{ at: number; message: LagDownloadToPage }> = [];
-  const host = new LagDownloadWorkerHost((message) => posted.push({ at: performance.now(), message }), fetchImpl);
-  const begun = performance.now();
-  host.receive({ type: "start", id: 7, start: { url: "https://extender.test/lag/v1/down?session=s", streams: 1, downloadMs: 5000, openRetries: 0 } });
-  await sleep(20);
-  // the first chunk, alone and at once
-  const firstWithItems = posted.find((post) => post.message.type === "chunks" && post.message.items.length > 0);
-  assert.ok(firstWithItems && firstWithItems.message.type === "chunks");
-  assert.deepEqual(firstWithItems.message.items.length, 3);
-  assert.ok(firstWithItems.at - begun < LAG_DOWNLOAD_BATCH_MS + 10);
-  await sleep(150);
-  // batches on the ticker, each saying how far it covers
-  const batches = posted.filter((post) => post.message.type === "chunks");
-  assert.ok(4 <= batches.length, `${batches.length} batches in 170 ms`);
-  const throughs = batches.map((post) => (post.message.type === "chunks" ? post.message.through : 0));
-  assert.deepEqual([...throughs].sort((a, b) => a - b), throughs);
-  host.receive({ type: "flush", id: 7 });
-  const flushed = posted.at(-1)!.message;
-  assert.equal(flushed.type, "flushed");
-  host.receive({ type: "close", id: 7 });
-  assert.equal(posted.at(-1)!.message.type, "closed");
-  const count = posted.length;
-  await sleep(150);
-  // nothing after the close: no chunk, no end, no ticker
-  assert.equal(posted.length, count);
-  const chunks = posted.flatMap((post) => (post.message.type === "chunks" || post.message.type === "flushed" || post.message.type === "closed" ? post.message.items : []));
-  assert.ok(chunks.length / 3 < 10, "the close let the stream run on");
+  const posted: LagDownloadToPage[] = [];
+  const host = new LagDownloadWorkerHost((message) => posted.push(message), fetchImpl, () => Date.now());
+  const begun = Date.now();
+  let closed = false;
+  try {
+    host.receive({ type: "start", id: 7, start: { url: "https://extender.test/lag/v1/down?session=s", streams: 1, downloadMs: 5000, openRetries: 0 } });
+    await settle();
+    // the first chunk, alone and at once: handed over as it was read, before
+    // the ticker's first batch and with no time gone by
+    assert.deepEqual(posted, [{ type: "chunks", id: 7, items: [0, begun, 1000], through: begun }]);
+    // then batches on the ticker, every LAG_DOWNLOAD_BATCH_MS, each with the
+    // chunks read since the one before and saying how far it covers
+    await advance(150);
+    const batches = posted.slice(1);
+    assert.deepEqual(
+      batches.map((post) => [post.type, post.type === "chunks" ? post.through : undefined]),
+      Array.from({ length: Math.floor(150 / LAG_DOWNLOAD_BATCH_MS) }, (_, i) => ["chunks", begun + (i + 1) * LAG_DOWNLOAD_BATCH_MS]),
+    );
+    let covered = begun;
+    for (const batch of batches) {
+      assert.ok(batch.type === "chunks");
+      for (let i = 0; i < batch.items.length; i += 3) {
+        const at = batch.items[i + 1];
+        assert.ok(covered < at && at <= batch.through, `a chunk read at ${at} came in the batch through ${batch.through}`);
+      }
+      covered = batch.through;
+    }
+    assert.deepEqual(
+      batches.flatMap((batch) => (batch.type === "chunks" ? batch.items : [])),
+      [25, 50, 75, 100, 125].flatMap((ms) => [0, begun + ms, 1000]),
+    );
+    // a flush hands over what came since the last batch, the chunk at 150 ms
+    host.receive({ type: "flush", id: 7 });
+    assert.deepEqual(posted.at(-1), { type: "flushed", id: 7, items: [0, begun + 150, 1000], through: begun + 150 });
+    host.receive({ type: "close", id: 7 });
+    closed = true;
+    assert.deepEqual(posted.at(-1), { type: "closed", id: 7, items: [], through: begun + 150 });
+    const count = posted.length;
+    await advance(150);
+    // nothing after the close: no chunk, no end, no ticker, though the
+    // stream had four chunks left to send
+    assert.equal(posted.length, count);
+  } finally {
+    if (!closed) {
+      host.receive({ type: "close", id: 7 });
+    }
+  }
 });
