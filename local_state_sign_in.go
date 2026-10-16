@@ -12,7 +12,11 @@
 // balance gate.
 //
 // So every sign-out advances signInGeneration and marks the space signed out,
-// and the next stored credential signs it in again. A deferred write captures
+// and the next stored credential signs it in again. Removing the last stored
+// credential without a logout (a failed sign-in's rollback, a rejected network
+// credential) is a sign-out too: otherwise a sign-in that stored its network
+// token and was rolled back would leave the space open with no account, and a
+// late write of the previous one would reach the next. A deferred write captures
 // its sign-in (localStateSignIn) before its device calls, and commits only while
 // that sign-in is still current, checked in the same critical section as the
 // write: a sign-out either comes first, and the write is dropped, or comes
@@ -47,7 +51,8 @@ func (self *LocalState) currentSignIn() localStateSignIn {
 }
 
 // Every removal of the account's state calls this before it removes anything,
-// so the fence closes even when the removal then fails partway.
+// so the fence closes even when the removal then fails partway, and so does a
+// commit that leaves no credential stored.
 func (self *LocalState) signOutWithLock() {
 	self.signInGeneration += 1
 	self.signedOut = true

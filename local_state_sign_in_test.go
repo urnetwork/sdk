@@ -169,6 +169,76 @@ func testingSignInFenceWritten(t *testing.T, localState *LocalState) []string {
 	return written
 }
 
+// A sign-in that stores its network token and is then rolled back (the apps
+// store it first and clear it again when a later step fails: apple
+// DeviceManager rollbackFailedNetworkClientAuthentication) leaves the space
+// with no credential. It is signed out again: the previous account's late
+// writes are dropped, and so is a write captured while the sign-in was open.
+func TestLocalStateRolledBackSignInKeepsTheFenceClosed(t *testing.T) {
+	space := testingAuthClientShapeSpace(t)
+	space.seedDistinctLogin(t)
+	if err := space.localState.Logout(); err != nil {
+		t.Fatal(err)
+	}
+
+	// the next sign-in stores its network token...
+	if err := space.localState.SetByJwt(space.adminJwt); err != nil {
+		t.Fatal(err)
+	}
+	rolledBack := space.localState.currentSignIn()
+	// ...and a later step fails, so it is rolled back
+	if err := space.localState.SetByJwt(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := space.localState.SetByClientJwt(""); err != nil {
+		t.Fatal(err)
+	}
+
+	testingSignInFenceLateWrites(t, space.localState)
+	if testingSignInFenceWrote(t, rolledBack, "rolled back") {
+		t.Error("a write of the rolled-back sign-in was saved")
+	}
+	space.seedDistinctLogin(t)
+	if written := testingSignInFenceWritten(t, space.localState); 0 < len(written) {
+		t.Errorf("late writes after a rolled-back sign-in were saved for the next sign-in: %v", written)
+	}
+}
+
+// The api's rejection of a network credential with no device (an account
+// screen's sign-out, or the server's) removes the last stored credential
+// through the same commit, so it closes the fence too. The next sign-in saves.
+func TestLocalStateRejectedNetworkCredentialClosesTheFence(t *testing.T) {
+	api := newApi(t.Context(), nil, "http://127.0.0.1:1")
+	defer api.Close()
+	networkJwt := taggedSessionTestJwt(t, "session", "")
+	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, "")
+	api.SetByJwt(networkJwt)
+	api.SetNetworkCredentialStore(localState)
+	signedIn := localState.currentSignIn()
+	if !api.rejectNetworkCredential(api.captureNetworkTarget(), "") {
+		t.Fatal("the network credential was not rejected")
+	}
+	if localState.GetByJwt() != "" {
+		t.Fatal("the rejected network credential is still stored")
+	}
+
+	testingSignInFenceLateWrites(t, localState)
+	if testingSignInFenceWrote(t, signedIn, "rejected") {
+		t.Error("a write of the rejected sign-in was saved")
+	}
+	if written := testingSignInFenceWritten(t, localState); 0 < len(written) {
+		t.Errorf("late writes after the rejected credential were saved: %v", written)
+	}
+
+	if err := localState.SetByJwt(taggedSessionTestJwt(t, "next session", "")); err != nil {
+		t.Fatal(err)
+	}
+	testingSignInFenceLateWrites(t, localState)
+	if written := testingSignInFenceWritten(t, localState); len(written) != 10 {
+		t.Errorf("the next sign-in saved only %v", written)
+	}
+}
+
 // Logout wipes every per-account setting (owner rule): a late write of any of
 // them, such as android's device listener mirrors make, must not carry into
 // the next sign-in, and the next sign-in's own writes all save.

@@ -168,6 +168,7 @@ func (self *LocalState) updateAuthState(
 	if err != nil {
 		return err
 	}
+	storedCredential := state.ByJwt != "" || state.ByClientJwt != ""
 	changed, err := mutate(&state)
 	if err != nil {
 		return err
@@ -177,6 +178,12 @@ func (self *LocalState) updateAuthState(
 		state.Generation += 1
 		if err := self.writeAuthStateLocked(state); err != nil {
 			return err
+		}
+		if storedCredential && state.ByJwt == "" && state.ByClientJwt == "" {
+			// The last stored credential is gone without a logout (a failed
+			// sign-in's rollback, a rejected network credential): nothing is
+			// signed in, so the sign-in fence closes (local_state_sign_in.go).
+			self.signOutWithLock()
 		}
 	} else {
 		// An unchanged credential is still a confirmed sign-in, as after a
