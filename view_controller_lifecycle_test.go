@@ -83,7 +83,8 @@ func TestBrowserStateOnlyConnectLocationReplayRetainsActiveGrid(t *testing.T) {
 	replayed := cloneConnectLocation(location)
 	replayed.Name = "same transport, refreshed description"
 	replayed.ProviderCount = 7
-	device.connectLocationChanged(newDeviceRemoteConnectLocation(replayed))
+	// the sync's replay, through the reverse rpc report path
+	device.connectLocationReported(newDeviceRemoteConnectLocation(replayed))
 
 	if got := controller.GetGrid(); got != initialGrid {
 		t.Fatal("equivalent browser sync replay replaced the active logical window")
@@ -111,12 +112,13 @@ func TestBrowserStateOnlyConnectLocationReplayRetainsActiveGrid(t *testing.T) {
 	default:
 	}
 
-	// An explicit reconnect advances the CVC generation before the same
-	// location is echoed back. That makes the retained grid stale by design:
-	// rebuild and register a fresh window rather than suppressing the gesture.
+	// An explicit reconnect advances the CVC generation before the device's
+	// Reconnect tells the same location again. That makes the retained grid
+	// stale by design: rebuild and register a fresh window rather than
+	// suppressing the gesture.
 	controller.beginGeneration(DestinationSet)
 	explicitReconnectSync := device.reconnectMonitor.NotifyChannel()
-	device.connectLocationChanged(newDeviceRemoteConnectLocation(replayed))
+	device.Reconnect(replayed)
 	if got := controller.GetGrid(); got == nil || got == initialGrid {
 		t.Fatal("explicit same-location reconnect retained its stale grid generation")
 	}
@@ -127,12 +129,15 @@ func TestBrowserStateOnlyConnectLocationReplayRetainsActiveGrid(t *testing.T) {
 	}
 
 	currentGrid := controller.GetGrid()
+	// a sync delivers the pending reconnect; the device then reports a
+	// different transport location of its own
+	testingTakeConnectSync(t, device)
 	changedLocationSync := device.reconnectMonitor.NotifyChannel()
 	changedLocation := &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{ClientId: NewId()},
 		Name:              "different transport",
 	}
-	device.connectLocationChanged(newDeviceRemoteConnectLocation(changedLocation))
+	device.connectLocationReported(newDeviceRemoteConnectLocation(changedLocation))
 	if got := controller.GetGrid(); got == nil || got == currentGrid {
 		t.Fatal("different browser transport location retained the previous grid")
 	}
