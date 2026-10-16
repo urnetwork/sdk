@@ -3218,7 +3218,9 @@ func (self *DeviceLocal) applyAllowForegroundWithLock(allowForeground bool) (fun
 }
 
 // hostedIncompatibleGuarded reports whether a setter that must not run on a
-// hosted device should be skipped. It logs the skip for visibility.
+// hosted device should be skipped. It logs the skip for visibility. A skipped
+// setter reached through the rpc answers success with no report, see
+// DeviceLocalRpc.hostedIncompatibleRpcGuarded.
 func (self *DeviceLocal) hostedIncompatibleGuarded(name string) bool {
 	if self.settings.HostedIncompatible {
 		self.log.Infof("[device]hosted incompatible: %s ignored\n", name)
@@ -4392,6 +4394,9 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 	return self.provideMode
 }
 
+// Without a provider there is nothing to pause, and the write is dropped with
+// no report; through the rpc it still answers success
+// (device_remote_setting_state.go).
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 	if self.hostedIncompatibleGuarded("SetProvidePaused") {
 		return
