@@ -14,6 +14,14 @@
 // what the getters answer. While the rpc is live the device applies a control
 // mode's or a connect write's provide mapping itself and reports the mode.
 //
+// A live write counts as applied once the device's rpc returns success. A
+// device that accepted a write without applying it would leave the told value
+// stuck until a resync, since no report follows. The hosted-incompatible
+// guards do accept without applying (DeviceLocalRpc.hostedIncompatibleRpcGuarded
+// and DeviceLocal.hostedIncompatibleGuarded), but no write reaches them today:
+// every remote to a hosted device sets DisableHostedIncompatible, which drops
+// the write before it is sent or told (DeviceRemote.hostedIncompatibleGuarded).
+//
 // The device then reports each value. A report equal to what the listeners
 // were last told is not told again; any other report is the device's own
 // change and is told. A listener that registers seeds itself from the getters,

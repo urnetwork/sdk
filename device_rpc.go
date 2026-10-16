@@ -10742,6 +10742,12 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 
 // hostedIncompatibleRpcGuarded reports whether a hosted-incompatible rpc setter
 // should be skipped. Getters and listeners are never guarded.
+//
+// A skipped setter still answers success, and no report follows. A remote
+// tells its listeners a live write once the rpc returns, so one that sent a
+// guarded write would leave them at the written value until a resync
+// (device_remote_setting_state.go). None sends one: every remote to a hosted
+// device sets DisableHostedIncompatible and drops the write itself.
 func (self *DeviceLocalRpc) hostedIncompatibleRpcGuarded(name string) bool {
 	if self.settings.DisableHostedIncompatible {
 		self.deviceLocal.log.Infof("[dlrpc]hosted incompatible: %s ignored\n", name)
