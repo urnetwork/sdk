@@ -3427,8 +3427,9 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 // device applied it, or at once while the rpc is down and the write is pending
 // until the next sync (device_remote_connect_state.go). A pending write also
 // tells the provide mode the getters derive from it, which under the auto
-// control mode follows the connect state (device_remote_setting_state.go), and
-// a pending RemoveDestination or SetDestination the provide enabled state.
+// control mode follows the connect state, and the provide enabled state, from
+// which the desktop apps refresh their provide mode
+// (device_remote_setting_state.go).
 func (self *DeviceRemote) RemoveDestination() {
 	deliver := false
 	provideModeDeliver := false
@@ -3602,6 +3603,7 @@ func (self *DeviceRemote) setConnectLocation(location *ConnectLocation, rebuild 
 	}
 	deliver := false
 	provideModeDeliver := false
+	provideEnabledDeliver := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3648,12 +3650,18 @@ func (self *DeviceRemote) setConnectLocation(location *ConnectLocation, rebuild 
 		}
 		deliver = self.tellConnectWriteWithLock(&write, rebuild)
 		provideModeDeliver = self.tellPendingProvideModeWithLock()
+		if !success {
+			provideEnabledDeliver = self.tellPendingProvideEnabledWithLock()
+		}
 	}()
 	if deliver {
 		self.deliverConnectState()
 	}
 	if provideModeDeliver {
 		self.deliverProvideMode()
+	}
+	if provideEnabledDeliver {
+		self.deliverProvideEnabled()
 	}
 }
 
