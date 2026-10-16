@@ -174,8 +174,33 @@ func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	if got := firstBudget.Stats().TotalByteCount; got != platformTransportShare {
 		t.Fatalf("platform carrier budget = %d, want target share %d", got, platformTransportShare)
 	}
-	if workingSet := firstWindow.H1BudgetByteCount + firstWindow.H3BudgetByteCount; firstBudget.Stats().TotalByteCount < workingSet {
+	if workingSet := firstWindow.H1MemoryReservationByteCount() + firstWindow.H3BudgetByteCount; firstBudget.Stats().TotalByteCount < workingSet {
 		t.Fatalf("platform carrier budget cannot fit Auto H1+H3 working set %d", workingSet)
+	}
+}
+
+// Actual profile construction supplies the priority lane and complete graph
+// claim without changing the per-device target or borrowing a process budget.
+func TestDeviceLocalH1RetainedGraphProfileComposition(t *testing.T) {
+	for _, c := range []struct {
+		target           ByteCount
+		priority, window int
+		graph            connect.ByteCount
+	}{
+		{target: 32 * 1024 * 1024, priority: 10, window: 6, graph: 697592},
+		{target: 64 * 1024 * 1024, priority: 21, window: 12, graph: 1004924},
+	} {
+		root := connect.NewPlatformTransportBudgetForMemoryTarget(c.target)
+		settings := newDeviceLocalPlatformTransportSettingsForProfile(c.target, root, nil, "", "", true)
+		if settings.PlatformTransportBudget != root || settings.H1AckPriorityBufferSize != c.priority ||
+			settings.TransportBufferSize != 32 || settings.H1MaxMessageByteCount != 16*1024 || settings.H1MemoryReservationByteCount() != c.graph {
+			t.Fatalf("target=%d actual mobile H1 graph/priority mismatch: base=%d graph=%d ack=%d", c.target, settings.H1BudgetByteCount, settings.H1MemoryReservationByteCount(), settings.H1AckPriorityBufferSize)
+		}
+		// Three persistent control paths and one make-before-break owner share
+		// the same root with the normal public client window.
+		if workingSet := connect.ByteCount(c.window+3+1) * c.graph; root.Stats().TotalByteCount < workingSet || root.Stats().TotalByteCount != c.target/4 {
+			t.Fatalf("target=%d retained H1 working set=%d does not fit unchanged carrier root=%d", c.target, workingSet, root.Stats().TotalByteCount)
+		}
 	}
 }
 
