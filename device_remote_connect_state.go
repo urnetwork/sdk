@@ -2,22 +2,28 @@
 // and whether connect is enabled.
 //
 // A local write (SetConnectLocation, Reconnect, SetDestination,
-// RemoveDestination) is announced to the listeners from the written value,
-// without waiting for the device to report it back. While the rpc is live the
-// announcement follows the device applying the write, so a grid the view
-// builds for it binds to the device's new window, never the outgoing one.
-// While the rpc is down, or a sync is still in flight, the write is pending
-// and announced at once; the device hears it from the next sync. So a connect
-// tap shows the connecting state immediately.
+// RemoveDestination) is told to the listeners from the written value, without
+// waiting for the device to report it back. While the rpc is live the write is
+// told once the device applied it, so a grid the view builds for it binds to
+// the device's new window, never the outgoing one. While the rpc is down, or a
+// sync is still in flight, the write is pending and told at once; the device
+// hears it from the next sync. So a connect tap shows the connecting state
+// immediately.
 //
-// The device then reports the state it applied. A report that only repeats
-// what the listeners were announced is that write's echo and is not announced
-// again. A report that arrives while a local write is still pending was made
-// before the device had the write (the replay of a sync that started before
-// the tap, or a push still in flight), so it is dropped: the next sync applies
-// the write over it, and announcing it would flip the view back until then.
-// The pending write is kept as last known instead, so the getters answer with
-// it while that sync is in flight.
+// The device then reports its state. A report equal to what the listeners were
+// last told changes nothing and is not told again; any other report is the
+// device's own change and is told. A report that arrives while a local write is
+// still pending was made before the device had the write (the replay of a sync
+// that started before the tap, or a push still in flight), so it is dropped:
+// the next sync applies the write over it, and telling it would flip the view
+// back until then. The pending write is kept as last known instead, so the
+// getters answer with it while that sync is in flight.
+//
+// One caller at a time delivers to the listeners, always the latest told
+// state, so the listeners hear the changes in order and the latest last, even
+// when writes and reports race on several goroutines. A caller that finds a
+// delivery running leaves its newer state to that delivery, which also keeps a
+// listener that writes from its callback from deadlocking.
 //
 // The state below is guarded by `DeviceRemote.stateLock`.
 package sdk
@@ -26,14 +32,20 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// bounds the echoes kept for a device that never reports some writes
-// (a write that does not change the device's state is not reported)
-const deviceRemoteConnectEchoLimit = 16
+// The connect state the listeners are told, with a sequence per value that
+// advances on every change to tell and the sequence last delivered.
+type deviceRemoteConnectTold struct {
+	location          *ConnectLocation
+	locationSet       bool
+	locationSequence  uint64
+	locationDelivered uint64
 
-// the connect state announced for one local write
-type deviceRemoteConnectAnnouncement struct {
-	location       *ConnectLocation
-	connectEnabled bool
+	connectEnabled          bool
+	connectEnabledSet       bool
+	connectEnabledSequence  uint64
+	connectEnabledDelivered uint64
+
+	delivering bool
 }
 
 // whether connect is enabled by the state's pending or last known write.
@@ -60,74 +72,99 @@ func (self *DeviceRemote) hasPendingConnectStateWithLock() bool {
 		self.state.Destination.IsSet
 }
 
-// Reads the written connect state and expects the device to echo it. Must be
-// called with stateLock.
-func (self *DeviceRemote) announceConnectWriteWithLock(write *DeviceRemoteState) *deviceRemoteConnectAnnouncement {
+// Keeps a pending write as last known, so the getters still answer with it
+// while a sync that took the write is in flight. Must be called with stateLock.
+func (self *DeviceRemote) recordPendingConnectWriteWithLock(write *DeviceRemoteState) {
 	location, _ := deviceRemoteStateConnectLocation(write)
 	connectEnabled, _ := deviceRemoteStateConnectEnabled(write)
-
-	self.expectedConnectLocationEchoes = appendDeviceRemoteConnectEcho(
-		self.expectedConnectLocationEchoes,
-		cloneConnectLocation(location),
-	)
-	self.expectedConnectEnabledEchoes = appendDeviceRemoteConnectEcho(
-		self.expectedConnectEnabledEchoes,
-		connectEnabled,
-	)
-
-	return &deviceRemoteConnectAnnouncement{
-		location:       location,
-		connectEnabled: connectEnabled,
-	}
-}
-
-// Keeps a pending write's announcement as last known, so the getters still
-// answer with it while a sync that took the write is in flight. Must be called
-// with stateLock.
-func (self *DeviceRemote) recordPendingConnectWriteWithLock(announcement *deviceRemoteConnectAnnouncement) {
-	self.lastKnownState.Location.Set(newDeviceRemoteConnectLocation(announcement.location))
+	self.lastKnownState.Location.Set(newDeviceRemoteConnectLocation(location))
 	self.lastKnownState.Destination.Unset()
 	self.lastKnownState.RemoveDestination.Unset()
-	self.lastKnownState.ConnectEnabled.Set(announcement.connectEnabled)
+	self.lastKnownState.ConnectEnabled.Set(connectEnabled)
 }
 
-func appendDeviceRemoteConnectEcho[T any](echoes []T, echo T) []T {
-	echoes = append(echoes, echo)
-	if deviceRemoteConnectEchoLimit < len(echoes) {
-		echoes = echoes[len(echoes)-deviceRemoteConnectEchoLimit:]
+// Tells the listeners a local write and returns whether a delivery is due.
+// A rebuild (Reconnect) tells its location even when unchanged: it is a new
+// connection, and the view builds a new grid for it. Must be called with
+// stateLock.
+func (self *DeviceRemote) tellConnectWriteWithLock(write *DeviceRemoteState, rebuild bool) bool {
+	location, _ := deviceRemoteStateConnectLocation(write)
+	connectEnabled, _ := deviceRemoteStateConnectEnabled(write)
+	locationDue := self.tellConnectLocationWithLock(location, rebuild)
+	connectEnabledDue := self.tellConnectEnabledWithLock(connectEnabled)
+	return locationDue || connectEnabledDue
+}
+
+// must be called with stateLock
+func (self *DeviceRemote) tellConnectLocationWithLock(location *ConnectLocation, always bool) bool {
+	told := &self.connectTold
+	if !always && told.locationSet && connectLocationValuesEqual(told.location, location) {
+		return false
 	}
-	return echoes
+	told.location = cloneConnectLocation(location)
+	told.locationSet = true
+	told.locationSequence += 1
+	return true
 }
 
-// Consumes the expected echoes through the first one equal to the report and
-// returns true. A device coalesces its pushes (last value wins), so a report
-// may skip earlier echoes. A report equal to no echo is a change of its own:
-// the echoes are dropped and false is returned.
-func consumeDeviceRemoteConnectEcho[T any](echoes []T, report T, equal func(T, T) bool) ([]T, bool) {
-	for i, echo := range echoes {
-		if equal(echo, report) {
-			return echoes[i+1:], true
+// must be called with stateLock
+func (self *DeviceRemote) tellConnectEnabledWithLock(connectEnabled bool) bool {
+	told := &self.connectTold
+	if told.connectEnabledSet && told.connectEnabled == connectEnabled {
+		return false
+	}
+	told.connectEnabled = connectEnabled
+	told.connectEnabledSet = true
+	told.connectEnabledSequence += 1
+	return true
+}
+
+// Delivers the told state to the listeners, unless another caller is
+// delivering: that caller delivers the latest state before it stops. Never
+// called with stateLock.
+func (self *DeviceRemote) deliverConnectState() {
+	self.stateLock.Lock()
+	told := &self.connectTold
+	if told.delivering {
+		self.stateLock.Unlock()
+		return
+	}
+	told.delivering = true
+	for {
+		locationDue := told.locationDelivered != told.locationSequence
+		connectEnabledDue := told.connectEnabledDelivered != told.connectEnabledSequence
+		if !locationDue && !connectEnabledDue {
+			told.delivering = false
+			self.stateLock.Unlock()
+			return
 		}
-	}
-	return nil, false
-}
+		location := cloneConnectLocation(told.location)
+		connectEnabled := told.connectEnabled
+		told.locationDelivered = told.locationSequence
+		told.connectEnabledDelivered = told.connectEnabledSequence
+		var connectLocationListeners []ConnectLocationChangeListener
+		if locationDue {
+			connectLocationListeners = listenerList(self.connectLocationChangeListeners)
+		}
+		var connectListeners []ConnectChangeListener
+		if connectEnabledDue {
+			connectListeners = listenerList(self.connectChangeListeners)
+		}
+		self.stateLock.Unlock()
 
-// Delivers an announcement to the listeners. Never called with stateLock.
-func (self *DeviceRemote) announceConnectState(announcement *deviceRemoteConnectAnnouncement) {
-	connectLocationListeners, connectListeners := func() ([]ConnectLocationChangeListener, []ConnectChangeListener) {
+		// listener panics are contained, so the delivery always resumes here
+		for _, connectLocationChangeListener := range connectLocationListeners {
+			connect.HandleError(func() {
+				connectLocationChangeListener.ConnectLocationChanged(cloneConnectLocation(location))
+			})
+		}
+		for _, connectChangeListener := range connectListeners {
+			connect.HandleError(func() {
+				connectChangeListener.ConnectChanged(connectEnabled)
+			})
+		}
+
 		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		return listenerList(self.connectLocationChangeListeners), listenerList(self.connectChangeListeners)
-	}()
-	for _, connectLocationChangeListener := range connectLocationListeners {
-		connect.HandleError(func() {
-			connectLocationChangeListener.ConnectLocationChanged(cloneConnectLocation(announcement.location))
-		})
-	}
-	for _, connectChangeListener := range connectListeners {
-		connect.HandleError(func() {
-			connectChangeListener.ConnectChanged(announcement.connectEnabled)
-		})
 	}
 }
 
@@ -136,7 +173,7 @@ func (self *DeviceRemote) connectLocationReported(deviceRemoteLocation *DeviceRe
 	if deviceRemoteLocation == nil {
 		deviceRemoteLocation = newDeviceRemoteConnectLocation(nil)
 	}
-	announce := func() bool {
+	deliver := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
@@ -148,22 +185,16 @@ func (self *DeviceRemote) connectLocationReported(deviceRemoteLocation *DeviceRe
 		self.lastKnownState.Location.Set(deviceRemoteLocation)
 		self.lastKnownState.Destination.Unset()
 		self.lastKnownState.RemoveDestination.Unset()
-		echoes, echo := consumeDeviceRemoteConnectEcho(
-			self.expectedConnectLocationEchoes,
-			deviceRemoteLocation.toConnectLocation(),
-			connectLocationValuesEqual,
-		)
-		self.expectedConnectLocationEchoes = echoes
-		return !echo
+		return self.tellConnectLocationWithLock(deviceRemoteLocation.toConnectLocation(), false)
 	}()
-	if announce {
-		self.connectLocationChanged(deviceRemoteLocation)
+	if deliver {
+		self.deliverConnectState()
 	}
 }
 
 // The device's report of whether connect is enabled (reverse rpc).
 func (self *DeviceRemote) connectEnabledReported(connectEnabled bool) {
-	announce := func() bool {
+	deliver := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
@@ -173,15 +204,9 @@ func (self *DeviceRemote) connectEnabledReported(connectEnabled bool) {
 			return false
 		}
 		self.lastKnownState.ConnectEnabled.Set(connectEnabled)
-		echoes, echo := consumeDeviceRemoteConnectEcho(
-			self.expectedConnectEnabledEchoes,
-			connectEnabled,
-			func(a bool, b bool) bool { return a == b },
-		)
-		self.expectedConnectEnabledEchoes = echoes
-		return !echo
+		return self.tellConnectEnabledWithLock(connectEnabled)
 	}()
-	if announce {
-		self.connectChanged(connectEnabled)
+	if deliver {
+		self.deliverConnectState()
 	}
 }

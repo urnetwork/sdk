@@ -13,7 +13,9 @@ import (
 	"net"
 	"net/rpc"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -172,13 +174,7 @@ func TestDeviceRemoteConnectTapSurvivesStaleDeviceReport(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.GetConnectLocation().Name, "tapped")
 
 	// the sync delivers the tap; the device reports what it applied
-	func() {
-		deviceRemote.stateLock.Lock()
-		defer deviceRemote.stateLock.Unlock()
-		syncState := deviceRemote.state
-		deviceRemote.state = DeviceRemoteState{}
-		connect.AssertEqual(t, syncState.Location.IsSet, true)
-	}()
+	testingTakeConnectSync(t, deviceRemote)
 	// while that sync is in flight the getters still answer with the tap
 	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), true)
 	connect.AssertEqual(t, deviceRemote.GetConnectLocation().Name, "tapped")
@@ -558,4 +554,169 @@ func TestDeviceRemoteConnectTapDuringSyncReachesDevice(t *testing.T) {
 	if status := controller.GetConnectionStatus(); status == Disconnected {
 		t.Fatalf("the connection status reverted to %s", status)
 	}
+}
+
+// Takes the remote's pending state, as takeSyncRequest does when a sync starts.
+func testingTakeConnectSync(t *testing.T, deviceRemote *DeviceRemote) {
+	t.Helper()
+	deviceRemote.stateLock.Lock()
+	defer deviceRemote.stateLock.Unlock()
+	syncState := deviceRemote.state
+	deviceRemote.state = DeviceRemoteState{}
+	if !syncState.Location.IsSet {
+		t.Fatal("the sync took no connect write")
+	}
+}
+
+// Fails unless the last location and connect events the listeners heard are
+// the given state.
+func testingAssertConnectStateLastHeard(t *testing.T, deviceRemote *DeviceRemote, recorder *testingConnectStateRecorder, location string, connectEnabled bool) {
+	t.Helper()
+	events := recorder.get()
+	lastLocation := ""
+	lastConnect := ""
+	for _, event := range events {
+		switch {
+		case strings.HasPrefix(event, "location:"):
+			lastLocation = event
+		case strings.HasPrefix(event, "connect:"):
+			lastConnect = event
+		}
+	}
+	if lastLocation != "location:"+location || lastConnect != fmt.Sprintf("connect:%t", connectEnabled) {
+		t.Fatalf(
+			"listeners last heard %s %s of %v; the device is at location:%s connect:%t (GetConnectEnabled=%t)",
+			lastLocation, lastConnect, events, location, connectEnabled, deviceRemote.GetConnectEnabled(),
+		)
+	}
+}
+
+// Taps queued while the rpc is down (connect, disconnect, connect) reach the
+// device in one sync, so it replays only the final state. A change the device
+// later makes on its own (the extension's own disconnect, another controller,
+// a recreated extension's replay) must still reach the listeners.
+func TestDeviceRemoteDeviceDisconnectAfterQueuedTapsIsTold(t *testing.T) {
+	deviceRemote, recorder := testingConnectStateRemote(t)
+	location := testingConnectStateLocation("tapped")
+
+	deviceRemote.Reconnect(location)
+	deviceRemote.SetConnectLocation(nil)
+	deviceRemote.Reconnect(location)
+
+	testingTakeConnectSync(t, deviceRemote)
+	// the sync's replay of the state the device applied
+	testingReportConnectState(t, deviceRemote, location, true)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "tapped", true)
+
+	// later, the device disconnects on its own
+	testingReportConnectState(t, deviceRemote, nil, false)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "nil", false)
+	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), false)
+}
+
+// The same with the rpc live: the device coalesces its pushes per key, last
+// value wins (DeviceLocalRpc.enqueueReverse), so three quick taps can come
+// back as one report.
+func TestDeviceRemoteDeviceDisconnectAfterCoalescedEchoIsTold(t *testing.T) {
+	deviceRemote, recorder := testingConnectStateRemote(t)
+	server := &testingConnectTapDeviceRpc{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	testingInstallConnectTapService(t, deviceRemote, server)
+	server.releaseWrites()
+
+	location := testingConnectStateLocation("tapped")
+	deviceRemote.Reconnect(location)
+	deviceRemote.SetConnectLocation(nil)
+	deviceRemote.Reconnect(location)
+
+	// the coalesced push of the final state
+	testingReportConnectState(t, deviceRemote, location, true)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "tapped", true)
+
+	// later, the device disconnects on its own
+	testingReportConnectState(t, deviceRemote, nil, false)
+	testingAssertConnectStateLastHeard(t, deviceRemote, recorder, "nil", false)
+	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), false)
+}
+
+// A connect listener that, while armed, holds its first call until released:
+// the first writer's goroutine descheduled in the middle of its delivery.
+type testingHeldConnectListener struct {
+	recorder *testingConnectStateRecorder
+	armed    atomic.Bool
+	once     sync.Once
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+func (self *testingHeldConnectListener) ConnectChanged(connectEnabled bool) {
+	first := false
+	if self.armed.Load() {
+		self.once.Do(func() { first = true })
+	}
+	if first {
+		close(self.entered)
+		<-self.release
+	}
+	self.recorder.add(fmt.Sprintf("connect:%t", connectEnabled))
+}
+
+// Two connect writes on different goroutines with the rpc live, and the
+// device's in-order reports of both. However the deliveries interleave, the
+// listeners hear the latest state last.
+func TestDeviceRemoteConcurrentConnectWritesTellTheLatestLast(t *testing.T) {
+	deviceRemote, _ := testingConnectStateRemote(t)
+	recorder := &testingConnectStateRecorder{}
+	held := &testingHeldConnectListener{
+		recorder: recorder,
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	sub := deviceRemote.AddConnectChangeListener(held)
+	defer sub.Close()
+	releaseHeld := sync.OnceFunc(func() { close(held.release) })
+	defer releaseHeld()
+
+	server := &testingConnectTapDeviceRpc{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	testingInstallConnectTapService(t, deviceRemote, server)
+	server.releaseWrites()
+
+	location := testingConnectStateLocation("tapped")
+	held.armed.Store(true)
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		deviceRemote.Reconnect(location)
+	}()
+	select {
+	case <-held.entered:
+	case <-firstDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the first write is stuck")
+	}
+	held.armed.Store(false)
+
+	// the second write, from another goroutine, completes meanwhile
+	deviceRemote.SetConnectLocation(nil)
+	// the device reports both writes, in order
+	testingReportConnectState(t, deviceRemote, location, true)
+	testingReportConnectState(t, deviceRemote, nil, false)
+
+	releaseHeld()
+	select {
+	case <-firstDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the first write did not return")
+	}
+
+	events := recorder.get()
+	if len(events) == 0 || events[len(events)-1] != "connect:false" {
+		t.Fatalf("the connect listener last heard %v; the device is disconnected", events)
+	}
+	connect.AssertEqual(t, deviceRemote.GetConnectEnabled(), false)
 }
