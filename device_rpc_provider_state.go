@@ -328,6 +328,9 @@ func (self *DeviceRemote) providerStateChanged(providerState *DeviceRemoteProvid
 		initial := !self.providerStatePushed || previous == nil
 		self.providerStatePushed = true
 		self.setProviderStateWithLock(providerState)
+		// a pending provide write stays last known over the push, which
+		// predates it (device_remote_setting_state.go)
+		self.recordPendingSettingWritesWithLock()
 		if initial || !contractDetailsRpcsEqual(previous.EgressContractDetails, providerState.EgressContractDetails) {
 			egressListeners = listenerList(self.providerEgressContractDetailsChangeListeners)
 		}

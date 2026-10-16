@@ -387,6 +387,12 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	}
 	// self.setConnected(true)
 
+	// The sign-in this gesture belongs to, taken before any device call. Each
+	// call below can hold in a device rpc for its full timeout; a sign-out
+	// meanwhile drops this gesture's local-state writes instead of saving them
+	// for the next sign-in (local_state_sign_in.go). The device calls still run.
+	signIn := self.localStateSignIn()
+
 	// D2: a new gesture starts a new generation, so any event still in flight
 	// from the previous session's monitor is dropped by the grid gate
 	self.beginGeneration(DestinationSet)
@@ -394,12 +400,12 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
 		// enable provider
 		provideMode := ProvideModePublic
-		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
+		signIn.setProvideMode(provideMode)
 		self.device.SetProvideMode(provideMode)
 	}
 
 	// persist the connection location for automatic reconnect
-	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
+	signIn.setConnectLocation(location)
 	// Reconnect, not SetConnectLocation: this is the explicit "connect to
 	// this" action, so choosing the location already connected rebuilds it —
 	// a new multi client and a new set of peers — instead of doing nothing.
@@ -407,7 +413,7 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 
 	// set location as default location
 	// if user disconnects, we still want that location populated when they reload the app
-	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetDefaultLocation(location)
+	signIn.setDefaultLocation(location)
 
 	// todo - is this needed?
 	self.device.SetDefaultLocation(location)
@@ -435,6 +441,10 @@ func (self *ConnectViewController) Disconnect() {
 		return
 	}
 
+	// As in Connect: a disconnect that lands after the next sign-in must not
+	// clear that sign-in's location or provide mode.
+	signIn := self.localStateSignIn()
+
 	// D2: the disconnect gesture ends the current generation FIRST, before
 	// any device call. From this instant the outgoing session's window-monitor
 	// events must not recompute the grid status — the field capture shows them
@@ -449,12 +459,26 @@ func (self *ConnectViewController) Disconnect() {
 		// connect location. Setting None here briefly tore down the provider
 		// and persisted a mode the device immediately overrode.
 		provideMode := ProvideModeNetwork
-		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
+		signIn.setProvideMode(provideMode)
 		self.device.SetProvideMode(provideMode)
 	}
 
-	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(nil)
+	signIn.setConnectLocation(nil)
 	self.device.SetConnectLocation(nil)
+}
+
+// The current sign-in of the device's network space, for this controller's own
+// local-state writes. A device without a local state has nothing to write.
+func (self *ConnectViewController) localStateSignIn() localStateSignIn {
+	networkSpace := self.device.GetNetworkSpace()
+	if networkSpace == nil {
+		return localStateSignIn{}
+	}
+	asyncLocalState := networkSpace.GetAsyncLocalState()
+	if asyncLocalState == nil {
+		return localStateSignIn{}
+	}
+	return asyncLocalState.GetLocalState().currentSignIn()
 }
 
 // Retire outgoing gesture events without claiming a successful write. A failed

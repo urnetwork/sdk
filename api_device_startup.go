@@ -153,6 +153,8 @@ func (self *Api) publishDeviceOwner(
 	if localState != nil {
 		localState.deviceAuthOwner = owner
 		localState.deviceAuthGeneration += 1
+		// The published device's credential is a sign-in, written or not.
+		localState.signInStoredWithLock(prepared.state)
 	}
 	self.mutex.Unlock()
 	return nil
