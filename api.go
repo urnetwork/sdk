@@ -71,6 +71,9 @@ type Api struct {
 	httpPostRawOwner       *deviceAuthPublicationGate
 	httpGetRawOwner        *deviceAuthPublicationGate
 	httpPostStreamRawOwner *deviceAuthPublicationGate
+	// An optional registration launcher, installed before use. Nil starts a
+	// goroutine; tests can hold one instance's requests before execution.
+	authNetworkClientLaunch func(func())
 
 	jwtRefreshListeners             *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]
@@ -994,17 +997,25 @@ type AuthNetworkClientError struct {
 }
 
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
-	runAsyncApiRequest[*AuthNetworkClientResult](callback, func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
+	// Registration belongs to the sign-in that invoked it, even if another
+	// sign-in or logout changes this API before the request goroutine runs.
+	byJwt := self.GetByJwt()
+	request := func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
-			self.GetByJwt(),
+			byJwt,
 			&AuthNetworkClientResult{},
 			callback,
 		)
-	})
+	}
+	if self.authNetworkClientLaunch != nil {
+		self.authNetworkClientLaunch(func() { runApiRequest[*AuthNetworkClientResult](callback, request) })
+	} else {
+		runAsyncApiRequest[*AuthNetworkClientResult](callback, request)
+	}
 }
 
 // AuthNetworkClientSyncWithContext is the caller-bounded headless form used
