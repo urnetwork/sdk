@@ -109,7 +109,7 @@ func TestDeviceLocalTransferHierarchyRoleOverlapBothDirections(t *testing.T) {
 			rootTotal := memory.root.TotalByteCount()
 			// Model owners from retired window generations, not merely current
 			// settings. They keep the same group root until their actual release.
-			oldWindow := connect.NewTransferMemoryBudgetWithParent(rootTotal, memory.client)
+			oldWindow := newTransferMemoryTestClaim(device, connect.NewTransferMemoryBudgetWithParent(rootTotal, memory.client))
 			connect.AssertEqual(t, oldWindow.TryReserve(rootTotal), true)
 			device.applyProvideMemorySharesWithLock(true)
 			connect.AssertEqual(t, memory.provider.TryReserve(1), false)
@@ -254,8 +254,9 @@ func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T)
 		device, _ := providerMemoryTestDevice(t, 20*1024*1024)
 		memory := device.transferMemory
 		held := memory.root.TotalByteCount()
-		connect.AssertEqual(t, memory.client.TryReserve(held), true)
-		defer func() { memory.client.Release(held) }()
+		claim := newTransferMemoryTestClaim(device, memory.client)
+		connect.AssertEqual(t, claim.TryReserve(held), true)
+		defer func() { claim.Release(held) }()
 		device.applyProvideMemorySharesWithLock(true)
 		device.stateLock.Lock()
 		device.ensureRemoteUserNatProviderWithLock()
@@ -271,7 +272,7 @@ func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T)
 		} else {
 			// Wake on enough real capacity, not an enlarged nominal child.
 			const constructorBytes = providerMemoryTestNatByteCount + providerMemoryTestProviderByteCount + providerMemoryTestStatsByteCount
-			memory.client.Release(constructorBytes)
+			claim.Release(constructorBytes)
 			held -= constructorBytes
 		}
 		waitProviderRotationBarrier(t, admissionDone, "NAT admission worker")

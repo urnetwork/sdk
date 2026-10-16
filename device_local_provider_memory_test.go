@@ -84,10 +84,11 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 		memory := device.transferMemory
 		// Exactly enough for NAT+provider, but not the required subscription.
 		held := memory.root.TotalByteCount() - providerMemoryTestNatByteCount - providerMemoryTestProviderByteCount
-		if !memory.client.TryReserve(held) {
+		claim := newTransferMemoryTestClaim(device, memory.client)
+		if !claim.TryReserve(held) {
 			t.Fatal("sibling fill failed")
 		}
-		defer func() { memory.client.Release(held) }()
+		defer func() { claim.Release(held) }()
 		device.applyProvideMemorySharesWithLock(true)
 		capacityNotify := memory.nat.CapacityNotify()
 		otherWorkRelease := make(chan struct{})
@@ -112,7 +113,7 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 		if stats := memory.nat.Stats(); stats.ReservedByteCount != providerMemoryTestNatByteCount || stats.ReleasedByteCount != 0 {
 			t.Fatalf("required stats refusal changed provider ownership: %+v", stats)
 		}
-		memory.client.Release(providerMemoryTestStatsByteCount)
+		claim.Release(providerMemoryTestStatsByteCount)
 		held -= providerMemoryTestStatsByteCount
 		waitProviderRotationBarrier(t, admissionDone, "required subscription retry")
 		device.stateLock.Lock()
@@ -130,10 +131,11 @@ func TestDeviceLocalProviderMemoryPendingAdmissionClose(t *testing.T) {
 	device, _ := providerMemoryTestDevice(t, 20*1024*1024)
 	memory := device.transferMemory
 	held := memory.root.TotalByteCount() - providerMemoryTestNatByteCount - providerMemoryTestProviderByteCount
-	if !memory.client.TryReserve(held) {
+	claim := newTransferMemoryTestClaim(device, memory.client)
+	if !claim.TryReserve(held) {
 		t.Fatal("sibling fill failed")
 	}
-	defer memory.client.Release(held)
+	defer claim.Release(held)
 	device.applyProvideMemorySharesWithLock(true)
 	device.stateLock.Lock()
 	err := device.ensureRemoteUserNatProviderWithLock()

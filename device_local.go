@@ -4234,7 +4234,6 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		// no target: legacy static sizing
 		return
 	}
-	self.transferMemory.setProvideActive(provideActive)
 	clientPairByteCount := clientShareByteCount
 	providerPairByteCount := ByteCount(0)
 	if provideActive {
@@ -4244,11 +4243,17 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 	} else {
 		clientPairByteCount += providerShareByteCount
 	}
+	var totals [5]connect.TransferMemoryBudgetTotal
+	count := 0
+	resize := func(budget *connect.TransferMemoryBudget, bytes ByteCount) {
+		totals[count] = connect.TransferMemoryBudgetTotal{Budget: budget, TotalByteCount: bytes}
+		count++
+	}
 	if resendQueueBudget := self.settings.ClientSettings.SendBufferSettings.ResendQueueBudget; resendQueueBudget != nil {
-		resendQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 3, 7), 1024*1024))
+		resize(resendQueueBudget, max(byteCountFraction(clientPairByteCount, 3, 7), 1024*1024))
 	}
 	if receiveQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget; receiveQueueBudget != nil {
-		receiveQueueBudget.SetTotalByteCount(
+		resize(receiveQueueBudget,
 			mobileReceiveQueueBudgetForPlatform(
 				self.settings.MemoryTargetByteCount,
 				clientPairByteCount,
@@ -4257,7 +4262,7 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		)
 	}
 	if packQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget; packQueueBudget != nil {
-		packQueueBudget.SetTotalByteCount(
+		resize(packQueueBudget,
 			mobilePackQueueBudgetByteCountForTarget(clientPairByteCount, self.settings.MemoryTargetByteCount),
 		)
 	}
@@ -4265,10 +4270,11 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		if resendQueueBudget, receiveQueueBudget := self.provider.transferBudgets(); resendQueueBudget != nil {
 			// the floors keep the idle provider client's control sequences
 			// working while its pool is reallocated
-			resendQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 3, 7), 256*1024))
-			receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
+			resize(resendQueueBudget, max(byteCountFraction(providerPairByteCount, 3, 7), 256*1024))
+			resize(receiveQueueBudget, max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
 		}
 	}
+	self.transferMemory.setProvideActive(provideActive, totals[:count]...)
 }
 
 // Must be called with stateLock, or during single-threaded construction. The

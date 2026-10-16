@@ -59,10 +59,20 @@ func configureDeviceLocalClientMemoryForPlatform(settings *DeviceLocalSettings, 
 			client.WebRtcSettings.NetworkPeerMemoryBudget, parent,
 		)
 	}
+	if memory != nil {
+		memory.client.ProtectIngressBudgets(
+			client.ReceiveBufferSettings.PackQueueBudget,
+			client.ReceiveBufferSettings.ReceiveQueueBudget,
+		)
+	}
 }
 
-func (self *deviceLocalTransferMemory) setProvideActive(active bool) {
+// Resizes the role and its protected receive windows at one admission boundary.
+func (self *deviceLocalTransferMemory) setProvideActive(active bool, totals ...connect.TransferMemoryBudgetTotal) {
 	if self == nil {
+		for _, total := range totals {
+			total.Budget.SetTotalByteCount(total.TotalByteCount)
+		}
 		return
 	}
 	clientTotal := self.clientShare + self.providerShare
@@ -71,11 +81,16 @@ func (self *deviceLocalTransferMemory) setProvideActive(active bool) {
 		clientTotal = self.clientShare
 		providerTotal = max(providerTotal, self.providerShare/2)
 	}
-	// The order cannot overdraw the unchanged root. A shrunk child may keep
-	// admitted owners until teardown; the enlarged sibling sees those exact
-	// same bytes at the root and must wait for their release.
-	self.client.SetTotalByteCount(clientTotal)
-	self.provider.SetTotalByteCount(providerTotal)
+	// All five queue ceilings plus both role ceilings fit this fixed batch.
+	// Existing owners remain charged during a shrink and may drain normally.
+	var changes [7]connect.TransferMemoryBudgetTotal
+	changes[0] = connect.TransferMemoryBudgetTotal{Budget: self.client, TotalByteCount: clientTotal}
+	changes[1] = connect.TransferMemoryBudgetTotal{Budget: self.provider, TotalByteCount: providerTotal}
+	if len(totals) > len(changes)-2 {
+		panic("too many device transfer role ceilings")
+	}
+	copy(changes[2:], totals)
+	self.root.SetTotalByteCounts(changes[:2+len(totals)]...)
 	// Local-fallback egress is useful even when providing is off. Its child
 	// stays live in both roles, and actual NAT ownership consumes the root.
 }

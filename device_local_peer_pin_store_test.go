@@ -133,7 +133,8 @@ func TestDeviceLocalPeerPinStoreRefusalBeforeProviderAndRollback(t *testing.T) {
 			settings.testingBeforePeerPinStoreAdmission = func(owner *deviceLocalTransferMemory) {
 				memory = owner
 				if kind == "capacity" {
-					held = owner.root.TotalByteCount()
+					// Fill ordinary permission without stealing protected ingress.
+					held = owner.root.Available()
 					if !owner.root.TryReserve(held) {
 						t.Fatal("test fill refused")
 					}
