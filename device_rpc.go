@@ -3137,15 +3137,12 @@ func (self *DeviceRemote) derivedProvideModeWithLock() ProvideMode {
 		// the private provider is always on (peers only)
 		return ProvideModeNetwork
 	case ProvideControlModeAuto:
-		// public while connected; network (peer-reachable) while idle
-		connected := false
-		if self.state.Location.IsSet {
-			connected = self.state.Location.Value.ConnectLocation != nil
-		} else if self.state.Destination.IsSet {
-			connected = self.state.Destination.Value.Location.ConnectLocation != nil
-		} else if self.state.RemoveDestination.IsSet {
-			connected = false
-		} else {
+		// public while connected; network (peer-reachable) while idle.
+		// Connected is what GetConnectEnabled answers: the device connects a
+		// destination by its spec list, which a custom destination gives
+		// without a display location
+		connected, known := deviceRemoteStateConnectEnabled(&self.state)
+		if !known {
 			connected = self.lastKnownState.ConnectEnabled.Get(false)
 		}
 		if connected {
