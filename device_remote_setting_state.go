@@ -45,8 +45,8 @@
 // next one run.
 //
 // Provide enabled (the provide change listeners) has no setter: it follows the
-// provide mode. A pending provide mode, control mode or destination write tells
-// the provide enabled state the getters derive from the pending writes, a
+// provide mode. A pending provide mode, control mode or connect write tells the
+// provide enabled state the getters derive from the pending writes, a
 // report made while a write the provide mode follows is pending is dropped, the
 // getters answer from the pending writes first, and the pending state is kept
 // as last known, as for the values above. Unlike them, every value is told,

@@ -11,6 +11,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -290,4 +291,124 @@ func TestDeviceRemoteProvideEnabledViewOpenedDuringFollowUpSync(t *testing.T) {
 		t.Fatalf("the view last heard %q of %v; the device provides", last, view.get())
 	}
 	connect.AssertEqual(t, deviceRemote.GetProvideEnabled(), true)
+}
+
+// Refreshes the provide mode from the provide enabled listener, as the status
+// of the Linux and Windows apps does (they hold no provide mode listener), and
+// records provide enabled with the provide mode the getter answers then.
+type testingProvideModeRefreshListener struct {
+	deviceRemote *DeviceRemote
+	recorder     *testingSettingRecorder
+}
+
+func (self *testingProvideModeRefreshListener) ProvideChanged(provideEnabled bool) {
+	self.recorder.add(fmt.Sprintf(
+		"provide:%t provideMode:%s",
+		provideEnabled,
+		testingProvideModeName(self.deviceRemote.GetProvideMode()),
+	))
+}
+
+// A connect write under the auto control mode with the rpc down moves the
+// provide mode the getters derive between network and public. Each write must
+// tell provide enabled before it returns, with the state the getters derive,
+// so a status that refreshes the provide mode from the provide enabled
+// listener shows the mode the write derives. Without the tell the desktop apps
+// show the previous mode until the device reports. The view controller's
+// connect and disconnect taps write Reconnect and SetConnectLocation(nil).
+func TestDeviceRemoteProvideEnabledToldByPendingAutoConnect(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		// the device's connect state before the write
+		connected bool
+		write     func(deviceRemote *DeviceRemote)
+		// the provide mode the getters derive from the write
+		provideMode string
+	}{
+		{
+			name:      "SetConnectLocation",
+			connected: false,
+			write: func(deviceRemote *DeviceRemote) {
+				deviceRemote.SetConnectLocation(testingConnectStateLocation("tapped"))
+			},
+			provideMode: "public",
+		},
+		{
+			name:      "Reconnect",
+			connected: false,
+			write: func(deviceRemote *DeviceRemote) {
+				deviceRemote.Reconnect(testingConnectStateLocation("tapped"))
+			},
+			provideMode: "public",
+		},
+		{
+			name:      "SetConnectLocation(nil)",
+			connected: true,
+			write: func(deviceRemote *DeviceRemote) {
+				deviceRemote.SetConnectLocation(nil)
+			},
+			provideMode: "network",
+		},
+		{
+			name:      "SetDestination",
+			connected: false,
+			write: func(deviceRemote *DeviceRemote) {
+				specs := NewProviderSpecList()
+				specs.Add(&ProviderSpec{BestAvailable: true})
+				deviceRemote.SetDestination(testingConnectStateLocation("tapped"), specs)
+			},
+			provideMode: "public",
+		},
+		{
+			name:      "RemoveDestination",
+			connected: true,
+			write: func(deviceRemote *DeviceRemote) {
+				deviceRemote.RemoveDestination()
+			},
+			provideMode: "network",
+		},
+	} {
+		func() {
+			deviceRemote := testingConnectStateRemoteWithoutListeners(t)
+			recorder := &testingSettingRecorder{}
+			sub := deviceRemote.AddProvideChangeListener(&testingProvideModeRefreshListener{
+				deviceRemote: deviceRemote,
+				recorder:     recorder,
+			})
+			defer sub.Close()
+
+			// the device's state before the write: auto, providing to network
+			// peers while idle and publicly while connected
+			provideMode := "network"
+			var location *ConnectLocation
+			if testCase.connected {
+				provideMode = "public"
+				location = testingConnectStateLocation("connected")
+			}
+			testingReportSetting(t, deviceRemote, testingRemoteSettingNamed(t, "ProvideControlMode"), ProvideControlModeAuto)
+			testingReportSetting(t, deviceRemote, testingRemoteSettingNamed(t, "ProvideMode"), provideMode)
+			testingReportConnectState(t, deviceRemote, location, testCase.connected)
+			testingReportProvideEnabled(t, deviceRemote, true)
+			want := []string{"provide:true provideMode:" + provideMode}
+			if events := recorder.get(); !slices.Equal(events, want) {
+				t.Errorf("%s: before the write the provide listeners heard %v, want %v", testCase.name, events, want)
+				return
+			}
+
+			testCase.write(deviceRemote)
+
+			// told before the write returns, with the state the getters derive
+			want = append(want, "provide:true provideMode:"+testCase.provideMode)
+			if events := recorder.get(); !slices.Equal(events, want) {
+				t.Errorf("%s: after the write the provide listeners heard %v, want %v", testCase.name, events, want)
+				return
+			}
+			if !deviceRemote.GetProvideEnabled() {
+				t.Errorf("%s: provide enabled reads false; auto provides", testCase.name)
+			}
+			if got := testingProvideModeName(deviceRemote.GetProvideMode()); got != testCase.provideMode {
+				t.Errorf("%s: the provide mode reads %s, want %s", testCase.name, got, testCase.provideMode)
+			}
+		}()
+	}
 }
