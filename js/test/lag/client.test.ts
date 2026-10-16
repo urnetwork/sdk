@@ -490,22 +490,59 @@ for (const direction of ["download", "upload"] as const) {
 test("a stall while the hello is handled does not shift the session's pings", { timeout: 20_000 }, async () => {
   // the hello waits 400 ms to be handled, as on a page busy when it arrives
   await withMock({ stallAfterHelloMs: 400 }, async (mock) => {
-    const { session, events } = open(mock, "ticket-hello-stall");
+    // when the page handled each round trip's report, on the clock its
+    // times are in
+    const handled: number[] = [];
+    const { session, events } = open(mock, "ticket-hello-stall", {
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "rtt") {
+          handled.push(Date.now());
+        }
+      },
+    });
     await session.ready;
-    await waitFor(() => 4 <= ofType(events, "rtt").length, "four pings");
     const record = mock.sessions[0];
     const opened = record.openedEpoch!;
     const late = ofType(events, "open")[0].at - opened;
     assert.ok(300 <= late, `the hello was handled ${late} ms after the session opened`);
-    // the round trips put the origin back where the session opened...
-    const off = session.openedAt! - opened;
-    assert.ok(Math.abs(off) <= 50, `the origin is ${off} ms from the session's opening`);
-    // ...so every ping sits at its own send time
+    // Each round trip bounds the session's opening: the extender had its
+    // pong t + ms after it and reported it at once, so the session opened
+    // no later than the report's handling less t + ms. How close a bound
+    // comes is how soon the report was handled after it went, which a busy
+    // machine makes later; so wait for one that places the opening well
+    // before the late hello.
+    const bound = (i: number) => {
+      const rtt = ofType(events, "rtt")[i];
+      return handled[i] - (rtt.t + rtt.ms!) - opened;
+    };
+    await waitFor(
+      () => {
+        const rtts = ofType(events, "rtt");
+        return 4 <= rtts.length && rtts.some((rtt, i) => !rtt.lost && bound(i) < late / 2);
+      },
+      "a round trip that places the session's opening before the hello",
+      15_000,
+    );
+    // the origin is the earliest bound so far, and each ping sits at the
+    // origin as it stood then plus its own send time, so the pings are not
+    // shifted by the stall (to 5 ms: t and Date.now() are whole ms, and the
+    // wall clock may be slewed against the monotonic one)
     const rtts = ofType(events, "rtt");
+    let origin = late;
     rtts.forEach((rtt, i) => {
+      if (!rtt.lost) {
+        // a bound is never before the opening, nor later than its report took
+        const delivery = handled[i] - record.rttSentEpoch[i];
+        assert.ok(-5 <= bound(i) && bound(i) <= delivery + 5, `ping ${i}'s bound is ${bound(i)} ms after the opening, its report took ${delivery} ms`);
+        origin = Math.min(origin, bound(i));
+      }
       const drift = rtt.at - record.pingSentEpoch[i];
-      assert.ok(Math.abs(drift) <= 50, `ping ${i} is ${drift} ms from its send`);
+      assert.ok(Math.abs(drift - origin) <= 5, `ping ${i} is ${drift} ms from its send, where the origin then was ${origin} ms after the opening`);
     });
+    assert.ok(origin < late / 2);
+    const off = session.openedAt! - opened;
+    assert.ok(Math.abs(off - origin) <= 5, `the origin is ${off} ms from the session's opening, its earliest bound ${origin} ms`);
     // the window follows the origin as later round trips refine it
     assert.deepEqual(
       session.pings.pings().map((ping) => ping.t),
@@ -631,8 +668,14 @@ test("upload streams start together even when their sockets open one at a time",
     const firsts = record.uploadFirstMessageAt;
     assert.equal(opens.filter((at) => at !== undefined).length, 4);
     assert.equal(firsts.filter((at) => at !== undefined).length, 4);
+    // the mock answered them one at a time, 300 ms apart, and none opened
+    // before its turn (a timer fires up to a millisecond early); a busy
+    // machine opens one late, which can bring the first nearer the last
+    const turns = record.uploadAnswerAt.filter((at) => at !== undefined).sort((a, b) => a - b);
+    assert.equal(turns.length, 4);
+    turns.slice(1).forEach((at, i) => assert.ok(300 <= at - turns[i] + 0.001, `turns ${at - turns[i]} ms apart`));
+    record.uploadAnswerAt.forEach((at, k) => assert.ok(at <= opens[k] + 2, `upload socket ${k} opened ${at - opens[k]} ms before its turn`));
     const lastOpen = Math.max(...opens);
-    assert.ok(800 <= lastOpen - Math.min(...opens), `the sockets opened over ${lastOpen - Math.min(...opens)} ms`);
     // no stream began before the last socket opened, and they began together
     const spread = Math.max(...firsts) - Math.min(...firsts);
     assert.ok(lastOpen <= Math.min(...firsts), "a stream began before every socket had opened");

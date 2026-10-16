@@ -9,6 +9,11 @@
 // one load, and a load can be refused as busy or budget while the session
 // goes on pinging.
 //
+// The download writes each stream past the extender's window until the
+// browser closes it, within the grace (M5, M7, amendment 15). An upload
+// stream read at a set rate reads through a link that keeps its own time
+// (uploadBytesPerSecond), so a busy machine's late timers don't slow it.
+//
 // The upload is counted as the extender counts it (M6): each read by rule S
 // on its stream, a read here being a whole message, since that is how this
 // server receives them. Its reports carry `at` and its loadResult the series
@@ -35,6 +40,7 @@ export class MockWebSocket {
   private fragments: Buffer[] = [];
   private fragmentOpcode = 0;
   private closeSent = false;
+  private held = false;
   private readonly socket: Duplex;
 
   constructor(socket: Duplex, head: Buffer) {
@@ -48,15 +54,28 @@ export class MockWebSocket {
   }
 
   get paused(): boolean {
-    return this.socket.isPaused();
+    return this.held;
   }
 
+  /**
+   * What the browser has sent that is not read as messages yet: a frame
+   * begun, and what the socket has taken in while paused.
+   */
+  get buffered(): number {
+    return this.pending.length + this.socket.readableLength;
+  }
+
+  // No message is read while paused, not even one already received, as an
+  // extender that stops reading leaves what came in its buffers.
   pause(): void {
+    this.held = true;
     this.socket.pause();
   }
 
   resume(): void {
+    this.held = false;
     this.socket.resume();
+    this.readFrames();
   }
 
   sendText(text: string): void {
@@ -107,7 +126,11 @@ export class MockWebSocket {
 
   private onData(chunk: Buffer): void {
     this.pending = this.pending.length === 0 ? chunk : Buffer.concat([this.pending, chunk]);
-    for (;;) {
+    this.readFrames();
+  }
+
+  private readFrames(): void {
+    while (!this.held && !this.closed) {
       const buffer = this.pending;
       if (buffer.length < 2) {
         return;
@@ -143,9 +166,6 @@ export class MockWebSocket {
       }
       this.pending = buffer.subarray(offset + length);
       this.onFrame(fin, opcode, payload);
-      if (this.closed) {
-        return;
-      }
     }
   }
 
@@ -252,6 +272,13 @@ const ZEROS = Buffer.alloc(65536);
 // Rule S's cap (M6), the extender's lagSpreadMax
 const SPREAD_MAX_MS = 1000;
 
+// M5, M7: a download stream goes on past the extender's window until the
+// browser closes it, within this grace. The browser's window opens when its
+// first chunk arrives, later than the extender's, so a stream that stopped
+// at the extender's own end would leave the browser's last interval short,
+// or empty when this process is slow to read (amendment 15).
+const DOWNLOAD_GRACE_MS = 2000;
+
 // Rule S (M6) as the extender counts a read: `n` bytes that arrived evenly
 // over [from, to] ms after the first byte, cut at the interval boundaries by
 // cumulative rounding into whole pieces that add up to exactly n; a span of
@@ -352,9 +379,11 @@ export interface MockExtenderOptions {
   /** answer the first download request of each stream with this status, once */
   firstDownloadStatus?: number;
   /**
-   * Keep writing each download stream this long past the window, whatever
-   * the browser's load phase, as an extender whose bytes are still in
-   * flight would deliver them.
+   * How long each download stream may go on past the window: it keeps
+   * writing, whatever the browser's load phase, until the browser closes it
+   * or this runs out (default DOWNLOAD_GRACE_MS, M5, M7), as an extender of
+   * amendment 15 does, and as one whose bytes are still in flight would
+   * deliver them.
    */
   downloadOverrunMs?: number;
   /** never answer the upgrade of this upload stream, as if its packets were lost */
@@ -364,6 +393,13 @@ export interface MockExtenderOptions {
    * opens one WebSocket handshake to a host at a time makes them complete.
    */
   uploadUpgradeSpacingMs?: number;
+  /**
+   * How long a stream that comes before its phase is held for it before it
+   * is refused with 409 (M4: STREAM_WAIT_MS). A test that measures how long
+   * the browser made one wait sets it longer, so that a busy machine's own
+   * delay is measured rather than turned into a refusal.
+   */
+  streamWaitMs?: number;
 }
 
 export interface MockSessionRecord {
@@ -403,11 +439,15 @@ export interface MockSessionRecord {
   uploadBytes: number[];
   /** per upload stream: when its socket opened, and when its first message came */
   uploadOpenedAt: number[];
+  /** uploadUpgradeSpacingMs: per upload stream, when its upgrade's turn to be answered came */
+  uploadAnswerAt: number[];
   uploadFirstMessageAt: number[];
   uploadReports: Array<{ bytes: number; ms: number; at?: number }>;
   /** performance.now() when the upload's window opened (its first message), and when the window-over report went out */
   uploadFirstAt?: number;
   uploadWindowOverAt?: number;
+  /** performance.now() when the upload message came and opened the upload's phase */
+  uploadPhaseAt?: number;
   /** upload bytes that arrived, counted or not */
   uploadArrivedBytes: number;
   mismatch: boolean;
@@ -415,6 +455,8 @@ export interface MockSessionRecord {
   openedEpoch?: number;
   /** Date.now() at each ping's send */
   pingSentEpoch: number[];
+  /** Date.now() as each `rtt` report went to the browser, lost ones too */
+  rttSentEpoch: number[];
   loadResult?: { uploadVerified: boolean; endReason: string; uploadBytes?: unknown };
   closeCode?: number;
   closedBy?: "browser" | "extender";
@@ -609,20 +651,23 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       sequence += 1;
+      // the two clocks read together, so a test can set the one against
+      // the other
       const ping = { sequence, sentAt: performance.now() };
+      state.record.pingSentEpoch.push(Date.now());
       inFlight = ping;
       lastSend = ping.sentAt;
       const payload = Buffer.alloc(4);
       payload.writeUInt32BE(sequence);
       state.ws.ping(payload);
       state.record.pingsSent += 1;
-      state.record.pingSentEpoch.push(Date.now());
       later(state, lostAfterMs, () => {
         if (inFlight !== ping) {
           return;
         }
         inFlight = null;
         state.record.lost += 1;
+        state.record.rttSentEpoch.push(Date.now());
         sendJson(state, { type: "rtt", t: Math.round(ping.sentAt - state.opened), lost: true });
         next();
       });
@@ -639,6 +684,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       inFlight = null;
       state.record.pongs += 1;
       const ms = Math.round((performance.now() - ping.sentAt) * 100) / 100;
+      state.record.rttSentEpoch.push(Date.now());
       sendJson(state, { type: "rtt", t: Math.round(ping.sentAt - state.opened), ms });
       next();
     };
@@ -684,6 +730,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       case "upload":
         if (state.phase === "download") {
           state.phase = "upload";
+          state.record.uploadPhaseAt = performance.now();
           wakePhaseWaiters(state);
         }
         return;
@@ -723,11 +770,13 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadVerifiedBytes: 0,
       uploadBytes: [],
       uploadOpenedAt: [],
+      uploadAnswerAt: [],
       uploadFirstMessageAt: [],
       uploadReports: [],
       uploadArrivedBytes: 0,
       mismatch: false,
       pingSentEpoch: [],
+      rttSentEpoch: [],
     };
     sessions.push(record);
     // M3: admission
@@ -754,11 +803,14 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     const id = randomBytes(16).toString("base64url");
     const uploadKey = randomBytes(16);
     record.id = id;
+    // the session opens now, on both clocks read together
+    const opened = performance.now();
+    record.openedEpoch = Date.now();
     const state: SessionState = {
       record,
       ws,
       uploadKey,
-      opened: performance.now(),
+      opened,
       phase: "idle",
       loadUsed: false,
       downloads: new Set(),
@@ -774,7 +826,6 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     byId.set(id, state);
     ws.onText = (text) => onControlMessage(state, JSON.parse(text));
     ws.onClose = (code) => endSession(state, "browser", code);
-    record.openedEpoch = Date.now();
     ws.sendText(
       JSON.stringify({ type: "hello", session: id, uploadKey: uploadKey.toString("base64url"), ...hello }),
     );
@@ -821,7 +872,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     record.maxConcurrentDownloads = Math.max(record.maxConcurrentDownloads, state.downloads.size);
     res.writeHead(200, { "Content-Type": "application/octet-stream", "Cache-Control": "no-store" });
     const cipher: Cipher = createCipheriv("aes-128-ctr", randomBytes(16), Buffer.alloc(16));
-    const overrunMs = options.downloadOverrunMs;
+    const overrunMs = options.downloadOverrunMs ?? DOWNLOAD_GRACE_MS;
     let done = false;
     const finish = () => {
       done = true;
@@ -847,14 +898,13 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       if (done) {
         return;
       }
-      const over = overrunMs === undefined ? state.phase !== "download" : state.phase === "ended" || state.closed;
-      if (over) {
+      if (state.phase === "ended" || state.closed) {
         endHere();
         return;
       }
       const now = performance.now();
       state.downloadFirst ??= now;
-      if (hello.downloadMs + (overrunMs ?? 0) <= now - state.downloadFirst) {
+      if (hello.downloadMs + overrunMs <= now - state.downloadFirst) {
         endHere();
         return;
       }
@@ -881,7 +931,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       state.record.uploadRequestedAt[stream] ??= performance.now();
     }
     // M4: a stream can overtake the upload message, so one that comes while
-    // the download runs waits for it, up to STREAM_WAIT_MS
+    // the download runs waits for it, up to STREAM_WAIT_MS (streamWaitMs)
     if (state !== undefined && !state.closed && state.phase === "download") {
       socket.on("error", () => undefined);
       state.record.uploadEarly += 1;
@@ -898,7 +948,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         }
         onUploadInPhase(req, socket, head, state, stream);
       };
-      const timer = setTimeout(wake, STREAM_WAIT_MS);
+      const timer = setTimeout(wake, options.streamWaitMs ?? STREAM_WAIT_MS);
       state.phaseWaiters.add(wake);
       return;
     }
@@ -934,6 +984,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       socket.on("error", () => undefined);
       const answerAt = Math.max(performance.now(), lastUpgradeAnswer + spacing);
       lastUpgradeAnswer = answerAt;
+      state.record.uploadAnswerAt[stream] = answerAt;
       setTimeout(() => {
         if (!socket.destroyed && !state.closed && state.phase === "upload") {
           acceptUpload(state, stream, req, socket, head);
@@ -966,6 +1017,39 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     // uploadFinal: its first message at or after the window's end has come,
     // and the stream is done 2 ms on
     let pastEnd = false;
+    // uploadBytesPerSecond: the link this stream's messages cross, which
+    // carries them one after another at that rate; a message is read once
+    // the link has delivered it, and none sooner. The link keeps its own
+    // time, as a network does, not this process's: a busy machine fires the
+    // timer that ends a read's wait late, and the link, which had the next
+    // message waiting, carried it meanwhile, so that message is read at
+    // once and the lateness costs the stream nothing. A link the browser
+    // left with nothing waiting idles until a message comes, and that time
+    // is lost, as on a real link: the window's bytes still show whether the
+    // browser kept every stream fed.
+    const rate = options.uploadBytesPerSecond;
+    // when the link has delivered every message read so far, and whether the
+    // next was already waiting when it had
+    let linkFree = -Infinity;
+    let fed = false;
+    const carry = (bytes: number, now: number) => {
+      if (rate === undefined) {
+        return;
+      }
+      linkFree = (fed ? linkFree : Math.max(linkFree, now)) + (bytes / rate) * 1000;
+      if (now < linkFree) {
+        // the next read waits for the link to be free
+        ws.pause();
+        setTimeout(() => {
+          fed = 0 < ws.buffered;
+          ws.resume();
+        }, linkFree - now);
+      } else {
+        // behind the link's time: read on, back to back if the next message
+        // has begun to come
+        fed = 0 < ws.buffered;
+      }
+    };
     ws.onBinary = (data) => {
       if (state.phase !== "upload") {
         return;
@@ -1041,11 +1125,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
           });
         }
       }
-      const rate = options.uploadBytesPerSecond;
-      if (rate !== undefined && !ws.paused) {
-        ws.pause();
-        setTimeout(() => ws.resume(), (data.length / rate) * 1000);
-      }
+      carry(data.length, now);
     };
   };
 
