@@ -80,6 +80,10 @@ func (self *testingSettingRecorder) BlockerEnabledChanged(blockerEnabled bool) {
 	self.add(fmt.Sprintf("blockerEnabled:%t", blockerEnabled))
 }
 
+func (self *testingSettingRecorder) ProvideChanged(provideEnabled bool) {
+	self.add(fmt.Sprintf("provide:%t", provideEnabled))
+}
+
 // The name a provide mode is spelled with in the tests.
 func testingProvideModeName(provideMode ProvideMode) string {
 	switch provideMode {
@@ -525,6 +529,19 @@ func (self *testingSettingFakeDevice) SetBlockerEnabled(blockerEnabled bool, _ R
 
 func (self *testingSettingFakeDevice) GetBlockerEnabled(_ RpcNoArg, blockerEnabled *bool) error {
 	*blockerEnabled = self.value("BlockerEnabled") == "true"
+	return nil
+}
+
+func (self *testingSettingFakeDevice) GetProvideEnabled(_ RpcNoArg, provideEnabled *bool) error {
+	*provideEnabled = self.value("ProvideEnabled") == "true"
+	return nil
+}
+
+func (self *testingSettingFakeDevice) AddProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	return nil
+}
+
+func (self *testingSettingFakeDevice) RemoveProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	return nil
 }
 

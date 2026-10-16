@@ -1,8 +1,9 @@
 // The settings a DeviceRemote shows its listeners besides its connect state:
 // the provide mode, the provide control mode, provide paused, offline (the
 // offline listeners also hear the vpn interface while offline), the vpn
-// interface while offline, route local and the blocker. Each is told as the
-// connect state is (device_remote_connect_state.go), one value at a time.
+// interface while offline, route local and the blocker, and provide enabled,
+// which differs as below. Each is told as the connect state is
+// (device_remote_connect_state.go), one value at a time.
 //
 // A local write is told to the listeners from the written value, without
 // waiting for the device to report it back: once the device applied it while
@@ -41,6 +42,17 @@
 // delivery that ends abnormally (a listener exits its goroutine) still lets the
 // next one run.
 //
+// Provide enabled (the provide change listeners) has no setter: it follows the
+// provide mode. A pending provide mode, control mode or destination write tells
+// the provide enabled state the getters derive from the pending writes, a
+// report made while a write the provide mode follows is pending is dropped, the
+// getters answer from the pending writes first, and the pending state is kept
+// as last known, as for the values above. Unlike them, every value is told,
+// also one equal to the last, and registering forgets nothing: DeviceLocal
+// reports provide enabled again on every provide mode change, and consumers
+// with no provide mode listener refresh the provide mode from it (the desktop
+// apps' status).
+//
 // Nothing here writes or derives the provide control mode: only
 // SetProvideControlMode and the device's reports change what its listeners are
 // told, and a provide mode tell never touches it (upgrading to Pro must never
@@ -71,6 +83,15 @@ func (self *deviceRemoteToldValue[T]) tellWithLock(value T) bool {
 	if self.set && self.value == value {
 		return false
 	}
+	self.value = value
+	self.set = true
+	self.sequence += 1
+	return true
+}
+
+// Records the value to tell even when it equals the last told, and returns
+// that a delivery is due. Must be called with stateLock.
+func (self *deviceRemoteToldValue[T]) tellAgainWithLock(value T) bool {
 	self.value = value
 	self.set = true
 	self.sequence += 1
@@ -110,6 +131,8 @@ type deviceRemoteSettingsTold struct {
 	vpnInterfaceWhileOffline deviceRemoteToldValue[bool]
 	routeLocal               deviceRemoteToldValue[bool]
 	blockerEnabled           deviceRemoteToldValue[bool]
+	// every value is told, see the file header
+	provideEnabled deviceRemoteToldValue[bool]
 }
 
 // A registering listener seeds itself from the getters, so the device's next
@@ -201,6 +224,20 @@ func (self *DeviceRemote) deliverBlockerEnabled() {
 	deliverToldValue(self, &self.settingsTold.blockerEnabled, self.blockerEnabledChangeListeners, BlockerEnabledChangeListener.BlockerEnabledChanged)
 }
 
+// Never called with stateLock.
+func (self *DeviceRemote) deliverProvideEnabled() {
+	deliverToldValue(self, &self.settingsTold.provideEnabled, self.provideChangeListeners, ProvideChangeListener.ProvideChanged)
+}
+
+// Tells the provide enabled state the getters derive from the pending writes,
+// which include the caller's own, and keeps it as last known. Returns that a
+// delivery is due. Must be called with stateLock.
+func (self *DeviceRemote) tellPendingProvideEnabledWithLock() bool {
+	provideEnabled := self.derivedProvideEnabledWithLock()
+	self.lastKnownState.ProvideEnabled.Set(provideEnabled)
+	return self.settingsTold.provideEnabled.tellAgainWithLock(provideEnabled)
+}
+
 // Tells the provide mode the getters derive while a write it follows is
 // pending, and returns whether a delivery is due. Must be called with
 // stateLock.
@@ -235,6 +272,10 @@ func (self *DeviceRemote) recordPendingSettingWritesWithLock() {
 	self.lastKnownState.VpnInterfaceWhileOffline.Merge(self.state.VpnInterfaceWhileOffline)
 	self.lastKnownState.RouteLocal.Merge(self.state.RouteLocal)
 	self.lastKnownState.BlockerEnabled.Merge(self.state.BlockerEnabled)
+	if self.provideQueuedWithLock() {
+		// provide enabled follows the pending writes
+		self.lastKnownState.ProvideEnabled.Set(self.derivedProvideEnabledWithLock())
+	}
 }
 
 // The device's report of its provide mode (reverse rpc). The mode follows a
@@ -251,6 +292,26 @@ func (self *DeviceRemote) provideModeReported(provideMode ProvideMode) {
 	}()
 	if deliver {
 		self.deliverProvideMode()
+	}
+}
+
+// The device's report of provide enabled (reverse rpc), which follows a pending
+// control mode, provide mode or connect write as the provide mode does. Any
+// other report is told, also one equal to the last (see the file header).
+func (self *DeviceRemote) provideEnabledReported(provideEnabled bool) {
+	deliver := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.provideQueuedWithLock() {
+			// made before the device had the pending write, which the next
+			// sync applies over it
+			return false
+		}
+		self.lastKnownState.ProvideEnabled.Set(provideEnabled)
+		return self.settingsTold.provideEnabled.tellAgainWithLock(provideEnabled)
+	}()
+	if deliver {
+		self.deliverProvideEnabled()
 	}
 }
 
