@@ -19,9 +19,11 @@
 // device that accepted a write without applying it would leave the told value
 // stuck until a resync, since no report follows. The hosted-incompatible
 // guards do accept without applying (DeviceLocalRpc.hostedIncompatibleRpcGuarded
-// and DeviceLocal.hostedIncompatibleGuarded), but no write reaches them today:
-// every remote to a hosted device sets DisableHostedIncompatible, which drops
-// the write before it is sent or told (DeviceRemote.hostedIncompatibleGuarded).
+// and DeviceLocal.hostedIncompatibleGuarded), and so does
+// DeviceLocal.SetProvidePaused on a device without a provider, which only a
+// hosted device is (NewPlatformDeviceLocal). No write reaches them today: every
+// remote to a hosted device sets DisableHostedIncompatible, which drops the
+// write before it is sent or told (DeviceRemote.hostedIncompatibleGuarded).
 //
 // The device then reports each value. A report equal to what the listeners
 // were last told is not told again; any other report is the device's own

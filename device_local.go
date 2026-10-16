@@ -4394,6 +4394,9 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 	return self.provideMode
 }
 
+// Without a provider there is nothing to pause, and the write is dropped with
+// no report; through the rpc it still answers success
+// (device_remote_setting_state.go).
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 	if self.hostedIncompatibleGuarded("SetProvidePaused") {
 		return
