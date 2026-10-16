@@ -105,3 +105,92 @@ func TestLocalStateSignInFenceIsInProcess(t *testing.T) {
 		t.Fatal("a fresh local state dropped a plain write")
 	}
 }
+
+// The previous account's late writes, as a device listener's mirror or an app
+// save after a held device call makes them, of every record the fence covers.
+func testingSignInFenceLateWrites(t *testing.T, localState *LocalState) {
+	t.Helper()
+	location := testingConnectStateLocation("previous account")
+	for _, err := range []error{
+		localState.SetConnectLocation(location),
+		localState.SetDefaultLocation(location),
+		localState.SetProvideMode(ProvideModePublic),
+		localState.SetProvideControlMode(ProvideControlModeAlways),
+		localState.SetProvideNetworkMode(ProvideNetworkModeAll),
+		localState.SetRouteLocal(false),
+		localState.SetBlockerEnabled(true),
+		localState.SetVpnInterfaceWhileOffline(true),
+		localState.SetPerformanceProfile(&PerformanceProfile{
+			WindowType: WindowTypeSpeed,
+			WindowSize: &WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4},
+		}),
+		localState.SetDnsResolverSettings(&DnsResolverSettings{EnableRemoteDoh: true}),
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Lists each covered record that holds a written value instead of its default.
+func testingSignInFenceWritten(t *testing.T, localState *LocalState) []string {
+	t.Helper()
+	written := []string{}
+	if location, err := localState.LoadConnectLocation(); err != nil || location != nil {
+		written = append(written, "connect location")
+	}
+	if location, err := localState.LoadDefaultLocation(); err != nil || location != nil {
+		written = append(written, "default location")
+	}
+	if localState.GetProvideMode() != ProvideModeNone {
+		written = append(written, "provide mode")
+	}
+	if localState.GetProvideControlMode() != ProvideControlModeNever {
+		written = append(written, "provide control mode")
+	}
+	if localState.GetProvideNetworkMode() != ProvideNetworkModeWiFi {
+		written = append(written, "provide network mode")
+	}
+	if !localState.GetRouteLocal() {
+		written = append(written, "route local")
+	}
+	if localState.GetBlockerEnabled() {
+		written = append(written, "blocker")
+	}
+	if localState.GetVpnInterfaceWhileOffline() {
+		written = append(written, "vpn interface while offline")
+	}
+	if localState.GetPerformanceProfile() != nil {
+		written = append(written, "performance profile")
+	}
+	if localState.GetDnsResolverSettings() != nil {
+		written = append(written, "dns resolver settings")
+	}
+	return written
+}
+
+// Logout wipes every per-account setting (owner rule): a late write of any of
+// them, such as android's device listener mirrors make, must not carry into
+// the next sign-in, and the next sign-in's own writes all save.
+func TestLocalStateAccountSettingsDroppedWhileSignedOut(t *testing.T) {
+	space := testingAuthClientShapeSpace(t)
+	space.seedDistinctLogin(t)
+	testingSignInFenceLateWrites(t, space.localState)
+	if written := testingSignInFenceWritten(t, space.localState); len(written) != 10 {
+		t.Fatalf("a signed-in write was dropped: saved only %v", written)
+	}
+
+	if err := space.localState.Logout(); err != nil {
+		t.Fatal(err)
+	}
+	testingSignInFenceLateWrites(t, space.localState)
+	space.seedDistinctLogin(t)
+	if written := testingSignInFenceWritten(t, space.localState); 0 < len(written) {
+		t.Errorf("late writes after the logout were saved for the next sign-in: %v", written)
+	}
+
+	testingSignInFenceLateWrites(t, space.localState)
+	if written := testingSignInFenceWritten(t, space.localState); len(written) != 10 {
+		t.Errorf("the next sign-in saved only %v", written)
+	}
+}

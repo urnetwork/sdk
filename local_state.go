@@ -379,10 +379,16 @@ func (self *LocalState) GetProvideMode() ProvideMode {
 }
 
 // wifi, cell, etc
+//
+// Like the other per-account settings below, dropped while the space is
+// signed out (local_state_sign_in.go): a sign-out wipes them, and a late write,
+// such as a device listener's mirror, would carry into the next sign-in.
 func (self *LocalState) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode) error {
 	path := filepath.Join(self.localStorageDir, ".provide_network_mode")
 	provideNetworkModeBytes := []byte(fmt.Sprintf("%s", provideNetworkMode))
-	return os.WriteFile(path, provideNetworkModeBytes, LocalStorageFilePermissions)
+	return self.writeSignedIn(func() error {
+		return os.WriteFile(path, provideNetworkModeBytes, LocalStorageFilePermissions)
+	})
 }
 
 func (self *LocalState) GetProvideNetworkMode() ProvideNetworkMode {
@@ -395,10 +401,13 @@ func (self *LocalState) GetProvideNetworkMode() ProvideNetworkMode {
 	return ProvideNetworkModeWiFi
 }
 
+// Dropped while the space is signed out, as SetProvideNetworkMode.
 func (self *LocalState) SetRouteLocal(routeLocal bool) error {
 	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	routeLocalBytes := []byte(fmt.Sprintf("%t", routeLocal))
-	return os.WriteFile(path, routeLocalBytes, LocalStorageFilePermissions)
+	return self.writeSignedIn(func() error {
+		return os.WriteFile(path, routeLocalBytes, LocalStorageFilePermissions)
+	})
 }
 
 func (self *LocalState) GetRouteLocal() bool {
@@ -518,10 +527,13 @@ func (self *LocalState) controlIpFamilyPolicyIfSet() (int, bool) {
 	return IpFamilyPolicyAuto, false
 }
 
+// Dropped while the space is signed out, as SetProvideNetworkMode.
 func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	blockerEnabledBytes := []byte(fmt.Sprintf("%t", blockerEnabled))
-	return os.WriteFile(path, blockerEnabledBytes, LocalStorageFilePermissions)
+	return self.writeSignedIn(func() error {
+		return os.WriteFile(path, blockerEnabledBytes, LocalStorageFilePermissions)
+	})
 }
 
 func (self *LocalState) GetBlockerEnabled() bool {
@@ -610,17 +622,22 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 	return &dnsResolverSettings, nil
 }
 
+// Dropped while the space is signed out, as SetProvideNetworkMode.
 func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettings == nil {
-		os.Remove(path)
-		return nil
+		return self.writeSignedIn(func() error {
+			os.Remove(path)
+			return nil
+		})
 	} else {
 		dnsResolverSettingsBytes, err := encodeDnsResolverSettingsRecord(dnsResolverSettings)
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(path, dnsResolverSettingsBytes, LocalStorageFilePermissions)
+		return self.writeSignedIn(func() error {
+			return os.WriteFile(path, dnsResolverSettingsBytes, LocalStorageFilePermissions)
+		})
 	}
 }
 
@@ -1037,13 +1054,16 @@ func (self *LocalState) GetCanRefer() bool {
 	return false
 }
 
+// Dropped while the space is signed out, as SetProvideNetworkMode.
 func (self *LocalState) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool) error {
 	path := filepath.Join(self.localStorageDir, ".vpn_interface_while_offline")
 	vpnInterfaceWhileOfflineBytes, err := json.Marshal(vpnInterfaceWhileOffline)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, vpnInterfaceWhileOfflineBytes, LocalStorageFilePermissions)
+	return self.writeSignedIn(func() error {
+		return os.WriteFile(path, vpnInterfaceWhileOfflineBytes, LocalStorageFilePermissions)
+	})
 }
 
 func (self *LocalState) GetVpnInterfaceWhileOffline() bool {
@@ -1083,11 +1103,15 @@ func (self *LocalState) GetProvideControlMode() ProvideControlMode {
 	return ProvideControlModeNever
 }
 
+// Dropped while the space is signed out, as SetProvideNetworkMode. An invalid
+// profile is still refused with its error.
 func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error {
 	path := filepath.Join(self.localStorageDir, ".performance_profile")
 	if profile == nil {
-		os.Remove(path)
-		return nil
+		return self.writeSignedIn(func() error {
+			os.Remove(path)
+			return nil
+		})
 	} else {
 		// a profile the device would refuse is not saved; the saved profile
 		// stays as it was
@@ -1098,15 +1122,18 @@ func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error
 		if err != nil {
 			return err
 		}
-		// App view models reconstruct equivalent value objects while
-		// resuming. Avoid an identical filesystem write independently of the
-		// live-device no-op guards; exact JSON equality preserves the caller's
-		// persisted representation while removing needless flash I/O.
-		if currentBytes, readErr := os.ReadFile(path); readErr == nil &&
-			bytes.Equal(currentBytes, profileBytes) {
-			return nil
-		}
-		return os.WriteFile(path, profileBytes, LocalStorageFilePermissions)
+		return self.writeSignedIn(func() error {
+			// App view models reconstruct equivalent value objects while
+			// resuming. Avoid an identical filesystem write independently of
+			// the live-device no-op guards; exact JSON equality preserves the
+			// caller's persisted representation while removing needless flash
+			// I/O.
+			if currentBytes, readErr := os.ReadFile(path); readErr == nil &&
+				bytes.Equal(currentBytes, profileBytes) {
+				return nil
+			}
+			return os.WriteFile(path, profileBytes, LocalStorageFilePermissions)
+		})
 	}
 }
 
