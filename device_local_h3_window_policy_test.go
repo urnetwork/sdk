@@ -205,7 +205,7 @@ func TestDeviceH3WindowPolicyReservesConfiguredControlGraphs(t *testing.T) {
 	base := newDeviceLocalPlatformTransportSettingsForProfile(settings.MemoryTargetByteCount,
 		nil, nil, "", "", true)
 	claim := base.H3MemoryReservationByteCount(connect.TransportModeH3, device.clientStrategy)
-	control := 3 * base.H1BudgetByteCount
+	control := 3 * base.H1MemoryReservationByteCount()
 	for _, c := range []struct {
 		bytes        connect.ByteCount
 		slots        int

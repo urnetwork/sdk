@@ -62,7 +62,7 @@ func (self *DeviceLocal) publicH3WindowSizeLimitWithLock() int {
 		if providerMode == connect.TransportModeH1 ||
 			(providerMode == connect.TransportModeAuto && preferences[connect.TransportModeH1] > 0) {
 			// Auto H3 is revocable; its required H1 control paths are not.
-			controlBytes = connect.ByteCount(controlSlots) * providerTransport.H1BudgetByteCount
+			controlBytes = connect.ByteCount(controlSlots) * providerTransport.H1MemoryReservationByteCount()
 		} else {
 			// Pinned family paths do not use an extender. The standby may,
 			// and therefore retains its own complete configured graph.
