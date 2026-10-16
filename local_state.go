@@ -47,6 +47,11 @@ type LocalState struct {
 	// Changes on committed auth mutations, including explicit equality no-ops.
 	// Unlike durable Generation, logout must not reset this in-process epoch.
 	deviceAuthGeneration uint64
+	// The sign-in fence (local_state_sign_in.go), guarded by authStateLock.
+	// Every sign-out advances the generation and sets signedOut; a stored
+	// credential clears it. Credential renewal changes neither.
+	signInGeneration uint64
+	signedOut        bool
 	// Tests hold a non-mutating preparation before final API publication.
 	// Installed before constructors start; invoked without either auth lock.
 	testingAfterDeviceAuthPrepare func(*deviceAuthPublicationGate)
@@ -347,7 +352,17 @@ func (self *LocalState) SetInstanceId(instanceId *Id) error {
 }
 
 // auto, always, never
+//
+// Dropped while the space is signed out (local_state_sign_in.go): a late
+// write would become the next sign-in's provide mode.
 func (self *LocalState) SetProvideMode(provideMode ProvideMode) error {
+	return self.writeSignedIn(func() error {
+		return self.setProvideModeWithLock(provideMode)
+	})
+}
+
+// The record SetProvideMode and a sign-in's own write share.
+func (self *LocalState) setProvideModeWithLock(provideMode ProvideMode) error {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	provideModeBytes := []byte(fmt.Sprintf("%d", provideMode))
 	return os.WriteFile(path, provideModeBytes, LocalStorageFilePermissions)
@@ -519,10 +534,12 @@ func (self *LocalState) GetBlockerEnabled() bool {
 	return false
 }
 
+// Dropped while the space is signed out (local_state_sign_in.go): a late
+// write would reconnect the next sign-in to this location.
 func (self *LocalState) SetConnectLocation(connectLocation *ConnectLocation) error {
-	self.authStateLock.Lock()
-	defer self.authStateLock.Unlock()
-	return self.setLocationWithLock(localConnectLocationFileName, connectLocation)
+	return self.writeSignedIn(func() error {
+		return self.setLocationWithLock(localConnectLocationFileName, connectLocation)
+	})
 }
 
 func (self *LocalState) GetConnectLocation() *ConnectLocation {
@@ -817,10 +834,12 @@ func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	return nil
 }
 
+// Dropped while the space is signed out (local_state_sign_in.go): a late
+// write would become the next sign-in's default location.
 func (self *LocalState) SetDefaultLocation(connectLocation *ConnectLocation) error {
-	self.authStateLock.Lock()
-	defer self.authStateLock.Unlock()
-	return self.setLocationWithLock(localDefaultLocationFileName, connectLocation)
+	return self.writeSignedIn(func() error {
+		return self.setLocationWithLock(localDefaultLocationFileName, connectLocation)
+	})
 }
 
 func (self *LocalState) GetDefaultLocation() *ConnectLocation {
@@ -1038,13 +1057,18 @@ func (self *LocalState) GetVpnInterfaceWhileOffline() bool {
 	return false
 }
 
+// Dropped while the space is signed out (local_state_sign_in.go): the apps
+// save it after the device call, which can hold past a sign-out, and a late
+// write would become the next sign-in's provide control mode.
 func (self *LocalState) SetProvideControlMode(mode ProvideControlMode) error {
 	path := filepath.Join(self.localStorageDir, ".provide_control_mode")
 	provideControlModeBytes, err := json.Marshal(mode)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, provideControlModeBytes, LocalStorageFilePermissions)
+	return self.writeSignedIn(func() error {
+		return os.WriteFile(path, provideControlModeBytes, LocalStorageFilePermissions)
+	})
 }
 
 func (self *LocalState) GetProvideControlMode() ProvideControlMode {
@@ -1201,9 +1225,11 @@ func keptAcrossSignOut(name string) bool {
 
 // Removes every entry of the storage directory but the ones a sign-out keeps,
 // and leaves the directory in place. A directory that cannot be listed is
-// removed whole, as before, kept files included: they are a cache. Called with
-// authStateLock held.
+// removed whole, as before, kept files included: they are a cache. This is a
+// sign-out, so it first closes the sign-in fence (local_state_sign_in.go).
+// Called with authStateLock held.
 func (self *LocalState) removeAccountStateWithLock() error {
+	self.signOutWithLock()
 	entries, err := os.ReadDir(self.localStorageDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.Join(

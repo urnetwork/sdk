@@ -178,6 +178,10 @@ func (self *LocalState) updateAuthState(
 		if err := self.writeAuthStateLocked(state); err != nil {
 			return err
 		}
+	} else {
+		// An unchanged credential is still a confirmed sign-in, as after a
+		// sign-out that could not remove it.
+		self.signInStoredWithLock(state)
 	}
 	if changed || 0 < len(commitOwnership) {
 		self.deviceAuthGeneration += 1
@@ -249,6 +253,8 @@ func (self *LocalState) writeAuthStateLocked(state persistedLocalAuthState) (ret
 
 	self.removeLegacyAuthStateLocked()
 	self.cleanupAuthStateTempsLocked()
+	// A stored credential signs the space in again (local_state_sign_in.go).
+	self.signInStoredWithLock(state)
 	return nil
 }
 
