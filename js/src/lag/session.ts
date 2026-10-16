@@ -173,6 +173,13 @@ export class LagGuestSession {
   private readonly now: () => number;
   private current: KeptGuest | null = null;
   private loading: Promise<LagGuest> | null = null;
+  private invalidationVersion = 0;
+  // Failed cleanup must not reload a refused guest from storage. A known
+  // current replacement remains usable without retaining rejected tokens.
+  private storageTrusted = true;
+  // Order this owner's read/remove and set operations; other owners' storage
+  // access still follows the adapter's own concurrency contract.
+  private storageChanges: Promise<void> = Promise.resolve();
   // after a failed renewal, the still-valid guest is used without asking
   // the api again until then
   private renewAfter = 0;
@@ -216,14 +223,27 @@ export class LagGuestSession {
    * guest another caller has already replaced it with stays.
    */
   async invalidate(jwt?: string): Promise<void> {
+    this.invalidationVersion += 1;
+    const invalidationVersion = this.invalidationVersion;
+    const storageTrusted = this.storageTrusted;
+    this.storageTrusted = false;
     if (jwt === undefined || this.current?.guest.by_client_jwt === jwt) {
       this.current = null;
+      this.renewAfter = 0;
     }
-    const stored = parseStored(await this.read(), this.renewWithinMs);
-    if (stored !== null && jwt !== undefined && stored.guest.by_client_jwt !== jwt) {
-      return;
-    }
-    await this.attempt(() => this.storage.remove(this.key));
+    await this.changeStorage(async () => {
+      const stored = parseStored(await this.read(), this.renewWithinMs);
+      if (stored !== null && jwt !== undefined && stored.guest.by_client_jwt !== jwt) {
+        if (invalidationVersion === this.invalidationVersion) {
+          this.storageTrusted = storageTrusted;
+        }
+        return;
+      }
+      const removed = await this.attempt(() => this.storage.remove(this.key));
+      if (removed && invalidationVersion === this.invalidationVersion) {
+        this.storageTrusted = true;
+      }
+    });
   }
 
   private isFresh(kept: KeptGuest): boolean {
@@ -231,32 +251,49 @@ export class LagGuestSession {
   }
 
   private async load(): Promise<LagGuest> {
-    const stored = parseStored(await this.read(), this.renewWithinMs);
+    const invalidationVersion = this.invalidationVersion;
+    // A load begun during invalidation must not read the guest before removal.
+    await this.storageChanges;
+    const text = this.storageTrusted ? await this.read() : undefined;
+    // A storage read begun before invalidation may still carry the refused guest.
+    const stored = invalidationVersion === this.invalidationVersion ? parseStored(text, this.renewWithinMs) : null;
     let best = this.current;
     // the guest the api made last is the one that lives longest
     if (stored !== null && (best === null || expiryOf(best.guest) < expiryOf(stored.guest))) {
       best = stored;
     }
+    // Keep the renewal's fallback visible to invalidate() while creation waits.
+    this.current = best;
     const usable = best !== null && this.now() < best.expiresAtMs;
     if (best !== null && (this.isFresh(best) || (usable && this.now() < this.renewAfter))) {
-      this.current = best;
       return best.guest;
     }
     let created: KeptGuest;
     try {
       created = await this.create();
     } catch (error) {
-      // a guest due for renewal still works until it actually expires
-      if (best !== null && usable) {
+      // A fallback must still be current and unexpired when renewal fails.
+      if (best !== null && this.current === best && this.now() < best.expiresAtMs) {
         const retryAfterMs = error instanceof LagGuestSessionError ? (error.retryAfterMs ?? 0) : 0;
         this.renewAfter = this.now() + Math.max(LAG_GUEST_RENEW_RETRY_MS, retryAfterMs);
-        this.current = best;
         return best.guest;
       }
       throw error;
     }
     this.current = created;
-    await this.attempt(() => this.storage.set(this.key, storedText(created)));
+    this.renewAfter = 0;
+    await this.changeStorage(async () => {
+      if (this.current === created) {
+        const invalidationVersion = this.invalidationVersion;
+        const saved = await this.attempt(() => this.storage.set(this.key, storedText(created)));
+        if (saved && this.current === created && invalidationVersion === this.invalidationVersion) {
+          this.storageTrusted = true;
+        }
+      }
+    });
+    if (this.current !== created) {
+      throw new LagGuestSessionError("the guest was invalidated before it could be returned");
+    }
     return created.guest;
   }
 
@@ -306,11 +343,20 @@ export class LagGuestSession {
     return text;
   }
 
-  private async attempt(action: () => unknown): Promise<void> {
+  // Serialize persistence only: no api request waits while owning this queue.
+  private changeStorage(action: () => Promise<void>): Promise<void> {
+    const changed = this.storageChanges.then(action);
+    this.storageChanges = changed.catch(() => undefined);
+    return changed;
+  }
+
+  private async attempt(action: () => unknown): Promise<boolean> {
     try {
       await action();
+      return true;
     } catch {
       // storage is a convenience: without it the guest lasts this page
+      return false;
     }
   }
 }

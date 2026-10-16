@@ -553,6 +553,17 @@ const roundTripsIn = (pings: readonly Ping[], from: number | undefined, to: numb
   return pings.filter((ping) => ping.ms !== null && from <= ping.at && ping.at < to).map((ping) => ping.ms!);
 };
 
+// Loaded pings follow each measured direction's window. The gap while upload
+// connections open stays outside these windows and inside the idle exclusion.
+const loadedRoundTrips = (dot: Dot, result: LagLoadResult | undefined): { download: number[]; upload: number[] } => {
+  const inDirection = (direction: "download" | "upload"): number[] => {
+    const measured = result?.[direction];
+    const start = measured?.startedAt ?? dot.phases[direction];
+    return roundTripsIn(dot.pings, start, start === undefined || measured === undefined ? undefined : start + measured.durationMs);
+  };
+  return { download: inDirection("download"), upload: inDirection("upload") };
+};
+
 function serverResult(dot: Dot, spans: readonly Span[]): ServerResult {
   const server = dot.server;
   const idle = asPercentiles(
@@ -612,9 +623,7 @@ function loadResult(
   const idle = percentiles(
     dot.pings.filter((ping) => ping.ms !== null && isIdle(ping, spans)).map((ping) => ping.ms!),
   );
-  const { download: downloadAt, upload: uploadAt, done: doneAt } = dot.phases;
-  const downloadTrips = roundTripsIn(dot.pings, downloadAt, uploadAt ?? doneAt);
-  const uploadTrips = roundTripsIn(dot.pings, uploadAt, doneAt);
+  const { download: downloadTrips, upload: uploadTrips } = loadedRoundTrips(dot, result);
   const direction = (
     measured: LagLoadResult["download"],
     trips: number[],
@@ -663,7 +672,10 @@ function measurement(
     const rates = (pick: (load: LoadResult) => number | null | undefined) =>
       loads.map(pick).filter((value): value is number => typeof value === "number");
     const ownP50s = dots
-      .map((dot) => median([...roundTripsIn(dot.pings, dot.phases.download, dot.phases.done)]))
+      .map((dot) => {
+        const trips = loadedRoundTrips(dot, dot.raw);
+        return median([...trips.download, ...trips.upload]);
+      })
       .filter((value): value is number => value !== null);
     const downloadRates = rates((load) => load.download?.p50Mbps);
     const uploadRates = rates((load) => load.upload?.p50Mbps);

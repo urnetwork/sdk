@@ -1327,8 +1327,8 @@ class LagLoadRun {
   // chunks reach back to its previous chunk, or to its group's span while a
   // chunk may still join the group, and never more than LAG_SPREAD_MAX_MS;
   // a first group it holds reaches back LAG_SPREAD_MAX_MS from its last
-  // chunk; and a stream that is done, so that nothing it reads later counts,
-  // reaches nothing (LagIntervalSeries.reach). One that has not opened yet
+  // chunk; and a done stream reaches nothing once its held group has counted
+  // (LagIntervalSeries.reach). One that has not opened yet
   // holds intervals back like any other, since its first group reaches back
   // too; one that has ended holds nothing back. Until the window is final,
   // chunks after its end can still count in its last intervals.
