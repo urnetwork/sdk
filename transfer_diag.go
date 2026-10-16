@@ -30,7 +30,7 @@ var transferDiagnosticSnapshotsEnabled atomic.Bool
 
 // SetTransferDiagnosticSnapshotsEnabled opts subsequently constructed devices
 // into acceptance diagnostics and returns the previous setting. It installs
-// only the real P2P counters, not a ticker, logger, or snapshot collector. Call
+// real P2P and bounded ACK-failure counters, not a ticker, logger, or collector. Call
 // before creating the test device, then restore the previous value on teardown.
 // Existing devices are deliberately unaffected. Ordinary applications leave
 // this false; their data plane allocates and records no diagnostic counters.
@@ -64,19 +64,22 @@ func transferDiagInterval() time.Duration {
 // "window_send" and "window_receive" per window client. The rig tool
 // (connect/tools/flightgate-devices) rejoins them by unix_millis.
 type transferDiagState struct {
-	Part                string                            `json:"part"`
-	UnixMillis          int64                             `json:"unix_millis"`
-	ConnectEnabled      bool                              `json:"connect_enabled"`
-	ProvideMode         ProvideMode                       `json:"provide_mode"`
-	LocationNetworkPeer bool                              `json:"location_network_peer"`
-	LocationIsDevice    bool                              `json:"location_is_device"`
-	LocationName        string                            `json:"location_name,omitempty"`
-	ClientID            string                            `json:"client_id"`
-	LocationClientID    string                            `json:"location_client_id,omitempty"`
-	QualityClientCount  int                               `json:"quality_client_count"`
-	SpeedClientCount    int                               `json:"speed_client_count"`
-	WindowClientCount   int                               `json:"window_client_count"`
-	P2p                 connect.P2pDataPlaneStatsSnapshot `json:"p2p"`
+	Part                string      `json:"part"`
+	UnixMillis          int64       `json:"unix_millis"`
+	ConnectEnabled      bool        `json:"connect_enabled"`
+	ProvideMode         ProvideMode `json:"provide_mode"`
+	LocationNetworkPeer bool        `json:"location_network_peer"`
+	LocationIsDevice    bool        `json:"location_is_device"`
+	LocationName        string      `json:"location_name,omitempty"`
+	ClientID            string      `json:"client_id"`
+	LocationClientID    string      `json:"location_client_id,omitempty"`
+	QualityClientCount  int         `json:"quality_client_count"`
+	SpeedClientCount    int         `json:"speed_client_count"`
+	WindowClientCount   int         `json:"window_client_count"`
+	// Window-lifetime evidence includes retired peers; never substitutes for live totals.
+	QualityAckRouteWriteLifetimeFailures *connect.AckRouteWriteFailureStatsSnapshot `json:"quality_ack_route_write_lifetime_failures,omitempty"`
+	SpeedAckRouteWriteLifetimeFailures   *connect.AckRouteWriteFailureStatsSnapshot `json:"speed_ack_route_write_lifetime_failures,omitempty"`
+	P2p                                  connect.P2pDataPlaneStatsSnapshot          `json:"p2p"`
 }
 
 // transferDiagMemory is the Go runtime view the MEMSTEADY gate judges
@@ -321,8 +324,8 @@ type transferDiagReceive struct {
 	Receive     connect.ClientReceiveStatsSnapshot `json:"receive"`
 }
 
-// attachTransferDiag points a client's p2p transports at the device's shared
-// data-plane counters. A no-op unless the seam is on.
+// Attaches device-owned p2p counters and enables bounded ACK-failure diagnostics.
+// A no-op unless the device's diagnostic seam is on.
 func (self *DeviceLocal) attachTransferDiag(clientSettings *connect.ClientSettings) {
 	attachTransferDiagStats(clientSettings, self.transferDiagStats)
 }
@@ -331,6 +334,7 @@ func attachTransferDiagStats(clientSettings *connect.ClientSettings, stats *conn
 	if stats == nil || clientSettings == nil {
 		return
 	}
+	clientSettings.EnableAckRouteWriteDiagnostics = true
 	streamManagerSettings := clientSettings.StreamManagerSettings
 	if streamManagerSettings == nil || streamManagerSettings.StreamBufferSettings == nil {
 		return
@@ -398,6 +402,7 @@ func (self *DeviceLocal) collectTransferDiag(millis int64) []any {
 		memory := multi.MemorySnapshot()
 		state.QualityClientCount = memory.QualityClientCount
 		state.SpeedClientCount = memory.SpeedClientCount
+		state.QualityAckRouteWriteLifetimeFailures, state.SpeedAckRouteWriteLifetimeFailures = multi.AckRouteWriteLifetimeFailures()
 		for _, stats := range multi.ClientTransferStats() {
 			window := "speed"
 			if stats.WindowType == connect.WindowTypeQuality {
