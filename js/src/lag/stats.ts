@@ -967,9 +967,9 @@ export class LagIntervalSeries {
    * How far back stream `stream`'s later reads can still count, in ms after
    * the first byte, when every read of it that arrived by `seenMs` has been
    * added: an interval that ends at or before this is final as far as the
-   * stream goes (M4's settled reports). Infinity when nothing it reads later
-   * can count: it is done (streamDone), its reach is past the window's end,
-   * or the window is final.
+   * stream goes (M4's settled reports). A held first group still reaches
+   * those intervals until counted, even after the stream is done. Infinity
+   * when neither held nor later bytes can count, or the window is final.
    */
   reach(stream: number, seenMs: number): number {
     if (this.finishedValue) {
@@ -981,11 +981,11 @@ export class LagIntervalSeries {
       // its first group, still to come, reaches back at most
       // LAG_SPREAD_MAX_MS from its last read
       reach = seenMs - LAG_SPREAD_MAX_MS;
-    } else if (this.streamDone(stream, seenMs)) {
-      return Number.POSITIVE_INFINITY;
     } else if (reads.held !== null) {
       // and so does the first group it holds
       reach = reads.held.last - LAG_SPREAD_MAX_MS;
+    } else if (this.streamDone(stream, seenMs)) {
+      return Number.POSITIVE_INFINITY;
     } else if (seenMs <= reads.groupFirst + LAG_SPREAD_JOIN_MS) {
       // a read may still join its group, whose span starts where the
       // group's does

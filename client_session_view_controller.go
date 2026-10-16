@@ -314,6 +314,30 @@ func (self *ClientSessionViewController) RevokeSession(sessionId *Id) {
 	self.revoke(sessionId, false)
 }
 func (self *ClientSessionViewController) RevokeOtherSessions() { self.revoke(nil, true) }
+
+// Both legacy status-only replies and operation-state replies confirm success.
+func clientSessionOperationEnforced(status, state string) bool {
+	return status == "revoked" || status == "already_revoked" || state == "enforced" || state == "complete"
+}
+
+// A known outcome ends an operation; a transport failure or missing receipt does not.
+func clientSessionOperationTerminal(status, state string) bool {
+	return clientSessionOperationEnforced(status, state) || state == "cancelled" || state == "failed"
+}
+
+// Detached actions cannot publish into a replacement action or credential generation.
+func (self *ClientSessionViewController) actionCurrentWithLock(action *ClientSessionAction) bool {
+	if self.state.BulkAction == action {
+		return true
+	}
+	for _, current := range self.state.Actions.values {
+		if current == action {
+			return true
+		}
+	}
+	return false
+}
+
 func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 	target := self.api.captureNetworkTarget()
 	generation := target.generation
@@ -325,12 +349,14 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		return
 	}
 	var action *ClientSessionAction
+	actionIndex := -1
 	if bulk {
 		action = self.state.BulkAction
 	} else {
-		for _, value := range self.state.Actions.values {
+		for i, value := range self.state.Actions.values {
 			if value.SessionId != nil && value.SessionId.Cmp(sessionId) == 0 {
 				action = value
+				actionIndex = i
 				break
 			}
 		}
@@ -339,10 +365,14 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		self.stateLock.Unlock()
 		return
 	}
-	if action == nil {
+	if action == nil || clientSessionOperationTerminal(action.Status, action.State) {
+		// Retries keep an uncertain operation's identity. A new action after a
+		// known outcome must not replay the server's cached receipt.
 		action = &ClientSessionAction{SessionId: sessionId, OperationId: newId(connect.NewId()), target: target}
 		if bulk {
 			self.state.BulkAction = action
+		} else if 0 <= actionIndex {
+			self.state.Actions.values[actionIndex] = action
 		} else {
 			self.state.Actions.Add(action)
 		}
@@ -371,14 +401,14 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		requestError := self.clientSessionError(err, false, target.byJwt)
 		current := self.api.sessionCredentialGeneration()
 		self.stateLock.Lock()
-		if self.closed || generation != current {
+		if self.closed || generation != current || generation != self.credentialGeneration || !self.actionCurrentWithLock(action) {
 			self.stateLock.Unlock()
 			return
 		}
 		action.Loading = false
 		action.Error = requestError
 		self.mutation++
-		enforced := err == nil && (result.Status == "revoked" || result.Status == "already_revoked" || result.State == "enforced" || result.State == "complete")
+		enforced := err == nil && clientSessionOperationEnforced(result.Status, result.State)
 		terminalFailure := err == nil && (result.State == "cancelled" || result.State == "failed")
 		if result != nil {
 			action.Status = result.Status
@@ -419,7 +449,7 @@ func (self *ClientSessionViewController) recoverPending() {
 	self.stateLock.Unlock()
 	for _, action := range actions {
 		self.stateLock.Lock()
-		pending := action.Pending
+		pending := !self.closed && generation == self.credentialGeneration && self.actionCurrentWithLock(action) && action.Pending
 		self.stateLock.Unlock()
 		if !pending {
 			continue
@@ -428,10 +458,16 @@ func (self *ClientSessionViewController) recoverPending() {
 		requestError := self.clientSessionError(err, false, action.target.byJwt)
 		current := self.api.sessionCredentialGeneration()
 		self.stateLock.Lock()
-		if self.closed || generation != current {
+		if self.closed || generation != current || generation != self.credentialGeneration {
 			self.stateLock.Unlock()
 			return
 		}
+		if !self.actionCurrentWithLock(action) || !action.Pending {
+			self.stateLock.Unlock()
+			continue
+		}
+		previousError := action.Error
+		previousStatus, previousState, previousPending := action.Status, action.State, action.Pending
 		action.Error = requestError
 		if result != nil {
 			action.Status = result.Status
@@ -441,15 +477,25 @@ func (self *ClientSessionViewController) recoverPending() {
 			action.Error = &ClientSessionError{Message: "Session revocation was not applied."}
 		}
 		var status *connect.HttpStatusError
-		if errors.As(err, &status) && status.StatusCode == 404 {
-			action.Pending = false
+		notFound := errors.As(err, &status) && status.StatusCode == 404
+		if notFound {
 			action.Error.Retryable = true
 		}
-		if err == nil && (result.State == "enforced" || result.State == "complete" || result.State == "cancelled" || result.State == "failed") {
+		terminal := err == nil && clientSessionOperationTerminal(result.Status, result.State)
+		if terminal || notFound {
 			action.Pending = false
+		}
+		errorChanged := (previousError == nil) != (action.Error == nil)
+		if previousError != nil && action.Error != nil {
+			errorChanged = *previousError != *action.Error
+		}
+		changed := errorChanged || previousStatus != action.Status || previousState != action.State || previousPending != action.Pending
+		if changed {
 			self.mutation++
 			self.stateLock.Unlock()
-			self.Refresh()
+			if terminal {
+				self.Refresh()
+			}
 			self.publish()
 		} else {
 			self.stateLock.Unlock()
