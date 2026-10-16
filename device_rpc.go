@@ -385,6 +385,10 @@ type DeviceRemote struct {
 	state DeviceRemoteState
 	// last observed values
 	lastKnownState DeviceRemoteState
+	// the device reports of announced local connect writes that are not
+	// announced again (device_remote_connect_state.go). Guarded by stateLock
+	expectedConnectLocationEchoes []*ConnectLocation
+	expectedConnectEnabledEchoes  []bool
 	// Guarded by stateLock. A status RPC must not replace a notification or
 	// another status reply published while it was in flight.
 	contractStatusRevision uint64
@@ -2938,6 +2942,12 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if connectEnabled, known := deviceRemoteStateConnectEnabled(&self.state); known {
+		return connectEnabled
+	}
+
 	connectEnabled, success := func() (bool, bool) {
 		if self.service == nil {
 			return false, false
@@ -2953,20 +2963,7 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 	if success {
 		return connectEnabled
 	} else {
-		if self.state.Location.IsSet {
-			return self.state.Location.Value != nil &&
-				self.state.Location.Value.ConnectLocation != nil
-		} else if self.state.Destination.IsSet {
-			// SetDestination supports a spec-only custom destination. Its
-			// display location may legitimately be nil; the spec list is the
-			// installed connection command.
-			return self.state.Destination.Value != nil &&
-				0 < len(self.state.Destination.Value.Specs)
-		} else if self.state.RemoveDestination.IsSet {
-			return false
-		} else {
-			return self.lastKnownState.ConnectEnabled.Get(false)
-		}
+		return self.lastKnownState.ConnectEnabled.Get(false)
 	}
 }
 
@@ -3303,8 +3300,13 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 	}
 }
 
+// RemoveDestination, SetDestination and SetConnectLocation announce the write
+// to the listeners themselves, without waiting for the device's report: once
+// the device applied it, or at once while the rpc is down and the write is
+// pending until the next sync (device_remote_connect_state.go).
 func (self *DeviceRemote) RemoveDestination() {
-	event := false
+	var announcement *deviceRemoteConnectAnnouncement
+	pending := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3335,15 +3337,22 @@ func (self *DeviceRemote) RemoveDestination() {
 			self.lastKnownState.Destination.Unset()
 			self.lastKnownState.Location.Unset()
 		} else {
-			event = true
+			pending = true
 			self.state.RemoveDestination.Set(true)
 			self.state.Destination.Unset()
 			self.state.Location.Unset()
 		}
+		var write DeviceRemoteState
+		write.RemoveDestination.Set(true)
+		announcement = self.announceConnectWriteWithLock(&write)
+		if !success {
+			self.recordPendingConnectWriteWithLock(announcement)
+		}
 	}()
-	if event {
-		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
-		self.connectChanged(self.GetConnectEnabled())
+	if announcement != nil {
+		self.announceConnectState(announcement)
+	}
+	if pending {
 		self.provideChanged(self.GetProvideEnabled())
 	}
 }
@@ -3357,7 +3366,8 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 		Location: newDeviceRemoteConnectLocation(location),
 		Specs:    providerSpecs,
 	}
-	event := false
+	var announcement *deviceRemoteConnectAnnouncement
+	pending := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3393,15 +3403,22 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 			self.lastKnownState.RemoveDestination.Unset()
 			self.lastKnownState.Location.Unset()
 		} else {
-			event = true
+			pending = true
 			self.state.Destination.Set(destination)
 			self.state.RemoveDestination.Unset()
 			self.state.Location.Unset()
 		}
+		var write DeviceRemoteState
+		write.Destination.Set(destination)
+		announcement = self.announceConnectWriteWithLock(&write)
+		if !success {
+			self.recordPendingConnectWriteWithLock(announcement)
+		}
 	}()
-	if event {
-		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
-		self.connectChanged(self.GetConnectEnabled())
+	if announcement != nil {
+		self.announceConnectState(announcement)
+	}
+	if pending {
 		self.provideChanged(self.GetProvideEnabled())
 	}
 }
@@ -3444,7 +3461,7 @@ func (self *DeviceRemote) setConnectLocation(location *ConnectLocation, rebuild 
 	if rebuild {
 		rpcMethod = "DeviceLocalRpc.Reconnect"
 	}
-	event := false
+	var announcement *deviceRemoteConnectAnnouncement
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3480,21 +3497,31 @@ func (self *DeviceRemote) setConnectLocation(location *ConnectLocation, rebuild 
 			self.lastKnownState.RemoveDestination.Unset()
 			self.lastKnownState.Destination.Unset()
 		} else {
-			event = true
 			self.state.Location.Set(deviceRemoteLocation)
 			self.state.RemoveDestination.Unset()
 			self.state.Destination.Unset()
 		}
+		var write DeviceRemoteState
+		write.Location.Set(deviceRemoteLocation)
+		announcement = self.announceConnectWriteWithLock(&write)
+		if !success {
+			self.recordPendingConnectWriteWithLock(announcement)
+		}
 	}()
-	if event {
-		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
-		self.connectChanged(self.GetConnectEnabled())
+	if announcement != nil {
+		self.announceConnectState(announcement)
 	}
 }
 
 func (self *DeviceRemote) GetConnectLocation() *ConnectLocation {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's location once delivered; the device's
+	// own answer predates it
+	if location, known := deviceRemoteStateConnectLocation(&self.state); known {
+		return location
+	}
 
 	location, success := func() (*ConnectLocation, bool) {
 		if self.service == nil {
@@ -3513,9 +3540,6 @@ func (self *DeviceRemote) GetConnectLocation() *ConnectLocation {
 	if success {
 		return location
 	} else {
-		if location, known := deviceRemoteStateConnectLocation(&self.state); known {
-			return location
-		}
 		if location, known := deviceRemoteStateConnectLocation(&self.lastKnownState); known {
 			return location
 		}
@@ -13886,7 +13910,7 @@ func (self *DeviceRemoteRpc) VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOf
 func (self *DeviceRemoteRpc) ConnectChanged(connectEnabled bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ConnectChanged connectEnabled=%t", connectEnabled)
 	self.dispatch(func() {
-		self.deviceRemote.connectChanged(connectEnabled)
+		self.deviceRemote.connectEnabledReported(connectEnabled)
 	})
 	return nil
 }
@@ -13910,7 +13934,7 @@ func (self *DeviceRemoteRpc) BlockerEnabledChanged(blockerEnabled bool, _ RpcVoi
 func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLocationChangeEvent, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ConnectLocationChanged")
 	self.dispatch(func() {
-		self.deviceRemote.connectLocationChanged(event.Location)
+		self.deviceRemote.connectLocationReported(event.Location)
 	})
 	return nil
 }
