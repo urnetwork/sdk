@@ -27,6 +27,8 @@ type IoLoopDiagnosticSession struct {
 	attemptCount uint64
 	refusedCount uint64
 	sealed       bool
+	// Cold explicit requests only; ordinary packet observation never reads this.
+	pacingSnapshotCount int
 }
 
 // A slot retains only scalar observation state and its two completion signals,
