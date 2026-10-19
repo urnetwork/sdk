@@ -18843,6 +18843,7 @@ public:
 	bool hasPlatformFamilyUrls() const;
 	std::string resetExtenders() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
+	bool same(const NetworkSpace& other) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
@@ -30839,6 +30840,10 @@ inline LocalStateResetResult NetworkSpace::resetLocalStateIfCurrent(const LocalA
 	if (err_c) {
 		detail::throwError(err_c);
 	}
+	return r;
+}
+inline bool NetworkSpace::same(const NetworkSpace& other) const {
+	bool r = urnet_network_space_same(handle(), other.handle());
 	return r;
 }
 inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std::string& service) const {

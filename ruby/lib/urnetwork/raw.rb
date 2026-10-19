@@ -1112,6 +1112,7 @@ module URnetwork
       attach_function :urnet_network_space_has_platform_family_urls, [:uint64], :bool, blocking: true
       attach_function :urnet_network_space_reset_extenders, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_reset_local_state_if_current, [:uint64, :uint64, :pointer], :uint64, blocking: true
+      attach_function :urnet_network_space_same, [:uint64, :uint64], :bool, blocking: true
       attach_function :urnet_network_space_service_url, [:uint64, :string, :string], :pointer, blocking: true
       attach_function :urnet_network_space_set_control_doh_urls, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_space_set_control_ip_family_policy, [:uint64, :int64], :void, blocking: true

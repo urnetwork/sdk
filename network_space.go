@@ -1342,6 +1342,12 @@ func (self *NetworkSpace) GetKey() *NetworkSpaceKey {
 	return &key
 }
 
+// Compares native lifecycle identity across mobile wrappers. Equal keys or
+// values do not make a rebuilt space the owner of an older callback.
+func (self *NetworkSpace) Same(other *NetworkSpace) bool {
+	return self == other
+}
+
 func (self *NetworkSpace) ServiceUrl(scheme string, service string) string {
 	return ServiceUrl(&self.key, &self.values, scheme, service)
 }

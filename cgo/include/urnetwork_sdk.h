@@ -1880,6 +1880,7 @@ char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
 char* urnet_network_space_reset_extenders(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
+bool urnet_network_space_same(uint64_t self, uint64_t other);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_control_doh_urls(uint64_t self, const char* doh_urls_json);

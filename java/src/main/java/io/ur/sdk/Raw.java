@@ -1113,6 +1113,7 @@ public interface Raw extends Library {
   byte urnet_network_space_has_platform_family_urls(long a0);
   Pointer urnet_network_space_reset_extenders(long a0);
   long urnet_network_space_reset_local_state_if_current(long a0, long a1, PointerByReference a2);
+  byte urnet_network_space_same(long a0, long a1);
   Pointer urnet_network_space_service_url(long a0, String a1, String a2);
   Pointer urnet_network_space_set_control_doh_urls(long a0, String a1);
   void urnet_network_space_set_control_ip_family_policy(long a0, long a1);

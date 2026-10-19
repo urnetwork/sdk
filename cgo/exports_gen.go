@@ -16453,6 +16453,25 @@ func urnet_network_space_reset_local_state_if_current(self C.uint64_t, snapshot 
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_network_space_same
+func urnet_network_space_same(self C.uint64_t, other C.uint64_t) C.bool {
+	defer cgoGuard("urnet_network_space_same")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_same")
+	if !ok {
+		return C.bool(false)
+	}
+	var other_ *sdk.NetworkSpace
+	if other != 0 {
+		var ok bool
+		other_, ok = resolveHandle[*sdk.NetworkSpace](uint64(other), "urnet_network_space_same")
+		if !ok {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.Same(other_)
+	return C.bool(r0)
+}
+
 //export urnet_network_space_service_url
 func urnet_network_space_service_url(self C.uint64_t, scheme *C.char, service *C.char) *C.char {
 	defer cgoGuard("urnet_network_space_service_url")

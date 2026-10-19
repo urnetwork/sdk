@@ -2012,6 +2012,8 @@ def bind(lib):
     lib.urnet_network_space_reset_extenders.restype = c_void_p
     lib.urnet_network_space_reset_local_state_if_current.argtypes = [c_uint64, c_uint64, POINTER(c_void_p)]
     lib.urnet_network_space_reset_local_state_if_current.restype = c_uint64
+    lib.urnet_network_space_same.argtypes = [c_uint64, c_uint64]
+    lib.urnet_network_space_same.restype = c_bool
     lib.urnet_network_space_service_url.argtypes = [c_uint64, c_char_p, c_char_p]
     lib.urnet_network_space_service_url.restype = c_void_p
     lib.urnet_network_space_set_control_doh_urls.argtypes = [c_uint64, c_char_p]

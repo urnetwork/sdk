@@ -992,6 +992,7 @@ EXPORTS
 	urnet_network_space_manager_update_network_space_values
 	urnet_network_space_reset_extenders
 	urnet_network_space_reset_local_state_if_current
+	urnet_network_space_same
 	urnet_network_space_service_url
 	urnet_network_space_set_control_doh_urls
 	urnet_network_space_set_control_ip_family_policy
