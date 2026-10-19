@@ -29,6 +29,7 @@ export interface NetworkSpaceValues {
   vless?: VlessSettings | null;
   control_doh_urls_ipv4?: string[];
   control_doh_urls_ipv6?: string[];
+  ingress_country_code?: string;
 }
 
 export interface ExportNetworkSpace {
