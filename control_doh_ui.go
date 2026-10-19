@@ -115,3 +115,59 @@ func (self *NetworkSpace) SetControlDohUrls(dohUrls *StringList) (errorId string
 	})
 	return ""
 }
+
+// The connection regions (ingress countries) a user can pick, lower case
+// country codes, each with a recommendation in the per-country table. Any other
+// country behaves as undisclosed, so the pickers offer these plus "Other /
+// Undisclosed" (empty).
+func IngressCountryCodes() *StringList {
+	countryCodes := NewStringList()
+	countryCodes.addAll(connect.IngressCountryCodes()...)
+	return countryCodes
+}
+
+// The ingress DoH servers a connection region adds ahead of the defaults, for
+// the picker to show. Empty for undisclosed and a region without presets: the
+// default servers alone.
+func IngressDohUrls(countryCode string) *StringList {
+	strategy := connect.IngressDnsStrategyForCountry(countryCode)
+	dohUrls := NewStringList()
+	dohUrls.addAll(strategy.DohUrlsIpv4...)
+	dohUrls.addAll(strategy.DohUrlsIpv6...)
+	return dohUrls
+}
+
+// The plain dns servers the last-resort ingress fallback of a connection
+// region asks, for the picker to show. Empty for undisclosed and a region
+// without them: the device's default plain resolvers.
+func IngressPlainDnsServers(countryCode string) *StringList {
+	strategy := connect.IngressDnsStrategyForCountry(countryCode)
+	servers := NewStringList()
+	servers.addAll(strategy.PlainDnsIpv4...)
+	servers.addAll(strategy.PlainDnsIpv6...)
+	return servers
+}
+
+// The space's connection region (ingress country), or empty for undisclosed.
+func (self *NetworkSpace) GetIngressCountryCode() string {
+	values := self.valuesCopy()
+	return spaceIngressCountryCode(&values)
+}
+
+// Saves the space's connection region (ingress country) and replaces the
+// ingress dns in place, from the next lookup. Empty, or a country without a
+// recommendation, is undisclosed. Returns the stored value. It stays on the
+// device; the egress (tunnel) dns is unchanged.
+//
+// The space a cloud host shares among its hosted devices saves nothing and
+// returns empty, the hosted-incompatible no-op.
+func (self *NetworkSpace) SetIngressCountryCode(countryCode string) string {
+	if self.hostedIncompatibleGuarded("SetIngressCountryCode") {
+		return ""
+	}
+	countryCode = spaceIngressCountryCode(&NetworkSpaceValues{IngressCountryCode: countryCode})
+	self.updateInPlaceValues(func(values *NetworkSpaceValues) {
+		values.IngressCountryCode = countryCode
+	})
+	return countryCode
+}

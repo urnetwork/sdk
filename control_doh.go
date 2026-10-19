@@ -16,6 +16,16 @@
 // stored values at its next start, and the desktop services import the space
 // at the next tunnel start.
 //
+// Ingress and egress dns are separate. Ingress dns resolves the space's own
+// names, the platform the app dials (api, connect, extender): these settings,
+// picked by the space's ingress country (`IngressCountryCode`, the "Connection
+// region" the user chooses on the login screen or in the dns settings).
+// Egress dns resolves user traffic through the tunnel, the device's dns
+// settings, which never read the ingress country. The ingress country is
+// local only. Undisclosed takes the default ingress dns; when every encrypted
+// resolver fails, the space's own names fall back to plain dns (connect
+// net_http_doh_bootstrap.go).
+//
 // The app-facing helpers are in control_doh_ui.go.
 package sdk
 
@@ -70,21 +80,36 @@ func spaceControlDohUrls(values *NetworkSpaceValues) (dohUrlsIpv4 []string, dohU
 	return
 }
 
-// The DoH settings of a space's client strategy: the defaults, with the
-// space's bootstrap DoH servers ahead of them when it names any.
+// The ingress country of a space's values: a country with a recommendation
+// (`connect.IngressCountryCodes`), else undisclosed (""). A stored value the
+// table does not know is left out: the values may have been written by hand.
+func spaceIngressCountryCode(values *NetworkSpaceValues) string {
+	countryCode := connect.NormalizeIngressCountryCode(values.IngressCountryCode)
+	if !slices.Contains(connect.IngressCountryCodes(), countryCode) {
+		return ""
+	}
+	return countryCode
+}
+
+// The DoH settings of a space's client strategy: the ingress (control-name)
+// settings of the space's ingress country, with the space's bootstrap DoH
+// servers ahead of the defaults when it names any.
 func spaceControlDohSettings(values *NetworkSpaceValues) *connect.DohSettings {
-	settings := connect.ControlDohSettings(spaceControlDohUrls(values))
+	dohUrlsIpv4, dohUrlsIpv6 := spaceControlDohUrls(values)
+	settings := connect.IngressDohSettings(spaceIngressCountryCode(values), dohUrlsIpv4, dohUrlsIpv6)
 	if controlDohSettingsConfigure != nil {
 		controlDohSettingsConfigure(settings)
 	}
 	return settings
 }
 
-// Reports whether two value sets name different bootstrap DoH servers. The
+// Reports whether two value sets name different bootstrap DoH servers or
+// ingress countries. The
 // comparison is of the urls the rule reads, so an edit that only adds
 // whitespace, a blank line or a repeat changes nothing.
 func controlDohValuesChanged(previous *NetworkSpaceValues, next *NetworkSpaceValues) bool {
 	previousDohUrlsIpv4, previousDohUrlsIpv6 := spaceControlDohUrls(previous)
 	nextDohUrlsIpv4, nextDohUrlsIpv6 := spaceControlDohUrls(next)
-	return !slices.Equal(previousDohUrlsIpv4, nextDohUrlsIpv4) || !slices.Equal(previousDohUrlsIpv6, nextDohUrlsIpv6)
+	return !slices.Equal(previousDohUrlsIpv4, nextDohUrlsIpv4) || !slices.Equal(previousDohUrlsIpv6, nextDohUrlsIpv6) ||
+		spaceIngressCountryCode(previous) != spaceIngressCountryCode(next)
 }
