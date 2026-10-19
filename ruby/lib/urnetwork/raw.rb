@@ -1095,6 +1095,7 @@ module URnetwork
       attach_function :urnet_network_space_get_extender_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_gossip_url, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_host_name, [:uint64], :pointer, blocking: true
+      attach_function :urnet_network_space_get_ingress_country_code, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_key, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_link_host_name, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_migration_host_name, [:uint64], :pointer, blocking: true
@@ -1115,6 +1116,7 @@ module URnetwork
       attach_function :urnet_network_space_set_control_doh_urls, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_space_set_control_ip_family_policy, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_network_space_set_extender_gossip_mode, [:uint64, :string], :void, blocking: true
+      attach_function :urnet_network_space_set_ingress_country_code, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_space_set_vless_settings, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_space_to_json, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_network_space_manager_add_active_network_space_change_listener, [:uint64, :urnet_active_network_space_change_cb, :pointer], :uint64, blocking: true
@@ -1391,6 +1393,9 @@ module URnetwork
       attach_function :urnet_has_regional_dns_recommendation, [:string], :bool, blocking: true
       attach_function :urnet_host_base_name, [:string], :pointer, blocking: true
       attach_function :urnet_id_from_bytes, [:pointer, :int32, :pointer], :pointer, blocking: true
+      attach_function :urnet_ingress_country_codes, [], :pointer, blocking: true
+      attach_function :urnet_ingress_doh_urls, [:string], :pointer, blocking: true
+      attach_function :urnet_ingress_plain_dns_servers, [:string], :pointer, blocking: true
       attach_function :urnet_is_balance_code_format_valid, [:string], :bool, blocking: true
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true

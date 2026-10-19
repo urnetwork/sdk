@@ -1978,6 +1978,8 @@ def bind(lib):
     lib.urnet_network_space_get_gossip_url.restype = c_void_p
     lib.urnet_network_space_get_host_name.argtypes = [c_uint64]
     lib.urnet_network_space_get_host_name.restype = c_void_p
+    lib.urnet_network_space_get_ingress_country_code.argtypes = [c_uint64]
+    lib.urnet_network_space_get_ingress_country_code.restype = c_void_p
     lib.urnet_network_space_get_key.argtypes = [c_uint64]
     lib.urnet_network_space_get_key.restype = c_void_p
     lib.urnet_network_space_get_link_host_name.argtypes = [c_uint64]
@@ -2018,6 +2020,8 @@ def bind(lib):
     lib.urnet_network_space_set_control_ip_family_policy.restype = None
     lib.urnet_network_space_set_extender_gossip_mode.argtypes = [c_uint64, c_char_p]
     lib.urnet_network_space_set_extender_gossip_mode.restype = None
+    lib.urnet_network_space_set_ingress_country_code.argtypes = [c_uint64, c_char_p]
+    lib.urnet_network_space_set_ingress_country_code.restype = c_void_p
     lib.urnet_network_space_set_vless_settings.argtypes = [c_uint64, c_char_p]
     lib.urnet_network_space_set_vless_settings.restype = c_void_p
     lib.urnet_network_space_to_json.argtypes = [c_uint64, POINTER(c_void_p)]
@@ -2570,6 +2574,12 @@ def bind(lib):
     lib.urnet_host_base_name.restype = c_void_p
     lib.urnet_id_from_bytes.argtypes = [POINTER(c_uint8), c_int32, POINTER(c_void_p)]
     lib.urnet_id_from_bytes.restype = c_void_p
+    lib.urnet_ingress_country_codes.argtypes = []
+    lib.urnet_ingress_country_codes.restype = c_void_p
+    lib.urnet_ingress_doh_urls.argtypes = [c_char_p]
+    lib.urnet_ingress_doh_urls.restype = c_void_p
+    lib.urnet_ingress_plain_dns_servers.argtypes = [c_char_p]
+    lib.urnet_ingress_plain_dns_servers.restype = c_void_p
     lib.urnet_is_balance_code_format_valid.argtypes = [c_char_p]
     lib.urnet_is_balance_code_format_valid.restype = c_bool
     lib.urnet_is_checkout_redirect.argtypes = [c_char_p]

@@ -1096,6 +1096,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_extender_status(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_gossip_url(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_host_name(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_ingress_country_code(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_key(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_link_host_name(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_get_migration_host_name(ulong a0);
@@ -1116,6 +1117,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_set_control_doh_urls(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_network_space_set_control_ip_family_policy(ulong a0, long a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_network_space_set_extender_gossip_mode(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_set_ingress_country_code(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_set_vless_settings(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_network_space_to_json(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_network_space_manager_add_active_network_space_change_listener(ulong a0, urnet_active_network_space_change_cb a1, IntPtr a2);
@@ -1392,6 +1394,9 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_has_regional_dns_recommendation([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_host_base_name([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_id_from_bytes(IntPtr a0, int a1, out IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_ingress_country_codes();
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_ingress_doh_urls([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_ingress_plain_dns_servers([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_is_balance_code_format_valid([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_is_checkout_redirect([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_is_points_leaderboard_sort([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);

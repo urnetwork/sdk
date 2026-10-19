@@ -1096,6 +1096,7 @@ public interface Raw extends Library {
   Pointer urnet_network_space_get_extender_status(long a0);
   Pointer urnet_network_space_get_gossip_url(long a0);
   Pointer urnet_network_space_get_host_name(long a0);
+  Pointer urnet_network_space_get_ingress_country_code(long a0);
   Pointer urnet_network_space_get_key(long a0);
   Pointer urnet_network_space_get_link_host_name(long a0);
   Pointer urnet_network_space_get_migration_host_name(long a0);
@@ -1116,6 +1117,7 @@ public interface Raw extends Library {
   Pointer urnet_network_space_set_control_doh_urls(long a0, String a1);
   void urnet_network_space_set_control_ip_family_policy(long a0, long a1);
   void urnet_network_space_set_extender_gossip_mode(long a0, String a1);
+  Pointer urnet_network_space_set_ingress_country_code(long a0, String a1);
   Pointer urnet_network_space_set_vless_settings(long a0, String a1);
   Pointer urnet_network_space_to_json(long a0, PointerByReference a1);
   long urnet_network_space_manager_add_active_network_space_change_listener(long a0, urnet_active_network_space_change_cb a1, Pointer a2);
@@ -1392,6 +1394,9 @@ public interface Raw extends Library {
   byte urnet_has_regional_dns_recommendation(String a0);
   Pointer urnet_host_base_name(String a0);
   Pointer urnet_id_from_bytes(Pointer a0, int a1, PointerByReference a2);
+  Pointer urnet_ingress_country_codes();
+  Pointer urnet_ingress_doh_urls(String a0);
+  Pointer urnet_ingress_plain_dns_servers(String a0);
   byte urnet_is_balance_code_format_valid(String a0);
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
