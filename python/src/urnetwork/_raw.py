@@ -15,6 +15,7 @@ urnet_auth_code_create_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_auth_code_login_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_auth_login_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_auth_login_with_password_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_auth_logout_event_cb = CFUNCTYPE(None, c_void_p, c_int64, c_char_p)
 urnet_auth_logout_cb = CFUNCTYPE(None, c_void_p)
 urnet_auth_network_client_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_auth_password_reset_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
@@ -309,6 +310,8 @@ def bind(lib):
     lib.urnet_api_add_account_sign_in_required_listener.restype = c_uint64
     lib.urnet_api_add_auth.argtypes = [c_uint64, c_char_p, urnet_add_auth_cb, c_void_p]
     lib.urnet_api_add_auth.restype = None
+    lib.urnet_api_add_auth_logout_event_listener.argtypes = [c_uint64, urnet_auth_logout_event_cb, c_void_p]
+    lib.urnet_api_add_auth_logout_event_listener.restype = c_uint64
     lib.urnet_api_add_auth_logout_listener.argtypes = [c_uint64, urnet_auth_logout_cb, c_void_p]
     lib.urnet_api_add_auth_logout_listener.restype = c_uint64
     lib.urnet_api_add_client_refresh_integrity_listener.argtypes = [c_uint64, urnet_client_refresh_integrity_cb, c_void_p]
@@ -421,6 +424,8 @@ def bind(lib):
     lib.urnet_api_get_transfer_stats.restype = None
     lib.urnet_api_has_network_credential.argtypes = [c_uint64]
     lib.urnet_api_has_network_credential.restype = c_bool
+    lib.urnet_api_is_auth_logout_current.argtypes = [c_uint64, c_int64]
+    lib.urnet_api_is_auth_logout_current.restype = c_bool
     lib.urnet_api_list_api_keys.argtypes = [c_uint64, urnet_list_api_keys_cb, c_void_p]
     lib.urnet_api_list_api_keys.restype = None
     lib.urnet_api_network_block_location.argtypes = [c_uint64, c_char_p, urnet_network_block_location_cb, c_void_p]

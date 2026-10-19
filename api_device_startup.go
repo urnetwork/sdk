@@ -4,13 +4,15 @@ package sdk
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
-// Immutable preparation captures both token bytes and in-process authority.
-// A rejected commit leaves its old serving owner and durable state untouched.
+// Preparation captures token bytes and in-process authority without publishing.
+// A local constructor also supplies its prepared pin store before commit.
 type deviceAuthStartup struct {
 	localState      *LocalState
+	peerKeyPinStore *boundedPeerClientKeyPinStore
 	state           persistedLocalAuthState
 	localGeneration uint64
 	apiGeneration   uint64
@@ -117,9 +119,17 @@ func (self *Api) publishDeviceOwner(
 	self.authMutationLock.Lock()
 	defer self.authMutationLock.Unlock()
 	localState := prepared.localState
+	if prepared.peerKeyPinStore != nil {
+		if localState != nil && localState != prepared.peerKeyPinStore.localState {
+			return errors.New("device auth and peer identity pin stores differ")
+		}
+		localState = prepared.peerKeyPinStore.localState
+	}
 	if localState != nil {
 		localState.authStateLock.Lock()
 		defer localState.authStateLock.Unlock()
+	}
+	if prepared.localState != nil {
 		state, err := localState.loadAuthStateLocked()
 		if err != nil {
 			return err
@@ -134,7 +144,14 @@ func (self *Api) publishDeviceOwner(
 	if !current {
 		return errors.New("device auth startup was superseded at the API")
 	}
-	if localState != nil {
+	if prepared.peerKeyPinStore != nil {
+		// Reread retiring-owner pins before any durable auth change. Keep the
+		// same local-state lock through both owner publications below.
+		if err := prepared.peerKeyPinStore.prepareActivationWithLock(owner); err != nil {
+			return fmt.Errorf("activate peer identity pin store: %w", err)
+		}
+	}
+	if prepared.localState != nil {
 		state := prepared.state
 		if state.ByClientJwt != prepared.byJwt || state.InstanceId != prepared.instanceId {
 			state.ByClientJwt = prepared.byJwt
@@ -150,11 +167,14 @@ func (self *Api) publishDeviceOwner(
 	self.mutex.Lock()
 	publishWithLock()
 	self.deviceAuthGeneration += 1
-	if localState != nil {
+	if prepared.localState != nil {
 		localState.deviceAuthOwner = owner
 		localState.deviceAuthGeneration += 1
 		// The published device's credential is a sign-in, written or not.
 		localState.signInStoredWithLock(prepared.state)
+	}
+	if prepared.peerKeyPinStore != nil {
+		prepared.peerKeyPinStore.publishWithLock()
 	}
 	self.mutex.Unlock()
 	return nil

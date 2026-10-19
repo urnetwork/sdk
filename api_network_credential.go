@@ -340,7 +340,9 @@ func (self *Api) requestByJwt(method string, requestUrl string, byJwt string) (s
 // rejection of the network credential it sent rejects that credential, with
 // the response's cause (api_auth_logout_cause.go).
 
-func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
+// An invocation-bound request supplies its credential generation so dispatch
+// cannot attribute its rejection to a later sign-in with equal token bytes.
+func (self *Api) getHttpPostRaw(expectedNetworkGeneration ...uint64) connect.HttpPostRawFunction {
 	httpPostRaw := self.transportHttpPostRaw()
 	return func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
 		byJwt, err := self.requestByJwt(http.MethodPost, requestUrl, byJwt)
@@ -348,6 +350,9 @@ func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
 			return nil, err
 		}
 		target, tracked := self.networkRequestTarget(byJwt)
+		if 0 < len(expectedNetworkGeneration) && target.generation != expectedNetworkGeneration[0] {
+			tracked = false
+		}
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {

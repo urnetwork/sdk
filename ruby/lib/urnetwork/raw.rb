@@ -15,6 +15,7 @@ module URnetwork
       callback :urnet_auth_code_login_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_login_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_login_with_password_cb, [:pointer, :string, :string], :void
+      callback :urnet_auth_logout_event_cb, [:pointer, :int64, :string], :void
       callback :urnet_auth_logout_cb, [:pointer], :void
       callback :urnet_auth_network_client_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_password_reset_cb, [:pointer, :string, :string], :void
@@ -260,6 +261,7 @@ module URnetwork
       attach_function :urnet_api_account_preferences_update, [:uint64, :string, :urnet_account_preferences_set_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_add_account_sign_in_required_listener, [:uint64, :urnet_account_sign_in_required_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_add_auth, [:uint64, :string, :urnet_add_auth_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_add_auth_logout_event_listener, [:uint64, :urnet_auth_logout_event_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_add_auth_logout_listener, [:uint64, :urnet_auth_logout_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_add_client_refresh_integrity_listener, [:uint64, :urnet_client_refresh_integrity_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_add_jwt_refresh_listener, [:uint64, :urnet_jwt_refresh_cb, :pointer], :uint64, blocking: true
@@ -316,6 +318,7 @@ module URnetwork
       attach_function :urnet_api_get_referral_network, [:uint64, :urnet_get_referral_network_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_transfer_stats, [:uint64, :urnet_get_transfer_stats_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_has_network_credential, [:uint64], :bool, blocking: true
+      attach_function :urnet_api_is_auth_logout_current, [:uint64, :int64], :bool, blocking: true
       attach_function :urnet_api_list_api_keys, [:uint64, :urnet_list_api_keys_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_block_location, [:uint64, :string, :urnet_network_block_location_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_check, [:uint64, :string, :urnet_network_check_cb, :pointer], :void, blocking: true

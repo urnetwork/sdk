@@ -17,10 +17,11 @@ func (self *LocalState) closeDeviceAuthOwner(owner *deviceAuthPublicationGate) {
 }
 
 // An explicit device setter may update its own credential, never reclaim a
-// store another constructor or login has already claimed.
-func (self *LocalState) setOwnedClientJwt(byJwt string, instanceId *Id, owner *deviceAuthPublicationGate) (bool, error) {
+// store another constructor or login has already claimed. The caller holds
+// authStateLock through the matching API publication.
+func (self *LocalState) setOwnedClientJwtWithLock(byJwt string, instanceId *Id, owner *deviceAuthPublicationGate) (bool, error) {
 	accepted := false
-	err := self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+	err := self.updateAuthStateWithLock(func(state *persistedLocalAuthState) (bool, error) {
 		if owner == nil || self.deviceAuthOwner != owner || instanceId == nil {
 			return false, nil
 		}
@@ -39,7 +40,9 @@ func (self *LocalState) setOwnedClientJwt(byJwt string, instanceId *Id, owner *d
 // Destructive rejected-client cleanup is qualified by both in-process owner
 // and durable credential/instance while holding the auth lock. A newer seed,
 // explicit login, or client refresh therefore cannot be erased by this event.
-func (self *LocalState) logoutRejectedClient(byJwt string, instanceId *Id, owner *deviceAuthPublicationGate) (bool, error) {
+// The optional published credential belongs to a device whose API rejection
+// remains locked and current: failed refresh persistence can leave it behind.
+func (self *LocalState) logoutRejectedClient(byJwt string, instanceId *Id, owner *deviceAuthPublicationGate, publishedByJwt ...string) (bool, error) {
 	self.authStateLock.Lock()
 	defer self.authStateLock.Unlock()
 	if owner == nil || self.deviceAuthOwner != owner || instanceId == nil || byJwt == "" {
@@ -49,7 +52,11 @@ func (self *LocalState) logoutRejectedClient(byJwt string, instanceId *Id, owner
 	if err != nil {
 		return false, err
 	}
-	if state.ByClientJwt != byJwt || state.InstanceId != instanceId.String() {
+	credentialMatches := state.ByClientJwt == byJwt
+	if len(publishedByJwt) == 1 && publishedByJwt[0] != "" {
+		credentialMatches = credentialMatches || state.ByClientJwt == publishedByJwt[0]
+	}
+	if !credentialMatches || state.InstanceId != instanceId.String() {
 		return false, nil
 	}
 	self.deviceAuthOwner = nil

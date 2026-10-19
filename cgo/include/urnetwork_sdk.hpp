@@ -17473,6 +17473,7 @@ using AuthCodeCreateCallback = std::function<void(std::optional<AuthCodeCreateRe
 using AuthCodeLoginCallback = std::function<void(std::optional<AuthCodeLoginResult> result, std::optional<std::string> err_param)>;
 using AuthLoginCallback = std::function<void(std::optional<AuthLoginResult> result, std::optional<std::string> err_param)>;
 using AuthLoginWithPasswordCallback = std::function<void(std::optional<AuthLoginWithPasswordResult> result, std::optional<std::string> err_param)>;
+using AuthLogoutEventListener = std::function<void(int64_t generation, std::string cause)>;
 using AuthLogoutListener = std::function<void()>;
 using AuthNetworkClientCallback = std::function<void(std::optional<AuthNetworkClientResult> result, std::optional<std::string> err_param)>;
 using AuthPasswordResetCallback = std::function<void(std::optional<AuthPasswordResetResult> result, std::optional<std::string> err_param)>;
@@ -17888,6 +17889,7 @@ public:
 	void accountPreferencesUpdate(const std::optional<AccountPreferencesSetArgs>& account_preferences, AccountPreferencesSetCallback callback) const;
 	Sub addAccountSignInRequiredListener(AccountSignInRequiredListener listener) const;
 	void addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback callback) const;
+	Sub addAuthLogoutEventListener(AuthLogoutEventListener listener) const;
 	Sub addAuthLogoutListener(AuthLogoutListener listener) const;
 	Sub addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
@@ -17944,6 +17946,7 @@ public:
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
 	bool hasNetworkCredential() const;
+	bool isAuthLogoutCurrent(int64_t generation) const;
 	void listApiKeys(ListApiKeysCallback callback) const;
 	void networkBlockLocation(const std::optional<NetworkBlockLocationArgs>& args, NetworkBlockLocationCallback callback) const;
 	void networkCheck(const std::optional<NetworkCheckArgs>& network_check, NetworkCheckCallback callback) const;
@@ -19549,6 +19552,26 @@ inline void oneshot_auth_login_with_password(void* user_data, const char* result
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_auth_logout_event(void* user_data, int64_t generation, const char* cause) {
+	auto* f = static_cast<AuthLogoutEventListener*>(user_data);
+	try {
+		(*f)(generation, std::string(cause ? cause : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_logout_event(void* user_data, int64_t generation, const char* cause) {
+	auto* f = static_cast<AuthLogoutEventListener*>(user_data);
+	try {
+		(*f)(generation, std::string(cause ? cause : ""));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -26301,6 +26324,17 @@ inline void Api::addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback
 	auto* callback_fn = callback ? new AddAuthCallback(std::move(callback)) : nullptr;
 	urnet_api_add_auth(handle(), args_c, callback_fn ? &detail::oneshot_add_auth : nullptr, callback_fn);
 }
+inline Sub Api::addAuthLogoutEventListener(AuthLogoutEventListener listener) const {
+	std::shared_ptr<AuthLogoutEventListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<AuthLogoutEventListener>(std::move(listener));
+	}
+	Sub r(urnet_api_add_auth_logout_event_listener(handle(), listener_fn ? &detail::retained_auth_logout_event : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Api::addAuthLogoutListener(AuthLogoutListener listener) const {
 	std::shared_ptr<AuthLogoutListener> listener_fn;
 	if (listener) {
@@ -26750,6 +26784,10 @@ inline void Api::getTransferStats(GetTransferStatsCallback callback) const {
 }
 inline bool Api::hasNetworkCredential() const {
 	bool r = urnet_api_has_network_credential(handle());
+	return r;
+}
+inline bool Api::isAuthLogoutCurrent(int64_t generation) const {
+	bool r = urnet_api_is_auth_logout_current(handle(), generation);
 	return r;
 }
 inline void Api::listApiKeys(ListApiKeysCallback callback) const {

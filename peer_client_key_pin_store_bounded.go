@@ -112,11 +112,21 @@ func prepareBoundedPeerClientKeyPinStore(state *LocalState, owner *deviceAuthPub
 	return store, nil
 }
 
-// Publish auth first, then reread under its lock: a retiring generation may
-// have committed another pin between initial preparation and publication.
+// Standalone stores reread and publish under the same local-state lock.
+// Device construction includes these steps in its auth publication transaction.
 func (self *boundedPeerClientKeyPinStore) activate() error {
 	self.localState.authStateLock.Lock()
 	defer self.localState.authStateLock.Unlock()
+	if err := self.prepareActivationWithLock(self.localState.deviceAuthOwner); err != nil {
+		return err
+	}
+	self.publishWithLock()
+	return nil
+}
+
+// Caller holds localState.authStateLock through publication. Rereading must
+// precede durable auth changes; a retiring generation may have added pins.
+func (self *boundedPeerClientKeyPinStore) prepareActivationWithLock(owner *deviceAuthPublicationGate) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.data == nil {
@@ -125,7 +135,7 @@ func (self *boundedPeerClientKeyPinStore) activate() error {
 	if self.failure != nil {
 		return self.failure
 	}
-	if self.owner != nil && self.localState.deviceAuthOwner != self.owner {
+	if self.owner != nil && self.owner != owner {
 		return errPeerPinStoreSuperseded
 	}
 	if self.localState.peerPinStorePublishedGeneration > self.generation {
@@ -137,9 +147,14 @@ func (self *boundedPeerClientKeyPinStore) activate() error {
 	if err := self.loadWithLock(); err != nil {
 		return err
 	}
+	return nil
+}
+
+// Caller retains localState.authStateLock from successful activation preparation.
+// No fallible work remains when the pin and auth owners become visible together.
+func (self *boundedPeerClientKeyPinStore) publishWithLock() {
 	self.localState.peerPinStoreOwner = self
 	self.localState.peerPinStorePublishedGeneration = self.generation
-	return nil
 }
 
 func (self *boundedPeerClientKeyPinStore) loadWithLock() error {

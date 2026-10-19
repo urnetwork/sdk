@@ -18,6 +18,7 @@ EXPORTS
 	urnet_api_account_preferences_update
 	urnet_api_add_account_sign_in_required_listener
 	urnet_api_add_auth
+	urnet_api_add_auth_logout_event_listener
 	urnet_api_add_auth_logout_listener
 	urnet_api_add_client_refresh_integrity_listener
 	urnet_api_add_jwt_refresh_listener
@@ -74,6 +75,7 @@ EXPORTS
 	urnet_api_get_referral_network
 	urnet_api_get_transfer_stats
 	urnet_api_has_network_credential
+	urnet_api_is_auth_logout_current
 	urnet_api_list_api_keys
 	urnet_api_network_block_location
 	urnet_api_network_check
