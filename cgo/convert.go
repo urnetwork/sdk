@@ -6,8 +6,8 @@ package main
 import "C"
 
 import (
-	"github.com/urnetwork/glog"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/glog/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // conversions between the c abi forms and the sdk forms:
