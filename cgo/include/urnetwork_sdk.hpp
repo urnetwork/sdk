@@ -2600,6 +2600,7 @@ struct NetworkSpaceValues {
 	std::optional<VlessSettings> vless;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
+	std::optional<std::string> ingress_country_code;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -11797,6 +11798,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.control_doh_urls_ipv6) {
 		j["control_doh_urls_ipv6"] = *v.control_doh_urls_ipv6;
 	}
+	if (v.ingress_country_code) {
+		j["ingress_country_code"] = *v.ingress_country_code;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 	if (!j.is_object()) {
@@ -11911,6 +11915,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.control_doh_urls_ipv6 = std::move(tmp);
+	}
+	if (auto it = j.find("ingress_country_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ingress_country_code = std::move(tmp);
 	}
 }
 
@@ -18814,6 +18823,7 @@ public:
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::string getGossipUrl() const;
 	std::string getHostName() const;
+	std::string getIngressCountryCode() const;
 	std::optional<NetworkSpaceKey> getKey() const;
 	std::string getLinkHostName() const;
 	std::string getMigrationHostName() const;
@@ -18835,6 +18845,7 @@ public:
 	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	std::string setIngressCountryCode(const std::string& country_code) const;
 	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
 	std::string toJson() const;
@@ -30708,6 +30719,10 @@ inline std::string NetworkSpace::getHostName() const {
 	char* r_c = urnet_network_space_get_host_name(handle());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::getIngressCountryCode() const {
+	char* r_c = urnet_network_space_get_ingress_country_code(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<NetworkSpaceKey> NetworkSpace::getKey() const {
 	char* r_c = urnet_network_space_get_key(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30807,6 +30822,10 @@ inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
 }
 inline void NetworkSpace::setExtenderGossipMode(const std::string& mode) const {
 	urnet_network_space_set_extender_gossip_mode(handle(), mode.c_str());
+}
+inline std::string NetworkSpace::setIngressCountryCode(const std::string& country_code) const {
+	char* r_c = urnet_network_space_set_ingress_country_code(handle(), country_code.c_str());
+	return detail::takeString(r_c);
 }
 inline std::string NetworkSpace::setVlessSettings(const std::optional<VlessSettings>& settings) const {
 	std::string settings_json;
@@ -32471,6 +32490,30 @@ inline std::string idFromBytes(const uint8_t* id_bytes, int32_t id_bytes_len) {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
+}
+inline std::optional<StringList> ingressCountryCodes() {
+	char* r_c = urnet_ingress_country_codes();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> ingressDohUrls(const std::string& country_code) {
+	char* r_c = urnet_ingress_doh_urls(country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> ingressPlainDnsServers(const std::string& country_code) {
+	char* r_c = urnet_ingress_plain_dns_servers(country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
 }
 inline bool isBalanceCodeFormatValid(const std::string& secret) {
 	bool r = urnet_is_balance_code_format_valid(secret.c_str());
