@@ -325,25 +325,14 @@ func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
 	// the url, and the address the DoH client dials
 	dohUrl := dohServer.URL + "/dns-query"
 	dohAddress := dohServer.Listener.Addr().String()
-	controlDohSettingsConfigure = func(settings *connect.DohSettings) {
-		settings.RequestTimeout = time.Second
-		settings.DnsResolverSettings.TlsConfig = &tls.Config{RootCAs: dohRoots}
-		settings.DialContextSettings = &connect.DialContextSettings{
-			DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
-				if address == dohAddress {
-					return (&net.Dialer{}).DialContext(ctx, network, address)
-				}
-				<-ctx.Done()
-				return nil, ctx.Err()
-			},
-		}
-	}
+	controlDohSettingsConfigure = controlDohFixtureConfigure(dohRoots, dohAddress)
 	t.Cleanup(func() {
 		controlDohSettingsConfigure = nil
 	})
 
 	connectSettings := connect.DefaultConnectSettings()
 	connectSettings.TlsConfig = &tls.Config{RootCAs: apiRoots}
+	connectSettings.DialControl = controlDohFixtureSocketControl(api.Listener.Addr().String())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	networkSpace := newNetworkSpaceWithConnectSettings(
