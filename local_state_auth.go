@@ -163,7 +163,15 @@ func (self *LocalState) updateAuthState(
 ) error {
 	self.authStateLock.Lock()
 	defer self.authStateLock.Unlock()
+	return self.updateAuthStateWithLock(mutate, commitOwnership...)
+}
 
+// Caller holds authStateLock through any paired API publication as well as
+// this durable update. No observer callbacks run in the transaction.
+func (self *LocalState) updateAuthStateWithLock(
+	mutate func(state *persistedLocalAuthState) (bool, error),
+	commitOwnership ...func(),
+) error {
 	state, err := self.loadAuthStateLocked()
 	if err != nil {
 		return err

@@ -659,15 +659,16 @@ func newDeviceRemoteWithOverrides(
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
-	var logout func(string) (bool, error)
+	var logout func(string, uint64, string) (bool, error)
 	if networkSpace.asyncLocalState != nil && !settings.DisableHostedIncompatible {
-		logout = func(rejectedJwt string) (bool, error) {
-			return networkSpace.asyncLocalState.localState.logoutRejectedClient(
-				rejectedJwt, instanceId, authPublication,
+		logout = func(rejectedJwt string, generation uint64, publishedByJwt string) (bool, error) {
+			return api.logoutRejectedDeviceClient(
+				networkSpace.asyncLocalState.localState, rejectedJwt, generation,
+				publishedByJwt, instanceId, authPublication,
 			)
 		}
 	} else {
-		logout = func(string) (bool, error) {
+		logout = func(string, uint64, string) (bool, error) {
 			if networkSpace.asyncLocalState != nil {
 				return true, networkSpace.asyncLocalState.localState.Logout()
 			}
@@ -691,14 +692,17 @@ func newDeviceRemoteWithOverrides(
 				return
 			}
 			defer release()
-			rejectedJwt, cause, current := api.deviceRejectedJwt(authPublication)
+			rejectedJwt, cause, generation, current := api.deviceRejectedJwt(authPublication)
 			if !current {
 				return
 			}
 			if authPublication.testingBeforePersistence != nil {
 				authPublication.testingBeforePersistence()
 			}
-			accepted, err := logout(rejectedJwt)
+			deviceRemote.stateLock.Lock()
+			publishedByJwt := deviceRemote.byJwt
+			deviceRemote.stateLock.Unlock()
+			accepted, err := logout(rejectedJwt, generation, publishedByJwt)
 			if err != nil {
 				deviceRemote.log.Errorf("failed to clear local auth state: %v", err)
 			}

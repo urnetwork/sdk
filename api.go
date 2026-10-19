@@ -56,6 +56,9 @@ type Api struct {
 	// (AuthLogoutCause*), set with rejectedByJwt before the listeners run and
 	// cleared by a new login (api_auth_logout_cause.go)
 	authLogoutCause string
+	// The last rejection's owner, retained across device teardown and cleared
+	// by an explicit credential install (api_auth_logout_event.go).
+	authLogoutGeneration uint64
 	// a confirmed rejection ended this API's sign-in or its network
 	// credential, with that rejection's trusted cause, until a new login
 	signInRejected       bool
@@ -77,6 +80,7 @@ type Api struct {
 
 	jwtRefreshListeners             *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]
+	authLogoutEventListeners        *connect.CallbackList[AuthLogoutEventListener]
 	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
 	tokenManager                    *apiTokenManager
 	networkRenewer                  *apiNetworkCredentialRenewer
@@ -157,6 +161,7 @@ func newApi(
 
 		jwtRefreshListeners:             connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:             connect.NewCallbackList[AuthLogoutListener](),
+		authLogoutEventListeners:        connect.NewCallbackList[AuthLogoutEventListener](),
 		networkSessionsListeners:        connect.NewCallbackList[NetworkSessionsChangeListener](),
 		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
@@ -310,6 +315,8 @@ func (self *Api) rejectByJwt(rejectedByJwt string, cause string, expectedGenerat
 	self.authLogoutCause = self.trustedRejectionCauseWithLock(rejectedByJwt, cause)
 	self.noteSignInRejectionWithLock(self.authLogoutCause)
 	self.deviceAuthGeneration += 1
+	self.authLogoutGeneration = self.deviceAuthGeneration
+	logoutGeneration, logoutCause := self.authLogoutGeneration, self.authLogoutCause
 	self.mutex.Unlock()
 	self.authMutationLock.Unlock()
 	self.networkRenewer.credentialChanged()
@@ -318,6 +325,7 @@ func (self *Api) rejectByJwt(rejectedByJwt string, cause string, expectedGenerat
 		listener := listener
 		connect.HandleError(listener.AuthLogout)
 	}
+	self.authLogoutEvent(logoutGeneration, logoutCause)
 	return true
 }
 
@@ -334,7 +342,8 @@ func (self *Api) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
 
 // AddAuthLogoutListener observes a confirmed server rejection of the current
 // client JWT. Transport failures and non-401 server failures never fire it.
-// GetAuthLogoutCause reads the rejection's cause inside the listener.
+// This compatibility callback has no immutable origin. Applications that
+// defer cleanup or can accept another login use AddAuthLogoutEventListener.
 //
 //gomobile:noexport
 func (self *Api) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
@@ -996,14 +1005,18 @@ type AuthNetworkClientError struct {
 	Message         string `json:"message"`
 }
 
+// Registers with the invoking sign-in, retaining its credential generation
+// even when a later login uses equal token bytes before the goroutine runs.
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
-	// Registration belongs to the sign-in that invoked it, even if another
-	// sign-in or logout changes this API before the request goroutine runs.
-	byJwt := self.GetByJwt()
+	byJwt, networkGeneration := func() (string, uint64) {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		return self.byJwt, self.networkByJwtGeneration
+	}()
 	request := func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			self.getHttpPostRaw(networkGeneration),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
 			byJwt,

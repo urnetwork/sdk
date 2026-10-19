@@ -28,38 +28,69 @@ func (self *Api) deviceOwnsByJwt(owner *deviceAuthPublicationGate, byJwt string)
 
 // An explicit device update cannot reclaim the API after a replacement or
 // admin login. The constructor-only install method establishes that ownership.
-func (self *Api) replaceDeviceByJwt(owner *deviceAuthPublicationGate, byJwt string) bool {
-	self.authMutationLock.Lock()
-	self.mutex.Lock()
-	if owner == nil || self.deviceAuthOwner != owner {
-		self.mutex.Unlock()
-		self.authMutationLock.Unlock()
-		return false
-	}
-	changed := self.byJwt != byJwt
-	self.byJwt = byJwt
-	self.rejectedByJwt = ""
-	self.newLoginWithLock(byJwt)
-	self.deviceAuthGeneration += 1
-	tokenManager := self.tokenManager
-	self.mutex.Unlock()
-	self.authMutationLock.Unlock()
-	if changed && tokenManager != nil {
+// Persistence and API publication share the rejection transaction boundary,
+// including equal-byte updates of the last device-published credential.
+func (self *Api) replaceDeviceByJwt(owner *deviceAuthPublicationGate, byJwt string, localState *LocalState, instanceId *Id) (bool, error) {
+	changed := false
+	var tokenManager *apiTokenManager
+	accepted, err := func() (bool, error) {
+		self.authMutationLock.Lock()
+		defer self.authMutationLock.Unlock()
+		if localState != nil {
+			localState.authStateLock.Lock()
+			defer localState.authStateLock.Unlock()
+		}
+		if !self.deviceOwnsAuth(owner) {
+			return false, nil
+		}
+		if localState != nil {
+			accepted, err := localState.setOwnedClientJwtWithLock(byJwt, instanceId, owner)
+			if err != nil || !accepted {
+				return false, err
+			}
+		}
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		changed = self.byJwt != byJwt
+		self.byJwt = byJwt
+		self.rejectedByJwt = ""
+		self.newLoginWithLock(byJwt)
+		self.deviceAuthGeneration += 1
+		tokenManager = self.tokenManager
+		return true, nil
+	}()
+	if accepted && changed && tokenManager != nil {
 		tokenManager.TokenChanged()
 	}
-	return true
+	return accepted, err
 }
 
 // Captures the rejected credential, with the cause recorded beside it, only
 // while its originating device still owns the API. Public listener signatures
 // and wire contracts stay unchanged.
-func (self *Api) deviceRejectedJwt(owner *deviceAuthPublicationGate) (rejectedJwt string, cause string, current bool) {
+func (self *Api) deviceRejectedJwt(owner *deviceAuthPublicationGate) (rejectedJwt string, cause string, generation uint64, current bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if owner == nil || self.deviceAuthOwner != owner || self.byJwt != "" || self.rejectedByJwt == "" {
-		return "", "", false
+		return "", "", 0, false
 	}
-	return self.rejectedByJwt, self.authLogoutCause, true
+	return self.rejectedByJwt, self.authLogoutCause, self.deviceAuthGeneration, true
+}
+
+// A failed refresh can leave storage at the last device-published token while
+// the API rejects its successor. Both are eligible only during this exact
+// rejection; a replacement login, device setter, instance, or owner wins.
+func (self *Api) logoutRejectedDeviceClient(
+	localState *LocalState, rejectedJwt string, generation uint64,
+	publishedByJwt string, instanceId *Id, owner *deviceAuthPublicationGate,
+) (bool, error) {
+	self.authMutationLock.Lock()
+	defer self.authMutationLock.Unlock()
+	currentJwt, _, currentGeneration, current := self.deviceRejectedJwt(owner)
+	if !current || currentJwt != rejectedJwt || currentGeneration != generation {
+		return false, nil
+	}
+	return localState.logoutRejectedClient(rejectedJwt, instanceId, owner, publishedByJwt)
 }
 
 // Installs a device credential without confusing it with an explicit admin

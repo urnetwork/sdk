@@ -14,6 +14,7 @@ pub type urnet_auth_code_create_cb = Option<unsafe extern "C" fn(*mut c_void, *c
 pub type urnet_auth_code_login_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_login_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_login_with_password_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_auth_logout_event_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char) -> ()>;
 pub type urnet_auth_logout_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_auth_network_client_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_password_reset_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -261,6 +262,7 @@ pub struct Raw {
     pub urnet_api_account_preferences_update: unsafe extern "C" fn(u64, *const c_char, urnet_account_preferences_set_cb, *mut c_void) -> (),
     pub urnet_api_add_account_sign_in_required_listener: unsafe extern "C" fn(u64, urnet_account_sign_in_required_cb, *mut c_void) -> u64,
     pub urnet_api_add_auth: unsafe extern "C" fn(u64, *const c_char, urnet_add_auth_cb, *mut c_void) -> (),
+    pub urnet_api_add_auth_logout_event_listener: unsafe extern "C" fn(u64, urnet_auth_logout_event_cb, *mut c_void) -> u64,
     pub urnet_api_add_auth_logout_listener: unsafe extern "C" fn(u64, urnet_auth_logout_cb, *mut c_void) -> u64,
     pub urnet_api_add_client_refresh_integrity_listener: unsafe extern "C" fn(u64, urnet_client_refresh_integrity_cb, *mut c_void) -> u64,
     pub urnet_api_add_jwt_refresh_listener: unsafe extern "C" fn(u64, urnet_jwt_refresh_cb, *mut c_void) -> u64,
@@ -317,6 +319,7 @@ pub struct Raw {
     pub urnet_api_get_referral_network: unsafe extern "C" fn(u64, urnet_get_referral_network_cb, *mut c_void) -> (),
     pub urnet_api_get_transfer_stats: unsafe extern "C" fn(u64, urnet_get_transfer_stats_cb, *mut c_void) -> (),
     pub urnet_api_has_network_credential: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_api_is_auth_logout_current: unsafe extern "C" fn(u64, i64) -> bool,
     pub urnet_api_list_api_keys: unsafe extern "C" fn(u64, urnet_list_api_keys_cb, *mut c_void) -> (),
     pub urnet_api_network_block_location: unsafe extern "C" fn(u64, *const c_char, urnet_network_block_location_cb, *mut c_void) -> (),
     pub urnet_api_network_check: unsafe extern "C" fn(u64, *const c_char, urnet_network_check_cb, *mut c_void) -> (),
@@ -1566,6 +1569,7 @@ impl Raw {
             urnet_api_account_preferences_update: unsafe { *library.get(b"urnet_api_account_preferences_update\0")? },
             urnet_api_add_account_sign_in_required_listener: unsafe { *library.get(b"urnet_api_add_account_sign_in_required_listener\0")? },
             urnet_api_add_auth: unsafe { *library.get(b"urnet_api_add_auth\0")? },
+            urnet_api_add_auth_logout_event_listener: unsafe { *library.get(b"urnet_api_add_auth_logout_event_listener\0")? },
             urnet_api_add_auth_logout_listener: unsafe { *library.get(b"urnet_api_add_auth_logout_listener\0")? },
             urnet_api_add_client_refresh_integrity_listener: unsafe { *library.get(b"urnet_api_add_client_refresh_integrity_listener\0")? },
             urnet_api_add_jwt_refresh_listener: unsafe { *library.get(b"urnet_api_add_jwt_refresh_listener\0")? },
@@ -1622,6 +1626,7 @@ impl Raw {
             urnet_api_get_referral_network: unsafe { *library.get(b"urnet_api_get_referral_network\0")? },
             urnet_api_get_transfer_stats: unsafe { *library.get(b"urnet_api_get_transfer_stats\0")? },
             urnet_api_has_network_credential: unsafe { *library.get(b"urnet_api_has_network_credential\0")? },
+            urnet_api_is_auth_logout_current: unsafe { *library.get(b"urnet_api_is_auth_logout_current\0")? },
             urnet_api_list_api_keys: unsafe { *library.get(b"urnet_api_list_api_keys\0")? },
             urnet_api_network_block_location: unsafe { *library.get(b"urnet_api_network_block_location\0")? },
             urnet_api_network_check: unsafe { *library.get(b"urnet_api_network_check\0")? },

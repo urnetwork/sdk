@@ -1801,16 +1801,17 @@ func newDeviceLocalWithOverridesForPlatform(
 	deviceLocal.updateSendRouteWithLock()
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
-	var logout func(string) (bool, error)
+	var logout func(string, uint64, string) (bool, error)
 	if networkSpace.asyncLocalState != nil && !settings.HostedIncompatible {
-		logout = func(rejectedJwt string) (bool, error) {
-			return networkSpace.asyncLocalState.localState.logoutRejectedClient(
-				rejectedJwt, instanceId, authPublication,
+		logout = func(rejectedJwt string, generation uint64, publishedByJwt string) (bool, error) {
+			return api.logoutRejectedDeviceClient(
+				networkSpace.asyncLocalState.localState, rejectedJwt, generation,
+				publishedByJwt, instanceId, authPublication,
 			)
 		}
 	} else {
 		// do nothing
-		logout = func(string) (bool, error) {
+		logout = func(string, uint64, string) (bool, error) {
 			return true, nil
 		}
 	}
@@ -1828,14 +1829,17 @@ func newDeviceLocalWithOverridesForPlatform(
 				return
 			}
 			defer release()
-			rejectedJwt, cause, current := api.deviceRejectedJwt(authPublication)
+			rejectedJwt, cause, generation, current := api.deviceRejectedJwt(authPublication)
 			if !current {
 				return
 			}
 			if authPublication.testingBeforePersistence != nil {
 				authPublication.testingBeforePersistence()
 			}
-			accepted, err := logout(rejectedJwt)
+			deviceLocal.stateLock.Lock()
+			publishedByJwt := deviceLocal.byJwt
+			deviceLocal.stateLock.Unlock()
+			accepted, err := logout(rejectedJwt, generation, publishedByJwt)
 			if err != nil {
 				log.Errorf("failed to clear local auth state: %v", err)
 			}
@@ -1845,15 +1849,10 @@ func newDeviceLocalWithOverridesForPlatform(
 			deviceLocal.handleApiAuthLogout(cause)
 		}),
 	)
+	preparedAuth.peerKeyPinStore = peerKeyPinStore
 	if err := api.setDeviceByJwt(preparedAuth, deviceLocal.authPublication, log); err != nil {
 		_ = deviceLocal.CloseAndWait(context.Background())
 		return nil, fmt.Errorf("publish device client auth: %w", err)
-	}
-	if peerKeyPinStore != nil {
-		if err := peerKeyPinStore.activate(); err != nil {
-			_ = deviceLocal.CloseAndWait(context.Background())
-			return nil, fmt.Errorf("activate peer identity pin store: %w", err)
-		}
 	}
 	pinStoreTransferred = true
 	api.StartJwtRefresh()
@@ -2724,6 +2723,8 @@ func (self *DeviceLocal) providerClientSnapshot() *connect.Client {
 	return self.providerClient()
 }
 
+// A device-owned explicit replacement persists and installs its API token in
+// one auth transaction before publishing to transports and app listeners.
 func (self *DeviceLocal) SetByJwt(byJwt string) {
 	release := self.authPublication.Begin()
 	if release == nil {
@@ -2732,25 +2733,16 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 	defer release()
 
 	api := self.GetApi()
-	if !api.deviceOwnsAuth(self.authPublication) {
+	var localState *LocalState
+	if self.networkSpace.asyncLocalState != nil && !self.ownsApi {
+		localState = self.networkSpace.asyncLocalState.localState
+	}
+	accepted, err := api.replaceDeviceByJwt(self.authPublication, byJwt, localState, newId(self.instanceId))
+	if err != nil {
+		self.log.Errorf("failed to persist refreshed JWT: %v", err)
 		return
 	}
-
-	if self.networkSpace.asyncLocalState != nil && !self.ownsApi {
-		accepted, err := self.networkSpace.asyncLocalState.localState.setOwnedClientJwt(
-			byJwt,
-			newId(self.instanceId),
-			self.authPublication,
-		)
-		if err != nil {
-			self.log.Errorf("failed to persist refreshed JWT: %v", err)
-			return
-		}
-		if !accepted {
-			return
-		}
-	}
-	if !api.replaceDeviceByJwt(self.authPublication, byJwt) {
+	if !accepted {
 		return
 	}
 

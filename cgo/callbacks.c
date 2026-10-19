@@ -53,6 +53,10 @@ void urnet_invoke_auth_login_with_password(urnet_auth_login_with_password_cb cb,
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_auth_logout_event(urnet_auth_logout_event_cb cb, void* user_data, int64_t generation, const char* cause) {
+	cb(user_data, generation, cause);
+}
+
 void urnet_invoke_auth_logout(urnet_auth_logout_cb cb, void* user_data) {
 	cb(user_data);
 }

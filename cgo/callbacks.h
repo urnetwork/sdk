@@ -31,6 +31,8 @@ typedef void (*urnet_auth_login_cb)(void* user_data, const char* result_json, co
 void urnet_invoke_auth_login(urnet_auth_login_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_login_with_password_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_login_with_password(urnet_auth_login_with_password_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_auth_logout_event_cb)(void* user_data, int64_t generation, const char* cause);
+void urnet_invoke_auth_logout_event(urnet_auth_logout_event_cb cb, void* user_data, int64_t generation, const char* cause);
 typedef void (*urnet_auth_logout_cb)(void* user_data);
 void urnet_invoke_auth_logout(urnet_auth_logout_cb cb, void* user_data);
 typedef void (*urnet_auth_network_client_cb)(void* user_data, const char* result_json, const char* err_param);

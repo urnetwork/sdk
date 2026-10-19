@@ -100,6 +100,7 @@ func (self *NetworkSpace) ResetLocalStateIfCurrent(snapshot *LocalAuthStateSnaps
 	api := self.api
 	localState := self.asyncLocalState.localState
 	var tokenManager *apiTokenManager
+	authCleared := false
 	result, err := func() (*LocalStateResetResult, error) {
 		api.authMutationLock.Lock()
 		defer api.authMutationLock.Unlock()
@@ -139,7 +140,11 @@ func (self *NetworkSpace) ResetLocalStateIfCurrent(snapshot *LocalAuthStateSnaps
 				tokenManager = api.tokenManager
 			}
 			api.byJwt = ""
+			// Reset ends the whole sign-in, including the separate credential
+			// selected for admin calls and its outstanding renewal generation.
+			api.setLoginNetworkByJwtWithLock("")
 			api.rejectedByJwt = ""
+			api.authLogoutGeneration = 0
 			owner := api.deviceAuthOwner
 			if owner != nil && api.httpPostRawOwner == owner {
 				api.httpPostRaw = nil
@@ -155,6 +160,7 @@ func (self *NetworkSpace) ResetLocalStateIfCurrent(snapshot *LocalAuthStateSnaps
 			}
 			api.deviceAuthOwner = nil
 			api.deviceAuthGeneration += 1
+			authCleared = true
 		}()
 		resetErr := localState.resetPreservingKeysWithLock(entries)
 		if localState.testingAfterPairedReset != nil {
@@ -167,6 +173,9 @@ func (self *NetworkSpace) ResetLocalStateIfCurrent(snapshot *LocalAuthStateSnaps
 	}()
 	if tokenManager != nil {
 		tokenManager.TokenChanged()
+	}
+	if authCleared {
+		api.networkRenewer.credentialChanged()
 	}
 	return result, err
 }

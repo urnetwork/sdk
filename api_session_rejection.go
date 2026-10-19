@@ -110,11 +110,14 @@ func (self *Api) rejectNetworkCredential(target networkRenewalTarget, cause stri
 	self.networkCredentialChangedWithLock()
 	cause = self.trustedRejectionCauseWithLock(target.byJwt, cause)
 	self.noteSignInRejectionWithLock(cause)
+	var logoutGeneration uint64
 	if logout {
 		self.rejectedByJwt = self.byJwt
 		self.authLogoutCause = cause
 		self.byJwt = ""
 		self.deviceAuthGeneration++
+		self.authLogoutGeneration = self.deviceAuthGeneration
+		logoutGeneration = self.authLogoutGeneration
 	}
 	self.mutex.Unlock()
 	self.authMutationLock.Unlock()
@@ -123,6 +126,7 @@ func (self *Api) rejectNetworkCredential(target networkRenewalTarget, cause stri
 		for _, listener := range self.authLogoutListeners.Get() {
 			connect.HandleError(listener.AuthLogout)
 		}
+		self.authLogoutEvent(logoutGeneration, cause)
 	} else {
 		for _, listener := range self.accountSignInRequiredListeners.Get() {
 			connect.HandleError(listener.AccountSignInRequired)

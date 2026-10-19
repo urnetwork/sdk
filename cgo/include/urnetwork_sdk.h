@@ -503,6 +503,8 @@ typedef void (*urnet_auth_code_login_cb)(void* user_data, const char* result_jso
 typedef void (*urnet_auth_login_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthLoginWithPasswordCallback */
 typedef void (*urnet_auth_login_with_password_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthLogoutEventListener */
+typedef void (*urnet_auth_logout_event_cb)(void* user_data, int64_t generation, const char* cause);
 /* AuthLogoutListener */
 typedef void (*urnet_auth_logout_cb)(void* user_data);
 /* AuthNetworkClientCallback */
@@ -913,6 +915,7 @@ void urnet_api_account_preferences_get(uint64_t self, urnet_account_preferences_
 void urnet_api_account_preferences_update(uint64_t self, const char* account_preferences_json, urnet_account_preferences_set_cb callback_result, void* callback_user_data);
 uint64_t urnet_api_add_account_sign_in_required_listener(uint64_t self, urnet_account_sign_in_required_cb listener_account_sign_in_required, void* listener_user_data);
 void urnet_api_add_auth(uint64_t self, const char* args_json, urnet_add_auth_cb callback_result, void* callback_user_data);
+uint64_t urnet_api_add_auth_logout_event_listener(uint64_t self, urnet_auth_logout_event_cb listener_auth_logout_event, void* listener_user_data);
 uint64_t urnet_api_add_auth_logout_listener(uint64_t self, urnet_auth_logout_cb listener_auth_logout, void* listener_user_data);
 uint64_t urnet_api_add_client_refresh_integrity_listener(uint64_t self, urnet_client_refresh_integrity_cb listener_client_refresh_invalid, void* listener_user_data);
 uint64_t urnet_api_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb listener_jwt_refreshed, void* listener_user_data);
@@ -969,6 +972,7 @@ void urnet_api_get_provider_status(uint64_t self, urnet_get_provider_status_cb c
 void urnet_api_get_referral_network(uint64_t self, urnet_get_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb callback_result, void* callback_user_data);
 bool urnet_api_has_network_credential(uint64_t self);
+bool urnet_api_is_auth_logout_current(uint64_t self, int64_t generation);
 void urnet_api_list_api_keys(uint64_t self, urnet_list_api_keys_cb callback_result, void* callback_user_data);
 void urnet_api_network_block_location(uint64_t self, const char* args_json, urnet_network_block_location_cb callback_result, void* callback_user_data);
 void urnet_api_network_check(uint64_t self, const char* network_check_json, urnet_network_check_cb callback_result, void* callback_user_data);
@@ -1859,6 +1863,7 @@ char* urnet_network_space_get_extender_root_public_keys(uint64_t self);
 char* urnet_network_space_get_extender_status(uint64_t self);
 char* urnet_network_space_get_gossip_url(uint64_t self);
 char* urnet_network_space_get_host_name(uint64_t self);
+char* urnet_network_space_get_ingress_country_code(uint64_t self);
 char* urnet_network_space_get_key(uint64_t self);
 char* urnet_network_space_get_link_host_name(uint64_t self);
 char* urnet_network_space_get_migration_host_name(uint64_t self);
@@ -1880,6 +1885,7 @@ char* urnet_network_space_service_url(uint64_t self, const char* scheme, const c
 char* urnet_network_space_set_control_doh_urls(uint64_t self, const char* doh_urls_json);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
+char* urnet_network_space_set_ingress_country_code(uint64_t self, const char* country_code);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_vless_settings(uint64_t self, const char* settings_json);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
@@ -2220,6 +2226,9 @@ char* urnet_gossip_url(const char* key_json, const char* values_json);
 bool urnet_has_regional_dns_recommendation(const char* country_code);
 char* urnet_host_base_name(const char* host);
 char* urnet_id_from_bytes(const uint8_t* id_bytes, int32_t id_bytes_len, char** out_error);
+char* urnet_ingress_country_codes(void);
+char* urnet_ingress_doh_urls(const char* country_code);
+char* urnet_ingress_plain_dns_servers(const char* country_code);
 bool urnet_is_balance_code_format_valid(const char* secret);
 bool urnet_is_checkout_redirect(const char* uri);
 bool urnet_is_points_leaderboard_sort(const char* sort);
@@ -3886,6 +3895,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   vless?: VlessSettings | null
  *   control_doh_urls_ipv4?: string[]
  *   control_doh_urls_ipv6?: string[]
+ *   ingress_country_code?: string
  */
 
 /* NetworkUnblockLocationArgs (json):

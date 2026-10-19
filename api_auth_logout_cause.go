@@ -80,8 +80,8 @@ func credentialSessionId(byJwt string) *connect.Id {
 // Why the server ended the sign-in that the last AuthLogout reported:
 // AuthLogoutCauseSessionRevoked when it confirmed the session was revoked,
 // which apps show as "This session was signed out from another device.", else
-// "". It is set before the AuthLogout listeners run, so they can read it, and
-// a new login clears it.
+// "". A new login clears this mutable state, even before an older callback
+// runs. AddAuthLogoutEventListener carries the original cause and owner.
 func (self *Api) GetAuthLogoutCause() string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -143,6 +143,8 @@ func (self *Api) noteSignInRejectionWithLock(cause string) {
 // Clearing the credential is not a new login: the cause stays readable after
 // an app's own cleanup. Callers hold mutex.
 func (self *Api) newLoginWithLock(byJwt string) {
+	// Explicit setters also retire queued events when they clear a credential.
+	self.authLogoutGeneration = 0
 	if byJwt == "" {
 		return
 	}

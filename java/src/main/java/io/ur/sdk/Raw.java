@@ -16,6 +16,7 @@ public interface Raw extends Library {
   interface urnet_auth_code_login_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_login_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_login_with_password_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_auth_logout_event_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
   interface urnet_auth_logout_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_auth_network_client_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_password_reset_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -261,6 +262,7 @@ public interface Raw extends Library {
   void urnet_api_account_preferences_update(long a0, String a1, urnet_account_preferences_set_cb a2, Pointer a3);
   long urnet_api_add_account_sign_in_required_listener(long a0, urnet_account_sign_in_required_cb a1, Pointer a2);
   void urnet_api_add_auth(long a0, String a1, urnet_add_auth_cb a2, Pointer a3);
+  long urnet_api_add_auth_logout_event_listener(long a0, urnet_auth_logout_event_cb a1, Pointer a2);
   long urnet_api_add_auth_logout_listener(long a0, urnet_auth_logout_cb a1, Pointer a2);
   long urnet_api_add_client_refresh_integrity_listener(long a0, urnet_client_refresh_integrity_cb a1, Pointer a2);
   long urnet_api_add_jwt_refresh_listener(long a0, urnet_jwt_refresh_cb a1, Pointer a2);
@@ -317,6 +319,7 @@ public interface Raw extends Library {
   void urnet_api_get_referral_network(long a0, urnet_get_referral_network_cb a1, Pointer a2);
   void urnet_api_get_transfer_stats(long a0, urnet_get_transfer_stats_cb a1, Pointer a2);
   byte urnet_api_has_network_credential(long a0);
+  byte urnet_api_is_auth_logout_current(long a0, long a1);
   void urnet_api_list_api_keys(long a0, urnet_list_api_keys_cb a1, Pointer a2);
   void urnet_api_network_block_location(long a0, String a1, urnet_network_block_location_cb a2, Pointer a3);
   void urnet_api_network_check(long a0, String a1, urnet_network_check_cb a2, Pointer a3);

@@ -239,6 +239,18 @@ func (self *cAdapterAuthLoginWithPasswordCallback) Result(result *sdk.AuthLoginW
 	}
 }
 
+type cAdapterAuthLogoutEventListener struct {
+	cbAuthLogoutEvent C.urnet_auth_logout_event_cb
+	userData          unsafe.Pointer
+}
+
+func (self *cAdapterAuthLogoutEventListener) AuthLogoutEvent(generation int64, cause string) {
+	defer cgoGuard("urnet_auth_logout_event_cb")
+	cause_ := cString(string(cause))
+	C.urnet_invoke_auth_logout_event(self.cbAuthLogoutEvent, self.userData, C.int64_t(int64(generation)), cause_)
+	cStringFree(cause_)
+}
+
 type cAdapterAuthLogoutListener struct {
 	cbAuthLogout C.urnet_auth_logout_cb
 	userData     unsafe.Pointer
@@ -3549,6 +3561,21 @@ func urnet_api_add_auth(self C.uint64_t, args *C.char, callback_result C.urnet_a
 	self_.AddAuth(args_, callback_)
 }
 
+//export urnet_api_add_auth_logout_event_listener
+func urnet_api_add_auth_logout_event_listener(self C.uint64_t, listener_auth_logout_event C.urnet_auth_logout_event_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_api_add_auth_logout_event_listener")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_add_auth_logout_event_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.AuthLogoutEventListener
+	if listener_auth_logout_event != nil {
+		listener_ = &cAdapterAuthLogoutEventListener{cbAuthLogoutEvent: listener_auth_logout_event, userData: listener_user_data}
+	}
+	r0 := self_.AddAuthLogoutEventListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_api_add_auth_logout_listener
 func urnet_api_add_auth_logout_listener(self C.uint64_t, listener_auth_logout C.urnet_auth_logout_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_api_add_auth_logout_listener")
@@ -4533,6 +4560,17 @@ func urnet_api_has_network_credential(self C.uint64_t) C.bool {
 		return C.bool(false)
 	}
 	r0 := self_.HasNetworkCredential()
+	return C.bool(r0)
+}
+
+//export urnet_api_is_auth_logout_current
+func urnet_api_is_auth_logout_current(self C.uint64_t, generation C.int64_t) C.bool {
+	defer cgoGuard("urnet_api_is_auth_logout_current")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_is_auth_logout_current")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.IsAuthLogoutCurrent(int64(generation))
 	return C.bool(r0)
 }
 
@@ -13964,6 +14002,36 @@ func urnet_id_from_bytes(idBytes *C.uint8_t, idBytes_len C.int32_t, outError **C
 	return cId(r0)
 }
 
+//export urnet_ingress_country_codes
+func urnet_ingress_country_codes() *C.char {
+	defer cgoGuard("urnet_ingress_country_codes")
+	r0 := sdk.IngressCountryCodes()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_ingress_country_codes")
+}
+
+//export urnet_ingress_doh_urls
+func urnet_ingress_doh_urls(countryCode *C.char) *C.char {
+	defer cgoGuard("urnet_ingress_doh_urls")
+	r0 := sdk.IngressDohUrls(goString(countryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_ingress_doh_urls")
+}
+
+//export urnet_ingress_plain_dns_servers
+func urnet_ingress_plain_dns_servers(countryCode *C.char) *C.char {
+	defer cgoGuard("urnet_ingress_plain_dns_servers")
+	r0 := sdk.IngressPlainDnsServers(goString(countryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_ingress_plain_dns_servers")
+}
+
 //export urnet_is_balance_code_format_valid
 func urnet_is_balance_code_format_valid(secret *C.char) C.bool {
 	defer cgoGuard("urnet_is_balance_code_format_valid")
@@ -16174,6 +16242,17 @@ func urnet_network_space_get_host_name(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_ingress_country_code
+func urnet_network_space_get_ingress_country_code(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_ingress_country_code")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_ingress_country_code")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetIngressCountryCode()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_key
 func urnet_network_space_get_key(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_key")
@@ -16426,6 +16505,17 @@ func urnet_network_space_set_extender_gossip_mode(self C.uint64_t, mode *C.char)
 		return
 	}
 	self_.SetExtenderGossipMode(goString(mode))
+}
+
+//export urnet_network_space_set_ingress_country_code
+func urnet_network_space_set_ingress_country_code(self C.uint64_t, countryCode *C.char) *C.char {
+	defer cgoGuard("urnet_network_space_set_ingress_country_code")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_ingress_country_code")
+	if !ok {
+		return nil
+	}
+	r0 := self_.SetIngressCountryCode(goString(countryCode))
+	return cString(string(r0))
 }
 
 //export urnet_network_space_set_vless_settings
