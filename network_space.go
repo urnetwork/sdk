@@ -133,6 +133,14 @@ type NetworkSpaceValues struct {
 	// extender values.
 	ControlDohUrlsIpv4 []string `json:"control_doh_urls_ipv4,omitempty"`
 	ControlDohUrlsIpv6 []string `json:"control_doh_urls_ipv6,omitempty"`
+
+	// The ingress country (control_doh.go): the country the user says they
+	// connect from (the "Connection region"), which picks the ingress dns of
+	// the space's own names from the per-country recommendations. Empty is
+	// undisclosed, the default ingress dns. Local only, never sent to the
+	// platform; the egress (tunnel) dns never reads it. Applied in place like
+	// the bootstrap DoH servers.
+	IngressCountryCode string `json:"ingress_country_code,omitempty"`
 }
 
 // The configured manual hosts of a space, trimmed and without the blanks a ui
@@ -393,6 +401,7 @@ func (self *NetworkSpace) applyControlDohValues(values *NetworkSpaceValues) bool
 		}
 		self.values.ControlDohUrlsIpv4 = slices.Clone(values.ControlDohUrlsIpv4)
 		self.values.ControlDohUrlsIpv6 = slices.Clone(values.ControlDohUrlsIpv6)
+		self.values.IngressCountryCode = values.IngressCountryCode
 		return true, self.closed
 	}()
 	if !changed || closed {
@@ -2112,6 +2121,7 @@ func onlyInPlaceValuesChanged(
 		other.Vless = nil
 		other.ControlDohUrlsIpv4 = nil
 		other.ControlDohUrlsIpv6 = nil
+		other.IngressCountryCode = ""
 		return other
 	}
 	if !reflect.DeepEqual(withoutInPlaceValues(previous), withoutInPlaceValues(next)) {

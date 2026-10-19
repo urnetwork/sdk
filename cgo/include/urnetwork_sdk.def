@@ -794,6 +794,9 @@ EXPORTS
 	urnet_has_regional_dns_recommendation
 	urnet_host_base_name
 	urnet_id_from_bytes
+	urnet_ingress_country_codes
+	urnet_ingress_doh_urls
+	urnet_ingress_plain_dns_servers
 	urnet_is_balance_code_format_valid
 	urnet_is_checkout_redirect
 	urnet_is_points_leaderboard_sort
@@ -960,6 +963,7 @@ EXPORTS
 	urnet_network_space_get_extender_status
 	urnet_network_space_get_gossip_url
 	urnet_network_space_get_host_name
+	urnet_network_space_get_ingress_country_code
 	urnet_network_space_get_key
 	urnet_network_space_get_link_host_name
 	urnet_network_space_get_migration_host_name
@@ -992,6 +996,7 @@ EXPORTS
 	urnet_network_space_set_control_doh_urls
 	urnet_network_space_set_control_ip_family_policy
 	urnet_network_space_set_extender_gossip_mode
+	urnet_network_space_set_ingress_country_code
 	urnet_network_space_set_vless_settings
 	urnet_network_space_to_json
 	urnet_network_user_view_controller_add_is_loading_listener
