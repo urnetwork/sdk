@@ -75,7 +75,7 @@ require (
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
 	github.com/urnetwork/connect/v2026 v2026.10.20-1077406510
 	github.com/urnetwork/glog/v2026 v2026.10.20-1077406510
-	github.com/urnetwork/goidenticons/v2026 v2026.10.20-1077406510
+	github.com/urnetwork/goidenticons/v2026 v2026.10.20-1077406510 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.10.20-1077406510
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
