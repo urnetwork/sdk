@@ -909,6 +909,7 @@ EXPORTS
 	urnet_monthly_equivalent_amount
 	urnet_nano_cents_to_usd
 	urnet_nano_points_to_points
+	urnet_network_changed
 	urnet_network_name_validation_view_controller_close
 	urnet_network_name_validation_view_controller_network_check
 	urnet_network_name_validation_view_controller_start

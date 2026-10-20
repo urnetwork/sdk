@@ -32605,6 +32605,9 @@ inline double nanoPointsToPoints(int64_t nano_points) {
 	double r = urnet_nano_points_to_points(nano_points);
 	return r;
 }
+inline void networkChanged() {
+	urnet_network_changed();
+}
 inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home) {
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
 	return r;
