@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -60,10 +61,73 @@ func checkPackage(language, out string) {
 		command(temp, e, python, "-m", "pip", "install", "--no-index", "--find-links", filepath.Join(out, "artifacts"), "--pre", "urnetwork-sdk")
 		command(temp, e, python, path("packaging/smoke_python.py"))
 	case "java":
+		// Maven may select a different JDK from PATH, including its wrapper default.
+		// Keep its JAVA_HOME semantics; validate the selected JVM against the package.
+		java := func() string {
+			cmd := exec.Command("mvn", "--version", "-Dstyle.color=never")
+			cmd.Dir = filepath.Join(out, "project")
+			cmd.Env = withEnv(e)
+			version, err := cmd.CombinedOutput()
+			require(err == nil, "cannot inspect Maven Java runtime: %v", err)
+			javaHome := ""
+			for _, line := range strings.Split(string(version), "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "Java version:") {
+					_, home, found := strings.Cut(line, ", runtime: ")
+					if found {
+						javaHome = strings.TrimSpace(home)
+					}
+				}
+			}
+			require(filepath.IsAbs(javaHome), "Maven did not report an absolute Java runtime; configure JAVA_HOME for Maven")
+			name := "java"
+			if runtime.GOOS == "windows" {
+				name += ".exe"
+			}
+			executable := filepath.Join(javaHome, "bin", name)
+			cmd = exec.Command(executable, "-XshowSettings:properties", "-version")
+			cmd.Dir = filepath.Join(out, "project")
+			cmd.Env = withEnv(e)
+			settings, err := cmd.CombinedOutput()
+			require(err == nil, "cannot inspect Maven-selected Java runtime: %v", err)
+			properties := map[string]string{}
+			for _, line := range strings.Split(string(settings), "\n") {
+				key, value, found := strings.Cut(strings.TrimSpace(line), " = ")
+				if found && (key == "os.name" || key == "os.arch") {
+					properties[key] = strings.ToLower(strings.TrimSpace(value))
+				}
+			}
+			system := ""
+			switch name := properties["os.name"]; {
+			case strings.Contains(name, "mac"):
+				system = "darwin"
+			case strings.Contains(name, "win"):
+				system = "windows"
+			case strings.Contains(name, "linux"):
+				system = "linux"
+			}
+			arch := map[string]string{
+				"aarch64": "arm64",
+				"arm64":   "arm64",
+				"amd64":   "amd64",
+				"x86_64":  "amd64",
+			}[properties["os.arch"]]
+			require(system != "" && arch != "", "unsupported Maven-selected Java platform: os.name=%q os.arch=%q", properties["os.name"], properties["os.arch"])
+			platform := system + "-" + arch
+			available := []string{}
+			if manifest.Native != nil {
+				for _, library := range manifest.Native.Libraries {
+					if library.Platform == platform {
+						return executable
+					}
+					available = append(available, library.Platform)
+				}
+			}
+			panic(fmt.Errorf("Java consumer JVM platform %s has no packaged native runtime (available: %s); select a matching JDK with JAVA_HOME or package that platform with SDK_NATIVE_MANIFEST", platform, strings.Join(available, ", ")))
+		}()
 		cp := filepath.Join(temp, "classpath")
 		command(filepath.Join(out, "project"), e, "mvn", "-q", "dependency:build-classpath", "-Dmdep.outputFile="+cp)
 		jar := filepath.Join(out, "artifacts", "urnetwork-sdk-"+manifest.Version+".jar")
-		command(temp, e, "java", "-cp", jar+string(os.PathListSeparator)+strings.TrimSpace(string(read(cp))), path("packaging/Smoke.java"))
+		command(temp, e, java, "-cp", jar+string(os.PathListSeparator)+strings.TrimSpace(string(read(cp))), path("packaging/Smoke.java"))
 	case "csharp":
 		d := requireDotnet()
 		e = d.environment(e)
