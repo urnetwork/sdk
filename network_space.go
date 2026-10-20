@@ -590,6 +590,20 @@ func newNetworkSpaceWithConnectSettings(
 	connectSettings *connect.ConnectSettings,
 	hostedIncompatible bool,
 ) *NetworkSpace {
+	return newNetworkSpaceWithConnectSettingsAndApiAlt(ctx, key, values, storagePath, connectSettings, hostedIncompatible, true)
+}
+
+// Applies the owning manager's immutable api-alt policy before the strategy
+// constructs any dialer. Platform carriers and ordinary dns keep their settings.
+func newNetworkSpaceWithConnectSettingsAndApiAlt(
+	ctx context.Context,
+	key NetworkSpaceKey,
+	values NetworkSpaceValues,
+	storagePath string,
+	connectSettings *connect.ConnectSettings,
+	hostedIncompatible bool,
+	apiAltEnabled bool,
+) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	// Prefer explicit overrides when set; otherwise derive from HostName/EnvName.
@@ -615,7 +629,11 @@ func newNetworkSpaceWithConnectSettings(
 	clientStrategySettings.InternalDohDomains = networkSpaceDohDomains(&key, &values)
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
-	clientStrategySettings.AltUrl = altUrl
+	if apiAltEnabled {
+		clientStrategySettings.AltUrl = altUrl
+	} else {
+		clientStrategySettings.AltUrl = ""
+	}
 	// a space that hosts cloud devices names no endpoint of a user's and
 	// dials none: it keeps the built-in DoH servers and the extenders a signed
 	// record verifies
@@ -1541,6 +1559,12 @@ func (self *NetworkSpace) GetAltUrl() string {
 	return self.altUrl
 }
 
+// Reports whether this space's api strategy was given an alt endpoint.
+// This does not describe platform, peer, or ordinary dns transport policy.
+func (self *NetworkSpace) GetApiAltEnabled() bool {
+	return self.clientStrategySettings.AltUrl != ""
+}
+
 // The family-pinned service urls (IPV6.md A9). The platform runs the
 // provider's two family-pinned transports against connect-v4 and connect-v6
 // (see connect.HeaderIpFamily); the api forms exist for diagnostics. Derived
@@ -1757,6 +1781,9 @@ type NetworkSpaceManager struct {
 	cancel context.CancelFunc
 
 	storagePath string
+	// Immutable for this manager, including restored and replacement spaces.
+	// It is never persisted or shared with another manager.
+	apiAltDisabled bool
 
 	stateLock          sync.Mutex
 	networkSpaces      map[NetworkSpaceKey]*NetworkSpace
@@ -1829,18 +1856,30 @@ func NewNetworkSpaceManagerNoStorage() *NetworkSpaceManager {
 }
 
 func NewNetworkSpaceManager(storagePath string) *NetworkSpaceManager {
-	ctx := context.Background()
-
-	return newNetworkSpaceManagerWithContext(ctx, storagePath)
+	return NewNetworkSpaceManagerWithApiAlt(storagePath, true)
 }
 
+// Constructs all spaces with an owner-scoped api-alt policy. False omits only
+// api alt-h3/whodis dialers; platform endpoints, ordinary dns and stored values
+// remain unchanged. Existing constructors retain the enabled default.
+func NewNetworkSpaceManagerWithApiAlt(storagePath string, apiAltEnabled bool) *NetworkSpaceManager {
+	return newNetworkSpaceManagerWithContextAndApiAlt(context.Background(), storagePath, apiAltEnabled)
+}
+
+// Keeps the production default for context-owned callers.
 func newNetworkSpaceManagerWithContext(ctx context.Context, storagePath string) *NetworkSpaceManager {
+	return newNetworkSpaceManagerWithContextAndApiAlt(ctx, storagePath, true)
+}
+
+// Copies policy before loading even the first persisted space.
+func newNetworkSpaceManagerWithContextAndApiAlt(ctx context.Context, storagePath string, apiAltEnabled bool) *NetworkSpaceManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	networkSpaceManager := &NetworkSpaceManager{
 		ctx:                               cancelCtx,
 		cancel:                            cancel,
 		storagePath:                       storagePath,
+		apiAltDisabled:                    !apiAltEnabled,
 		networkSpaces:                     map[NetworkSpaceKey]*NetworkSpace{},
 		activeNetworkSpace:                nil,
 		networkSpacesChangeListeners:      connect.NewCallbackList[NetworkSpacesChangeListener](),
@@ -1848,6 +1887,12 @@ func newNetworkSpaceManagerWithContext(ctx context.Context, storagePath string) 
 	}
 	networkSpaceManager.load()
 	return networkSpaceManager
+}
+
+// Every restore, update, migration and failed-migration reopen uses the same
+// immutable policy before constructing the space's strategy.
+func (self *NetworkSpaceManager) newNetworkSpace(key NetworkSpaceKey, values NetworkSpaceValues, storagePath string) *NetworkSpace {
+	return newNetworkSpaceWithConnectSettingsAndApiAlt(self.ctx, key, values, storagePath, newNetworkSpaceConnectSettings(), false, !self.apiAltDisabled)
 }
 
 func (self *NetworkSpaceManager) store() error {
@@ -1900,8 +1945,7 @@ func (self *NetworkSpaceManager) load() error {
 	replacementNetworkSpaces := map[NetworkSpaceKey]*NetworkSpace{}
 	replacedNetworkSpaces := []*NetworkSpace{}
 	for _, networkSpaceState := range storedState.NetworkSpaces {
-		replacement := newNetworkSpace(
-			self.ctx,
+		replacement := self.newNetworkSpace(
 			networkSpaceState.Key,
 			networkSpaceState.Values,
 			self.envStoragePath(&networkSpaceState.Key),
@@ -2195,7 +2239,7 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 	if existingNetworkSpace != nil {
 		existingNetworkSpace.applyExtenderResetForRebuild(copyValues.ExtenderResetId)
 	}
-	copyNetworkSpace := newNetworkSpace(self.ctx, *key, copyValues, self.envStoragePath(key))
+	copyNetworkSpace := self.newNetworkSpace(*key, copyValues, self.envStoragePath(key))
 	copyNetworkSpace.setNetworkSpaceManager(self)
 	activeSet := false
 	installed := false
@@ -2370,7 +2414,7 @@ func (self *NetworkSpaceManager) MigrateNetworkSpace(fromKey *NetworkSpaceKey, t
 		fromNetworkSpace.close()
 	}
 
-	toNetworkSpace := newNetworkSpace(self.ctx, *toKey, values, self.envStoragePath(toKey))
+	toNetworkSpace := self.newNetworkSpace(*toKey, values, self.envStoragePath(toKey))
 	toNetworkSpace.setNetworkSpaceManager(self)
 	installed := false
 	func() {
@@ -2404,7 +2448,7 @@ func (self *NetworkSpaceManager) MigrateNetworkSpace(fromKey *NetworkSpaceKey, t
 // restoreNetworkSpace puts a fresh space for key, carrying the values of the
 // closed space it replaces, back where a failed migration left a closed one.
 func (self *NetworkSpaceManager) restoreNetworkSpace(key *NetworkSpaceKey, closedNetworkSpace *NetworkSpace, active bool) {
-	replacement := newNetworkSpace(self.ctx, *key, closedNetworkSpace.valuesCopy(), self.envStoragePath(key))
+	replacement := self.newNetworkSpace(*key, closedNetworkSpace.valuesCopy(), self.envStoragePath(key))
 	replacement.setNetworkSpaceManager(self)
 	installed := false
 	func() {
