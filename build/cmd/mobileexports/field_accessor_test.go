@@ -20,8 +20,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/go/packages"
 )
 
 // Checks every package view gomobile binds. A field whose type gobind does not
@@ -287,36 +285,4 @@ func testingGobindBindsType(boundPackage *types.Package, candidateType types.Typ
 		}
 	}
 	return false
-}
-
-// Type-checks one gomobile view of the sdk from source. Loading the
-// dependencies from source too keeps the check independent of the export data
-// format of the toolchain that runs it.
-func testingLoadMobileView(t *testing.T, goos string, tags string) *packages.Package {
-	t.Helper()
-	config := &packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedImports | packages.NeedDeps,
-		Dir:  "../..",
-		// the sdk package has no cgo, so its declarations do not depend on cgo
-		Env: append(
-			os.Environ(),
-			"GOOS="+goos,
-			"GOARCH=arm64",
-			"CGO_ENABLED=0",
-			"GOEXPERIMENT=greenteagc",
-			"GOPROXY=off",
-			"GOSUMDB=off",
-			"GOWORK=off",
-		),
-		BuildFlags: []string{"-tags=" + tags},
-	}
-	loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk")
-	testingBuildNoError(t, err)
-	if len(loadedPackages) != 1 {
-		t.Fatalf("the %s %s view loaded %d packages, want the sdk", goos, tags, len(loadedPackages))
-	}
-	if 0 < len(loadedPackages[0].Errors) {
-		t.Fatalf("load the %s %s view: %v", goos, tags, loadedPackages[0].Errors)
-	}
-	return loadedPackages[0]
 }
