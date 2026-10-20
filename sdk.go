@@ -594,6 +594,15 @@ func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }
 
+// NetworkChanged reports a host network path change to a process that holds no
+// DeviceLocal -- the Windows app, whose service owns the tunnel -- so the
+// process's own API connections drop their pooled sockets and re-dial over the
+// new path instead of stalling on the old one until a timeout. A process with
+// a DeviceLocal calls DeviceLocal.NetworkChanged, which also does this.
+func NetworkChanged() {
+	connect.NetworkChanged()
+}
+
 // Reports the country of the mobile network this device is on: Android's
 // TelephonyManager.networkCountryIso while the default network is cellular,
 // and "" on Wi-Fi or any other network whose country the platform does not

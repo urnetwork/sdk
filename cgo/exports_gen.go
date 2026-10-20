@@ -15586,6 +15586,12 @@ func urnet_nano_points_to_points(nanoPoints C.int64_t) C.double {
 	return C.double(r0)
 }
 
+//export urnet_network_changed
+func urnet_network_changed() {
+	defer cgoGuard("urnet_network_changed")
+	sdk.NetworkChanged()
+}
+
 //export urnet_network_name_validation_view_controller_close
 func urnet_network_name_validation_view_controller_close(self C.uint64_t) {
 	defer cgoGuard("urnet_network_name_validation_view_controller_close")

@@ -2241,6 +2241,7 @@ char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
+void urnet_network_changed(void);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
