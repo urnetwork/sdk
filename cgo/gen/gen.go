@@ -26,10 +26,14 @@ import (
 	"go/build/constraint"
 	"go/constant"
 	"go/format"
+	"go/importer"
+	"go/token"
 	"go/types"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -302,11 +306,17 @@ type constRecord struct {
 	literal string // c literal (also valid c++)
 }
 
+// Load the exported sdk types used by classification and emission.
 func load() (*gen, error) {
-	config := &packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps,
-	}
-	pkgs, err := packages.Load(config, sdkPath)
+	return loadWithConfig(packages.Config{})
+}
+
+// Resolve current export files with module replacements and build settings.
+// The toolchain importer decodes its own format without source-checking the
+// dependency graph or relying on the x/tools export-format version ceiling.
+func loadWithConfig(config packages.Config) (*gen, error) {
+	config.Mode = packages.NeedName | packages.NeedImports | packages.NeedDeps | packages.NeedExportFile
+	pkgs, err := packages.Load(&config, sdkPath)
 	if err != nil {
 		return nil, err
 	}
@@ -316,9 +326,13 @@ func load() (*gen, error) {
 	if len(pkgs) != 1 {
 		return nil, fmt.Errorf("expected one package, got %d", len(pkgs))
 	}
+	pkg, err := importGeneratorPackage(pkgs[0], config.Fset)
+	if err != nil {
+		return nil, err
+	}
 	g := &gen{
-		pkg:             pkgs[0].Types,
-		scope:           pkgs[0].Types.Scope(),
+		pkg:             pkg,
+		scope:           pkg.Scope(),
 		sourceDirectory: ".",
 		errorType:       types.Universe.Lookup("error").Type(),
 		callbacks:       map[string]*types.Named{},
@@ -332,6 +346,50 @@ func load() (*gen, error) {
 		}
 	}
 	return g, nil
+}
+
+// One importer preserves canonical type identity across the export graph.
+// Missing, ambiguous or incompatible data fails closed; there is no source
+// fallback. A decoder panic is an import error, never a partial type package.
+func importGeneratorPackage(root *packages.Package, fileSet *token.FileSet) (pkg *types.Package, err error) {
+	defer func() {
+		if failure := recover(); failure != nil {
+			pkg = nil
+			err = fmt.Errorf("import %q export data with %s: %v", root.PkgPath, runtime.Version(), failure)
+		}
+	}()
+
+	exportFiles := map[string]string{}
+	var metadataError error
+	packages.Visit([]*packages.Package{root}, func(dependency *packages.Package) bool {
+		if previous, ok := exportFiles[dependency.PkgPath]; ok && previous != dependency.ExportFile {
+			metadataError = fmt.Errorf("conflicting export files for %q", dependency.PkgPath)
+			return false
+		}
+		exportFiles[dependency.PkgPath] = dependency.ExportFile
+		return true
+	}, nil)
+	if metadataError != nil {
+		return nil, metadataError
+	}
+	if fileSet == nil {
+		fileSet = token.NewFileSet()
+	}
+	typeImporter := importer.ForCompiler(fileSet, runtime.Compiler, func(importPath string) (io.ReadCloser, error) {
+		exportFile := exportFiles[importPath]
+		if exportFile == "" {
+			return nil, fmt.Errorf("no export file for %q", importPath)
+		}
+		return os.Open(exportFile)
+	})
+	if typeImporter == nil {
+		return nil, fmt.Errorf("unsupported export-data compiler %q", runtime.Compiler)
+	}
+	pkg, err = typeImporter.Import(root.PkgPath)
+	if err != nil {
+		return nil, fmt.Errorf("import %q export data with %s: %w", root.PkgPath, runtime.Version(), err)
+	}
+	return pkg, nil
 }
 
 func (g *gen) run() error {

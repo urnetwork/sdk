@@ -3006,7 +3006,7 @@ struct ReliabilitySettings {
 	int64_t BlackholeReceiveTimeoutMillis{};
 	int32_t MaxFlowsPerExit{};
 	bool AffinityStickyPastCap{};
-	bool FreshFlowAffinity{};
+	int64_t AffinityMaxTimeMillis{};
 	bool PerformanceAwareAffinity{};
 	int32_t MaxStickyFlowsPerExit{};
 	int64_t StickyFlowIdleTimeoutMillis{};
@@ -13762,7 +13762,7 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["BlackholeReceiveTimeoutMillis"] = v.BlackholeReceiveTimeoutMillis;
 	j["MaxFlowsPerExit"] = v.MaxFlowsPerExit;
 	j["AffinityStickyPastCap"] = v.AffinityStickyPastCap;
-	j["FreshFlowAffinity"] = v.FreshFlowAffinity;
+	j["AffinityMaxTimeMillis"] = v.AffinityMaxTimeMillis;
 	j["PerformanceAwareAffinity"] = v.PerformanceAwareAffinity;
 	j["MaxStickyFlowsPerExit"] = v.MaxStickyFlowsPerExit;
 	j["StickyFlowIdleTimeoutMillis"] = v.StickyFlowIdleTimeoutMillis;
@@ -13836,8 +13836,8 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("AffinityStickyPastCap"); it != j.end() && !it->is_null()) {
 		it->get_to(v.AffinityStickyPastCap);
 	}
-	if (auto it = j.find("FreshFlowAffinity"); it != j.end() && !it->is_null()) {
-		it->get_to(v.FreshFlowAffinity);
+	if (auto it = j.find("AffinityMaxTimeMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AffinityMaxTimeMillis);
 	}
 	if (auto it = j.find("PerformanceAwareAffinity"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PerformanceAwareAffinity);

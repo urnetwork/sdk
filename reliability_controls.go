@@ -13,6 +13,13 @@ func millis(milliseconds int64) time.Duration {
 	return time.Duration(milliseconds) * time.Millisecond
 }
 
+// Bound only this affinity setting before conversion: an overflowing positive
+// age must not become disabled, nor a negative disabled value become positive.
+func affinityMaxTimeFromMillis(milliseconds int64) time.Duration {
+	const maximumMillis = int64(math.MaxInt64) / int64(time.Millisecond)
+	return time.Duration(max(-maximumMillis, min(milliseconds, maximumMillis))) * time.Millisecond
+}
+
 // multiClient returns the remote multi client when one is connected. Every
 // control here is a no-op while disconnected, since there are no exits to act
 // on -- the menu reads that back as an empty exit list rather than an error.
@@ -99,16 +106,18 @@ type ReliabilitySettings struct {
 	// and the cap veto was splitting exactly the sites that were busiest.
 	// false restores the veto, the A/B comparison point.
 	AffinityStickyPastCap bool
-	// FreshFlowAffinity directly assigns an ordinary new flow to an exit
-	// already used by its IP/domain group. It defaults off: fresh flows instead
-	// reach the health/performance-weighted provider race. Existing tuples and
-	// explicit app/host pins remain fixed. True restores legacy hard affinity
-	// for A/B measurement.
-	FreshFlowAffinity bool
+	// Caps healthy IP/domain donor reuse for ordinary new connections by the
+	// original connection creation age, including setup time. Inherited reuse
+	// does not renew that origin. Warned or unhealthy donors always yield to a
+	// fresh race. Connect supplies the one-minute default; <=0 disables reuse.
+	// Existing connections and explicit app/host pins are unchanged.
+	// Values outside time.Duration's whole-millisecond range saturate without
+	// changing sign.
+	AffinityMaxTimeMillis int64
 	// PerformanceAwareAffinity checks a live or recently completed TCP/443
 	// provider's peak inner-TCP ACK rate against its advertised bandwidth prior
-	// when weighting a fresh race. If legacy FreshFlowAffinity is enabled, the
-	// same evidence can veto a slow donor. Established flows and explicit pins
+	// when weighting a fresh race. Within the affinity age cap, the same
+	// evidence can veto a slow donor. Established flows and explicit pins
 	// are never moved.
 	PerformanceAwareAffinity bool
 	// MaxStickyFlowsPerExit bounds an exit that grew past MaxFlowsPerExit
@@ -299,7 +308,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
 		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
 		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
-		FreshFlowAffinity:             reliabilitySettings.FreshFlowAffinity,
+		AffinityMaxTimeMillis:         reliabilitySettings.AffinityMaxTime.Milliseconds(),
 		PerformanceAwareAffinity:      reliabilitySettings.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:         int32(reliabilitySettings.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeoutMillis:   reliabilitySettings.StickyFlowIdleTimeout.Milliseconds(),
@@ -351,7 +360,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		BlackholeReceiveTimeout:    millis(self.BlackholeReceiveTimeoutMillis),
 		MaxFlowsPerExit:            int(self.MaxFlowsPerExit),
 		AffinityStickyPastCap:      self.AffinityStickyPastCap,
-		FreshFlowAffinity:          self.FreshFlowAffinity,
+		AffinityMaxTime:            affinityMaxTimeFromMillis(self.AffinityMaxTimeMillis),
 		PerformanceAwareAffinity:   self.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:      int(self.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeout:      millis(self.StickyFlowIdleTimeoutMillis),

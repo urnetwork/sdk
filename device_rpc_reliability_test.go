@@ -190,17 +190,17 @@ func TestSdkStickyRecoverySettingsAndMetricsComplete(t *testing.T) {
 	connectSettings := &connect.ReliabilitySettings{
 		MaxStickyFlowsPerExit:    73,
 		StickyFlowIdleTimeout:    41 * time.Second,
-		FreshFlowAffinity:        true,
+		AffinityMaxTime:          37 * time.Second,
 		PerformanceAwareAffinity: true,
 	}
 	sdkSettings := reliabilitySettingsFromConnect(connectSettings)
 	if sdkSettings.MaxStickyFlowsPerExit != 73 || sdkSettings.StickyFlowIdleTimeoutMillis != 41_000 ||
-		!sdkSettings.FreshFlowAffinity || !sdkSettings.PerformanceAwareAffinity {
+		sdkSettings.AffinityMaxTimeMillis != 37_000 || !sdkSettings.PerformanceAwareAffinity {
 		t.Fatalf("Connect -> SDK sticky settings = %+v", sdkSettings)
 	}
 	roundTripSettings := sdkSettings.toConnect()
 	if roundTripSettings.MaxStickyFlowsPerExit != 73 || roundTripSettings.StickyFlowIdleTimeout != 41*time.Second ||
-		!roundTripSettings.FreshFlowAffinity || !roundTripSettings.PerformanceAwareAffinity {
+		roundTripSettings.AffinityMaxTime != 37*time.Second || !roundTripSettings.PerformanceAwareAffinity {
 		t.Fatalf("SDK -> Connect sticky settings = %+v", roundTripSettings)
 	}
 
@@ -554,6 +554,7 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	defaultSettings := deviceLocal.GetReliabilitySettings()
 	connect.AssertNotEqual(t, defaultSettings, nil)
 	connect.AssertNotEqual(t, defaultSettings.HeartbeatIntervalMillis, int64(0))
+	connect.AssertEqual(t, defaultSettings.AffinityMaxTimeMillis, int64(60_000))
 
 	// the remote reads the same effective settings through the bridge
 	testingReliabilityWaitFor(t, "remote reads the local effective settings", func() bool {
@@ -565,10 +566,14 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	// read-modify-write from the effective settings (the ui pattern): the
 	// override lands on the local multi client through the bridge
 	override := deviceRemote.GetReliabilitySettings()
+	if override == nil {
+		t.Fatal("connected effective settings became unavailable before override")
+	}
 	override.HeartbeatIntervalMillis = 123456
+	override.AffinityMaxTimeMillis = 45_000
 	deviceRemote.SetReliabilitySettings(override)
 	testingReliabilityWaitFor(t, "override lands on the local", func() bool {
-		return deviceLocal.GetReliabilitySettings().HeartbeatIntervalMillis == int64(123456)
+		return testingReliabilitySettingsMatch(deviceLocal.GetReliabilitySettings, 123456, 45_000)
 	})
 
 	// set -> get across the bridge, full struct fidelity through
@@ -586,7 +591,7 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	// settings return to the shipped defaults)
 	deviceRemote.ResetReliabilitySettings()
 	testingReliabilityWaitFor(t, "reset restores the local defaults", func() bool {
-		return deviceLocal.GetReliabilitySettings().HeartbeatIntervalMillis == defaultSettings.HeartbeatIntervalMillis
+		return testingReliabilitySettingsMatch(deviceLocal.GetReliabilitySettings, defaultSettings.HeartbeatIntervalMillis, defaultSettings.AffinityMaxTimeMillis)
 	})
 	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), defaultSettings)
 
@@ -799,10 +804,14 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 		return deviceRemote.GetReliabilitySettings() != nil
 	})
 	override := deviceRemote.GetReliabilitySettings()
+	if override == nil {
+		t.Fatal("connected effective settings became unavailable before override")
+	}
 	override.HeartbeatIntervalMillis = 654321
+	override.AffinityMaxTimeMillis = -1
 	deviceRemote.SetReliabilitySettings(override)
 	testingReliabilityWaitFor(t, "the override lands while connected", func() bool {
-		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(654321)
+		return testingReliabilitySettingsMatch(deviceLocal.GetReliabilitySettings, 654321, -1)
 	})
 
 	// the extension restarts: a fresh local with no memory of the override
@@ -819,7 +828,7 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 
 	// only the retained queue can put it back
 	testingReliabilityWaitFor(t, "the connected-set override is re-applied", func() bool {
-		return testingReliabilityHeartbeatMillis(deviceLocal2) == int64(654321)
+		return testingReliabilitySettingsMatch(deviceLocal2.GetReliabilitySettings, 654321, -1)
 	})
 }
 
@@ -860,6 +869,7 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 		UdpTeardownSignal:       true,
 		DialFailureRerace:       true,
 		HeartbeatIntervalMillis: 123456,
+		AffinityMaxTimeMillis:   45_000,
 	}
 	deviceRemote.SetReliabilitySettings(override)
 
@@ -867,8 +877,15 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	// struct was copied (mutating it must not corrupt the queue)
 	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), override)
 	override.HeartbeatIntervalMillis = 999
-	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings().HeartbeatIntervalMillis, int64(123456))
+	override.AffinityMaxTimeMillis = 999
+	queuedSettings := deviceRemote.GetReliabilitySettings()
+	if queuedSettings == nil {
+		t.Fatal("offline queued override became unavailable")
+	}
+	connect.AssertEqual(t, queuedSettings.HeartbeatIntervalMillis, int64(123456))
+	connect.AssertEqual(t, queuedSettings.AffinityMaxTimeMillis, int64(45_000))
 	override.HeartbeatIntervalMillis = 123456
+	override.AffinityMaxTimeMillis = 45_000
 
 	// offline readouts degrade to empty/zero, never nil
 	connect.AssertEqual(t, deviceRemote.GetExits().Len(), 0)
@@ -899,13 +916,13 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	// the tunnel comes up; the held override is applied to the new window
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 1"))
 	testingReliabilityWaitFor(t, "queued override lands on the first local", func() bool {
-		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(123456)
+		return testingReliabilitySettingsMatch(deviceLocal.GetReliabilitySettings, 123456, 45_000)
 	})
 
 	// a reconnect rebuilds the multi client; the override must survive it
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability reconnect"))
 	testingReliabilityWaitFor(t, "override survives the multi client rebuild", func() bool {
-		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(123456)
+		return testingReliabilitySettingsMatch(deviceLocal.GetReliabilitySettings, 123456, 45_000)
 	})
 
 	// the extension restart: tear the local down and recreate it. The
@@ -923,7 +940,7 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	})
 	deviceLocal2.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 2"))
 	testingReliabilityWaitFor(t, "override re-applied after the local restart", func() bool {
-		return testingReliabilityHeartbeatMillis(deviceLocal2) == int64(123456)
+		return testingReliabilitySettingsMatch(deviceLocal2.GetReliabilitySettings, 123456, 45_000)
 	})
 
 	// reset with the rpc DOWN: the reset queues as the nil sentinel, the next
@@ -939,8 +956,9 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	deviceRemote.ResetReliabilitySettings()
 	deviceRemote.Sync()
 	testingReliabilityWaitFor(t, "reset restores the second local", func() bool {
-		heartbeat := testingReliabilityHeartbeatMillis(deviceLocal2)
-		return heartbeat != int64(-1) && heartbeat != int64(123456)
+		settings := deviceLocal2.GetReliabilitySettings()
+		return settings != nil && settings.HeartbeatIntervalMillis != -1 &&
+			settings.HeartbeatIntervalMillis != 123456 && settings.AffinityMaxTimeMillis == 60_000
 	})
 	testingReliabilityWaitFor(t, "the queued reset is cleared by the sync", func() bool {
 		deviceRemote.stateLock.Lock()
@@ -953,5 +971,10 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	testingReliabilityWaitFor(t, "remote reconnects after the reset", func() bool {
 		return deviceRemote.GetReliabilitySettings() != nil
 	})
-	connect.AssertNotEqual(t, testingReliabilityHeartbeatMillis(deviceLocal2), int64(123456))
+	resetSettings := deviceLocal2.GetReliabilitySettings()
+	if resetSettings == nil {
+		t.Fatal("reset settings became unavailable after reconnect")
+	}
+	connect.AssertNotEqual(t, resetSettings.HeartbeatIntervalMillis, int64(123456))
+	connect.AssertEqual(t, resetSettings.AffinityMaxTimeMillis, int64(60_000))
 }
