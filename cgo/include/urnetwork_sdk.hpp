@@ -234,6 +234,24 @@ inline constexpr const char* ControlDohErrorHttpsRequired = "control_doh_error_h
 inline constexpr const char* ControlDohErrorIpRequired = "control_doh_error_ip_required";
 inline constexpr const char* ControlDohErrorTooMany = "control_doh_error_too_many";
 inline constexpr const char* ControlDohErrorUrlInvalid = "control_doh_error_url_invalid";
+inline constexpr const char* CryptoAssetUsdcSolana = "usdc_solana";
+inline constexpr const char* CryptoAssetXmr = "xmr";
+inline constexpr const char* CryptoAssetZec = "zec";
+inline constexpr const char* CryptoInvoicePhaseFailed = "failed";
+inline constexpr const char* CryptoInvoicePhaseNone = "none";
+inline constexpr const char* CryptoInvoicePhaseOpen = "open";
+inline constexpr const char* CryptoInvoicePhasePaid = "paid";
+inline constexpr const char* CryptoInvoicePhaseStarting = "starting";
+inline constexpr const char* CryptoPaymentDeliveryAccount = "account";
+inline constexpr const char* CryptoPaymentDeliveryCode = "code";
+inline constexpr const char* CryptoPaymentDeliveryNetwork = "network";
+inline constexpr const char* CryptoPaymentStatusConfirming = "confirming";
+inline constexpr const char* CryptoPaymentStatusExpired = "expired";
+inline constexpr const char* CryptoPaymentStatusPaid = "paid";
+inline constexpr const char* CryptoPaymentStatusPending = "pending";
+inline constexpr const char* CryptoPaymentStatusReview = "review";
+inline constexpr const char* CryptoPaymentStatusSeen = "seen";
+inline constexpr const char* CryptoPaymentStatusUnknown = "unknown";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
@@ -266,9 +284,11 @@ inline constexpr const char* EventPurchaseFailed = "purchase.failed";
 inline constexpr const char* EventPurchaseStarted = "purchase.started";
 inline constexpr const char* EventSignupOptoutChanged = "signup.optout_changed";
 inline constexpr const char* EventStoreApple = "apple";
+inline constexpr const char* EventStoreMonero = "monero";
 inline constexpr const char* EventStorePlay = "play";
 inline constexpr const char* EventStoreSolana = "solana";
 inline constexpr const char* EventStoreStripe = "stripe";
+inline constexpr const char* EventStoreZcash = "zcash";
 inline constexpr const char* EventWidgetAdded = "widget.added";
 inline constexpr const char* ExperimentSurfaceEmailSequence = "email.sequence";
 inline constexpr const char* ExperimentSurfaceOfferAccount = "offer.account";
@@ -350,6 +370,7 @@ inline constexpr const char* OnboardingDestinationWidgets = "onboarding/widgets"
 inline constexpr const char* OnboardingOfferStateActive = "active";
 inline constexpr const char* OnboardingOfferStateExpired = "expired";
 inline constexpr const char* OnboardingOfferStateRedeemed = "redeemed";
+inline constexpr const char* PaymentMethodCard = "card";
 inline constexpr const char* PlanMonthly = "monthly";
 inline constexpr const char* PlanYearly = "yearly";
 inline constexpr const char* PlanYearlyOnboarding = "yearly_onboarding";
@@ -420,7 +441,10 @@ inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "conf
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
 inline constexpr const char* PurchaseConfirmationStateWaitingForConfirmation = "waiting_for_confirmation";
+inline constexpr const char* PurchaseErrorCodeAssetUnavailable = "asset_unavailable";
 inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
+inline constexpr const char* PurchaseErrorCodeQuoteExpired = "quote_expired";
+inline constexpr const char* PurchaseErrorCodeUnderpaid = "underpaid";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
 inline constexpr const char* PurchaseReportStatusCredited = "credited";
 inline constexpr const char* PurchaseReportStatusInvalid = "invalid";
@@ -486,6 +510,7 @@ inline constexpr const char* StripeUiModeHosted = "hosted";
 inline constexpr int64_t SubprotocolReservedLimit = 1024;
 inline constexpr const char* SubscriptionPlanSupporter = "supporter";
 inline constexpr const char* SubscriptionStoreApple = "apple";
+inline constexpr const char* SubscriptionStoreCrypto = "crypto";
 inline constexpr const char* SubscriptionStoreGoogle = "google";
 inline constexpr const char* SubscriptionStoreOther = "other";
 inline constexpr const char* SubscriptionStoreStripe = "stripe";
@@ -547,6 +572,7 @@ class ConnectGrid;
 class ConnectViewController;
 class ContractDetailsViewController;
 class ContractViewController;
+class CryptoInvoiceViewController;
 class DeviceLocal;
 class DeviceLocalKeyMaterial;
 class DeviceLocalLoadResult;
@@ -691,6 +717,16 @@ struct CreateAccountWalletArgs;
 struct CreateAccountWalletResult;
 struct CreateApiKeyArgs;
 struct CreateApiKeyResult;
+struct CreateCryptoPaymentIntentArgs;
+struct CreateDataCryptoPaymentIntentArgs;
+struct CryptoInvoiceState;
+struct CryptoPaymentAsset;
+struct CryptoPaymentAssetsResult;
+struct CryptoPaymentError;
+struct CryptoPaymentStatusResult;
+struct CryptoPaymentIntentResult;
+struct CryptoPaymentStatusArgs;
+struct CryptoTerm;
 struct DeleteApiKeyArgs;
 struct DeleteApiKeyResult;
 struct DestinationExit;
@@ -977,6 +1013,7 @@ using ContractDetailsList = std::vector<ContractDetails>;
 using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
+using CryptoPaymentAssetList = std::vector<CryptoPaymentAsset>;
 using DestinationExitList = std::vector<DestinationExit>;
 using ExitList = std::vector<Exit>;
 using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
@@ -1705,6 +1742,126 @@ struct CreateApiKeyResult {
 	std::optional<std::string> api_key;
 	std::optional<std::string> name;
 	std::optional<ApiError> error;
+};
+
+struct CreateCryptoPaymentIntentArgs {
+	std::string asset{};
+	std::optional<std::string> plan;
+	std::optional<std::string> item_id;
+	std::optional<std::string> storefront_country;
+};
+
+struct CreateDataCryptoPaymentIntentArgs {
+	std::string asset{};
+	std::string item_id{};
+	std::string network_name{};
+	std::string email{};
+};
+
+struct CryptoInvoiceState {
+	std::string phase{};
+	std::string intent_id{};
+	std::string asset{};
+	std::string plan{};
+	std::string item_id{};
+	std::string delivery{};
+	std::string network_name{};
+	std::string address{};
+	std::string amount{};
+	std::string amount_atomic{};
+	std::string ticker{};
+	std::string uri{};
+	std::string memo{};
+	double price_usd{};
+	double rate_usd{};
+	std::string expires_at{};
+	int64_t seconds_left{};
+	std::string status{};
+	std::string review_reason{};
+	std::string received{};
+	std::string remaining{};
+	int64_t confirmations{};
+	int64_t confirmations_required{};
+	std::string balance_code{};
+	bool refreshing{};
+	std::string error_code{};
+	std::string error_message{};
+};
+
+struct CryptoPaymentAsset {
+	std::string asset{};
+	std::optional<StringList> plans;
+	std::optional<StringList> items;
+	int64_t confirmations_required{};
+	int64_t quote_ttl_seconds{};
+};
+
+struct CryptoPaymentAssetsResult {
+	std::optional<CryptoPaymentAssetList> assets;
+};
+
+struct CryptoPaymentError {
+	std::optional<std::string> code;
+	std::string message{};
+};
+
+struct CryptoPaymentStatusResult {
+	std::optional<std::string> intent_id;
+	std::optional<std::string> asset;
+	std::optional<std::string> plan;
+	std::optional<std::string> item_id;
+	std::optional<std::string> delivery;
+	std::optional<std::string> network_name;
+	std::string status{};
+	std::optional<std::string> review_reason;
+	std::optional<std::string> amount;
+	std::optional<std::string> amount_atomic;
+	std::optional<std::string> received;
+	std::optional<std::string> received_atomic;
+	std::optional<std::string> remaining;
+	std::optional<std::string> remaining_atomic;
+	int64_t confirmations{};
+	int64_t confirmations_required{};
+	std::optional<std::string> expires_at;
+	std::optional<std::string> credited_at;
+	std::optional<std::string> balance_code;
+	std::optional<CryptoPaymentError> error;
+};
+
+struct CryptoPaymentIntentResult {
+	std::optional<std::string> intent_id;
+	std::optional<std::string> status_token;
+	std::optional<std::string> asset;
+	std::optional<std::string> plan;
+	std::optional<std::string> item_id;
+	std::optional<std::string> delivery;
+	std::optional<std::string> network_name;
+	std::optional<std::string> tier;
+	std::optional<bool> offer_applied;
+	std::optional<double> price_usd;
+	std::optional<double> regular_price_usd;
+	std::optional<double> rate_usd;
+	std::optional<std::string> address;
+	std::optional<std::string> amount;
+	std::optional<std::string> amount_atomic;
+	std::optional<std::string> memo;
+	std::optional<std::string> uri;
+	std::optional<std::string> quoted_at;
+	std::optional<std::string> expires_at;
+	std::optional<int64_t> confirmations_required;
+	std::optional<CryptoPaymentStatusResult> status;
+	std::optional<CryptoPaymentError> error;
+};
+
+struct CryptoPaymentStatusArgs {
+	std::string intent_id{};
+	std::string status_token{};
+};
+
+struct CryptoTerm {
+	std::string market{};
+	std::string term_end_time{};
+	std::string grace_end_time{};
 };
 
 struct DeleteApiKeyArgs {
@@ -3542,6 +3699,8 @@ struct SubscriptionBalanceResult {
 	std::optional<PriceTier> price_tier;
 	std::optional<OnboardingOffer> onboarding_offer;
 	std::optional<ExperimentAssignmentList> experiments;
+	std::optional<CryptoPaymentAssetList> crypto_assets;
+	std::optional<CryptoTerm> crypto_term;
 };
 
 struct SubscriptionCreatePaymentIdArgs {
@@ -4024,6 +4183,26 @@ inline void to_json(nlohmann::json& j, const CreateApiKeyArgs& v);
 inline void from_json(const nlohmann::json& j, CreateApiKeyArgs& v);
 inline void to_json(nlohmann::json& j, const CreateApiKeyResult& v);
 inline void from_json(const nlohmann::json& j, CreateApiKeyResult& v);
+inline void to_json(nlohmann::json& j, const CreateCryptoPaymentIntentArgs& v);
+inline void from_json(const nlohmann::json& j, CreateCryptoPaymentIntentArgs& v);
+inline void to_json(nlohmann::json& j, const CreateDataCryptoPaymentIntentArgs& v);
+inline void from_json(const nlohmann::json& j, CreateDataCryptoPaymentIntentArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v);
+inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentError& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentError& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentStatusResult& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentStatusArgs& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoTerm& v);
+inline void from_json(const nlohmann::json& j, CryptoTerm& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyArgs& v);
 inline void from_json(const nlohmann::json& j, DeleteApiKeyArgs& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyResult& v);
@@ -7791,6 +7970,640 @@ inline void from_json(const nlohmann::json& j, CreateApiKeyResult& v) {
 		ApiError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CreateCryptoPaymentIntentArgs& v) {
+	j = nlohmann::json::object();
+	j["asset"] = v.asset;
+	if (v.plan) {
+		j["plan"] = *v.plan;
+	}
+	if (v.item_id) {
+		j["item_id"] = *v.item_id;
+	}
+	if (v.storefront_country) {
+		j["storefront_country"] = *v.storefront_country;
+	}
+}
+inline void from_json(const nlohmann::json& j, CreateCryptoPaymentIntentArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.item_id = std::move(tmp);
+	}
+	if (auto it = j.find("storefront_country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.storefront_country = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CreateDataCryptoPaymentIntentArgs& v) {
+	j = nlohmann::json::object();
+	j["asset"] = v.asset;
+	j["item_id"] = v.item_id;
+	j["network_name"] = v.network_name;
+	j["email"] = v.email;
+}
+inline void from_json(const nlohmann::json& j, CreateDataCryptoPaymentIntentArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.item_id);
+	}
+	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_name);
+	}
+	if (auto it = j.find("email"); it != j.end() && !it->is_null()) {
+		it->get_to(v.email);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
+	j = nlohmann::json::object();
+	j["phase"] = v.phase;
+	j["intent_id"] = v.intent_id;
+	j["asset"] = v.asset;
+	j["plan"] = v.plan;
+	j["item_id"] = v.item_id;
+	j["delivery"] = v.delivery;
+	j["network_name"] = v.network_name;
+	j["address"] = v.address;
+	j["amount"] = v.amount;
+	j["amount_atomic"] = v.amount_atomic;
+	j["ticker"] = v.ticker;
+	j["uri"] = v.uri;
+	j["memo"] = v.memo;
+	j["price_usd"] = v.price_usd;
+	j["rate_usd"] = v.rate_usd;
+	j["expires_at"] = v.expires_at;
+	j["seconds_left"] = v.seconds_left;
+	j["status"] = v.status;
+	j["review_reason"] = v.review_reason;
+	j["received"] = v.received;
+	j["remaining"] = v.remaining;
+	j["confirmations"] = v.confirmations;
+	j["confirmations_required"] = v.confirmations_required;
+	j["balance_code"] = v.balance_code;
+	j["refreshing"] = v.refreshing;
+	j["error_code"] = v.error_code;
+	j["error_message"] = v.error_message;
+}
+inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("phase"); it != j.end() && !it->is_null()) {
+		it->get_to(v.phase);
+	}
+	if (auto it = j.find("intent_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.intent_id);
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		it->get_to(v.plan);
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.item_id);
+	}
+	if (auto it = j.find("delivery"); it != j.end() && !it->is_null()) {
+		it->get_to(v.delivery);
+	}
+	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_name);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.address);
+	}
+	if (auto it = j.find("amount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount);
+	}
+	if (auto it = j.find("amount_atomic"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_atomic);
+	}
+	if (auto it = j.find("ticker"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ticker);
+	}
+	if (auto it = j.find("uri"); it != j.end() && !it->is_null()) {
+		it->get_to(v.uri);
+	}
+	if (auto it = j.find("memo"); it != j.end() && !it->is_null()) {
+		it->get_to(v.memo);
+	}
+	if (auto it = j.find("price_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.price_usd);
+	}
+	if (auto it = j.find("rate_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rate_usd);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expires_at);
+	}
+	if (auto it = j.find("seconds_left"); it != j.end() && !it->is_null()) {
+		it->get_to(v.seconds_left);
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("review_reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.review_reason);
+	}
+	if (auto it = j.find("received"); it != j.end() && !it->is_null()) {
+		it->get_to(v.received);
+	}
+	if (auto it = j.find("remaining"); it != j.end() && !it->is_null()) {
+		it->get_to(v.remaining);
+	}
+	if (auto it = j.find("confirmations"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations);
+	}
+	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations_required);
+	}
+	if (auto it = j.find("balance_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.balance_code);
+	}
+	if (auto it = j.find("refreshing"); it != j.end() && !it->is_null()) {
+		it->get_to(v.refreshing);
+	}
+	if (auto it = j.find("error_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.error_code);
+	}
+	if (auto it = j.find("error_message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.error_message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v) {
+	j = nlohmann::json::object();
+	j["asset"] = v.asset;
+	if (v.plans) {
+		j["plans"] = *v.plans;
+	}
+	if (v.items) {
+		j["items"] = *v.items;
+	}
+	j["confirmations_required"] = v.confirmations_required;
+	j["quote_ttl_seconds"] = v.quote_ttl_seconds;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("plans"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.plans = std::move(tmp);
+	}
+	if (auto it = j.find("items"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.items = std::move(tmp);
+	}
+	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations_required);
+	}
+	if (auto it = j.find("quote_ttl_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.quote_ttl_seconds);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v) {
+	j = nlohmann::json::object();
+	if (v.assets) {
+		j["assets"] = *v.assets;
+	}
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("assets"); it != j.end() && !it->is_null()) {
+		CryptoPaymentAssetList tmp{};
+		it->get_to(tmp);
+		v.assets = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentError& v) {
+	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v) {
+	j = nlohmann::json::object();
+	if (v.intent_id) {
+		j["intent_id"] = *v.intent_id;
+	}
+	if (v.asset) {
+		j["asset"] = *v.asset;
+	}
+	if (v.plan) {
+		j["plan"] = *v.plan;
+	}
+	if (v.item_id) {
+		j["item_id"] = *v.item_id;
+	}
+	if (v.delivery) {
+		j["delivery"] = *v.delivery;
+	}
+	if (v.network_name) {
+		j["network_name"] = *v.network_name;
+	}
+	j["status"] = v.status;
+	if (v.review_reason) {
+		j["review_reason"] = *v.review_reason;
+	}
+	if (v.amount) {
+		j["amount"] = *v.amount;
+	}
+	if (v.amount_atomic) {
+		j["amount_atomic"] = *v.amount_atomic;
+	}
+	if (v.received) {
+		j["received"] = *v.received;
+	}
+	if (v.received_atomic) {
+		j["received_atomic"] = *v.received_atomic;
+	}
+	if (v.remaining) {
+		j["remaining"] = *v.remaining;
+	}
+	if (v.remaining_atomic) {
+		j["remaining_atomic"] = *v.remaining_atomic;
+	}
+	j["confirmations"] = v.confirmations;
+	j["confirmations_required"] = v.confirmations_required;
+	if (v.expires_at) {
+		j["expires_at"] = *v.expires_at;
+	}
+	if (v.credited_at) {
+		j["credited_at"] = *v.credited_at;
+	}
+	if (v.balance_code) {
+		j["balance_code"] = *v.balance_code;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentStatusResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("intent_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.intent_id = std::move(tmp);
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.asset = std::move(tmp);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.item_id = std::move(tmp);
+	}
+	if (auto it = j.find("delivery"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.delivery = std::move(tmp);
+	}
+	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network_name = std::move(tmp);
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("review_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.review_reason = std::move(tmp);
+	}
+	if (auto it = j.find("amount"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.amount = std::move(tmp);
+	}
+	if (auto it = j.find("amount_atomic"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.amount_atomic = std::move(tmp);
+	}
+	if (auto it = j.find("received"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.received = std::move(tmp);
+	}
+	if (auto it = j.find("received_atomic"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.received_atomic = std::move(tmp);
+	}
+	if (auto it = j.find("remaining"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.remaining = std::move(tmp);
+	}
+	if (auto it = j.find("remaining_atomic"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.remaining_atomic = std::move(tmp);
+	}
+	if (auto it = j.find("confirmations"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations);
+	}
+	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations_required);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.expires_at = std::move(tmp);
+	}
+	if (auto it = j.find("credited_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.credited_at = std::move(tmp);
+	}
+	if (auto it = j.find("balance_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.balance_code = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		CryptoPaymentError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v) {
+	j = nlohmann::json::object();
+	if (v.intent_id) {
+		j["intent_id"] = *v.intent_id;
+	}
+	if (v.status_token) {
+		j["status_token"] = *v.status_token;
+	}
+	if (v.asset) {
+		j["asset"] = *v.asset;
+	}
+	if (v.plan) {
+		j["plan"] = *v.plan;
+	}
+	if (v.item_id) {
+		j["item_id"] = *v.item_id;
+	}
+	if (v.delivery) {
+		j["delivery"] = *v.delivery;
+	}
+	if (v.network_name) {
+		j["network_name"] = *v.network_name;
+	}
+	if (v.tier) {
+		j["tier"] = *v.tier;
+	}
+	if (v.offer_applied) {
+		j["offer_applied"] = *v.offer_applied;
+	}
+	if (v.price_usd) {
+		j["price_usd"] = *v.price_usd;
+	}
+	if (v.regular_price_usd) {
+		j["regular_price_usd"] = *v.regular_price_usd;
+	}
+	if (v.rate_usd) {
+		j["rate_usd"] = *v.rate_usd;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.amount) {
+		j["amount"] = *v.amount;
+	}
+	if (v.amount_atomic) {
+		j["amount_atomic"] = *v.amount_atomic;
+	}
+	if (v.memo) {
+		j["memo"] = *v.memo;
+	}
+	if (v.uri) {
+		j["uri"] = *v.uri;
+	}
+	if (v.quoted_at) {
+		j["quoted_at"] = *v.quoted_at;
+	}
+	if (v.expires_at) {
+		j["expires_at"] = *v.expires_at;
+	}
+	if (v.confirmations_required) {
+		j["confirmations_required"] = *v.confirmations_required;
+	}
+	if (v.status) {
+		j["status"] = *v.status;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("intent_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.intent_id = std::move(tmp);
+	}
+	if (auto it = j.find("status_token"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.status_token = std::move(tmp);
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.asset = std::move(tmp);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.item_id = std::move(tmp);
+	}
+	if (auto it = j.find("delivery"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.delivery = std::move(tmp);
+	}
+	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network_name = std::move(tmp);
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tier = std::move(tmp);
+	}
+	if (auto it = j.find("offer_applied"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.offer_applied = std::move(tmp);
+	}
+	if (auto it = j.find("price_usd"); it != j.end() && !it->is_null()) {
+		double tmp{};
+		it->get_to(tmp);
+		v.price_usd = std::move(tmp);
+	}
+	if (auto it = j.find("regular_price_usd"); it != j.end() && !it->is_null()) {
+		double tmp{};
+		it->get_to(tmp);
+		v.regular_price_usd = std::move(tmp);
+	}
+	if (auto it = j.find("rate_usd"); it != j.end() && !it->is_null()) {
+		double tmp{};
+		it->get_to(tmp);
+		v.rate_usd = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("amount"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.amount = std::move(tmp);
+	}
+	if (auto it = j.find("amount_atomic"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.amount_atomic = std::move(tmp);
+	}
+	if (auto it = j.find("memo"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.memo = std::move(tmp);
+	}
+	if (auto it = j.find("uri"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.uri = std::move(tmp);
+	}
+	if (auto it = j.find("quoted_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.quoted_at = std::move(tmp);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.expires_at = std::move(tmp);
+	}
+	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmations_required = std::move(tmp);
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		CryptoPaymentStatusResult tmp{};
+		it->get_to(tmp);
+		v.status = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		CryptoPaymentError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentStatusArgs& v) {
+	j = nlohmann::json::object();
+	j["intent_id"] = v.intent_id;
+	j["status_token"] = v.status_token;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("intent_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.intent_id);
+	}
+	if (auto it = j.find("status_token"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status_token);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoTerm& v) {
+	j = nlohmann::json::object();
+	j["market"] = v.market;
+	j["term_end_time"] = v.term_end_time;
+	j["grace_end_time"] = v.grace_end_time;
+}
+inline void from_json(const nlohmann::json& j, CryptoTerm& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("market"); it != j.end() && !it->is_null()) {
+		it->get_to(v.market);
+	}
+	if (auto it = j.find("term_end_time"); it != j.end() && !it->is_null()) {
+		it->get_to(v.term_end_time);
+	}
+	if (auto it = j.find("grace_end_time"); it != j.end() && !it->is_null()) {
+		it->get_to(v.grace_end_time);
 	}
 }
 
@@ -16172,6 +16985,12 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	if (v.experiments) {
 		j["experiments"] = *v.experiments;
 	}
+	if (v.crypto_assets) {
+		j["crypto_assets"] = *v.crypto_assets;
+	}
+	if (v.crypto_term) {
+		j["crypto_term"] = *v.crypto_term;
+	}
 }
 inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 	if (!j.is_object()) {
@@ -16226,6 +17045,16 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 		ExperimentAssignmentList tmp{};
 		it->get_to(tmp);
 		v.experiments = std::move(tmp);
+	}
+	if (auto it = j.find("crypto_assets"); it != j.end() && !it->is_null()) {
+		CryptoPaymentAssetList tmp{};
+		it->get_to(tmp);
+		v.crypto_assets = std::move(tmp);
+	}
+	if (auto it = j.find("crypto_term"); it != j.end() && !it->is_null()) {
+		CryptoTerm tmp{};
+		it->get_to(tmp);
+		v.crypto_term = std::move(tmp);
 	}
 }
 
@@ -17516,6 +18345,10 @@ using ContractStatsChangeListener = std::function<void(std::optional<ContractSta
 using ContractStatusChangeListener = std::function<void(std::optional<ContractStatus> contract_status)>;
 using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccountWalletResult> result, std::optional<std::string> err_param)>;
 using CreateApiKeyCallback = std::function<void(std::optional<CreateApiKeyResult> result, std::optional<std::string> err_param)>;
+using CryptoInvoiceListener = std::function<void()>;
+using CryptoPaymentAssetsCallback = std::function<void(std::optional<CryptoPaymentAssetsResult> result, std::optional<std::string> err_param)>;
+using CryptoPaymentIntentCallback = std::function<void(std::optional<CryptoPaymentIntentResult> result, std::optional<std::string> err_param)>;
+using CryptoPaymentStatusCallback = std::function<void(std::optional<CryptoPaymentStatusResult> result, std::optional<std::string> err_param)>;
 using DefaultLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult> result, std::optional<std::string> err_param)>;
 using DeviceConfigurationChangedListener = std::function<void()>;
@@ -17921,6 +18754,8 @@ public:
 	void close() const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
+	void createCryptoPaymentIntent(const std::optional<CreateCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const;
+	void createDataCryptoPaymentIntent(const std::optional<CreateDataCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const;
 	void createSolanaPaymentIntent(const std::optional<SolanaPaymentIntentArgs>& args, SolanaPaymentIntentCallback callback) const;
 	void createStripeCheckoutSession(const std::optional<StripeCreateCheckoutSessionArgs>& args, StripeCreateCheckoutSessionCallback callback) const;
 	void createStripePaymentIntent(const std::optional<StripeCreatePaymentIntentArgs>& args, StripePaymentIntentCallback callback) const;
@@ -17938,6 +18773,8 @@ public:
 	std::string getByJwt() const;
 	std::optional<ClientInfo> getClientInfo() const;
 	void getCredentialPersistenceError() const;
+	void getCryptoPaymentAssets(CryptoPaymentAssetsCallback callback) const;
+	void getCryptoPaymentStatus(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentStatusCallback callback) const;
 	void getLeaderboard(const std::optional<GetLeaderboardArgs>& args, GetLeaderboardCallback callback) const;
 	void getNetworkBlockedLocations(GetNetworkBlockedLocationsCallback callback) const;
 	void getNetworkClients(GetNetworkClientsCallback callback) const;
@@ -17977,6 +18814,7 @@ public:
 	std::optional<RemoveNetworkClientResult> removeNetworkClientSync(const std::optional<RemoveNetworkClientArgs>& args) const;
 	void removeWallet(const std::optional<RemoveWalletArgs>& remove_wallet, RemoveWalletCallback callback) const;
 	void requestJwtRefresh() const;
+	void requoteCryptoPayment(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentIntentCallback callback) const;
 	void revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const;
 	void revokeOtherNetworkSessions(const std::optional<RevokeOtherNetworkSessionsArgs>& args, SessionOperationCallback callback) const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
@@ -18252,6 +19090,23 @@ public:
 	void stop() const;
 };
 
+class CryptoInvoiceViewController final : public detail::Handle {
+public:
+	CryptoInvoiceViewController() = default;
+	explicit CryptoInvoiceViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addCryptoInvoiceListener(CryptoInvoiceListener listener) const;
+	void close() const;
+	void dismiss() const;
+	std::string getPaymentMethod() const;
+	std::optional<CryptoInvoiceState> getState() const;
+	void requote() const;
+	bool resume() const;
+	void setPaymentMethod(const std::string& method) const;
+	void start() const;
+	void startInvoice(const std::string& asset, const std::string& plan, const std::string& item_id, const std::string& storefront_country) const;
+	void stop() const;
+};
+
 class DeviceLocal final : public Device {
 public:
 	DeviceLocal() = default;
@@ -18268,6 +19123,7 @@ public:
 	void closeConnectViewController(const ConnectViewController& vc) const;
 	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
 	void closeContractViewController(const ContractViewController& vc) const;
+	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
@@ -18316,6 +19172,7 @@ public:
 	ConnectViewController openConnectViewController() const;
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
+	CryptoInvoiceViewController openCryptoInvoiceViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -18444,6 +19301,7 @@ public:
 	void closeConnectViewController(const ConnectViewController& vc) const;
 	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
 	void closeContractViewController(const ContractViewController& vc) const;
+	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
@@ -18477,6 +19335,7 @@ public:
 	ConnectViewController openConnectViewController() const;
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
+	CryptoInvoiceViewController openCryptoInvoiceViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -18805,6 +19664,7 @@ public:
 	std::string getAltUrlV4() const;
 	std::string getAltUrlV6() const;
 	Api getApi() const;
+	bool getApiAltEnabled() const;
 	std::string getApiUrl() const;
 	std::string getApiUrlV4() const;
 	std::string getApiUrlV6() const;
@@ -20482,6 +21342,134 @@ inline void oneshot_create_api_key(void* user_data, const char* result_json, con
 		std::optional<CreateApiKeyResult> result_v;
 		if (result_json) {
 			result_v = parseJson<CreateApiKeyResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_crypto_invoice(void* user_data) {
+	auto* f = static_cast<CryptoInvoiceListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_crypto_invoice(void* user_data) {
+	auto* f = static_cast<CryptoInvoiceListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_crypto_payment_assets(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentAssetsCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentAssetsResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentAssetsResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_crypto_payment_assets(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentAssetsCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentAssetsResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentAssetsResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_crypto_payment_intent(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentIntentCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentIntentResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentIntentResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_crypto_payment_intent(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentIntentCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentIntentResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentIntentResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_crypto_payment_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentStatusCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_crypto_payment_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<CryptoPaymentStatusCallback*>(user_data);
+	try {
+		std::optional<CryptoPaymentStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<CryptoPaymentStatusResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -26580,6 +27568,26 @@ inline void Api::createApiKey(const std::optional<CreateApiKeyArgs>& args, Creat
 	auto* callback_fn = callback ? new CreateApiKeyCallback(std::move(callback)) : nullptr;
 	urnet_api_create_api_key(handle(), args_c, callback_fn ? &detail::oneshot_create_api_key : nullptr, callback_fn);
 }
+inline void Api::createCryptoPaymentIntent(const std::optional<CreateCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new CryptoPaymentIntentCallback(std::move(callback)) : nullptr;
+	urnet_api_create_crypto_payment_intent(handle(), args_c, callback_fn ? &detail::oneshot_crypto_payment_intent : nullptr, callback_fn);
+}
+inline void Api::createDataCryptoPaymentIntent(const std::optional<CreateDataCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new CryptoPaymentIntentCallback(std::move(callback)) : nullptr;
+	urnet_api_create_data_crypto_payment_intent(handle(), args_c, callback_fn ? &detail::oneshot_crypto_payment_intent : nullptr, callback_fn);
+}
 inline void Api::createSolanaPaymentIntent(const std::optional<SolanaPaymentIntentArgs>& args, SolanaPaymentIntentCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -26717,6 +27725,20 @@ inline void Api::getCredentialPersistenceError() const {
 	if (!ok) {
 		throw Error("urnet: urnet_api_get_credential_persistence_error failed");
 	}
+}
+inline void Api::getCryptoPaymentAssets(CryptoPaymentAssetsCallback callback) const {
+	auto* callback_fn = callback ? new CryptoPaymentAssetsCallback(std::move(callback)) : nullptr;
+	urnet_api_get_crypto_payment_assets(handle(), callback_fn ? &detail::oneshot_crypto_payment_assets : nullptr, callback_fn);
+}
+inline void Api::getCryptoPaymentStatus(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentStatusCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new CryptoPaymentStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_get_crypto_payment_status(handle(), args_c, callback_fn ? &detail::oneshot_crypto_payment_status : nullptr, callback_fn);
 }
 inline void Api::getLeaderboard(const std::optional<GetLeaderboardArgs>& args, GetLeaderboardCallback callback) const {
 	std::string args_json;
@@ -26982,6 +28004,16 @@ inline void Api::removeWallet(const std::optional<RemoveWalletArgs>& remove_wall
 }
 inline void Api::requestJwtRefresh() const {
 	urnet_api_request_jwt_refresh(handle());
+}
+inline void Api::requoteCryptoPayment(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentIntentCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new CryptoPaymentIntentCallback(std::move(callback)) : nullptr;
+	urnet_api_requote_crypto_payment(handle(), args_c, callback_fn ? &detail::oneshot_crypto_payment_intent : nullptr, callback_fn);
 }
 inline void Api::revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const {
 	std::string args_json;
@@ -28184,6 +29216,54 @@ inline void ContractViewController::start() const {
 inline void ContractViewController::stop() const {
 	urnet_contract_view_controller_stop(handle());
 }
+inline Sub CryptoInvoiceViewController::addCryptoInvoiceListener(CryptoInvoiceListener listener) const {
+	std::shared_ptr<CryptoInvoiceListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<CryptoInvoiceListener>(std::move(listener));
+	}
+	Sub r(urnet_crypto_invoice_view_controller_add_crypto_invoice_listener(handle(), listener_fn ? &detail::retained_crypto_invoice : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void CryptoInvoiceViewController::close() const {
+	urnet_crypto_invoice_view_controller_close(handle());
+}
+inline void CryptoInvoiceViewController::dismiss() const {
+	urnet_crypto_invoice_view_controller_dismiss(handle());
+}
+inline std::string CryptoInvoiceViewController::getPaymentMethod() const {
+	char* r_c = urnet_crypto_invoice_view_controller_get_payment_method(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<CryptoInvoiceState> CryptoInvoiceViewController::getState() const {
+	char* r_c = urnet_crypto_invoice_view_controller_get_state(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<CryptoInvoiceState>(r_s->c_str());
+}
+inline void CryptoInvoiceViewController::requote() const {
+	urnet_crypto_invoice_view_controller_requote(handle());
+}
+inline bool CryptoInvoiceViewController::resume() const {
+	bool r = urnet_crypto_invoice_view_controller_resume(handle());
+	return r;
+}
+inline void CryptoInvoiceViewController::setPaymentMethod(const std::string& method) const {
+	urnet_crypto_invoice_view_controller_set_payment_method(handle(), method.c_str());
+}
+inline void CryptoInvoiceViewController::start() const {
+	urnet_crypto_invoice_view_controller_start(handle());
+}
+inline void CryptoInvoiceViewController::startInvoice(const std::string& asset, const std::string& plan, const std::string& item_id, const std::string& storefront_country) const {
+	urnet_crypto_invoice_view_controller_start_invoice(handle(), asset.c_str(), plan.c_str(), item_id.c_str(), storefront_country.c_str());
+}
+inline void CryptoInvoiceViewController::stop() const {
+	urnet_crypto_invoice_view_controller_stop(handle());
+}
 inline Sub DeviceLocal::addLocalStateSaveListener(LocalStateSaveListener listener) const {
 	std::shared_ptr<LocalStateSaveListener> listener_fn;
 	if (listener) {
@@ -28268,6 +29348,9 @@ inline void DeviceLocal::closeContractDetailsViewController(const ContractDetail
 }
 inline void DeviceLocal::closeContractViewController(const ContractViewController& vc) const {
 	urnet_device_local_close_contract_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const {
+	urnet_device_local_close_crypto_invoice_view_controller(handle(), vc.handle());
 }
 inline void DeviceLocal::closeDevicesViewController(const DevicesViewController& vc) const {
 	urnet_device_local_close_devices_view_controller(handle(), vc.handle());
@@ -28521,6 +29604,10 @@ inline ContractDetailsViewController DeviceLocal::openContractDetailsViewControl
 }
 inline ContractViewController DeviceLocal::openContractViewController() const {
 	ContractViewController r(urnet_device_local_open_contract_view_controller(handle()));
+	return r;
+}
+inline CryptoInvoiceViewController DeviceLocal::openCryptoInvoiceViewController() const {
+	CryptoInvoiceViewController r(urnet_device_local_open_crypto_invoice_view_controller(handle()));
 	return r;
 }
 inline DevicesViewController DeviceLocal::openDevicesViewController() const {
@@ -29081,6 +30168,9 @@ inline void DeviceRemote::closeContractDetailsViewController(const ContractDetai
 inline void DeviceRemote::closeContractViewController(const ContractViewController& vc) const {
 	urnet_device_remote_close_contract_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const {
+	urnet_device_remote_close_crypto_invoice_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closeDevicesViewController(const DevicesViewController& vc) const {
 	urnet_device_remote_close_devices_view_controller(handle(), vc.handle());
 }
@@ -29250,6 +30340,10 @@ inline ContractDetailsViewController DeviceRemote::openContractDetailsViewContro
 }
 inline ContractViewController DeviceRemote::openContractViewController() const {
 	ContractViewController r(urnet_device_remote_open_contract_view_controller(handle()));
+	return r;
+}
+inline CryptoInvoiceViewController DeviceRemote::openCryptoInvoiceViewController() const {
+	CryptoInvoiceViewController r(urnet_device_remote_open_crypto_invoice_view_controller(handle()));
 	return r;
 }
 inline DevicesViewController DeviceRemote::openDevicesViewController() const {
@@ -30644,6 +31738,10 @@ inline std::string NetworkSpace::getAltUrlV6() const {
 }
 inline Api NetworkSpace::getApi() const {
 	Api r(urnet_network_space_get_api(handle()));
+	return r;
+}
+inline bool NetworkSpace::getApiAltEnabled() const {
+	bool r = urnet_network_space_get_api_alt_enabled(handle());
 	return r;
 }
 inline std::string NetworkSpace::getApiUrl() const {
@@ -32059,6 +33157,10 @@ inline std::string buildSolanaPaymentUrl(const std::optional<SolanaPaymentUrlArg
 	}
 	return detail::takeString(r_c);
 }
+inline bool checkCryptoPaymentUri(const std::string& asset, const std::string& uri, const std::string& address) {
+	bool r = urnet_check_crypto_payment_uri(asset.c_str(), uri.c_str(), address.c_str());
+	return r;
+}
 inline std::string classifyBalanceCodeRedeem(const std::optional<RedeemBalanceCodeResult>& result, const std::optional<RedeemedBalanceCodeList>& redeemed_codes, const std::string& secret) {
 	std::string result_json;
 	const char* result_c = nullptr;
@@ -32185,6 +33287,38 @@ inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, con
 inline std::string createPaymentReference() {
 	char* r_c = urnet_create_payment_reference();
 	return detail::takeString(r_c);
+}
+inline bool cryptoAssetSells(const std::optional<CryptoPaymentAssetList>& assets, const std::string& asset, const std::string& item) {
+	std::string assets_json;
+	const char* assets_c = nullptr;
+	if (assets) {
+		assets_json = nlohmann::json(*assets).dump();
+		assets_c = assets_json.c_str();
+	}
+	bool r = urnet_crypto_asset_sells(assets_c, asset.c_str(), item.c_str());
+	return r;
+}
+inline std::string cryptoAssetTicker(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_ticker(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline bool cryptoTermNoticeDue(const std::optional<CryptoTerm>& term) {
+	std::string term_json;
+	const char* term_c = nullptr;
+	if (term) {
+		term_json = nlohmann::json(*term).dump();
+		term_c = term_json.c_str();
+	}
+	bool r = urnet_crypto_term_notice_due(term_c);
+	return r;
+}
+inline std::optional<StringList> cryptoWalletSuggestions(const std::string& asset) {
+	char* r_c = urnet_crypto_wallet_suggestions(asset.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
 }
 inline std::optional<DeviceLocalSettings> defaultDeviceLocalSettings() {
 	char* r_c = urnet_default_device_local_settings();
@@ -32640,6 +33774,10 @@ inline std::optional<ClientEvent> newConnectFirstEvent() {
 	}
 	return detail::parseJson<ClientEvent>(r_s->c_str());
 }
+inline CryptoInvoiceViewController newCryptoInvoiceViewController(const Api& api, const std::string& storage_dir) {
+	CryptoInvoiceViewController r(urnet_new_crypto_invoice_view_controller(api.handle(), storage_dir.c_str()));
+	return r;
+}
 inline DeviceLocal newDeviceLocal(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, const std::optional<DeviceLocalSettings>& settings) {
 	std::string settings_json;
 	const char* settings_c = nullptr;
@@ -32753,6 +33891,10 @@ inline NetworkSpaceManager newNetworkSpaceManager(const std::string& storage_pat
 }
 inline NetworkSpaceManager newNetworkSpaceManagerNoStorage() {
 	NetworkSpaceManager r(urnet_new_network_space_manager_no_storage());
+	return r;
+}
+inline NetworkSpaceManager newNetworkSpaceManagerWithApiAlt(const std::string& storage_path, bool api_alt_enabled) {
+	NetworkSpaceManager r(urnet_new_network_space_manager_with_api_alt(storage_path.c_str(), api_alt_enabled));
 	return r;
 }
 inline std::optional<ClientEvent> newOfferCardTappedEvent(const std::string& plan) {
@@ -33021,6 +34163,30 @@ inline std::optional<VlessLinkResult> parseVlessLink(const std::string& link) {
 		return std::nullopt;
 	}
 	return detail::parseJson<VlessLinkResult>(r_s->c_str());
+}
+inline bool paymentMethodAllowsPlan(const std::string& method, const std::string& plan) {
+	bool r = urnet_payment_method_allows_plan(method.c_str(), plan.c_str());
+	return r;
+}
+inline std::optional<StringList> paymentMethods(const std::optional<CryptoPaymentAssetList>& assets, const std::optional<StringList>& items) {
+	std::string assets_json;
+	const char* assets_c = nullptr;
+	if (assets) {
+		assets_json = nlohmann::json(*assets).dump();
+		assets_c = assets_json.c_str();
+	}
+	std::string items_json;
+	const char* items_c = nullptr;
+	if (items) {
+		items_json = nlohmann::json(*items).dump();
+		items_c = items_json.c_str();
+	}
+	char* r_c = urnet_payment_methods(assets_c, items_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
 }
 inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::optional<PointsLeaderboardRow>& row) {
 	std::string row_json;

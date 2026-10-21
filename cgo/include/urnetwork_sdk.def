@@ -41,6 +41,8 @@ EXPORTS
 	urnet_api_close
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
+	urnet_api_create_crypto_payment_intent
+	urnet_api_create_data_crypto_payment_intent
 	urnet_api_create_solana_payment_intent
 	urnet_api_create_stripe_checkout_session
 	urnet_api_create_stripe_payment_intent
@@ -58,6 +60,8 @@ EXPORTS
 	urnet_api_get_by_jwt
 	urnet_api_get_client_info
 	urnet_api_get_credential_persistence_error
+	urnet_api_get_crypto_payment_assets
+	urnet_api_get_crypto_payment_status
 	urnet_api_get_leaderboard
 	urnet_api_get_network_blocked_locations
 	urnet_api_get_network_clients
@@ -97,6 +101,7 @@ EXPORTS
 	urnet_api_remove_network_client_sync
 	urnet_api_remove_wallet
 	urnet_api_request_jwt_refresh
+	urnet_api_requote_crypto_payment
 	urnet_api_revoke_network_session
 	urnet_api_revoke_other_network_sessions
 	urnet_api_send_feedback
@@ -200,6 +205,7 @@ EXPORTS
 	urnet_build_checkout_bridge_url_with_redirect
 	urnet_build_inline_checkout_bridge_url
 	urnet_build_solana_payment_url
+	urnet_check_crypto_payment_uri
 	urnet_classify_balance_code_redeem
 	urnet_classify_subscription_store
 	urnet_client_event_names
@@ -317,6 +323,21 @@ EXPORTS
 	urnet_contract_view_controller_stop
 	urnet_copy_string
 	urnet_create_payment_reference
+	urnet_crypto_asset_sells
+	urnet_crypto_asset_ticker
+	urnet_crypto_invoice_view_controller_add_crypto_invoice_listener
+	urnet_crypto_invoice_view_controller_close
+	urnet_crypto_invoice_view_controller_dismiss
+	urnet_crypto_invoice_view_controller_get_payment_method
+	urnet_crypto_invoice_view_controller_get_state
+	urnet_crypto_invoice_view_controller_requote
+	urnet_crypto_invoice_view_controller_resume
+	urnet_crypto_invoice_view_controller_set_payment_method
+	urnet_crypto_invoice_view_controller_start
+	urnet_crypto_invoice_view_controller_start_invoice
+	urnet_crypto_invoice_view_controller_stop
+	urnet_crypto_term_notice_due
+	urnet_crypto_wallet_suggestions
 	urnet_decode_base58
 	urnet_decrypt_data
 	urnet_default_device_local_settings
@@ -459,6 +480,7 @@ EXPORTS
 	urnet_device_local_close_connect_view_controller
 	urnet_device_local_close_contract_details_view_controller
 	urnet_device_local_close_contract_view_controller
+	urnet_device_local_close_crypto_invoice_view_controller
 	urnet_device_local_close_devices_view_controller
 	urnet_device_local_close_locations_view_controller
 	urnet_device_local_close_peer_view_controller
@@ -523,6 +545,7 @@ EXPORTS
 	urnet_device_local_open_connect_view_controller
 	urnet_device_local_open_contract_details_view_controller
 	urnet_device_local_open_contract_view_controller
+	urnet_device_local_open_crypto_invoice_view_controller
 	urnet_device_local_open_devices_view_controller
 	urnet_device_local_open_extender_view_controller
 	urnet_device_local_open_feedback_view_controller
@@ -611,6 +634,7 @@ EXPORTS
 	urnet_device_remote_close_connect_view_controller
 	urnet_device_remote_close_contract_details_view_controller
 	urnet_device_remote_close_contract_view_controller
+	urnet_device_remote_close_crypto_invoice_view_controller
 	urnet_device_remote_close_devices_view_controller
 	urnet_device_remote_close_locations_view_controller
 	urnet_device_remote_close_peer_view_controller
@@ -644,6 +668,7 @@ EXPORTS
 	urnet_device_remote_open_connect_view_controller
 	urnet_device_remote_open_contract_details_view_controller
 	urnet_device_remote_open_contract_view_controller
+	urnet_device_remote_open_crypto_invoice_view_controller
 	urnet_device_remote_open_devices_view_controller
 	urnet_device_remote_open_extender_view_controller
 	urnet_device_remote_open_feedback_view_controller
@@ -943,6 +968,7 @@ EXPORTS
 	urnet_network_space_get_alt_url_v4
 	urnet_network_space_get_alt_url_v6
 	urnet_network_space_get_api
+	urnet_network_space_get_api_alt_enabled
 	urnet_network_space_get_api_url
 	urnet_network_space_get_api_url_v4
 	urnet_network_space_get_api_url_v6
@@ -1017,6 +1043,7 @@ EXPORTS
 	urnet_new_client_event_queue
 	urnet_new_client_info
 	urnet_new_connect_first_event
+	urnet_new_crypto_invoice_view_controller
 	urnet_new_device_local
 	urnet_new_device_local_key_material
 	urnet_new_device_local_with_defaults
@@ -1032,6 +1059,7 @@ EXPORTS
 	urnet_new_network_space_key
 	urnet_new_network_space_manager
 	urnet_new_network_space_manager_no_storage
+	urnet_new_network_space_manager_with_api_alt
 	urnet_new_offer_card_tapped_event
 	urnet_new_offer_cta_tapped_event
 	urnet_new_offer_declined_event
@@ -1069,6 +1097,8 @@ EXPORTS
 	urnet_parse_client_events_json
 	urnet_parse_id
 	urnet_parse_vless_link
+	urnet_payment_method_allows_plan
+	urnet_payment_methods
 	urnet_peer_view_controller_add_peers_listener
 	urnet_peer_view_controller_close
 	urnet_peer_view_controller_get_connected_count

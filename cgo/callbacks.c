@@ -189,6 +189,22 @@ void urnet_invoke_create_api_key(urnet_create_api_key_cb cb, void* user_data, co
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_crypto_invoice(urnet_crypto_invoice_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+void urnet_invoke_crypto_payment_assets(urnet_crypto_payment_assets_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_crypto_payment_intent(urnet_crypto_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_crypto_payment_status(urnet_crypto_payment_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json) {
 	cb(user_data, location_json);
 }

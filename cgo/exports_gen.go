@@ -736,6 +736,79 @@ func (self *cAdapterCreateApiKeyCallback) Result(result *sdk.CreateApiKeyResult,
 	}
 }
 
+type cAdapterCryptoInvoiceListener struct {
+	cbCryptoInvoiceChanged C.urnet_crypto_invoice_cb
+	userData               unsafe.Pointer
+}
+
+func (self *cAdapterCryptoInvoiceListener) CryptoInvoiceChanged() {
+	defer cgoGuard("urnet_crypto_invoice_cb")
+	C.urnet_invoke_crypto_invoice(self.cbCryptoInvoiceChanged, self.userData)
+}
+
+type cAdapterCryptoPaymentAssetsCallback struct {
+	cbResult C.urnet_crypto_payment_assets_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterCryptoPaymentAssetsCallback) Result(result *sdk.CryptoPaymentAssetsResult, errParam error) {
+	defer cgoGuard("urnet_crypto_payment_assets_cb")
+	result_ := cJson(result, "urnet_crypto_payment_assets_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_crypto_payment_assets(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterCryptoPaymentIntentCallback struct {
+	cbResult C.urnet_crypto_payment_intent_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterCryptoPaymentIntentCallback) Result(result *sdk.CryptoPaymentIntentResult, errParam error) {
+	defer cgoGuard("urnet_crypto_payment_intent_cb")
+	result_ := cJson(result, "urnet_crypto_payment_intent_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_crypto_payment_intent(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterCryptoPaymentStatusCallback struct {
+	cbResult C.urnet_crypto_payment_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterCryptoPaymentStatusCallback) Result(result *sdk.CryptoPaymentStatusResult, errParam error) {
+	defer cgoGuard("urnet_crypto_payment_status_cb")
+	result_ := cJson(result, "urnet_crypto_payment_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_crypto_payment_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterDefaultLocationChangeListener struct {
 	cbDefaultLocationChanged C.urnet_default_location_change_cb
 	userData                 unsafe.Pointer
@@ -4011,6 +4084,48 @@ func urnet_api_create_api_key(self C.uint64_t, args *C.char, callback_result C.u
 	self_.CreateApiKey(args_, callback_)
 }
 
+//export urnet_api_create_crypto_payment_intent
+func urnet_api_create_crypto_payment_intent(self C.uint64_t, args *C.char, callback_result C.urnet_crypto_payment_intent_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_create_crypto_payment_intent")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_create_crypto_payment_intent")
+	if !ok {
+		return
+	}
+	var args_ *sdk.CreateCryptoPaymentIntentArgs
+	if args != nil {
+		args_ = &sdk.CreateCryptoPaymentIntentArgs{}
+		if !goJson(args, args_, "urnet_api_create_crypto_payment_intent") {
+			return
+		}
+	}
+	var callback_ sdk.CryptoPaymentIntentCallback
+	if callback_result != nil {
+		callback_ = &cAdapterCryptoPaymentIntentCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CreateCryptoPaymentIntent(args_, callback_)
+}
+
+//export urnet_api_create_data_crypto_payment_intent
+func urnet_api_create_data_crypto_payment_intent(self C.uint64_t, args *C.char, callback_result C.urnet_crypto_payment_intent_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_create_data_crypto_payment_intent")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_create_data_crypto_payment_intent")
+	if !ok {
+		return
+	}
+	var args_ *sdk.CreateDataCryptoPaymentIntentArgs
+	if args != nil {
+		args_ = &sdk.CreateDataCryptoPaymentIntentArgs{}
+		if !goJson(args, args_, "urnet_api_create_data_crypto_payment_intent") {
+			return
+		}
+	}
+	var callback_ sdk.CryptoPaymentIntentCallback
+	if callback_result != nil {
+		callback_ = &cAdapterCryptoPaymentIntentCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CreateDataCryptoPaymentIntent(args_, callback_)
+}
+
 //export urnet_api_create_solana_payment_intent
 func urnet_api_create_solana_payment_intent(self C.uint64_t, args *C.char, callback_result C.urnet_solana_payment_intent_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_create_solana_payment_intent")
@@ -4312,6 +4427,41 @@ func urnet_api_get_credential_persistence_error(self C.uint64_t, outError **C.ch
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_api_get_crypto_payment_assets
+func urnet_api_get_crypto_payment_assets(self C.uint64_t, callback_result C.urnet_crypto_payment_assets_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_get_crypto_payment_assets")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_crypto_payment_assets")
+	if !ok {
+		return
+	}
+	var callback_ sdk.CryptoPaymentAssetsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterCryptoPaymentAssetsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetCryptoPaymentAssets(callback_)
+}
+
+//export urnet_api_get_crypto_payment_status
+func urnet_api_get_crypto_payment_status(self C.uint64_t, args *C.char, callback_result C.urnet_crypto_payment_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_get_crypto_payment_status")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_crypto_payment_status")
+	if !ok {
+		return
+	}
+	var args_ *sdk.CryptoPaymentStatusArgs
+	if args != nil {
+		args_ = &sdk.CryptoPaymentStatusArgs{}
+		if !goJson(args, args_, "urnet_api_get_crypto_payment_status") {
+			return
+		}
+	}
+	var callback_ sdk.CryptoPaymentStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterCryptoPaymentStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetCryptoPaymentStatus(args_, callback_)
 }
 
 //export urnet_api_get_leaderboard
@@ -4962,6 +5112,27 @@ func urnet_api_request_jwt_refresh(self C.uint64_t) {
 		return
 	}
 	self_.RequestJwtRefresh()
+}
+
+//export urnet_api_requote_crypto_payment
+func urnet_api_requote_crypto_payment(self C.uint64_t, args *C.char, callback_result C.urnet_crypto_payment_intent_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_requote_crypto_payment")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_requote_crypto_payment")
+	if !ok {
+		return
+	}
+	var args_ *sdk.CryptoPaymentStatusArgs
+	if args != nil {
+		args_ = &sdk.CryptoPaymentStatusArgs{}
+		if !goJson(args, args_, "urnet_api_requote_crypto_payment") {
+			return
+		}
+	}
+	var callback_ sdk.CryptoPaymentIntentCallback
+	if callback_result != nil {
+		callback_ = &cAdapterCryptoPaymentIntentCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RequoteCryptoPayment(args_, callback_)
 }
 
 //export urnet_api_revoke_network_session
@@ -6555,6 +6726,13 @@ func urnet_build_solana_payment_url(args *C.char, outError **C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_check_crypto_payment_uri
+func urnet_check_crypto_payment_uri(asset *C.char, uri *C.char, address *C.char) C.bool {
+	defer cgoGuard("urnet_check_crypto_payment_uri")
+	r0 := sdk.CheckCryptoPaymentUri(goString(asset), goString(uri), goString(address))
+	return C.bool(r0)
+}
+
 //export urnet_classify_balance_code_redeem
 func urnet_classify_balance_code_redeem(result *C.char, redeemedCodes *C.char, secret *C.char) *C.char {
 	defer cgoGuard("urnet_classify_balance_code_redeem")
@@ -7884,6 +8062,172 @@ func urnet_create_payment_reference() *C.char {
 	defer cgoGuard("urnet_create_payment_reference")
 	r0 := sdk.CreatePaymentReference()
 	return cString(string(r0))
+}
+
+//export urnet_crypto_asset_sells
+func urnet_crypto_asset_sells(assets *C.char, asset *C.char, item *C.char) C.bool {
+	defer cgoGuard("urnet_crypto_asset_sells")
+	var assets_ *sdk.CryptoPaymentAssetList
+	if assets != nil {
+		assets_ = &sdk.CryptoPaymentAssetList{}
+		if !goJson(assets, assets_, "urnet_crypto_asset_sells") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.CryptoAssetSells(assets_, goString(asset), goString(item))
+	return C.bool(r0)
+}
+
+//export urnet_crypto_asset_ticker
+func urnet_crypto_asset_ticker(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_ticker")
+	r0 := sdk.CryptoAssetTicker(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_invoice_view_controller_add_crypto_invoice_listener
+func urnet_crypto_invoice_view_controller_add_crypto_invoice_listener(self C.uint64_t, listener_crypto_invoice_changed C.urnet_crypto_invoice_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_add_crypto_invoice_listener")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_add_crypto_invoice_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.CryptoInvoiceListener
+	if listener_crypto_invoice_changed != nil {
+		listener_ = &cAdapterCryptoInvoiceListener{cbCryptoInvoiceChanged: listener_crypto_invoice_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddCryptoInvoiceListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_crypto_invoice_view_controller_close
+func urnet_crypto_invoice_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_close")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_crypto_invoice_view_controller_dismiss
+func urnet_crypto_invoice_view_controller_dismiss(self C.uint64_t) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_dismiss")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_dismiss")
+	if !ok {
+		return
+	}
+	self_.Dismiss()
+}
+
+//export urnet_crypto_invoice_view_controller_get_payment_method
+func urnet_crypto_invoice_view_controller_get_payment_method(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_get_payment_method")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_get_payment_method")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPaymentMethod()
+	return cString(string(r0))
+}
+
+//export urnet_crypto_invoice_view_controller_get_state
+func urnet_crypto_invoice_view_controller_get_state(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_get_state")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_get_state")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetState()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_crypto_invoice_view_controller_get_state")
+}
+
+//export urnet_crypto_invoice_view_controller_requote
+func urnet_crypto_invoice_view_controller_requote(self C.uint64_t) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_requote")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_requote")
+	if !ok {
+		return
+	}
+	self_.Requote()
+}
+
+//export urnet_crypto_invoice_view_controller_resume
+func urnet_crypto_invoice_view_controller_resume(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_resume")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_resume")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.Resume()
+	return C.bool(r0)
+}
+
+//export urnet_crypto_invoice_view_controller_set_payment_method
+func urnet_crypto_invoice_view_controller_set_payment_method(self C.uint64_t, method *C.char) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_set_payment_method")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_set_payment_method")
+	if !ok {
+		return
+	}
+	self_.SetPaymentMethod(goString(method))
+}
+
+//export urnet_crypto_invoice_view_controller_start
+func urnet_crypto_invoice_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_start")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_crypto_invoice_view_controller_start_invoice
+func urnet_crypto_invoice_view_controller_start_invoice(self C.uint64_t, asset *C.char, plan *C.char, itemId *C.char, storefrontCountry *C.char) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_start_invoice")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_start_invoice")
+	if !ok {
+		return
+	}
+	self_.StartInvoice(goString(asset), goString(plan), goString(itemId), goString(storefrontCountry))
+}
+
+//export urnet_crypto_invoice_view_controller_stop
+func urnet_crypto_invoice_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_crypto_invoice_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.CryptoInvoiceViewController](uint64(self), "urnet_crypto_invoice_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
+//export urnet_crypto_term_notice_due
+func urnet_crypto_term_notice_due(term *C.char) C.bool {
+	defer cgoGuard("urnet_crypto_term_notice_due")
+	var term_ *sdk.CryptoTerm
+	if term != nil {
+		term_ = &sdk.CryptoTerm{}
+		if !goJson(term, term_, "urnet_crypto_term_notice_due") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.CryptoTermNoticeDue(term_)
+	return C.bool(r0)
+}
+
+//export urnet_crypto_wallet_suggestions
+func urnet_crypto_wallet_suggestions(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_wallet_suggestions")
+	r0 := sdk.CryptoWalletSuggestions(goString(asset))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_crypto_wallet_suggestions")
 }
 
 //export urnet_default_device_local_settings
@@ -10185,6 +10529,24 @@ func urnet_device_local_close_contract_view_controller(self C.uint64_t, vc C.uin
 	self_.CloseContractViewController(vc_)
 }
 
+//export urnet_device_local_close_crypto_invoice_view_controller
+func urnet_device_local_close_crypto_invoice_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_crypto_invoice_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_crypto_invoice_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.CryptoInvoiceViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.CryptoInvoiceViewController](uint64(vc), "urnet_device_local_close_crypto_invoice_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseCryptoInvoiceViewController(vc_)
+}
+
 //export urnet_device_local_close_devices_view_controller
 func urnet_device_local_close_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
 	defer cgoGuard("urnet_device_local_close_devices_view_controller")
@@ -10842,6 +11204,20 @@ func urnet_device_local_open_contract_view_controller(self C.uint64_t) C.uint64_
 		return 0
 	}
 	r0 := self_.OpenContractViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_open_crypto_invoice_view_controller
+func urnet_device_local_open_crypto_invoice_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_crypto_invoice_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_crypto_invoice_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenCryptoInvoiceViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -12134,6 +12510,24 @@ func urnet_device_remote_close_contract_view_controller(self C.uint64_t, vc C.ui
 	self_.CloseContractViewController(vc_)
 }
 
+//export urnet_device_remote_close_crypto_invoice_view_controller
+func urnet_device_remote_close_crypto_invoice_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_crypto_invoice_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_crypto_invoice_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.CryptoInvoiceViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.CryptoInvoiceViewController](uint64(vc), "urnet_device_remote_close_crypto_invoice_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseCryptoInvoiceViewController(vc_)
+}
+
 //export urnet_device_remote_close_devices_view_controller
 func urnet_device_remote_close_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
 	defer cgoGuard("urnet_device_remote_close_devices_view_controller")
@@ -12601,6 +12995,20 @@ func urnet_device_remote_open_contract_view_controller(self C.uint64_t) C.uint64
 		return 0
 	}
 	r0 := self_.OpenContractViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_crypto_invoice_view_controller
+func urnet_device_remote_open_crypto_invoice_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_crypto_invoice_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_crypto_invoice_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenCryptoInvoiceViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -15989,6 +16397,17 @@ func urnet_network_space_get_api(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_network_space_get_api_alt_enabled
+func urnet_network_space_get_api_alt_enabled(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_network_space_get_api_alt_enabled")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_api_alt_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetApiAltEnabled()
+	return C.bool(r0)
+}
+
 //export urnet_network_space_get_api_url
 func urnet_network_space_get_api_url(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_api_url")
@@ -17004,6 +17423,24 @@ func urnet_new_connect_first_event() *C.char {
 	return cJson(r0, "urnet_new_connect_first_event")
 }
 
+//export urnet_new_crypto_invoice_view_controller
+func urnet_new_crypto_invoice_view_controller(api C.uint64_t, storageDir *C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_crypto_invoice_view_controller")
+	var api_ *sdk.Api
+	if api != 0 {
+		var ok bool
+		api_, ok = resolveHandle[*sdk.Api](uint64(api), "urnet_new_crypto_invoice_view_controller")
+		if !ok {
+			return 0
+		}
+	}
+	r0 := sdk.NewCryptoInvoiceViewController(api_, goString(storageDir))
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_device_local
 func urnet_new_device_local(networkSpace C.uint64_t, byJwt *C.char, deviceDescription *C.char, deviceSpec *C.char, appVersion *C.char, instanceId *C.char, settings *C.char, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_new_device_local")
@@ -17261,6 +17698,16 @@ func urnet_new_network_space_manager(storagePath *C.char) C.uint64_t {
 func urnet_new_network_space_manager_no_storage() C.uint64_t {
 	defer cgoGuard("urnet_new_network_space_manager_no_storage")
 	r0 := sdk.NewNetworkSpaceManagerNoStorage()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_network_space_manager_with_api_alt
+func urnet_new_network_space_manager_with_api_alt(storagePath *C.char, apiAltEnabled C.bool) C.uint64_t {
+	defer cgoGuard("urnet_new_network_space_manager_with_api_alt")
+	r0 := sdk.NewNetworkSpaceManagerWithApiAlt(goString(storagePath), bool(apiAltEnabled))
 	if r0 == nil {
 		return 0
 	}
@@ -17671,6 +18118,37 @@ func urnet_parse_vless_link(link *C.char) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_parse_vless_link")
+}
+
+//export urnet_payment_method_allows_plan
+func urnet_payment_method_allows_plan(method *C.char, plan *C.char) C.bool {
+	defer cgoGuard("urnet_payment_method_allows_plan")
+	r0 := sdk.PaymentMethodAllowsPlan(goString(method), goString(plan))
+	return C.bool(r0)
+}
+
+//export urnet_payment_methods
+func urnet_payment_methods(assets *C.char, items *C.char) *C.char {
+	defer cgoGuard("urnet_payment_methods")
+	var assets_ *sdk.CryptoPaymentAssetList
+	if assets != nil {
+		assets_ = &sdk.CryptoPaymentAssetList{}
+		if !goJson(assets, assets_, "urnet_payment_methods") {
+			return nil
+		}
+	}
+	var items_ *sdk.StringList
+	if items != nil {
+		items_ = &sdk.StringList{}
+		if !goJson(items, items_, "urnet_payment_methods") {
+			return nil
+		}
+	}
+	r0 := sdk.PaymentMethods(assets_, items_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_payment_methods")
 }
 
 //export urnet_peer_view_controller_add_peers_listener

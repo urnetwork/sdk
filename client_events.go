@@ -63,12 +63,15 @@ const (
 	EventPlatformLinux   = "linux"
 )
 
-// Stores (purchase.* store, offer.cta.tapped store).
+// Stores (purchase.* store, offer.cta.tapped store). A crypto purchase names
+// its coin's market: EventStoreSolana for USDC, EventStoreZcash, EventStoreMonero.
 const (
 	EventStoreApple  = "apple"
 	EventStorePlay   = "play"
 	EventStoreStripe = "stripe"
 	EventStoreSolana = "solana"
+	EventStoreZcash  = "zcash"
+	EventStoreMonero = "monero"
 )
 
 // Decline controls (offer.declined control).

@@ -1900,6 +1900,16 @@ type SubscriptionBalanceResult struct {
 	// Experiments is the caller's variant per experiment surface; nil when no
 	// experiment runs.
 	Experiments *ExperimentAssignmentList `json:"experiments,omitempty"`
+
+	// ----- crypto payments (crypto_pay_api.go) -----
+	// CryptoAssets are the coins the network can pay in now and what each
+	// sells (PaymentMethods). nil when none is enabled, and from an older
+	// server, so no crypto method is offered then.
+	CryptoAssets *CryptoPaymentAssetList `json:"crypto_assets,omitempty"`
+	// CryptoTerm is the network's latest one-time crypto credit whose grace
+	// has not ended, for the renewal notice (CryptoTermNoticeDue); nil when
+	// there is none.
+	CryptoTerm *CryptoTerm `json:"crypto_term,omitempty"`
 }
 
 // ExperimentVariant is the caller's variant on a surface, "" when no

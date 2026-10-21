@@ -100,6 +100,7 @@ var behavioralTypes = map[string]bool{
 	"BlockActionViewController":           true,
 	"ConnectViewController":               true,
 	"ContractViewController":              true,
+	"CryptoInvoiceViewController":         true,
 	"SubscriptionBalanceViewController":   true,
 	"ContractDetailsViewController":       true,
 	"ClientSessionViewController":         true,
