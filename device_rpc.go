@@ -103,7 +103,8 @@ type deviceRpcSettings struct {
 	// MuxMaxFrameBytes is a hard per-websocket-message limit, including the
 	// one-byte stream tag. MuxMaxQueuedBytes applies independently to send and
 	// receive queues so either direction always retains enough progress capacity
-	// for one maximum-sized frame without cross-direction deadlock.
+	// for one maximum-sized frame without cross-direction deadlock. Non-positive
+	// values use the defaults (defaultDeviceRpcSettings).
 	MuxMaxFrameBytes  int64
 	MuxMaxQueuedBytes int64
 	// deadline for a single mux frame write before the connection is torn down.
@@ -120,10 +121,11 @@ type deviceRpcSettings struct {
 
 	// Maximum concurrent HTTP-over-RPC operations on the app side and in each
 	// extension fetch/delivery stage. This bounds in-flight request/response
-	// buffers and goroutines when the app is slow or suspended.
+	// buffers and goroutines when the app is slow or suspended. Non-positive
+	// uses the default (defaultDeviceRpcSettings).
 	HttpMaxConcurrent int
 	// largest request or response body allowed through http-over-rpc. Values
-	// <= 0 resolve to the bounded production default.
+	// <= 0 use the default (defaultDeviceRpcSettings).
 	HttpMaxBodyBytes int
 	// RequireRemoteApi makes the DeviceRemote fail closed while its rpc service
 	// is unavailable instead of issuing the request from the caller's process.
@@ -172,36 +174,30 @@ func SetDeviceRpcH1PlusEnabled(enabled bool) { deviceRpcH1PlusDisabled.Store(!en
 // at a per-process ephemeral port (see TestMain).
 var deviceRpcDefaultAddress = "127.0.0.1:12025"
 
-const (
-	deviceRpcDefaultMaxFrameBytes    int64 = 3 * 1024 * 1024
-	deviceRpcDefaultMaxQueuedBytes   int64 = 4 * 1024 * 1024
-	deviceRpcDefaultHttpMaxBodyBytes       = int(connect.DefaultMaxHttpResponseBodyBytes)
-)
-
 func (self *deviceRpcSettings) maxFrameBytes() int64 {
 	if self.MuxMaxFrameBytes <= 0 {
-		return deviceRpcDefaultMaxFrameBytes
+		return defaultDeviceRpcSettings().MuxMaxFrameBytes
 	}
 	return self.MuxMaxFrameBytes
 }
 
 func (self *deviceRpcSettings) maxQueuedBytes() int64 {
 	if self.MuxMaxQueuedBytes <= 0 {
-		return deviceRpcDefaultMaxQueuedBytes
+		return defaultDeviceRpcSettings().MuxMaxQueuedBytes
 	}
 	return self.MuxMaxQueuedBytes
 }
 
 func (self *deviceRpcSettings) httpMaxBodyBytes() int {
 	if self.HttpMaxBodyBytes <= 0 {
-		return deviceRpcDefaultHttpMaxBodyBytes
+		return defaultDeviceRpcSettings().HttpMaxBodyBytes
 	}
 	return self.HttpMaxBodyBytes
 }
 
 func (self *deviceRpcSettings) httpMaxConcurrent() int {
 	if self.HttpMaxConcurrent <= 0 {
-		return 2
+		return defaultDeviceRpcSettings().HttpMaxConcurrent
 	}
 	return self.HttpMaxConcurrent
 }
@@ -225,12 +221,16 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		CallbackBufferSize:   64,
 		MuxSendBufferSize:    32,
 		MuxReceiveBufferSize: 32,
-		MuxMaxFrameBytes:     deviceRpcDefaultMaxFrameBytes,
-		MuxMaxQueuedBytes:    deviceRpcDefaultMaxQueuedBytes,
-		MuxWriteTimeout:      15 * time.Second,
-		HttpMaxConcurrent:    2,
-		HttpMaxBodyBytes:     deviceRpcDefaultHttpMaxBodyBytes,
-		RpcVersion:           DeviceRpcVersion,
+		// encoding headroom above the largest http-over-rpc body, and a queue
+		// that holds one maximum frame in each direction
+		MuxMaxFrameBytes:  3 * 1024 * 1024,
+		MuxMaxQueuedBytes: 4 * 1024 * 1024,
+		MuxWriteTimeout:   15 * time.Second,
+		HttpMaxConcurrent: 2,
+		// the API responses a DeviceRemote relays are bounded by the client
+		// strategy, so the relay carries any response the strategy accepts
+		HttpMaxBodyBytes: int(connect.DefaultClientStrategySettings().MaxHttpResponseBodyBytes),
+		RpcVersion:       DeviceRpcVersion,
 
 		DeviceLocalSettings: *DefaultDeviceLocalSettings(),
 	}
@@ -9222,13 +9222,13 @@ func newDeviceRemoteHttpResponse(requestId connect.Id, bodyBytes []byte, err err
 		requestId,
 		bodyBytes,
 		err,
-		deviceRpcDefaultHttpMaxBodyBytes,
+		defaultDeviceRpcSettings().HttpMaxBodyBytes,
 	)
 }
 
 func newDeviceRemoteHttpResponseWithLimit(requestId connect.Id, bodyBytes []byte, err error, maxBodyBytes int) *DeviceRemoteHttpResponse {
 	if maxBodyBytes <= 0 {
-		maxBodyBytes = deviceRpcDefaultHttpMaxBodyBytes
+		maxBodyBytes = defaultDeviceRpcSettings().HttpMaxBodyBytes
 	}
 	if maxBodyBytes < len(bodyBytes) {
 		bodyBytes = nil
