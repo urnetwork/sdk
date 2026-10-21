@@ -83,3 +83,10 @@ func (self *viewControllerManager) CloseClientSessionViewController(vc *ClientSe
 		self.CloseViewController(vc)
 	}
 }
+
+// Closes a crypto invoice controller this manager opened; nil is a no-op.
+func (self *viewControllerManager) CloseCryptoInvoiceViewController(vc *CryptoInvoiceViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}

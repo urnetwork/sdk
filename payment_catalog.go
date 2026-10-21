@@ -73,27 +73,37 @@ const StripeRedirectOnCompletionNever = "never"
 // Normalized store families for Subscription.Store. The raw store value is a
 // server-side store id; each family maps to the place the subscription must be
 // cancelled (Apple subscriptions page, Play subscriptions page, the Stripe
-// billing portal).
+// billing portal), or says there is nothing to cancel.
 const (
 	SubscriptionStoreApple  = "apple"
 	SubscriptionStoreGoogle = "google"
 	SubscriptionStoreStripe = "stripe"
+	// SubscriptionStoreCrypto is a one-time crypto payment (the markets
+	// "solana" for USDC, "monero" and "zcash"). It never renews, so there is
+	// nothing to cancel or manage: an app says "does not renew" and shows the
+	// renewal notice when the paid term ends (CryptoTermNoticeDue).
+	SubscriptionStoreCrypto = "crypto"
 	// SubscriptionStoreOther is any non-empty store id that matches no known
-	// family (e.g. a crypto rail). There is no per-store manage link for it.
+	// family (e.g. manual, x402, coinbase). There is no per-store manage link
+	// for it.
 	SubscriptionStoreOther = "other"
 )
 
-// ported from mmm/ur.io react/src/app/screens/Subscription.jsx normStore
+// ported from mmm/ur.io react/src/app/screens/Subscription.jsx normStore. The
+// web copy has a family for solana alone; here every one-time crypto market is
+// one family.
 var (
 	subscriptionStoreStripeRe = regexp.MustCompile(`stripe`)
 	subscriptionStoreAppleRe  = regexp.MustCompile(`apple|itunes|ios|app.?store`)
 	subscriptionStoreGoogleRe = regexp.MustCompile(`google|play|android`)
+	subscriptionStoreCryptoRe = regexp.MustCompile(`solana|monero|zcash`)
 )
 
 // ClassifySubscriptionStore maps a raw Subscription.Store id to one of the
 // SubscriptionStore* families, or "" for an empty store. Matching is
-// case-insensitive substring matching, ported verbatim from the web app's
-// normStore (mmm/ur.io react/src/app/screens/Subscription.jsx).
+// case-insensitive substring matching, ported from the web app's normStore
+// (mmm/ur.io react/src/app/screens/Subscription.jsx). Before Zcash and Monero,
+// "solana" classified as SubscriptionStoreOther.
 func ClassifySubscriptionStore(store string) string {
 	s := strings.ToLower(store)
 	switch {
@@ -105,6 +115,8 @@ func ClassifySubscriptionStore(store string) string {
 		return SubscriptionStoreApple
 	case subscriptionStoreGoogleRe.MatchString(s):
 		return SubscriptionStoreGoogle
+	case subscriptionStoreCryptoRe.MatchString(s):
+		return SubscriptionStoreCrypto
 	default:
 		return SubscriptionStoreOther
 	}

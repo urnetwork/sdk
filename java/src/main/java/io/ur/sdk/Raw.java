@@ -50,6 +50,10 @@ public interface Raw extends Library {
   interface urnet_contract_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_create_account_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_create_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_crypto_invoice_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_crypto_payment_assets_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_crypto_payment_intent_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_crypto_payment_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_default_location_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_delete_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_device_configuration_changed_cb extends Callback { void invoke(Pointer a0); }
@@ -285,6 +289,8 @@ public interface Raw extends Library {
   void urnet_api_close(long a0);
   void urnet_api_create_account_wallet(long a0, String a1, urnet_create_account_wallet_cb a2, Pointer a3);
   void urnet_api_create_api_key(long a0, String a1, urnet_create_api_key_cb a2, Pointer a3);
+  void urnet_api_create_crypto_payment_intent(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
+  void urnet_api_create_data_crypto_payment_intent(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
   void urnet_api_create_solana_payment_intent(long a0, String a1, urnet_solana_payment_intent_cb a2, Pointer a3);
   void urnet_api_create_stripe_checkout_session(long a0, String a1, urnet_stripe_create_checkout_session_cb a2, Pointer a3);
   void urnet_api_create_stripe_payment_intent(long a0, String a1, urnet_stripe_payment_intent_cb a2, Pointer a3);
@@ -302,6 +308,8 @@ public interface Raw extends Library {
   Pointer urnet_api_get_by_jwt(long a0);
   Pointer urnet_api_get_client_info(long a0);
   byte urnet_api_get_credential_persistence_error(long a0, PointerByReference a1);
+  void urnet_api_get_crypto_payment_assets(long a0, urnet_crypto_payment_assets_cb a1, Pointer a2);
+  void urnet_api_get_crypto_payment_status(long a0, String a1, urnet_crypto_payment_status_cb a2, Pointer a3);
   void urnet_api_get_leaderboard(long a0, String a1, urnet_get_leaderboard_cb a2, Pointer a3);
   void urnet_api_get_network_blocked_locations(long a0, urnet_get_network_blocked_locations_cb a1, Pointer a2);
   void urnet_api_get_network_clients(long a0, urnet_get_network_clients_cb a1, Pointer a2);
@@ -341,6 +349,7 @@ public interface Raw extends Library {
   Pointer urnet_api_remove_network_client_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_remove_wallet(long a0, String a1, urnet_remove_wallet_cb a2, Pointer a3);
   void urnet_api_request_jwt_refresh(long a0);
+  void urnet_api_requote_crypto_payment(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
   void urnet_api_revoke_network_session(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
   void urnet_api_revoke_other_network_sessions(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
   void urnet_api_send_feedback(long a0, String a1, urnet_send_feedback_cb a2, Pointer a3);
@@ -530,6 +539,17 @@ public interface Raw extends Library {
   void urnet_contract_view_controller_set_window_duration_seconds(long a0, long a1);
   void urnet_contract_view_controller_start(long a0);
   void urnet_contract_view_controller_stop(long a0);
+  long urnet_crypto_invoice_view_controller_add_crypto_invoice_listener(long a0, urnet_crypto_invoice_cb a1, Pointer a2);
+  void urnet_crypto_invoice_view_controller_close(long a0);
+  void urnet_crypto_invoice_view_controller_dismiss(long a0);
+  Pointer urnet_crypto_invoice_view_controller_get_payment_method(long a0);
+  Pointer urnet_crypto_invoice_view_controller_get_state(long a0);
+  void urnet_crypto_invoice_view_controller_requote(long a0);
+  byte urnet_crypto_invoice_view_controller_resume(long a0);
+  void urnet_crypto_invoice_view_controller_set_payment_method(long a0, String a1);
+  void urnet_crypto_invoice_view_controller_start(long a0);
+  void urnet_crypto_invoice_view_controller_start_invoice(long a0, String a1, String a2, String a3, String a4);
+  void urnet_crypto_invoice_view_controller_stop(long a0);
   long urnet_device_add_allow_foreground_change_listener(long a0, urnet_allow_foreground_change_cb a1, Pointer a2);
   long urnet_device_add_auth_logout_listener(long a0, urnet_auth_logout_cb a1, Pointer a2);
   void urnet_device_add_block_action_override(long a0, String a1);
@@ -692,6 +712,7 @@ public interface Raw extends Library {
   void urnet_device_local_close_connect_view_controller(long a0, long a1);
   void urnet_device_local_close_contract_details_view_controller(long a0, long a1);
   void urnet_device_local_close_contract_view_controller(long a0, long a1);
+  void urnet_device_local_close_crypto_invoice_view_controller(long a0, long a1);
   void urnet_device_local_close_devices_view_controller(long a0, long a1);
   void urnet_device_local_close_locations_view_controller(long a0, long a1);
   void urnet_device_local_close_peer_view_controller(long a0, long a1);
@@ -740,6 +761,7 @@ public interface Raw extends Library {
   long urnet_device_local_open_connect_view_controller(long a0);
   long urnet_device_local_open_contract_details_view_controller(long a0);
   long urnet_device_local_open_contract_view_controller(long a0);
+  long urnet_device_local_open_crypto_invoice_view_controller(long a0);
   long urnet_device_local_open_devices_view_controller(long a0);
   long urnet_device_local_open_extender_view_controller(long a0);
   long urnet_device_local_open_feedback_view_controller(long a0);
@@ -833,6 +855,7 @@ public interface Raw extends Library {
   void urnet_device_remote_close_connect_view_controller(long a0, long a1);
   void urnet_device_remote_close_contract_details_view_controller(long a0, long a1);
   void urnet_device_remote_close_contract_view_controller(long a0, long a1);
+  void urnet_device_remote_close_crypto_invoice_view_controller(long a0, long a1);
   void urnet_device_remote_close_devices_view_controller(long a0, long a1);
   void urnet_device_remote_close_locations_view_controller(long a0, long a1);
   void urnet_device_remote_close_peer_view_controller(long a0, long a1);
@@ -866,6 +889,7 @@ public interface Raw extends Library {
   long urnet_device_remote_open_connect_view_controller(long a0);
   long urnet_device_remote_open_contract_details_view_controller(long a0);
   long urnet_device_remote_open_contract_view_controller(long a0);
+  long urnet_device_remote_open_crypto_invoice_view_controller(long a0);
   long urnet_device_remote_open_devices_view_controller(long a0);
   long urnet_device_remote_open_extender_view_controller(long a0);
   long urnet_device_remote_open_feedback_view_controller(long a0);
@@ -1334,6 +1358,7 @@ public interface Raw extends Library {
   Pointer urnet_build_checkout_bridge_url_with_redirect(String a0, String a1);
   Pointer urnet_build_inline_checkout_bridge_url(String a0);
   Pointer urnet_build_solana_payment_url(String a0, PointerByReference a1);
+  byte urnet_check_crypto_payment_uri(String a0, String a1, String a2);
   Pointer urnet_classify_balance_code_redeem(String a0, String a1, String a2);
   Pointer urnet_classify_subscription_store(String a0);
   Pointer urnet_client_event_names();
@@ -1345,6 +1370,10 @@ public interface Raw extends Library {
   Pointer urnet_compute_price_equivalent(double a0, double a1, long a2);
   Pointer urnet_connect_link_url(String a0, String a1, String a2);
   Pointer urnet_create_payment_reference();
+  byte urnet_crypto_asset_sells(String a0, String a1, String a2);
+  Pointer urnet_crypto_asset_ticker(String a0);
+  byte urnet_crypto_term_notice_due(String a0);
+  Pointer urnet_crypto_wallet_suggestions(String a0);
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
   Pointer urnet_default_provider_transport_settings();
@@ -1414,6 +1443,7 @@ public interface Raw extends Library {
   long urnet_new_client_event_queue(long a0, String a1, String a2, String a3);
   Pointer urnet_new_client_info(String a0, String a1);
   Pointer urnet_new_connect_first_event();
+  long urnet_new_crypto_invoice_view_controller(long a0, String a1);
   long urnet_new_device_local(long a0, String a1, String a2, String a3, String a4, String a5, String a6, PointerByReference a7);
   long urnet_new_device_local_key_material(Pointer a0, int a1, Pointer a2, int a3, Pointer a4, int a5);
   long urnet_new_device_local_with_defaults(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, PointerByReference a7);
@@ -1462,6 +1492,8 @@ public interface Raw extends Library {
   Pointer urnet_parse_client_events_json(String a0, PointerByReference a1);
   Pointer urnet_parse_id(String a0, PointerByReference a1);
   Pointer urnet_parse_vless_link(String a0);
+  byte urnet_payment_method_allows_plan(String a0, String a1);
+  Pointer urnet_payment_methods(String a0, String a1);
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);

@@ -1,0 +1,1068 @@
+{
+  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived.",
+  "addresses": {
+    "xmr": "8BSyntheticXmrSubaddressFixture",
+    "zec": "u1syntheticzcashunifiedaddressfixture",
+    "usdc_solana": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ"
+  },
+  "paymentMethods": [
+    {
+      "name": "no assets listed: card only",
+      "assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "an empty list: card only",
+      "assets": [],
+      "items": [
+        "yearly",
+        "yearly_onboarding"
+      ],
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "the server's order means nothing: card, usdc, zcash, monero",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600
+        }
+      ],
+      "items": [
+        "yearly",
+        "yearly_onboarding"
+      ],
+      "expected": [
+        "card",
+        "usdc_solana",
+        "zec",
+        "xmr"
+      ]
+    },
+    {
+      "name": "a coin is offered when it sells at least one of the items",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "zec",
+          "items": [
+            "data_1tib"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": [
+        "yearly_onboarding",
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "xmr"
+      ]
+    },
+    {
+      "name": "data packs",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "zec",
+          "items": [
+            "data_10tib"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "usdc_solana",
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600
+        }
+      ],
+      "items": [
+        "data_1tib",
+        "data_10tib"
+      ],
+      "expected": [
+        "card",
+        "usdc_solana",
+        "zec"
+      ]
+    },
+    {
+      "name": "monthly is card only, even when a list names it",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "monthly",
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "monthly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600
+        }
+      ],
+      "items": [
+        "monthly"
+      ],
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "monthly beside yearly: the coins that sell yearly",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "monthly",
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "monthly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600
+        }
+      ],
+      "items": [
+        "monthly",
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "xmr"
+      ]
+    },
+    {
+      "name": "an asset this sdk does not know is never offered",
+      "assets": [
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 2,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "XMR",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "no items: card only",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": [],
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "items not given: card only",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": null,
+      "expected": [
+        "card"
+      ]
+    },
+    {
+      "name": "a null entry and a repeated asset are skipped",
+      "assets": [
+        null,
+        {
+          "asset": "zec",
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "zec"
+      ]
+    }
+  ],
+  "cryptoAssetSells": [
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "yearly",
+      "expected": true
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "yearly_onboarding",
+      "expected": true
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "data_1tib",
+      "expected": true
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "data_10tib",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "zec",
+      "item": "yearly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "monthly"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "monthly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "asset": "xmr",
+      "item": "",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "asset": "btc",
+      "item": "yearly",
+      "expected": false
+    },
+    {
+      "assets": null,
+      "asset": "xmr",
+      "item": "yearly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "zec"
+        }
+      ],
+      "asset": "zec",
+      "item": "yearly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "items": [
+            "data_10tib"
+          ]
+        }
+      ],
+      "asset": "usdc_solana",
+      "item": "data_10tib",
+      "expected": true
+    }
+  ],
+  "paymentMethodAllowsPlan": [
+    {
+      "method": "card",
+      "plan": "monthly",
+      "expected": true
+    },
+    {
+      "method": "card",
+      "plan": "yearly",
+      "expected": true
+    },
+    {
+      "method": "usdc_solana",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "zec",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "xmr",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "xmr",
+      "plan": "yearly",
+      "expected": true
+    },
+    {
+      "method": "zec",
+      "plan": "yearly_onboarding",
+      "expected": true
+    },
+    {
+      "method": "usdc_solana",
+      "plan": "data_1tib",
+      "expected": true
+    },
+    {
+      "method": "",
+      "plan": "monthly",
+      "expected": true
+    },
+    {
+      "method": "btc",
+      "plan": "monthly",
+      "expected": true
+    },
+    {
+      "method": "XMR",
+      "plan": "monthly",
+      "expected": true
+    }
+  ],
+  "cryptoAssetTicker": [
+    {
+      "asset": "usdc_solana",
+      "expected": "USDC"
+    },
+    {
+      "asset": "zec",
+      "expected": "ZEC"
+    },
+    {
+      "asset": "xmr",
+      "expected": "XMR"
+    },
+    {
+      "asset": "card",
+      "expected": ""
+    },
+    {
+      "asset": "",
+      "expected": ""
+    },
+    {
+      "asset": "XMR",
+      "expected": ""
+    }
+  ],
+  "cryptoWalletSuggestions": [
+    {
+      "asset": "xmr",
+      "expected": [
+        "Cake",
+        "Feather",
+        "Monerujo",
+        "Stack",
+        "Unstoppable"
+      ]
+    },
+    {
+      "asset": "zec",
+      "expected": [
+        "Zodl",
+        "Cake",
+        "Zingo",
+        "Zkool",
+        "Vizor"
+      ]
+    },
+    {
+      "asset": "usdc_solana",
+      "expected": [
+        "Phantom",
+        "Solflare"
+      ]
+    },
+    {
+      "asset": "card",
+      "expected": []
+    },
+    {
+      "asset": "",
+      "expected": []
+    }
+  ],
+  "checkCryptoPaymentUri": [
+    {
+      "name": "monero, as the server builds it",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_amount=0.072387&tx_description=URnetwork%20Pro%20yearly",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": true
+    },
+    {
+      "name": "monero without a query",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": true
+    },
+    {
+      "name": "the scheme compares without case",
+      "asset": "xmr",
+      "uri": "MONERO:8BSyntheticXmrSubaddressFixture?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": true
+    },
+    {
+      "name": "another coin's scheme",
+      "asset": "xmr",
+      "uri": "zcash:8BSyntheticXmrSubaddressFixture?amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "another address",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressOther?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "the shown address is only a prefix",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixtureX?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "the address is matched byte for byte",
+      "asset": "xmr",
+      "uri": "monero:8bsyntheticxmrsubaddressfixture?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an authority instead of an address",
+      "asset": "xmr",
+      "uri": "monero://8BSyntheticXmrSubaddressFixture?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a second monero recipient",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture;8BSyntheticXmrSubaddressOther?tx_amount=1;2",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a percent-encoded address",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture%20?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a fragment",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_amount=1#more",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a space",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_description=URnetwork Pro",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a line break",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture\n",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a character outside ascii",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_description=café",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "the same character percent-encoded",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_description=caf%C3%A9",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": true
+    },
+    {
+      "name": "no address to check against",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture",
+      "address": "",
+      "expected": false
+    },
+    {
+      "name": "no uri",
+      "asset": "xmr",
+      "uri": "",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "no scheme",
+      "asset": "xmr",
+      "uri": "8BSyntheticXmrSubaddressFixture",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an empty address in the uri",
+      "asset": "xmr",
+      "uri": "monero:?tx_amount=1",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an asset this sdk does not know",
+      "asset": "btc",
+      "uri": "bitcoin:bc1synthetic?amount=1",
+      "address": "bc1synthetic",
+      "expected": false
+    },
+    {
+      "name": "zcash, as the server builds it",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&message=URnetwork%20Pro%20yearly",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "a second zcash recipient",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&address.1=u1syntheticzcashother&amount.1=1",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "the zcash address as a parameter",
+      "asset": "zec",
+      "uri": "zcash:?address=u1syntheticzcashunifiedaddressfixture&amount=0.5",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "an address parameter beside the zcash address",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?address=u1syntheticzcashunifiedaddressfixture&amount=0.5",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a percent-encoded recipient parameter",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&%61ddress.1=u1syntheticzcashother",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a recipient parameter in capitals",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&ADDRESS.1=u1syntheticzcashother",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a malformed escape in a parameter name",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&%zz=1",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a parameter that only starts like address",
+      "asset": "zec",
+      "uri": "zcash:u1syntheticzcashunifiedaddressfixture?amount=0.5&addressbook=1",
+      "address": "u1syntheticzcashunifiedaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "an address parameter is only refused for zcash",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?address=8BSyntheticXmrSubaddressOther",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": true
+    },
+    {
+      "name": "solana pay, as the server builds it",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "a usdc invoice with a monero uri",
+      "asset": "usdc_solana",
+      "uri": "monero:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?tx_amount=1",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    }
+  ],
+  "cryptoTermNoticeDue": [
+    {
+      "name": "during the paid term",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-19T23:59:59Z",
+      "expected": false
+    },
+    {
+      "name": "from the end of the term",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": true
+    },
+    {
+      "name": "in the grace",
+      "term": {
+        "market": "zcash",
+        "term_end_time": "2026-10-20T00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-11-18T23:59:59Z",
+      "expected": true
+    },
+    {
+      "name": "not once the grace ended",
+      "term": {
+        "market": "solana",
+        "term_end_time": "2026-10-20T00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-11-19T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "fractional seconds",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T00:00:00.5Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "fractional seconds, passed",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T00:00:00.5Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:01Z",
+      "expected": true
+    },
+    {
+      "name": "a zone offset",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T02:00:00+02:00",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": true
+    },
+    {
+      "name": "no term",
+      "term": null,
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "an empty time",
+      "term": {
+        "market": "monero",
+        "term_end_time": "",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "a space for the T",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20 00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "no zone",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-20T00:00:00",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "hour 24",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-10-19T24:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    },
+    {
+      "name": "a day the month does not have",
+      "term": {
+        "market": "monero",
+        "term_end_time": "2026-02-30T00:00:00Z",
+        "grace_end_time": "2026-11-19T00:00:00Z"
+      },
+      "now": "2026-10-20T00:00:00Z",
+      "expected": false
+    }
+  ],
+  "invoiceDismiss": [
+    {
+      "name": "an account invoice with nothing received is dropped",
+      "delivery": "account",
+      "status": "pending",
+      "expected": "drop"
+    },
+    {
+      "name": "an account invoice whose quote expired with nothing received is dropped",
+      "delivery": "account",
+      "status": "expired",
+      "expected": "drop"
+    },
+    {
+      "name": "an account invoice with money seen is kept for the next resume",
+      "delivery": "account",
+      "status": "seen",
+      "expected": "keep"
+    },
+    {
+      "name": "an account invoice that is confirming is kept for the next resume",
+      "delivery": "account",
+      "status": "confirming",
+      "expected": "keep"
+    },
+    {
+      "name": "an account invoice in review is kept for the next resume",
+      "delivery": "account",
+      "status": "review",
+      "expected": "keep"
+    },
+    {
+      "name": "a network invoice with nothing received is dropped: its data goes to the network anyway",
+      "delivery": "network",
+      "status": "pending",
+      "expected": "drop"
+    },
+    {
+      "name": "a network invoice whose quote expired with nothing received is dropped",
+      "delivery": "network",
+      "status": "expired",
+      "expected": "drop"
+    },
+    {
+      "name": "a network invoice with money seen is hidden",
+      "delivery": "network",
+      "status": "seen",
+      "expected": "hide"
+    },
+    {
+      "name": "a network invoice that is confirming is hidden",
+      "delivery": "network",
+      "status": "confirming",
+      "expected": "hide"
+    },
+    {
+      "name": "a network invoice in review is hidden",
+      "delivery": "network",
+      "status": "review",
+      "expected": "hide"
+    },
+    {
+      "name": "a code invoice that reads pending is hidden: USDC goes from pending straight to paid",
+      "delivery": "code",
+      "status": "pending",
+      "expected": "hide"
+    },
+    {
+      "name": "a code invoice that reads expired is hidden: a late payment credits while it reads expired",
+      "delivery": "code",
+      "status": "expired",
+      "expected": "hide"
+    },
+    {
+      "name": "a code invoice with money seen is hidden",
+      "delivery": "code",
+      "status": "seen",
+      "expected": "hide"
+    },
+    {
+      "name": "a code invoice that is confirming is hidden",
+      "delivery": "code",
+      "status": "confirming",
+      "expected": "hide"
+    },
+    {
+      "name": "a code invoice in review is hidden",
+      "delivery": "code",
+      "status": "review",
+      "expected": "hide"
+    },
+    {
+      "name": "a paid code invoice is dropped once its code was shown",
+      "delivery": "code",
+      "status": "paid",
+      "expected": "drop"
+    }
+  ],
+  "invoiceCountdown": [
+    {
+      "name": "a device clock 31 minutes fast still shows the whole quote",
+      "quoted_at": "2026-10-20T18:00:00Z",
+      "expires_at": "2026-10-20T18:30:00Z",
+      "received_at": "2026-10-20T18:31:00Z",
+      "after_ms": 0,
+      "expected": 1800
+    },
+    {
+      "name": "a device clock 31 minutes fast, 10 s later",
+      "quoted_at": "2026-10-20T18:00:00Z",
+      "expires_at": "2026-10-20T18:30:00Z",
+      "received_at": "2026-10-20T18:31:00Z",
+      "after_ms": 10000,
+      "expected": 1790
+    },
+    {
+      "name": "a device clock 20 minutes slow does not lengthen the quote",
+      "quoted_at": "2026-10-20T18:00:00Z",
+      "expires_at": "2026-10-20T18:30:00Z",
+      "received_at": "2026-10-20T17:40:00Z",
+      "after_ms": 1799500,
+      "expected": 1
+    },
+    {
+      "name": "a device clock 20 minutes slow, at the quote's end",
+      "quoted_at": "2026-10-20T18:00:00Z",
+      "expires_at": "2026-10-20T18:30:00Z",
+      "received_at": "2026-10-20T17:40:00Z",
+      "after_ms": 1800000,
+      "expected": 0
+    },
+    {
+      "name": "an hour-long USDC quote",
+      "quoted_at": "2026-10-20T18:00:00Z",
+      "expires_at": "2026-10-20T19:00:00Z",
+      "received_at": "2026-10-20T18:00:00.300Z",
+      "after_ms": 0,
+      "expected": 3600
+    },
+    {
+      "name": "without quoted_at the device clock is all there is",
+      "quoted_at": "",
+      "expires_at": "2026-10-20T18:30:00Z",
+      "received_at": "2026-10-20T18:20:00Z",
+      "after_ms": 0,
+      "expected": 600
+    }
+  ]
+}

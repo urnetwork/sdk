@@ -67,9 +67,15 @@ func TestClassifySubscriptionStore(t *testing.T) {
 		{"android", SubscriptionStoreGoogle},
 		// stripe wins over the others when both match (web switch order)
 		{"stripe-apple-bridge", SubscriptionStoreStripe},
+		// the one-time crypto markets: nothing renews, nothing to cancel
+		{"solana", SubscriptionStoreCrypto},
+		{"Solana", SubscriptionStoreCrypto},
+		{"monero", SubscriptionStoreCrypto},
+		{"zcash", SubscriptionStoreCrypto},
 		// unknown but non-empty
-		{"solana", SubscriptionStoreOther},
 		{"coinbase", SubscriptionStoreOther},
+		{"manual", SubscriptionStoreOther},
+		{"x402", SubscriptionStoreOther},
 		// empty
 		{"", ""},
 	}

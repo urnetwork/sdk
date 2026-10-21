@@ -54,6 +54,8 @@ type ViewControllerManager interface {
 
 	OpenProviderStatusViewController() *ProviderStatusViewController
 
+	OpenCryptoInvoiceViewController() *CryptoInvoiceViewController
+
 	// Deprecated: use the split client/provider entry points below.
 	OpenContractDetailsViewController() *ContractDetailsViewController
 	OpenClientContractDetailsViewController() *ContractDetailsViewController
@@ -211,6 +213,15 @@ func (self *viewControllerManager) OpenSubscriptionBalanceViewController() *Subs
 // Opens the provider status controller, owned by this manager until closed.
 func (self *viewControllerManager) OpenProviderStatusViewController() *ProviderStatusViewController {
 	vc := newProviderStatusViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+// Opens the crypto invoice controller on the device's api, saving the invoice
+// and the payment method in the network space's local-state directory (the one
+// a sign-out clears). Owned by this manager until closed.
+func (self *viewControllerManager) OpenCryptoInvoiceViewController() *CryptoInvoiceViewController {
+	vc := newCryptoInvoiceViewController(self.ctx, self.device.GetApi(), deviceLocalStorageDir(self.device))
 	self.openViewController(vc)
 	return vc
 }
