@@ -99,6 +99,14 @@ typedef void (*urnet_create_account_wallet_cb)(void* user_data, const char* resu
 void urnet_invoke_create_account_wallet(urnet_create_account_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_create_api_key(urnet_create_api_key_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_crypto_invoice_cb)(void* user_data);
+void urnet_invoke_crypto_invoice(urnet_crypto_invoice_cb cb, void* user_data);
+typedef void (*urnet_crypto_payment_assets_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_crypto_payment_assets(urnet_crypto_payment_assets_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_crypto_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_crypto_payment_intent(urnet_crypto_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_crypto_payment_status_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_crypto_payment_status(urnet_crypto_payment_status_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json);
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);

@@ -258,6 +258,32 @@ func apiCredentialCases() []apiCredentialCase {
 				api.CreateSolanaPaymentIntent(&SolanaPaymentIntentArgs{}, cb)
 			})
 		}},
+		// crypto invoices: only the signed-in intent carries a credential; the
+		// public routes carry none, so a code bought without a sign-in never
+		// arrives with the device's network
+		{"GetCryptoPaymentAssets", "GET /pay/crypto/assets", "/pay/crypto/assets", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*CryptoPaymentAssetsResult]) { api.GetCryptoPaymentAssets(cb) })
+		}},
+		{"CreateCryptoPaymentIntent", "POST /pay/crypto/intent", "/pay/crypto/intent", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*CryptoPaymentIntentResult]) {
+				api.CreateCryptoPaymentIntent(&CreateCryptoPaymentIntentArgs{}, cb)
+			})
+		}},
+		{"CreateDataCryptoPaymentIntent", "POST /pay/data/crypto-intent", "/pay/data/crypto-intent", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*CryptoPaymentIntentResult]) {
+				api.CreateDataCryptoPaymentIntent(&CreateDataCryptoPaymentIntentArgs{}, cb)
+			})
+		}},
+		{"GetCryptoPaymentStatus", "POST /pay/crypto/status", "/pay/crypto/status", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*CryptoPaymentStatusResult]) {
+				api.GetCryptoPaymentStatus(&CryptoPaymentStatusArgs{}, cb)
+			})
+		}},
+		{"RequoteCryptoPayment", "POST /pay/crypto/requote", "/pay/crypto/requote", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*CryptoPaymentIntentResult]) {
+				api.RequoteCryptoPayment(&CryptoPaymentStatusArgs{}, cb)
+			})
+		}},
 		{"CreateStripePaymentIntent", "POST /stripe/payment-intent", "/stripe/payment-intent", sendsCurrent, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*StripeCreatePaymentIntentResult]) {
 				api.CreateStripePaymentIntent(&StripeCreatePaymentIntentArgs{}, cb)

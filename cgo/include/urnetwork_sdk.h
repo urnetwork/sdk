@@ -183,6 +183,24 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONTROL_DOH_ERROR_IP_REQUIRED "control_doh_error_ip_required"
 #define URNET_CONTROL_DOH_ERROR_TOO_MANY "control_doh_error_too_many"
 #define URNET_CONTROL_DOH_ERROR_URL_INVALID "control_doh_error_url_invalid"
+#define URNET_CRYPTO_ASSET_USDC_SOLANA "usdc_solana"
+#define URNET_CRYPTO_ASSET_XMR "xmr"
+#define URNET_CRYPTO_ASSET_ZEC "zec"
+#define URNET_CRYPTO_INVOICE_PHASE_FAILED "failed"
+#define URNET_CRYPTO_INVOICE_PHASE_NONE "none"
+#define URNET_CRYPTO_INVOICE_PHASE_OPEN "open"
+#define URNET_CRYPTO_INVOICE_PHASE_PAID "paid"
+#define URNET_CRYPTO_INVOICE_PHASE_STARTING "starting"
+#define URNET_CRYPTO_PAYMENT_DELIVERY_ACCOUNT "account"
+#define URNET_CRYPTO_PAYMENT_DELIVERY_CODE "code"
+#define URNET_CRYPTO_PAYMENT_DELIVERY_NETWORK "network"
+#define URNET_CRYPTO_PAYMENT_STATUS_CONFIRMING "confirming"
+#define URNET_CRYPTO_PAYMENT_STATUS_EXPIRED "expired"
+#define URNET_CRYPTO_PAYMENT_STATUS_PAID "paid"
+#define URNET_CRYPTO_PAYMENT_STATUS_PENDING "pending"
+#define URNET_CRYPTO_PAYMENT_STATUS_REVIEW "review"
+#define URNET_CRYPTO_PAYMENT_STATUS_SEEN "seen"
+#define URNET_CRYPTO_PAYMENT_STATUS_UNKNOWN "unknown"
 #define URNET_DEFAULT_TUNNEL_DNS_ADDRESS_IPV6 "2001:db8::65:49:70:65"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
 #define URNET_DEVICE_RPC_VERSION 3
@@ -215,9 +233,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EVENT_PURCHASE_STARTED "purchase.started"
 #define URNET_EVENT_SIGNUP_OPTOUT_CHANGED "signup.optout_changed"
 #define URNET_EVENT_STORE_APPLE "apple"
+#define URNET_EVENT_STORE_MONERO "monero"
 #define URNET_EVENT_STORE_PLAY "play"
 #define URNET_EVENT_STORE_SOLANA "solana"
 #define URNET_EVENT_STORE_STRIPE "stripe"
+#define URNET_EVENT_STORE_ZCASH "zcash"
 #define URNET_EVENT_WIDGET_ADDED "widget.added"
 #define URNET_EXPERIMENT_SURFACE_EMAIL_SEQUENCE "email.sequence"
 #define URNET_EXPERIMENT_SURFACE_OFFER_ACCOUNT "offer.account"
@@ -299,6 +319,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ONBOARDING_OFFER_STATE_ACTIVE "active"
 #define URNET_ONBOARDING_OFFER_STATE_EXPIRED "expired"
 #define URNET_ONBOARDING_OFFER_STATE_REDEEMED "redeemed"
+#define URNET_PAYMENT_METHOD_CARD "card"
 #define URNET_PLAN_MONTHLY "monthly"
 #define URNET_PLAN_YEARLY "yearly"
 #define URNET_PLAN_YEARLY_ONBOARDING "yearly_onboarding"
@@ -369,7 +390,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMED "confirmed"
 #define URNET_PURCHASE_CONFIRMATION_STATE_IDLE "idle"
 #define URNET_PURCHASE_CONFIRMATION_STATE_WAITING_FOR_CONFIRMATION "waiting_for_confirmation"
+#define URNET_PURCHASE_ERROR_CODE_ASSET_UNAVAILABLE "asset_unavailable"
 #define URNET_PURCHASE_ERROR_CODE_GUEST_SIGN_IN_REQUIRED "guest_sign_in_required"
+#define URNET_PURCHASE_ERROR_CODE_QUOTE_EXPIRED "quote_expired"
+#define URNET_PURCHASE_ERROR_CODE_UNDERPAID "underpaid"
 #define URNET_PURCHASE_REPORT_STATUS_ALREADY_CREDITED "already_credited"
 #define URNET_PURCHASE_REPORT_STATUS_CREDITED "credited"
 #define URNET_PURCHASE_REPORT_STATUS_INVALID "invalid"
@@ -435,6 +459,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SUBPROTOCOL_RESERVED_LIMIT 1024
 #define URNET_SUBSCRIPTION_PLAN_SUPPORTER "supporter"
 #define URNET_SUBSCRIPTION_STORE_APPLE "apple"
+#define URNET_SUBSCRIPTION_STORE_CRYPTO "crypto"
 #define URNET_SUBSCRIPTION_STORE_GOOGLE "google"
 #define URNET_SUBSCRIPTION_STORE_OTHER "other"
 #define URNET_SUBSCRIPTION_STORE_STRIPE "stripe"
@@ -571,6 +596,14 @@ typedef void (*urnet_contract_status_change_cb)(void* user_data, const char* con
 typedef void (*urnet_create_account_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* CreateApiKeyCallback */
 typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
+/* CryptoInvoiceListener */
+typedef void (*urnet_crypto_invoice_cb)(void* user_data);
+/* CryptoPaymentAssetsCallback */
+typedef void (*urnet_crypto_payment_assets_cb)(void* user_data, const char* result_json, const char* err_param);
+/* CryptoPaymentIntentCallback */
+typedef void (*urnet_crypto_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
+/* CryptoPaymentStatusCallback */
+typedef void (*urnet_crypto_payment_status_cb)(void* user_data, const char* result_json, const char* err_param);
 /* DefaultLocationChangeListener */
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 /* DeleteApiKeyCallback */
@@ -938,6 +971,8 @@ void urnet_api_client_events_send(uint64_t self, const char* args_json, urnet_cl
 void urnet_api_close(uint64_t self);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
+void urnet_api_create_crypto_payment_intent(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
+void urnet_api_create_data_crypto_payment_intent(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_create_solana_payment_intent(uint64_t self, const char* args_json, urnet_solana_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_create_stripe_checkout_session(uint64_t self, const char* args_json, urnet_stripe_create_checkout_session_cb callback_result, void* callback_user_data);
 void urnet_api_create_stripe_payment_intent(uint64_t self, const char* args_json, urnet_stripe_payment_intent_cb callback_result, void* callback_user_data);
@@ -955,6 +990,8 @@ char* urnet_api_get_auth_logout_cause(uint64_t self);
 char* urnet_api_get_by_jwt(uint64_t self);
 char* urnet_api_get_client_info(uint64_t self);
 bool urnet_api_get_credential_persistence_error(uint64_t self, char** out_error);
+void urnet_api_get_crypto_payment_assets(uint64_t self, urnet_crypto_payment_assets_cb callback_result, void* callback_user_data);
+void urnet_api_get_crypto_payment_status(uint64_t self, const char* args_json, urnet_crypto_payment_status_cb callback_result, void* callback_user_data);
 void urnet_api_get_leaderboard(uint64_t self, const char* args_json, urnet_get_leaderboard_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_blocked_locations(uint64_t self, urnet_get_network_blocked_locations_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_clients(uint64_t self, urnet_get_network_clients_cb callback_result, void* callback_user_data);
@@ -994,6 +1031,7 @@ void urnet_api_remove_network_client(uint64_t self, const char* args_json, urnet
 char* urnet_api_remove_network_client_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_remove_wallet(uint64_t self, const char* remove_wallet_json, urnet_remove_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_request_jwt_refresh(uint64_t self);
+void urnet_api_requote_crypto_payment(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_revoke_network_session(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
 void urnet_api_revoke_other_network_sessions(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
 void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urnet_send_feedback_cb callback_result, void* callback_user_data);
@@ -1226,6 +1264,20 @@ void urnet_contract_view_controller_set_window_duration_seconds(uint64_t self, i
 void urnet_contract_view_controller_start(uint64_t self);
 void urnet_contract_view_controller_stop(uint64_t self);
 
+/* ----- CryptoInvoiceViewController ----- */
+
+uint64_t urnet_crypto_invoice_view_controller_add_crypto_invoice_listener(uint64_t self, urnet_crypto_invoice_cb listener_crypto_invoice_changed, void* listener_user_data);
+void urnet_crypto_invoice_view_controller_close(uint64_t self);
+void urnet_crypto_invoice_view_controller_dismiss(uint64_t self);
+char* urnet_crypto_invoice_view_controller_get_payment_method(uint64_t self);
+char* urnet_crypto_invoice_view_controller_get_state(uint64_t self);
+void urnet_crypto_invoice_view_controller_requote(uint64_t self);
+bool urnet_crypto_invoice_view_controller_resume(uint64_t self);
+void urnet_crypto_invoice_view_controller_set_payment_method(uint64_t self, const char* method);
+void urnet_crypto_invoice_view_controller_start(uint64_t self);
+void urnet_crypto_invoice_view_controller_start_invoice(uint64_t self, const char* asset, const char* plan, const char* item_id, const char* storefront_country);
+void urnet_crypto_invoice_view_controller_stop(uint64_t self);
+
 /* ----- Device ----- */
 
 uint64_t urnet_device_add_allow_foreground_change_listener(uint64_t self, urnet_allow_foreground_change_cb listener_allow_foreground_changed, void* listener_user_data);
@@ -1393,6 +1445,7 @@ void urnet_device_local_close_client_session_view_controller(uint64_t self, uint
 void urnet_device_local_close_connect_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_contract_details_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_contract_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_crypto_invoice_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
@@ -1441,6 +1494,7 @@ uint64_t urnet_device_local_open_client_session_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_crypto_invoice_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
@@ -1546,6 +1600,7 @@ void urnet_device_remote_close_client_session_view_controller(uint64_t self, uin
 void urnet_device_remote_close_connect_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_contract_details_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_contract_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_crypto_invoice_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
@@ -1579,6 +1634,7 @@ uint64_t urnet_device_remote_open_client_session_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_crypto_invoice_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
@@ -1842,6 +1898,7 @@ char* urnet_network_space_get_alt_url(uint64_t self);
 char* urnet_network_space_get_alt_url_v4(uint64_t self);
 char* urnet_network_space_get_alt_url_v6(uint64_t self);
 uint64_t urnet_network_space_get_api(uint64_t self);
+bool urnet_network_space_get_api_alt_enabled(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
 char* urnet_network_space_get_api_url_v4(uint64_t self);
 char* urnet_network_space_get_api_url_v6(uint64_t self);
@@ -2166,6 +2223,7 @@ char* urnet_build_checkout_bridge_url(const char* client_secret);
 char* urnet_build_checkout_bridge_url_with_redirect(const char* client_secret, const char* redirect_link);
 char* urnet_build_inline_checkout_bridge_url(const char* client_secret);
 char* urnet_build_solana_payment_url(const char* args_json, char** out_error);
+bool urnet_check_crypto_payment_uri(const char* asset, const char* uri, const char* address);
 char* urnet_classify_balance_code_redeem(const char* result_json, const char* redeemed_codes_json, const char* secret);
 char* urnet_classify_subscription_store(const char* store);
 char* urnet_client_event_names(void);
@@ -2177,6 +2235,10 @@ int64_t urnet_compare_points_leaderboard_values(const char* sort, const char* a_
 char* urnet_compute_price_equivalent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits);
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_create_payment_reference(void);
+bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const char* item);
+char* urnet_crypto_asset_ticker(const char* asset);
+bool urnet_crypto_term_notice_due(const char* term_json);
+char* urnet_crypto_wallet_suggestions(const char* asset);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
@@ -2247,6 +2309,7 @@ uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* p
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_client_info(const char* device_type, const char* app_version);
 char* urnet_new_connect_first_event(void);
+uint64_t urnet_new_crypto_invoice_view_controller(uint64_t api, const char* storage_dir);
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
 uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int32_t client_key_seed_len, const uint8_t* provide_tls_certificate_pem, int32_t provide_tls_certificate_pem_len, const uint8_t* provide_tls_private_key_pem, int32_t provide_tls_private_key_pem_len);
 uint64_t urnet_new_device_local_with_defaults(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, char** out_error);
@@ -2262,6 +2325,7 @@ uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
 uint64_t urnet_new_network_space_manager_no_storage(void);
+uint64_t urnet_new_network_space_manager_with_api_alt(const char* storage_path, bool api_alt_enabled);
 char* urnet_new_offer_card_tapped_event(const char* plan);
 char* urnet_new_offer_cta_tapped_event(const char* plan, const char* store);
 char* urnet_new_offer_declined_event(const char* control, int64_t elapsed_ms);
@@ -2295,6 +2359,8 @@ char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
 char* urnet_parse_vless_link(const char* link);
+bool urnet_payment_method_allows_plan(const char* method, const char* plan);
+char* urnet_payment_methods(const char* assets_json, const char* items_json);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);
@@ -3016,6 +3082,130 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   api_key?: string
  *   name?: string
  *   error?: ApiError | null
+ */
+
+/* CreateCryptoPaymentIntentArgs (json):
+ *   asset: string
+ *   plan?: string
+ *   item_id?: string
+ *   storefront_country?: string
+ */
+
+/* CreateDataCryptoPaymentIntentArgs (json):
+ *   asset: string
+ *   item_id: string
+ *   network_name: string
+ *   email: string
+ */
+
+/* CryptoInvoiceState (json):
+ *   phase: string
+ *   intent_id: string
+ *   asset: string
+ *   plan: string
+ *   item_id: string
+ *   delivery: string
+ *   network_name: string
+ *   address: string
+ *   amount: string
+ *   amount_atomic: string
+ *   ticker: string
+ *   uri: string
+ *   memo: string
+ *   price_usd: number
+ *   rate_usd: number
+ *   expires_at: string
+ *   seconds_left: number
+ *   status: string
+ *   review_reason: string
+ *   received: string
+ *   remaining: string
+ *   confirmations: number
+ *   confirmations_required: number
+ *   balance_code: string
+ *   refreshing: boolean
+ *   error_code: string
+ *   error_message: string
+ */
+
+/* CryptoPaymentAsset (json):
+ *   asset: string
+ *   plans?: StringList | null
+ *   items?: StringList | null
+ *   confirmations_required: number
+ *   quote_ttl_seconds: number
+ */
+
+/* CryptoPaymentAssetList (json):
+ *   = CryptoPaymentAsset | null[]
+ */
+
+/* CryptoPaymentAssetsResult (json):
+ *   assets: CryptoPaymentAssetList | null
+ */
+
+/* CryptoPaymentError (json):
+ *   code?: string
+ *   message: string
+ */
+
+/* CryptoPaymentIntentResult (json):
+ *   intent_id?: string
+ *   status_token?: string
+ *   asset?: string
+ *   plan?: string
+ *   item_id?: string
+ *   delivery?: string
+ *   network_name?: string
+ *   tier?: string
+ *   offer_applied?: boolean
+ *   price_usd?: number
+ *   regular_price_usd?: number
+ *   rate_usd?: number
+ *   address?: string
+ *   amount?: string
+ *   amount_atomic?: string
+ *   memo?: string
+ *   uri?: string
+ *   quoted_at?: string
+ *   expires_at?: string
+ *   confirmations_required?: number
+ *   status?: CryptoPaymentStatusResult | null
+ *   error?: CryptoPaymentError | null
+ */
+
+/* CryptoPaymentStatusArgs (json):
+ *   intent_id: string
+ *   status_token: string
+ */
+
+/* CryptoPaymentStatusResult (json):
+ *   intent_id?: string
+ *   asset?: string
+ *   plan?: string
+ *   item_id?: string
+ *   delivery?: string
+ *   network_name?: string
+ *   status: string
+ *   review_reason?: string
+ *   amount?: string
+ *   amount_atomic?: string
+ *   received?: string
+ *   received_atomic?: string
+ *   remaining?: string
+ *   remaining_atomic?: string
+ *   confirmations: number
+ *   confirmations_required: number
+ *   expires_at?: string
+ *   credited_at?: string
+ *   balance_code?: string
+ *   error?: CryptoPaymentError | null
+ */
+
+/* CryptoTerm (json):
+ *   market: string
+ *   term_end_time: string
+ *   grace_end_time: string
  */
 
 /* DeleteApiKeyArgs (json):
@@ -5058,6 +5248,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   price_tier?: PriceTier | null
  *   onboarding_offer?: OnboardingOffer | null
  *   experiments?: ExperimentAssignmentList | null
+ *   crypto_assets?: CryptoPaymentAssetList | null
+ *   crypto_term?: CryptoTerm | null
  */
 
 /* SubscriptionCreatePaymentIdArgs (json):
