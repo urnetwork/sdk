@@ -5239,7 +5239,7 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 //
 //gomobile:noexport
 func (self *DeviceLocal) SendPacketsNoCopy(packets [][]byte) int {
-	return self.sendPacketsNoCopy(packets)
+	return self.sendPacketsWithPolicy(packets, false)
 }
 
 // SendPacketBatch parses a compact sequence of uint16 length-prefixed packets
@@ -5372,6 +5372,13 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 // to the route; rejected packets are returned here. One immutable route and
 // one stats update cover the whole burst.
 func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
+	return self.sendPacketsWithPolicy(packets, true)
+}
+
+// Takes every pooled original. Native packet readers use the optional remote
+// ready-only capability; generic Go senders and local protocol owners still wait
+// within SendTimeout. No refused original is retained behind the native reader.
+func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress bool) int {
 	if len(packets) == 0 {
 		return 0
 	}
@@ -5415,6 +5422,9 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 	}
 	source := connect.SourceId(self.clientId)
 	if route.upgradeMux != nil {
+		if nativeIngress {
+			return route.upgradeMux.SendNativePacketBatch(source, protocol.ProvideMode_Network, packets, self.settings.SendTimeout)
+		}
 		return route.upgradeMux.SendPacketBatch(
 			source,
 			protocol.ProvideMode_Network,
@@ -5423,6 +5433,11 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 		)
 	}
 	if route.remoteUserNatClient != nil {
+		if nativeIngress {
+			if nativeClient, ok := route.remoteUserNatClient.(connect.UserNatNativeBatchClient); ok {
+				return nativeClient.SendNativePacketBatch(source, protocol.ProvideMode_Network, packets, self.settings.SendTimeout)
+			}
+		}
 		if batchClient, ok := route.remoteUserNatClient.(connect.UserNatBatchClient); ok {
 			return batchClient.SendPacketBatch(
 				source,
