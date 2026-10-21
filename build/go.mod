@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk/build
 
-go 1.26.5
+go 1.27.3
 
 require (
 	github.com/urnetwork/sdk v0.0.0

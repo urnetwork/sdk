@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk/js
 
-go 1.26.5
+go 1.27.3
 
 require (
 	github.com/urnetwork/connect v0.0.0
