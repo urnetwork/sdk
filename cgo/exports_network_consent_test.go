@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 func TestNetworkConsentChallengeJsonThroughTheAbi(t *testing.T) {
