@@ -738,7 +738,7 @@ func TestSnNetworkConsentRefusesMalformedAnswers(t *testing.T) {
 // answer, so the deadline only bounds the test.
 func TestSnNetworkConsentRefusesAnOversizedAnswer(t *testing.T) {
 	server := newSnConsentServer(t)
-	server.wallets = answer(http.StatusOK, strings.Repeat(" ", int(connect.DefaultMaxHttpResponseBodyBytes))+snConsentWallets())
+	server.wallets = answer(http.StatusOK, strings.Repeat(" ", int(connect.DefaultClientStrategySettings().MaxHttpResponseBodyBytes))+snConsentWallets())
 	ctx, api, _ := newSnConsentOwnerApi(t, server)
 	for _, call := range []func(ctx context.Context) (any, error){
 		func(ctx context.Context) (any, error) {

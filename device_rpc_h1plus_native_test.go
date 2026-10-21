@@ -257,7 +257,7 @@ func TestDeviceRpcH1PlusRealForwardReverseRpc(t *testing.T) {
 	}()
 	// Both logical directions carry actual gob/net-rpc calls above uint16.
 	// Reserve encoding/tag headroom for the large near-3MiB call.
-	for _, size := range []int{96 * 1024, int(deviceRpcDefaultMaxFrameBytes) - 4096} {
+	for _, size := range []int{96 * 1024, int(defaultDeviceRpcSettings().MuxMaxFrameBytes) - 4096} {
 		payload := h1PlusRpcPayload(size)
 		errs := make(chan error, 2)
 		for _, c := range []*rpc.Client{forwardClient, reverseClient} {

@@ -43,7 +43,11 @@ import (
 // Authentication, 16 warmup calls/direction, setup and teardown are excluded.
 // Use build/bench-device-rpc.mjs for alternating fresh-process paired cohorts.
 
-var deviceRpcBenchSizes = []int{256, 1200, 64 * 1024, int(deviceRpcDefaultMaxFrameBytes) - 4096}
+// The largest size is one production frame less gob/tag headroom.
+func deviceRpcBenchSizes() []int {
+	return []int{256, 1200, 64 * 1024, int(defaultDeviceRpcSettings().MuxMaxFrameBytes) - 4096}
+}
+
 var deviceRpcBenchDirections = []string{"forward", "reverse", "duplex"}
 
 type DeviceRpcBenchmarkRequest struct {
@@ -177,7 +181,8 @@ func newDeviceRpcBenchFixture(t testing.TB, framed bool, payload []byte) *device
 		if gotFramed != framed || gotWebSocket == framed {
 			t.Fatalf("requested framed=%t but negotiated %T", framed, mux.ws)
 		}
-		if mux.maxFrameBytes != deviceRpcDefaultMaxFrameBytes || mux.sendBytes.max != deviceRpcDefaultMaxQueuedBytes || mux.receiveBytes.max != deviceRpcDefaultMaxQueuedBytes {
+		defaults := defaultDeviceRpcSettings()
+		if mux.maxFrameBytes != defaults.MuxMaxFrameBytes || mux.sendBytes.max != defaults.MuxMaxQueuedBytes || mux.receiveBytes.max != defaults.MuxMaxQueuedBytes {
 			t.Fatal("benchmark changed production RPC frame/queue admission budgets")
 		}
 	}
@@ -371,7 +376,7 @@ func deviceRpcBenchQuantile(sorted []int64, numerator, denominator int) int64 {
 func measureDeviceRpc(t testing.TB, framed bool, direction string, size, iterations int, sampleMemory bool) deviceRpcBenchResult {
 	t.Helper()
 	streams, err := deviceRpcBenchStreams(direction)
-	if err != nil || iterations < 1 || size < 1 || size > int(deviceRpcDefaultMaxFrameBytes)-4096 {
+	if err != nil || iterations < 1 || size < 1 || size > int(defaultDeviceRpcSettings().MuxMaxFrameBytes)-4096 {
 		t.Fatalf("invalid benchmark arguments: %s %d %d: %v", direction, size, iterations, err)
 	}
 	payload := make([]byte, size)
@@ -548,7 +553,7 @@ func TestDeviceRpcH1PlusMeasurement(t *testing.T) {
 }
 
 func BenchmarkDeviceRpcH1PlusMTLS(b *testing.B) {
-	for _, size := range deviceRpcBenchSizes {
+	for _, size := range deviceRpcBenchSizes() {
 		b.Run(strconv.Itoa(size), func(b *testing.B) {
 			for _, direction := range deviceRpcBenchDirections {
 				b.Run(direction, func(b *testing.B) {
@@ -580,7 +585,7 @@ func BenchmarkDeviceRpcH1PlusMTLS(b *testing.B) {
 }
 
 func TestDeviceRpcH1PlusBenchmarkCorrectness(t *testing.T) {
-	for _, size := range deviceRpcBenchSizes {
+	for _, size := range deviceRpcBenchSizes() {
 		for _, framed := range []bool{false, true} {
 			for _, direction := range deviceRpcBenchDirections {
 				if !deviceRpcBenchAdmissionSupported(size, direction) {
@@ -602,15 +607,16 @@ func deviceRpcBenchAdmissionSupported(size int, direction string) bool {
 	// can deliver an incoming request on one tag and reply on the other before
 	// either consumer releases its frame. Leave gob/tag headroom in this test
 	// policy; do not grow the real shared 4 MiB receive budget to hide saturation.
-	return direction != "duplex" || int64(size+4096)*2 <= deviceRpcDefaultMaxQueuedBytes
+	return direction != "duplex" || int64(size+4096)*2 <= defaultDeviceRpcSettings().MuxMaxQueuedBytes
 }
 
 func TestDeviceRpcH1PlusBenchmarkLargeDuplexAdmission(t *testing.T) {
 	for _, framed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("framed=%t", framed), func(t *testing.T) {
 			f := newDeviceRpcBenchFixture(t, framed, nil)
-			payload := make([]byte, deviceRpcDefaultMaxFrameBytes-4096)
-			if int64(len(payload)+1)*2 <= deviceRpcDefaultMaxQueuedBytes {
+			defaults := defaultDeviceRpcSettings()
+			payload := make([]byte, defaults.MuxMaxFrameBytes-4096)
+			if int64(len(payload)+1)*2 <= defaults.MuxMaxQueuedBytes {
 				t.Fatal("saturation control no longer exceeds the real receive budget")
 			}
 			// No receiver consumes the first stream. Both independently valid

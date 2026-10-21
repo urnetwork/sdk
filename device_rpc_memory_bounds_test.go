@@ -49,8 +49,8 @@ func TestDeviceRpcMemoryDefaultsAreBounded(t *testing.T) {
 	if settings.HttpMaxConcurrent != 2 {
 		t.Fatalf("http concurrency = %d, want 2", settings.HttpMaxConcurrent)
 	}
-	if settings.httpMaxBodyBytes() != deviceRpcDefaultHttpMaxBodyBytes {
-		t.Fatalf("http body limit = %d", settings.httpMaxBodyBytes())
+	if want := int(connect.DefaultClientStrategySettings().MaxHttpResponseBodyBytes); settings.httpMaxBodyBytes() != want {
+		t.Fatalf("http body limit = %d, want the client strategy's %d", settings.httpMaxBodyBytes(), want)
 	}
 	if settings.maxFrameBytes() <= int64(settings.httpMaxBodyBytes()) {
 		t.Fatalf("frame limit %d must leave encoding headroom above body limit %d", settings.maxFrameBytes(), settings.httpMaxBodyBytes())
