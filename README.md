@@ -33,20 +33,14 @@ If you're seeing an error similar to `go: error reading go.mod: missing module d
 
 # Go setup
 
-Due to a bug in recent versions of Go wrt gomobile, we need to use a patched version of go to build the sdk. See https://github.com/golang/go/issues/68760
+Use the official Go 1.27.3 distribution for your host platform. Confirm the selected compiler before building the SDK:
 
+```sh
+go version
+# go version go1.27.3 <host OS>/<host architecture>
 ```
-git clone https://go.googlesource.com/go
-cd go
-git checkout release-branch.go1.23
-git revert 3560cf0afb3c29300a6c88ccd98256949ca7a6f6
-cd src
-./make.bash
-cd ../..
-sudo mv /usr/local/go /usr/local/go.bak
-sudo cp -r go /usr/local/go
-# now `which go` should point to the patched go
-```
+
+Use the mobile tools pinned by the build recipes.
 
 # Xcode setup
 
