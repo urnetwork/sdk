@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk
 
-go 1.25.0
+go 1.27.3
 
 require (
 	github.com/btcsuite/btcutil v1.0.2
