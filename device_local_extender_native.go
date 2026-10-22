@@ -572,13 +572,19 @@ func (self *deviceLocalExtender) newMeasurementCert() (measurementCert *extender
 		self.log.Infof("[extender]provide measurement off: the role has no api url\n")
 		return nil, false
 	}
-	asyncLocalState := self.settings.NetworkSpace.asyncLocalState
-	if asyncLocalState == nil {
-		self.log.Infof("[extender]provide measurement off: the space keeps no extender key file\n")
+	// beside `.extender_key` for a space with local state, else the file the
+	// embedder kept it in, which it supplied through the device's key material
+	measurementKeyFile := ""
+	if asyncLocalState := self.settings.NetworkSpace.asyncLocalState; asyncLocalState != nil {
+		keyFile := filepath.Join(asyncLocalState.GetLocalState().localStorageDir, extenderKeyFileName)
+		measurementKeyFile = extender.ExtenderMeasurementKeyPath(keyFile)
+	} else {
+		measurementKeyFile = self.settings.NetworkSpace.suppliedExtenderMeasurementKeyFile()
+	}
+	if measurementKeyFile == "" {
+		self.log.Infof("[extender]provide measurement off: the space keeps no extender key file and the embedder named no measurement key file\n")
 		return nil, false
 	}
-	keyFile := filepath.Join(asyncLocalState.GetLocalState().localStorageDir, extenderKeyFileName)
-	measurementKeyFile := extender.ExtenderMeasurementKeyPath(keyFile)
 	measurementCert, err := extender.NewExtenderMeasurementCert(measurementKeyFile, "")
 	if err != nil {
 		self.log.Infof(

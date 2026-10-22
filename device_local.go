@@ -1456,6 +1456,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		// settings: the space's member node and the provider extender role
 		// both present it (B1, G2)
 		networkSpace.setExtenderKeySeed(settings.KeyMaterial.GetExtenderKeySeed())
+		networkSpace.setExtenderMeasurementKeyFile(settings.KeyMaterial.GetExtenderMeasurementKeyFile())
 	}
 	dnsShareByteCount, _, _, providerShareByteCount := deviceMemoryShares(settings)
 	dnsMemoryTarget := connect.NewMemoryTarget(dnsShareByteCount)
@@ -4094,6 +4095,9 @@ func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
 		self.GetProvideTlsPrivateKeyPem(),
 	)
 	keyMaterial.SetExtenderKeySeed(self.GetExtenderKeySeed())
+	if self.networkSpace != nil {
+		keyMaterial.SetExtenderMeasurementKeyFile(self.networkSpace.suppliedExtenderMeasurementKeyFile())
+	}
 	keyMaterial.networkId = self.networkId
 	return keyMaterial
 }
@@ -4125,6 +4129,7 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 		// the extender identity lives on the space; a role already running
 		// keeps the identity it activated with until it restarts (G2)
 		self.networkSpace.setExtenderKeySeed(keyMaterial.GetExtenderKeySeed())
+		self.networkSpace.setExtenderMeasurementKeyFile(keyMaterial.GetExtenderMeasurementKeyFile())
 	}
 
 	if client != nil {
