@@ -104,7 +104,7 @@ func (loader *mobileViewPackageLoader) loadSource(config mobileViewLoadConfig) (
 		Dir:        config.dir,
 		Env:        slices.Clone(config.env),
 		BuildFlags: slices.Clone(config.buildFlags),
-	}, "github.com/urnetwork/sdk")
+	}, "github.com/urnetwork/sdk/v2026")
 	if err != nil {
 		return nil, err
 	}

@@ -11,8 +11,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // The strategy of a space these tests build on a documentation address. The
