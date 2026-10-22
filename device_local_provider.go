@@ -212,6 +212,7 @@ func newDeviceLocalProviderWithOverrides(
 	localDialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
+	moveDecline func() bool,
 	sessionApis ...*Api,
 ) (*deviceLocalProvider, error) {
 	providerApi := networkSpace.GetApi()
@@ -302,6 +303,7 @@ func newDeviceLocalProviderWithOverrides(
 		networkSpace.GetAltUrl(),
 		dnsPumpHost,
 		mobileRuntime() || transferMemory != nil,
+		moveDecline,
 	)
 	platformTransportSettings.AuthorizationClosed = func(cause connect.AuthorizationCloseCause) {
 		if cause != connect.AuthorizationCloseUnavailable {

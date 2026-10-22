@@ -1358,6 +1358,8 @@ def bind(lib):
     lib.urnet_device_local_send_packet_batch.restype = c_int64
     lib.urnet_device_local_send_subprotocol_bytes.argtypes = [c_uint64, c_int64, c_char_p, POINTER(c_uint8), c_int32]
     lib.urnet_device_local_send_subprotocol_bytes.restype = c_bool
+    lib.urnet_device_local_set_app_backgrounded.argtypes = [c_uint64, c_bool]
+    lib.urnet_device_local_set_app_backgrounded.restype = None
     lib.urnet_device_local_set_auto_save.argtypes = [c_uint64, c_bool, POINTER(c_void_p)]
     lib.urnet_device_local_set_auto_save.restype = c_bool
     lib.urnet_device_local_set_by_jwt.argtypes = [c_uint64, c_char_p]
@@ -1370,6 +1372,8 @@ def bind(lib):
     lib.urnet_device_local_set_flow_owner_lookup.restype = None
     lib.urnet_device_local_set_key_material.argtypes = [c_uint64, c_uint64]
     lib.urnet_device_local_set_key_material.restype = None
+    lib.urnet_device_local_set_network_metered.argtypes = [c_uint64, c_bool]
+    lib.urnet_device_local_set_network_metered.restype = None
     lib.urnet_device_local_set_performance_degraded.argtypes = [c_uint64, c_bool]
     lib.urnet_device_local_set_performance_degraded.restype = None
     lib.urnet_device_local_set_reliability_settings.argtypes = [c_uint64, c_char_p]

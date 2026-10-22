@@ -2,9 +2,9 @@ package sdk
 
 // The provider's part in the platform's connection moves
 // (connect/resident_move.go, server/connect/MOVE.md §5.2): a move over real
-// transports, the advisory failure and decline paths with their reports, and
-// the rule that a migration the platform asked for never breaks before it
-// makes.
+// transports, the advisory failure and decline paths with their reports, the
+// mobile background or metered decline, and the rule that a migration the
+// platform asked for never breaks before it makes.
 
 import (
 	"context"
@@ -401,6 +401,70 @@ func TestDeviceLocalProviderAdvisoryMoveTimeoutKeepsTheOldTransport(t *testing.T
 	}
 }
 
+// The mobile decline (D11): while the app is in the background or the active
+// network is metered, an advisory move is declined and reported, and a
+// compulsory one still moves. With the policy off, the state declines nothing.
+func TestDeviceLocalProviderDeclinesAdvisoryMovesInTheBackgroundOrMetered(t *testing.T) {
+	for _, c := range []struct {
+		name         string
+		enabled      bool
+		backgrounded bool
+		metered      bool
+		declined     bool
+	}{
+		{name: "foreground unmetered", enabled: true},
+		{name: "backgrounded", enabled: true, backgrounded: true, declined: true},
+		{name: "metered", enabled: true, metered: true, declined: true},
+		{name: "policy off", enabled: false, backgrounded: true, metered: true},
+	} {
+		moveDecline := newDeviceLocalMoveDecline(c.enabled)
+		device := &DeviceLocal{moveDecline: moveDecline}
+		device.SetAppBackgrounded(c.backgrounded)
+		device.SetNetworkMetered(c.metered)
+		settings := newDeviceLocalPlatformTransportSettings(0, nil, nil, "", "")
+		settings.MoveDecline = device.moveDeclineHook()
+		if (settings.MoveDecline == nil) == c.enabled {
+			t.Fatalf("%s: hook installed = %t", c.name, settings.MoveDecline != nil)
+		}
+		fixture := newTestProviderMoveFixture(t, settings, func() migratablePlatformTransport {
+			return newFakeMigratablePlatformTransport(&connect.ClientAuth{}, false)
+		})
+		fixture.provider.migrateConnectTimeout = 10 * time.Millisecond
+		moveId := connect.NewId()
+		fixture.move(protocol.ResidentMoveKind_ResidentMoveKindAdvisory, moveId, testProviderMoveTarget)
+		waitTestProviderMigration(t, fixture.provider)
+		select {
+		case <-fixture.created:
+			if c.declined {
+				t.Fatalf("%s: a declined move built a replacement", c.name)
+			}
+		default:
+			if !c.declined {
+				t.Fatalf("%s: an accepted move built no replacement", c.name)
+			}
+		}
+		reports := fixture.reports.snapshot()
+		if c.declined {
+			requireTestProviderMoveReports(t, fixture.reports, connect.NewResidentMoveDeclined(
+				moveId,
+				protocol.ResidentMoveReason_ResidentMoveReasonMobileBackgroundOrMetered,
+				0,
+			))
+		} else if len(reports) != 1 || reports[0].Reason != protocol.ResidentMoveReason_ResidentMoveReasonConnectTimeout {
+			t.Fatalf("%s: reports = %v, want the accepted move's timeout", c.name, reports)
+		}
+
+		// a compulsory move is never declined
+		compulsoryId := connect.NewId()
+		fixture.move(protocol.ResidentMoveKind_ResidentMoveKindCompulsory, compulsoryId, testProviderMoveTarget)
+		created := receiveTestProviderMove(t, fixture.created, c.name+": the compulsory move built no replacement")
+		if created.ResidentMoveDial == nil || created.ResidentMoveDial.Strict() {
+			t.Fatalf("%s: the compulsory replacement does not try its target", c.name)
+		}
+		waitTestProviderMigration(t, fixture.provider)
+	}
+}
+
 // A move while another migration is in flight is declined as in progress; a
 // repeated move id is dropped without a report.
 func TestDeviceLocalProviderMoveInProgressAndRepeats(t *testing.T) {
@@ -707,5 +771,65 @@ func TestProviderResidentMoveTransports(t *testing.T) {
 	}
 	if providerResidentMoveTransports(nil) != nil {
 		t.Fatal("no transport has a view")
+	}
+}
+
+// The device builds every platform transport with its move policy: the
+// defaults keep moves on, the provider and each window decline as the app
+// reports, and the policy off installs no hook.
+func TestDeviceLocalPlatformTransportsCarryTheMovePolicy(t *testing.T) {
+	if !DefaultDeviceLocalSettings().MoveDeclineBackgroundOrMetered {
+		t.Fatal("the mobile move decline is off by default")
+	}
+	fixture := testingAuthClientShapeSpace(t)
+	settings := DefaultDeviceLocalSettings()
+	settings.DisableLogging = true
+	device := newSettingsOwnershipDevice(t, fixture, settings, true)
+	if device.provider == nil {
+		t.Fatal("the fixture has no provider")
+	}
+	device.provider.platformTransport.Close()
+	providerSettings := device.provider.platformTransportSettings
+	windowSettings := device.windowPlatformTransportSettings()
+	for name, transportSettings := range map[string]*connect.PlatformTransportSettings{
+		"provider": providerSettings,
+		"window":   windowSettings,
+	} {
+		if !transportSettings.EnableMove || transportSettings.MoveDecline == nil {
+			t.Fatalf("%s settings lost the move policy", name)
+		}
+		if transportSettings.MoveDecline() {
+			t.Fatalf("%s declines before the app reported anything", name)
+		}
+	}
+	if providerSettings.ResidentMoveTracker == nil {
+		t.Fatal("the provider has no move memory shared by its generations")
+	}
+	device.SetNetworkMetered(true)
+	if !providerSettings.MoveDecline() || !windowSettings.MoveDecline() {
+		t.Fatal("a metered network does not decline")
+	}
+	device.SetNetworkMetered(false)
+	device.SetAppBackgrounded(true)
+	if !providerSettings.MoveDecline() || !windowSettings.MoveDecline() {
+		t.Fatal("a backgrounded app does not decline")
+	}
+	device.SetAppBackgrounded(false)
+	if providerSettings.MoveDecline() || windowSettings.MoveDecline() {
+		t.Fatal("the foreground on an unmetered network declines")
+	}
+
+	offSettings := DefaultDeviceLocalSettings()
+	offSettings.DisableLogging = true
+	offSettings.MoveDeclineBackgroundOrMetered = false
+	offDevice := newSettingsOwnershipDevice(t, testingAuthClientShapeSpace(t), offSettings, true)
+	if offDevice.provider != nil {
+		offDevice.provider.platformTransport.Close()
+		if offDevice.provider.platformTransportSettings.MoveDecline != nil {
+			t.Fatal("the policy off still installs a provider hook")
+		}
+	}
+	if offDevice.windowPlatformTransportSettings().MoveDecline != nil {
+		t.Fatal("the policy off still installs a window hook")
 	}
 }

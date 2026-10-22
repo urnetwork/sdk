@@ -35,7 +35,7 @@ func (self *DeviceLocal) publicH3WindowSizeLimitWithLock() int {
 	}
 	transport := newDeviceLocalPlatformTransportSettingsForProfile(
 		settings.MemoryTargetByteCount, owner, nil,
-		networkSpace.GetAltUrl(), settings.DnsPumpHost, true)
+		networkSpace.GetAltUrl(), settings.DnsPumpHost, true, nil)
 	claim := transport.H3MemoryReservationByteCount(mode, clientStrategy)
 	if claim <= 0 {
 		return 0
@@ -57,7 +57,7 @@ func (self *DeviceLocal) publicH3WindowSizeLimitWithLock() int {
 		providerTransport := newDeviceLocalPlatformTransportSettingsForProfile(
 			settings.MemoryTargetByteCount, owner,
 			settings.ProviderDialContextSettings, networkSpace.GetAltUrl(),
-			settings.DnsPumpHost, true)
+			settings.DnsPumpHost, true, nil)
 		providerTransport.ModePreferences = preferences
 		if providerMode == connect.TransportModeH1 ||
 			(providerMode == connect.TransportModeAuto && preferences[connect.TransportModeH1] > 0) {
