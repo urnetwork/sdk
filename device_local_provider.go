@@ -19,12 +19,6 @@ import (
 // receive buffer requested for ICE UDP sockets on a device.
 const deviceLocalP2pUdpSocketBufferByteCount = 512 * 1024
 
-// bound on waiting for a migration replacement transport to connect before
-// keeping the old transport (the draining server then evicts, and the
-// reconnect falls back to the drain excuse path)
-const platformTransportMigrateConnectTimeout = 60 * time.Second
-const platformTransportMigrateMaxScheduleDelay = 5 * time.Minute
-
 type migratablePlatformTransport interface {
 	ConnectedNotify() <-chan struct{}
 	IsConnected() bool
@@ -106,12 +100,15 @@ type deviceLocalProvider struct {
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
-	// bound on waiting for the replacement to connect
-	// (default `platformTransportMigrateConnectTimeout`)
+	// bound on waiting for the replacement to connect, the connect
+	// generator's MigrateConnectTimeout by default. Non-positive uses that
+	// default.
 	migrateConnectTimeout time.Duration
-	// bound on a server-provided absolute migrate time. This is a little over
-	// twice the server's default two-minute jitter window, so clock skew or a
-	// malformed far-future timestamp cannot pin migrating indefinitely.
+	// bound on a server-provided absolute migrate time, the connect
+	// generator's MigrateMaxScheduleDelay by default: a little over twice the
+	// server's default two-minute jitter window, so clock skew or a malformed
+	// far-future timestamp cannot pin migrating indefinitely. Non-positive
+	// uses that default.
 	migrateMaxScheduleDelay time.Duration
 	// injectable for deterministic migration tests; nil uses the production
 	// PlatformTransport constructor.
@@ -316,6 +313,7 @@ func newDeviceLocalProviderWithOverrides(
 	// one hold for every generation: a migration copies these settings
 	clientLimitBackoff := connect.NewClientLimitBackoff()
 	platformTransportSettings.ClientLimitBackoff = clientLimitBackoff
+	migrateSettings := connect.DefaultApiMultiClientGeneratorSettings()
 
 	provider := &deviceLocalProvider{
 		ctx:          providerCtx,
@@ -340,8 +338,8 @@ func newDeviceLocalProviderWithOverrides(
 		modePreferences:           maps.Clone(modePreferences),
 		transportPolicyVersion:    1,
 		clientLimitBackoff:        clientLimitBackoff,
-		migrateConnectTimeout:     platformTransportMigrateConnectTimeout,
-		migrateMaxScheduleDelay:   platformTransportMigrateMaxScheduleDelay,
+		migrateConnectTimeout:     migrateSettings.MigrateConnectTimeout,
+		migrateMaxScheduleDelay:   migrateSettings.MigrateMaxScheduleDelay,
 		auth:                      auth,
 		resendQueueBudget:         resendQueueBudget,
 		receiveQueueBudget:        receiveQueueBudget,
@@ -616,16 +614,35 @@ func (self *deviceLocalProvider) handleControlFrames(source connect.TransferPath
 		if !ok {
 			continue
 		}
-		migrateTime := time.UnixMilli(int64(residentMigrate.MigrateTime))
-		self.requestPlatformTransportMigration(migrateTime)
+		self.requestPlatformTransportMigrationWith(deviceLocalProviderMigration{
+			migrateTime:      time.UnixMilli(int64(residentMigrate.MigrateTime)),
+			platformDirected: true,
+		})
 	}
 }
 
+// One migration of the provider's transports: a carrier policy change, or the
+// platform's migrate (CONNECTDRAIN2.md §3.3).
+type deviceLocalProviderMigration struct {
+	migrateTime time.Time
+	// the platform asked for it, so it never breaks before it makes: the
+	// platform closes the old transports at its own deadline if the
+	// replacement cannot be held beside them
+	platformDirected bool
+}
+
+// A carrier policy migration at `migrateTime`.
 func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime time.Time) {
+	self.requestPlatformTransportMigrationWith(deviceLocalProviderMigration{migrateTime: migrateTime})
+}
+
+// Starts one migration worker, false when one is already in flight or the
+// provider is closed.
+func (self *deviceLocalProvider) requestPlatformTransportMigrationWith(migration deviceLocalProviderMigration) bool {
 	self.stateLock.Lock()
 	if self.closed || !self.migrating.CompareAndSwap(false, true) {
 		self.stateLock.Unlock()
-		return
+		return false
 	}
 	self.migrationWorkers.Add(1)
 	self.stateLock.Unlock()
@@ -633,7 +650,7 @@ func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime t
 		defer self.migrationWorkers.Done()
 		defer self.migrating.Store(false)
 		for {
-			attemptedPolicyVersion := self.migratePlatformTransportWithPolicy(migrateTime)
+			attemptedPolicyVersion := self.migratePlatformTransportWithPolicy(migration)
 			self.stateLock.Lock()
 			currentPolicyVersion := self.transportPolicyVersion
 			self.stateLock.Unlock()
@@ -642,26 +659,38 @@ func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime t
 			}
 			// The policy changed while the replacement was pending. Apply the
 			// latest policy immediately; do not replay server migration jitter.
-			migrateTime = time.Now()
+			migration = deviceLocalProviderMigration{migrateTime: time.Now()}
 		}
+	})
+	return true
+}
+
+// migratePlatformTransport performs the drain's make-before-break at
+// `migrateTime`: build a replacement platform transport while the current one
+// keeps carrying traffic, wait for the replacement to connect (bounded), then
+// close the old transport so its routes drop and traffic continues over the
+// replacement. On timeout the replacement is closed and the old transport
+// stays: the draining server evicts it, and the reconnect falls back to the
+// drain excuse path (CONNECTDRAIN2.md §3.3).
+func (self *deviceLocalProvider) migratePlatformTransport(migrateTime time.Time) {
+	self.migratePlatformTransportWithPolicy(deviceLocalProviderMigration{
+		migrateTime:      migrateTime,
+		platformDirected: true,
 	})
 }
 
-// migratePlatformTransport performs make-before-break at `migrateTime`: build
-// a replacement platform transport while the current one keeps carrying
-// traffic, wait for the replacement to connect (bounded), then close the old
-// transport so its routes drop and traffic continues over the replacement.
-// On timeout the replacement is closed and the old transport stays: the
-// draining server evicts it, and the reconnect falls back to the drain excuse
-// path (CONNECTDRAIN2.md §3.3).
-func (self *deviceLocalProvider) migratePlatformTransport(migrateTime time.Time) {
-	self.migratePlatformTransportWithPolicy(migrateTime)
-}
-
-func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime time.Time) uint64 {
+// Runs one migration after its migrate time and returns the policy version it
+// built for, zero when it did not run. A replacement the memory budget cannot
+// hold beside the old transports never breaks a migration the platform asked
+// for: the replacement is closed and the old transports stay until the
+// platform's own deadline closes them (server/connect/MOVE.md §2.2). Only a
+// carrier policy change, which nothing else would ever apply, releases the old
+// H3 working set first.
+func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migration deviceLocalProviderMigration) uint64 {
+	migrateTime := migration.migrateTime
 	maxScheduleDelay := self.migrateMaxScheduleDelay
 	if maxScheduleDelay <= 0 {
-		maxScheduleDelay = platformTransportMigrateMaxScheduleDelay
+		maxScheduleDelay = connect.DefaultApiMultiClientGeneratorSettings().MigrateMaxScheduleDelay
 	}
 	if latest := time.Now().Add(maxScheduleDelay); latest.Before(migrateTime) {
 		migrateTime = latest
@@ -715,18 +744,30 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		next = self.newProviderPlatformTransport(auth, targetMode, platformTransportSettings)
 	}
 	brokeBeforeMake := false
-	func() {
+	madeBeforeBreak := func() bool {
 		self.stateLock.Lock()
 		previous := self.platformTransport
 		self.stateLock.Unlock()
-		if previous != nil && !canMakeBeforeBreak(next, previous) {
-			// A second full H3 working set would escape the shared memory cap.
-			// H1 transitions use Connect's bounded handoff and keep the old route;
-			// only a budget-blocked H3-to-H3-family transition breaks first.
-			closeMigratablePlatformTransportAndWait(previous)
-			brokeBeforeMake = true
+		if previous == nil || canMakeBeforeBreak(next, previous) {
+			return true
 		}
+		if migration.platformDirected {
+			// make-before-break or nothing: the old transports keep carrying
+			// until the platform closes them, and their own reconnect runs
+			return false
+		}
+		// A second full H3 working set would escape the shared memory cap.
+		// H1 transitions use Connect's bounded handoff and keep the old route;
+		// only a budget-blocked H3-to-H3-family policy change breaks first, so
+		// the policy is applied at all.
+		closeMigratablePlatformTransportAndWait(previous)
+		brokeBeforeMake = true
+		return true
 	}()
+	if !madeBeforeBreak {
+		closeMigratablePlatformTransportAndWait(next)
+		return policyVersion
+	}
 	installNext := func() (migratablePlatformTransport, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -746,13 +787,23 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		return previous, true
 	}
 
-	connectEndTime := time.Now().Add(self.migrateConnectTimeout)
+	connectTimeout := self.migrateConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = connect.DefaultApiMultiClientGeneratorSettings().MigrateConnectTimeout
+	}
+	connectTimer := time.NewTimer(connectTimeout)
+	defer connectTimer.Stop()
 	for {
 		notify := next.ConnectedNotify()
 		if next.IsConnected() {
 			break
 		}
-		if connectEndTime.Before(time.Now()) {
+		select {
+		case <-self.ctx.Done():
+			closeMigratablePlatformTransportAndWait(next)
+			return policyVersion
+		case <-notify:
+		case <-connectTimer.C:
 			if brokeBeforeMake {
 				// The old full-H3 carrier is already closed to honor the memory
 				// cap. Keep the replacement installed so its owned reconnect loop
@@ -765,13 +816,6 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			// the replacement did not come up; keep the old transport
 			closeMigratablePlatformTransportAndWait(next)
 			return policyVersion
-		}
-		select {
-		case <-self.ctx.Done():
-			closeMigratablePlatformTransportAndWait(next)
-			return policyVersion
-		case <-notify:
-		case <-time.After(1 * time.Second):
 		}
 	}
 

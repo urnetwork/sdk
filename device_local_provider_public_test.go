@@ -84,8 +84,8 @@ func newTestProvideModeProvider(
 		targetMode:                connect.TransportModeH1,
 		modePreferences:           connect.DefaultTransportModePreferences(),
 		transportPolicyVersion:    1,
-		migrateConnectTimeout:     platformTransportMigrateConnectTimeout,
-		migrateMaxScheduleDelay:   platformTransportMigrateMaxScheduleDelay,
+		migrateConnectTimeout:     connect.DefaultApiMultiClientGeneratorSettings().MigrateConnectTimeout,
+		migrateMaxScheduleDelay:   connect.DefaultApiMultiClientGeneratorSettings().MigrateMaxScheduleDelay,
 		provideMode:               provideMode,
 		auth: &connect.ClientAuth{
 			ByJwt:      "test",
