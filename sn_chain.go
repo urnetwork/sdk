@@ -80,14 +80,13 @@ func NewSnChainSettings() *SnChainSettings {
 // server's /sn/epoch (DeviceLocal.SyncSnChainSettings) or the device
 // settings; the chain, rpc and explorer are compiled in.
 //
-// Vault2Address stays empty on mainnet until settlement v2 activates
-// (VERSION2-FINAL.md §14): the v2 claim is then not configured, and the apps
-// hide it while still showing v2 balances. At activation the deployed
-// STSettlementVault2 is pinned here, or in the network space's sn_chain
-// values. /sn/epoch never sets it: the vault a claim is sent to is pinned by
-// the release, not taken from a server.
+// Vault2Address pins the deployed mainnet STSettlementVault2. The server's
+// /sn/epoch never sets it: a claim target comes from the release or the
+// network space's explicit sn_chain settings. Claims remain unavailable until
+// an account has finalized, claimable v2 funds.
 func DefaultSnChainSettings() *SnChainSettings {
 	return &SnChainSettings{
+		Vault2Address:  "0xe4865eb1bebdf5c6a10c9d37f3ccdd59aee8f20c",
 		ChainId:        SnChainIdMainnet,
 		Netuid:         25,
 		ExplorerTxUrl:  "https://evm.taostats.io/tx/%s",
