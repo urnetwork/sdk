@@ -64,6 +64,29 @@ func GetExtenderColorHex(ip string) string {
 	return hslColorHex(float64(hash.Sum32()%360), 0.70, 0.55)
 }
 
+// The extender addresses of one provider event as a connect grid point and a
+// provider row carry them (EXTENDER.md K1, K3): the canonical addresses and
+// their colors, comma separated in the same order, because gomobile binds no
+// string slice. An invalid address is dropped from both, so the two lists
+// always pair by index. Untagged, like GetExtenderColorHex, so the iOS
+// extension's provider rows have it too.
+func extenderIpsAndColorHexes(extenderIps []netip.Addr) (string, string) {
+	if len(extenderIps) == 0 {
+		return "", ""
+	}
+	ips := make([]string, 0, len(extenderIps))
+	colorHexes := make([]string, 0, len(extenderIps))
+	for _, extenderIp := range extenderIps {
+		if !extenderIp.IsValid() {
+			continue
+		}
+		ip := extenderIp.Unmap().String()
+		ips = append(ips, ip)
+		colorHexes = append(colorHexes, GetExtenderColorHex(ip))
+	}
+	return strings.Join(ips, ","), strings.Join(colorHexes, ",")
+}
+
 // The standard hsl to rgb conversion, with hue in degrees and saturation and
 // lightness in [0, 1]. Half-up rounding on each channel, so the value is a
 // pure function of the three inputs on every platform.

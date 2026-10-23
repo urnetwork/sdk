@@ -191,7 +191,7 @@ func TestDeviceLocalH1RetainedGraphProfileComposition(t *testing.T) {
 		{target: 64 * 1024 * 1024, priority: 21, window: 12, graph: 1004924},
 	} {
 		root := connect.NewPlatformTransportBudgetForMemoryTarget(c.target)
-		settings := newDeviceLocalPlatformTransportSettingsForProfile(c.target, root, nil, "", "", true)
+		settings := newDeviceLocalPlatformTransportSettingsForProfile(c.target, root, nil, "", "", true, nil)
 		if settings.PlatformTransportBudget != root || settings.H1AckPriorityBufferSize != c.priority ||
 			settings.TransportBufferSize != 32 || settings.H1MaxMessageByteCount != 16*1024 || settings.H1MemoryReservationByteCount() != c.graph {
 			t.Fatalf("target=%d actual mobile H1 graph/priority mismatch: base=%d graph=%d ack=%d", c.target, settings.H1BudgetByteCount, settings.H1MemoryReservationByteCount(), settings.H1AckPriorityBufferSize)

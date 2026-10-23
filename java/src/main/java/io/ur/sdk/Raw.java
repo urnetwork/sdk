@@ -788,12 +788,14 @@ public interface Raw extends Library {
   byte urnet_device_local_send_packet(long a0, Pointer a1, int a2, long a3);
   long urnet_device_local_send_packet_batch(long a0, Pointer a1, int a2);
   byte urnet_device_local_send_subprotocol_bytes(long a0, long a1, String a2, Pointer a3, int a4);
+  void urnet_device_local_set_app_backgrounded(long a0, byte a1);
   byte urnet_device_local_set_auto_save(long a0, byte a1, PointerByReference a2);
   void urnet_device_local_set_by_jwt(long a0, String a1);
   byte urnet_device_local_set_connect_location_checked(long a0, String a1, PointerByReference a2);
   byte urnet_device_local_set_default_location_checked(long a0, String a1, PointerByReference a2);
   void urnet_device_local_set_flow_owner_lookup(long a0, urnet_flow_owner_lookup_cb a1, Pointer a2);
   void urnet_device_local_set_key_material(long a0, long a1);
+  void urnet_device_local_set_network_metered(long a0, byte a1);
   void urnet_device_local_set_performance_degraded(long a0, byte a1);
   void urnet_device_local_set_reliability_settings(long a0, String a1);
   void urnet_device_local_set_routing_tier(long a0, long a1);
