@@ -148,7 +148,7 @@ func TestLowMemoryProfileProviderCarrierAndWindowParity(t *testing.T) {
 	device.provider.platformTransport.Close()
 	provider := device.provider.platformTransportSettings
 	want := newDeviceLocalPlatformTransportSettingsForProfile(settings.MemoryTargetByteCount,
-		device.platformTransportBudget, nil, "", "", true)
+		device.platformTransportBudget, nil, "", "", true, nil)
 	if provider.PlatformTransportBudget != device.platformTransportBudget ||
 		provider.H1AckPriorityBufferSize != want.H1AckPriorityBufferSize ||
 		provider.H3BudgetByteCount != want.H3BudgetByteCount ||

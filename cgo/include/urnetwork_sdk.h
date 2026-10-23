@@ -1521,12 +1521,14 @@ bool urnet_device_local_save_provide_secret_keys(uint64_t self, char** out_error
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
 int64_t urnet_device_local_send_packet_batch(uint64_t self, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
 bool urnet_device_local_send_subprotocol_bytes(uint64_t self, int64_t subprotocol_id, const char* destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
+void urnet_device_local_set_app_backgrounded(uint64_t self, bool backgrounded);
 bool urnet_device_local_set_auto_save(uint64_t self, bool enabled, char** out_error);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 bool urnet_device_local_set_connect_location_checked(uint64_t self, const char* location_json, char** out_error);
 bool urnet_device_local_set_default_location_checked(uint64_t self, const char* location_json, char** out_error);
 void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
+void urnet_device_local_set_network_metered(uint64_t self, bool metered);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
 void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 void urnet_device_local_set_routing_tier(uint64_t self, int64_t tier);
@@ -3305,6 +3307,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DefaultProvideExtender: boolean
  *   ProvideExtenderDnsPrivilegedPort: boolean
  *   Verbose: boolean
+ *   MoveDeclineBackgroundOrMetered: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean
  *   DisableLogging: boolean

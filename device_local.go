@@ -174,7 +174,7 @@ func newDeviceLocalPlatformTransportSettings(
 	dnsPumpHost string,
 ) *connect.PlatformTransportSettings {
 	return newDeviceLocalPlatformTransportSettingsForProfile(memoryTargetByteCount,
-		platformTransportBudget, dialContextSettings, altUrl, dnsPumpHost, mobileRuntime())
+		platformTransportBudget, dialContextSettings, altUrl, dnsPumpHost, mobileRuntime(), nil)
 }
 
 // Every provider and destination carrier uses its owner's explicit policy;
@@ -186,6 +186,7 @@ func newDeviceLocalPlatformTransportSettingsForProfile(
 	altUrl string,
 	dnsPumpHost string,
 	lowMemoryProfile bool,
+	moveDecline func() bool,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
@@ -207,6 +208,28 @@ func newDeviceLocalPlatformTransportSettingsForProfile(
 	if dialContextSettings != nil {
 		settings.H3PacketConnFactory = dialContextSettings.PacketConnFactory
 	}
+	// the device's own decline of the platform's advisory moves: a mobile app
+	// in the background or on a metered network (device_local_move.go). The
+	// other move settings keep connect's defaults.
+	settings.MoveDecline = moveDecline
+	return settings
+}
+
+// The platform transport settings of each window client the device's
+// generator builds: the device's carrier policy, its shared receive and H1
+// statistics, and its decline of the platform's advisory moves.
+func (self *DeviceLocal) windowPlatformTransportSettings() *connect.PlatformTransportSettings {
+	settings := newDeviceLocalPlatformTransportSettingsForProfile(
+		self.settings.MemoryTargetByteCount,
+		self.platformTransportBudget,
+		nil,
+		self.networkSpace.GetAltUrl(),
+		self.settings.DnsPumpHost,
+		self.settings.LowMemoryProfile,
+		self.moveDeclineHook(),
+	)
+	settings.ReceiveStats = self.platformTransportReceiveStats
+	settings.H1ConnectionStats = &self.h1ConnectionStats
 	return settings
 }
 
@@ -426,6 +449,9 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
 		Verbose: false,
+		// a mobile device declines the platform's advisory moves while
+		// backgrounded or metered (D11)
+		MoveDeclineBackgroundOrMetered: true,
 
 		ClientSettings: *clientSettings,
 	}
@@ -657,6 +683,12 @@ type DeviceLocalSettings struct {
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
 	Verbose bool
+	// Declines the platform's advisory connection moves
+	// (server/connect/MOVE.md D11) while the app reports it is in the
+	// background (SetAppBackgrounded) or that the active network is metered
+	// (SetNetworkMetered). A compulsory move still applies. On by default;
+	// off accepts advisory moves in either state.
+	MoveDeclineBackgroundOrMetered bool
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	//
@@ -950,6 +982,11 @@ type DeviceLocal struct {
 	// via SetPerformanceDegraded; carried into each window build and
 	// forwarded live so the liveness probe timings ease on a slow device.
 	performanceDegraded atomic.Bool
+
+	// the app and network state the apps report, which declines the
+	// platform's advisory moves (device_local_move.go). Shared with the
+	// provider and every window transport.
+	moveDecline *deviceLocalMoveDecline
 
 	// windowIdentityStore, when the device owns its storage (not hosted, not
 	// host-provided), persists the window client identities so a relaunch
@@ -1581,6 +1618,9 @@ func newDeviceLocalWithOverridesForPlatform(
 	// Acceptance-only counters must be present before provider/window settings
 	// are copied into live clients. The default path allocates nothing.
 	transferDiagStats := prepareTransferDiag(&settings.ClientSettings)
+	// the app and network state that declines the platform's advisory moves,
+	// shared by the provider and every window (device_local_move.go)
+	moveDecline := newDeviceLocalMoveDecline(settings.MoveDeclineBackgroundOrMetered)
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
 		if settings.testingBeforeProviderConstruction != nil {
@@ -1605,6 +1645,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			settings.LocalDialContextSettings,
 			settings.DnsPumpHost,
 			transferMemory,
+			moveDecline.hook(),
 			api,
 		)
 		if err != nil {
@@ -1692,6 +1733,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		transferMemory:            transferMemory,
 		generatorFunc:             settings.GeneratorFunc,
 		provider:                  provider,
+		moveDecline:               moveDecline,
 		transportSettings:         cloneTransportSettings(transportSettings),
 		providerTransportSettings: cloneTransportSettings(providerTransportSettings),
 		// contractManager: contractManager,
@@ -4752,19 +4794,7 @@ func (self *DeviceLocal) applyDestination(
 				apiGeneratorSettings.ClientCredentials = self.settings.ClientCredentials
 				apiGeneratorSettings.ClientControl = self.settings.ClientControl
 				apiGeneratorSettings.ProviderDiscovery = self.settings.ProviderDiscovery
-				apiGeneratorSettings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
-					settings := newDeviceLocalPlatformTransportSettingsForProfile(
-						self.settings.MemoryTargetByteCount,
-						self.platformTransportBudget,
-						nil,
-						self.networkSpace.GetAltUrl(),
-						self.settings.DnsPumpHost,
-						self.settings.LowMemoryProfile,
-					)
-					settings.ReceiveStats = self.platformTransportReceiveStats
-					settings.H1ConnectionStats = &self.h1ConnectionStats
-					return settings
-				}
+				apiGeneratorSettings.PlatformTransportSettingsGenerator = self.windowPlatformTransportSettings
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
 				apiGeneratorSettings.PlatformTransportModePreferences = modePreferences

@@ -1957,6 +1957,7 @@ struct DeviceLocalSettings {
 	bool DefaultProvideExtender{};
 	bool ProvideExtenderDnsPrivilegedPort{};
 	bool Verbose{};
+	bool MoveDeclineBackgroundOrMetered{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
 	bool DisableLogging{};
@@ -8899,6 +8900,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["Verbose"] = v.Verbose;
+	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
 	j["DisableLogging"] = v.DisableLogging;
@@ -8986,6 +8988,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
+	}
+	if (auto it = j.find("MoveDeclineBackgroundOrMetered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MoveDeclineBackgroundOrMetered);
 	}
 	if (auto it = j.find("DnsPumpHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DnsPumpHost);
@@ -19199,12 +19204,14 @@ public:
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	int64_t sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const;
 	bool sendSubprotocolBytes(int64_t subprotocol_id, const std::string& destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) const;
+	void setAppBackgrounded(bool backgrounded) const;
 	void setAutoSave(bool enabled) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setConnectLocationChecked(const std::optional<ConnectLocation>& location) const;
 	void setDefaultLocationChecked(const std::optional<ConnectLocation>& location) const;
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
+	void setNetworkMetered(bool metered) const;
 	void setPerformanceDegraded(bool degraded) const;
 	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRoutingTier(int64_t tier) const;
@@ -29736,6 +29743,9 @@ inline bool DeviceLocal::sendSubprotocolBytes(int64_t subprotocol_id, const std:
 	bool r = urnet_device_local_send_subprotocol_bytes(handle(), subprotocol_id, destination_client_id.c_str(), message_bytes, message_bytes_len);
 	return r;
 }
+inline void DeviceLocal::setAppBackgrounded(bool backgrounded) const {
+	urnet_device_local_set_app_backgrounded(handle(), backgrounded);
+}
 inline void DeviceLocal::setAutoSave(bool enabled) const {
 	char* err_c = nullptr;
 	bool ok = urnet_device_local_set_auto_save(handle(), enabled, &err_c);
@@ -29793,6 +29803,9 @@ inline void DeviceLocal::setFlowOwnerLookup(FlowOwnerLookup lookup) const {
 }
 inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const {
 	urnet_device_local_set_key_material(handle(), key_material.handle());
+}
+inline void DeviceLocal::setNetworkMetered(bool metered) const {
+	urnet_device_local_set_network_metered(handle(), metered);
 }
 inline void DeviceLocal::setPerformanceDegraded(bool degraded) const {
 	urnet_device_local_set_performance_degraded(handle(), degraded);

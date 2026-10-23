@@ -787,12 +787,14 @@ module URnetwork
       attach_function :urnet_device_local_send_packet, [:uint64, :pointer, :int32, :int64], :bool, blocking: true
       attach_function :urnet_device_local_send_packet_batch, [:uint64, :pointer, :int32], :int64, blocking: true
       attach_function :urnet_device_local_send_subprotocol_bytes, [:uint64, :int64, :string, :pointer, :int32], :bool, blocking: true
+      attach_function :urnet_device_local_set_app_backgrounded, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_auto_save, [:uint64, :bool, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_set_by_jwt, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_local_set_connect_location_checked, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_set_default_location_checked, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_set_flow_owner_lookup, [:uint64, :urnet_flow_owner_lookup_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_set_key_material, [:uint64, :uint64], :void, blocking: true
+      attach_function :urnet_device_local_set_network_metered, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_performance_degraded, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_reliability_settings, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_local_set_routing_tier, [:uint64, :int64], :void, blocking: true
