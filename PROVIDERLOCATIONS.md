@@ -1334,3 +1334,12 @@ Two traps the ports had to handle, worth knowing before touching this again:
   back to the literal, so no compile break). Needs a separate store import; not touched
   here.
 - Apple/web UI ports remain; they consume the server/connect/sdk layers unchanged.
+
+### Extenders on the rows (2026-10-22)
+`ConnectedProviderLocation` carries `ExtenderIps` and `ExtenderColorHexes`, the extenders
+carrying the client's connection to the provider, paired by index exactly as on the connect
+grid point. The rows ring their dots with them and list each extender's address under the
+connected time, and the globe rings its dots. The rules are connect/EXTENDER.md K9; Apple was
+built first and the other apps follow it. The web binding pairs the two lists itself and hands
+the page `extenders: [{ip, colorHex}]` (`ProviderExtenderInfo` in js/src/types.ts), dropping
+an unpaired tail as the apps do.

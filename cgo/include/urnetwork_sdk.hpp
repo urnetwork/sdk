@@ -1651,6 +1651,8 @@ struct ConnectedProviderLocation {
 	int64_t ConnectedSinceMillis{};
 	std::string IpFamily{};
 	std::string IpFamilyLabel{};
+	std::string ExtenderIps{};
+	std::string ExtenderColorHexes{};
 };
 
 struct ContractClientRow {
@@ -7539,6 +7541,8 @@ inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v) {
 	j["ConnectedSinceMillis"] = v.ConnectedSinceMillis;
 	j["IpFamily"] = v.IpFamily;
 	j["IpFamilyLabel"] = v.IpFamilyLabel;
+	j["ExtenderIps"] = v.ExtenderIps;
+	j["ExtenderColorHexes"] = v.ExtenderColorHexes;
 }
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	if (!j.is_object()) {
@@ -7590,6 +7594,12 @@ inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	}
 	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IpFamilyLabel);
+	}
+	if (auto it = j.find("ExtenderIps"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderIps);
+	}
+	if (auto it = j.find("ExtenderColorHexes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderColorHexes);
 	}
 }
 

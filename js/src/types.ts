@@ -202,6 +202,18 @@ export interface ConnectedProviderLocationInfo {
   /** the dot color from the sdk palette (hex, no "#"): the country's when the
    * location is known, else the stable per-client color */
   colorHex: string;
+  /** the extenders carrying the connection to this provider right now, in the
+   * sdk's order: none over a direct or p2p route, one through an extender,
+   * briefly two across a transport migration (connect/EXTENDER.md K9) */
+  extenders: ProviderExtenderInfo[];
+}
+
+/** One extender on a provider's route (connect/EXTENDER.md K9). */
+export interface ProviderExtenderInfo {
+  /** the extender's address, which is its id on the provider rows */
+  ip: string;
+  /** the ring color from the sdk palette (hex, no "#") */
+  colorHex: string;
 }
 
 /** Listener adders return an unsubscribe function. */

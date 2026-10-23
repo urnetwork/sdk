@@ -50,6 +50,17 @@ type ConnectedProviderLocation struct {
 	// IpFamilyLabel is the short display form of IpFamily: IpFamilyLabelBoth,
 	// IpFamilyLabelV4 or IpFamilyLabelV6, for the provider rows.
 	IpFamilyLabel string
+	// ExtenderIps are the extender addresses carrying this client's live
+	// platform transports to the provider right now (EXTENDER.md K1), comma
+	// separated in canonical form, because gomobile binds no string slice:
+	// empty over a direct or p2p route, one address through an extender, and
+	// briefly two across a transport migration. The same values the provider's
+	// grid point carries, so the provider rows and the connect grid agree.
+	ExtenderIps string
+	// ExtenderColorHexes are the colors of those addresses (K3), comma
+	// separated in the SAME order, so an app pairs the two lists by index and
+	// never recomputes a color itself.
+	ExtenderColorHexes string
 }
 
 type ConnectedProviderLocationList struct {
@@ -118,6 +129,9 @@ func deriveConnectedProviderLocations(providerEvents map[connect.Id]*connect.Pro
 			IpFamily:             ipFamilyValue(providerEvent.IpFamily),
 			IpFamilyLabel:        ipFamilyLabel(providerEvent.IpFamily),
 		}
+		location.ExtenderIps, location.ExtenderColorHexes = extenderIpsAndColorHexes(
+			providerEvent.ExtenderIps,
+		)
 		if l := providerEvent.Location; l != nil {
 			location.HasLocation = true
 			location.Country = l.Country
