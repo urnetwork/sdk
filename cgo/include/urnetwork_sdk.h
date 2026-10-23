@@ -1389,6 +1389,7 @@ char* urnet_device_get_public_identity_key_hash(uint64_t self);
 bool urnet_device_get_route_local(uint64_t self);
 bool urnet_device_get_should_show_rating_dialog(uint64_t self);
 uint64_t urnet_device_get_stats(uint64_t self);
+bool urnet_device_get_supports_extender_pin(uint64_t self);
 char* urnet_device_get_transport_settings(uint64_t self);
 char* urnet_device_get_transport_status(uint64_t self);
 bool urnet_device_get_tunnel_started(uint64_t self);
@@ -2946,6 +2947,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   stable: boolean
  *   strong_privacy: boolean
  *   network_peer?: boolean
+ *   extender_ip?: string
  */
 
 /* ConnectLocationId (json):
@@ -2975,6 +2977,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ConnectedSinceMillis: number
  *   IpFamily: string
  *   IpFamilyLabel: string
+ *   ExtenderIps: string
+ *   ExtenderColorHexes: string
  */
 
 /* ConnectedProviderLocationList (json):

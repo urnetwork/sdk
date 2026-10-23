@@ -1283,6 +1283,7 @@ struct ConnectLocation {
 	bool stable{};
 	bool strong_privacy{};
 	std::optional<bool> network_peer;
+	std::optional<std::string> extender_ip;
 };
 
 struct WindowSizeSettings {
@@ -1651,6 +1652,8 @@ struct ConnectedProviderLocation {
 	int64_t ConnectedSinceMillis{};
 	std::string IpFamily{};
 	std::string IpFamilyLabel{};
+	std::string ExtenderIps{};
+	std::string ExtenderColorHexes{};
 };
 
 struct ContractClientRow {
@@ -5847,6 +5850,9 @@ inline void to_json(nlohmann::json& j, const ConnectLocation& v) {
 	if (v.network_peer) {
 		j["network_peer"] = *v.network_peer;
 	}
+	if (v.extender_ip) {
+		j["extender_ip"] = *v.extender_ip;
+	}
 }
 inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 	if (!j.is_object()) {
@@ -5927,6 +5933,11 @@ inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.network_peer = std::move(tmp);
+	}
+	if (auto it = j.find("extender_ip"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.extender_ip = std::move(tmp);
 	}
 }
 
@@ -7540,6 +7551,8 @@ inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v) {
 	j["ConnectedSinceMillis"] = v.ConnectedSinceMillis;
 	j["IpFamily"] = v.IpFamily;
 	j["IpFamilyLabel"] = v.IpFamilyLabel;
+	j["ExtenderIps"] = v.ExtenderIps;
+	j["ExtenderColorHexes"] = v.ExtenderColorHexes;
 }
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	if (!j.is_object()) {
@@ -7591,6 +7604,12 @@ inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	}
 	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IpFamilyLabel);
+	}
+	if (auto it = j.find("ExtenderIps"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderIps);
+	}
+	if (auto it = j.find("ExtenderColorHexes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderColorHexes);
 	}
 }
 
@@ -18662,6 +18681,7 @@ public:
 	bool getRouteLocal() const;
 	bool getShouldShowRatingDialog() const;
 	DeviceStats getStats() const;
+	bool getSupportsExtenderPin() const;
 	std::optional<TransportSettings> getTransportSettings() const;
 	std::optional<TransportStatus> getTransportStatus() const;
 	bool getTunnelStarted() const;
@@ -27018,6 +27038,10 @@ inline bool Device::getShouldShowRatingDialog() const {
 }
 inline DeviceStats Device::getStats() const {
 	DeviceStats r(urnet_device_get_stats(handle()));
+	return r;
+}
+inline bool Device::getSupportsExtenderPin() const {
+	bool r = urnet_device_get_supports_extender_pin(handle());
 	return r;
 }
 inline std::optional<TransportSettings> Device::getTransportSettings() const {

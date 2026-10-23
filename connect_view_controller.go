@@ -9,8 +9,6 @@ import (
 	// "fmt"
 	"math"
 	mathrand "math/rand"
-	"net/netip"
-	"strings"
 	"sync"
 	"time"
 
@@ -642,27 +640,6 @@ type ProviderGridPoint struct {
 	// separated in the SAME order, so an app pairs the two lists by index and
 	// never recomputes a color itself. Six hex digits each, no leading `#`.
 	ExtenderColorHexes string
-}
-
-// The extender addresses of one provider event as a grid point carries them
-// (K1, K3): the canonical addresses and their colors, comma separated in the
-// same order, because gomobile binds no string slice. An invalid address is
-// dropped from both, so the two lists always pair by index.
-func extenderIpsAndColorHexes(extenderIps []netip.Addr) (string, string) {
-	if len(extenderIps) == 0 {
-		return "", ""
-	}
-	ips := make([]string, 0, len(extenderIps))
-	colorHexes := make([]string, 0, len(extenderIps))
-	for _, extenderIp := range extenderIps {
-		if !extenderIp.IsValid() {
-			continue
-		}
-		ip := extenderIp.Unmap().String()
-		ips = append(ips, ip)
-		colorHexes = append(colorHexes, GetExtenderColorHex(ip))
-	}
-	return strings.Join(ips, ","), strings.Join(colorHexes, ",")
 }
 
 type gridPointCoord struct {

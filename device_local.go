@@ -2635,9 +2635,37 @@ func connectLocationTransportEqual(a *ConnectLocation, b *ConnectLocation) bool 
 		return true
 	}
 	// NetworkPeer changes admission, receive-buffer sizing, and the provider
-	// mode used by this destination. The other descriptive location fields do
-	// not affect the installed transport.
-	return a.NetworkPeer == b.NetworkPeer
+	// mode used by this destination, and an extender pin changes how the
+	// destination is dialed (K10). The other descriptive location fields do not
+	// affect the installed transport.
+	return a.NetworkPeer == b.NetworkPeer && a.ExtenderIp == b.ExtenderIp
+}
+
+// The extender pin of a stayed-on exit (K10) as the transport hint of the
+// location's one fixed spec, which hands it to that destination's window
+// clients. A location without a client id, or without a pin that parses,
+// leaves the specs as they are. The hint is not part of the fingerprint.
+func setConnectLocationTransportHint(location *ConnectLocation, specs []*connect.ProviderSpec) {
+	if location == nil || location.ConnectLocationId == nil || location.ConnectLocationId.ClientId == nil {
+		return
+	}
+	extenderIp, err := netip.ParseAddr(strings.TrimSpace(location.ExtenderIp))
+	if err != nil {
+		return
+	}
+	clientId := location.ConnectLocationId.ClientId.toConnectId()
+	for _, spec := range specs {
+		if spec != nil && spec.ClientId != nil && *spec.ClientId == clientId {
+			spec.TransportHint = &connect.TransportHint{ExtenderIp: extenderIp.Unmap()}
+		}
+	}
+}
+
+// GetSupportsExtenderPin reports that this device keeps a stayed-on exit on
+// its extender (K10). A hosted device never dials an extender (K8), so it has
+// none to keep.
+func (self *DeviceLocal) GetSupportsExtenderPin() bool {
+	return self.settings == nil || !self.settings.HostedIncompatible
 }
 
 func idsEqual(a *Id, b *Id) bool {
@@ -2668,7 +2696,8 @@ func connectLocationValuesEqual(a *ConnectLocation, b *ConnectLocation) bool {
 		idsEqual(a.CountryLocationId, b.CountryLocationId) &&
 		a.Stable == b.Stable &&
 		a.StrongPrivacy == b.StrongPrivacy &&
-		a.NetworkPeer == b.NetworkPeer
+		a.NetworkPeer == b.NetworkPeer &&
+		a.ExtenderIp == b.ExtenderIp
 }
 
 func cloneId(id *Id) *Id {
@@ -4634,6 +4663,7 @@ func (self *DeviceLocal) applyDestination(
 			}
 		}
 	}
+	setConnectLocationTransportHint(location, connectSpecs)
 	specsFingerprint := providerSpecsFingerprint(connectSpecs)
 	windowSizeLimit := 0
 	if 0 < len(connectSpecs) {

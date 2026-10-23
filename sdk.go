@@ -1001,6 +1001,13 @@ type ConnectLocation struct {
 	// under ProvideMode_Network. This is explicit state set by the caller — a
 	// fixed client id alone does not imply a trusted peer (it can be a public exit).
 	NetworkPeer bool `json:"network_peer,omitempty"`
+
+	// ExtenderIp pins a stayed-on exit to the extender that carried it
+	// (EXTENDER.md K10): with a client id, the exit is reached through this
+	// extender address alone, over H1, and waits for it while it is down. Empty
+	// is no pin; a location without a client id never carries one. Set it only
+	// against a device that reports GetSupportsExtenderPin.
+	ExtenderIp string `json:"extender_ip,omitempty"`
 }
 
 func (self *ConnectLocation) IsGroup() bool {
