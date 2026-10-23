@@ -15,6 +15,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -38,8 +39,8 @@ const testProviderMoveHost = "connect.space.example"
 // Documentation addresses (RFC 5737) for move targets.
 var testProviderMoveTarget = netip.MustParseAddr("192.0.2.10")
 
-// A certificate for `host` and the pool that trusts it.
-func testProviderMoveCertificate(t *testing.T, host string) (tls.Certificate, *x509.CertPool) {
+// A certificate for `hosts` and the pool that trusts it.
+func testProviderMoveCertificate(t *testing.T, hosts ...string) (tls.Certificate, *x509.CertPool) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -47,8 +48,8 @@ func testProviderMoveCertificate(t *testing.T, host string) (tls.Certificate, *x
 	}
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: host},
-		DNSNames:              []string{host},
+		Subject:               pkix.Name{CommonName: hosts[0]},
+		DNSNames:              hosts,
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
@@ -524,8 +525,65 @@ func TestDeviceLocalProviderDrainMigratesByNameAsBefore(t *testing.T) {
 	requireTestProviderMoveReports(t, fixture.reports)
 }
 
-// A local QUIC platform edge on loopback: it answers each auth frame with an
-// echo, so an H3 carrier dialing it connects.
+const testProviderMoveH3NextProto = "urnetwork-provider-move-test"
+
+// A local QUIC platform edge on loopback that presents `certificate`: it
+// answers each auth frame with an echo, so an H3 carrier dialing it connects,
+// and reports the server name of every connection it accepts.
+func startTestProviderMoveH3Edge(t *testing.T, certificate tls.Certificate) (*net.UDPAddr, chan string) {
+	t.Helper()
+	listener, err := quic.ListenAddrEarly(
+		"127.0.0.1:0",
+		&tls.Config{
+			Certificates: []tls.Certificate{certificate},
+			NextProtos:   []string{testProviderMoveH3NextProto},
+		},
+		&quic.Config{MaxIdleTimeout: 10 * time.Second},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		serverCancel()
+		listener.Close()
+	})
+	serverNames := make(chan string, 64)
+	framerSettings := connect.DefaultFramerSettings(int(connect.DefaultClientSettings().MinimumMessageLenLimit()))
+	go func() {
+		for {
+			connection, err := listener.Accept(serverCtx)
+			if err != nil {
+				return
+			}
+			select {
+			case serverNames <- connection.ConnectionState().TLS.ServerName:
+			default:
+			}
+			go func() {
+				stream, err := connection.AcceptStream(serverCtx)
+				if err != nil {
+					return
+				}
+				framer := connect.NewFramer(framerSettings)
+				authBytes, err := framer.Read(stream)
+				if err != nil {
+					return
+				}
+				err = framer.Write(stream, authBytes)
+				connect.MessagePoolReturn(authBytes)
+				if err != nil {
+					return
+				}
+				<-connection.Context().Done()
+			}()
+		}
+	}()
+	return listener.Addr().(*net.UDPAddr), serverNames
+}
+
+// A local QUIC platform edge on loopback for a carrier that dials it by
+// address, with the client tls configuration that trusts it.
 func newTestProviderMoveH3Edge(t *testing.T) (*net.UDPAddr, *tls.Config) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -553,52 +611,10 @@ func newTestProviderMoveH3Edge(t *testing.T) (*net.UDPAddr, *tls.Config) {
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(leaf)
-	const nextProto = "urnetwork-provider-move-test"
-	listener, err := quic.ListenAddrEarly(
-		"127.0.0.1:0",
-		&tls.Config{
-			Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}},
-			NextProtos:   []string{nextProto},
-		},
-		&quic.Config{MaxIdleTimeout: 10 * time.Second},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		serverCancel()
-		listener.Close()
-	})
-	framerSettings := connect.DefaultFramerSettings(int(connect.DefaultClientSettings().MinimumMessageLenLimit()))
-	go func() {
-		for {
-			connection, err := listener.Accept(serverCtx)
-			if err != nil {
-				return
-			}
-			go func() {
-				stream, err := connection.AcceptStream(serverCtx)
-				if err != nil {
-					return
-				}
-				framer := connect.NewFramer(framerSettings)
-				authBytes, err := framer.Read(stream)
-				if err != nil {
-					return
-				}
-				err = framer.Write(stream, authBytes)
-				connect.MessagePoolReturn(authBytes)
-				if err != nil {
-					return
-				}
-				<-connection.Context().Done()
-			}()
-		}
-	}()
-	return listener.Addr().(*net.UDPAddr), &tls.Config{
+	addr, _ := startTestProviderMoveH3Edge(t, tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf})
+	return addr, &tls.Config{
 		RootCAs:    roots,
-		NextProtos: []string{nextProto},
+		NextProtos: []string{testProviderMoveH3NextProto},
 	}
 }
 
@@ -832,4 +848,205 @@ func TestDeviceLocalPlatformTransportsCarryTheMovePolicy(t *testing.T) {
 	if offDevice.windowPlatformTransportSettings().MoveDecline != nil {
 		t.Fatal("the policy off still installs a window hook")
 	}
+}
+
+const testProviderMoveHostV4 = "connect-v4.space.example"
+
+// A packet connection for an H3 carrier that records every destination and
+// sends only to loopback, so a dial to a documentation address leaves the
+// machine as nothing.
+type testProviderMoveRecordingPacketConn struct {
+	net.PacketConn
+	stateLock sync.Mutex
+	addresses []string
+}
+
+func (self *testProviderMoveRecordingPacketConn) WriteTo(packet []byte, addr net.Addr) (int, error) {
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.addresses = append(self.addresses, addr.String())
+	}()
+	if udpAddr, ok := addr.(*net.UDPAddr); !ok || !udpAddr.IP.IsLoopback() {
+		return len(packet), nil
+	}
+	return self.PacketConn.WriteTo(packet, addr)
+}
+
+// An H3 packet connection factory over recording connections, and the
+// destinations every connection it made sent to.
+func newTestProviderMoveRecordingFactory() (func(context.Context) (net.PacketConn, error), func() []string) {
+	var stateLock sync.Mutex
+	packetConns := []*testProviderMoveRecordingPacketConn{}
+	factory := func(context.Context) (net.PacketConn, error) {
+		packetConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		recording := &testProviderMoveRecordingPacketConn{PacketConn: packetConn}
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		packetConns = append(packetConns, recording)
+		return recording, nil
+	}
+	dialedAddresses := func() []string {
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		addresses := []string{}
+		for _, packetConn := range packetConns {
+			func() {
+				packetConn.stateLock.Lock()
+				defer packetConn.stateLock.Unlock()
+				addresses = append(addresses, packetConn.addresses...)
+			}()
+		}
+		return addresses
+	}
+	return factory, dialedAddresses
+}
+
+// On a space with an alt url (EXTENDER.md L4) the provider's family
+// transports move over H1, the carrier that dials the platform host: the v4
+// pin's H1 reaches the move target with its family hostname kept for TLS and
+// HTTP, while its H3 waits out the move and then dials alt again -- never the
+// target, not even through the preference the arrival leaves.
+func TestDeviceLocalProviderMoveOnAltMovesH1AndKeepsH3OnAlt(t *testing.T) {
+	if !connect.FamilySupported(4) {
+		t.Skip("this host has no ipv4 path for the v4 pinned transport")
+	}
+	certificate, roots := testProviderMoveCertificate(t, testProviderMoveHost, testProviderMoveHostV4)
+	edgeByName := newTestProviderMoveEdge(t, certificate)
+	edgeAtTarget := newTestProviderMoveEdge(t, certificate)
+	altAddr, altServerNames := startTestProviderMoveH3Edge(t, certificate)
+	targetAddress := net.JoinHostPort(testProviderMoveTarget.String(), "443")
+	routes := map[string]string{
+		net.JoinHostPort(testProviderMoveHost, "443"):   edgeByName.address,
+		net.JoinHostPort(testProviderMoveHostV4, "443"): edgeByName.address,
+		targetAddress: edgeAtTarget.address,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.EnableNormal = true
+	strategySettings.EnableResilient = false
+	strategySettings.RequestTimeout = 2 * time.Second
+	strategySettings.TlsConfig = &tls.Config{RootCAs: roots}
+	strategySettings.Resolver = testOfflineResolver
+	strategySettings.DialContextSettings = &connect.DialContextSettings{
+		DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+			if serverAddress, ok := routes[address]; ok {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", serverAddress)
+			}
+			return nil, errors.New("test: no route to this address")
+		},
+	}
+	strategy := connect.NewClientStrategy(ctx, strategySettings)
+	defer strategy.Close()
+	clientSettings := connect.DefaultClientSettings()
+	clientSettings.ControlPingTimeout = 0
+	clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOff
+	client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), clientSettings)
+	defer client.Close()
+
+	// tied tiers, so H3 runs beside H1 whenever it may dial
+	modePreferences := map[connect.TransportMode]int{connect.TransportModeH1: 1, connect.TransportModeH3: 1}
+	oldFactory, oldH3Addresses := newTestProviderMoveRecordingFactory()
+	settings := connect.DefaultPlatformTransportSettings()
+	settings.EnableH1Plus = false
+	settings.ReconnectTimeout = 50 * time.Millisecond
+	settings.ModePreferences = maps.Clone(modePreferences)
+	settings.AltUrl = "https://" + altAddr.String()
+	settings.QuicTlsConfig = &tls.Config{RootCAs: roots, NextProtos: []string{testProviderMoveH3NextProto}}
+	settings.H3PacketConnFactory = oldFactory
+	// room for both generations' carriers, so no optional H3 lease waits
+	settings.PlatformTransportBudget = connect.NewPlatformTransportBudget(1024*1024*1024, 0)
+	settings.ResidentMoveTracker = connect.NewResidentMoveTracker()
+	reports := &testProviderMoveReports{}
+	auth := &connect.ClientAuth{ByJwt: "test", InstanceId: connect.NewId(), AppVersion: "0.0.0"}
+	provider := &deviceLocalProvider{
+		ctx:                           ctx,
+		client:                        client,
+		clientStrategy:                strategy,
+		clientStrategySettings:        strategySettings,
+		platformUrl:                   "wss://" + testProviderMoveHost,
+		platformUrlV4:                 "wss://" + testProviderMoveHostV4,
+		platformTransportSettings:     settings,
+		targetMode:                    connect.TransportModeAuto,
+		modePreferences:               modePreferences,
+		transportPolicyVersion:        1,
+		migrateConnectTimeout:         10 * time.Second,
+		migrateMaxScheduleDelay:       time.Second,
+		auth:                          auth,
+		platformTransportMonitor:      connect.NewMonitor(),
+		sendResidentMoveResultForTest: reports.observe,
+	}
+	// the replacement generation sends its H3 packets through a factory of
+	// its own, so its destinations are told apart from the old generation's
+	replacementFactory, replacementH3Addresses := newTestProviderMoveRecordingFactory()
+	provider.newPlatformTransport = func(
+		auth *connect.ClientAuth,
+		targetMode connect.TransportMode,
+		settings *connect.PlatformTransportSettings,
+	) migratablePlatformTransport {
+		settingsValue := *settings
+		settingsValue.H3PacketConnFactory = replacementFactory
+		return provider.newProviderPlatformTransport(auth, targetMode, &settingsValue)
+	}
+	old := provider.newProviderPlatformTransport(auth, connect.TransportModeAuto, settings)
+	provider.platformTransport = old
+	defer old.Close()
+	oldGroup := old.(*connect.FamilyPlatformTransportGroup)
+	if oldGroup.Ipv4Transport() == nil {
+		t.Fatal("the provider has no v4 pinned transport")
+	}
+	if request := receiveTestProviderMove(t, edgeByName.requests, "the v4 pin did not reach the edge by name"); request.host != testProviderMoveHostV4 {
+		t.Fatalf("v4 pin upgrade host = %q", request.host)
+	}
+	if serverName := receiveTestProviderMove(t, altServerNames, "the v4 pin's H3 did not reach alt"); serverName != testProviderMoveHostV4 {
+		t.Fatalf("alt server name = %q", serverName)
+	}
+	if !waitForProviderCondition(10*time.Second, old.IsConnected) {
+		t.Fatal("the provider did not connect")
+	}
+
+	provider.handleControlFrames(
+		connect.SourceId(connect.ControlId),
+		[]*protocol.Frame{testProviderMoveFrame(protocol.ResidentMoveKind_ResidentMoveKindAdvisory, connect.NewId(), testProviderMoveTarget)},
+		connect.Peer{},
+	)
+	request := receiveTestProviderMove(t, edgeAtTarget.requests, "the replacement's v4 pin did not reach the target over H1")
+	if request.host != testProviderMoveHostV4 || request.serverName != testProviderMoveHostV4 || request.moveVersion != "1" {
+		t.Fatalf("target edge upgrade = %+v", request)
+	}
+	// the move is not concluded before its replacement arrived, and until it
+	// is, the replacement's H3 waits
+	if got := replacementH3Addresses(); 0 < len(got) {
+		t.Fatalf("the replacement's H3 sent to %v during the move", got)
+	}
+	select {
+	case <-oldGroup.Done():
+		t.Fatal("the old transports closed before the replacement reached the target")
+	default:
+	}
+	receiveTestProviderMove(t, oldGroup.Done(), "the old transports did not close after the arrival")
+	waitTestProviderMigration(t, provider)
+
+	// the move concluded: the replacement's H3 dials alt again, never the
+	// target the arrival made preferred
+	altAddress := altAddr.String()
+	if !waitForProviderCondition(10*time.Second, func() bool {
+		return slices.Contains(replacementH3Addresses(), altAddress)
+	}) {
+		t.Fatal("the replacement's H3 did not dial alt after the move")
+	}
+	for _, address := range append(oldH3Addresses(), replacementH3Addresses()...) {
+		if address != altAddress {
+			t.Fatalf("H3 sent to %q, want only alt at %s", address, altAddress)
+		}
+	}
+	if !settings.ResidentMoveTracker.MovedWithin(time.Minute, time.Now()) {
+		t.Fatal("the move over H1 does not count as a completed move")
+	}
+	requireTestProviderMoveReports(t, reports)
 }
