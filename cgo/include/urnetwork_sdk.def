@@ -461,6 +461,7 @@ EXPORTS
 	urnet_device_get_route_local
 	urnet_device_get_should_show_rating_dialog
 	urnet_device_get_stats
+	urnet_device_get_supports_extender_pin
 	urnet_device_get_transport_settings
 	urnet_device_get_transport_status
 	urnet_device_get_tunnel_started

@@ -796,6 +796,13 @@ type Device interface {
 	// as the provide mode is
 	SetProvideExtender(provideExtender bool)
 
+	// GetSupportsExtenderPin reports whether the device process keeps a
+	// stayed-on exit on its extender (EXTENDER.md K10), the capability that
+	// gates `ConnectLocation.ExtenderIp`: an older device process would decode
+	// the pin as nothing and stay on the exit alone, so an app offers the pin
+	// only when this is true.
+	GetSupportsExtenderPin() bool
+
 	// GetMeasurementsEnabled is the owner's lag.dev measurements setting
 	// (lag.dev/PLAN.md C4, decision 18): whether the provider extender role
 	// serves the measurement API, stored per network space, or held by the

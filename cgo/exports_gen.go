@@ -9806,6 +9806,17 @@ func urnet_device_get_stats(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_get_supports_extender_pin
+func urnet_device_get_supports_extender_pin(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_supports_extender_pin")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_supports_extender_pin")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetSupportsExtenderPin()
+	return C.bool(r0)
+}
+
 //export urnet_device_get_transport_settings
 func urnet_device_get_transport_settings(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_transport_settings")
