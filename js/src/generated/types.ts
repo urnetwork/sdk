@@ -705,6 +705,7 @@ export interface ConnectLocation {
   stable: boolean;
   strong_privacy: boolean;
   network_peer?: boolean;
+  extender_ip?: string;
 }
 
 export interface ProxyDeviceState {
