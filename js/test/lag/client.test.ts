@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { registerTsResolve } from "../ts-resolve.ts";
-import { startMockExtender, type MockExtender } from "./client_mock_extender.ts";
+import { scheduleMockUploadWindowOver, startMockExtender, type MockExtender } from "./client_mock_extender.ts";
 import type { LagSession, LagSessionEvent } from "../../src/lag/client.ts";
 
 registerTsResolve();
@@ -61,6 +61,112 @@ const expectedReceived = (intervalBytes: number[], intervalMs: number) => {
 
 const ofType = <T extends LagSessionEvent["type"]>(events: LagSessionEvent[], type: T) =>
   events.filter((event): event is Extract<LagSessionEvent, { type: T }> => event.type === type);
+
+// Drive the actual mock scheduler without wall-clock waits or scheduler luck.
+const controlledUploadDeadline = (options: { firstAt: number; uploadMs: number; now: number; delayMs?: number }) => {
+  let now = options.now;
+  let closed = false;
+  let phase: "upload" | "ended" = "upload";
+  const pending: Array<{ ms: number; action: () => void }> = [];
+  const reports: number[] = [];
+  return {
+    pending,
+    reports,
+    start: () => scheduleMockUploadWindowOver({
+      firstAt: options.firstAt,
+      uploadMs: options.uploadMs,
+      delayMs: options.delayMs,
+      now: () => now,
+      later: (ms, action) => pending.push({ ms, action }),
+      isActive: () => !closed && phase === "upload",
+      report: () => reports.push(now),
+    }),
+    wake: (at: number) => {
+      assert.ok(now <= at, "the controlled monotonic clock went backwards");
+      now = at;
+      const timer = pending.shift();
+      assert.ok(timer, "no pending deadline wake");
+      timer.action();
+    },
+    stop: (kind: "closed" | "ended") => {
+      if (kind === "closed") closed = true;
+      else phase = "ended";
+    },
+  };
+};
+
+test("mock upload window deadline rechecks rounded elapsed", () => {
+  const firstAt = 100.25;
+  const due = firstAt + 1000 + 700;
+  const clock = controlledUploadDeadline({ firstAt, uploadMs: 1000, delayMs: 700, now: firstAt + 1000.75 });
+  clock.start();
+  // The old rounded elapsed requested 699 ms, landing 0.25 ms before due.
+  clock.wake(due - 0.25);
+  assert.deepEqual(clock.reports, [], "a rounded elapsed value released the report early");
+  assert.equal(clock.pending.length, 1);
+  clock.wake(due);
+  assert.deepEqual(clock.reports, [due]);
+  assert.equal(clock.pending.length, 0);
+});
+
+test("mock upload window deadline rechecks early wakes", () => {
+  const firstAt = 20.125;
+  const due = firstAt + 1000 + 700;
+  const clock = controlledUploadDeadline({ firstAt, uploadMs: 1000, delayMs: 700, now: firstAt + 1000 });
+  clock.start();
+  for (const at of [due - 0.8, due - 0.1]) {
+    clock.wake(at);
+    assert.deepEqual(clock.reports, [], "an early timer wake released the report");
+    assert.equal(clock.pending.length, 1);
+    assert.equal(clock.pending[0].ms, 1, "a fractional remaining wait must yield to another timer turn");
+  }
+  clock.wake(due);
+  assert.deepEqual(clock.reports, [due]);
+  assert.equal(clock.pending.length, 0);
+});
+
+test("mock upload window deadline keeps the default spread delay", () => {
+  const firstAt = 24.125;
+  const due = firstAt + 1000 + 1000;
+  const clock = controlledUploadDeadline({ firstAt, uploadMs: 1000, now: firstAt + 1000.75 });
+  clock.start();
+  clock.wake(due - 0.25);
+  assert.deepEqual(clock.reports, [], "the default fallback reported before the full spread delay");
+  clock.wake(due);
+  assert.deepEqual(clock.reports, [due]);
+});
+
+test("mock upload window deadline reports exactly due or already late with zero extra delay", () => {
+  const firstAt = 10.5;
+  const due = firstAt + 1000;
+  for (const now of [due, due + 17.75]) {
+    const clock = controlledUploadDeadline({ firstAt, uploadMs: 1000, delayMs: 0, now });
+    clock.start();
+    assert.deepEqual(clock.reports, [now]);
+    assert.equal(clock.pending.length, 0);
+  }
+});
+
+test("mock upload window deadline cancels an armed wake after close or phase end", () => {
+  for (const kind of ["closed", "ended"] as const) {
+    const clock = controlledUploadDeadline({ firstAt: 0, uploadMs: 1000, delayMs: 700, now: 1000 });
+    clock.start();
+    clock.stop(kind);
+    clock.wake(1700);
+    assert.deepEqual(clock.reports, []);
+    assert.equal(clock.pending.length, 0, "a canceled owner armed another timer");
+  }
+});
+
+test("mock upload window deadline never arms a closed or ended owner", () => {
+  for (const kind of ["closed", "ended"] as const) {
+    const clock = controlledUploadDeadline({ firstAt: 0, uploadMs: 1000, delayMs: 700, now: 1000 });
+    clock.stop(kind);
+    clock.start();
+    assert.deepEqual(clock.reports, []);
+    assert.equal(clock.pending.length, 0);
+  }
+});
 
 // A direction's progress events go out at the load's own time, within its
 // window, and neither that time nor their bytes ever go back (S5)

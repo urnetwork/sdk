@@ -272,6 +272,34 @@ const ZEROS = Buffer.alloc(65536);
 // Rule S's cap (M6), the extender's lagSpreadMax
 const SPREAD_MAX_MS = 1000;
 
+/** The mock's terminal report deadline, with controlled clock/timers for tests. */
+export interface MockUploadWindowDeadline {
+  firstAt: number;
+  uploadMs: number;
+  delayMs?: number;
+  now: () => number;
+  later: (ms: number, action: () => void) => void;
+  isActive: () => boolean;
+  report: () => void;
+}
+
+/** A timer wake is only a chance to check the monotonic deadline, never proof it passed. */
+export const scheduleMockUploadWindowOver = (settings: MockUploadWindowDeadline): void => {
+  const due = settings.firstAt + settings.uploadMs + (settings.delayMs ?? SPREAD_MAX_MS);
+  const wake = () => {
+    if (!settings.isActive()) {
+      return;
+    }
+    const remaining = due - settings.now();
+    if (0 < remaining) {
+      settings.later(Math.ceil(remaining), wake);
+      return;
+    }
+    settings.report();
+  };
+  wake();
+};
+
 // M5, M7: a download stream goes on past the extender's window until the
 // browser closes it, within this grace. The browser's window opens when its
 // first chunk arrives, later than the extender's, so a stream that stopped
@@ -1085,9 +1113,15 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
           }
           if (hello.uploadMs <= ms) {
             clearInterval(state.uploadReporter);
-            const delayMs = options.uploadWindowOverDelayMs;
-            const late = ms - hello.uploadMs;
-            later(state, Math.max(0, (delayMs ?? SPREAD_MAX_MS) - late), () => sendUploadWindowOver(state));
+            scheduleMockUploadWindowOver({
+              firstAt: state.uploadFirst!,
+              uploadMs: hello.uploadMs,
+              delayMs: options.uploadWindowOverDelayMs,
+              now: () => performance.now(),
+              later: (waitMs, action) => later(state, waitMs, action),
+              isActive: () => !state.closed && state.phase === "upload" && !state.uploadOver,
+              report: () => sendUploadWindowOver(state),
+            });
             checkUploadFinal(state);
           }
         }, hello.intervalMs);
