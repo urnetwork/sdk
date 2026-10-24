@@ -1571,8 +1571,10 @@ bool urnet_device_local_write_memory_owner_census(uint64_t self, const char* pat
 
 /* ----- DeviceLocalKeyMaterial ----- */
 
+char* urnet_device_local_key_material_get_extender_measurement_key_file(uint64_t self);
 bool urnet_device_local_key_material_is_empty(uint64_t self);
 void urnet_device_local_key_material_set_extender_key_seed(uint64_t self, const uint8_t* extender_key_seed, int32_t extender_key_seed_len);
+void urnet_device_local_key_material_set_extender_measurement_key_file(uint64_t self, const char* extender_measurement_key_file);
 
 /* ----- DeviceLocalLoadResult ----- */
 

@@ -19283,8 +19283,10 @@ class DeviceLocalKeyMaterial final : public detail::Handle {
 public:
 	DeviceLocalKeyMaterial() = default;
 	explicit DeviceLocalKeyMaterial(uint64_t h) : detail::Handle(h) {}
+	std::string getExtenderMeasurementKeyFile() const;
 	bool isEmpty() const;
 	void setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const;
+	void setExtenderMeasurementKeyFile(const std::string& extender_measurement_key_file) const;
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
@@ -30092,12 +30094,19 @@ inline void DeviceLocal::writeMemoryOwnerCensus(const std::string& path) const {
 		throw Error("urnet: urnet_device_local_write_memory_owner_census failed");
 	}
 }
+inline std::string DeviceLocalKeyMaterial::getExtenderMeasurementKeyFile() const {
+	char* r_c = urnet_device_local_key_material_get_extender_measurement_key_file(handle());
+	return detail::takeString(r_c);
+}
 inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
 	return r;
 }
 inline void DeviceLocalKeyMaterial::setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const {
 	urnet_device_local_key_material_set_extender_key_seed(handle(), extender_key_seed, extender_key_seed_len);
+}
+inline void DeviceLocalKeyMaterial::setExtenderMeasurementKeyFile(const std::string& extender_measurement_key_file) const {
+	urnet_device_local_key_material_set_extender_measurement_key_file(handle(), extender_measurement_key_file.c_str());
 }
 inline std::string DeviceLocalLoadResult::getDefaultError() const {
 	char* r_c = urnet_device_local_load_result_get_default_error(handle());

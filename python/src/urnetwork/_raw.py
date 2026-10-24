@@ -1100,6 +1100,8 @@ def bind(lib):
     lib.urnet_device_get_should_show_rating_dialog.restype = c_bool
     lib.urnet_device_get_stats.argtypes = [c_uint64]
     lib.urnet_device_get_stats.restype = c_uint64
+    lib.urnet_device_get_supports_extender_pin.argtypes = [c_uint64]
+    lib.urnet_device_get_supports_extender_pin.restype = c_bool
     lib.urnet_device_get_transport_settings.argtypes = [c_uint64]
     lib.urnet_device_get_transport_settings.restype = c_void_p
     lib.urnet_device_get_transport_status.argtypes = [c_uint64]
@@ -1450,10 +1452,14 @@ def bind(lib):
     lib.urnet_device_local_wait_for_close.restype = c_bool
     lib.urnet_device_local_write_memory_owner_census.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_device_local_write_memory_owner_census.restype = c_bool
+    lib.urnet_device_local_key_material_get_extender_measurement_key_file.argtypes = [c_uint64]
+    lib.urnet_device_local_key_material_get_extender_measurement_key_file.restype = c_void_p
     lib.urnet_device_local_key_material_is_empty.argtypes = [c_uint64]
     lib.urnet_device_local_key_material_is_empty.restype = c_bool
     lib.urnet_device_local_key_material_set_extender_key_seed.argtypes = [c_uint64, POINTER(c_uint8), c_int32]
     lib.urnet_device_local_key_material_set_extender_key_seed.restype = None
+    lib.urnet_device_local_key_material_set_extender_measurement_key_file.argtypes = [c_uint64, c_char_p]
+    lib.urnet_device_local_key_material_set_extender_measurement_key_file.restype = None
     lib.urnet_device_local_load_result_get_default_error.argtypes = [c_uint64]
     lib.urnet_device_local_load_result_get_default_error.restype = c_void_p
     lib.urnet_device_local_load_result_get_has_connect_location.argtypes = [c_uint64]

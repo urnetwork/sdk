@@ -12239,6 +12239,17 @@ func urnet_device_local_write_memory_owner_census(self C.uint64_t, path *C.char,
 	return C.bool(true)
 }
 
+//export urnet_device_local_key_material_get_extender_measurement_key_file
+func urnet_device_local_key_material_get_extender_measurement_key_file(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_key_material_get_extender_measurement_key_file")
+	self_, ok := resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(self), "urnet_device_local_key_material_get_extender_measurement_key_file")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderMeasurementKeyFile()
+	return cString(string(r0))
+}
+
 //export urnet_device_local_key_material_is_empty
 func urnet_device_local_key_material_is_empty(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_local_key_material_is_empty")
@@ -12258,6 +12269,16 @@ func urnet_device_local_key_material_set_extender_key_seed(self C.uint64_t, exte
 		return
 	}
 	self_.SetExtenderKeySeed(goBytes(extenderKeySeed, extenderKeySeed_len))
+}
+
+//export urnet_device_local_key_material_set_extender_measurement_key_file
+func urnet_device_local_key_material_set_extender_measurement_key_file(self C.uint64_t, extenderMeasurementKeyFile *C.char) {
+	defer cgoGuard("urnet_device_local_key_material_set_extender_measurement_key_file")
+	self_, ok := resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(self), "urnet_device_local_key_material_set_extender_measurement_key_file")
+	if !ok {
+		return
+	}
+	self_.SetExtenderMeasurementKeyFile(goString(extenderMeasurementKeyFile))
 }
 
 //export urnet_device_local_load_result_get_default_error
