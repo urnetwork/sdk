@@ -114,11 +114,42 @@ func jsConnectedProviderLocation(location *sdk.ConnectedProviderLocation) js.Val
 		// the dot color from the sdk palette: the country's when the location
 		// is known, else the stable per-client color
 		"colorHex": location.ColorHex(),
+		// the extenders carrying this client's connection to the provider
+		// (EXTENDER.md K1, K9), outermost ring first: none over a direct or
+		// p2p route, one through an extender, briefly two in a migration
+		"extenders": jsProviderExtenders(location.ExtenderIps, location.ExtenderColorHexes),
 	}
 	if location.ClientId != nil {
 		m["clientId"] = location.ClientId.String()
 	}
 	return js.ValueOf(m)
+}
+
+// jsProviderExtenders pairs the sdk's comma-separated extender addresses and
+// colors by index (K1, K3) into an array of {ip, colorHex}: JS has string
+// arrays, so the page gets the pairs rather than the two gomobile strings. The
+// sdk keeps the lists the same length; an unpaired tail is dropped rather than
+// drawn in a made-up color.
+func jsProviderExtenders(ips string, colorHexes string) []any {
+	split := func(value string) []string {
+		values := []string{}
+		for _, part := range strings.Split(value, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				values = append(values, part)
+			}
+		}
+		return values
+	}
+	ipList := split(ips)
+	colorHexList := split(colorHexes)
+	extenders := []any{}
+	for i := 0; i < len(ipList) && i < len(colorHexList); i += 1 {
+		extenders = append(extenders, map[string]any{
+			"ip":       ipList[i],
+			"colorHex": colorHexList[i],
+		})
+	}
+	return extenders
 }
 
 // jsConnectedProviderLocations marshals the list, preserving whatever order it

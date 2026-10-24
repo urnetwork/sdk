@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
+	"net/netip"
 	"net/rpc"
 	"testing"
 	"time"
@@ -510,5 +511,57 @@ func TestWindowStatusGobCarriesIpFamilyCounts(t *testing.T) {
 		decoded.WindowStatus.ProviderV4OnlyCount != 1 ||
 		decoded.WindowStatus.ProviderV6OnlyCount != 1 {
 		t.Fatalf("ip family counts lost in gob round trip: %+v", decoded.WindowStatus)
+	}
+}
+
+// A provider row carries the extenders of its route the way its connect grid
+// point does (EXTENDER.md K1, K3): the canonical addresses and their colors,
+// comma separated in the same order, and nothing over a direct route.
+func TestDerivedProviderLocationsCarryTheirExtenders(t *testing.T) {
+	extended := connect.NewId()
+	direct := connect.NewId()
+	extenderV4 := netip.MustParseAddr("203.0.113.7")
+	extenderV6 := netip.MustParseAddr("2001:db8::5")
+
+	providerEvents := map[connect.Id]*connect.ProviderEvent{
+		extended: {
+			EventTime: time.Now().Add(-2 * time.Minute),
+			ClientId:  extended,
+			State:     connect.ProviderStateAdded,
+			// mid migration: two extenders, and an invalid entry that must be
+			// dropped from both lists
+			ExtenderIps: []netip.Addr{extenderV4, {}, extenderV6},
+		},
+		direct: {
+			EventTime: time.Now().Add(-1 * time.Minute),
+			ClientId:  direct,
+			State:     connect.ProviderStateAdded,
+		},
+	}
+
+	locations := deriveConnectedProviderLocations(providerEvents)
+	if locations.Len() != 2 {
+		t.Fatalf("derived %d locations, want 2", locations.Len())
+	}
+
+	first := locations.Get(0)
+	if first.ClientId.String() != newId(extended).String() {
+		t.Fatal("the older provider must be first")
+	}
+	if first.ExtenderIps != "203.0.113.7,2001:db8::5" {
+		t.Fatalf("extender ips = %q", first.ExtenderIps)
+	}
+	wantColors := GetExtenderColorHex("203.0.113.7") + "," + GetExtenderColorHex("2001:db8::5")
+	if first.ExtenderColorHexes != wantColors {
+		t.Fatalf("extender colors = %q, want %q in the address order", first.ExtenderColorHexes, wantColors)
+	}
+	gridIps, gridColorHexes := extenderIpsAndColorHexes(providerEvents[extended].ExtenderIps)
+	if first.ExtenderIps != gridIps || first.ExtenderColorHexes != gridColorHexes {
+		t.Fatal("the provider row and its grid point disagree about the extenders")
+	}
+
+	second := locations.Get(1)
+	if second.ExtenderIps != "" || second.ExtenderColorHexes != "" {
+		t.Fatalf("a direct route carries no extenders: %+v", second)
 	}
 }

@@ -9806,6 +9806,17 @@ func urnet_device_get_stats(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_get_supports_extender_pin
+func urnet_device_get_supports_extender_pin(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_supports_extender_pin")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_supports_extender_pin")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetSupportsExtenderPin()
+	return C.bool(r0)
+}
+
 //export urnet_device_get_transport_settings
 func urnet_device_get_transport_settings(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_transport_settings")
@@ -11575,6 +11586,16 @@ func urnet_device_local_send_subprotocol_bytes(self C.uint64_t, subprotocolId C.
 	return C.bool(r0)
 }
 
+//export urnet_device_local_set_app_backgrounded
+func urnet_device_local_set_app_backgrounded(self C.uint64_t, backgrounded C.bool) {
+	defer cgoGuard("urnet_device_local_set_app_backgrounded")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_app_backgrounded")
+	if !ok {
+		return
+	}
+	self_.SetAppBackgrounded(bool(backgrounded))
+}
+
 //export urnet_device_local_set_auto_save
 func urnet_device_local_set_auto_save(self C.uint64_t, enabled C.bool, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_local_set_auto_save")
@@ -11674,6 +11695,16 @@ func urnet_device_local_set_key_material(self C.uint64_t, keyMaterial C.uint64_t
 		}
 	}
 	self_.SetKeyMaterial(keyMaterial_)
+}
+
+//export urnet_device_local_set_network_metered
+func urnet_device_local_set_network_metered(self C.uint64_t, metered C.bool) {
+	defer cgoGuard("urnet_device_local_set_network_metered")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_network_metered")
+	if !ok {
+		return
+	}
+	self_.SetNetworkMetered(bool(metered))
 }
 
 //export urnet_device_local_set_performance_degraded

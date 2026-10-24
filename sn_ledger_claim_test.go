@@ -1758,11 +1758,11 @@ func TestSnLedgerClaimOnBothDevices(t *testing.T) {
 }
 
 // APPS-SPEC "Vault2Address": in the settings' json beside vault_address,
-// overlaid by Merge, empty in the compiled mainnet and testnet defaults, and
+// overlaid by Merge, pinned on mainnet and empty on testnet, and
 // read from the network space's sn_chain values.
 func TestSnChainSettingsVault2Address(t *testing.T) {
-	if DefaultSnChainSettings().Vault2Address != "" || SnTestnetChainSettings().Vault2Address != "" {
-		t.Fatal("a compiled default configures v2 claims before activation")
+	if DefaultSnChainSettings().Vault2Address != "0xe4865eb1bebdf5c6a10c9d37f3ccdd59aee8f20c" || SnTestnetChainSettings().Vault2Address != "" {
+		t.Fatal("mainnet vault2 pin or empty testnet default differs from the release")
 	}
 	settings := SnTestnetChainSettings()
 	settings.Vault2Address = testVault2

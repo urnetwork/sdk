@@ -416,6 +416,8 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last answer of the local's extender pin capability (K10)
+	lastSupportsExtenderPin bool
 	// the last provider connected state the local device answered or pushed
 	lastProviderConnected bool
 	// the provider state the local device last pushed or answered in a sync
@@ -1462,6 +1464,33 @@ func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
 		return cloneClientLimitStatus(self.lastClientLimitStatus)
 	}
 	return noneClientLimitStatus()
+}
+
+// GetSupportsExtenderPin asks the local device whether it keeps a stayed-on exit
+// on its extender (K10). A device process too old to have the method answers
+// false and keeps its session, so the app offers the plain stay instead of a
+// pin the process would drop. A device that cannot be reached reads the last
+// answer.
+func (self *DeviceRemote) GetSupportsExtenderPin() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service != nil {
+		supports, err := rpcCallNoArgAllowMissingMethod[bool](
+			self.service,
+			"DeviceLocalRpc.GetSupportsExtenderPin",
+			self.closeService,
+		)
+		if err == nil {
+			self.lastSupportsExtenderPin = supports
+			return supports
+		}
+		if rpcMissingMethodError(err) {
+			self.lastSupportsExtenderPin = false
+			return false
+		}
+	}
+	return self.lastSupportsExtenderPin
 }
 
 // GetProvideExtender reads the setting through to the local device, which owns
@@ -7710,6 +7739,10 @@ type DeviceRemoteConnectLocationValue struct {
 	// a trusted same-network peer destination; drives the multi client's
 	// ProvideMode_Network allow-direct force (see DeviceLocal.SetDestination)
 	NetworkPeer bool
+
+	// the stayed-on exit's extender pin (EXTENDER.md K10); an optional field a
+	// local without it drops, which `GetSupportsExtenderPin` gates
+	ExtenderIp string
 }
 
 func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *DeviceRemoteConnectLocationValue {
@@ -7731,6 +7764,8 @@ func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *Devi
 		StrongPrivacy: connectLocation.StrongPrivacy,
 
 		NetworkPeer: connectLocation.NetworkPeer,
+
+		ExtenderIp: connectLocation.ExtenderIp,
 	}
 	if connectLocation.ConnectLocationId != nil {
 		deviceRemoteConnectLocationValue.ConnectLocationId = newDeviceRemoteConnectLocationId(connectLocation.ConnectLocationId)
@@ -7769,6 +7804,8 @@ func (self *DeviceRemoteConnectLocationValue) toConnectLocation() *ConnectLocati
 		StrongPrivacy: self.StrongPrivacy,
 
 		NetworkPeer: self.NetworkPeer,
+
+		ExtenderIp: self.ExtenderIp,
 	}
 	if self.ConnectLocationId != nil {
 		connectLocation.ConnectLocationId = self.ConnectLocationId.toConnectLocationId()
@@ -9101,7 +9138,8 @@ func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 // and never offers the control, and the default is never read as truth. A
 // queued write to such a peer is dropped, not kept for replay. The provider
 // extender setting is that case, gated by `ExtenderProvideStatus.Supported`
-// (EXTENDER.md N1, N2).
+// (EXTENDER.md N1, N2), and so is a stay's extender pin, gated by
+// `GetSupportsExtenderPin` (K10).
 func rpcCallNoArgAllowMissingMethod[T any](
 	service *rpcClient,
 	name string,
@@ -12560,6 +12598,11 @@ func (self *DeviceLocalRpc) GetClientLimitStatus(_ RpcNoArg, status **ClientLimi
 
 func (self *DeviceLocalRpc) GetProvideExtender(_ RpcNoArg, provideExtender *bool) error {
 	*provideExtender = self.deviceLocal.GetProvideExtender()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetSupportsExtenderPin(_ RpcNoArg, supports *bool) error {
+	*supports = self.deviceLocal.GetSupportsExtenderPin()
 	return nil
 }
 

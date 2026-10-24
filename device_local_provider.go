@@ -19,12 +19,6 @@ import (
 // receive buffer requested for ICE UDP sockets on a device.
 const deviceLocalP2pUdpSocketBufferByteCount = 512 * 1024
 
-// bound on waiting for a migration replacement transport to connect before
-// keeping the old transport (the draining server then evicts, and the
-// reconnect falls back to the drain excuse path)
-const platformTransportMigrateConnectTimeout = 60 * time.Second
-const platformTransportMigrateMaxScheduleDelay = 5 * time.Minute
-
 type migratablePlatformTransport interface {
 	ConnectedNotify() <-chan struct{}
 	IsConnected() bool
@@ -106,13 +100,22 @@ type deviceLocalProvider struct {
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
-	// bound on waiting for the replacement to connect
-	// (default `platformTransportMigrateConnectTimeout`)
+	// bound on waiting for the replacement to connect, the connect
+	// generator's MigrateConnectTimeout by default. Non-positive uses that
+	// default.
 	migrateConnectTimeout time.Duration
-	// bound on a server-provided absolute migrate time. This is a little over
-	// twice the server's default two-minute jitter window, so clock skew or a
-	// malformed far-future timestamp cannot pin migrating indefinitely.
+	// bound on a server-provided absolute migrate time, the connect
+	// generator's MigrateMaxScheduleDelay by default: a little over twice the
+	// server's default two-minute jitter window, so clock skew or a malformed
+	// far-future timestamp cannot pin migrating indefinitely. Non-positive
+	// uses that default.
 	migrateMaxScheduleDelay time.Duration
+	// the provider client's move memory (connect/resident_move.go), shared
+	// by every transport generation. Read through moveTracker.
+	residentMoveTracker *connect.ResidentMoveTracker
+	// Nil outside package tests. Observes each move report as it is sent, on
+	// the sending goroutine.
+	sendResidentMoveResultForTest func(result *protocol.ResidentMoveResult)
 	// injectable for deterministic migration tests; nil uses the production
 	// PlatformTransport constructor.
 	newPlatformTransport func(
@@ -209,6 +212,7 @@ func newDeviceLocalProviderWithOverrides(
 	localDialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
+	moveDecline func() bool,
 	sessionApis ...*Api,
 ) (*deviceLocalProvider, error) {
 	providerApi := networkSpace.GetApi()
@@ -299,6 +303,7 @@ func newDeviceLocalProviderWithOverrides(
 		networkSpace.GetAltUrl(),
 		dnsPumpHost,
 		mobileRuntime() || transferMemory != nil,
+		moveDecline,
 	)
 	platformTransportSettings.AuthorizationClosed = func(cause connect.AuthorizationCloseCause) {
 		if cause != connect.AuthorizationCloseUnavailable {
@@ -316,6 +321,11 @@ func newDeviceLocalProviderWithOverrides(
 	// one hold for every generation: a migration copies these settings
 	clientLimitBackoff := connect.NewClientLimitBackoff()
 	platformTransportSettings.ClientLimitBackoff = clientLimitBackoff
+	// one move memory for every generation too: the moves seen, the held
+	// targets, and the targets reconnects prefer after a move (D10)
+	residentMoveTracker := connect.NewResidentMoveTracker()
+	platformTransportSettings.ResidentMoveTracker = residentMoveTracker
+	migrateSettings := connect.DefaultApiMultiClientGeneratorSettings()
 
 	provider := &deviceLocalProvider{
 		ctx:          providerCtx,
@@ -340,8 +350,9 @@ func newDeviceLocalProviderWithOverrides(
 		modePreferences:           maps.Clone(modePreferences),
 		transportPolicyVersion:    1,
 		clientLimitBackoff:        clientLimitBackoff,
-		migrateConnectTimeout:     platformTransportMigrateConnectTimeout,
-		migrateMaxScheduleDelay:   platformTransportMigrateMaxScheduleDelay,
+		migrateConnectTimeout:     migrateSettings.MigrateConnectTimeout,
+		migrateMaxScheduleDelay:   migrateSettings.MigrateMaxScheduleDelay,
+		residentMoveTracker:       residentMoveTracker,
 		auth:                      auth,
 		resendQueueBudget:         resendQueueBudget,
 		receiveQueueBudget:        receiveQueueBudget,
@@ -616,16 +627,167 @@ func (self *deviceLocalProvider) handleControlFrames(source connect.TransferPath
 		if !ok {
 			continue
 		}
-		migrateTime := time.UnixMilli(int64(residentMigrate.MigrateTime))
-		self.requestPlatformTransportMigration(migrateTime)
+		self.requestPlatformTransportMove(connect.NewResidentMove(residentMigrate))
 	}
 }
 
+// One migration of the provider's transports: a carrier policy change, or the
+// platform's migrate or move (server/connect/MOVE.md §5.2).
+type deviceLocalProviderMigration struct {
+	migrateTime time.Time
+	// the platform asked for it -- a drain or a move -- so it never breaks
+	// before it makes: the platform closes the old transports at its own
+	// deadline if the replacement cannot be held beside them
+	platformDirected bool
+	// set for a move whose replacement dials targets
+	moveDial *connect.ResidentMoveDial
+	// the move's close time, zero when it has none
+	closeTime time.Time
+}
+
+// The provider client's move memory, shared by every transport generation:
+// the one the transport settings carry, and for a provider a fixture built
+// without one, a memory of its own.
+func (self *deviceLocalProvider) moveTracker() *connect.ResidentMoveTracker {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.residentMoveTracker == nil {
+		if self.platformTransportSettings != nil && self.platformTransportSettings.ResidentMoveTracker != nil {
+			self.residentMoveTracker = self.platformTransportSettings.ResidentMoveTracker
+		} else {
+			self.residentMoveTracker = connect.NewResidentMoveTracker()
+		}
+	}
+	return self.residentMoveTracker
+}
+
+// Sends one move report from the provider client, best effort.
+func (self *deviceLocalProvider) sendResidentMoveResult(result *protocol.ResidentMoveResult) {
+	if self.sendResidentMoveResultForTest != nil {
+		self.sendResidentMoveResultForTest(result)
+	}
+	connect.SendResidentMoveResult(self.client, result)
+}
+
+// The provider's transports as a move sees them: each transport of a family
+// group, else the single transport.
+func providerResidentMoveTransports(transport migratablePlatformTransport) []connect.ResidentMoveTransport {
+	switch v := transport.(type) {
+	case nil:
+		return nil
+	case *connect.FamilyPlatformTransportGroup:
+		moveTransports := []connect.ResidentMoveTransport{}
+		for _, platformTransport := range v.Transports() {
+			moveTransports = append(moveTransports, platformTransport)
+		}
+		return moveTransports
+	case connect.ResidentMoveTransport:
+		return []connect.ResidentMoveTransport{v}
+	default:
+		return []connect.ResidentMoveTransport{&providerResidentMoveTransportView{transport: v}}
+	}
+}
+
+// A transport that cannot answer for itself (a test seam): a connected,
+// family-agnostic carrier of unknown mode.
+type providerResidentMoveTransportView struct {
+	transport migratablePlatformTransport
+}
+
+func (self *providerResidentMoveTransportView) IpFamily() int {
+	return 0
+}
+
+func (self *providerResidentMoveTransportView) IsConnected() bool {
+	return self.transport.IsConnected()
+}
+
+func (self *providerResidentMoveTransportView) ActiveMode() connect.TransportMode {
+	return connect.TransportModeNone
+}
+
+func (self *providerResidentMoveTransportView) RelayCarried() bool {
+	return false
+}
+
+// Handles the platform's migrate or move on the receive callback, so it never
+// waits (MOVE.md §5.2). A drain, a provider with moves disabled, and a
+// compulsory move no transport can use a target for migrate by name. A
+// repeated move id is dropped. An advisory move is declined by
+// connect.PlanResidentMove's rules and while a migration is in progress, each
+// decline reported once; otherwise every transport whose family has a
+// target is moved, make-before-break.
+func (self *deviceLocalProvider) requestPlatformTransportMove(move *connect.ResidentMove) {
+	settings, previous, closed := func() (*connect.PlatformTransportSettings, migratablePlatformTransport, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.platformTransportSettings, self.platformTransport, self.closed
+	}()
+	if closed || move == nil {
+		return
+	}
+	if settings == nil {
+		settings = connect.DefaultPlatformTransportSettings()
+	}
+	moving := move.Moving() && settings.EnableMove
+	declineInProgress := func() {
+		if moving && move.Advisory() {
+			self.sendResidentMoveResult(connect.NewResidentMoveDeclined(
+				*move.MoveId,
+				protocol.ResidentMoveReason_ResidentMoveReasonMoveInProgress,
+				0,
+			))
+		}
+	}
+	migration := deviceLocalProviderMigration{
+		migrateTime:      move.MigrateTime,
+		platformDirected: true,
+		closeTime:        move.CloseTime,
+	}
+	if moving {
+		tracker := self.moveTracker()
+		if !tracker.AdmitMoveId(*move.MoveId, settings.MoveIdDedupeCount) {
+			// a repeat of a move this client already handled
+			return
+		}
+		if self.migrating.Load() {
+			declineInProgress()
+			return
+		}
+		plan := connect.PlanResidentMove(
+			move,
+			providerResidentMoveTransports(previous),
+			settings,
+			tracker,
+			time.Now(),
+		)
+		if plan.Declined {
+			self.sendResidentMoveResult(connect.NewResidentMoveDeclined(
+				*move.MoveId,
+				plan.DeclineReason,
+				plan.DeclineIpFamily,
+			))
+			return
+		}
+		migration.moveDial = plan.Dial
+	}
+	if !self.requestPlatformTransportMigrationWith(migration) {
+		declineInProgress()
+	}
+}
+
+// A carrier policy migration at `migrateTime`.
 func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime time.Time) {
+	self.requestPlatformTransportMigrationWith(deviceLocalProviderMigration{migrateTime: migrateTime})
+}
+
+// Starts one migration worker, false when one is already in flight or the
+// provider is closed.
+func (self *deviceLocalProvider) requestPlatformTransportMigrationWith(migration deviceLocalProviderMigration) bool {
 	self.stateLock.Lock()
 	if self.closed || !self.migrating.CompareAndSwap(false, true) {
 		self.stateLock.Unlock()
-		return
+		return false
 	}
 	self.migrationWorkers.Add(1)
 	self.stateLock.Unlock()
@@ -633,7 +795,7 @@ func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime t
 		defer self.migrationWorkers.Done()
 		defer self.migrating.Store(false)
 		for {
-			attemptedPolicyVersion := self.migratePlatformTransportWithPolicy(migrateTime)
+			attemptedPolicyVersion := self.migratePlatformTransportWithPolicy(migration)
 			self.stateLock.Lock()
 			currentPolicyVersion := self.transportPolicyVersion
 			self.stateLock.Unlock()
@@ -642,26 +804,45 @@ func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime t
 			}
 			// The policy changed while the replacement was pending. Apply the
 			// latest policy immediately; do not replay server migration jitter.
-			migrateTime = time.Now()
+			migration = deviceLocalProviderMigration{migrateTime: time.Now()}
 		}
+	})
+	return true
+}
+
+// migratePlatformTransport performs the drain's make-before-break at
+// `migrateTime`: build a replacement platform transport while the current one
+// keeps carrying traffic, wait for the replacement to connect (bounded), then
+// close the old transport so its routes drop and traffic continues over the
+// replacement. On timeout the replacement is closed and the old transport
+// stays: the draining server evicts it, and the reconnect falls back to the
+// drain excuse path (CONNECTDRAIN2.md §3.3).
+func (self *deviceLocalProvider) migratePlatformTransport(migrateTime time.Time) {
+	self.migratePlatformTransportWithPolicy(deviceLocalProviderMigration{
+		migrateTime:      migrateTime,
+		platformDirected: true,
 	})
 }
 
-// migratePlatformTransport performs make-before-break at `migrateTime`: build
-// a replacement platform transport while the current one keeps carrying
-// traffic, wait for the replacement to connect (bounded), then close the old
-// transport so its routes drop and traffic continues over the replacement.
-// On timeout the replacement is closed and the old transport stays: the
-// draining server evicts it, and the reconnect falls back to the drain excuse
-// path (CONNECTDRAIN2.md §3.3).
-func (self *deviceLocalProvider) migratePlatformTransport(migrateTime time.Time) {
-	self.migratePlatformTransportWithPolicy(migrateTime)
-}
-
-func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime time.Time) uint64 {
+// Runs one migration after its migrate time and returns the policy version it
+// built for, zero when it did not run. A replacement the memory budget cannot
+// hold beside the old transports never breaks a migration the platform asked
+// for: the replacement is closed and the old transports stay until the
+// platform's own deadline closes them (MOVE.md §2.2). Only a carrier policy
+// change, which nothing else would ever apply, releases the old H3 working
+// set first. A move's replacement dials its targets and resolves as
+// connect.ResidentMoveDial.Wait decides; a failed move keeps the old
+// transports and reports.
+func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migration deviceLocalProviderMigration) uint64 {
+	if migration.moveDial != nil {
+		// from here on, transports dial as usual: a replacement that stays
+		// keeps any preference its arrival recorded
+		defer migration.moveDial.Conclude()
+	}
+	migrateTime := migration.migrateTime
 	maxScheduleDelay := self.migrateMaxScheduleDelay
 	if maxScheduleDelay <= 0 {
-		maxScheduleDelay = platformTransportMigrateMaxScheduleDelay
+		maxScheduleDelay = connect.DefaultApiMultiClientGeneratorSettings().MigrateMaxScheduleDelay
 	}
 	if latest := time.Now().Add(maxScheduleDelay); latest.Before(migrateTime) {
 		migrateTime = latest
@@ -708,6 +889,12 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			&settings
 	}()
 	platformTransportSettings.ModePreferences = modePreferences
+	tracker := self.moveTracker()
+	// every generation shares the client's move memory
+	platformTransportSettings.ResidentMoveTracker = tracker
+	// a move's replacement transports dial its targets, each the target of
+	// its own family (MOVE.md §5.2)
+	platformTransportSettings.ResidentMoveDial = migration.moveDial
 	var next migratablePlatformTransport
 	if self.newPlatformTransport != nil {
 		next = self.newPlatformTransport(auth, targetMode, platformTransportSettings)
@@ -715,18 +902,37 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		next = self.newProviderPlatformTransport(auth, targetMode, platformTransportSettings)
 	}
 	brokeBeforeMake := false
-	func() {
+	madeBeforeBreak := func() bool {
 		self.stateLock.Lock()
 		previous := self.platformTransport
 		self.stateLock.Unlock()
-		if previous != nil && !canMakeBeforeBreak(next, previous) {
-			// A second full H3 working set would escape the shared memory cap.
-			// H1 transitions use Connect's bounded handoff and keep the old route;
-			// only a budget-blocked H3-to-H3-family transition breaks first.
-			closeMigratablePlatformTransportAndWait(previous)
-			brokeBeforeMake = true
+		if previous == nil || canMakeBeforeBreak(next, previous) {
+			return true
 		}
+		if migration.platformDirected {
+			// make-before-break or nothing: the old transports keep carrying
+			// until the platform closes them, and their own reconnect runs
+			return false
+		}
+		// A second full H3 working set would escape the shared memory cap.
+		// H1 transitions use Connect's bounded handoff and keep the old route;
+		// only a budget-blocked H3-to-H3-family policy change breaks first, so
+		// the policy is applied at all.
+		closeMigratablePlatformTransportAndWait(previous)
+		brokeBeforeMake = true
+		return true
 	}()
+	if !madeBeforeBreak {
+		closeMigratablePlatformTransportAndWait(next)
+		if migration.moveDial != nil && migration.moveDial.Strict() {
+			self.sendResidentMoveResult(connect.NewResidentMoveDeclined(
+				migration.moveDial.MoveId(),
+				protocol.ResidentMoveReason_ResidentMoveReasonMemoryBudget,
+				0,
+			))
+		}
+		return policyVersion
+	}
 	installNext := func() (migratablePlatformTransport, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -746,13 +952,28 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		return previous, true
 	}
 
-	connectEndTime := time.Now().Add(self.migrateConnectTimeout)
+	connectTimeout := self.migrateConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = connect.DefaultApiMultiClientGeneratorSettings().MigrateConnectTimeout
+	}
+	if migration.moveDial != nil {
+		self.moveProviderPlatformTransport(migration, next, connectTimeout, installNext, tracker)
+		return policyVersion
+	}
+
+	connectTimer := time.NewTimer(connectTimeout)
+	defer connectTimer.Stop()
 	for {
 		notify := next.ConnectedNotify()
 		if next.IsConnected() {
 			break
 		}
-		if connectEndTime.Before(time.Now()) {
+		select {
+		case <-self.ctx.Done():
+			closeMigratablePlatformTransportAndWait(next)
+			return policyVersion
+		case <-notify:
+		case <-connectTimer.C:
 			if brokeBeforeMake {
 				// The old full-H3 carrier is already closed to honor the memory
 				// cap. Keep the replacement installed so its owned reconnect loop
@@ -766,13 +987,6 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			closeMigratablePlatformTransportAndWait(next)
 			return policyVersion
 		}
-		select {
-		case <-self.ctx.Done():
-			closeMigratablePlatformTransportAndWait(next)
-			return policyVersion
-		case <-notify:
-		case <-time.After(1 * time.Second):
-		}
 	}
 
 	previous, installed := installNext()
@@ -784,6 +998,75 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		closeMigratablePlatformTransportAndWait(previous)
 	}
 	return policyVersion
+}
+
+// Resolves one move's replacement (MOVE.md §5.2): an advisory move swaps once
+// a moved transport arrived at its target and otherwise keeps the old
+// transports, holding the failed targets and reporting; a compulsory move
+// swaps once the replacement connects at all -- through its targets or, after
+// they failed, by name -- waiting no later than the close time.
+func (self *deviceLocalProvider) moveProviderPlatformTransport(
+	migration deviceLocalProviderMigration,
+	next migratablePlatformTransport,
+	connectTimeout time.Duration,
+	installNext func() (migratablePlatformTransport, bool),
+	tracker *connect.ResidentMoveTracker,
+) {
+	dial := migration.moveDial
+	startTime := time.Now()
+	if !migration.closeTime.IsZero() {
+		// the platform closes the old transports at the close time, so
+		// waiting past it keeps nothing
+		if untilClose := time.Until(migration.closeTime); 0 < untilClose && untilClose < connectTimeout {
+			connectTimeout = untilClose
+		}
+	}
+	resolution := dial.Wait(self.ctx, next, connectTimeout)
+	failureReport := func() *protocol.ResidentMoveResult {
+		if failure, ok := dial.Failure(); ok {
+			return connect.NewResidentMoveFailed(dial.MoveId(), failure)
+		}
+		if resolution == connect.ResidentMoveResolutionTimedOut {
+			return connect.NewResidentMoveFailed(dial.MoveId(), connect.ResidentMoveFailure{
+				Reason:  protocol.ResidentMoveReason_ResidentMoveReasonConnectTimeout,
+				Elapsed: time.Since(startTime),
+			})
+		}
+		return nil
+	}
+	switch resolution {
+	case connect.ResidentMoveResolutionCanceled:
+		closeMigratablePlatformTransportAndWait(next)
+		return
+	case connect.ResidentMoveResolutionConnected:
+	default:
+		// keep the old transports: they still carry the client
+		closeMigratablePlatformTransportAndWait(next)
+		if report := failureReport(); report != nil {
+			self.sendResidentMoveResult(report)
+		}
+		return
+	}
+	previous, installed := installNext()
+	if !installed {
+		closeMigratablePlatformTransportAndWait(next)
+		return
+	}
+	if dial.Arrived() {
+		tracker.NoteMoved(time.Now())
+	}
+	// Only now break the old routes. Until this close the route manager can
+	// carry traffic over both generations.
+	if previous != nil {
+		closeMigratablePlatformTransportAndWait(previous)
+	}
+	if !dial.Arrived() {
+		// a compulsory move that connected by name: a target that failed is
+		// still reported
+		if report := failureReport(); report != nil {
+			self.sendResidentMoveResult(report)
+		}
+	}
 }
 
 // SetTransportPolicy applies a provider carrier policy make-before-break. A

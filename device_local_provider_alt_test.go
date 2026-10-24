@@ -102,8 +102,8 @@ func newTestAltProvider(
 		targetMode:              targetMode,
 		modePreferences:         connect.DefaultTransportModePreferences(),
 		transportPolicyVersion:  1,
-		migrateConnectTimeout:   platformTransportMigrateConnectTimeout,
-		migrateMaxScheduleDelay: platformTransportMigrateMaxScheduleDelay,
+		migrateConnectTimeout:   connect.DefaultApiMultiClientGeneratorSettings().MigrateConnectTimeout,
+		migrateMaxScheduleDelay: connect.DefaultApiMultiClientGeneratorSettings().MigrateMaxScheduleDelay,
 		auth: &connect.ClientAuth{
 			ByJwt:      "test",
 			InstanceId: connect.NewId(),

@@ -29,6 +29,11 @@ type DeviceLocalKeyMaterial struct {
 	// space with local state keeps `.extender_key` and that always wins, so
 	// this is empty there.
 	extenderKeySeed []byte
+	// The file the extender's lag.dev measurement key is kept in
+	// (lag.dev/PLAN.md C4), for the same embedder: a space with local state
+	// keeps it beside `.extender_key`, so this is empty there. Without it a
+	// space with no local state serves no measurement name.
+	extenderMeasurementKeyFile string
 	// The network the identity was made for, empty when unknown.
 	networkId string
 }
@@ -87,6 +92,26 @@ func (self *DeviceLocalKeyMaterial) SetExtenderKeySeed(extenderKeySeed []byte) {
 	self.extenderKeySeed = bytes.Clone(extenderKeySeed)
 }
 
+// The file the extender measurement key is kept in (C4). Empty when the
+// device's space keeps its own, which is every space with local state.
+func (self *DeviceLocalKeyMaterial) GetExtenderMeasurementKeyFile() string {
+	if self == nil {
+		return ""
+	}
+	return self.extenderMeasurementKeyFile
+}
+
+// Names the file an embedder keeps the extender measurement key in, so a
+// space with no local state serves the lag.dev measurement api under one key
+// across restarts (C4). The role creates the file when it is absent. Like the
+// extender seed, a space with local state ignores it.
+func (self *DeviceLocalKeyMaterial) SetExtenderMeasurementKeyFile(extenderMeasurementKeyFile string) {
+	if self == nil {
+		return
+	}
+	self.extenderMeasurementKeyFile = extenderMeasurementKeyFile
+}
+
 func (self *DeviceLocalKeyMaterial) IsEmpty() bool {
 	return self == nil || (len(self.clientKeySeed) == 0 &&
 		len(self.provideTlsCertificatePem) == 0 &&
@@ -105,6 +130,7 @@ func (self *DeviceLocalKeyMaterial) clone() *DeviceLocalKeyMaterial {
 		self.provideTlsPrivateKeyPem,
 	)
 	keyMaterial.extenderKeySeed = bytes.Clone(self.extenderKeySeed)
+	keyMaterial.extenderMeasurementKeyFile = self.extenderMeasurementKeyFile
 	keyMaterial.networkId = self.networkId
 	return keyMaterial
 }

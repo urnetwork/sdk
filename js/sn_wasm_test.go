@@ -105,7 +105,7 @@ func TestSnLedgerAccountsResultWasm(t *testing.T) {
 // of the defaults and back in, under any key casing, so a page can configure
 // the v2 claim.
 func TestSnChainSettingsWasmVault2Address(t *testing.T) {
-	if got := jsSnChainSettings(sdk.DefaultSnChainSettings()).Get("Vault2Address").String(); got != "" {
+	if got := jsSnChainSettings(sdk.DefaultSnChainSettings()).Get("Vault2Address").String(); got != "0xe4865eb1bebdf5c6a10c9d37f3ccdd59aee8f20c" {
 		t.Fatalf("default vault2 %q", got)
 	}
 	vault2 := "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"

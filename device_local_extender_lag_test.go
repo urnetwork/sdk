@@ -806,3 +806,69 @@ func TestDeviceLocalProviderExtenderMeasurementNeedsAKeptIdentity(t *testing.T) 
 		t.Fatalf("the certificate route was read %d times", count)
 	}
 }
+
+// A space that keeps no local state serves the measurement API when its
+// embedder names the file it keeps the measurement key in, as the sn miner
+// does beside its extender seed: the role makes the key there, asks for a
+// certificate for it at the activation after the first, and takes the same
+// key from the file at its next start (C4). Without the file a miner never
+// asked for a certificate, and lag.dev had no extender to offer.
+func TestDeviceLocalProviderExtenderMeasurementKeyFileWithoutLocalState(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	keySeed, err := connect.NewExtenderKeySeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	measurementKeyFile := filepath.Join(t.TempDir(), ".provider.extender.measurement.key")
+	newKeyMaterial := func() *DeviceLocalKeyMaterial {
+		keyMaterial := NewDeviceLocalKeyMaterial(nil, nil, nil)
+		keyMaterial.SetExtenderKeySeed(keySeed)
+		keyMaterial.SetExtenderMeasurementKeyFile(measurementKeyFile)
+		return keyMaterial
+	}
+
+	// each start in a subtest of its own, so the first role is down before
+	// the second binds its carriers
+	var publicKey *ecdsa.PublicKey
+	t.Run("first start", func(t *testing.T) {
+		fixture, _ := newTestProvideMeasurementFixture(t, newTestProvideExtenderUrlSpace, func(settings *DeviceLocalSettings) {
+			settings.KeyMaterial = newKeyMaterial()
+		})
+		if fixture.networkSpace.asyncLocalState != nil {
+			t.Fatal("the url-only space kept local state")
+		}
+		role := fixture.extender()
+		if role == nil || role.measurementCert == nil {
+			t.Fatal("no measurement certificate with a measurement key file")
+		}
+		fixture.waitPost()
+		if post := fixture.waitPost(); post.args.MeasurementCsr == "" || post.args.MeasurementDisabled {
+			t.Fatal("the activation after the first carried no request")
+		}
+		testWaitProvideMeasurementCertificate(t, role.measurementCert)
+		if keyPem, err := os.ReadFile(measurementKeyFile); err != nil || len(keyPem) == 0 {
+			t.Fatalf("the measurement key file was not written: %v", err)
+		}
+		if got := fixture.device.GetKeyMaterial().GetExtenderMeasurementKeyFile(); got != measurementKeyFile {
+			t.Fatalf("the key material names %q, expected %q", got, measurementKeyFile)
+		}
+		publicKey = role.measurementCert.PublicKey()
+	})
+	if publicKey == nil {
+		t.FailNow()
+	}
+
+	// the next start keeps the key the file holds
+	t.Run("restart", func(t *testing.T) {
+		fixture, _ := newTestProvideMeasurementFixture(t, newTestProvideExtenderUrlSpace, func(settings *DeviceLocalSettings) {
+			settings.KeyMaterial = newKeyMaterial()
+		})
+		role := fixture.extender()
+		if role == nil || role.measurementCert == nil {
+			t.Fatal("no measurement certificate after the restart")
+		}
+		if !role.measurementCert.PublicKey().Equal(publicKey) {
+			t.Fatal("the restart made a new measurement key")
+		}
+	})
+}

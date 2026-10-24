@@ -305,6 +305,12 @@ type NetworkSpace struct {
 	// at first use. A space with local state keeps `.extender_key` instead,
 	// which always wins, and leaves this empty.
 	extenderKeySeed []byte
+	// The file the extender measurement key is kept in for a space with no
+	// local state (lag.dev/PLAN.md C4), as an embedder supplied it through the
+	// device's key material. Empty for a space with local state, which keeps
+	// the key beside `.extender_key`, and for one whose embedder named none,
+	// which then serves no measurement name.
+	extenderMeasurementKeyFile string
 	// The gossip node of the member role (D1, D5). Nil in the feed role, on
 	// the js build, and for a space with nothing to join. The provider
 	// extender role swaps it for a listening extender node and back (G2).
@@ -553,6 +559,27 @@ func (self *NetworkSpace) setExtenderKeySeed(extenderKeySeed []byte) {
 	if changed {
 		self.rebuildExtenderMemberNode()
 	}
+}
+
+// Installs the file an embedder keeps the extender measurement key in (C4). A
+// space that keeps local state keeps the key beside its own `.extender_key`
+// and ignores this. A role already running keeps the key it started with until
+// it restarts, as it does its identity.
+func (self *NetworkSpace) setExtenderMeasurementKeyFile(extenderMeasurementKeyFile string) {
+	if self.asyncLocalState != nil || extenderMeasurementKeyFile == "" {
+		return
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.extenderMeasurementKeyFile = extenderMeasurementKeyFile
+}
+
+// The file an embedder supplied for the extender measurement key of a space
+// with no local state (C4), "" for none.
+func (self *NetworkSpace) suppliedExtenderMeasurementKeyFile() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.extenderMeasurementKeyFile
 }
 
 // The space's logger, which a url-only space may have been built without.
