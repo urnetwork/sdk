@@ -189,6 +189,7 @@ var skipMethods = map[string]string{
 	"DeviceLocal.AddReceivePacketCallback":           "func param (macOS parity: ignored); use urnet_device_local_add_receive_packet",
 	"DeviceLocal.SendPacketNoCopy":                   "pool ownership does not cross the abi; use urnet_device_local_send_packet",
 	"DeviceLocal.SendPacketsNoCopy":                  "pool ownership does not cross the abi; use urnet_device_local_send_packet_batch",
+	"DeviceLocal.SendNativePacketsNoCopy":            "pool ownership does not cross the abi; use urnet_device_local_send_packet_batch",
 	"PacketBatch.Get":                                "manual export urnet_packet_batch_get",
 	"WebsocketDeviceRpcDialer.Dial":                  "net.Conn internal; used by DeviceRemote internally",
 	"WebsocketDeviceRpcListener.Accept":              "net.Conn internal; used by DeviceLocal internally",

@@ -138,7 +138,7 @@ func (d *DeviceLocal) socketTun() (*connect.Tun, error) {
 			if err != nil {
 				return
 			}
-			d.SendPacketsNoCopy(packets[:n])
+			d.sendPacketsNoCopy(packets[:n])
 			clear(packets[:n])
 		}
 	}()

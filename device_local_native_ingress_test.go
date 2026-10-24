@@ -32,7 +32,7 @@ type nativeIngressDeviceFixture struct {
 	workerDone <-chan struct{}
 }
 
-func newNativeIngressDeviceFixture(t *testing.T) *nativeIngressDeviceFixture {
+func newNativeIngressDeviceFixture(t *testing.T, observePolicies ...func(connect.SecurityPolicy) connect.SecurityPolicy) *nativeIngressDeviceFixture {
 	t.Helper()
 	for _, size := range []int{60, 256, 2048} {
 		connect.MessagePoolReturn(connect.MessagePoolGet(size))
@@ -48,7 +48,11 @@ func newNativeIngressDeviceFixture(t *testing.T) *nativeIngressDeviceFixture {
 	settings.Log = connect.NewNoopLogger()
 	settings.ProviderProbe = false
 	settings.SecurityPolicyGenerator = func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy {
-		return connect.DisableSecurityPolicy()
+		policy := connect.DisableSecurityPolicy()
+		for _, observePolicy := range observePolicies {
+			policy = observePolicy(policy)
+		}
+		return policy
 	}
 	remote := connect.NewRemoteUserNatMultiClient(ctx, &testingDnsOwnerGenerator{}, nil, protocol.ProvideMode_Network, settings)
 	device := newPacketBatchTestDevice(remote)

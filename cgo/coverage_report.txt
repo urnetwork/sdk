@@ -1306,7 +1306,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1228) ==
+== skipped (1229) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1658,6 +1658,7 @@ DeviceLocal.RemoveBlockActionOverride: device interface method: use urnet_device
 DeviceLocal.RemoveConnectedProvider: device interface method: use urnet_device_remove_connected_provider
 DeviceLocal.RemoveDestination: device interface method: use urnet_device_remove_destination
 DeviceLocal.ResetExtenders: device interface method: use urnet_device_reset_extenders
+DeviceLocal.SendNativePacketsNoCopy: skipped: pool ownership does not cross the abi; use urnet_device_local_send_packet_batch
 DeviceLocal.SendPacketNoCopy: skipped: pool ownership does not cross the abi; use urnet_device_local_send_packet
 DeviceLocal.SendPacketsNoCopy: skipped: pool ownership does not cross the abi; use urnet_device_local_send_packet_batch
 DeviceLocal.SetAllowForeground: device interface method: use urnet_device_set_allow_foreground

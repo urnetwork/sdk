@@ -849,9 +849,10 @@ type DeviceLocal struct {
 	closeOnce sync.Once
 	closed    bool
 
-	// Every device-owned goroutine or asynchronous retirement is admitted
-	// under stateLock before Close publishes the closed state. The join worker
-	// can therefore wait without racing a late WaitGroup.Add.
+	// Constructor workers are admitted before publication. Later retirement is
+	// admitted under stateLock before close() releases it with closed=true;
+	// Close starts its join only after closeOnce.Do returns. Destination setters
+	// check closed under that same lock, so their Add cannot race a zero Wait.
 	lifecycleWorkers  sync.WaitGroup
 	lifecycleJoinOnce sync.Once
 	lifecycleDone     chan struct{}
@@ -4650,17 +4651,7 @@ func (self *DeviceLocal) applyDestination(
 		// and the block-action host feed — for flows the OS keeps open (or dials from its
 		// long-TTL DNS cache) across the rebuild. Close() cancels the ctx but leaves the
 		// reverse map intact for the adopt.
-		var priorUpgradeMux *connect.UpgradeMux
-		if self.upgradeMux != nil {
-			priorUpgradeMux = self.upgradeMux
-			// capture the mux's learned DoH server ordering before teardown: it seeds
-			// the next mux this session and persists for the next session's first
-			// lookups (see dohServerScoresSeed)
-			self.saveDohServerScoresWithLock(priorUpgradeMux)
-			self.upgradeMux.Close()
-			self.upgradeMux = nil
-			self.upgradeMuxLiveSettings = nil
-		}
+		priorUpgradeMux := self.closeUpgradeMuxWithLock()
 		self.closeRemoteUserNatClientWithLock()
 
 		if 0 < len(connectSpecs) {
@@ -5604,7 +5595,8 @@ func (self *DeviceLocal) WaitForClose(timeoutMilliseconds int64) bool {
 
 // Joins the independently owned API session after callback-safe device
 // cancellation. Hosted owners use this before replacing or releasing a device;
-// callbacks running on the API refresh worker must use Close instead.
+// callbacks running on the API refresh worker or internal mux pump must use
+// Close and leave the join to an independent owner.
 //
 //gomobile:noexport
 func (self *DeviceLocal) CloseAndWait(ctx context.Context) error {
@@ -5680,13 +5672,7 @@ func (self *DeviceLocal) close() {
 		self.windowMonitorSub()
 		self.windowMonitorSub = nil
 	}
-	if self.upgradeMux != nil {
-		// persist the learned DoH server ordering for the next session
-		self.saveDohServerScoresWithLock(self.upgradeMux)
-		self.upgradeMux.Close()
-		self.upgradeMux = nil
-		self.upgradeMuxLiveSettings = nil
-	}
+	self.closeUpgradeMuxWithLock()
 	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
@@ -6170,6 +6156,25 @@ func (self *DeviceLocal) closeRemoteUserNatProviderWithLock() {
 			}
 		})
 	}
+}
+
+// Retires the selected mux and admits its pump join under the device's existing
+// close/admission lock. Close itself never waits for that pump, so a native
+// callback may request Close. The returned map owner remains available for
+// AdoptServerNames; this does not join the mux's other independent workers.
+func (self *DeviceLocal) closeUpgradeMuxWithLock() *connect.UpgradeMux {
+	upgradeMux := self.upgradeMux
+	if upgradeMux == nil {
+		return nil
+	}
+	self.saveDohServerScoresWithLock(upgradeMux)
+	upgradeMux.Close()
+	self.upgradeMux = nil
+	self.upgradeMuxLiveSettings = nil
+	self.startLifecycleWorkerWithLock(func() {
+		_ = upgradeMux.WaitForPump(context.Background())
+	})
+	return upgradeMux
 }
 
 // Detaches one destination generation and admits its complete asynchronous
