@@ -23,6 +23,7 @@ func TestDeviceLocalSettingsJsonShapeAndDecode(t *testing.T) {
 		"ClientControl",
 		"ProviderDiscovery",
 		"LocalApi",
+		"PlatformPlacement",
 		"GeneratorFunc",
 		"MultiClientIdentityStore",
 		"ProviderDialContextSettings",

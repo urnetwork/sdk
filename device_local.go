@@ -217,7 +217,8 @@ func newDeviceLocalPlatformTransportSettingsForProfile(
 
 // The platform transport settings of each window client the device's
 // generator builds: the device's carrier policy, its shared receive and H1
-// statistics, and its decline of the platform's advisory moves.
+// statistics, its decline of the platform's advisory moves, and the edge
+// placement of a device the platform hosts.
 func (self *DeviceLocal) windowPlatformTransportSettings() *connect.PlatformTransportSettings {
 	settings := newDeviceLocalPlatformTransportSettingsForProfile(
 		self.settings.MemoryTargetByteCount,
@@ -228,6 +229,7 @@ func (self *DeviceLocal) windowPlatformTransportSettings() *connect.PlatformTran
 		self.settings.LowMemoryProfile,
 		self.moveDeclineHook(),
 	)
+	settings.Placement = self.settings.PlatformPlacement
 	settings.ReceiveStats = self.platformTransportReceiveStats
 	settings.H1ConnectionStats = &self.h1ConnectionStats
 	return settings
@@ -557,6 +559,12 @@ type DeviceLocalSettings struct {
 	ProviderDiscovery connect.NetworkProviderDiscovery `json:"-"`
 	//gomobile:noexport Go-only private API authority.
 	LocalApi localDeviceApi `json:"-"`
+	// Chooses the edge each window transport dials, for a device the platform
+	// hosts, which reads the platform's edge load (connect
+	// platform_placement.go). A platform device has no provider, so only the
+	// windows are placed. Nil resolves the platform host.
+	//gomobile:noexport Go-only platform placement authority.
+	PlatformPlacement connect.PlatformPlacement `json:"-"`
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
 	// Constructor seams observe admission ordering without creating a client.
