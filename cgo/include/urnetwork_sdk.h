@@ -447,6 +447,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_SESSION_NOT_FOUND "session_not_found"
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
+#define URNET_STRIPE_CUSTOMER_PORTAL_FLOW_PAYMENT_METHOD_UPDATE "payment_method_update"
 #define URNET_STRIPE_INTENT_TYPE_PAYMENT "payment"
 #define URNET_STRIPE_INTENT_TYPE_SETUP "setup"
 #define URNET_STRIPE_ITEM_DATA10_TIB "data_10tib"
@@ -4207,6 +4208,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TransportStats: TransportPacketStatsList | null
  */
 
+/* PaymentPastDue (json):
+ *   store: string
+ *   fail_time: string
+ *   update_payment_url: string
+ */
+
 /* PerformanceProfile (json):
  *   window_type: string
  *   window_size: WindowSizeSettings | null
@@ -5150,6 +5157,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* StripeCreateCustomerPortalArgs (json):
+ *   flow?: string
  */
 
 /* StripeCreateCustomerPortalError (json):
@@ -5259,6 +5267,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   experiments?: ExperimentAssignmentList | null
  *   crypto_assets?: CryptoPaymentAssetList | null
  *   crypto_term?: CryptoTerm | null
+ *   payment_past_due?: PaymentPastDue | null
  */
 
 /* SubscriptionCreatePaymentIdArgs (json):

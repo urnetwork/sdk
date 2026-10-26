@@ -498,6 +498,7 @@ inline constexpr const char* SolanaWalletBridgeErrorNoAccount = "no_account";
 inline constexpr const char* SolanaWalletBridgeErrorSessionNotFound = "session_not_found";
 inline constexpr const char* SolanaWalletBridgeErrorUserRejected = "user_rejected";
 inline constexpr const char* SolanaWalletBridgeErrorWallet = "wallet_error";
+inline constexpr const char* StripeCustomerPortalFlowPaymentMethodUpdate = "payment_method_update";
 inline constexpr const char* StripeIntentTypePayment = "payment";
 inline constexpr const char* StripeIntentTypeSetup = "setup";
 inline constexpr const char* StripeItemData10Tib = "data_10tib";
@@ -839,6 +840,7 @@ struct OnboardingOfferIssueArgs;
 struct OnboardingOfferIssueResult;
 struct OverrideLocalAppIds;
 struct PacketStats;
+struct PaymentPastDue;
 struct PointsLeaderboardError;
 struct PointsLeaderboardKey;
 struct PointsLeaderboardRow;
@@ -2861,6 +2863,12 @@ struct PacketStats {
 	std::optional<TransportPacketStatsList> TransportStats;
 };
 
+struct PaymentPastDue {
+	std::string store{};
+	std::string fail_time{};
+	std::string update_payment_url{};
+};
+
 struct PointsLeaderboardError {
 	std::string message{};
 };
@@ -3600,6 +3608,7 @@ struct StripeCreateCheckoutSessionResult {
 };
 
 struct StripeCreateCustomerPortalArgs {
+	std::optional<std::string> flow;
 };
 
 struct StripeCreateCustomerPortalError {
@@ -3705,6 +3714,7 @@ struct SubscriptionBalanceResult {
 	std::optional<ExperimentAssignmentList> experiments;
 	std::optional<CryptoPaymentAssetList> crypto_assets;
 	std::optional<CryptoTerm> crypto_term;
+	std::optional<PaymentPastDue> payment_past_due;
 };
 
 struct SubscriptionCreatePaymentIdArgs {
@@ -4431,6 +4441,8 @@ inline void to_json(nlohmann::json& j, const OverrideLocalAppIds& v);
 inline void from_json(const nlohmann::json& j, OverrideLocalAppIds& v);
 inline void to_json(nlohmann::json& j, const PacketStats& v);
 inline void from_json(const nlohmann::json& j, PacketStats& v);
+inline void to_json(nlohmann::json& j, const PaymentPastDue& v);
+inline void from_json(const nlohmann::json& j, PaymentPastDue& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardError& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardError& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardKey& v);
@@ -13195,6 +13207,27 @@ inline void from_json(const nlohmann::json& j, PacketStats& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const PaymentPastDue& v) {
+	j = nlohmann::json::object();
+	j["store"] = v.store;
+	j["fail_time"] = v.fail_time;
+	j["update_payment_url"] = v.update_payment_url;
+}
+inline void from_json(const nlohmann::json& j, PaymentPastDue& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("store"); it != j.end() && !it->is_null()) {
+		it->get_to(v.store);
+	}
+	if (auto it = j.find("fail_time"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fail_time);
+	}
+	if (auto it = j.find("update_payment_url"); it != j.end() && !it->is_null()) {
+		it->get_to(v.update_payment_url);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const PointsLeaderboardError& v) {
 	j = nlohmann::json::object();
 	j["message"] = v.message;
@@ -16551,10 +16584,18 @@ inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionResult
 
 inline void to_json(nlohmann::json& j, const StripeCreateCustomerPortalArgs& v) {
 	j = nlohmann::json::object();
+	if (v.flow) {
+		j["flow"] = *v.flow;
+	}
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCustomerPortalArgs& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("flow"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.flow = std::move(tmp);
 	}
 }
 
@@ -17015,6 +17056,9 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	if (v.crypto_term) {
 		j["crypto_term"] = *v.crypto_term;
 	}
+	if (v.payment_past_due) {
+		j["payment_past_due"] = *v.payment_past_due;
+	}
 }
 inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 	if (!j.is_object()) {
@@ -17079,6 +17123,11 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 		CryptoTerm tmp{};
 		it->get_to(tmp);
 		v.crypto_term = std::move(tmp);
+	}
+	if (auto it = j.find("payment_past_due"); it != j.end() && !it->is_null()) {
+		PaymentPastDue tmp{};
+		it->get_to(tmp);
+		v.payment_past_due = std::move(tmp);
 	}
 }
 
