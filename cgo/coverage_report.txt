@@ -1311,7 +1311,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1231) ==
+== skipped (1232) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2218,6 +2218,7 @@ PacketStats: data: crosses as json
 PacketStatsChangeListener: callback interface: crosses as c function pointer
 PacketStatsRpc: skipped: rpc gob internal (macOS parity: ignored)
 ParseByJwtCallback: callback interface: crosses as c function pointer
+PaymentPastDue: data: crosses as json
 PaymentsListener: callback interface: crosses as c function pointer
 PayoutWalletListener: callback interface: crosses as c function pointer
 PeersListener: callback interface: crosses as c function pointer
