@@ -29,19 +29,28 @@ type NetworkUserUpdateSuccessListener interface {
 	Success()
 }
 
-// `model.NetworkUser` (the per-auth-type arrays `user_auths`, `sso_auths`,
-// `wallet_auths` and `seedphrase_auths` are not modeled here)
+// `model.NetworkUser` (the per-auth-type arrays `sso_auths`, `wallet_auths`
+// and `seedphrase_auths` are not modeled here)
 type NetworkUser struct {
 	// the wire name is `user_id` (an earlier tag, `userId`, never matched the
 	// server and left this nil)
-	UserId        *Id         `json:"user_id"`
-	UserName      string      `json:"user_name"`
+	UserId   *Id    `json:"user_id"`
+	UserName string `json:"user_name"`
+	// the identity the account was created with. An account created with a
+	// wallet, a seed phrase or as a guest has none, even after it adds an email
+	// or phone; for a Google or Apple account it is the provider's email,
+	// which has no password. UserAuths lists the password sign-ins.
 	UserAuth      string      `json:"user_auth,omitempty"`
 	Verified      bool        `json:"verified"`
 	AuthType      string      `json:"auth_type"`
 	NetworkName   string      `json:"network_name"`
 	WalletAddress string      `json:"wallet_address,omitempty"`
 	AuthTypes     *StringList `json:"auth_types,omitempty"`
+	// the account's email and phone password sign-ins, including those added
+	// after the account was created. A password reset rewrites these, so
+	// Change password is offered at one of their addresses. Absent when the
+	// account has none.
+	UserAuths *NetworkUserUserAuthList `json:"user_auths,omitempty"`
 }
 
 type NetworkUserViewController struct {
@@ -206,6 +215,7 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 				NetworkName:   result.NetworkUser.NetworkName,
 				WalletAddress: result.NetworkUser.WalletAddress,
 				AuthTypes:     result.NetworkUser.AuthTypes,
+				UserAuths:     result.NetworkUser.UserAuths,
 			}
 
 			self.setNetworkUser(networkUser)

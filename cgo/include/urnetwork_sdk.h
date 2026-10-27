@@ -4121,6 +4121,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   network_name: string
  *   wallet_address?: string
  *   auth_types?: StringList | null
+ *   user_auths?: NetworkUserUserAuthList | null
  */
 
 /* NetworkUserUpdateArgs (json):
@@ -4133,6 +4134,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* NetworkUserUpdateResult (json):
  *   error?: NetworkUserUpdateError | null
+ */
+
+/* NetworkUserUserAuth (json):
+ *   user_auth?: string
+ *   auth_type: string
+ */
+
+/* NetworkUserUserAuthList (json):
+ *   = NetworkUserUserAuth | null[]
  */
 
 /* OnboardingClickArgs (json):
