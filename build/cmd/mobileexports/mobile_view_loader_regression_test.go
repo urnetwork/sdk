@@ -15,8 +15,8 @@ import (
 
 func testingMobileViewPackage() *packages.Package {
 	return &packages.Package{
-		PkgPath: "github.com/urnetwork/sdk",
-		Types:   types.NewPackage("github.com/urnetwork/sdk", "sdk"),
+		PkgPath: "github.com/urnetwork/sdk/v2026",
+		Types:   types.NewPackage("github.com/urnetwork/sdk/v2026", "sdk"),
 	}
 }
 
@@ -223,7 +223,7 @@ func TestMobileViewLoaderPreservesSourceLoadConfiguration(t *testing.T) {
 			actual.Dir != "../.." ||
 			!reflect.DeepEqual(actual.Env, config.env) ||
 			!reflect.DeepEqual(actual.BuildFlags, []string{"-tags=sdk_mobile_bind,ios_extension"}) ||
-			!reflect.DeepEqual(patterns, []string{"github.com/urnetwork/sdk"}) {
+			!reflect.DeepEqual(patterns, []string{"github.com/urnetwork/sdk/v2026"}) {
 			t.Fatal("mobile source-load configuration changed")
 		}
 		wantTail := []string{
