@@ -265,6 +265,25 @@ func NewAccountPaymentsList() *AccountPaymentsList {
 	}
 }
 
+// An email or phone password sign-in of the account, one entry of the
+// server's `user_auths` (GET /network/user).
+type NetworkUserUserAuth struct {
+	// the email or phone number
+	UserAuth string `json:"user_auth,omitempty"`
+	// "email" or "phone"
+	AuthType string `json:"auth_type"`
+}
+
+type NetworkUserUserAuthList struct {
+	exportedList[*NetworkUserUserAuth]
+}
+
+func NewNetworkUserUserAuthList() *NetworkUserUserAuthList {
+	return &NetworkUserUserAuthList{
+		exportedList: *newExportedList[*NetworkUserUserAuth](),
+	}
+}
+
 type BlockedLocation struct {
 	LocationId   *Id          `json:"location_id"`
 	LocationName string       `json:"location_name"`

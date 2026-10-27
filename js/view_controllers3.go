@@ -193,7 +193,7 @@ func jsNetworkUserViewController(
 	})
 	// the cached NetworkUser through its json tags (userId, user_name,
 	// user_auth, verified, auth_type, network_name, wallet_address,
-	// auth_types), null until fetched
+	// auth_types, user_auths), null until fetched
 	m["getNetworkUser"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsJson(vc.GetNetworkUser())
 	})

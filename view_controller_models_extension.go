@@ -16,6 +16,8 @@ type NetworkUser struct {
 	NetworkName   string      `json:"network_name"`
 	WalletAddress string      `json:"wallet_address,omitempty"`
 	AuthTypes     *StringList `json:"auth_types,omitempty"`
+	// see network_user_view_controller.go
+	UserAuths *NetworkUserUserAuthList `json:"user_auths,omitempty"`
 }
 
 type AccountWallet struct {

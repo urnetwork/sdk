@@ -1084,6 +1084,8 @@ export interface NetworkUserInfo {
   network_name: string;
   wallet_address?: string;
   auth_types?: string[];
+  /** the email and phone password sign-ins, including ones added after sign-up */
+  user_auths?: { user_auth?: string; auth_type: string }[];
 }
 
 /**
