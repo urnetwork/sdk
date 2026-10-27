@@ -1311,7 +1311,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1231) ==
+== skipped (1234) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2113,6 +2113,8 @@ NetworkUserUpdateError: data: crosses as json
 NetworkUserUpdateErrorListener: callback interface: crosses as c function pointer
 NetworkUserUpdateResult: data: crosses as json
 NetworkUserUpdateSuccessListener: callback interface: crosses as c function pointer
+NetworkUserUserAuth: data: crosses as json
+NetworkUserUserAuthList: data: crosses as json
 NewAccountEpochList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewAccountPaymentsList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewAccountPreferencesViewControllerWithApi: unmappable: param ctx: external type context.Context
@@ -2161,6 +2163,7 @@ NewNetworkPeerList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSessionInfoList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSpaceList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSpaceWithUrls: unmappable: param ctx: external type context.Context
+NewNetworkUserUserAuthList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkUserViewControllerWithApi: unmappable: param ctx: external type context.Context
 NewPlatformDeviceLocal: skipped: platform constructor (macOS parity: ignored)
 NewPlatformDeviceLocalWithDefaults: unmappable: param generatorFunc: func type

@@ -830,6 +830,7 @@ struct NetworkUnblockLocationResult;
 struct NetworkUserUpdateArgs;
 struct NetworkUserUpdateError;
 struct NetworkUserUpdateResult;
+struct NetworkUserUserAuth;
 struct OnboardingClickArgs;
 struct OnboardingClickResult;
 struct OnboardingError;
@@ -1034,6 +1035,7 @@ using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
 using NetworkClientInfoList = std::vector<NetworkClientInfo>;
 using NetworkPeerList = std::vector<NetworkPeer>;
 using NetworkSpaceList = std::vector<nlohmann::json>;
+using NetworkUserUserAuthList = std::vector<NetworkUserUserAuth>;
 using PointsLeaderboardRowList = std::vector<PointsLeaderboardRow>;
 using ProbeResultList = std::vector<ProbeResult>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
@@ -2386,6 +2388,7 @@ struct NetworkUser {
 	std::string network_name{};
 	std::optional<std::string> wallet_address;
 	std::optional<StringList> auth_types;
+	std::optional<NetworkUserUserAuthList> user_auths;
 };
 
 struct GetNetworkUserResult {
@@ -2786,6 +2789,11 @@ struct NetworkUserUpdateError {
 
 struct NetworkUserUpdateResult {
 	std::optional<NetworkUserUpdateError> error;
+};
+
+struct NetworkUserUserAuth {
+	std::optional<std::string> user_auth;
+	std::string auth_type{};
 };
 
 struct OnboardingClickArgs {
@@ -4413,6 +4421,8 @@ inline void to_json(nlohmann::json& j, const NetworkUserUpdateError& v);
 inline void from_json(const nlohmann::json& j, NetworkUserUpdateError& v);
 inline void to_json(nlohmann::json& j, const NetworkUserUpdateResult& v);
 inline void from_json(const nlohmann::json& j, NetworkUserUpdateResult& v);
+inline void to_json(nlohmann::json& j, const NetworkUserUserAuth& v);
+inline void from_json(const nlohmann::json& j, NetworkUserUserAuth& v);
 inline void to_json(nlohmann::json& j, const OnboardingClickArgs& v);
 inline void from_json(const nlohmann::json& j, OnboardingClickArgs& v);
 inline void to_json(nlohmann::json& j, const OnboardingClickResult& v);
@@ -10848,6 +10858,9 @@ inline void to_json(nlohmann::json& j, const NetworkUser& v) {
 	if (v.auth_types) {
 		j["auth_types"] = *v.auth_types;
 	}
+	if (v.user_auths) {
+		j["user_auths"] = *v.user_auths;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkUser& v) {
 	if (!j.is_object()) {
@@ -10884,6 +10897,11 @@ inline void from_json(const nlohmann::json& j, NetworkUser& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.auth_types = std::move(tmp);
+	}
+	if (auto it = j.find("user_auths"); it != j.end() && !it->is_null()) {
+		NetworkUserUserAuthList tmp{};
+		it->get_to(tmp);
+		v.user_auths = std::move(tmp);
 	}
 }
 
@@ -12847,6 +12865,27 @@ inline void from_json(const nlohmann::json& j, NetworkUserUpdateResult& v) {
 		NetworkUserUpdateError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const NetworkUserUserAuth& v) {
+	j = nlohmann::json::object();
+	if (v.user_auth) {
+		j["user_auth"] = *v.user_auth;
+	}
+	j["auth_type"] = v.auth_type;
+}
+inline void from_json(const nlohmann::json& j, NetworkUserUserAuth& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.user_auth = std::move(tmp);
+	}
+	if (auto it = j.find("auth_type"); it != j.end() && !it->is_null()) {
+		it->get_to(v.auth_type);
 	}
 }
 
