@@ -883,6 +883,8 @@ typedef void (*urnet_subscription_create_payment_id_cb)(void* user_data, const c
 typedef void (*urnet_subscription_jwt_out_of_sync_cb)(void* user_data, bool server_is_pro);
 /* ThroughputListener */
 typedef void (*urnet_throughput_cb)(void* user_data);
+/* TransportDelayChangeListener */
+typedef void (*urnet_transport_delay_change_cb)(void* user_data, const char* delay_json);
 /* TransportSettingsChangeListener */
 typedef void (*urnet_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
 /* TransportStatusChangeListener */
@@ -1324,6 +1326,7 @@ uint64_t urnet_device_add_provider_packet_stats_change_listener(uint64_t self, u
 uint64_t urnet_device_add_provider_transport_settings_change_listener(uint64_t self, urnet_provider_transport_settings_change_cb listener_provider_transport_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_transport_status_change_listener(uint64_t self, urnet_provider_transport_status_change_cb listener_provider_transport_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_route_local_change_listener(uint64_t self, urnet_route_local_change_cb listener_route_local_changed, void* listener_user_data);
+uint64_t urnet_device_add_transport_delay_change_listener(uint64_t self, urnet_transport_delay_change_cb listener_transport_delay_changed, void* listener_user_data);
 uint64_t urnet_device_add_transport_settings_change_listener(uint64_t self, urnet_transport_settings_change_cb listener_transport_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_transport_status_change_listener(uint64_t self, urnet_transport_status_change_cb listener_transport_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_tunnel_change_listener(uint64_t self, urnet_tunnel_change_cb listener_tunnel_changed, void* listener_user_data);
@@ -1391,6 +1394,7 @@ bool urnet_device_get_route_local(uint64_t self);
 bool urnet_device_get_should_show_rating_dialog(uint64_t self);
 uint64_t urnet_device_get_stats(uint64_t self);
 bool urnet_device_get_supports_extender_pin(uint64_t self);
+char* urnet_device_get_transport_delay(uint64_t self);
 char* urnet_device_get_transport_settings(uint64_t self);
 char* urnet_device_get_transport_status(uint64_t self);
 bool urnet_device_get_tunnel_started(uint64_t self);
@@ -3315,6 +3319,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProvideExtenderDnsPrivilegedPort: boolean
  *   Verbose: boolean
  *   MoveDeclineBackgroundOrMetered: boolean
+ *   EnableTransportDelay: boolean
+ *   TransportDelayWindowCount: number
+ *   TransportDelayWindowTimeout: number (ns)
+ *   TransportDelayGoodUpBitsPerSecond: number
+ *   TransportDelayBadUpBitsPerSecond: number
+ *   TransportDelayGoodDownBitsPerSecond: number
+ *   TransportDelayBadDownBitsPerSecond: number
+ *   TransportDelayGoodUpQueueDelay: number (ns)
+ *   TransportDelayGoodDownQueueDelay: number (ns)
+ *   TransportDelayBadUpQueueDelay: number (ns)
+ *   TransportDelayBadDownQueueDelay: number (ns)
+ *   TransportDelayQualityStep: number
+ *   TransportDelayQualityHysteresis: number
  *   DnsPumpHost: string
  *   EnableRpc: boolean
  *   DisableLogging: boolean
@@ -5347,6 +5364,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* TransferStatsResult (json):
  *   paid_bytes_provided: number
  *   unpaid_bytes_provided: number
+ */
+
+/* TransportDelay (json):
+ *   UpQuality: number
+ *   DownQuality: number
+ *   UpBitsPerSecond: number
+ *   DownBitsPerSecond: number
+ *   UpQueueDelayMillis: number
+ *   DownQueueDelayMillis: number
+ *   Fallback: boolean
  */
 
 /* TransportDistribution (json):

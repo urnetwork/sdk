@@ -260,15 +260,15 @@ func TestDeviceLocalProviderProvideModeWithoutFlipDoesNotRebuild(t *testing.T) {
 		return newFakeMigratablePlatformTransport(auth, true)
 	}
 
-	// network -> friends and family, and public -> stream: neither crosses
-	// the public flag
+	// network -> friends and family, and network -> stream: neither crosses
+	// the public flag, since the stream mode provides nothing publicly
 	for _, c := range []struct {
 		from ProvideMode
 		to   ProvideMode
 	}{
 		{ProvideModeNetwork, ProvideModeFriendsAndFamily},
 		{ProvideModeFriendsAndFamily, ProvideModeFriendsAndFamily},
-		{ProvideModePublic, ProvideModeStream},
+		{ProvideModeNetwork, ProvideModeStream},
 	} {
 		provider.stateLock.Lock()
 		provider.provideMode = c.from
@@ -296,6 +296,76 @@ func TestDeviceLocalProviderProvideModeWithoutFlipDoesNotRebuild(t *testing.T) {
 			t.Errorf("provide mode %d -> %d rebuilt the transports", c.from, c.to)
 		default:
 		}
+	}
+}
+
+// Public -> stream crosses the public flag: a stream mode provides nothing
+// publicly, so the provider rebuilds on the shared strategy and stops declaring
+// provide intent, which also lets its client connections offer the transport
+// delay header (connect DELAY.md §6).
+func TestDeviceLocalProviderPublicToStreamRebuildsWithoutProvideIntent(t *testing.T) {
+	provider, _ := newTestProvideModeProvider(t, ProvideModePublic)
+	provider.stateLock.Lock()
+	publicAuth := *provider.auth
+	publicAuth.ProvideIntent = true
+	provider.auth = &publicAuth
+	current := newFakeMigratablePlatformTransport(provider.auth, true)
+	provider.platformTransport = current
+	provider.stateLock.Unlock()
+
+	type build struct {
+		provideIntent   bool
+		standbyStrategy *connect.ClientStrategy
+	}
+	builds := make(chan build, 4)
+	provider.newPlatformTransport = func(
+		auth *connect.ClientAuth,
+		targetMode connect.TransportMode,
+		settings *connect.PlatformTransportSettings,
+	) migratablePlatformTransport {
+		builds <- build{
+			provideIntent:   auth.ProvideIntent,
+			standbyStrategy: provider.standbyClientStrategy(provider.clientStrategySettings),
+		}
+		return newFakeMigratablePlatformTransport(auth, true)
+	}
+
+	provider.setProvideMode(ProvideModeStream)
+
+	provider.stateLock.Lock()
+	provideIntent := provider.auth.ProvideIntent
+	policyVersion := provider.transportPolicyVersion
+	provider.stateLock.Unlock()
+	if provideIntent {
+		t.Fatal("the stream mode still declares provide intent")
+	}
+	if policyVersion != 2 {
+		t.Fatalf("policy version = %d after public -> stream, want 2", policyVersion)
+	}
+	current.mutex.Lock()
+	currentProvideIntent := current.auth.ProvideIntent
+	current.mutex.Unlock()
+	if currentProvideIntent {
+		t.Fatal("the running transport kept the public declaration")
+	}
+
+	select {
+	case b := <-builds:
+		if b.provideIntent {
+			t.Fatal("the rebuilt transport declares provide intent")
+		}
+		if b.standbyStrategy != provider.clientStrategy {
+			t.Fatal("the rebuilt standby did not return to the shared strategy")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("public -> stream did not rebuild the provider transports")
+	}
+	if !waitProviderCondition(15*time.Second, func() bool {
+		provider.stateLock.Lock()
+		defer provider.stateLock.Unlock()
+		return provider.platformTransport != current && !provider.migrating.Load()
+	}) {
+		t.Fatal("the rebuilt transport was not installed")
 	}
 }
 

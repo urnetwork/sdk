@@ -455,6 +455,23 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// backgrounded or metered (D11)
 		MoveDeclineBackgroundOrMetered: true,
 
+		// the window transports measure their connections (connect/DELAY.md
+		// §10), with the thresholds of the calibration report until the
+		// shadow trial sets them (§13)
+		EnableTransportDelay:                true,
+		TransportDelayWindowCount:           defaultTransportDelayWindowCount,
+		TransportDelayWindowTimeout:         defaultTransportDelayWindowTimeout,
+		TransportDelayGoodUpBitsPerSecond:   defaultTransportDelayGoodUpBitsPerSecond,
+		TransportDelayBadUpBitsPerSecond:    defaultTransportDelayBadUpBitsPerSecond,
+		TransportDelayGoodDownBitsPerSecond: defaultTransportDelayGoodDownBitsPerSecond,
+		TransportDelayBadDownBitsPerSecond:  defaultTransportDelayBadDownBitsPerSecond,
+		TransportDelayGoodUpQueueDelay:      defaultTransportDelayGoodUpQueueDelay,
+		TransportDelayGoodDownQueueDelay:    defaultTransportDelayGoodDownQueueDelay,
+		TransportDelayBadUpQueueDelay:       defaultTransportDelayBadUpQueueDelay,
+		TransportDelayBadDownQueueDelay:     defaultTransportDelayBadDownQueueDelay,
+		TransportDelayQualityStep:           defaultTransportDelayQualityStep,
+		TransportDelayQualityHysteresis:     defaultTransportDelayQualityHysteresis,
+
 		ClientSettings: *clientSettings,
 	}
 }
@@ -484,9 +501,9 @@ func (self *DeviceLocalSettings) logger() connect.Logger {
 // BusyProbeBudgetMillis and friends elsewhere in the sdk.
 //
 // Millisecond granularity is not a narrowing in practice: every default here
-// is whole seconds (5s, 10s, 300s, 1s, 1s). A sub-millisecond value set from
-// Go still round-trips through the Go field untouched — only the bound view
-// truncates.
+// is whole milliseconds (5s, 10s, 300s, 1s, 1s, 20s, 500ms, 2.5s). A
+// sub-millisecond value set from Go still round-trips through the Go field
+// untouched — only the bound view truncates.
 
 func (self *DeviceLocalSettings) GetSendTimeoutMillis() int64 {
 	return self.SendTimeout.Milliseconds()
@@ -526,6 +543,46 @@ func (self *DeviceLocalSettings) GetNetworkPeersEpochMillis() int64 {
 
 func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 	self.NetworkPeersEpoch = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayWindowTimeoutMillis() int64 {
+	return self.TransportDelayWindowTimeout.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayWindowTimeoutMillis(millis int64) {
+	self.TransportDelayWindowTimeout = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayGoodUpQueueDelayMillis() int64 {
+	return self.TransportDelayGoodUpQueueDelay.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayGoodUpQueueDelayMillis(millis int64) {
+	self.TransportDelayGoodUpQueueDelay = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayGoodDownQueueDelayMillis() int64 {
+	return self.TransportDelayGoodDownQueueDelay.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayGoodDownQueueDelayMillis(millis int64) {
+	self.TransportDelayGoodDownQueueDelay = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayBadUpQueueDelayMillis() int64 {
+	return self.TransportDelayBadUpQueueDelay.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayBadUpQueueDelayMillis(millis int64) {
+	self.TransportDelayBadUpQueueDelay = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayBadDownQueueDelayMillis() int64 {
+	return self.TransportDelayBadDownQueueDelay.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayBadDownQueueDelayMillis(millis int64) {
+	self.TransportDelayBadDownQueueDelay = time.Duration(millis) * time.Millisecond
 }
 
 // DeviceLocalSettings is BOUND and app-facing, despite what a
@@ -697,6 +754,42 @@ type DeviceLocalSettings struct {
 	// (SetNetworkMetered). A compulsory move still applies. On by default;
 	// off accepts advisory moves in either state.
 	MoveDeclineBackgroundOrMetered bool
+	// EnableTransportDelay offers the delay header on every window transport,
+	// which then measures its connection, and reports the transport quality
+	// (Device.GetTransportDelay, connect/DELAY.md §10). On by default. Off,
+	// nothing is offered or measured and the quality reads normal operation;
+	// a hosted device turns it off, since its transports run between data
+	// centers and never cross the user's link. Settings are not sent over the
+	// device rpc, so these are set where the device is built.
+	EnableTransportDelay bool
+	// the window: each direction scores the second-worst of its newest
+	// TransportDelayWindowCount sampled seconds, none older than
+	// TransportDelayWindowTimeout (transport_delay.go)
+	TransportDelayWindowCount int
+	//gomobile:noexport time.Duration — bound as GetTransportDelayWindowTimeoutMillis/SetTransportDelayWindowTimeoutMillis
+	TransportDelayWindowTimeout time.Duration
+	// the link throughput where a direction's quality reaches 0 (at or above
+	// good) and 1 (at or below bad), in bits per second (§10.2)
+	TransportDelayGoodUpBitsPerSecond   int64
+	TransportDelayBadUpBitsPerSecond    int64
+	TransportDelayGoodDownBitsPerSecond int64
+	TransportDelayBadDownBitsPerSecond  int64
+	// the standing queue where a direction's quality reaches 0 (at or below
+	// good) and 1 (at or above bad)
+	//
+	//gomobile:noexport time.Duration — bound as GetTransportDelayGoodUpQueueDelayMillis/SetTransportDelayGoodUpQueueDelayMillis
+	TransportDelayGoodUpQueueDelay time.Duration
+	//gomobile:noexport time.Duration — bound as GetTransportDelayGoodDownQueueDelayMillis/SetTransportDelayGoodDownQueueDelayMillis
+	TransportDelayGoodDownQueueDelay time.Duration
+	//gomobile:noexport time.Duration — bound as GetTransportDelayBadUpQueueDelayMillis/SetTransportDelayBadUpQueueDelayMillis
+	TransportDelayBadUpQueueDelay time.Duration
+	//gomobile:noexport time.Duration — bound as GetTransportDelayBadDownQueueDelayMillis/SetTransportDelayBadDownQueueDelayMillis
+	TransportDelayBadDownQueueDelay time.Duration
+	// the reported quality is a multiple of the step. A worse level is
+	// reported at once; a better one once the quality is the hysteresis
+	// below the level's band (§10.3)
+	TransportDelayQualityStep       float64
+	TransportDelayQualityHysteresis float64
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	//
@@ -945,6 +1038,13 @@ type DeviceLocal struct {
 	remoteUserNatClient connect.UserNatClient
 	contractStatusSub   func()
 	windowMonitorSub    func()
+	// the delay stats of the current multi client generation
+	// (device_local_transport_delay.go)
+	transportDelayStatsSub func()
+	// the window of those stats, guarded by its own lock so a transport
+	// goroutine never takes stateLock, and the wake of watchTransportDelay
+	transportDelay       *transportDelayWindow
+	transportDelayNotify chan struct{}
 
 	// a stable windowMonitor instance per remoteUserNatClient for the
 	// fixed/empty monitor types (see cachedWindowMonitor). Guarded by its own
@@ -1174,6 +1274,8 @@ type DeviceLocal struct {
 	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
 	// fed by watchClientLimitStatus from the provider's client limit hold
 	clientLimitStatusChangeListeners *connect.CallbackList[ClientLimitStatusChangeListener]
+	// fed by watchTransportDelay from the window transports' delay stats
+	transportDelayChangeListeners *connect.CallbackList[TransportDelayChangeListener]
 	// fed by watchProviderConnected from the provider's transport generations
 	providerConnectedChangeCallbacks *connect.CallbackList[func(providerConnected bool)]
 
@@ -1803,6 +1905,9 @@ func newDeviceLocalWithOverridesForPlatform(
 		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
 		extenderProvideMonitor:                   connect.NewMonitor(),
 		clientLimitStatusChangeListeners:         connect.NewCallbackList[ClientLimitStatusChangeListener](),
+		transportDelayChangeListeners:            connect.NewCallbackList[TransportDelayChangeListener](),
+		transportDelay:                           newTransportDelayWindow(settings),
+		transportDelayNotify:                     make(chan struct{}, 1),
 		providerConnectedChangeCallbacks:         connect.NewCallbackList[func(providerConnected bool)](),
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
@@ -1964,6 +2069,17 @@ func newDeviceLocalWithOverridesForPlatform(
 		}
 		deviceLocal.watchExtenderProvideStatus(extenderProvideUpdate)
 	})
+
+	// the transport quality of the window transports. The wake is made with
+	// the device, so a sample that lands the instant the constructor returns
+	// still wakes the watch
+	if settings.EnableTransportDelay {
+		deviceLocal.lifecycleWorkers.Add(1)
+		go connect.HandleError(func() {
+			defer deviceLocal.lifecycleWorkers.Done()
+			deviceLocal.watchTransportDelay()
+		})
+	}
 
 	// the trailing edge of the contract stats epoch gate: carries out the last
 	// batch of a transfer, which lands inside the gate and would otherwise never
@@ -4730,6 +4846,13 @@ func (self *DeviceLocal) applyDestination(
 			self.windowMonitorSub()
 			self.windowMonitorSub = nil
 		}
+		if self.transportDelayStatsSub != nil {
+			self.transportDelayStatsSub()
+			self.transportDelayStatsSub = nil
+		}
+		// the samples and levels are the retired multi client's. A sample one
+		// of its transports publishes late is dropped from here on
+		self.transportDelay.reset(self.connectionGeneration, nil)
 		// the prior mux is closed here but its learned IP→hostname names are carried
 		// into the new mux below (AdoptServerNames): server names outlive the physical
 		// connection, so a reconnect/location change must not blank the reverse index —
@@ -4832,6 +4955,11 @@ func (self *DeviceLocal) applyDestination(
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
 				apiGeneratorSettings.PlatformTransportModePreferences = modePreferences
+				// every window client's transports offer the delay header and
+				// measure (connect/DELAY.md D3)
+				if self.settings.EnableTransportDelay {
+					apiGeneratorSettings.TransportDelay = connect.DefaultTransportDelaySettings()
+				}
 				apiGenerator := connect.NewApiMultiClientGenerator(
 					self.ctx,
 					connectSpecs,
@@ -5057,6 +5185,14 @@ func (self *DeviceLocal) applyDestination(
 				}
 			}
 			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
+			if self.settings.EnableTransportDelay {
+				// the window takes this generation's samples, from before its
+				// first window client publishes one
+				self.transportDelay.reset(connectionGeneration, multi)
+				self.transportDelayStatsSub = multi.AddTransportDelayStatsCallback(func(stats *connect.TransportDelayStats) {
+					self.updateTransportDelayStats(connectionGeneration, multi, stats)
+				})
+			}
 			// }
 
 			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
@@ -5116,6 +5252,9 @@ func (self *DeviceLocal) applyDestination(
 		self.stats.UpdateConnect(connectEnabled)
 		self.connectChanged(connectEnabled)
 		self.windowStatusChanged(self.GetWindowStatus())
+		// the rebuild reset the window; the watch emits the reset levels if
+		// they changed
+		self.notifyTransportDelay()
 		self.providerIdentitiesChanged()
 		self.connectedProviderLocationsChanged()
 		if contractStatusChanged {
@@ -5745,6 +5884,11 @@ func (self *DeviceLocal) close() {
 		self.windowMonitorSub()
 		self.windowMonitorSub = nil
 	}
+	if self.transportDelayStatsSub != nil {
+		self.transportDelayStatsSub()
+		self.transportDelayStatsSub = nil
+	}
+	self.transportDelay.reset(self.connectionGeneration, nil)
 	self.closeUpgradeMuxWithLock()
 	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()

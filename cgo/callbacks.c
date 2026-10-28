@@ -777,6 +777,10 @@ void urnet_invoke_throughput(urnet_throughput_cb cb, void* user_data) {
 	cb(user_data);
 }
 
+void urnet_invoke_transport_delay_change(urnet_transport_delay_change_cb cb, void* user_data, const char* delay_json) {
+	cb(user_data, delay_json);
+}
+
 void urnet_invoke_transport_settings_change(urnet_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json) {
 	cb(user_data, transport_settings_json);
 }

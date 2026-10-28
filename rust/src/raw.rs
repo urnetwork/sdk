@@ -194,6 +194,7 @@ pub type urnet_subscription_balance_fetch_error_cb = Option<unsafe extern "C" fn
 pub type urnet_subscription_create_payment_id_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_subscription_jwt_out_of_sync_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_throughput_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_transport_delay_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_transport_settings_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_transport_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_tunnel_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
@@ -593,6 +594,7 @@ pub struct Raw {
     pub urnet_device_add_provider_transport_settings_change_listener: unsafe extern "C" fn(u64, urnet_provider_transport_settings_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provider_transport_status_change_listener: unsafe extern "C" fn(u64, urnet_provider_transport_status_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_route_local_change_listener: unsafe extern "C" fn(u64, urnet_route_local_change_cb, *mut c_void) -> u64,
+    pub urnet_device_add_transport_delay_change_listener: unsafe extern "C" fn(u64, urnet_transport_delay_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_transport_settings_change_listener: unsafe extern "C" fn(u64, urnet_transport_settings_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_transport_status_change_listener: unsafe extern "C" fn(u64, urnet_transport_status_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_tunnel_change_listener: unsafe extern "C" fn(u64, urnet_tunnel_change_cb, *mut c_void) -> u64,
@@ -660,6 +662,7 @@ pub struct Raw {
     pub urnet_device_get_should_show_rating_dialog: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_stats: unsafe extern "C" fn(u64) -> u64,
     pub urnet_device_get_supports_extender_pin: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_device_get_transport_delay: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_transport_settings: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_transport_status: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_tunnel_started: unsafe extern "C" fn(u64) -> bool,
@@ -1942,6 +1945,7 @@ impl Raw {
             urnet_device_add_provider_transport_settings_change_listener: unsafe { *library.get(b"urnet_device_add_provider_transport_settings_change_listener\0")? },
             urnet_device_add_provider_transport_status_change_listener: unsafe { *library.get(b"urnet_device_add_provider_transport_status_change_listener\0")? },
             urnet_device_add_route_local_change_listener: unsafe { *library.get(b"urnet_device_add_route_local_change_listener\0")? },
+            urnet_device_add_transport_delay_change_listener: unsafe { *library.get(b"urnet_device_add_transport_delay_change_listener\0")? },
             urnet_device_add_transport_settings_change_listener: unsafe { *library.get(b"urnet_device_add_transport_settings_change_listener\0")? },
             urnet_device_add_transport_status_change_listener: unsafe { *library.get(b"urnet_device_add_transport_status_change_listener\0")? },
             urnet_device_add_tunnel_change_listener: unsafe { *library.get(b"urnet_device_add_tunnel_change_listener\0")? },
@@ -2009,6 +2013,7 @@ impl Raw {
             urnet_device_get_should_show_rating_dialog: unsafe { *library.get(b"urnet_device_get_should_show_rating_dialog\0")? },
             urnet_device_get_stats: unsafe { *library.get(b"urnet_device_get_stats\0")? },
             urnet_device_get_supports_extender_pin: unsafe { *library.get(b"urnet_device_get_supports_extender_pin\0")? },
+            urnet_device_get_transport_delay: unsafe { *library.get(b"urnet_device_get_transport_delay\0")? },
             urnet_device_get_transport_settings: unsafe { *library.get(b"urnet_device_get_transport_settings\0")? },
             urnet_device_get_transport_status: unsafe { *library.get(b"urnet_device_get_transport_status\0")? },
             urnet_device_get_tunnel_started: unsafe { *library.get(b"urnet_device_get_tunnel_started\0")? },

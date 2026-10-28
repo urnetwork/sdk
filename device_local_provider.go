@@ -373,13 +373,14 @@ func newDeviceLocalProviderWithOverrides(
 	return provider, nil
 }
 
-// Whether a provide mode serves public peers (J4). The modes are ordered by
-// openness, so the test is public and above, which also covers the stream
-// modes. It errs toward public on purpose: dialing direct where it was not
-// needed costs nothing, while a public provider tagged with an extender's
-// address is the failure this rule exists to prevent.
+// Whether a provide mode serves public peers (J4). Provide modes are a set of
+// independent relationships, not an ordered scale (protocol.ProvideMode), so
+// this names the one device mode that provides publicly: setProvideModeWithLock
+// grants the public contract mode only to ProvideModePublic. A stream mode
+// provides nothing publicly, so it must neither declare provide intent nor
+// give up the extender dialers a censored network may need.
 func provideModeIncludesPublic(provideMode ProvideMode) bool {
-	return ProvideModePublic <= provideMode
+	return provideMode == ProvideModePublic
 }
 
 // The strategy the standby transport of a new generation dials with (J4).
