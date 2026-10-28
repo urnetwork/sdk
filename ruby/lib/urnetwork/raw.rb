@@ -195,6 +195,7 @@ module URnetwork
       callback :urnet_subscription_create_payment_id_cb, [:pointer, :string, :string], :void
       callback :urnet_subscription_jwt_out_of_sync_cb, [:pointer, :bool], :void
       callback :urnet_throughput_cb, [:pointer], :void
+      callback :urnet_transport_delay_change_cb, [:pointer, :string], :void
       callback :urnet_transport_settings_change_cb, [:pointer, :string], :void
       callback :urnet_transport_status_change_cb, [:pointer, :string], :void
       callback :urnet_tunnel_change_cb, [:pointer, :bool], :void
@@ -592,6 +593,7 @@ module URnetwork
       attach_function :urnet_device_add_provider_transport_settings_change_listener, [:uint64, :urnet_provider_transport_settings_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provider_transport_status_change_listener, [:uint64, :urnet_provider_transport_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_route_local_change_listener, [:uint64, :urnet_route_local_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_transport_delay_change_listener, [:uint64, :urnet_transport_delay_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_transport_settings_change_listener, [:uint64, :urnet_transport_settings_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_transport_status_change_listener, [:uint64, :urnet_transport_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_tunnel_change_listener, [:uint64, :urnet_tunnel_change_cb, :pointer], :uint64, blocking: true
@@ -659,6 +661,7 @@ module URnetwork
       attach_function :urnet_device_get_should_show_rating_dialog, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_stats, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_get_supports_extender_pin, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_get_transport_delay, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_transport_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_transport_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_tunnel_started, [:uint64], :bool, blocking: true

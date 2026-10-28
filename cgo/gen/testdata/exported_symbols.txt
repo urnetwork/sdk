@@ -170,3 +170,8 @@ urnet_device_remote_open_crypto_invoice_view_controller
 urnet_new_crypto_invoice_view_controller
 urnet_payment_method_allows_plan
 urnet_payment_methods
+
+# transport quality (connect/DELAY.md §10): the desktop apps show the slow
+# internet indicator from these
+urnet_device_get_transport_delay
+urnet_device_add_transport_delay_change_listener

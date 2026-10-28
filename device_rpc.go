@@ -338,6 +338,7 @@ type DeviceRemote struct {
 	extenderStatusChangeListeners            map[connect.Id]ExtenderStatusChangeListener
 	extenderProvideStatusChangeListeners     map[connect.Id]ExtenderProvideStatusChangeListener
 	clientLimitStatusChangeListeners         map[connect.Id]ClientLimitStatusChangeListener
+	transportDelayChangeListeners            map[connect.Id]TransportDelayChangeListener
 	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
 	blockStatsChangeListeners                map[connect.Id]BlockStatsChangeListener
 	blockActionOverridesChangeListeners      map[connect.Id]BlockActionOverridesChangeListener
@@ -416,6 +417,12 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last transport quality the local device answered or pushed, read
+	// while the rpc is down. Guarded by stateLock, as is the revision, which
+	// keeps a read from replacing a push or another read published while it
+	// was in flight
+	lastTransportDelay     *TransportDelay
+	transportDelayRevision uint64
 	// the last answer of the local's extender pin capability (K10)
 	lastSupportsExtenderPin bool
 	// the last provider connected state the local device answered or pushed
@@ -597,6 +604,7 @@ func newDeviceRemoteWithOverrides(
 		extenderStatusChangeListeners:            map[connect.Id]ExtenderStatusChangeListener{},
 		extenderProvideStatusChangeListeners:     map[connect.Id]ExtenderProvideStatusChangeListener{},
 		clientLimitStatusChangeListeners:         map[connect.Id]ClientLimitStatusChangeListener{},
+		transportDelayChangeListeners:            map[connect.Id]TransportDelayChangeListener{},
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
 		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
 		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
@@ -787,6 +795,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		ExtenderStatusChangeListenerIds:           slices.Collect(maps.Keys(self.extenderStatusChangeListeners)),
 		ExtenderProvideStatusChangeListenerIds:    slices.Collect(maps.Keys(self.extenderProvideStatusChangeListeners)),
 		ClientLimitStatusChangeListenerIds:        slices.Collect(maps.Keys(self.clientLimitStatusChangeListeners)),
+		TransportDelayChangeListenerIds:           slices.Collect(maps.Keys(self.transportDelayChangeListeners)),
 		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
 		BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
 		BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
@@ -1464,6 +1473,43 @@ func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
 		return cloneClientLimitStatus(self.lastClientLimitStatus)
 	}
 	return noneClientLimitStatus()
+}
+
+// GetTransportDelay reads through to the local device, whose multi client
+// measures the window transports (on ios that is the packet tunnel
+// extension). The read holds no stateLock while it waits, as GetContractStatus
+// does, since a notification may read the value often, and a revision keeps a
+// slow read from replacing a newer push. With no service it reads the last
+// value the device answered or pushed, else normal operation. A device process
+// too old to answer keeps its rpc session and reads normal operation. Never
+// nil.
+func (self *DeviceRemote) GetTransportDelay() *TransportDelay {
+	self.stateLock.Lock()
+	service := self.service
+	revision := self.transportDelayRevision
+	self.stateLock.Unlock()
+
+	var delay *TransportDelay
+	var err error
+	if service != nil {
+		delay, err = rpcCallNoArgAllowMissingMethod[*TransportDelay](
+			service,
+			"DeviceLocalRpc.GetTransportDelay",
+			func() { self.closeServiceInstance(service) },
+		)
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if err == nil && delay != nil && self.service == service && self.transportDelayRevision == revision {
+		self.lastTransportDelay = cloneTransportDelay(delay)
+		self.transportDelayRevision++
+		return delay
+	}
+	if self.lastTransportDelay != nil {
+		return cloneTransportDelay(self.lastTransportDelay)
+	}
+	return noneTransportDelay()
 }
 
 // GetSupportsExtenderPin asks the local device whether it keeps a stayed-on exit
@@ -2815,6 +2861,19 @@ func (self *DeviceRemote) AddClientLimitStatusChangeListener(listener ClientLimi
 		self.clientLimitStatusChangeListeners,
 		"DeviceLocalRpc.AddClientLimitStatusChangeListener",
 		"DeviceLocalRpc.RemoveClientLimitStatusChangeListener",
+	)
+}
+
+// The transport quality mirrors the same way, and is compatible for the same
+// reason: an app attached to a device process without the listener keeps its
+// session and degrades to the getter.
+func (self *DeviceRemote) AddTransportDelayChangeListener(listener TransportDelayChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.transportDelayChangeListeners,
+		"DeviceLocalRpc.AddTransportDelayChangeListener",
+		"DeviceLocalRpc.RemoveTransportDelayChangeListener",
 	)
 }
 
@@ -4643,6 +4702,29 @@ func (self *DeviceRemote) clientLimitStatusChanged(status *ClientLimitStatus) {
 	for _, clientLimitStatusChangeListener := range listenerList {
 		connect.HandleError(func() {
 			clientLimitStatusChangeListener.ClientLimitStatusChanged(cloneClientLimitStatus(published))
+		})
+	}
+}
+
+// The pushed transport quality replaces the cached last value and ends any
+// read in flight, so a getter called right after the push, or after a
+// disconnect, answers the level the device last published.
+func (self *DeviceRemote) transportDelayChanged(delay *TransportDelay) {
+	// a listener is handed the published value, never nil
+	published := cloneTransportDelay(delay)
+	if published == nil {
+		published = noneTransportDelay()
+	}
+	listenerList := func() []TransportDelayChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastTransportDelay = cloneTransportDelay(published)
+		self.transportDelayRevision++
+		return listenerList(self.transportDelayChangeListeners)
+	}()
+	for _, transportDelayChangeListener := range listenerList {
+		connect.HandleError(func() {
+			transportDelayChangeListener.TransportDelayChanged(cloneTransportDelay(published))
 		})
 	}
 }
@@ -7620,6 +7702,7 @@ type DeviceRemoteSyncRequest struct {
 	ExtenderStatusChangeListenerIds            []connect.Id
 	ExtenderProvideStatusChangeListenerIds     []connect.Id
 	ClientLimitStatusChangeListenerIds         []connect.Id
+	TransportDelayChangeListenerIds            []connect.Id
 	BlockActionWindowChangeListenerIds         []connect.Id
 	BlockStatsChangeListenerIds                []connect.Id
 	BlockActionOverridesChangeListenerIds      []connect.Id
@@ -9503,6 +9586,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerIds            map[connect.Id]bool
 	extenderProvideStatusChangeListenerIds     map[connect.Id]bool
 	clientLimitStatusChangeListenerIds         map[connect.Id]bool
+	transportDelayChangeListenerIds            map[connect.Id]bool
 	blockActionWindowChangeListenerIds         map[connect.Id]bool
 	blockStatsChangeListenerIds                map[connect.Id]bool
 	blockActionOverridesChangeListenerIds      map[connect.Id]bool
@@ -9555,6 +9639,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerSub            Sub
 	extenderProvideStatusChangeListenerSub     Sub
 	clientLimitStatusChangeListenerSub         Sub
+	transportDelayChangeListenerSub            Sub
 	blockActionWindowChangeListenerSub         Sub
 	blockStatsChangeListenerSub                Sub
 	blockActionOverridesChangeListenerSub      Sub
@@ -9642,6 +9727,7 @@ func newDeviceLocalRpc(
 		extenderStatusChangeListenerIds:            map[connect.Id]bool{},
 		extenderProvideStatusChangeListenerIds:     map[connect.Id]bool{},
 		clientLimitStatusChangeListenerIds:         map[connect.Id]bool{},
+		transportDelayChangeListenerIds:            map[connect.Id]bool{},
 		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
 		blockStatsChangeListenerIds:                map[connect.Id]bool{},
 		blockActionOverridesChangeListenerIds:      map[connect.Id]bool{},
@@ -9880,6 +9966,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for clientLimitStatusChangeListenerId := range self.clientLimitStatusChangeListenerIds {
 		self.removeClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
+	}
+	for transportDelayChangeListenerId := range self.transportDelayChangeListenerIds {
+		self.removeTransportDelayChangeListenerWithLock(transportDelayChangeListenerId)
 	}
 	for blockActionWindowChangeListenerId, _ := range self.blockActionWindowChangeListenerIds {
 		self.removeBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
@@ -10528,6 +10617,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, clientLimitStatusChangeListenerId := range syncRequest.ClientLimitStatusChangeListenerIds {
 		self.addClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
 	}
+	for _, transportDelayChangeListenerId := range syncRequest.TransportDelayChangeListenerIds {
+		self.addTransportDelayChangeListenerWithLock(transportDelayChangeListenerId)
+	}
 	for _, blockActionWindowChangeListenerId := range syncRequest.BlockActionWindowChangeListenerIds {
 		self.addBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
 	}
@@ -10714,6 +10806,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.clientLimitStatusChangeListenerSub != nil {
 		self.clientLimitStatusChangedWithLock(self.deviceLocal.GetClientLimitStatus())
+	}
+	if self.transportDelayChangeListenerSub != nil {
+		self.transportDelayChangedWithLock(self.deviceLocal.GetTransportDelay())
 	}
 	if self.blockActionWindowChangeListenerSub != nil {
 		self.blockActionWindowChanged(self.deviceLocal.GetBlockActions())
@@ -11033,6 +11128,41 @@ func (self *DeviceLocalRpc) RemoveClientLimitStatusChangeListener(listenerId con
 	return nil
 }
 
+// AddTransportDelayChangeListener forwards the device's transport quality to
+// the remote listener listenerId.
+func (self *DeviceLocalRpc) AddTransportDelayChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addTransportDelayChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// Subscribes to the device once, for the first remote listener.
+func (self *DeviceLocalRpc) addTransportDelayChangeListenerWithLock(listenerId connect.Id) {
+	self.transportDelayChangeListenerIds[listenerId] = true
+	if self.transportDelayChangeListenerSub == nil {
+		self.transportDelayChangeListenerSub = self.deviceLocal.AddTransportDelayChangeListener(self)
+	}
+}
+
+// Unsubscribes from the device with the last remote listener.
+func (self *DeviceLocalRpc) removeTransportDelayChangeListenerWithLock(listenerId connect.Id) {
+	delete(self.transportDelayChangeListenerIds, listenerId)
+	if len(self.transportDelayChangeListenerIds) == 0 && self.transportDelayChangeListenerSub != nil {
+		self.transportDelayChangeListenerSub.Close()
+		self.transportDelayChangeListenerSub = nil
+	}
+}
+
+// RemoveTransportDelayChangeListener stops forwarding to the remote listener
+// listenerId.
+func (self *DeviceLocalRpc) RemoveTransportDelayChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeTransportDelayChangeListenerWithLock(listenerId)
+	return nil
+}
+
 // TunnelChangeListener
 func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
 	self.stateLock.Lock()
@@ -11122,6 +11252,24 @@ func (self *DeviceLocalRpc) clientLimitStatusChangedWithLock(status *ClientLimit
 		status = noneClientLimitStatus()
 	}
 	self.reverseNotify("DeviceRemoteRpc.ClientLimitStatusChanged", status)
+}
+
+// TransportDelayChanged is the device's TransportDelayChangeListener.
+func (self *DeviceLocalRpc) TransportDelayChanged(delay *TransportDelay) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.transportDelayChangedWithLock(delay)
+}
+
+// Enqueues an async reverse notification, which coalesces with one still
+// queued so the newest level wins (see sendLoop). Every field is a plain
+// value, so the readout crosses as it stands; gob cannot carry nil, so none
+// is sent as normal operation.
+func (self *DeviceLocalRpc) transportDelayChangedWithLock(delay *TransportDelay) {
+	if delay == nil {
+		delay = noneTransportDelay()
+	}
+	self.reverseNotify("DeviceRemoteRpc.TransportDelayChanged", delay)
 }
 
 // privacy block
@@ -12593,6 +12741,12 @@ func (self *DeviceLocalRpc) GetExtenderProvideStatus(_ RpcNoArg, status **Extend
 // GetClientLimitStatus answers the device's client limit status.
 func (self *DeviceLocalRpc) GetClientLimitStatus(_ RpcNoArg, status **ClientLimitStatus) error {
 	*status = self.deviceLocal.GetClientLimitStatus()
+	return nil
+}
+
+// GetTransportDelay answers the device's transport quality.
+func (self *DeviceLocalRpc) GetTransportDelay(_ RpcNoArg, delay **TransportDelay) error {
+	*delay = self.deviceLocal.GetTransportDelay()
 	return nil
 }
 
@@ -14074,6 +14228,16 @@ func (self *DeviceRemoteRpc) ClientLimitStatusChanged(status *ClientLimitStatus,
 	self.deviceRemote.log.Infof("[drrpc]ClientLimitStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.clientLimitStatusChanged(status)
+	})
+	return nil
+}
+
+// TransportDelayChanged re-emits a transport quality the device process
+// pushed.
+func (self *DeviceRemoteRpc) TransportDelayChanged(delay *TransportDelay, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]TransportDelayChanged")
+	self.dispatch(func() {
+		self.deviceRemote.transportDelayChanged(delay)
 	})
 	return nil
 }

@@ -88,9 +88,9 @@ func TestExtenderIpsAndColorHexesPairByIndex(t *testing.T) {
 
 // A provider whose mode serves public peers dials the platform directly on
 // every transport, so the platform observes the provider's own address (J4).
-// The modes are ordered by openness, and the rule errs toward public: dialing
-// direct where it was not needed costs nothing, while a public provider tagged
-// with an extender's address is the failure this exists to prevent.
+// Provide modes are an unordered set: only the public mode serves public
+// peers, and the stream mode, which provides nothing publicly, keeps the
+// shared strategy and declares no provide intent.
 func TestProvideModeIncludesPublic(t *testing.T) {
 	cases := []struct {
 		provideMode ProvideMode
@@ -100,7 +100,7 @@ func TestProvideModeIncludesPublic(t *testing.T) {
 		{provideMode: ProvideModeNetwork, expect: false},
 		{provideMode: ProvideModeFriendsAndFamily, expect: false},
 		{provideMode: ProvideModePublic, expect: true},
-		{provideMode: ProvideModeStream, expect: true},
+		{provideMode: ProvideModeStream, expect: false},
 	}
 	for _, c := range cases {
 		if public := provideModeIncludesPublic(c.provideMode); public != c.expect {

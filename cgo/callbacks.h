@@ -393,6 +393,8 @@ typedef void (*urnet_subscription_jwt_out_of_sync_cb)(void* user_data, bool serv
 void urnet_invoke_subscription_jwt_out_of_sync(urnet_subscription_jwt_out_of_sync_cb cb, void* user_data, bool server_is_pro);
 typedef void (*urnet_throughput_cb)(void* user_data);
 void urnet_invoke_throughput(urnet_throughput_cb cb, void* user_data);
+typedef void (*urnet_transport_delay_change_cb)(void* user_data, const char* delay_json);
+void urnet_invoke_transport_delay_change(urnet_transport_delay_change_cb cb, void* user_data, const char* delay_json);
 typedef void (*urnet_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
 void urnet_invoke_transport_settings_change(urnet_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json);
 typedef void (*urnet_transport_status_change_cb)(void* user_data, const char* transport_status_json);

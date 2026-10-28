@@ -195,6 +195,7 @@ urnet_subscription_balance_fetch_error_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_subscription_create_payment_id_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_subscription_jwt_out_of_sync_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_throughput_cb = CFUNCTYPE(None, c_void_p)
+urnet_transport_delay_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_transport_settings_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_transport_status_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_tunnel_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
@@ -968,6 +969,8 @@ def bind(lib):
     lib.urnet_device_add_provider_transport_status_change_listener.restype = c_uint64
     lib.urnet_device_add_route_local_change_listener.argtypes = [c_uint64, urnet_route_local_change_cb, c_void_p]
     lib.urnet_device_add_route_local_change_listener.restype = c_uint64
+    lib.urnet_device_add_transport_delay_change_listener.argtypes = [c_uint64, urnet_transport_delay_change_cb, c_void_p]
+    lib.urnet_device_add_transport_delay_change_listener.restype = c_uint64
     lib.urnet_device_add_transport_settings_change_listener.argtypes = [c_uint64, urnet_transport_settings_change_cb, c_void_p]
     lib.urnet_device_add_transport_settings_change_listener.restype = c_uint64
     lib.urnet_device_add_transport_status_change_listener.argtypes = [c_uint64, urnet_transport_status_change_cb, c_void_p]
@@ -1102,6 +1105,8 @@ def bind(lib):
     lib.urnet_device_get_stats.restype = c_uint64
     lib.urnet_device_get_supports_extender_pin.argtypes = [c_uint64]
     lib.urnet_device_get_supports_extender_pin.restype = c_bool
+    lib.urnet_device_get_transport_delay.argtypes = [c_uint64]
+    lib.urnet_device_get_transport_delay.restype = c_void_p
     lib.urnet_device_get_transport_settings.argtypes = [c_uint64]
     lib.urnet_device_get_transport_settings.restype = c_void_p
     lib.urnet_device_get_transport_status.argtypes = [c_uint64]

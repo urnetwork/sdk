@@ -3076,6 +3076,20 @@ func (self *cAdapterThroughputListener) ThroughputChanged() {
 	C.urnet_invoke_throughput(self.cbThroughputChanged, self.userData)
 }
 
+type cAdapterTransportDelayChangeListener struct {
+	cbTransportDelayChanged C.urnet_transport_delay_change_cb
+	userData                unsafe.Pointer
+}
+
+func (self *cAdapterTransportDelayChangeListener) TransportDelayChanged(delay *sdk.TransportDelay) {
+	defer cgoGuard("urnet_transport_delay_change_cb")
+	delay_ := cJson(delay, "urnet_transport_delay_change_cb")
+	C.urnet_invoke_transport_delay_change(self.cbTransportDelayChanged, self.userData, delay_)
+	if delay_ != nil {
+		cStringFree(delay_)
+	}
+}
+
 type cAdapterTransportSettingsChangeListener struct {
 	cbTransportSettingsChanged C.urnet_transport_settings_change_cb
 	userData                   unsafe.Pointer
@@ -8964,6 +8978,21 @@ func urnet_device_add_route_local_change_listener(self C.uint64_t, listener_rout
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_transport_delay_change_listener
+func urnet_device_add_transport_delay_change_listener(self C.uint64_t, listener_transport_delay_changed C.urnet_transport_delay_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_transport_delay_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_transport_delay_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.TransportDelayChangeListener
+	if listener_transport_delay_changed != nil {
+		listener_ = &cAdapterTransportDelayChangeListener{cbTransportDelayChanged: listener_transport_delay_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddTransportDelayChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_transport_settings_change_listener
 func urnet_device_add_transport_settings_change_listener(self C.uint64_t, listener_transport_settings_changed C.urnet_transport_settings_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_transport_settings_change_listener")
@@ -9815,6 +9844,20 @@ func urnet_device_get_supports_extender_pin(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetSupportsExtenderPin()
 	return C.bool(r0)
+}
+
+//export urnet_device_get_transport_delay
+func urnet_device_get_transport_delay(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_transport_delay")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_transport_delay")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetTransportDelay()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_transport_delay")
 }
 
 //export urnet_device_get_transport_settings

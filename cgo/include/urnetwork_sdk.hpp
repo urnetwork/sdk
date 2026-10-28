@@ -957,6 +957,7 @@ struct ThroughputPoint;
 struct Time;
 struct TransferBalance;
 struct TransferStatsResult;
+struct TransportDelay;
 struct TransportDistribution;
 struct TransportModePriority;
 struct TransportPacketStats;
@@ -1965,6 +1966,19 @@ struct DeviceLocalSettings {
 	bool ProvideExtenderDnsPrivilegedPort{};
 	bool Verbose{};
 	bool MoveDeclineBackgroundOrMetered{};
+	bool EnableTransportDelay{};
+	int64_t TransportDelayWindowCount{};
+	int64_t TransportDelayWindowTimeout{};
+	int64_t TransportDelayGoodUpBitsPerSecond{};
+	int64_t TransportDelayBadUpBitsPerSecond{};
+	int64_t TransportDelayGoodDownBitsPerSecond{};
+	int64_t TransportDelayBadDownBitsPerSecond{};
+	int64_t TransportDelayGoodUpQueueDelay{};
+	int64_t TransportDelayGoodDownQueueDelay{};
+	int64_t TransportDelayBadUpQueueDelay{};
+	int64_t TransportDelayBadDownQueueDelay{};
+	double TransportDelayQualityStep{};
+	double TransportDelayQualityHysteresis{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
 	bool DisableLogging{};
@@ -3776,6 +3790,16 @@ struct TransferStatsResult {
 	int64_t unpaid_bytes_provided{};
 };
 
+struct TransportDelay {
+	double UpQuality{};
+	double DownQuality{};
+	int64_t UpBitsPerSecond{};
+	int64_t DownBitsPerSecond{};
+	int64_t UpQueueDelayMillis{};
+	int64_t DownQueueDelayMillis{};
+	bool Fallback{};
+};
+
 struct TransportDistribution {
 	std::optional<TransportShareList> Shares;
 	int64_t ByteCount{};
@@ -4683,6 +4707,8 @@ inline void to_json(nlohmann::json& j, const TransferBalance& v);
 inline void from_json(const nlohmann::json& j, TransferBalance& v);
 inline void to_json(nlohmann::json& j, const TransferStatsResult& v);
 inline void from_json(const nlohmann::json& j, TransferStatsResult& v);
+inline void to_json(nlohmann::json& j, const TransportDelay& v);
+inline void from_json(const nlohmann::json& j, TransportDelay& v);
 inline void to_json(nlohmann::json& j, const TransportDistribution& v);
 inline void from_json(const nlohmann::json& j, TransportDistribution& v);
 inline void to_json(nlohmann::json& j, const TransportModePriority& v);
@@ -8942,6 +8968,19 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["Verbose"] = v.Verbose;
 	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
+	j["EnableTransportDelay"] = v.EnableTransportDelay;
+	j["TransportDelayWindowCount"] = v.TransportDelayWindowCount;
+	j["TransportDelayWindowTimeout"] = v.TransportDelayWindowTimeout;
+	j["TransportDelayGoodUpBitsPerSecond"] = v.TransportDelayGoodUpBitsPerSecond;
+	j["TransportDelayBadUpBitsPerSecond"] = v.TransportDelayBadUpBitsPerSecond;
+	j["TransportDelayGoodDownBitsPerSecond"] = v.TransportDelayGoodDownBitsPerSecond;
+	j["TransportDelayBadDownBitsPerSecond"] = v.TransportDelayBadDownBitsPerSecond;
+	j["TransportDelayGoodUpQueueDelay"] = v.TransportDelayGoodUpQueueDelay;
+	j["TransportDelayGoodDownQueueDelay"] = v.TransportDelayGoodDownQueueDelay;
+	j["TransportDelayBadUpQueueDelay"] = v.TransportDelayBadUpQueueDelay;
+	j["TransportDelayBadDownQueueDelay"] = v.TransportDelayBadDownQueueDelay;
+	j["TransportDelayQualityStep"] = v.TransportDelayQualityStep;
+	j["TransportDelayQualityHysteresis"] = v.TransportDelayQualityHysteresis;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
 	j["DisableLogging"] = v.DisableLogging;
@@ -9032,6 +9071,45 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("MoveDeclineBackgroundOrMetered"); it != j.end() && !it->is_null()) {
 		it->get_to(v.MoveDeclineBackgroundOrMetered);
+	}
+	if (auto it = j.find("EnableTransportDelay"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EnableTransportDelay);
+	}
+	if (auto it = j.find("TransportDelayWindowCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayWindowCount);
+	}
+	if (auto it = j.find("TransportDelayWindowTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayWindowTimeout);
+	}
+	if (auto it = j.find("TransportDelayGoodUpBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodUpBitsPerSecond);
+	}
+	if (auto it = j.find("TransportDelayBadUpBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadUpBitsPerSecond);
+	}
+	if (auto it = j.find("TransportDelayGoodDownBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodDownBitsPerSecond);
+	}
+	if (auto it = j.find("TransportDelayBadDownBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadDownBitsPerSecond);
+	}
+	if (auto it = j.find("TransportDelayGoodUpQueueDelay"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodUpQueueDelay);
+	}
+	if (auto it = j.find("TransportDelayGoodDownQueueDelay"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodDownQueueDelay);
+	}
+	if (auto it = j.find("TransportDelayBadUpQueueDelay"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadUpQueueDelay);
+	}
+	if (auto it = j.find("TransportDelayBadDownQueueDelay"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadDownQueueDelay);
+	}
+	if (auto it = j.find("TransportDelayQualityStep"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayQualityStep);
+	}
+	if (auto it = j.find("TransportDelayQualityHysteresis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayQualityHysteresis);
 	}
 	if (auto it = j.find("DnsPumpHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DnsPumpHost);
@@ -17394,6 +17472,43 @@ inline void from_json(const nlohmann::json& j, TransferStatsResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const TransportDelay& v) {
+	j = nlohmann::json::object();
+	j["UpQuality"] = v.UpQuality;
+	j["DownQuality"] = v.DownQuality;
+	j["UpBitsPerSecond"] = v.UpBitsPerSecond;
+	j["DownBitsPerSecond"] = v.DownBitsPerSecond;
+	j["UpQueueDelayMillis"] = v.UpQueueDelayMillis;
+	j["DownQueueDelayMillis"] = v.DownQueueDelayMillis;
+	j["Fallback"] = v.Fallback;
+}
+inline void from_json(const nlohmann::json& j, TransportDelay& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("UpQuality"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UpQuality);
+	}
+	if (auto it = j.find("DownQuality"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DownQuality);
+	}
+	if (auto it = j.find("UpBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UpBitsPerSecond);
+	}
+	if (auto it = j.find("DownBitsPerSecond"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DownBitsPerSecond);
+	}
+	if (auto it = j.find("UpQueueDelayMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UpQueueDelayMillis);
+	}
+	if (auto it = j.find("DownQueueDelayMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DownQueueDelayMillis);
+	}
+	if (auto it = j.find("Fallback"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Fallback);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const TransportDistribution& v) {
 	j = nlohmann::json::object();
 	if (v.Shares) {
@@ -18607,6 +18722,7 @@ using SubscriptionBalanceFetchErrorListener = std::function<void(std::string p0)
 using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<SubscriptionCreatePaymentIdResult> result, std::optional<std::string> err_param)>;
 using SubscriptionJwtOutOfSyncListener = std::function<void(bool server_is_pro)>;
 using ThroughputListener = std::function<void()>;
+using TransportDelayChangeListener = std::function<void(std::optional<TransportDelay> delay)>;
 using TransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
 using TransportStatusChangeListener = std::function<void(std::optional<TransportStatus> transport_status)>;
 using TunnelChangeListener = std::function<void(bool tunnel_started)>;
@@ -18703,6 +18819,7 @@ public:
 	Sub addProviderTransportSettingsChangeListener(ProviderTransportSettingsChangeListener listener) const;
 	Sub addProviderTransportStatusChangeListener(ProviderTransportStatusChangeListener listener) const;
 	Sub addRouteLocalChangeListener(RouteLocalChangeListener listener) const;
+	Sub addTransportDelayChangeListener(TransportDelayChangeListener listener) const;
 	Sub addTransportSettingsChangeListener(TransportSettingsChangeListener listener) const;
 	Sub addTransportStatusChangeListener(TransportStatusChangeListener listener) const;
 	Sub addTunnelChangeListener(TunnelChangeListener listener) const;
@@ -18770,6 +18887,7 @@ public:
 	bool getShouldShowRatingDialog() const;
 	DeviceStats getStats() const;
 	bool getSupportsExtenderPin() const;
+	std::optional<TransportDelay> getTransportDelay() const;
 	std::optional<TransportSettings> getTransportSettings() const;
 	std::optional<TransportStatus> getTransportStatus() const;
 	bool getTunnelStarted() const;
@@ -25606,6 +25724,34 @@ inline void oneshot_throughput(void* user_data) {
 	delete f;
 }
 
+inline void retained_transport_delay_change(void* user_data, const char* delay_json) {
+	auto* f = static_cast<TransportDelayChangeListener*>(user_data);
+	try {
+		std::optional<TransportDelay> delay_v;
+		if (delay_json) {
+			delay_v = parseJson<TransportDelay>(delay_json);
+		}
+		(*f)(std::move(delay_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_transport_delay_change(void* user_data, const char* delay_json) {
+	auto* f = static_cast<TransportDelayChangeListener*>(user_data);
+	try {
+		std::optional<TransportDelay> delay_v;
+		if (delay_json) {
+			delay_v = parseJson<TransportDelay>(delay_json);
+		}
+		(*f)(std::move(delay_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_transport_settings_change(void* user_data, const char* transport_settings_json) {
 	auto* f = static_cast<TransportSettingsChangeListener*>(user_data);
 	try {
@@ -26714,6 +26860,17 @@ inline Sub Device::addRouteLocalChangeListener(RouteLocalChangeListener listener
 	}
 	return r;
 }
+inline Sub Device::addTransportDelayChangeListener(TransportDelayChangeListener listener) const {
+	std::shared_ptr<TransportDelayChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<TransportDelayChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_transport_delay_change_listener(handle(), listener_fn ? &detail::retained_transport_delay_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addTransportSettingsChangeListener(TransportSettingsChangeListener listener) const {
 	std::shared_ptr<TransportSettingsChangeListener> listener_fn;
 	if (listener) {
@@ -27133,6 +27290,14 @@ inline DeviceStats Device::getStats() const {
 inline bool Device::getSupportsExtenderPin() const {
 	bool r = urnet_device_get_supports_extender_pin(handle());
 	return r;
+}
+inline std::optional<TransportDelay> Device::getTransportDelay() const {
+	char* r_c = urnet_device_get_transport_delay(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<TransportDelay>(r_s->c_str());
 }
 inline std::optional<TransportSettings> Device::getTransportSettings() const {
 	char* r_c = urnet_device_get_transport_settings(handle());

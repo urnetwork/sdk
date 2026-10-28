@@ -759,6 +759,20 @@ type Device interface {
 	// fires on every change of the client limit status
 	AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub
 
+	// GetTransportDelay is the transport quality of the device's connection
+	// (transport_delay.go, connect/DELAY.md §10): per direction a quality from
+	// 0 (normal) to 1 (worst) in steps, the link throughput and standing queue
+	// it scored, and whether a DNS-carried fallback transport carried the
+	// second that set the level. The window transports of the multi client
+	// measure it, so a device with no destination reads 0. Never nil. A
+	// remote device reads through to the device process, with the last value
+	// cached while it cannot be reached; an app hides the readout while
+	// GetRemoteConnected is false rather than show a stale level.
+	GetTransportDelay() *TransportDelay
+
+	// fires when either direction's quality level changes, or Fallback does
+	AddTransportDelayChangeListener(listener TransportDelayChangeListener) Sub
+
 	// GetExtenderStatus is the extender network of the device's network space
 	// (EXTENDER.md K5): the role, the gossip state, the counts, the event rate
 	// and every known address. It reads the space the DEVICE runs in -- on ios

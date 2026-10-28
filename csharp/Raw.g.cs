@@ -196,6 +196,7 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_subscription_create_payment_id_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_subscription_jwt_out_of_sync_cb(IntPtr a0, byte a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_throughput_cb(IntPtr a0);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_transport_delay_change_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_transport_settings_change_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_transport_status_change_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_tunnel_change_cb(IntPtr a0, byte a1);
@@ -593,6 +594,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_provider_transport_settings_change_listener(ulong a0, urnet_provider_transport_settings_change_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_provider_transport_status_change_listener(ulong a0, urnet_provider_transport_status_change_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_route_local_change_listener(ulong a0, urnet_route_local_change_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_transport_delay_change_listener(ulong a0, urnet_transport_delay_change_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_transport_settings_change_listener(ulong a0, urnet_transport_settings_change_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_transport_status_change_listener(ulong a0, urnet_transport_status_change_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_add_tunnel_change_listener(ulong a0, urnet_tunnel_change_cb a1, IntPtr a2);
@@ -660,6 +662,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_device_get_should_show_rating_dialog(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_get_stats(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_device_get_supports_extender_pin(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_transport_delay(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_transport_settings(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_transport_status(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_device_get_tunnel_started(ulong a0);
