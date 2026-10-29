@@ -179,6 +179,8 @@ module URnetwork
       callback :urnet_sn_network_consent_challenge_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_network_consent_status_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_set_wallet_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_top_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_top_me_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_validate_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_wallet_change_cb, [:pointer, :string], :void
       callback :urnet_solana_payment_intent_cb, [:pointer, :string, :string], :void
@@ -376,6 +378,8 @@ module URnetwork
       attach_function :urnet_api_sn_pool_claim_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_set_wallet, [:uint64, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_set_wallet_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_sn_top, [:uint64, :string, :urnet_sn_top_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_top_me, [:uint64, :urnet_sn_top_me_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_validate_wallet, [:uint64, :string, :urnet_sn_validate_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_start_jwt_refresh, [:uint64], :void, blocking: true

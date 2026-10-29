@@ -178,6 +178,8 @@ pub type urnet_sn_ledger_claim_sent_cb = Option<unsafe extern "C" fn(*mut c_void
 pub type urnet_sn_network_consent_challenge_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_network_consent_status_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_set_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_top_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_top_me_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_validate_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_wallet_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_solana_payment_intent_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -377,6 +379,8 @@ pub struct Raw {
     pub urnet_api_sn_pool_claim_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_set_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_sn_set_wallet_cb, *mut c_void) -> (),
     pub urnet_api_sn_set_wallet_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_api_sn_top: unsafe extern "C" fn(u64, *const c_char, urnet_sn_top_cb, *mut c_void) -> (),
+    pub urnet_api_sn_top_me: unsafe extern "C" fn(u64, urnet_sn_top_me_cb, *mut c_void) -> (),
     pub urnet_api_sn_validate_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_sn_validate_wallet_cb, *mut c_void) -> (),
     pub urnet_api_sn_wallet_mapping_challenge_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_start_jwt_refresh: unsafe extern "C" fn(u64) -> (),
@@ -1728,6 +1732,8 @@ impl Raw {
             urnet_api_sn_pool_claim_sync: unsafe { *library.get(b"urnet_api_sn_pool_claim_sync\0")? },
             urnet_api_sn_set_wallet: unsafe { *library.get(b"urnet_api_sn_set_wallet\0")? },
             urnet_api_sn_set_wallet_sync: unsafe { *library.get(b"urnet_api_sn_set_wallet_sync\0")? },
+            urnet_api_sn_top: unsafe { *library.get(b"urnet_api_sn_top\0")? },
+            urnet_api_sn_top_me: unsafe { *library.get(b"urnet_api_sn_top_me\0")? },
             urnet_api_sn_validate_wallet: unsafe { *library.get(b"urnet_api_sn_validate_wallet\0")? },
             urnet_api_sn_wallet_mapping_challenge_sync: unsafe { *library.get(b"urnet_api_sn_wallet_mapping_challenge_sync\0")? },
             urnet_api_start_jwt_refresh: unsafe { *library.get(b"urnet_api_start_jwt_refresh\0")? },

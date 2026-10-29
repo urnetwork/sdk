@@ -2799,6 +2799,48 @@ func (self *cAdapterSnSetWalletCallback) Result(result *sdk.SnSetWalletResult, e
 	}
 }
 
+type cAdapterSnTopCallback struct {
+	cbResult C.urnet_sn_top_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnTopCallback) Result(result *sdk.SnTopResult, errParam error) {
+	defer cgoGuard("urnet_sn_top_cb")
+	result_ := cJson(result, "urnet_sn_top_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_top(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnTopMeCallback struct {
+	cbResult C.urnet_sn_top_me_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnTopMeCallback) Result(result *sdk.SnTopMeResult, errParam error) {
+	defer cgoGuard("urnet_sn_top_me_cb")
+	result_ := cJson(result, "urnet_sn_top_me_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_top_me(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSnValidateWalletCallback struct {
 	cbResult C.urnet_sn_validate_wallet_cb
 	userData unsafe.Pointer
@@ -5626,6 +5668,41 @@ func urnet_api_sn_set_wallet_sync(self C.uint64_t, args *C.char, outError **C.ch
 		return nil
 	}
 	return cJson(r0, "urnet_api_sn_set_wallet_sync")
+}
+
+//export urnet_api_sn_top
+func urnet_api_sn_top(self C.uint64_t, args *C.char, callback_result C.urnet_sn_top_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_top")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_top")
+	if !ok {
+		return
+	}
+	var args_ *sdk.SnTopArgs
+	if args != nil {
+		args_ = &sdk.SnTopArgs{}
+		if !goJson(args, args_, "urnet_api_sn_top") {
+			return
+		}
+	}
+	var callback_ sdk.SnTopCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnTopCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnTop(args_, callback_)
+}
+
+//export urnet_api_sn_top_me
+func urnet_api_sn_top_me(self C.uint64_t, callback_result C.urnet_sn_top_me_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_top_me")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_top_me")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnTopMeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnTopMeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnTopMe(callback_)
 }
 
 //export urnet_api_sn_validate_wallet

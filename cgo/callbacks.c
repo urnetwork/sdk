@@ -713,6 +713,14 @@ void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, cons
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sn_top(urnet_sn_top_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_top_me(urnet_sn_top_me_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sn_validate_wallet(urnet_sn_validate_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
