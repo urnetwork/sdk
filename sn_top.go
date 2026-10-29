@@ -164,7 +164,9 @@ func (self *SnTopSnapshot) UnmarshalJSON(b []byte) error {
 
 // SnTopFleet is one fleet a network has claimed, bound on SN25 to a hotkey
 // UID. The validator fields are unset until the validator's head summary
-// covers the fleet, and the incentive until it is first read on chain.
+// covers the fleet, and the incentive until it is first read on chain. A UID
+// that changed hands earns and ranks for its new holder, so both are unset
+// once the fleet's hotkey no longer holds the UID.
 type SnTopFleet struct {
 	Uid          int64 `json:"uid"`
 	Generation   int64 `json:"generation"`
@@ -183,7 +185,8 @@ type SnTopFleet struct {
 	// the validator selected the fleet into the Top 200
 	Selected    bool `json:"selected"`
 	HasSelected bool `json:"has_selected"`
-	// the UID's on-chain incentive
+	// the UID's share of SN25 incentive, a fraction from 0 to 1 (shown as a
+	// percent: 0.018 is "1.8%")
 	Incentive    float64 `json:"incentive"`
 	HasIncentive bool    `json:"has_incentive"`
 	// the incentive is stale: the validator's weights are its fallback row or
@@ -256,7 +259,8 @@ type SnTopRow struct {
 	// the validator can measure the network (its providers are in the cohort)
 	Measurable     bool `json:"measurable"`
 	VerifyEligible bool `json:"verify_eligible"`
-	// prompt the network to claim: measurable and position 200 or better
+	// prompt the network to claim: measurable, position 200 or better, and no
+	// active claimed fleet. Apps use this flag rather than computing it.
 	ClaimPrompt bool `json:"claim_prompt"`
 	// the caller's own network
 	IsMe bool `json:"is_me"`
