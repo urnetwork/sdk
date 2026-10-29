@@ -125,6 +125,63 @@ func unroutedSdkApiUrls(urls []*sdkApiUrl, routes map[string]*regexp.Regexp) []*
 	return unrouted
 }
 
+// Urls the sdk calls ahead of the server: the spec marks their operations
+// `x-status: planned` (connect api/bringyour.yml) until a later server change
+// routes them. While the server does not route one it is logged, not failed,
+// so the sdk can lead the server by one deploy, as the spec does. Remove an
+// entry, with the spec's marker, once the server routes it.
+var sdkApiUrlsPlannedOnServer = map[string]bool{
+	// the Protocol leaderboard (server LEADERTOP.md §7)
+	"/sn/top":    true,
+	"/sn/top/me": true,
+}
+
+// splitPlannedSdkApiUrls separates the unrouted urls that are planned on the
+// server from the ones to report.
+func splitPlannedSdkApiUrls(unrouted []*sdkApiUrl, planned map[string]bool) (reported []*sdkApiUrl, plannedUrls []*sdkApiUrl) {
+	for _, url := range unrouted {
+		if planned[url.path] {
+			plannedUrls = append(plannedUrls, url)
+		} else {
+			reported = append(reported, url)
+		}
+	}
+	return reported, plannedUrls
+}
+
+// A url planned on the server is not reported while the server does not route
+// it, and a route the server dropped still is. Runs on a synthetic route
+// table, so it needs no server checkout.
+func TestSdkApiUrlPlannedOnServerIsNotReported(t *testing.T) {
+	urls := []*sdkApiUrl{
+		{path: "/sn/head", position: "synthetic"},
+		{path: "/sn/top", position: "synthetic"},
+		{path: "/solana/payment-intent", position: "synthetic"},
+	}
+	routes := serverRoutePatterns(t, `router.NewRoute("GET", "/sn/head", handlers.SnHead),`)
+	reported, planned := splitPlannedSdkApiUrls(unroutedSdkApiUrls(urls, routes), map[string]bool{"/sn/top": true})
+	if len(reported) != 1 || reported[0].path != "/solana/payment-intent" {
+		t.Fatalf("reported = %v, want exactly [/solana/payment-intent]", reported)
+	}
+	if len(planned) != 1 || planned[0].path != "/sn/top" {
+		t.Fatalf("planned = %v, want exactly [/sn/top]", planned)
+	}
+}
+
+// Every planned entry names a url the sdk calls, so the list cannot outlive
+// the call it excuses.
+func TestSdkApiUrlsPlannedOnServerAreCalled(t *testing.T) {
+	paths := map[string]bool{}
+	for _, url := range sdkApiUrls(t, ".") {
+		paths[url.path] = true
+	}
+	for path := range sdkApiUrlsPlannedOnServer {
+		if !paths[path] {
+			t.Errorf("planned url %s is not called by the sdk; remove it", path)
+		}
+	}
+}
+
 // The scan must find the sdk's whole api surface, including the payment
 // endpoints the old hand-written list missed, or it is checking nothing.
 func TestSdkApiUrlScanFindsTheApiSurface(t *testing.T) {
@@ -203,7 +260,11 @@ func TestSdkApiUrlsMatchServerRoutes(t *testing.T) {
 	}
 	routes := serverRoutePatterns(t, string(routesSource))
 
-	for _, url := range unroutedSdkApiUrls(sdkApiUrls(t, "."), routes) {
+	reported, planned := splitPlannedSdkApiUrls(unroutedSdkApiUrls(sdkApiUrls(t, "."), routes), sdkApiUrlsPlannedOnServer)
+	for _, url := range planned {
+		t.Logf("SDK calls %s (%s), planned on the server and not routed yet", url.path, url.position)
+	}
+	for _, url := range reported {
 		t.Errorf("SDK calls %s (%s) but the server no longer routes it", url.path, url.position)
 	}
 

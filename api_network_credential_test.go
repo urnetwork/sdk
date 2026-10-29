@@ -346,6 +346,16 @@ func apiCredentialCases() []apiCredentialCase {
 		{"SnHead", "GET /sn/head", "/sn/head", sendsCurrent, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*SnHeadResult]) { api.SnHead(cb) })
 		}},
+		// the Protocol leaderboard: public with optional auth, and the
+		// caller's detail
+		{"SnTop", "GET /sn/top", "/sn/top", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnTopResult]) {
+				api.SnTop(&SnTopArgs{Limit: 50, Filter: SnTopFilterAll}, cb)
+			})
+		}},
+		{"SnTopMe", "GET /sn/top/me", "/sn/top/me", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnTopMeResult]) { api.SnTopMe(cb) })
+		}},
 		{"SnPoolClaimSyncWithContext", "GET /sn/pool/claim", "/sn/pool/claim", sendsCurrent, func(ctx context.Context, api *Api) error {
 			_, err := api.SnPoolClaimSyncWithContext(ctx, &SnPoolClaimArgs{Epoch: 7})
 			return err
