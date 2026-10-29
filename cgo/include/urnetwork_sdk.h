@@ -434,6 +434,18 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_NETWORK_CONSENT_EPOCH_SPAN 65535
 #define URNET_SN_RAO_PER_ALPHA 1000000000
 #define URNET_SN_SS58_PREFIX 42
+#define URNET_SN_TOP_FILTER_ALL "all"
+#define URNET_SN_TOP_FILTER_CLAIMED "claimed"
+#define URNET_SN_TOP_FILTER_UNCLAIMED "unclaimed"
+#define URNET_SN_TOP_LABEL_BORDERLINE "borderline"
+#define URNET_SN_TOP_LABEL_ESTIMATE "estimate"
+#define URNET_SN_TOP_LABEL_LIKELY "likely"
+#define URNET_SN_TOP_LABEL_NOT_MEASURABLE "not_measurable"
+#define URNET_SN_TOP_LABEL_UNLIKELY "unlikely"
+#define URNET_SN_TOP_NOT_MEASURABLE_REASON_NONE ""
+#define URNET_SN_TOP_NOT_MEASURABLE_REASON_NOT_IN_COHORT "not_in_cohort"
+#define URNET_SN_TOP_NOT_MEASURABLE_REASON_NOT_PROVIDING "not_providing"
+#define URNET_SN_TOP_NOT_MEASURABLE_REASON_SHARED_EGRESS "shared_egress"
 #define URNET_SN_TX_TYPE_EIP1559 "eip1559"
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
 #define URNET_SN_WALLET_CONSENT_SCOPE_HOTKEY "hotkey"
@@ -851,6 +863,10 @@ typedef void (*urnet_sn_network_consent_challenge_cb)(void* user_data, const cha
 typedef void (*urnet_sn_network_consent_status_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnSetWalletCallback */
 typedef void (*urnet_sn_set_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnTopCallback */
+typedef void (*urnet_sn_top_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnTopMeCallback */
+typedef void (*urnet_sn_top_me_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnValidateWalletCallback */
 typedef void (*urnet_sn_validate_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnWalletChangeListener */
@@ -1061,6 +1077,8 @@ char* urnet_api_sn_network_wallet_mapping_challenge_sync(uint64_t self, const ch
 char* urnet_api_sn_pool_claim_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_sn_set_wallet(uint64_t self, const char* args_json, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_set_wallet_sync(uint64_t self, const char* args_json, char** out_error);
+void urnet_api_sn_top(uint64_t self, const char* args_json, urnet_sn_top_cb callback_result, void* callback_user_data);
+void urnet_api_sn_top_me(uint64_t self, urnet_sn_top_me_cb callback_result, void* callback_user_data);
 void urnet_api_sn_validate_wallet(uint64_t self, const char* address, urnet_sn_validate_wallet_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_start_jwt_refresh(uint64_t self);
@@ -5062,6 +5080,116 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: SnSetWalletError | null
  *   mapping_hash?: string
  *   mapping_generation?: number
+ */
+
+/* SnTopArgs (json):
+ *   limit?: number
+ *   cursor?: string
+ *   filter?: string
+ *   snapshot?: string
+ */
+
+/* SnTopFleet (json):
+ *   uid: number
+ *   generation: number
+ *   valid_to_epoch: number
+ *   replica_score: number
+ *   validator_score: number
+ *   has_validator_score: boolean
+ *   validator_rank: number
+ *   has_validator_rank: boolean
+ *   validator_rank_of: number
+ *   has_validator_rank_of: boolean
+ *   selected: boolean
+ *   has_selected: boolean
+ *   incentive: number
+ *   has_incentive: boolean
+ *   incentive_stale: boolean
+ */
+
+/* SnTopFleetList (json):
+ *   = SnTopFleet | null[]
+ */
+
+/* SnTopHistoryPoint (json):
+ *   day: string
+ *   rank: number
+ *   score: number
+ */
+
+/* SnTopHistoryPointList (json):
+ *   = SnTopHistoryPoint | null[]
+ */
+
+/* SnTopMe (json):
+ *   row: SnTopRow | null
+ *   solo_score: number
+ *   distinct_prefixes: number
+ *   shared_prefixes: number
+ *   shared_with_units: number
+ *   not_measurable_reason: string
+ *   history: SnTopHistoryPointList | null
+ */
+
+/* SnTopMeResult (json):
+ *   snapshot: SnTopSnapshot | null
+ *   me: SnTopMe | null
+ *   error?: ApiError | null
+ */
+
+/* SnTopResult (json):
+ *   snapshot: SnTopSnapshot | null
+ *   rows: SnTopRowList | null
+ *   me: SnTopRow | null
+ *   next: string
+ *   error?: ApiError | null
+ */
+
+/* SnTopRow (json):
+ *   position: number
+ *   name: string
+ *   tag: string
+ *   projected_score: number
+ *   raw_last_tempo: number
+ *   margin: number
+ *   trend: number
+ *   prefixes: number
+ *   shared_prefixes: number
+ *   presence: number
+ *   label: string
+ *   measurable: boolean
+ *   verify_eligible: boolean
+ *   claim_prompt: boolean
+ *   is_me: boolean
+ *   fleets: SnTopFleetList | null
+ */
+
+/* SnTopRowList (json):
+ *   = SnTopRow | null[]
+ */
+
+/* SnTopSnapshot (json):
+ *   id: string
+ *   tempo_index: number
+ *   block: number
+ *   computed_at: string (rfc3339) | null
+ *   settlement_epoch: number
+ *   total_ranked: number
+ *   head_seats: number
+ *   claimed_fleets: number
+ *   open_seats: number
+ *   projected_cutoff: number
+ *   claimed_cutoff: number
+ *   has_claimed_cutoff: boolean
+ *   binding_open: boolean
+ *   binding_note: string
+ *   measured_providers: number
+ *   cohort_capacity: number
+ *   validator_summary_at: string (rfc3339) | null
+ *   incentive_at: string (rfc3339) | null
+ *   precision_at_200: number
+ *   has_precision_at_200: boolean
+ *   stale: boolean
  */
 
 /* SnUnsignedTx (json):

@@ -128,6 +128,8 @@ EXPORTS
 	urnet_api_sn_pool_claim_sync
 	urnet_api_sn_set_wallet
 	urnet_api_sn_set_wallet_sync
+	urnet_api_sn_top
+	urnet_api_sn_top_me
 	urnet_api_sn_validate_wallet
 	urnet_api_sn_wallet_mapping_challenge_sync
 	urnet_api_start_jwt_refresh

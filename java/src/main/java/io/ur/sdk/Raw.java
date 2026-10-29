@@ -180,6 +180,8 @@ public interface Raw extends Library {
   interface urnet_sn_network_consent_challenge_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_network_consent_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_set_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_top_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_top_me_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_validate_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_wallet_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_solana_payment_intent_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -377,6 +379,8 @@ public interface Raw extends Library {
   Pointer urnet_api_sn_pool_claim_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_sn_set_wallet(long a0, String a1, urnet_sn_set_wallet_cb a2, Pointer a3);
   Pointer urnet_api_sn_set_wallet_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_sn_top(long a0, String a1, urnet_sn_top_cb a2, Pointer a3);
+  void urnet_api_sn_top_me(long a0, urnet_sn_top_me_cb a1, Pointer a2);
   void urnet_api_sn_validate_wallet(long a0, String a1, urnet_sn_validate_wallet_cb a2, Pointer a3);
   Pointer urnet_api_sn_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_start_jwt_refresh(long a0);
