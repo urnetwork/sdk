@@ -708,11 +708,14 @@ func ValidateEmojiTag(tag string) *EmojiTagValidation {
 //	streak: (streak, blocks, points)
 //
 // Every key is descending; when all three keys tie the network id (ascending)
-// makes the order total, so two clients and the server always agree on the
-// exact sequence. This is THE definition of the order: the view controller
-// keeps its rows in it, and the server ranks and pages with it (the ranks
-// `rank_*` are competition ranks on the same three-key tuple, so two networks
-// share a rank only when all three keys tie).
+// makes the order total on the server, which ranks and pages with it (the
+// ranks `rank_*` are competition ranks on the same three-key tuple, so two
+// networks share a rank only when all three keys tie). Each row's `position`
+// is its place in that order. Since 2026-10-29 an anonymous row carries no
+// network id, so the clients break a three-key tie by position, the server's
+// order, and fall back to the network id only for keys without positions.
+// The view controller keeps its rows in this order, so two clients and the
+// server always agree on the exact sequence.
 
 // PointsLeaderboardNanoPointsPerPoint is the points unit on the wire: a row's
 // `total_points` is nano points / 1e6, and the ordering compares the exact
@@ -724,7 +727,11 @@ type PointsLeaderboardKey struct {
 	NanoPoints int64
 	Blocks     int64
 	Streak     int64
-	NetworkId  string
+	// "" when the row carries no network id (an anonymous row)
+	NetworkId string
+	// the row's 1-based place in the server's total order for the sort; 0
+	// when unknown (an older server, or a key built from values alone)
+	Position int64
 }
 
 // pointsLeaderboardDimensions returns the three dimensions of a sort in
@@ -771,11 +778,23 @@ func ComparePointsLeaderboardValues(sort string, a *PointsLeaderboardKey, b *Poi
 }
 
 // ComparePointsLeaderboardKeys is the total order: the values in the sort's
-// order, then the network id ascending. It never returns zero for two
-// different networks.
+// order, then the server's order. When all three values tie, two keys that
+// both carry a position follow it: the server breaks the tie by network id,
+// which an anonymous row no longer carries. Keys without both positions fall
+// back to the network id ascending. It never returns zero for two different
+// networks of one page.
 func ComparePointsLeaderboardKeys(sort string, a *PointsLeaderboardKey, b *PointsLeaderboardKey) int {
 	if c := ComparePointsLeaderboardValues(sort, a, b); c != 0 {
 		return c
+	}
+	if 0 < a.Position && 0 < b.Position {
+		switch {
+		case a.Position < b.Position:
+			return -1
+		case b.Position < a.Position:
+			return 1
+		}
+		return 0
 	}
 	switch {
 	case a.NetworkId < b.NetworkId:
@@ -787,12 +806,14 @@ func ComparePointsLeaderboardKeys(sort string, a *PointsLeaderboardKey, b *Point
 }
 
 // PointsLeaderboardKeyOf is a row's ordering key. `total_points` is nano
-// points / 1e6 on the wire, so the exact nano points are recovered.
+// points / 1e6 on the wire, so the exact nano points are recovered. A row
+// without a network id (an anonymous row) keys by its values and position.
 func PointsLeaderboardKeyOf(row *PointsLeaderboardRow) *PointsLeaderboardKey {
 	key := &PointsLeaderboardKey{
 		NanoPoints: int64(math.Round(row.TotalPoints * PointsLeaderboardNanoPointsPerPoint)),
 		Blocks:     row.BlocksWithPoints,
 		Streak:     row.Streak,
+		Position:   row.Position,
 	}
 	if row.NetworkId != nil {
 		key.NetworkId = row.NetworkId.String()
