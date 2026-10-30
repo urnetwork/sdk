@@ -102,7 +102,8 @@ type SnTopArgs struct {
 
 // SnTopSnapshot is one per-tempo computation of the board.
 type SnTopSnapshot struct {
-	// opaque; SnTopArgs.Snapshot reads a first page from it
+	// opaque; SnTopArgs.Snapshot reads a first page from it. Empty before the
+	// board's first snapshot, when there are no rows yet.
 	Id         string `json:"id"`
 	TempoIndex int64  `json:"tempo_index"`
 	// the chain block it was computed at
@@ -234,7 +235,8 @@ func NewSnTopFleetList() *SnTopFleetList {
 // SnTopRow is one network on the board, scored as one hypothetical fleet of
 // its verify-eligible providers. No row carries a network id.
 type SnTopRow struct {
-	// the 1-based position in the snapshot's total order
+	// the 1-based position in the snapshot's total order; 0 in SnTopMe.Row
+	// when the network isn't ranked
 	Position int `json:"position"`
 	// the network name, only when the network shows its name on leaderboards;
 	// "" when the row is anonymous
@@ -371,7 +373,9 @@ type SnTopCallback connect.ApiCallback[*SnTopResult]
 
 // SnTop reads one page of the Protocol leaderboard (GET /sn/top). The board
 // is public: signed out the request carries no credential, and signed in it
-// adds `Me`. nil args read the first page of the newest snapshot.
+// adds `Me`. nil args read the first page of the newest snapshot. A cursor
+// whose snapshot expired is refused with HTTP 410: reload from the first
+// page.
 func (self *Api) SnTop(args *SnTopArgs, callback SnTopCallback) {
 	runAsyncApiRequest[*SnTopResult](callback, func(callback connect.ApiCallback[*SnTopResult]) {
 		connect.HttpGetWithRawFunction(

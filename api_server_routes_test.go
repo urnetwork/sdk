@@ -130,11 +130,7 @@ func unroutedSdkApiUrls(urls []*sdkApiUrl, routes map[string]*regexp.Regexp) []*
 // routes them. While the server does not route one it is logged, not failed,
 // so the sdk can lead the server by one deploy, as the spec does. Remove an
 // entry, with the spec's marker, once the server routes it.
-var sdkApiUrlsPlannedOnServer = map[string]bool{
-	// the Protocol leaderboard (server LEADERTOP.md §7)
-	"/sn/top":    true,
-	"/sn/top/me": true,
-}
+var sdkApiUrlsPlannedOnServer = map[string]bool{}
 
 // splitPlannedSdkApiUrls separates the unrouted urls that are planned on the
 // server from the ones to report.
