@@ -13,12 +13,15 @@ import (
 
 // A device whose performance profile requires post-quantum encryption runs
 // every window client fail closed, so its discovery has to ask
-// find-providers2 for providers that advertise post-quantum encryption
-// sessions (support inbox 7918, 7843,
-// https://github.com/urnetwork/connect/issues/220). Every app sets the
-// requirement through the device's performance profile. These follow it
-// through the real device construction and live setter to the requests of the
-// device's own generator, read as the JSON the platform receives.
+// find-providers2 for providers that can seal its sessions (support inbox
+// 7918, 7843, https://github.com/urnetwork/connect/issues/220). Since connect
+// 72eb15a4 it asks for modern providers (require_modern_provider), which hold
+// post-quantum session evidence and resizable windows, and no longer for
+// declaring providers (post_quantum_encryption) (server FP2-MODERN.md,
+// decision 1). Every app sets the requirement through the device's
+// performance profile. These follow it through the real device construction
+// and live setter to the requests of the device's own generator, read as the
+// JSON the platform receives.
 
 // testingPostQuantumDiscovery records each find-providers2 request and answers
 // no providers, so the windows keep discovering and never dial. A request
@@ -78,15 +81,15 @@ func (self *testingPostQuantumDiscovery) windowDiscovered(t *testing.T, ctx cont
 	return slices.Clone(self.windowRequests)
 }
 
-// The value a request asks for post_quantum_encryption, and whether it names
-// the field at all.
-func testingPostQuantumRequested(t *testing.T, body string) (requested bool, present bool) {
+// The value a request asks for a boolean field, and whether it names the
+// field at all.
+func testingDiscoveryRequestFlag(t *testing.T, body string, field string) (requested bool, present bool) {
 	t.Helper()
 	fields := map[string]json.RawMessage{}
 	if err := json.Unmarshal([]byte(body), &fields); err != nil {
 		t.Fatal(err)
 	}
-	value, present := fields["post_quantum_encryption"]
+	value, present := fields[field]
 	if !present {
 		return false, false
 	}
@@ -94,6 +97,29 @@ func testingPostQuantumRequested(t *testing.T, body string) (requested bool, pre
 		t.Fatal(err)
 	}
 	return requested, true
+}
+
+// Fails unless the request sends require_modern_provider true and leaves
+// post_quantum_encryption off the wire.
+func assertModernDiscoveryRequest(t *testing.T, body string, description string) {
+	t.Helper()
+	if requested, _ := testingDiscoveryRequestFlag(t, body, "require_modern_provider"); !requested {
+		t.Fatalf("%s did not ask for modern providers: %s", description, body)
+	}
+	if _, present := testingDiscoveryRequestFlag(t, body, "post_quantum_encryption"); present {
+		t.Fatalf("%s still asked for declaring providers: %s", description, body)
+	}
+}
+
+// Fails unless the request names neither capability field, as every request
+// before them did not.
+func assertCapabilityBlindDiscoveryRequest(t *testing.T, body string, description string) {
+	t.Helper()
+	for _, field := range []string{"require_modern_provider", "post_quantum_encryption"} {
+		if _, present := testingDiscoveryRequestFlag(t, body, field); present {
+			t.Fatalf("%s sent %s: %s", description, field, body)
+		}
+	}
 }
 
 // A connected device whose discovery goes to `discovery`, with the profile set
@@ -119,13 +145,13 @@ func newTestingPostQuantumDevice(t *testing.T, discovery *testingPostQuantumDisc
 }
 
 // A device whose profile requires post-quantum encryption asks find-providers2
-// for providers that advertise it: the windows of the multi client it
-// constructs under the profile, and every later request of its generator.
-// Turning the requirement off live returns the requests to those of an older
-// client, and turning it on again asks again. Before this change no request
-// could ask, so a post-quantum device dialed and failed through providers
-// that could never seal its sessions.
-func TestDevicePostQuantumProfileAsksDiscoveryForPostQuantumProviders(t *testing.T) {
+// for modern providers: the windows of the multi client it constructs under
+// the profile, and every later request of its generator. None of them asks
+// for declaring providers any more. Turning the requirement off live returns
+// the requests to those of an older client, and turning it on again asks
+// again. Before discovery could ask, a post-quantum device dialed and failed
+// through providers that could never seal its sessions.
+func TestDevicePostQuantumProfileAsksDiscoveryForModernProviders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
@@ -135,9 +161,7 @@ func TestDevicePostQuantumProfileAsksDiscoveryForPostQuantumProviders(t *testing
 
 	// the profile never changed while these were made
 	for _, body := range discovery.windowDiscovered(t, ctx) {
-		if requested, _ := testingPostQuantumRequested(t, body); !requested {
-			t.Fatalf("a post-quantum window discovered without asking for post-quantum providers: %s", body)
-		}
+		assertModernDiscoveryRequest(t, body, "a post-quantum window")
 	}
 
 	device.stateLock.Lock()
@@ -166,27 +190,19 @@ func TestDevicePostQuantumProfileAsksDiscoveryForPostQuantumProviders(t *testing
 		return discovery.testRequests[0]
 	}
 
-	body := discover()
-	if requested, _ := testingPostQuantumRequested(t, body); !requested {
-		t.Fatalf("the post-quantum device's generator did not ask for post-quantum providers: %s", body)
-	}
+	assertModernDiscoveryRequest(t, discover(), "the post-quantum device's generator")
 
 	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
-	body = discover()
-	if _, present := testingPostQuantumRequested(t, body); present {
-		t.Fatalf("discovery still asks for post-quantum providers after the profile stopped requiring them: %s", body)
-	}
+	assertCapabilityBlindDiscoveryRequest(t, discover(), "discovery after the profile stopped requiring post-quantum encryption")
 
 	device.SetPerformanceProfile(postQuantum)
-	body = discover()
-	if requested, _ := testingPostQuantumRequested(t, body); !requested {
-		t.Fatalf("discovery did not ask for post-quantum providers after the profile required them again: %s", body)
-	}
+	assertModernDiscoveryRequest(t, discover(), "discovery after the profile required post-quantum encryption again")
 }
 
 // A device without the requirement, the default and every device before this
-// change, keeps its requests exactly as they were: no post_quantum_encryption
-// field, so discovery stays capability-blind.
+// change, keeps its requests exactly as they were: neither
+// require_modern_provider nor post_quantum_encryption, so discovery stays
+// capability-blind.
 func TestDeviceDefaultProfileKeepsCapabilityBlindDiscovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -194,8 +210,6 @@ func TestDeviceDefaultProfileKeepsCapabilityBlindDiscovery(t *testing.T) {
 	discovery := newTestingPostQuantumDiscovery()
 	newTestingPostQuantumDevice(t, discovery, nil)
 	for _, body := range discovery.windowDiscovered(t, ctx) {
-		if _, present := testingPostQuantumRequested(t, body); present {
-			t.Fatalf("a device without the requirement asked about post-quantum providers: %s", body)
-		}
+		assertCapabilityBlindDiscoveryRequest(t, body, "a device without the requirement")
 	}
 }
