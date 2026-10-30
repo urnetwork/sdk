@@ -7,7 +7,7 @@ sources:
     repo: sdk
   - origin: maven
     repo: android
-    commit: 0298059033bd6b9380339e04486dcb6fdeefa897
+    commit: 5e18e2deec8a06367650a856d11c0c32bf9ed7f6
   - origin: swiftpm
     repo: apple
     commit: cd7ae6cce5e9429982f2e7a2ba8c9783206a4605
@@ -526,15 +526,6 @@ entries:
     copyright: Copyright (c) The Android Open Source Project
     text: 074e6e32c86a
   - name: androidx.compose.material3:material3-android
-    version: 1.4.0
-    kind: software
-    origin: maven
-    apps: [android]
-    url: https://developer.android.com/jetpack/androidx/releases/compose-material3#1.4.0
-    spdx: Apache-2.0
-    copyright: Copyright (c) The Android Open Source Project
-    text: 074e6e32c86a
-  - name: androidx.compose.material3:material3-window-size-class-android
     version: 1.4.0
     kind: software
     origin: maven
