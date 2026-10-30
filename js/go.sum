@@ -184,6 +184,16 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/theodorsm/covert-dtls v1.5.1 h1:qTp59YIwGpY4eDJbR237R1MAahWLZNryDNknFRGR0FU=
 github.com/theodorsm/covert-dtls v1.5.1/go.mod h1:MTb9IO4aqSxrcrh569UGO4PlC1Yel37M440z+gcm13E=
+github.com/urnetwork/connect/v2026 v2026.10.30-1086010350 h1:ZYmABBqzDji9PimlKEbgIs9eXVNVNUEFCqdLmT4nhPs=
+github.com/urnetwork/connect/v2026 v2026.10.30-1086010350/go.mod h1:dn+deo+5Fj6GGuS97d6kWlURwRZ6w5xBsXE/EAUPmU8=
+github.com/urnetwork/glog/v2026 v2026.10.30-1086010350 h1:k4YPMmAUpxvh0+nA2vqx7Dm3/GKGSBQEuOBnnTS2uhI=
+github.com/urnetwork/glog/v2026 v2026.10.30-1086010350/go.mod h1:PPRu6m3WuomSyo6fM3J3M5cbCG0aLIjMxeKWaXvo8mY=
+github.com/urnetwork/goidenticons/v2026 v2026.10.30-1086010350 h1:GCQXJ6rEf3rX1H7cz5tnU9fMzVEunU6jjRd0XyDzuTE=
+github.com/urnetwork/goidenticons/v2026 v2026.10.30-1086010350/go.mod h1:vj6UFCphm3nJhf089ycGhBEGfbyIFsUom8D7NXkk/Pc=
+github.com/urnetwork/gvisor v0.0.0-20261022064944-57c9e137f740 h1:ESPq3kZ109CSaEJnpN6dejz2HibS3TEYNqzMTQt3K1M=
+github.com/urnetwork/gvisor v0.0.0-20261022064944-57c9e137f740/go.mod h1:vhr+dKaKG6frtXM4HM1WN+KUr+bCkQsRu6+AP87pTyg=
+github.com/urnetwork/sdk/v2026 v2026.10.30-1086010350 h1:qOqDS8m+WBu9RkGuJ02tzVrc1d6TZ0H/VikBZF/qe/o=
+github.com/urnetwork/sdk/v2026 v2026.10.30-1086010350/go.mod h1:rvVJxACXooKlv2dimv461Gt3pyky0xmSKTSwdHhSDG0=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 go.uber.org/dig v1.19.0 h1:BACLhebsYdpQ7IROQ1AGPjrXcP5dF80U3gKoFzbaq/4=
