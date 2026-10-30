@@ -2834,7 +2834,13 @@ type GetPointsLeaderboardArgs struct {
 // `DisplayName` is the network name, or empty when `Anonymous` (the app then
 // shows its localized "Anonymous"); `EmojiTag` shows either way.
 type PointsLeaderboardRow struct {
-	NetworkId   *Id    `json:"network_id"`
+	// NetworkId is nil on an anonymous row: since 2026-10-29 the server sends
+	// it only on a named row and on the signed-in caller's own row, so an
+	// anonymous row never identifies its network. Use IsMe to find the
+	// caller's row and Position to order rows.
+	NetworkId *Id `json:"network_id"`
+	// IsMe marks the signed-in caller's own row
+	IsMe        bool   `json:"is_me"`
 	NetworkName string `json:"network_name,omitempty"`
 	EmojiTag    string `json:"emoji_tag,omitempty"`
 	Anonymous   bool   `json:"anonymous"`

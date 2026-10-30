@@ -215,6 +215,7 @@ export interface GetPointsLeaderboardArgs {
 
 export interface PointsLeaderboardRow {
   network_id: string | null;
+  is_me: boolean;
   network_name?: string;
   emoji_tag?: string;
   anonymous: boolean;

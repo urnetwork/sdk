@@ -2923,10 +2923,12 @@ struct PointsLeaderboardKey {
 	int64_t Blocks{};
 	int64_t Streak{};
 	std::string NetworkId{};
+	int64_t Position{};
 };
 
 struct PointsLeaderboardRow {
 	std::optional<std::string> network_id;
+	bool is_me{};
 	std::optional<std::string> network_name;
 	std::optional<std::string> emoji_tag;
 	bool anonymous{};
@@ -13501,6 +13503,7 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardKey& v) {
 	j["Blocks"] = v.Blocks;
 	j["Streak"] = v.Streak;
 	j["NetworkId"] = v.NetworkId;
+	j["Position"] = v.Position;
 }
 inline void from_json(const nlohmann::json& j, PointsLeaderboardKey& v) {
 	if (!j.is_object()) {
@@ -13518,6 +13521,9 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardKey& v) {
 	if (auto it = j.find("NetworkId"); it != j.end() && !it->is_null()) {
 		it->get_to(v.NetworkId);
 	}
+	if (auto it = j.find("Position"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Position);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v) {
@@ -13525,6 +13531,7 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v) {
 	if (v.network_id) {
 		j["network_id"] = *v.network_id;
 	}
+	j["is_me"] = v.is_me;
 	if (v.network_name) {
 		j["network_name"] = *v.network_name;
 	}
@@ -13576,6 +13583,9 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardRow& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.network_id = std::move(tmp);
+	}
+	if (auto it = j.find("is_me"); it != j.end() && !it->is_null()) {
+		it->get_to(v.is_me);
 	}
 	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
