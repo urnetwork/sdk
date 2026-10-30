@@ -412,6 +412,7 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 
 		NetContractStatusDuration: 10 * time.Second,
 		NetContractStatusCount:    10,
+		contractErrorLogInterval:  60 * time.Second,
 
 		BlockActionWindowDuration: 300 * time.Second,
 		BlockActionWindowMaxCount: 1024,
@@ -659,6 +660,14 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport time.Duration — bound as GetNetContractStatusMillis/SetNetContractStatusMillis
 	NetContractStatusDuration time.Duration
 	NetContractStatusCount    int
+
+	// The least time between two `[contract]error` lines of one kind while
+	// the contract status keeps that kind (contractErrorLogThrottle). Under
+	// sustained contract refusals every status update reports the error, and
+	// the line made up most of an app's logs. One minute, as connect's log
+	// throttles. Non-positive logs every error. Unexported, so the bound
+	// settings and the c abi json do not change.
+	contractErrorLogInterval time.Duration
 
 	// the time window and max count of retained block actions
 	//
@@ -1178,6 +1187,9 @@ type DeviceLocal struct {
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
+	// rate-limit the `[contract]error` lines, one throttle per kind
+	insufficientBalanceLogThrottle contractErrorLogThrottle
+	noPermissionLogThrottle        contractErrorLogThrottle
 	// the last WindowStatus dispatched to listeners. the monitor fires an event
 	// for transitions that do not change the derived status — notably a terminal
 	// provider state for a client that was never added, whose delete is a no-op —
@@ -3061,8 +3073,42 @@ type contractStatusUpdate struct {
 	contractStatus *connect.ContractStatus
 }
 
+// Rate-limits the line updateContractStatus logs for one kind of contract
+// error. Under sustained contract refusals every status update reports the
+// error, several a second from a VPN window, and the line flooded the log.
+//
+// An error of a kind the device's contract status does not have logs at once:
+// the first one, and the first after the status clears or moves to another
+// kind. While the status keeps the kind, its errors log at most once per
+// interval. A line carries the count of the errors of its kind suppressed since
+// the line before, a count that a clear does not reset.
+//
+// Guarded by the device's stateLock.
+type contractErrorLogThrottle struct {
+	logTime         time.Time
+	suppressedCount int64
+}
+
+// Reports whether an error logs a line at now and, when it does, how many
+// errors of the kind were suppressed since the previous line. A repeat is an
+// error of a kind the device's contract status already has. A non-positive
+// interval logs every error.
+func (self *contractErrorLogThrottle) allow(now time.Time, interval time.Duration, repeat bool) (bool, int64) {
+	if repeat && 0 < interval && now.Sub(self.logTime) < interval {
+		self.suppressedCount += 1
+		return false, 0
+	}
+	suppressedCount := self.suppressedCount
+	self.logTime = now
+	self.suppressedCount = 0
+	return true, suppressedCount
+}
+
 func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractStatus) {
 	event := false
+	// at most one error line per update, logged after the lock is released
+	logLine := ""
+	var logSuppressedCount int64
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -3098,10 +3144,8 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				switch *contractStatus.Error {
 				case protocol.ContractError_InsufficientBalance:
 					netContractStatus.InsufficientBalance = true
-					self.log.Infof("[contract]error insufficent balance\n")
 				case protocol.ContractError_NoPermission:
 					netContractStatus.NoPermission = true
-					self.log.Infof("[contract]error no permission\n")
 				}
 			} else {
 				// reset the error state
@@ -3113,11 +3157,42 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 			}
 		}
 
+		// only the new update's error is logged. The summary above visits
+		// every update still in the window, and logging there repeated each
+		// error up to NetContractStatusCount times. The status before this
+		// update tells a repeat from a new error
+		if contractStatus.Error != nil {
+			priorContractStatus := ContractStatus{}
+			if self.netContractStatus != nil {
+				priorContractStatus = *self.netContractStatus
+			}
+			allowLog := func(throttle *contractErrorLogThrottle, repeat bool, line string) {
+				if allowed, suppressedCount := throttle.allow(now, self.settings.contractErrorLogInterval, repeat); allowed {
+					logLine = line
+					logSuppressedCount = suppressedCount
+				}
+			}
+			switch *contractStatus.Error {
+			case protocol.ContractError_InsufficientBalance:
+				allowLog(&self.insufficientBalanceLogThrottle, priorContractStatus.InsufficientBalance, "[contract]error insufficent balance")
+			case protocol.ContractError_NoPermission:
+				allowLog(&self.noPermissionLogThrottle, priorContractStatus.NoPermission, "[contract]error no permission")
+			}
+		}
+
 		if self.netContractStatus == nil || *self.netContractStatus != *netContractStatus {
 			self.netContractStatus = netContractStatus
 			event = true
 		}
 	}()
+	if logLine != "" {
+		// the message text is unchanged for log searches; a count is a suffix
+		if 0 < logSuppressedCount {
+			self.log.Infof("%s (%d suppressed)\n", logLine, logSuppressedCount)
+		} else {
+			self.log.Infof("%s\n", logLine)
+		}
+	}
 	if event {
 		self.contractStatusChanged(self.GetContractStatus())
 	}
