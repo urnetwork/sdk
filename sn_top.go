@@ -172,8 +172,9 @@ type SnTopFleet struct {
 	Uid          int64 `json:"uid"`
 	Generation   int64 `json:"generation"`
 	ValidToEpoch int64 `json:"valid_to_epoch"`
-	// the board's replica of the validator's head score for the fleet
-	ReplicaScore float64 `json:"replica_score"`
+	// exact replica, available only after authenticated evidence and prior state replay
+	ReplicaScore    float64 `json:"replica_score"`
+	HasReplicaScore bool    `json:"has_replica_score"`
 	// the validator's own head score
 	ValidatorScore    float64 `json:"validator_score"`
 	HasValidatorScore bool    `json:"has_validator_score"`
@@ -199,6 +200,8 @@ func (self *SnTopFleet) UnmarshalJSON(b []byte) error {
 	type plain SnTopFleet
 	var wire struct {
 		plain
+		ReplicaScore       snTopNullable[float64] `json:"replica_score"`
+		HasReplicaScore    *bool                  `json:"has_replica_score"`
 		ValidatorScore     snTopNullable[float64] `json:"validator_score"`
 		HasValidatorScore  *bool                  `json:"has_validator_score"`
 		ValidatorRank      snTopNullable[int]     `json:"validator_rank"`
@@ -214,6 +217,7 @@ func (self *SnTopFleet) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*self = SnTopFleet(wire.plain)
+	self.ReplicaScore, self.HasReplicaScore = wire.ReplicaScore.get(wire.HasReplicaScore)
 	self.ValidatorScore, self.HasValidatorScore = wire.ValidatorScore.get(wire.HasValidatorScore)
 	self.ValidatorRank, self.HasValidatorRank = wire.ValidatorRank.get(wire.HasValidatorRank)
 	self.ValidatorRankOf, self.HasValidatorRankOf = wire.ValidatorRankOf.get(wire.HasValidatorRankOf)

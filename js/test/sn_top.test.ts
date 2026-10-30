@@ -110,6 +110,9 @@ test("the Protocol leaderboard types keep nulls, enums and lists", () => {
     const summaryAt: string | null = snapshot.validator_summary_at;
     const label: "estimate" | "likely" | "borderline" | "unlikely" | "not_measurable" = row.label;
     const fleets: SnTopFleet[] = row.fleets;
+    const unavailableReplica: SnTopFleet["replica_score"] = null;
+    // @ts-expect-error the replica is unavailable until its evidence can be verified
+    const replicaMustBePresent: number = fleet.replica_score;
     const score: number | null = fleet.validator_score;
     const rank: number | null = fleet.validator_rank;
     const rankOf: number | null = fleet.validator_rank_of;
