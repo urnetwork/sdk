@@ -804,6 +804,15 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
 	// another package, which gomobile does not bind. Go/headless hosts only.
 	MultiClientIdentityStore connect.MultiClientIdentityStore `json:"-"`
+	// SchedulerPauseDetector, when set, is the one scheduler-pause detector
+	// the device's multi clients share with the other devices of their host,
+	// instead of each running its own
+	// (`connect.MultiClientSettings.SchedulerPauseDetector`). A host that runs
+	// many devices in one process (the proxy service) sets one on all of them.
+	//
+	//gomobile:noexport a pointer to another package's struct, which gomobile
+	// does not bind. Go/headless hosts only.
+	SchedulerPauseDetector *connect.SchedulerPauseDetector `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -1217,6 +1226,11 @@ type DeviceLocal struct {
 	mobileMemoryProviderTrafficByteCount ByteCount
 	// contracts of the provider client, which lives as long as the device
 	providerContracts *deviceContractTracker
+	// shared by both trackers: signaled when an update leaves something for
+	// `runContractStatsFlush` to carry out, so the settled loop can park
+	contractStatsFlushWake chan struct{}
+	// Observes each pass of `runContractStatsFlush`. Nil in production.
+	contractStatsFlushPassForTest atomic.Pointer[func()]
 
 	// packet counts on the fallback local route (no remote client)
 	localFallbackEgressPacketCount  atomic.Int64
@@ -1874,6 +1888,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		netContractStatus:                        &ContractStatus{},
 		contracts:                                newDeviceContractTracker(),
 		providerContracts:                        newDeviceContractTracker(),
+		contractStatsFlushWake:                   make(chan struct{}, 1),
 		receiveCallbacks:                         connect.NewCallbackList[connect.ReceivePacketFunction](),
 		receivePacketsCallbacks:                  connect.NewCallbackList[connect.ReceivePacketsFunction](),
 		receivePacketBatchCallbacks:              connect.NewCallbackList[receivePacketBatchFunction](),
@@ -2084,6 +2099,8 @@ func newDeviceLocalWithOverridesForPlatform(
 	// the trailing edge of the contract stats epoch gate: carries out the last
 	// batch of a transfer, which lands inside the gate and would otherwise never
 	// be emitted, and decays the bit rate of idle contracts
+	deviceLocal.contracts.flushWake = deviceLocal.contractStatsFlushWake
+	deviceLocal.providerContracts.flushWake = deviceLocal.contractStatsFlushWake
 	deviceLocal.lifecycleWorkers.Add(1)
 	go connect.HandleError(func() {
 		defer deviceLocal.lifecycleWorkers.Done()
@@ -5074,6 +5091,7 @@ func (self *DeviceLocal) applyDestination(
 				overrideAllowDirect := false
 				settings.OverrideAllowDirect = &overrideAllowDirect
 			}
+			settings.SchedulerPauseDetector = self.settings.SchedulerPauseDetector
 			if self.clientSecurityPolicyGenerator != nil {
 				settings.SecurityPolicyGenerator = self.clientSecurityPolicyGenerator
 			}
@@ -7280,6 +7298,9 @@ type deviceContractTracker struct {
 	// batch ever arrives to carry it — without the trailing flush the pushed
 	// stats sit permanently below what the getters report
 	pendingEmit bool
+	// signaled without blocking when an update or clear leaves something for
+	// the flush loop to carry out. nil for a bare tracker
+	flushWake chan struct{}
 }
 
 func newDeviceContractTracker() *deviceContractTracker {
@@ -7300,6 +7321,35 @@ func (self *deviceContractTracker) clear() {
 	// last pre-disconnect values while the getters, reading the now empty maps,
 	// report zero — push and pull disagreeing until the next connect
 	self.pendingEmit = true
+	self.wakeFlush()
+}
+
+// wakeFlush resumes a parked flush loop. Called with the tracker's state
+// changed, before the loop could have judged it settled.
+func (self *deviceContractTracker) wakeFlush() {
+	if self.flushWake == nil {
+		return
+	}
+	select {
+	case self.flushWake <- struct{}{}:
+	default:
+	}
+}
+
+// settled reports that `flushPending` has nothing left to do until the next
+// update: no gated update to carry out, and no bit rate left to decay.
+func (self *deviceContractTracker) settled() bool {
+	if self.pendingEmit {
+		return false
+	}
+	for _, contracts := range []map[connect.Id]*deviceContractState{self.egressContracts, self.ingressContracts} {
+		for _, state := range contracts {
+			if state.bitRate != 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // applies a contract stats event batch.
@@ -7313,6 +7363,9 @@ func (self *deviceContractTracker) update(
 	epoch time.Duration,
 ) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	now := time.Now()
+	// whatever this folds in, the flush loop has a trailing edge or a decay to
+	// carry out
+	defer self.wakeFlush()
 	hasClose := false
 	for _, event := range events {
 		if 0 < event.Sequence {
@@ -7486,18 +7539,37 @@ func (self *DeviceLocal) updateContractStatsEvents(events []*connect.ContractSta
 // arrives — the pushed stats then sit permanently below what the getters report,
 // and a finished transfer keeps reporting its last bit rate. This loop is the
 // trailing edge the gate needs.
+//
+// The loop arms one timer for its life. Once both trackers settle (nothing
+// gated, no rate left to decay) it parks until an update wakes it, so an idle
+// device costs no epoch wakeups.
 func (self *DeviceLocal) runContractStatsFlush() {
+	flushTimer := time.NewTimer(self.settings.ContractStatsEpoch)
+	defer flushTimer.Stop()
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
-		case <-time.After(self.settings.ContractStatsEpoch):
+		case <-flushTimer.C:
 		}
-		self.flushContractStats()
+		settled := self.flushContractStats()
+		if pass := self.contractStatsFlushPassForTest.Load(); pass != nil {
+			(*pass)()
+		}
+		if settled {
+			select {
+			case <-self.ctx.Done():
+				return
+			case <-self.contractStatsFlushWake:
+			}
+		}
+		flushTimer.Reset(self.settings.ContractStatsEpoch)
 	}
 }
 
-func (self *DeviceLocal) flushContractStats() {
+// flushContractStats returns whether both trackers settled. An update that
+// lands after the judgement wakes the loop, so a parked loop never strands it.
+func (self *DeviceLocal) flushContractStats() (settled bool) {
 	var egressStats *ContractStats
 	var ingressStats *ContractStats
 	var egressDetails *ContractDetailsList
@@ -7513,6 +7585,7 @@ func (self *DeviceLocal) flushContractStats() {
 			self.contracts.flushPending(self.settings.ContractStatsEpoch)
 		providerEgressStats, providerIngressStats, providerEgressDetails, providerIngressDetails =
 			self.providerContracts.flushPending(self.settings.ContractStatsEpoch)
+		settled = self.contracts.settled() && self.providerContracts.settled()
 	}()
 	if egressStats != nil {
 		self.egressContractStatsChanged(egressStats)
@@ -7526,6 +7599,7 @@ func (self *DeviceLocal) flushContractStats() {
 		self.providerEgressContractDetailsChanged(providerEgressDetails)
 		self.providerIngressContractDetailsChanged(providerIngressDetails)
 	}
+	return
 }
 
 // the contract stats epoch callback from the provider client
