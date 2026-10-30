@@ -63,8 +63,8 @@ _build_android:
 	# pin-store helper is unexported; neither may appear as an accepted omission
 	# the same applies to the DeviceLocalSettings struct fields, the DeviceLocal security-policy
 	# generator setters, and testing-only constructors whose unsupported field/param types gomobile skips
-	# the Sim* simulation scaffolding (sim_device.go) is a go-embedder surface whose configs
-	# deliberately carry connect types, and CollapseHostNames is the go-side ([]string) variant
+	# the Sim* simulation scaffolding is a Go-embedder surface excluded by sdk_mobile_bind.
+	# CollapseHostNames is the go-side ([]string) variant
 	# of CollapseHostNamesList — both are expected skips, not part of the mobile surface
 	# the extender network's []string surface is the same case: the ExtenderHosts and
 	# ExtenderRootPublicKeys package helpers and the NetworkSpaceValues fields they read are

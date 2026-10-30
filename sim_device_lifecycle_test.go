@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 // Headless simulator lifecycle tests pin completion at the SDK ownership
 // boundary used by the production latency fleet.
 package sdk

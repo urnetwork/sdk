@@ -118,8 +118,7 @@ func allowedMobileOmission(identifier string) bool {
 	if typeName == "DeviceLocalSettings" || strings.Contains(identifier, "SetUpgradeMuxSettings") {
 		return true
 	}
-	if identifier == "Testing_NewNetworkSpaceWithUrls" || identifier == "CollapseHostNames" ||
-		strings.HasPrefix(identifier, "Sim") || strings.HasPrefix(identifier, "NewSim") {
+	if identifier == "Testing_NewNetworkSpaceWithUrls" || identifier == "CollapseHostNames" {
 		return true
 	}
 	if strings.Contains(identifier, "SyncWithContext") || memberName == "NewApi" ||

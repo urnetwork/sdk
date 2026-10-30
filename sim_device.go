@@ -1,6 +1,12 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // simulation surfaces for headless providers and clients.
+//
+// Keep this Go-embedder API out of gomobile bindings: even without bindable
+// constructors, gobind exports its types and roots their methods in the mobile
+// binary. The packet tunnel uses DeviceLocal, not these fleet simulators.
 //
 // These compose the same connect components the full `DeviceLocal` device
 // uses — client, platform transport, `LocalUserNat`/`RemoteUserNatProvider`

@@ -49,6 +49,12 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 				// interfaces or invalid Go proxy assignments (missing Get).
 				"LocalDeviceApi",
 				"localDeviceApi",
+				"SimProvider",
+				"SimClient",
+				"NewProxyDeviceWithDefaults",
+				"SetupNewDeviceCallback",
+				"@interface SdkProxyDevice :",
+				"class ProxyDevice ",
 			}
 			err := filepath.WalkDir(outputDirectory, func(path string, entry os.DirEntry, walkErr error) error {
 				if walkErr != nil {
@@ -230,8 +236,12 @@ func TestMobileExtenderStringSlicePolicyDoesNotPrefixMatch(t *testing.T) {
 
 // These internal types are absent under sdk_mobile_bind. A skipped record is
 // a source-boundary regression, not a permitted unsupported app declaration.
-func TestMobileSubprotocolRpcOmissionsAreRejected(t *testing.T) {
+func TestMobileInternalOmissionsAreRejected(t *testing.T) {
 	for _, source := range []string{
+		"// skipped field SimProviderConfig.ClientId with unsupported type",
+		"// skipped field SimClientConfig.ClientId with unsupported type",
+		"// skipped function NewSimProvider with unsupported parameter or return types",
+		"// skipped function NewSimClient with unsupported parameter or return types",
 		"// skipped field DeviceSubprotocolRequest.ID with unsupported type",
 		"// skipped field DeviceSubprotocolRequest.ClientID with unsupported type",
 		"// skipped field DeviceSubprotocolRequest.InstanceID with unsupported type",

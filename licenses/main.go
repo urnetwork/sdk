@@ -1,9 +1,9 @@
-// Regenerates ../license.yml and its runtime copy ../license_data.json, which every app
+// Regenerates ../license.yml, ../license_data.json and its compressed runtime copy, which every app
 // shows under Account -> Settings -> Licenses (sdk.GetLicenses).
 //
 // Run from the sdk repo:
 //
-//	go run ./licenses                  # regenerate license.yml and license_data.json
+//	go run ./licenses                  # regenerate YAML, readable JSON and compressed runtime JSON
 //	go run ./licenses -skip android    # regenerate, keeping android's entries as they are
 //	go run ./licenses -check sdk       # fail if the SDK's Go modules or extra.yml drifted
 //	go -C ../sdk run ./licenses -check android   # from an app repo's build
@@ -39,6 +39,7 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1351,7 +1352,31 @@ func (self *licenseFile) writeRuntimeFile(path string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "licenses: wrote %s: %d bytes\n", path, len(data))
+	compressed, err := compressRuntimeBytes(data)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path+".gz", compressed, 0644); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "licenses: wrote %s.gz: %d bytes\n", path, len(compressed))
 	return nil
+}
+
+// gzip's zero timestamp and empty name make this a deterministic build input.
+func compressRuntimeBytes(data []byte) ([]byte, error) {
+	var out bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&out, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func (self *licenseFile) checkRuntimeFile(path string) error {
@@ -1361,10 +1386,21 @@ func (self *licenseFile) checkRuntimeFile(path string) error {
 	}
 	have, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("runtime license catalog (run `go run ./licenses` and commit both catalogs): %w", err)
+		return fmt.Errorf("runtime license catalog (run `go run ./licenses` and commit all catalogs): %w", err)
 	}
 	if !bytes.Equal(have, want) {
-		return fmt.Errorf("license_data.json is out of date with license.yml (run `go run ./licenses` and commit both catalogs)")
+		return fmt.Errorf("license_data.json is out of date with license.yml (run `go run ./licenses` and commit all catalogs)")
+	}
+	wantCompressed, err := compressRuntimeBytes(want)
+	if err != nil {
+		return err
+	}
+	haveCompressed, err := os.ReadFile(path + ".gz")
+	if err != nil {
+		return fmt.Errorf("compressed runtime license catalog (run `go run ./licenses`): %w", err)
+	}
+	if !bytes.Equal(haveCompressed, wantCompressed) {
+		return fmt.Errorf("license_data.json.gz is out of date with license.yml (run `go run ./licenses` and commit all catalogs)")
 	}
 	return nil
 }

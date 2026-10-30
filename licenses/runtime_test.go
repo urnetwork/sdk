@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,6 +37,19 @@ func TestRuntimeLicenseCatalogPreservesAllFieldsAndTexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	compressed, err := os.ReadFile(runtimePath + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompressed, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil || !bytes.Equal(uncompressed, data) {
+		t.Fatalf("compressed catalog differs from readable JSON: %v", err)
+	}
 	var got licenseFile
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
@@ -55,6 +70,19 @@ func TestRuntimeLicenseCatalogPreservesAllFieldsAndTexts(t *testing.T) {
 	again, err := os.ReadFile(runtimePath)
 	if err != nil || !bytes.Equal(data, again) {
 		t.Fatalf("runtime output is not deterministic: %v", err)
+	}
+	againCompressed, err := os.ReadFile(runtimePath + ".gz")
+	if err != nil || !bytes.Equal(compressed, againCompressed) {
+		t.Fatalf("compressed runtime output is not deterministic: %v", err)
+	}
+	if err := os.WriteFile(runtimePath+".gz", []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := want.checkRuntimeFile(runtimePath); err == nil {
+		t.Fatal("runtime check accepted a corrupt compressed catalog")
+	}
+	if err := want.writeRuntimeFile(runtimePath); err != nil {
+		t.Fatal(err)
 	}
 	want.Entries[0].Notice = "changed notice"
 	if err := want.checkRuntimeFile(runtimePath); err == nil {
