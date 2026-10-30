@@ -102,7 +102,8 @@ type SnTopArgs struct {
 
 // SnTopSnapshot is one per-tempo computation of the board.
 type SnTopSnapshot struct {
-	// opaque; SnTopArgs.Snapshot reads a first page from it
+	// opaque; SnTopArgs.Snapshot reads a first page from it. Empty before the
+	// board's first snapshot, when there are no rows yet.
 	Id         string `json:"id"`
 	TempoIndex int64  `json:"tempo_index"`
 	// the chain block it was computed at
@@ -164,7 +165,9 @@ func (self *SnTopSnapshot) UnmarshalJSON(b []byte) error {
 
 // SnTopFleet is one fleet a network has claimed, bound on SN25 to a hotkey
 // UID. The validator fields are unset until the validator's head summary
-// covers the fleet, and the incentive until it is first read on chain.
+// covers the fleet, and the incentive until it is first read on chain. A UID
+// that changed hands earns and ranks for its new holder, so both are unset
+// once the fleet's hotkey no longer holds the UID.
 type SnTopFleet struct {
 	Uid          int64 `json:"uid"`
 	Generation   int64 `json:"generation"`
@@ -183,7 +186,8 @@ type SnTopFleet struct {
 	// the validator selected the fleet into the Top 200
 	Selected    bool `json:"selected"`
 	HasSelected bool `json:"has_selected"`
-	// the UID's on-chain incentive
+	// the UID's share of SN25 incentive, a fraction from 0 to 1 (shown as a
+	// percent: 0.018 is "1.8%")
 	Incentive    float64 `json:"incentive"`
 	HasIncentive bool    `json:"has_incentive"`
 	// the incentive is stale: the validator's weights are its fallback row or
@@ -231,7 +235,8 @@ func NewSnTopFleetList() *SnTopFleetList {
 // SnTopRow is one network on the board, scored as one hypothetical fleet of
 // its verify-eligible providers. No row carries a network id.
 type SnTopRow struct {
-	// the 1-based position in the snapshot's total order
+	// the 1-based position in the snapshot's total order; 0 in SnTopMe.Row
+	// when the network isn't ranked
 	Position int `json:"position"`
 	// the network name, only when the network shows its name on leaderboards;
 	// "" when the row is anonymous
@@ -256,7 +261,8 @@ type SnTopRow struct {
 	// the validator can measure the network (its providers are in the cohort)
 	Measurable     bool `json:"measurable"`
 	VerifyEligible bool `json:"verify_eligible"`
-	// prompt the network to claim: measurable and position 200 or better
+	// prompt the network to claim: measurable, position 200 or better, and no
+	// active claimed fleet. Apps use this flag rather than computing it.
 	ClaimPrompt bool `json:"claim_prompt"`
 	// the caller's own network
 	IsMe bool `json:"is_me"`
@@ -367,7 +373,9 @@ type SnTopCallback connect.ApiCallback[*SnTopResult]
 
 // SnTop reads one page of the Protocol leaderboard (GET /sn/top). The board
 // is public: signed out the request carries no credential, and signed in it
-// adds `Me`. nil args read the first page of the newest snapshot.
+// adds `Me`. nil args read the first page of the newest snapshot. A cursor
+// whose snapshot expired is refused with HTTP 410: reload from the first
+// page.
 func (self *Api) SnTop(args *SnTopArgs, callback SnTopCallback) {
 	runAsyncApiRequest[*SnTopResult](callback, func(callback connect.ApiCallback[*SnTopResult]) {
 		connect.HttpGetWithRawFunction(
