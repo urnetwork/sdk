@@ -100,6 +100,7 @@ urnet_jwt_refresh_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_list_api_keys_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_local_override_app_ids_cb = CFUNCTYPE(None, c_void_p)
 urnet_local_state_save_cb = CFUNCTYPE(None, c_void_p, c_uint64)
+urnet_location_match_cb = CFUNCTYPE(None, c_void_p)
 urnet_network_block_location_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_network_check_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_network_clients_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -795,6 +796,8 @@ def bind(lib):
     lib.urnet_connect_view_controller_add_connection_status_listener.restype = c_uint64
     lib.urnet_connect_view_controller_add_grid_listener.argtypes = [c_uint64, urnet_grid_cb, c_void_p]
     lib.urnet_connect_view_controller_add_grid_listener.restype = c_uint64
+    lib.urnet_connect_view_controller_add_location_match_listener.argtypes = [c_uint64, urnet_location_match_cb, c_void_p]
+    lib.urnet_connect_view_controller_add_location_match_listener.restype = c_uint64
     lib.urnet_connect_view_controller_add_selected_location_listener.argtypes = [c_uint64, urnet_selected_location_cb, c_void_p]
     lib.urnet_connect_view_controller_add_selected_location_listener.restype = c_uint64
     lib.urnet_connect_view_controller_close.argtypes = [c_uint64]
@@ -813,6 +816,8 @@ def bind(lib):
     lib.urnet_connect_view_controller_get_connection_status.restype = c_void_p
     lib.urnet_connect_view_controller_get_grid.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_get_grid.restype = c_uint64
+    lib.urnet_connect_view_controller_get_location_match.argtypes = [c_uint64]
+    lib.urnet_connect_view_controller_get_location_match.restype = c_void_p
     lib.urnet_connect_view_controller_get_selected_location.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_get_selected_location.restype = c_void_p
     lib.urnet_connect_view_controller_start.argtypes = [c_uint64]

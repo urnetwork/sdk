@@ -443,6 +443,27 @@ export type ConnectionStatus =
   | "DESTINATION_SET"
   | "CONNECTED";
 
+/**
+ * Whether the connection shows the location the user selected. The platform
+ * answers a city or region with no provider from its region, then its
+ * country, and marks the providers it found there; this is the window-level
+ * summary of the providers in use. While `match` is not "", say "No providers
+ * in <selected location>; showing <name>" ("Also showing <name>" while
+ * `mixed`). Exact ("") while disconnected, from each connect until providers
+ * are in use, and from a device or server that predates the marker.
+ */
+export interface LocationMatch {
+  /** "" the selected location; "region" or "country" the level shown instead */
+  match: "" | "region" | "country";
+  /** some providers in use are in the selected location and others are not */
+  mixed: boolean;
+  /** the region or country shown instead; "" when exact or not sent, then
+   * name the selected location's own region or country */
+  name: string;
+  /** that region or country's location id, when the server sent it */
+  locationId?: string;
+}
+
 /** InEvaluation | EvaluationFailed | NotAdded | Added | Removed */
 export type ProviderState =
   | "InEvaluation"
@@ -490,6 +511,8 @@ export interface ConnectViewController {
   getConnected(): boolean;
   getConnectionStatus(): ConnectionStatus;
   getSelectedLocation(): ConnectLocationInfo | null;
+  /** see LocationMatch; never null */
+  getLocationMatch(): LocationMatch;
   getGrid(): ConnectGrid | null;
 
   connect(location: ConnectLocationSpec): void;
@@ -498,6 +521,8 @@ export interface ConnectViewController {
 
   addConnectionStatusListener(cb: () => void): Unsubscribe;
   addSelectedLocationListener(cb: (location: ConnectLocationInfo | null) => void): Unsubscribe;
+  /** signal only — re-read getLocationMatch, on every change */
+  addLocationMatchListener(cb: () => void): Unsubscribe;
   addGridListener(cb: () => void): Unsubscribe;
 }
 

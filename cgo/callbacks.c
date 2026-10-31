@@ -397,6 +397,10 @@ void urnet_invoke_local_state_save(urnet_local_state_save_cb cb, void* user_data
 	cb(user_data, result);
 }
 
+void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_network_block_location(urnet_network_block_location_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

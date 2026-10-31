@@ -295,6 +295,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOCATIONS_ERROR "LOCATIONS_ERROR"
 #define URNET_LOCATIONS_LOADED "LOCATIONS_LOADED"
 #define URNET_LOCATIONS_LOADING "LOCATIONS_LOADING"
+#define URNET_LOCATION_MATCH_COUNTRY "country"
+#define URNET_LOCATION_MATCH_EXACT ""
+#define URNET_LOCATION_MATCH_REGION "region"
 #define URNET_LOCATION_TYPE_CITY "city"
 #define URNET_LOCATION_TYPE_COUNTRY "country"
 #define URNET_LOCATION_TYPE_REGION "region"
@@ -711,6 +714,8 @@ typedef void (*urnet_list_api_keys_cb)(void* user_data, const char* result_json,
 typedef void (*urnet_local_override_app_ids_cb)(void* user_data);
 /* LocalStateSaveListener */
 typedef void (*urnet_local_state_save_cb)(void* user_data, uint64_t result);
+/* LocationMatchListener */
+typedef void (*urnet_location_match_cb)(void* user_data);
 /* NetworkBlockLocationCallback */
 typedef void (*urnet_network_block_location_cb)(void* user_data, const char* result_json, const char* err_param);
 /* NetworkCheckCallback */
@@ -1242,6 +1247,7 @@ int64_t urnet_connect_grid_get_window_target_size(uint64_t self);
 
 uint64_t urnet_connect_view_controller_add_connection_status_listener(uint64_t self, urnet_connection_status_cb listener_connection_status_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_grid_listener(uint64_t self, urnet_grid_cb listener_grid_changed, void* listener_user_data);
+uint64_t urnet_connect_view_controller_add_location_match_listener(uint64_t self, urnet_location_match_cb listener_location_match_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_selected_location_listener(uint64_t self, urnet_selected_location_cb listener_selected_location_changed, void* listener_user_data);
 void urnet_connect_view_controller_close(uint64_t self);
 void urnet_connect_view_controller_connect(uint64_t self, const char* location_json);
@@ -1251,6 +1257,7 @@ void urnet_connect_view_controller_disconnect(uint64_t self);
 bool urnet_connect_view_controller_get_connected(uint64_t self);
 char* urnet_connect_view_controller_get_connection_status(uint64_t self);
 uint64_t urnet_connect_view_controller_get_grid(uint64_t self);
+char* urnet_connect_view_controller_get_location_match(uint64_t self);
 char* urnet_connect_view_controller_get_selected_location(uint64_t self);
 void urnet_connect_view_controller_start(uint64_t self);
 void urnet_connect_view_controller_stop(uint64_t self);
@@ -3862,6 +3869,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* LocationGroupResultList (json):
  *   = LocationGroupResult | null[]
+ */
+
+/* LocationMatch (json):
+ *   Match: string
+ *   Mixed: boolean
+ *   Name: string
+ *   LocationId: string (uuid) | null
  */
 
 /* LocationResult (json):

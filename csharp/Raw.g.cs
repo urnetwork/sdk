@@ -101,6 +101,7 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_list_api_keys_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_local_override_app_ids_cb(IntPtr a0);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_local_state_save_cb(IntPtr a0, ulong a1);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_location_match_cb(IntPtr a0);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_network_block_location_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_network_check_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_network_clients_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
@@ -508,6 +509,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_connect_grid_get_window_target_size(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_connect_view_controller_add_connection_status_listener(ulong a0, urnet_connection_status_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_connect_view_controller_add_grid_listener(ulong a0, urnet_grid_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_connect_view_controller_add_location_match_listener(ulong a0, urnet_location_match_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_connect_view_controller_add_selected_location_listener(ulong a0, urnet_selected_location_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_connect_view_controller_close(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_connect_view_controller_connect(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
@@ -517,6 +519,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_connect_view_controller_get_connected(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_connect_view_controller_get_connection_status(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_connect_view_controller_get_grid(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_connect_view_controller_get_location_match(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_connect_view_controller_get_selected_location(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_connect_view_controller_start(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_connect_view_controller_stop(ulong a0);

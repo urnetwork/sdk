@@ -100,6 +100,7 @@ module URnetwork
       callback :urnet_list_api_keys_cb, [:pointer, :string, :string], :void
       callback :urnet_local_override_app_ids_cb, [:pointer], :void
       callback :urnet_local_state_save_cb, [:pointer, :uint64], :void
+      callback :urnet_location_match_cb, [:pointer], :void
       callback :urnet_network_block_location_cb, [:pointer, :string, :string], :void
       callback :urnet_network_check_cb, [:pointer, :string, :string], :void
       callback :urnet_network_clients_cb, [:pointer, :string], :void
@@ -507,6 +508,7 @@ module URnetwork
       attach_function :urnet_connect_grid_get_window_target_size, [:uint64], :int64, blocking: true
       attach_function :urnet_connect_view_controller_add_connection_status_listener, [:uint64, :urnet_connection_status_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_add_grid_listener, [:uint64, :urnet_grid_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_connect_view_controller_add_location_match_listener, [:uint64, :urnet_location_match_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_add_selected_location_listener, [:uint64, :urnet_selected_location_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_close, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_connect, [:uint64, :string], :void, blocking: true
@@ -516,6 +518,7 @@ module URnetwork
       attach_function :urnet_connect_view_controller_get_connected, [:uint64], :bool, blocking: true
       attach_function :urnet_connect_view_controller_get_connection_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_get_grid, [:uint64], :uint64, blocking: true
+      attach_function :urnet_connect_view_controller_get_location_match, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_get_selected_location, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_stop, [:uint64], :void, blocking: true
