@@ -15,9 +15,8 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// testingLocationMatchListener records, for every LocationMatchChanged
-// signal, what the view controller's GetLocationMatch reads then, as an app
-// re-reads it.
+// Records, for every LocationMatchChanged signal, what the view controller's
+// GetLocationMatch reads then, as an app re-reads it.
 type testingLocationMatchListener struct {
 	vc              *ConnectViewController
 	stateLock       sync.Mutex
@@ -62,7 +61,7 @@ func (self *testingLocationMatchListener) waitForCount(t *testing.T, count int) 
 	}
 }
 
-// testingLocationMatch is the exported form the tests expect.
+// The exported form the tests expect.
 func testingLocationMatch(match string, mixed bool, name string, locationId connect.Id) LocationMatch {
 	locationMatch := LocationMatch{
 		Match: match,
@@ -89,7 +88,7 @@ func assertLocationMatch(t *testing.T, got *LocationMatch, want LocationMatch) {
 	}
 }
 
-// testingProviderLocation is a synthetic provider location with every id set.
+// A synthetic provider location with every id set.
 func testingProviderLocation(region string, country string) *connect.ProviderLocation {
 	regionLocationId := connect.NewId()
 	countryLocationId := connect.NewId()
@@ -123,10 +122,16 @@ func TestNewLocationMatchMapsTheWindowMatch(t *testing.T) {
 		newLocationMatch(connect.WindowLocationMatch{Match: connect.LocationMatchRegion}),
 		LocationMatch{Match: LocationMatchRegion},
 	)
-	// a level this build does not know reads as exact, name and all
+	// a level this build does not know reads as exact, name and all, whether
+	// a newer device process sends its own name for it or connect's other level
 	assertLocationMatch(
 		t,
 		newLocationMatch(connect.WindowLocationMatch{Match: "continent", Name: "Continent A", LocationId: locationId}),
+		LocationMatch{},
+	)
+	assertLocationMatch(
+		t,
+		newLocationMatch(connect.WindowLocationMatch{Match: connect.LocationMatch("continent").Normalize(), Name: "Continent A"}),
 		LocationMatch{},
 	)
 	// the exported levels are the connect levels
@@ -182,15 +187,53 @@ func TestConnectViewControllerLocationMatchFollowsTheWindowMonitor(t *testing.T)
 	assertLocationMatch(t, listener.received()[2], LocationMatch{})
 	assertLocationMatch(t, vc.GetLocationMatch(), LocationMatch{})
 
-	// an event that does not change the match does not fire the listener
+	// an event that does not change the match does not fire the listener. The
+	// grid handles the merged events one at a time, so a later event that
+	// changes the status is the barrier: once its status change is seen, the
+	// earlier event's callback, its location match write included, is done
 	otherExactClientId := connect.NewId()
 	qualityMonitor.AddProviderEventWithLocationMatch(otherExactClientId, connect.ProviderStateAdded, otherExactClientId, nil, connect.LocationMatchExact, connect.IpFamilyLegacy, nil)
-	if !testing_waitFor(10*time.Second, func() bool {
-		return grid.GetProviderGridPointByClientId(newId(otherExactClientId)) != nil
-	}) {
+	statusListener := newTestingConnectionStatusListener()
+	statusSub := vc.AddConnectionStatusListener(statusListener)
+	defer statusSub.Close()
+	qualityMonitor.AddWindowExpandEvent(true, 2, false)
+	statusListener.waitFor(t, vc, Connected)
+	if grid.GetProviderGridPointByClientId(newId(otherExactClientId)) == nil {
 		t.Fatal("the exact provider never reached the grid")
 	}
 	connect.AssertEqual(t, len(listener.received()), 3)
+}
+
+// Signals every ConnectionStatusChanged.
+type testingConnectionStatusListener struct {
+	notify chan struct{}
+}
+
+func newTestingConnectionStatusListener() *testingConnectionStatusListener {
+	return &testingConnectionStatusListener{
+		notify: make(chan struct{}, 1024),
+	}
+}
+
+// ConnectionStatusListener
+func (self *testingConnectionStatusListener) ConnectionStatusChanged() {
+	self.notify <- struct{}{}
+}
+
+// waits until a signal finds the view controller's status at want
+func (self *testingConnectionStatusListener) waitFor(t *testing.T, vc *ConnectViewController, want ConnectionStatus) {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case <-self.notify:
+			if vc.GetConnectionStatus() == want {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("connection status never reached %s: %s", want, vc.GetConnectionStatus())
+		}
+	}
 }
 
 // The match belongs to one selection: a gesture returns it to exact at once,
@@ -314,6 +357,129 @@ func TestConnectViewControllerLocationMatchIsExactWithoutAKnownFallback(t *testi
 	})
 	assertLocationMatch(t, vc.GetLocationMatch(), LocationMatch{})
 	connect.AssertEqual(t, len(listener.received()), 0)
+}
+
+// Sets a grid test monitor's window to a satisfied one whose providers are in
+// a region, and returns the match the view controller should read.
+func testingWindowMonitorWithRegion(monitor *testing_gridWindowMonitor) LocationMatch {
+	locationId := connect.NewId()
+	func() {
+		monitor.mu.Lock()
+		defer monitor.mu.Unlock()
+		monitor.windowExpandEvent = connect.WindowExpandEvent{
+			TargetSize:   2,
+			MinSatisfied: true,
+			LocationMatch: connect.WindowLocationMatch{
+				Match:      connect.LocationMatchRegion,
+				Name:       "Region A",
+				LocationId: locationId,
+			},
+		}
+	}()
+	return testingLocationMatch(LocationMatchRegion, false, "Region A", locationId)
+}
+
+// Through a device's view controller and its public Connect and Disconnect:
+// the connection's grid publishes its window's match, and the disconnect
+// returns it to exact, one signal each.
+func TestConnectViewControllerLocationMatchFollowsPublicConnectAndDisconnect(t *testing.T) {
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	device := testingPreferenceDevice(t, fixture)
+	controller := testingPreferenceController(t, device)
+	region := testingWindowMonitorWithRegion(controller.testingWindowMonitor.(*testing_gridWindowMonitor))
+	listener := newTestingLocationMatchListener(controller)
+	sub := controller.AddLocationMatchListener(listener)
+	defer sub.Close()
+
+	controller.Connect(testingSpecificPreferenceLocation())
+	connect.AssertEqual(t, controller.GetConnectionStatus(), Connected)
+	assertLocationMatch(t, controller.GetLocationMatch(), region)
+
+	controller.Disconnect()
+	connect.AssertEqual(t, controller.GetConnectionStatus(), Disconnected)
+	assertLocationMatch(t, controller.GetLocationMatch(), LocationMatch{})
+
+	received := listener.received()
+	if len(received) != 2 {
+		t.Fatalf("listener received %d changes, want 2: %+v", len(received), received)
+	}
+	assertLocationMatch(t, received[0], region)
+	assertLocationMatch(t, received[1], LocationMatch{})
+}
+
+// With autosave the gesture (beginLocalPreferenceGesture) changes neither the
+// status nor the match; the grid change that follows does. A reconnect clears
+// the match before its new grid publishes its window's, and a disconnect
+// clears it for good.
+func TestConnectViewControllerLocationMatchResetsOnTheAutoSaveGridChange(t *testing.T) {
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	device := testingPreferenceDevice(t, fixture)
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	controller := testingPreferenceController(t, device)
+	region := testingWindowMonitorWithRegion(controller.testingWindowMonitor.(*testing_gridWindowMonitor))
+	listener := newTestingLocationMatchListener(controller)
+	sub := controller.AddLocationMatchListener(listener)
+	defer sub.Close()
+
+	location := testingSpecificPreferenceLocation()
+	controller.Connect(location)
+	assertLocationMatch(t, controller.GetLocationMatch(), region)
+
+	controller.Connect(cloneConnectLocation(location))
+	assertLocationMatch(t, controller.GetLocationMatch(), region)
+
+	controller.Disconnect()
+	connect.AssertEqual(t, controller.GetConnectionStatus(), Disconnected)
+	assertLocationMatch(t, controller.GetLocationMatch(), LocationMatch{})
+
+	received := listener.received()
+	want := []LocationMatch{region, {}, region, {}}
+	if len(received) != len(want) {
+		t.Fatalf("listener received %d changes, want %d: %+v", len(received), len(want), received)
+	}
+	for i := range want {
+		assertLocationMatch(t, received[i], want[i])
+	}
+}
+
+// A disconnect the device makes itself, from another process or a sign-out,
+// reaches the view controller as ConnectLocationChanged(nil) with no gesture:
+// the grid goes, and the match returns to exact with it.
+func TestConnectViewControllerLocationMatchResetsWhenTheDeviceDisconnects(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vc := newTestingConnectViewController(ctx)
+	monitor := newTestingGridWindowMonitor()
+	vc.testingWindowMonitor = monitor
+	region := testingWindowMonitorWithRegion(monitor)
+	listener := newTestingLocationMatchListener(vc)
+	sub := vc.AddLocationMatchListener(listener)
+	defer sub.Close()
+
+	vc.ConnectLocationChanged(&ConnectLocation{
+		ConnectLocationId: &ConnectLocationId{LocationId: NewId()},
+		Name:              "City A",
+	})
+	connect.AssertEqual(t, vc.GetConnectionStatus(), Connected)
+	assertLocationMatch(t, vc.GetLocationMatch(), region)
+
+	generation := vc.generation
+	vc.ConnectLocationChanged(nil)
+	connect.AssertEqual(t, vc.generation, generation)
+	connect.AssertEqual(t, vc.GetConnectionStatus(), Disconnected)
+	assertLocationMatch(t, vc.GetLocationMatch(), LocationMatch{})
+
+	received := listener.received()
+	if len(received) != 2 {
+		t.Fatalf("listener received %d changes, want 2: %+v", len(received), received)
+	}
+	assertLocationMatch(t, received[0], region)
+	assertLocationMatch(t, received[1], LocationMatch{})
 }
 
 // Across the device rpc the window-level match rides the expand event the

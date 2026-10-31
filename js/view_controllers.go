@@ -107,10 +107,10 @@ func jsConnectGrid(grid *sdk.ConnectGrid) js.Value {
 	})
 }
 
-// jsLocationMatch converts the connect screen's location match: match is ""
-// (the selected location), "region" or "country" (the providers in use are
-// there because the selected location has none), with the name and id of
-// that region or country. locationId is omitted when unknown.
+// Converts the connect screen's location match: match is "" (the selected
+// location), "region" or "country" (the providers in use are there because the
+// selected location has none), with the name and id of that region or country.
+// locationId is omitted when unknown.
 func jsLocationMatch(locationMatch *sdk.LocationMatch) js.Value {
 	if locationMatch == nil {
 		return js.Null()
