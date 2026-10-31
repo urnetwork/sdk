@@ -34,6 +34,7 @@ func TestDeviceLocalSettingsJsonRoundTrip(t *testing.T) {
 		"GeneratorFunc",
 		"MultiClientIdentityStore",
 		"SchedulerPauseDetector",
+		"WindowClientStats",
 		"ProviderDialContextSettings",
 		"KeyMaterial",
 		"ClientSettings",
