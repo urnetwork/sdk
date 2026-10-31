@@ -1452,6 +1452,10 @@ type FindProviders2Args struct {
 	// IpFamilyFilterV6Capable (dualstack first, then v6-only), or the exact
 	// categories IpFamilyDualstack, IpFamilyV4Only, IpFamilyV6Only.
 	IpFamily string `json:"ip_family,omitempty"`
+	// Strict asks for the requested locations only. Unset, a city or region
+	// the server holds no admitted provider for is answered from its region,
+	// then its country, and each provider found there carries its Match.
+	Strict bool `json:"strict,omitempty"`
 }
 
 // MultiHopIdList is a list of multi-hop ids, each an ordered *IdList
@@ -1492,6 +1496,12 @@ type FindProvidersProvider struct {
 	// IpFamilyV4Only or IpFamilyV6Only; empty for a fixed client-id spec,
 	// which bypasses discovery
 	IpFamily string `json:"ip_family,omitempty"`
+	// Match is LocationTypeRegion or LocationTypeCountry when the provider
+	// was found there because the requested city or region had no admitted
+	// provider, so an app can say what it shows in place of the location it
+	// asked for. Empty for a provider of the requested location itself, a
+	// fixed client-id spec, a Strict request, and from an older server.
+	Match string `json:"match,omitempty"`
 }
 
 // `model.ProviderLocation`: the location of a provider client, resolved from

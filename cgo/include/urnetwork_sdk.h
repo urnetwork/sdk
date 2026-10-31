@@ -3634,6 +3634,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rank_mode?: string
  *   force_minimum?: boolean
  *   ip_family?: string
+ *   strict?: boolean
  */
 
 /* FindProviders2Result (json):
@@ -3657,6 +3658,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   reputation_failed_names?: string
  *   location?: ProviderLocation | null
  *   ip_family?: string
+ *   match?: string
  */
 
 /* FindProvidersProviderList (json):

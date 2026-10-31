@@ -35,7 +35,8 @@ func TestFindProviders2DecodeMatchesServer(t *testing.T) {
 					"country": "United States", "country_code": "us",
 					"region": "California", "city": "Palo Alto",
 					"city_coordinates": {"lat": 37.44, "lon": -122.14}
-				}
+				},
+				"match": "region"
 			},
 			{"client_id": "00000000-0000-0000-0000-000000000042", "estimated_bytes_per_second": 0, "has_estimated_bytes_per_second": false, "tier": 0}
 		]}`)
@@ -57,12 +58,17 @@ func TestFindProviders2DecodeMatchesServer(t *testing.T) {
 	if p.IntermediaryIds != nil {
 		t.Errorf("intermediary_ids should be absent, got %+v", p.IntermediaryIds)
 	}
+	// found in the requested city's region because the city had no
+	// admitted provider
+	if p.Match != LocationTypeRegion {
+		t.Errorf("match = %q, want %q", p.Match, LocationTypeRegion)
+	}
 	if p.Location == nil || p.Location.City != "Palo Alto" || p.Location.CityCoordinates == nil ||
 		p.Location.CityCoordinates.Lat != 37.44 || p.Location.RegionCoordinates != nil {
 		t.Errorf("location = %+v", p.Location)
 	}
 	fixed := r.Result.ProviderStats.Get(1)
-	if fixed.Location != nil || fixed.IpFamily != "" || fixed.Tier != 0 {
+	if fixed.Location != nil || fixed.IpFamily != "" || fixed.Tier != 0 || fixed.Match != "" {
 		t.Errorf("fixed provider = %+v", fixed)
 	}
 }
@@ -92,6 +98,23 @@ func TestFindProviders2ArgsEncodeMatchesServer(t *testing.T) {
 	}
 	if wire["force_count"] != true || wire["rank_mode"] != "speed" || wire["ip_family"] != "v6-capable" {
 		t.Errorf("wire = %s", b)
+	}
+	// unset, strict is left off the wire, so the server answers an empty
+	// city or region from above it
+	if _, ok := wire["strict"]; ok {
+		t.Errorf("strict sent unset: %s", b)
+	}
+	args.Strict = true
+	b, err = json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire = map[string]any{}
+	if err := json.Unmarshal(b, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["strict"] != true {
+		t.Errorf("strict = %v (the wire name is strict)", wire["strict"])
 	}
 	dests, _ := wire["exclude_destinations"].([]any)
 	if len(dests) != 1 {
