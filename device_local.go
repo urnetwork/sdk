@@ -822,8 +822,8 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport a pointer to another package's struct, which gomobile
 	// does not bind. Go/headless hosts only.
 	SchedulerPauseDetector *connect.SchedulerPauseDetector `json:"-"`
-	// WindowClientStats, when set, is the process's counters of what the
-	// device's windows do with their window clients
+	// When set, the process's counters of what the device's windows do with
+	// their window clients
 	// (`connect.MultiClientSettings.WindowClientStats`). A host that runs many
 	// devices in one process (the proxy service) sets one instance on all of
 	// them and exports it. Nil counts nothing.
@@ -831,6 +831,14 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport a pointer to another package's struct, which gomobile
 	// does not bind. Go/headless hosts only.
 	WindowClientStats *connect.WindowClientStats `json:"-"`
+	// Turns off a strict window's handover
+	// (`connect.MultiClientSettings.StrictWindowHandover`): with it, a window
+	// at its hard max builds candidates the hard max refuses, and its warned
+	// clients keep their slots. The host's kill switch (the proxy service's
+	// window_strict_handover); false keeps the connect default.
+	//
+	//gomobile:noexport a host's kill switch. Go/headless hosts only.
+	DisableStrictWindowHandover bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2527,6 +2535,15 @@ func applyPlatformTransportMemoryUsage(
 		usage.PlatformTransportPreemptedH3Count = 1<<63 - 1
 	} else {
 		usage.PlatformTransportPreemptedH3Count = int64(platformTransportStats.PreemptedH3Count)
+	}
+}
+
+// The window policy the host chose for every multi client of the device: the
+// process counters its windows count into, and its handover kill switch.
+func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
+	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
+	if deviceLocalSettings.DisableStrictWindowHandover {
+		settings.StrictWindowHandover = false
 	}
 }
 
@@ -5176,7 +5193,7 @@ func (self *DeviceLocal) applyDestination(
 				settings.OverrideAllowDirect = &overrideAllowDirect
 			}
 			settings.SchedulerPauseDetector = self.settings.SchedulerPauseDetector
-			settings.WindowClientStats = self.settings.WindowClientStats
+			applyDeviceLocalWindowClientSettings(settings, self.settings)
 			if self.clientSecurityPolicyGenerator != nil {
 				settings.SecurityPolicyGenerator = self.clientSecurityPolicyGenerator
 			}

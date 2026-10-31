@@ -70,3 +70,24 @@ func TestDeviceLocalMultiClientsCountIntoTheWindowClientStats(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// A device keeps connect's strict window handover unless the host turns it
+// off, and carries the host's counters either way.
+func TestDeviceLocalWindowClientSettingsCarryTheHandoverKillSwitch(t *testing.T) {
+	stats := connect.NewWindowClientStats()
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.WindowClientStats = stats
+
+	settings := connect.DefaultMultiClientSettings()
+	applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+	if !settings.StrictWindowHandover || settings.WindowClientStats != stats {
+		t.Fatal("a device without the kill switch lost the handover or the host's counters")
+	}
+
+	deviceLocalSettings.DisableStrictWindowHandover = true
+	settings = connect.DefaultMultiClientSettings()
+	applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+	if settings.StrictWindowHandover || settings.WindowClientStats != stats {
+		t.Fatal("the host's kill switch left the handover on or dropped its counters")
+	}
+}
