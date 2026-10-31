@@ -2,7 +2,12 @@ module github.com/urnetwork/sdk/cgo
 
 go 1.27.3
 
-require golang.org/x/tools v0.48.0
+require (
+	github.com/urnetwork/connect/v2026 v2026.10.30-1086064830
+	github.com/urnetwork/glog/v2026 v2026.10.30-1086064830
+	github.com/urnetwork/sdk/v2026 v2026.10.30-1086064830
+	golang.org/x/tools v0.48.0
+)
 
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
@@ -73,10 +78,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
-	github.com/urnetwork/connect/v2026 v2026.10.30-1086064830
-	github.com/urnetwork/glog/v2026 v2026.10.30-1086064830
-	github.com/urnetwork/goidenticons/v2026 v2026.10.30-1086064830
-	github.com/urnetwork/sdk/v2026 v2026.10.30-1086064830
+	github.com/urnetwork/goidenticons/v2026 v2026.10.30-1086064830 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
