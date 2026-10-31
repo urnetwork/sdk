@@ -30,14 +30,15 @@ const (
 	ConnectFailed string = "CONNECT_FAILED"
 )
 
-// LocationMatch.Match values: whether the providers in use are in the selected
-// location, or in its region or country because it has none. A fallback value
-// is the LocationType of the location shown instead.
+// The values of LocationMatch.Match: whether the providers in use are in the
+// selected location, or in its region or country because it has none. A
+// fallback value is the LocationType of the location shown instead.
 const (
 	// The providers in use are in the selected location. Also every
 	// connection while no provider is in use, every connection without a
-	// location target (best available, a group, a peer), and every connection
-	// to a device process or server that predates the marker.
+	// location target (best available, a group, a peer), every connection to
+	// a device process or server that predates the marker, and providers at a
+	// level this build does not know.
 	LocationMatchExact string = ""
 	// The selected city has no provider: the providers in use are in its
 	// region.
@@ -48,36 +49,38 @@ const (
 	LocationMatchCountry string = "country"
 )
 
-// LocationMatch is whether the connection shows the location the user
-// selected, for the connect screen's notice: while Match is not exact, the
-// apps say "No providers in <selected location>; showing <Name>". The platform
-// answers a city or region with no provider from its region, then its country,
-// and marks each provider found there; this is the window-level summary of the
+// Whether the connection shows the location the user selected, for the
+// connect screen's notice: while Match is not exact, the apps say "No
+// providers in <selected location>; showing <Name>". The platform answers a
+// city or region with no provider from its region, then its country, and
+// marks each provider found there; this is the window-level summary of the
 // providers in use (connect location_match.go), so an app needs no
-// per-provider logic. Immutable.
+// per-provider logic. A provider is in use from the moment it is Added, which
+// can be while the connection status is still CONNECTING: the notice shows as
+// soon as a fallback provider is Added, because that is where the traffic
+// exits. Immutable.
 type LocationMatch struct {
 	// LocationMatchExact, LocationMatchRegion or LocationMatchCountry: the
 	// broadest level among the providers in use. A connection sends new flows
 	// to any of them, so one provider outside the selected location is enough.
 	Match string
-	// Mixed is true while some providers in use are in the selected location
-	// itself and others are not, so "No providers in <city>" would be untrue;
-	// say "Also showing <Name>" instead. It is a transition: the location's
-	// own providers came back and the fallback ones have not rotated out yet.
+	// True while some providers in use are in the selected location itself
+	// and others are not, so "No providers in <city>" would be untrue; say
+	// "Also showing <Name>" instead. It is a transition: the location's own
+	// providers came back and the fallback ones have not rotated out yet.
 	// False when Match is exact.
 	Mixed bool
-	// Name is the name of the region or country shown instead, from the
-	// providers' location. Empty when Match is exact, and when the server sent
-	// no location; then name the selected location's own Region or Country.
+	// The name of the region or country shown instead, from the providers'
+	// location. Empty when Match is exact, and when the server sent no
+	// location; then name the selected location's own Region or Country.
 	Name string
-	// LocationId is the id of that region or country location. nil when Match
-	// is exact or the server did not send it.
+	// The id of that region or country location. nil when Match is exact or
+	// the server did not send it.
 	LocationId *Id
 }
 
-// newLocationMatch maps the window-level match to the exported form. A level
-// this build does not know reads as exact, all of it, as connect normalizes a
-// provider's level.
+// Maps the window-level match to the exported form. A level this build does
+// not know reads as exact, all of it.
 func newLocationMatch(windowLocationMatch connect.WindowLocationMatch) *LocationMatch {
 	windowLocationMatch = exactUnlessKnownLocationMatch(windowLocationMatch)
 	locationMatch := &LocationMatch{
@@ -91,11 +94,11 @@ func newLocationMatch(windowLocationMatch connect.WindowLocationMatch) *Location
 	return locationMatch
 }
 
-// exactUnlessKnownLocationMatch is the zero (exact) match for a level this
-// build does not know, as a newer device process could send, so neither a
-// change nor a name is reported for it.
+// The zero (exact) match unless the level is a fallback this build can name,
+// so a level a newer device process could send reports neither a change nor a
+// name.
 func exactUnlessKnownLocationMatch(windowLocationMatch connect.WindowLocationMatch) connect.WindowLocationMatch {
-	if windowLocationMatch.Match.Normalize() == connect.LocationMatchExact {
+	if !windowLocationMatch.Match.IsFallback() {
 		return connect.WindowLocationMatch{}
 	}
 	return windowLocationMatch
@@ -139,9 +142,9 @@ type ConnectViewController struct {
 	// this is set when the client is connected
 	connected        bool
 	connectionStatus ConnectionStatus
-	// locationMatch is the connected grid's window-level location match,
-	// written with connectionStatus under the same generation gate and reset
-	// to exact by every gesture and grid change. Never an unknown level.
+	// The connected grid's window-level location match, written with
+	// connectionStatus under the same generation gate and reset to exact by
+	// every gesture and grid change. Never a level this build does not know.
 	locationMatch    connect.WindowLocationMatch
 	selectedLocation *ConnectLocation
 	grid             *ConnectGrid
@@ -312,12 +315,13 @@ func (self *ConnectViewController) AddConnectionStatusListener(listener Connecti
 	})
 }
 
-// GetLocationMatch is whether the connection shows the selected location (see
-// LocationMatch). Never nil. Exact while disconnected, from each gesture until
-// the new connection's providers are in use, and with a device process or
-// server that predates the marker. It changes with the connection's providers
-// in use, on the same window events and generation gate as
-// GetConnectionStatus.
+// Whether the connection shows the selected location (see LocationMatch).
+// Never nil. Exact while disconnected, from each gesture until a provider of
+// the new connection is Added, and with a device process or server that
+// predates the marker. It can be a fallback while GetConnectionStatus is still
+// CONNECTING: it follows the Added providers, which carry traffic before the
+// connection reaches its minimum. It changes with them, on the same window
+// events and generation gate as GetConnectionStatus.
 func (self *ConnectViewController) GetLocationMatch() *LocationMatch {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -472,8 +476,7 @@ func (self *ConnectViewController) setConnectionStatusForGeneration(status Conne
 	self.setConnectionForGeneration(status, connect.WindowLocationMatch{}, generation)
 }
 
-// setConnectionForGeneration writes the status and the location match of one
-// window snapshot together, under the gate of
+// Writes the status and the location match of one window snapshot together, under the gate of
 // setConnectionStatusForGeneration: a stale event changes neither, and a
 // listener of either never sees one from a newer snapshot than the other.
 func (self *ConnectViewController) setConnectionForGeneration(

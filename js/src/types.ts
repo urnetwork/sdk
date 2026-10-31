@@ -449,8 +449,11 @@ export type ConnectionStatus =
  * country, and marks the providers it found there; this is the window-level
  * summary of the providers in use. While `match` is not "", say "No providers
  * in <selected location>; showing <name>" ("Also showing <name>" while
- * `mixed`). Exact ("") while disconnected, from each connect until providers
- * are in use, and from a device or server that predates the marker.
+ * `mixed`). Exact ("") while disconnected, from each connect until a provider
+ * is Added, and from a device or server that predates the marker. It can be a
+ * fallback while getConnectionStatus() is still "CONNECTING": a provider
+ * carries traffic from the moment it is Added, before the connection reaches
+ * its minimum.
  */
 export interface LocationMatch {
   /** "" the selected location; "region" or "country" the level shown instead */
