@@ -343,6 +343,9 @@ inline constexpr const char* LicenseKindFont = "font";
 inline constexpr const char* LicenseKindSoftware = "software";
 inline constexpr int64_t LocalStorageDirectoryPermissions = 448;
 inline constexpr int64_t LocalStorageFilePermissions = 384;
+inline constexpr const char* LocationMatchCountry = "country";
+inline constexpr const char* LocationMatchExact = "";
+inline constexpr const char* LocationMatchRegion = "region";
 inline constexpr const char* LocationTypeCity = "city";
 inline constexpr const char* LocationTypeCountry = "country";
 inline constexpr const char* LocationTypeRegion = "region";
@@ -811,6 +814,7 @@ struct LicenseInfo;
 struct ListApiKeysResult;
 struct LocationDeviceResult;
 struct LocationGroupResult;
+struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
@@ -2518,6 +2522,13 @@ struct LocationGroupResult {
 	std::optional<int64_t> provider_count;
 	std::optional<bool> promoted;
 	std::optional<int64_t> match_distance;
+};
+
+struct LocationMatch {
+	std::string Match{};
+	bool Mixed{};
+	std::string Name{};
+	std::optional<std::string> LocationId;
 };
 
 struct LocationResult {
@@ -4517,6 +4528,8 @@ inline void to_json(nlohmann::json& j, const LocationDeviceResult& v);
 inline void from_json(const nlohmann::json& j, LocationDeviceResult& v);
 inline void to_json(nlohmann::json& j, const LocationGroupResult& v);
 inline void from_json(const nlohmann::json& j, LocationGroupResult& v);
+inline void to_json(nlohmann::json& j, const LocationMatch& v);
+inline void from_json(const nlohmann::json& j, LocationMatch& v);
 inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
@@ -11537,6 +11550,35 @@ inline void from_json(const nlohmann::json& j, LocationGroupResult& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.match_distance = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const LocationMatch& v) {
+	j = nlohmann::json::object();
+	j["Match"] = v.Match;
+	j["Mixed"] = v.Mixed;
+	j["Name"] = v.Name;
+	if (v.LocationId) {
+		j["LocationId"] = *v.LocationId;
+	}
+}
+inline void from_json(const nlohmann::json& j, LocationMatch& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Match"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Match);
+	}
+	if (auto it = j.find("Mixed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Mixed);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("LocationId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.LocationId = std::move(tmp);
 	}
 }
 
@@ -19229,6 +19271,7 @@ using JwtRefreshListener = std::function<void(std::string jwt)>;
 using ListApiKeysCallback = std::function<void(std::optional<ListApiKeysResult> result, std::optional<std::string> err_param)>;
 using LocalOverrideAppIdsListener = std::function<void()>;
 using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;
+using LocationMatchListener = std::function<void()>;
 using NetworkBlockLocationCallback = std::function<void(std::optional<NetworkBlockLocationResult> result, std::optional<std::string> err_param)>;
 using NetworkCheckCallback = std::function<void(std::optional<NetworkCheckResult> result, std::optional<std::string> err_param)>;
 using NetworkClientsListener = std::function<void(std::optional<NetworkClientInfoList> network_clients)>;
@@ -19881,6 +19924,7 @@ public:
 	explicit ConnectViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addConnectionStatusListener(ConnectionStatusListener listener) const;
 	Sub addGridListener(GridListener listener) const;
+	Sub addLocationMatchListener(LocationMatchListener listener) const;
 	Sub addSelectedLocationListener(SelectedLocationListener listener) const;
 	void close() const;
 	void connect(const std::optional<ConnectLocation>& location) const;
@@ -19890,6 +19934,7 @@ public:
 	bool getConnected() const;
 	std::string getConnectionStatus() const;
 	ConnectGrid getGrid() const;
+	std::optional<LocationMatch> getLocationMatch() const;
 	std::optional<ConnectLocation> getSelectedLocation() const;
 	void start() const;
 	void stop() const;
@@ -23715,6 +23760,26 @@ inline void oneshot_local_state_save(void* user_data, uint64_t result) {
 	try {
 		DeviceLocalSaveResult result_v(result);
 		(*f)(std::move(result_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_location_match(void* user_data) {
+	auto* f = static_cast<LocationMatchListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_location_match(void* user_data) {
+	auto* f = static_cast<LocationMatchListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -29983,6 +30048,17 @@ inline Sub ConnectViewController::addGridListener(GridListener listener) const {
 	}
 	return r;
 }
+inline Sub ConnectViewController::addLocationMatchListener(LocationMatchListener listener) const {
+	std::shared_ptr<LocationMatchListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<LocationMatchListener>(std::move(listener));
+	}
+	Sub r(urnet_connect_view_controller_add_location_match_listener(handle(), listener_fn ? &detail::retained_location_match : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub ConnectViewController::addSelectedLocationListener(SelectedLocationListener listener) const {
 	std::shared_ptr<SelectedLocationListener> listener_fn;
 	if (listener) {
@@ -30032,6 +30108,14 @@ inline std::string ConnectViewController::getConnectionStatus() const {
 inline ConnectGrid ConnectViewController::getGrid() const {
 	ConnectGrid r(urnet_connect_view_controller_get_grid(handle()));
 	return r;
+}
+inline std::optional<LocationMatch> ConnectViewController::getLocationMatch() const {
+	char* r_c = urnet_connect_view_controller_get_location_match(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<LocationMatch>(r_s->c_str());
 }
 inline std::optional<ConnectLocation> ConnectViewController::getSelectedLocation() const {
 	char* r_c = urnet_connect_view_controller_get_selected_location(handle());

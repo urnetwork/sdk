@@ -15,6 +15,7 @@ func newTestingConnectViewController(ctx context.Context) *ConnectViewController
 		device:                    nil,
 		selectedLocationListeners: connect.NewCallbackList[SelectedLocationListener](),
 		connectionStatusListeners: connect.NewCallbackList[ConnectionStatusListener](),
+		locationMatchListeners:    connect.NewCallbackList[LocationMatchListener](),
 		gridListeners:             connect.NewCallbackList[GridListener](),
 	}
 }

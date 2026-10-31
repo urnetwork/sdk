@@ -101,6 +101,7 @@ public interface Raw extends Library {
   interface urnet_list_api_keys_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_local_override_app_ids_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_local_state_save_cb extends Callback { void invoke(Pointer a0, long a1); }
+  interface urnet_location_match_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_network_block_location_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_network_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_network_clients_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -508,6 +509,7 @@ public interface Raw extends Library {
   long urnet_connect_grid_get_window_target_size(long a0);
   long urnet_connect_view_controller_add_connection_status_listener(long a0, urnet_connection_status_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_grid_listener(long a0, urnet_grid_cb a1, Pointer a2);
+  long urnet_connect_view_controller_add_location_match_listener(long a0, urnet_location_match_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_selected_location_listener(long a0, urnet_selected_location_cb a1, Pointer a2);
   void urnet_connect_view_controller_close(long a0);
   void urnet_connect_view_controller_connect(long a0, String a1);
@@ -517,6 +519,7 @@ public interface Raw extends Library {
   byte urnet_connect_view_controller_get_connected(long a0);
   Pointer urnet_connect_view_controller_get_connection_status(long a0);
   long urnet_connect_view_controller_get_grid(long a0);
+  Pointer urnet_connect_view_controller_get_location_match(long a0);
   Pointer urnet_connect_view_controller_get_selected_location(long a0);
   void urnet_connect_view_controller_start(long a0);
   void urnet_connect_view_controller_stop(long a0);

@@ -30,12 +30,91 @@ const (
 	ConnectFailed string = "CONNECT_FAILED"
 )
 
+// LocationMatch.Match values: whether the providers in use are in the selected
+// location, or in its region or country because it has none. A fallback value
+// is the LocationType of the location shown instead.
+const (
+	// The providers in use are in the selected location. Also every
+	// connection while no provider is in use, every connection without a
+	// location target (best available, a group, a peer), and every connection
+	// to a device process or server that predates the marker.
+	LocationMatchExact string = ""
+	// The selected city has no provider: the providers in use are in its
+	// region.
+	LocationMatchRegion string = "region"
+	// The selected city or region has no provider, nor does its region: the
+	// providers in use are in its country. The platform never answers from
+	// another country.
+	LocationMatchCountry string = "country"
+)
+
+// LocationMatch is whether the connection shows the location the user
+// selected, for the connect screen's notice: while Match is not exact, the
+// apps say "No providers in <selected location>; showing <Name>". The platform
+// answers a city or region with no provider from its region, then its country,
+// and marks each provider found there; this is the window-level summary of the
+// providers in use (connect location_match.go), so an app needs no
+// per-provider logic. Immutable.
+type LocationMatch struct {
+	// LocationMatchExact, LocationMatchRegion or LocationMatchCountry: the
+	// broadest level among the providers in use. A connection sends new flows
+	// to any of them, so one provider outside the selected location is enough.
+	Match string
+	// Mixed is true while some providers in use are in the selected location
+	// itself and others are not, so "No providers in <city>" would be untrue;
+	// say "Also showing <Name>" instead. It is a transition: the location's
+	// own providers came back and the fallback ones have not rotated out yet.
+	// False when Match is exact.
+	Mixed bool
+	// Name is the name of the region or country shown instead, from the
+	// providers' location. Empty when Match is exact, and when the server sent
+	// no location; then name the selected location's own Region or Country.
+	Name string
+	// LocationId is the id of that region or country location. nil when Match
+	// is exact or the server did not send it.
+	LocationId *Id
+}
+
+// newLocationMatch maps the window-level match to the exported form. A level
+// this build does not know reads as exact, all of it, as connect normalizes a
+// provider's level.
+func newLocationMatch(windowLocationMatch connect.WindowLocationMatch) *LocationMatch {
+	windowLocationMatch = exactUnlessKnownLocationMatch(windowLocationMatch)
+	locationMatch := &LocationMatch{
+		Match: string(windowLocationMatch.Match),
+		Mixed: windowLocationMatch.Mixed,
+		Name:  windowLocationMatch.Name,
+	}
+	if windowLocationMatch.LocationId != (connect.Id{}) {
+		locationMatch.LocationId = newId(windowLocationMatch.LocationId)
+	}
+	return locationMatch
+}
+
+// exactUnlessKnownLocationMatch is the zero (exact) match for a level this
+// build does not know, as a newer device process could send, so neither a
+// change nor a name is reported for it.
+func exactUnlessKnownLocationMatch(windowLocationMatch connect.WindowLocationMatch) connect.WindowLocationMatch {
+	if windowLocationMatch.Match.Normalize() == connect.LocationMatchExact {
+		return connect.WindowLocationMatch{}
+	}
+	return windowLocationMatch
+}
+
 type SelectedLocationListener interface {
 	SelectedLocationChanged(location *ConnectLocation)
 }
 
 type ConnectionStatusListener interface {
 	ConnectionStatusChanged()
+}
+
+// fires on every change of `ConnectViewController.GetLocationMatch`. Signal
+// only: re-read GetLocationMatch, which is always the latest value. Two writes
+// that race can notify in either order, so a value carried by the call could
+// arrive stale.
+type LocationMatchListener interface {
+	LocationMatchChanged()
 }
 
 // type ConnectGridListener interface {
@@ -60,6 +139,10 @@ type ConnectViewController struct {
 	// this is set when the client is connected
 	connected        bool
 	connectionStatus ConnectionStatus
+	// locationMatch is the connected grid's window-level location match,
+	// written with connectionStatus under the same generation gate and reset
+	// to exact by every gesture and grid change. Never an unknown level.
+	locationMatch    connect.WindowLocationMatch
 	selectedLocation *ConnectLocation
 	grid             *ConnectGrid
 	// Immutable test producer installed before any connected grid exists.
@@ -78,6 +161,7 @@ type ConnectViewController struct {
 
 	selectedLocationListeners *connect.CallbackList[SelectedLocationListener]
 	connectionStatusListeners *connect.CallbackList[ConnectionStatusListener]
+	locationMatchListeners    *connect.CallbackList[LocationMatchListener]
 	// connectGridListeners       *connect.CallbackList[ConnectGridListener]
 	gridListeners *connect.CallbackList[GridListener]
 }
@@ -97,6 +181,7 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 
 		selectedLocationListeners: connect.NewCallbackList[SelectedLocationListener](),
 		connectionStatusListeners: connect.NewCallbackList[ConnectionStatusListener](),
+		locationMatchListeners:    connect.NewCallbackList[LocationMatchListener](),
 		// connectGridListeners:       connect.NewCallbackList[ConnectGridListener](),
 		// windowSizeListeners:   connect.NewCallbackList[WindowSizeListener](),
 		gridListeners: connect.NewCallbackList[GridListener](),
@@ -227,6 +312,33 @@ func (self *ConnectViewController) AddConnectionStatusListener(listener Connecti
 	})
 }
 
+// GetLocationMatch is whether the connection shows the selected location (see
+// LocationMatch). Never nil. Exact while disconnected, from each gesture until
+// the new connection's providers are in use, and with a device process or
+// server that predates the marker. It changes with the connection's providers
+// in use, on the same window events and generation gate as
+// GetConnectionStatus.
+func (self *ConnectViewController) GetLocationMatch() *LocationMatch {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return newLocationMatch(self.locationMatch)
+}
+
+func (self *ConnectViewController) AddLocationMatchListener(listener LocationMatchListener) Sub {
+	callbackId := self.locationMatchListeners.Add(listener)
+	return newSub(func() {
+		self.locationMatchListeners.Remove(callbackId)
+	})
+}
+
+func (self *ConnectViewController) locationMatchChanged() {
+	for _, listener := range self.locationMatchListeners.Get() {
+		connect.HandleError(func() {
+			listener.LocationMatchChanged()
+		})
+	}
+}
+
 func (self *ConnectViewController) AddSelectedLocationListener(listener SelectedLocationListener) Sub {
 	callbackId := self.selectedLocationListeners.Add(listener)
 	return newSub(func() {
@@ -313,9 +425,11 @@ func (self *ConnectViewController) setConnected(connected bool) {
 // status in the same critical section. Leaving Connected behind until the
 // asynchronous device callback arrives lets observers combine the outgoing
 // status with the newly selected destination and mistake a switch for a live
-// connection.
+// connection. The location match returns to exact for the same reason: the
+// outgoing connection's fallback must not read as the new selection's.
 func (self *ConnectViewController) beginGeneration(status ConnectionStatus) {
 	changed := false
+	locationMatchChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -324,9 +438,16 @@ func (self *ConnectViewController) beginGeneration(status ConnectionStatus) {
 			self.connectionStatus = status
 			changed = true
 		}
+		if self.locationMatch != (connect.WindowLocationMatch{}) {
+			self.locationMatch = connect.WindowLocationMatch{}
+			locationMatchChanged = true
+		}
 	}()
 	if changed {
 		self.connectionStatusChanged()
+	}
+	if locationMatchChanged {
+		self.locationMatchChanged()
 	}
 }
 
@@ -344,9 +465,25 @@ func (self *ConnectViewController) generationCurrent(generation uint64) bool {
 // after a monitor event passed the entry gate — but before the event finished
 // computing the grid and reached its status write — can never be overwritten
 // by that event's stale status. The entry gate alone leaves exactly that seam
-// open, and the seam is the original defect in miniature.
+// open, and the seam is the original defect in miniature. A status written
+// without a window (a grid set or cleared, a disconnect) carries an exact
+// location match.
 func (self *ConnectViewController) setConnectionStatusForGeneration(status ConnectionStatus, generation uint64) {
+	self.setConnectionForGeneration(status, connect.WindowLocationMatch{}, generation)
+}
+
+// setConnectionForGeneration writes the status and the location match of one
+// window snapshot together, under the gate of
+// setConnectionStatusForGeneration: a stale event changes neither, and a
+// listener of either never sees one from a newer snapshot than the other.
+func (self *ConnectViewController) setConnectionForGeneration(
+	status ConnectionStatus,
+	windowLocationMatch connect.WindowLocationMatch,
+	generation uint64,
+) {
+	windowLocationMatch = exactUnlessKnownLocationMatch(windowLocationMatch)
 	changed := false
+	locationMatchChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -357,9 +494,16 @@ func (self *ConnectViewController) setConnectionStatusForGeneration(status Conne
 			self.connectionStatus = status
 			changed = true
 		}
+		if self.locationMatch != windowLocationMatch {
+			self.locationMatch = windowLocationMatch
+			locationMatchChanged = true
+		}
 	}()
 	if changed {
 		self.connectionStatusChanged()
+	}
+	if locationMatchChanged {
+		self.locationMatchChanged()
 	}
 }
 
@@ -1297,5 +1441,11 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 	if windowSizeChanged || providerGridPointChanged {
 		self.connectViewController.gridChanged()
 	}
-	self.connectViewController.setConnectionStatusForGeneration(connectionStatus, self.generation)
+	// the expand event carries the window-level location match, merged across
+	// the windows, so the grid keeps no per-provider copy of it
+	self.connectViewController.setConnectionForGeneration(
+		connectionStatus,
+		windowExpandEvent.LocationMatch,
+		self.generation,
+	)
 }

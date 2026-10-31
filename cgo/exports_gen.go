@@ -1588,6 +1588,16 @@ func (self *cAdapterLocalStateSaveListener) LocalStateSaved(result *sdk.DeviceLo
 	C.urnet_invoke_local_state_save(self.cbLocalStateSaved, self.userData, result_)
 }
 
+type cAdapterLocationMatchListener struct {
+	cbLocationMatchChanged C.urnet_location_match_cb
+	userData               unsafe.Pointer
+}
+
+func (self *cAdapterLocationMatchListener) LocationMatchChanged() {
+	defer cgoGuard("urnet_location_match_cb")
+	C.urnet_invoke_location_match(self.cbLocationMatchChanged, self.userData)
+}
+
 type cAdapterNetworkBlockLocationCallback struct {
 	cbResult C.urnet_network_block_location_cb
 	userData unsafe.Pointer
@@ -7696,6 +7706,21 @@ func urnet_connect_view_controller_add_grid_listener(self C.uint64_t, listener_g
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_connect_view_controller_add_location_match_listener
+func urnet_connect_view_controller_add_location_match_listener(self C.uint64_t, listener_location_match_changed C.urnet_location_match_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_connect_view_controller_add_location_match_listener")
+	self_, ok := resolveHandle[*sdk.ConnectViewController](uint64(self), "urnet_connect_view_controller_add_location_match_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.LocationMatchListener
+	if listener_location_match_changed != nil {
+		listener_ = &cAdapterLocationMatchListener{cbLocationMatchChanged: listener_location_match_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddLocationMatchListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_connect_view_controller_add_selected_location_listener
 func urnet_connect_view_controller_add_selected_location_listener(self C.uint64_t, listener_selected_location_changed C.urnet_selected_location_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_connect_view_controller_add_selected_location_listener")
@@ -7809,6 +7834,20 @@ func urnet_connect_view_controller_get_grid(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_connect_view_controller_get_location_match
+func urnet_connect_view_controller_get_location_match(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_connect_view_controller_get_location_match")
+	self_, ok := resolveHandle[*sdk.ConnectViewController](uint64(self), "urnet_connect_view_controller_get_location_match")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetLocationMatch()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_connect_view_controller_get_location_match")
 }
 
 //export urnet_connect_view_controller_get_selected_location

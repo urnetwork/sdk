@@ -203,6 +203,8 @@ typedef void (*urnet_local_override_app_ids_cb)(void* user_data);
 void urnet_invoke_local_override_app_ids(urnet_local_override_app_ids_cb cb, void* user_data);
 typedef void (*urnet_local_state_save_cb)(void* user_data, uint64_t result);
 void urnet_invoke_local_state_save(urnet_local_state_save_cb cb, void* user_data, uint64_t result);
+typedef void (*urnet_location_match_cb)(void* user_data);
+void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data);
 typedef void (*urnet_network_block_location_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_network_block_location(urnet_network_block_location_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_network_check_cb)(void* user_data, const char* result_json, const char* err_param);

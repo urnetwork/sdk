@@ -107,9 +107,29 @@ func jsConnectGrid(grid *sdk.ConnectGrid) js.Value {
 	})
 }
 
+// jsLocationMatch converts the connect screen's location match: match is ""
+// (the selected location), "region" or "country" (the providers in use are
+// there because the selected location has none), with the name and id of
+// that region or country. locationId is omitted when unknown.
+func jsLocationMatch(locationMatch *sdk.LocationMatch) js.Value {
+	if locationMatch == nil {
+		return js.Null()
+	}
+	m := map[string]any{
+		"match": locationMatch.Match,
+		"mixed": locationMatch.Mixed,
+		"name":  locationMatch.Name,
+	}
+	if locationMatch.LocationId != nil {
+		m["locationId"] = locationMatch.LocationId.String()
+	}
+	return js.ValueOf(m)
+}
+
 // jsConnectViewController binds the connect state machine the app screens use:
 // connection status (DISCONNECTED / CONNECTING / DESTINATION_SET / CONNECTED),
-// the selected location, the provider grid, and connect/disconnect.
+// the selected location, the location match, the provider grid, and
+// connect/disconnect.
 func jsConnectViewController(vc *sdk.ConnectViewController, closeController func()) js.Value {
 	if vc == nil {
 		return js.Null()
@@ -136,6 +156,9 @@ func jsConnectViewController(vc *sdk.ConnectViewController, closeController func
 	})
 	m["getSelectedLocation"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsConnectLocation(vc.GetSelectedLocation())
+	})
+	m["getLocationMatch"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsLocationMatch(vc.GetLocationMatch())
 	})
 	m["getGrid"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsConnectGrid(vc.GetGrid())
@@ -172,6 +195,13 @@ func jsConnectViewController(vc *sdk.ConnectViewController, closeController func
 		}
 		return jsSub(vc.AddSelectedLocationListener(&jsSelectedLocationListener{cb}))
 	})
+	m["addLocationMatchListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddLocationMatchListener(&jsLocationMatchListener{cb}))
+	})
 	m["addGridListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		cb, ok := funcArg(args)
 		if !ok {
@@ -193,6 +223,12 @@ type jsSelectedLocationListener struct{ cb js.Value }
 
 func (self *jsSelectedLocationListener) SelectedLocationChanged(location *sdk.ConnectLocation) {
 	self.cb.Invoke(jsConnectLocation(location))
+}
+
+type jsLocationMatchListener struct{ cb js.Value }
+
+func (self *jsLocationMatchListener) LocationMatchChanged() {
+	self.cb.Invoke()
 }
 
 type jsGridListener struct{ cb js.Value }
