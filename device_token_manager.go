@@ -231,7 +231,8 @@ type apiTokenRefreshSettings struct {
 	// refreshes, including an empty or unparseable one. A refreshable legacy
 	// token without an expiration must not become permanent, so it is
 	// revalidated weekly. Also the cap of the network renewer's anomaly
-	// spacing (networkRenewalAnomalyTimeout).
+	// spacing (networkRenewalAnomalyTimeout). Non-positive refreshes such a
+	// token as often as the floor allows.
 	NoExpirationRefreshTimeout time.Duration
 	// After a failed client JWT refresh, the next attempt waits a time drawn
 	// uniformly from [0, RefreshRetryTimeout), which spreads clients that failed
@@ -242,12 +243,14 @@ type apiTokenRefreshSettings struct {
 	// jitter drawn from an interval that starts at
 	// NetworkRenewalRetryJitterBase and doubles with each further failure in
 	// a row, up to NetworkRenewalMaxRetryJitter. The minimum keeps any jitter,
-	// even none, from retrying in a loop.
+	// even none, from retrying in a loop; non-positive leaves only the
+	// jitter, and a non-positive jitter interval adds none.
 	NetworkRenewalMinRetryTimeout time.Duration
 	NetworkRenewalRetryJitterBase time.Duration
 	NetworkRenewalMaxRetryJitter  time.Duration
 	// A renewal the server answers with another 4xx (a server that predates
-	// the route answers 404) is tried again after this.
+	// the route answers 404) is tried again after this. Non-positive retries
+	// at once.
 	NetworkRenewalRefusedRetryTimeout time.Duration
 }
 
