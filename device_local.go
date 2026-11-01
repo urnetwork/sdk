@@ -831,14 +831,16 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport a pointer to another package's struct, which gomobile
 	// does not bind. Go/headless hosts only.
 	WindowClientStats *connect.WindowClientStats `json:"-"`
-	// Turns off a strict window's handover
-	// (`connect.MultiClientSettings.StrictWindowHandover`): with it, a window
-	// at its hard max builds candidates the hard max refuses, and its warned
-	// clients keep their slots. The host's kill switch (the proxy service's
-	// window_strict_handover); false keeps the connect default.
-	//
-	//gomobile:noexport a host's kill switch. Go/headless hosts only.
-	DisableStrictWindowHandover bool `json:"-"`
+	// Turns on a strict window's handover
+	// (`connect.MultiClientSettings.StrictWindowHandover`) for every multi
+	// client of the device: a window at its hard max builds no candidate the
+	// hard max refuses, and a drained client hands its slot to its
+	// replacement. Off by default, which keeps the windows as before. The
+	// proxy service turns it on for its hosted devices (proxy.yml
+	// window_strict_handover); apps leave it off until an app release turns
+	// it on (CPUOPT3 D2, owner question 5). gobind binds this bool for the
+	// apps; it does not cross the c abi json, so a c abi host keeps it off.
+	StrictWindowHandover bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2539,12 +2541,11 @@ func applyPlatformTransportMemoryUsage(
 }
 
 // The window policy the host chose for every multi client of the device: the
-// process counters its windows count into, and its handover kill switch.
+// process counters its windows count into, and whether its strict windows
+// hand drained slots over.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
-	if deviceLocalSettings.DisableStrictWindowHandover {
-		settings.StrictWindowHandover = false
-	}
+	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
 }
 
 // Keeps an absent/reset window unknown instead of manufacturing readiness.

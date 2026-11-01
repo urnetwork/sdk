@@ -71,23 +71,31 @@ func TestDeviceLocalMultiClientsCountIntoTheWindowClientStats(t *testing.T) {
 	}
 }
 
-// A device keeps connect's strict window handover unless the host turns it
-// off, and carries the host's counters either way.
-func TestDeviceLocalWindowClientSettingsCarryTheHandoverKillSwitch(t *testing.T) {
+// A device's strict windows hand drained slots over only when its host turns
+// the handover on: neither the platform defaults nor the low-memory profile
+// that gives apps and c abi hosts strict windows turn it on. The host's
+// counters are carried either way.
+func TestDeviceLocalWindowClientSettingsKeepTheHandoverOffUnlessTheHostOptsIn(t *testing.T) {
 	stats := connect.NewWindowClientStats()
-	deviceLocalSettings := DefaultDeviceLocalSettings()
-	deviceLocalSettings.WindowClientStats = stats
+	for _, deviceLocalSettings := range []*DeviceLocalSettings{
+		DefaultDeviceLocalSettings(),
+		DefaultLowMemoryDeviceLocalSettings(),
+		defaultDeviceLocalSettingsForPlatform("android"),
+		defaultDeviceLocalSettingsForPlatform("ios"),
+	} {
+		deviceLocalSettings.WindowClientStats = stats
+		settings := connect.DefaultMultiClientSettings()
+		applyMobileLowMemoryMultiClientSettingsForPlatform(settings, deviceLocalSettings.MemoryTargetByteCount, deviceLocalSettings.LowMemoryProfile)
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if settings.StrictWindowHandover || settings.WindowClientStats != stats {
+			t.Fatal("a device whose host did not opt in hands strict window slots over, or lost the host's counters")
+		}
 
-	settings := connect.DefaultMultiClientSettings()
-	applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
-	if !settings.StrictWindowHandover || settings.WindowClientStats != stats {
-		t.Fatal("a device without the kill switch lost the handover or the host's counters")
-	}
-
-	deviceLocalSettings.DisableStrictWindowHandover = true
-	settings = connect.DefaultMultiClientSettings()
-	applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
-	if settings.StrictWindowHandover || settings.WindowClientStats != stats {
-		t.Fatal("the host's kill switch left the handover on or dropped its counters")
+		deviceLocalSettings.StrictWindowHandover = true
+		settings = connect.DefaultMultiClientSettings()
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if !settings.StrictWindowHandover || settings.WindowClientStats != stats {
+			t.Fatal("the host's opt-in did not turn the handover on, or dropped its counters")
+		}
 	}
 }
