@@ -186,8 +186,8 @@ func jwtIssuedAt(byJwt string) time.Time {
 	return issuedAt.Time
 }
 
-// apiTokenRefreshSettings schedules an API's credential refreshes: the client
-// JWT refreshes of apiTokenManager and the network credential renewals of
+// The schedule of an API's credential refreshes: the client JWT refreshes of
+// apiTokenManager and the network credential renewals of
 // apiNetworkCredentialRenewer. Neither worker changes it.
 //
 // A scheduled refresh falls at a point of the token's own lifetime, from `iat`
@@ -268,9 +268,9 @@ func defaultApiTokenRefreshSettings() *apiTokenRefreshSettings {
 	}
 }
 
-// refreshFraction is the point of a token's lifetime that a window draw
-// selects: draw 0 is the window's start and 1 its end. A draw outside [0, 1]
-// is clamped, so no draw falls after the window's end.
+// The point of a token's lifetime that a window draw selects: draw 0 is the
+// window's start and 1 its end. A draw outside [0, 1] is clamped, so no draw
+// falls after the window's end.
 func (self *apiTokenRefreshSettings) refreshFraction(draw float64) float64 {
 	start := max(self.RefreshWindowStart, 0)
 	end := max(self.RefreshWindowEnd, start)
@@ -283,8 +283,8 @@ func (self *apiTokenRefreshSettings) refreshFraction(draw float64) float64 {
 	return min(start+(end-start)*draw, end)
 }
 
-// apiRefreshClock is the time source of an API's refresh workers. Tests
-// install a controlled one.
+// The time source of an API's refresh workers. Tests install a controlled
+// one.
 type apiRefreshClock interface {
 	Now() time.Time
 	// After starts a timer of d; stop releases it.
@@ -304,8 +304,8 @@ func (systemApiRefreshClock) After(d time.Duration) (<-chan time.Time, func()) {
 	}
 }
 
-// jwtRefreshTime is when the scheduled refresh of `byJwt` falls, for a window
-// draw in [0, 1] (refreshFraction). A token without a readable `exp` refreshes
+// When the scheduled refresh of `byJwt` falls, for a window draw in [0, 1]
+// (refreshFraction). A token without a readable `exp` refreshes
 // NoExpirationRefreshTimeout from now; any other at its drawn point, which is
 // in the past for a token loaded late in its life.
 //
@@ -331,9 +331,9 @@ func jwtRefreshTime(byJwt string, now time.Time, draw float64, settings *apiToke
 	return lifetimeStart.Add(time.Duration(settings.refreshFraction(draw) * lifetime))
 }
 
-// jwtRefreshTimeout is the wait from now until a scheduled refresh at
-// refreshTime, held to at least MinRefreshTimeout after the previous refresh
-// attempt (zero when there was none). It is 0 when the refresh is due: a token
+// The wait from now until a scheduled refresh at refreshTime, held to at
+// least MinRefreshTimeout after the previous refresh attempt (zero when there
+// was none). It is 0 when the refresh is due: a token
 // loaded past its point refreshes promptly, and the floor, rather than the
 // schedule, keeps one scheduled refresh from following another in a loop.
 func jwtRefreshTimeout(refreshTime time.Time, previousAttemptTime time.Time, now time.Time, settings *apiTokenRefreshSettings) time.Duration {
@@ -451,9 +451,9 @@ func (self *apiTokenManager) transportRetryIsPending() bool {
 	return self.transportRetryPending
 }
 
-// nextRetryTimeout owns the randomized outage backoff, uniform over
-// [0, RefreshRetryTimeout). Tests replace it with a barrier so transport/wait
-// races are forced rather than scheduled by luck.
+// The randomized outage backoff, uniform over [0, RefreshRetryTimeout). Tests
+// replace it with a barrier so transport/wait races are forced rather than
+// scheduled by luck.
 func (self *apiTokenManager) nextRetryTimeout() time.Duration {
 	if self.retryTimeout != nil {
 		return self.retryTimeout()
@@ -464,7 +464,7 @@ func (self *apiTokenManager) nextRetryTimeout() time.Duration {
 	return time.Duration(mathrand.Int63n(int64(self.settings.RefreshRetryTimeout)))
 }
 
-// drawRefreshPoint draws a token's point in its refresh window, in [0, 1).
+// A token's point in its refresh window, drawn uniformly from [0, 1).
 func (self *apiTokenManager) drawRefreshPoint() float64 {
 	if self.refreshDraw != nil {
 		return self.refreshDraw()
@@ -472,11 +472,11 @@ func (self *apiTokenManager) drawRefreshPoint() float64 {
 	return mathrand.Float64()
 }
 
-// scheduledRefreshTimeout is the wait until the scheduled refresh of `byJwt`.
-// A token draws its point once, when it is first scheduled: a refresh installs
-// a new token, which draws again, and a wake that changes nothing keeps the
-// point it has. A token without `iat` keeps its lifetime start the same way,
-// rather than receding on every pass. Owned by run.
+// The wait until the scheduled refresh of `byJwt`. A token draws its point
+// once, when it is first scheduled: a refresh installs a new token, which
+// draws again, and a wake that changes nothing keeps the point it has. A token
+// without `iat` keeps its lifetime start the same way, rather than receding on
+// every pass. Owned by run.
 func (self *apiTokenManager) scheduledRefreshTimeout(byJwt string) time.Duration {
 	now := self.clock.Now()
 	if byJwt != self.scheduledByJwt {

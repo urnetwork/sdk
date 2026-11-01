@@ -22,9 +22,8 @@ import (
 
 const testingWindowDay = 24 * time.Hour
 
-// testingWindowClientJwt is a refreshable client token issued at `issued`. The
-// marker keeps tokens minted in the same second distinct, as the server's
-// `jti` does.
+// A refreshable client token issued at `issued`. The marker keeps tokens
+// minted in the same second distinct, as the server's `jti` does.
 func testingWindowClientJwt(issued time.Time, lifetime time.Duration, marker string) string {
 	return testingJwt(map[string]any{
 		"iat":       issued.Unix(),
@@ -36,7 +35,7 @@ func testingWindowClientJwt(issued time.Time, lifetime time.Duration, marker str
 	})
 }
 
-// requireTimeEqual compares instants: token claims parse into the local zone.
+// Compares instants: token claims parse into the local zone.
 func requireTimeEqual(t *testing.T, got time.Time, want time.Time, message string) {
 	t.Helper()
 	if !got.Equal(want) {
@@ -44,7 +43,7 @@ func requireTimeEqual(t *testing.T, got time.Time, want time.Time, message strin
 	}
 }
 
-// requireDurationNear allows the float rounding of a fraction of a lifetime.
+// Allows the float rounding of a fraction of a lifetime.
 func requireDurationNear(t *testing.T, got time.Duration, want time.Duration, message string) {
 	t.Helper()
 	if diff := got - want; diff < -time.Microsecond || time.Microsecond < diff {
@@ -238,10 +237,9 @@ func TestTokenManagerRetryDrawIsUnchanged(t *testing.T) {
 	}
 }
 
-// testingWindowRefreshes drives the API's own token manager on a controlled
-// clock. Each /auth/refresh request is answered by answer, which gets the
-// request's number from 1 and the clock's now; each window draw is the next of
-// draws.
+// Drives the API's own token manager on a controlled clock. Each /auth/refresh
+// request is answered by answer, which gets the request's number from 1 and
+// the clock's now; each window draw is the next of draws.
 type testingWindowRefreshes struct {
 	api       *Api
 	clock     *renewalTestClock

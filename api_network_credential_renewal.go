@@ -30,21 +30,20 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// networkCredentialDueAtOnce reports a network token to renew now, while the
-// server still accepts it (vault auth.yml reject_missing_expiration and
-// reject_expired off): one without a readable expiration (a legacy token), or
-// an expired one. Renewing is how the installed base moves to tokens that
-// renew before those gates flip.
+// Reports a network token to renew now, while the server still accepts it
+// (vault auth.yml reject_missing_expiration and reject_expired off): one
+// without a readable expiration (a legacy token), or an expired one. Renewing
+// is how the installed base moves to tokens that renew before those gates
+// flip.
 func networkCredentialDueAtOnce(byJwt string, now time.Time) bool {
 	expirationTime := jwtExpiration(byJwt)
 	return expirationTime.IsZero() || !now.Before(expirationTime)
 }
 
-// networkCredentialRenewalTime is when the scheduled renewal of a network
-// token falls: now for a token due at once, and any other at its drawn point
-// of the refresh window (jwtRefreshTime), the client token's schedule. The
-// renewer holds each renewal to at least MinRefreshTimeout after the previous
-// one.
+// When the scheduled renewal of a network token falls: now for a token due at
+// once, and any other at its drawn point of the refresh window
+// (jwtRefreshTime), the client token's schedule. The renewer holds each
+// renewal to at least MinRefreshTimeout after the previous one.
 func networkCredentialRenewalTime(byJwt string, now time.Time, draw float64, settings *apiTokenRefreshSettings) time.Time {
 	if networkCredentialDueAtOnce(byJwt, now) {
 		return now
@@ -52,11 +51,10 @@ func networkCredentialRenewalTime(byJwt string, now time.Time, draw float64, set
 	return jwtRefreshTime(byJwt, now, draw, settings)
 }
 
-// networkRenewalAnomalyTimeout spaces renewals that answer a token which is
-// itself due at once (a server that mints no expiration, or a clock far ahead
-// of the server's). The spacing doubles from MinRefreshTimeout with each such
-// renewal in a row, up to NoExpirationRefreshTimeout, so neither can make
-// renewal a loop.
+// Spaces renewals that answer a token which is itself due at once (a server
+// that mints no expiration, or a clock far ahead of the server's). The spacing
+// doubles from MinRefreshTimeout with each such renewal in a row, up to
+// NoExpirationRefreshTimeout, so neither can make renewal a loop.
 func networkRenewalAnomalyTimeout(consecutive int, settings *apiTokenRefreshSettings) time.Duration {
 	timeout := settings.MinRefreshTimeout
 	for i := 1; i < consecutive && timeout < settings.NoExpirationRefreshTimeout; i += 1 {
@@ -65,11 +63,10 @@ func networkRenewalAnomalyTimeout(consecutive int, settings *apiTokenRefreshSett
 	return min(timeout, settings.NoExpirationRefreshTimeout)
 }
 
-// networkRenewalRetryTimeout is the backoff after the given number of failed
-// renewals in a row: NetworkRenewalMinRetryTimeout plus jitter over an
-// interval that doubles from NetworkRenewalRetryJitterBase up to
-// NetworkRenewalMaxRetryJitter. The minimum keeps any jitter, even none, from
-// retrying in a loop.
+// The backoff after the given number of failed renewals in a row:
+// NetworkRenewalMinRetryTimeout plus jitter over an interval that doubles from
+// NetworkRenewalRetryJitterBase up to NetworkRenewalMaxRetryJitter. The minimum
+// keeps any jitter, even none, from retrying in a loop.
 func networkRenewalRetryTimeout(failures int, jitter func(time.Duration) time.Duration, settings *apiTokenRefreshSettings) time.Duration {
 	interval := settings.NetworkRenewalRetryJitterBase
 	for i := 1; i < failures && interval < settings.NetworkRenewalMaxRetryJitter; i += 1 {
@@ -444,8 +441,8 @@ func (self *apiNetworkCredentialRenewer) run() {
 	}
 }
 
-// track starts the state of a new credential generation over, and schedules
-// a token the first time it is the target. The schedule of a token is read
+// Starts the state of a new credential generation over, and schedules a token
+// the first time it is the target. The schedule of a token is read
 // once: every renewal draws its token's point again, while a token without
 // `iat` has a lifetime relative to the time it is read, which would recede if
 // it were read again on every pass.
