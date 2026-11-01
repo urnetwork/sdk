@@ -3357,6 +3357,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TransportDelayBadDownQueueDelay: number (ns)
  *   TransportDelayQualityStep: number
  *   TransportDelayQualityHysteresis: number
+ *   StrictWindowHandover: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean
  *   DisableLogging: boolean

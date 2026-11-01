@@ -2006,6 +2006,7 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayBadDownQueueDelay{};
 	double TransportDelayQualityStep{};
 	double TransportDelayQualityHysteresis{};
+	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
 	bool DisableLogging{};
@@ -9136,6 +9137,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayBadDownQueueDelay"] = v.TransportDelayBadDownQueueDelay;
 	j["TransportDelayQualityStep"] = v.TransportDelayQualityStep;
 	j["TransportDelayQualityHysteresis"] = v.TransportDelayQualityHysteresis;
+	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
 	j["DisableLogging"] = v.DisableLogging;
@@ -9265,6 +9267,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("TransportDelayQualityHysteresis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportDelayQualityHysteresis);
+	}
+	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StrictWindowHandover);
 	}
 	if (auto it = j.find("DnsPumpHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DnsPumpHost);

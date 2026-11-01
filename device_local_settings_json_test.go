@@ -35,7 +35,6 @@ func TestDeviceLocalSettingsJsonRoundTrip(t *testing.T) {
 		"MultiClientIdentityStore",
 		"SchedulerPauseDetector",
 		"WindowClientStats",
-		"StrictWindowHandover",
 		"ProviderDialContextSettings",
 		"KeyMaterial",
 		"ClientSettings",
@@ -46,7 +45,7 @@ func TestDeviceLocalSettingsJsonRoundTrip(t *testing.T) {
 			t.Errorf("the settings json carries %s", key)
 		}
 	}
-	for _, key := range []string{"ProvideExtenderEnabled", "DefaultProvideExtender", "AllowProvider"} {
+	for _, key := range []string{"ProvideExtenderEnabled", "DefaultProvideExtender", "AllowProvider", "StrictWindowHandover"} {
 		if values[key] != true {
 			t.Errorf("the settings json has %s = %v, expected true", key, values[key])
 		}
@@ -121,5 +120,40 @@ func TestDeviceLocalSettingsJsonCarriesTheExtenderDnsPrivilegedPort(t *testing.T
 	if values["ProvideExtenderDnsPrivilegedPort"] != true {
 		t.Fatalf("the settings json has ProvideExtenderDnsPrivilegedPort = %v, expected true",
 			values["ProvideExtenderDnsPrivilegedPort"])
+	}
+}
+
+// The strict window handover's off switch crosses as json like the other
+// device controls: a c host that names it off decodes it over the defaults,
+// and the rest keep their defaults; one that omits it keeps the handover on.
+func TestDeviceLocalSettingsJsonCarriesTheStrictWindowHandoverOffSwitch(t *testing.T) {
+	settings := DefaultDeviceLocalSettings()
+	if err := json.Unmarshal([]byte(`{"StrictWindowHandover": false}`), settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.StrictWindowHandover {
+		t.Fatal("the json did not turn the handover off")
+	}
+	if !settings.ProvideExtenderEnabled || !settings.DefaultProvideExtender || !settings.AllowProvider {
+		t.Error("a field the json omits lost its default")
+	}
+	settingsBytes, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]any{}
+	if err := json.Unmarshal(settingsBytes, &values); err != nil {
+		t.Fatal(err)
+	}
+	if values["StrictWindowHandover"] != false {
+		t.Fatalf("the settings json has StrictWindowHandover = %v, expected false", values["StrictWindowHandover"])
+	}
+
+	omitted := DefaultLowMemoryDeviceLocalSettings()
+	if err := json.Unmarshal([]byte(`{"DefaultProvideExtender": false}`), omitted); err != nil {
+		t.Fatal(err)
+	}
+	if !omitted.StrictWindowHandover {
+		t.Fatal("a json that omits the handover turned it off")
 	}
 }

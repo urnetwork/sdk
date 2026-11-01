@@ -71,31 +71,52 @@ func TestDeviceLocalMultiClientsCountIntoTheWindowClientStats(t *testing.T) {
 	}
 }
 
-// A device's strict windows hand drained slots over only when its host turns
-// the handover on: neither the platform defaults nor the low-memory profile
-// that gives apps and c abi hosts strict windows turn it on. The host's
-// counters are carried either way.
-func TestDeviceLocalWindowClientSettingsKeepTheHandoverOffUnlessTheHostOptsIn(t *testing.T) {
+// Every default a host builds its device from turns the strict window handover
+// on: the platform defaults of iOS, Android and the c abi's desktop hosts, and
+// the low-memory profile. Where the profile makes the windows strict (iOS,
+// Android, the low-memory settings), the handover engages; a host that turns
+// it off keeps its windows as before. The host's counters are carried either
+// way.
+func TestDeviceLocalWindowClientSettingsTurnTheHandoverOnUnlessTheHostTurnsItOff(t *testing.T) {
 	stats := connect.NewWindowClientStats()
-	for _, deviceLocalSettings := range []*DeviceLocalSettings{
-		DefaultDeviceLocalSettings(),
-		DefaultLowMemoryDeviceLocalSettings(),
-		defaultDeviceLocalSettingsForPlatform("android"),
-		defaultDeviceLocalSettingsForPlatform("ios"),
+	for name, deviceLocalSettings := range map[string]*DeviceLocalSettings{
+		"default":    DefaultDeviceLocalSettings(),
+		"low memory": DefaultLowMemoryDeviceLocalSettings(),
+		"android":    defaultDeviceLocalSettingsForPlatform("android"),
+		"ios":        defaultDeviceLocalSettingsForPlatform("ios"),
+		"windows":    defaultDeviceLocalSettingsForPlatform("windows"),
+		"linux":      defaultDeviceLocalSettingsForPlatform("linux"),
+		"darwin":     defaultDeviceLocalSettingsForPlatform("darwin"),
 	} {
+		if !deviceLocalSettings.StrictWindowHandover {
+			t.Errorf("%s: the default settings leave the handover off", name)
+		}
 		deviceLocalSettings.WindowClientStats = stats
 		settings := connect.DefaultMultiClientSettings()
 		applyMobileLowMemoryMultiClientSettingsForPlatform(settings, deviceLocalSettings.MemoryTargetByteCount, deviceLocalSettings.LowMemoryProfile)
 		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
-		if settings.StrictWindowHandover || settings.WindowClientStats != stats {
-			t.Fatal("a device whose host did not opt in hands strict window slots over, or lost the host's counters")
+		if !settings.StrictWindowHandover || settings.WindowClientStats != stats {
+			t.Errorf("%s: the device's multi clients do not hand strict window slots over, or lost the host's counters", name)
+		}
+		// the strict windows the handover acts on
+		if deviceLocalSettings.LowMemoryProfile && !settings.StrictWindowSizeHardMax {
+			t.Errorf("%s: the low-memory profile gives the device no strict windows", name)
 		}
 
-		deviceLocalSettings.StrictWindowHandover = true
+		// the host's emergency off switch
+		deviceLocalSettings.StrictWindowHandover = false
 		settings = connect.DefaultMultiClientSettings()
+		applyMobileLowMemoryMultiClientSettingsForPlatform(settings, deviceLocalSettings.MemoryTargetByteCount, deviceLocalSettings.LowMemoryProfile)
 		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
-		if !settings.StrictWindowHandover || settings.WindowClientStats != stats {
-			t.Fatal("the host's opt-in did not turn the handover on, or dropped its counters")
+		if settings.StrictWindowHandover || settings.WindowClientStats != stats {
+			t.Errorf("%s: the host turned the handover off and its windows still hand slots over, or lost its counters", name)
+		}
+	}
+	// the iOS and Android defaults are the profiles that give windows a strict
+	// hard max
+	for _, goos := range []string{"ios", "android"} {
+		if !defaultDeviceLocalSettingsForPlatform(goos).LowMemoryProfile {
+			t.Errorf("%s: the platform default is not the low-memory profile", goos)
 		}
 	}
 }

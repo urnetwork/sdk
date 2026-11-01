@@ -38,6 +38,7 @@ func TestDeviceLocalSettingsJsonShapeAndDecode(t *testing.T) {
 		" *   ProvideExtenderEnabled: boolean\n",
 		" *   DefaultProvideExtender: boolean\n",
 		" *   ProvideExtenderDnsPrivilegedPort: boolean\n",
+		" *   StrictWindowHandover: boolean\n",
 		" * urnet_default_device_local_settings(): a field it omits keeps its default,\n",
 	} {
 		if !strings.Contains(shape, text) {
