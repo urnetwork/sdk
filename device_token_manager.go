@@ -501,6 +501,10 @@ func (self *apiTokenManager) run() {
 		byJwt := self.api.GetByJwt()
 
 		if !self.active.Load() || !jwtCanRefresh(byJwt) {
+			// keep no copy of a credential that is no longer scheduled, such as
+			// one signed out
+			self.scheduledByJwt = ""
+			self.scheduledRefreshTime = time.Time{}
 			select {
 			case <-self.ctx.Done():
 				return
