@@ -50,7 +50,12 @@ still accept a client token from an ordinary network.
     Nothing else renews: ur.io's account host (ur.io keeps and renews its own
     token), a headless backend, and a hosted device's session `Api` have no
     LocalState behind a network token. One `Api` has one renewer.
-  - **When.** At the token's half-life, and never sooner than 5 minutes. A
+  - **When.** On the client token's schedule (`apiTokenRefreshSettings` in
+    `device_token_manager.go`): at a point drawn uniformly between 40% and
+    50% of the token's lifetime, measured from `iat`, so never later than its
+    half-life. Each renewal draws again, so clients that renewed together do
+    not stay in lockstep. A token loaded past its point renews at once, and
+    a renewal is never sooner than 5 minutes after the previous one. A
     token with no `exp` (a legacy token) or an expired one renews at once.
     That works while the server still accepts it (vault `auth.yml`
     `reject_missing_expiration` and `reject_expired` off), which is how the
@@ -189,8 +194,8 @@ client token. It can happen when all of these hold:
    `/network/auth-client`) to the first build with this SDK.
 3. **The network token outlives 30 days.** Addressed by renewal: the server
    renews a network token at `POST /auth/network-refresh`, which a client
-   token can never call, and the SDK renews the kept one at its half-life
-   (Renewal, above). What still holds:
+   token can never call, and the SDK renews the kept one between 40% and 50%
+   of its lifetime (Renewal, above). What still holds:
    - Renewal runs only while the app runs. A token of an app that was not
      opened for 30 days expires. While `reject_expired` is off it renews on
      the next launch; once it is on, that user signs in again for the account
