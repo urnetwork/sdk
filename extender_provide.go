@@ -463,6 +463,11 @@ type deviceLocalExtenderSettings struct {
 	// tells the operator, which withdraws the measurement name (C4, C9). Zero
 	// takes extenderMeasurementOptOutHold. Tests shorten it.
 	MeasurementOptOutHold time.Duration
+	// The least time between two log lines of one kind of forward dial
+	// failure, the stream forward's or the datagram relay's (A7). Zero takes
+	// extenderForwardDialErrorLogInterval; a negative value logs every
+	// failure.
+	ForwardDialErrorLogInterval time.Duration
 }
 
 // The bound dns ports of one extender as one string (F3, L2), ascending.
