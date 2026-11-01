@@ -218,7 +218,7 @@ func newRenewalTestApi(t *testing.T) *renewalTestApi {
 	api.networkRenewer.jitter = func(interval time.Duration) time.Duration {
 		return interval
 	}
-	api.networkRenewer.draw = func() float64 {
+	api.networkRenewer.draw = func(string) float64 {
 		return 1
 	}
 	api.networkRenewer.testingAfterRenew = func() {

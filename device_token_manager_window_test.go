@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,11 +15,12 @@ import (
 )
 
 // The refresh window (apiTokenRefreshSettings): each client token refreshes at
-// a point drawn uniformly from 40% to 50% of its lifetime, never later than its
-// half-life, never sooner than the floor after the previous attempt, and a
-// failed refresh retries after a uniform wait under 15 minutes. At exactly the
-// half-life, clients that refreshed together kept refreshing in lockstep every
-// cycle (owner decision, 2026-11-01).
+// its point from 40% to 50% of its lifetime, a hash of its id that is uniform
+// across tokens, never later than its half-life, never sooner than the floor
+// after the previous attempt, and a failed refresh retries after a uniform
+// wait under 15 minutes. At exactly the half-life, clients that refreshed
+// together kept refreshing in lockstep every cycle (owner decision,
+// 2026-11-01). Tests install their own points through refreshDraw.
 
 const testingWindowDay = 24 * time.Hour
 
@@ -95,19 +97,38 @@ func TestJwtRefreshTimeDrawsWithinTheWindow(t *testing.T) {
 	}
 }
 
-// The production draw, with no hook installed, is uniform over [0, 1), so its
-// points stay in [40%, 50%) of the lifetime; the window spreads them.
+// A client token with an id (`jti`), as the server mints each token.
+func testingWindowClientJwtWithId(issued time.Time, lifetime time.Duration, id string) string {
+	return testingJwt(map[string]any{
+		"iat":       issued.Unix(),
+		"exp":       issued.Add(lifetime).Unix(),
+		"user_id":   "11111111-1111-1111-1111-111111111111",
+		"client_id": "33333333-3333-3333-3333-333333333333",
+		"device_id": "44444444-4444-4444-4444-444444444444",
+		"jti":       id,
+	})
+}
+
+// A synthetic token id, the n-th of a run.
+func testingWindowTokenId(n int) string {
+	return fmt.Sprintf("00000000-0000-4000-8000-%012d", n)
+}
+
+// The production draw, with no hook installed, takes each token's point from
+// its id: a cohort that refreshed together, 2000 tokens issued in the same
+// second, spreads over the whole window, every point in [40%, 50%) of the
+// lifetime.
 func TestJwtRefreshDefaultDrawStaysWithinTheWindow(t *testing.T) {
 	now := time.Date(2026, 11, 1, 9, 30, 0, 0, time.UTC)
 	lifetime := 30 * testingWindowDay
-	byJwt := testingWindowClientJwt(now, lifetime, "default-draw")
 	manager := &apiTokenManager{settings: defaultApiTokenRefreshSettings()}
 	windowStart := now.Add(time.Duration(0.4 * float64(lifetime)))
 	halfLife := now.Add(lifetime / 2)
 	earliest := halfLife
 	latest := windowStart
-	for i := 0; i < 10000; i += 1 {
-		draw := manager.drawRefreshPoint()
+	for i := 0; i < 2000; i += 1 {
+		byJwt := testingWindowClientJwtWithId(now, lifetime, testingWindowTokenId(i))
+		draw := manager.drawRefreshPoint(byJwt)
 		if draw < 0 || 1 <= draw {
 			t.Fatalf("draw %v is outside [0, 1)", draw)
 		}
@@ -123,8 +144,82 @@ func TestJwtRefreshDefaultDrawStaysWithinTheWindow(t *testing.T) {
 		}
 	}
 	// at exactly the half-life every client fell on the same instant
-	if latest.Sub(earliest) < 2*testingWindowDay {
-		t.Fatalf("10000 draws spread over only %s of the 3-day window", latest.Sub(earliest))
+	if latest.Sub(earliest) < 2*testingWindowDay+23*time.Hour {
+		t.Fatalf("2000 tokens spread over only %s of the 3-day window", latest.Sub(earliest))
+	}
+}
+
+// A token's point is a function of the token: any process, and the same one
+// after a restart, takes the same point for it, so a restart neither renews a
+// token early nor makes a burst. The id decides: tokens with other ids take
+// other points, and claims beside the id do not move it. A token without an
+// id takes its point from its signature, and one that does not parse from its
+// whole text.
+func TestJwtRefreshDrawIsTheTokens(t *testing.T) {
+	issued := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	lifetime := 30 * testingWindowDay
+	byJwt := testingWindowClientJwtWithId(issued, lifetime, testingWindowTokenId(1))
+	first := &apiTokenManager{settings: defaultApiTokenRefreshSettings()}
+	restarted := &apiTokenManager{settings: defaultApiTokenRefreshSettings()}
+	connect.AssertEqual(t, restarted.drawRefreshPoint(byJwt), first.drawRefreshPoint(byJwt))
+	connect.AssertEqual(t, jwtRefreshDraw(byJwt), jwtRefreshDraw(byJwt))
+
+	other := testingWindowClientJwtWithId(issued, lifetime, testingWindowTokenId(2))
+	if jwtRefreshDraw(other) == jwtRefreshDraw(byJwt) {
+		t.Fatal("tokens with different ids took the same point")
+	}
+	// the id alone decides
+	reissued := testingWindowClientJwtWithId(issued.Add(time.Hour), lifetime, testingWindowTokenId(1))
+	connect.AssertEqual(t, jwtRefreshDraw(reissued), jwtRefreshDraw(byJwt))
+
+	// without an id, the signature
+	header, body, _ := strings.Cut(testingJwt(map[string]any{"exp": issued.Add(lifetime).Unix()}), ".")
+	body, _, _ = strings.Cut(body, ".")
+	signedA := header + "." + body + ".c2lnbmF0dXJlLWE"
+	signedB := header + "." + body + ".c2lnbmF0dXJlLWI"
+	if jwtRefreshDraw(signedA) == jwtRefreshDraw(signedB) {
+		t.Fatal("tokens with different signatures and no id took the same point")
+	}
+	connect.AssertEqual(t, jwtRefreshDraw(signedA), jwtRefreshDraw(signedA))
+	// not a jwt: its text
+	for _, text := range []string{"", "not-a-jwt", "a.b.c"} {
+		draw := jwtRefreshDraw(text)
+		if draw < 0 || 1 <= draw {
+			t.Fatalf("%q: draw %v is outside [0, 1)", text, draw)
+		}
+		connect.AssertEqual(t, jwtRefreshDraw(text), draw)
+	}
+}
+
+// Points are uniform over tokens: 10000 ids fill 20 equal bins of [0, 1)
+// evenly (chi-square below 43.8, the 0.001 critical value for 19 degrees of
+// freedom), and reach both ends.
+func TestJwtRefreshDrawIsUniformOverTokens(t *testing.T) {
+	issued := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	lifetime := 30 * testingWindowDay
+	const tokenCount = 10000
+	const binCount = 20
+	bins := make([]int, binCount)
+	low, high := 1.0, 0.0
+	for i := 0; i < tokenCount; i += 1 {
+		draw := jwtRefreshDraw(testingWindowClientJwtWithId(issued, lifetime, testingWindowTokenId(i)))
+		if draw < 0 || 1 <= draw {
+			t.Fatalf("draw %v is outside [0, 1)", draw)
+		}
+		bins[int(draw*binCount)] += 1
+		low = min(low, draw)
+		high = max(high, draw)
+	}
+	expected := float64(tokenCount) / binCount
+	chiSquare := 0.0
+	for _, count := range bins {
+		chiSquare += (float64(count) - expected) * (float64(count) - expected) / expected
+	}
+	if 43.8 < chiSquare {
+		t.Fatalf("points are not uniform over tokens: chi-square %.1f, bins %v", chiSquare, bins)
+	}
+	if 0.002 < low || high < 0.998 {
+		t.Fatalf("points span only [%v, %v]", low, high)
 	}
 }
 
@@ -262,7 +357,7 @@ func newTestingWindowRefreshes(
 	}
 	var drawLock sync.Mutex
 	api.tokenManager.clock = self.clock
-	api.tokenManager.refreshDraw = func() float64 {
+	api.tokenManager.refreshDraw = func(string) float64 {
 		drawLock.Lock()
 		defer drawLock.Unlock()
 		i := self.drawCount.Add(1) - 1
@@ -397,4 +492,126 @@ func TestTokenManagerNeverSchedulesPastHalfLife(t *testing.T) {
 	}
 	r.clock.requireArmed(t, 15*testingWindowDay)
 	connect.AssertEqual(t, r.requests.Load(), int64(4))
+}
+
+// A second manager over the API, inactive and with no worker yet, so the test
+// installs its hooks before the worker reads them and then runs the worker.
+// The API's own manager stays dormant: these tests never start it.
+func testingInactiveTokenManager(t *testing.T, api *Api, clock *renewalTestClock) (*apiTokenManager, func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(api.ctx)
+	manager := &apiTokenManager{
+		ctx:            ctx,
+		cancel:         cancel,
+		api:            api,
+		done:           make(chan struct{}),
+		refreshMonitor: connect.NewMonitor(),
+		settings:       defaultApiTokenRefreshSettings(),
+		clock:          clock,
+	}
+	run := func() {
+		go func() {
+			defer close(manager.done)
+			manager.run()
+		}()
+	}
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-manager.done:
+		case <-time.After(renewalTestStepLimit):
+			t.Error("the worker did not stop")
+		}
+	})
+	return manager, run
+}
+
+// Start records its refresh before it activates the worker. A wake between the
+// two steps (setDeviceByJwt's TokenChanged lands just before StartJwtRefresh)
+// must find the worker still dormant. In the other order it found an active
+// worker with nothing requested and scheduled the stored token: one already
+// past its point was refreshed at once, then again by Start's request, and
+// the window tests saw their first draw taken by the stored token.
+func TestTokenManagerStartRequestsBeforeActivating(t *testing.T) {
+	lifetime := 30 * testingWindowDay
+	// 45% into its life; draw 0 puts its point at 40%, already past
+	stored := testingWindowClientJwt(renewalTestBaseTime.Add(-time.Duration(0.45*float64(lifetime))), lifetime, "stored")
+	_, api := newTestApiForURL(t, "https://window.example")
+	clock := newRenewalTestClock()
+	manager, run := testingInactiveTokenManager(t, api, clock)
+	var draws atomic.Int64
+	manager.refreshDraw = func(string) float64 {
+		draws.Add(1)
+		return 0
+	}
+	var requests atomic.Int64
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		n := requests.Add(1)
+		return []byte(fmt.Sprintf(`{"by_jwt":%q}`, testingWindowClientJwt(clock.Now(), lifetime, fmt.Sprintf("refresh-%d", n)))), nil
+	})
+	dormant := make(chan struct{}, 16)
+	manager.testingDormant = func() {
+		dormant <- struct{}{}
+	}
+	manager.testingBetweenStartSteps = func() {
+		// the wake, and the worker's answer to it: parked dormant, or a
+		// schedule of the stored token
+		manager.refreshMonitor.NotifyAll()
+		select {
+		case <-dormant:
+		case wait := <-clock.armed:
+			t.Errorf("between Start's steps the worker scheduled the stored token and armed %s", wait)
+		case <-time.After(renewalTestStepLimit):
+			t.Error("the worker did not answer the wake between Start's steps")
+		}
+	}
+	api.SetByJwt(stored)
+	run()
+	select {
+	case <-dormant:
+	case <-time.After(renewalTestStepLimit):
+		t.Fatal("the inactive worker did not park")
+	}
+
+	manager.Start()
+	// one refresh, Start's, then the refreshed token's point
+	clock.requireArmed(t, 12*testingWindowDay)
+	connect.AssertEqual(t, requests.Load(), int64(1))
+	connect.AssertEqual(t, draws.Load(), int64(1))
+	clock.requireNotArmed(t)
+}
+
+// A worker with nothing to schedule keeps no copy of the token it scheduled
+// last: after a sign-out it holds no credential.
+func TestTokenManagerDormantDropsTheScheduledToken(t *testing.T) {
+	lifetime := 30 * testingWindowDay
+	initial := testingWindowClientJwt(renewalTestBaseTime.Add(-time.Hour), lifetime, "initial")
+	_, api := newTestApiForURL(t, "https://window.example")
+	clock := newRenewalTestClock()
+	manager, run := testingInactiveTokenManager(t, api, clock)
+	manager.refreshDraw = func(string) float64 { return 0 }
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		return []byte(fmt.Sprintf(`{"by_jwt":%q}`, testingWindowClientJwt(clock.Now(), lifetime, "refreshed"))), nil
+	})
+	dormant := make(chan struct{}, 16)
+	manager.testingDormant = func() {
+		dormant <- struct{}{}
+	}
+	api.SetByJwt(initial)
+	run()
+	<-dormant
+	manager.Start()
+	clock.requireArmed(t, 12*testingWindowDay)
+
+	// signed out: the worker wakes and parks dormant
+	api.SetByJwt("")
+	manager.TokenChanged()
+	select {
+	case <-dormant:
+	case <-time.After(renewalTestStepLimit):
+		t.Fatal("the signed-out worker did not park")
+	}
+	// parked in its select, the worker writes nothing until the next wake
+	connect.AssertEqual(t, manager.scheduledByJwt, "")
+	connect.AssertEqual(t, manager.scheduledRefreshTime.IsZero(), true)
 }

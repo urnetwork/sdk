@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -10,15 +11,16 @@ import (
 )
 
 // The network credential renews on the client token's refresh window
-// (apiTokenRefreshSettings): a drawn point from 40% to 50% of each token's
-// lifetime, never later than its half-life, never sooner than the floor after
-// the previous renewal (owner decision, 2026-11-01).
+// (apiTokenRefreshSettings): each token's point from 40% to 50% of its
+// lifetime, a hash of its id, never later than its half-life, never sooner
+// than the floor after the previous renewal (owner decision, 2026-11-01).
+// Tests install their own points through the renewer's draw.
 
 // installs the window draws a test's renewals take, in order
 func (self *renewalTestApi) drawWindow(t *testing.T, draws ...float64) func() int {
 	var drawLock sync.Mutex
 	count := 0
-	self.api.networkRenewer.draw = func() float64 {
+	self.api.networkRenewer.draw = func(string) float64 {
 		drawLock.Lock()
 		defer drawLock.Unlock()
 		if len(draws) <= count {
@@ -153,4 +155,101 @@ func TestNetworkCredentialRenewalNeverSchedulesPastHalfLife(t *testing.T) {
 		r.requireRenewed(t)
 	}
 	r.clock.requireArmed(t, 15*day)
+}
+
+// A relaunch takes the same point for the token it loads, with the production
+// draw: two processes that load one token 45% into its life agree on whether
+// it is past its point, and if not, on the wait. A point drawn afresh by each
+// process instead made a mass restart renew the tokens whose new point had
+// passed in one burst, and frequent restarts renew early.
+func TestNetworkCredentialRelaunchKeepsTheTokensPoint(t *testing.T) {
+	day := 24 * time.Hour
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+	settings := defaultApiTokenRefreshSettings()
+	pastCount := 0
+	for i := 0; i < 8; i += 1 {
+		// 13.5 of 30 days old: 45% of its lifetime
+		networkJwt := renewalTestNetworkJwt(t, renewalTestBaseTime.Add(-13*day-12*time.Hour), renewalTestBaseTime.Add(16*day+12*time.Hour), fmt.Sprintf("sign-in-%d", i))
+		point := networkCredentialRenewalTime(networkJwt, renewalTestBaseTime, jwtRefreshDraw(networkJwt), settings)
+		for _, process := range []string{"first", "relaunched"} {
+			r := newRenewalTestApi(t)
+			r.api.networkRenewer.draw = jwtRefreshDraw
+			r.startDevice(t, newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt), clientJwt)
+			if point.After(r.clock.Now()) {
+				r.clock.requireArmed(t, point.Sub(r.clock.Now()))
+				r.transport.requireNone(t)
+			} else {
+				r.transport.takeRenewal(t, networkJwt)
+				r.clock.requireNotArmed(t)
+				if process == "first" {
+					pastCount += 1
+				}
+			}
+		}
+	}
+	// half of the window is behind a token 45% into its life
+	if pastCount == 0 || pastCount == 8 {
+		t.Fatalf("%d of 8 tokens past their point; the points do not spread", pastCount)
+	}
+}
+
+// A renewer with nothing to renew keeps no copy of the token it scheduled
+// last: after a sign-out it holds no credential.
+func TestNetworkCredentialRenewerDropsTheTokenOnSignOut(t *testing.T) {
+	day := 24 * time.Hour
+	r := newRenewalTestApi(t)
+	parked := make(chan struct{}, 16)
+	r.api.networkRenewer.testingParked = func() {
+		parked <- struct{}{}
+	}
+	networkJwt := renewalTestRenewedJwt(t, renewalTestBaseTime, "sign-in")
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt)
+	r.startDevice(t, localState, clientJwt)
+	r.clock.requireArmed(t, 15*day)
+
+	if err := localState.Logout(); err != nil {
+		t.Fatal(err)
+	}
+	r.api.SetByJwt("")
+	select {
+	case <-parked:
+	case <-time.After(renewalTestStepLimit):
+		t.Fatal("the signed-out renewer did not park")
+	}
+	// parked in its select, the renewer writes nothing until the next wake
+	connect.AssertEqual(t, r.api.networkRenewer.scheduledByJwt, "")
+	connect.AssertEqual(t, r.api.networkRenewer.scheduledTime.IsZero(), true)
+	r.transport.requireNone(t)
+}
+
+// The floor belongs to the token, not to the credential generation. A
+// renewal that answers a token already past its point (a device clock 16 days
+// ahead of the server's) waits out the floor when a device starts from another
+// LocalState that keeps the same pair, instead of renewing again at once. A
+// new sign-in starts the floor over (TestRejectedNetworkCredentialIsDroppedOnly).
+func TestNetworkCredentialRenewalFloorOutlivesTheGeneration(t *testing.T) {
+	day := 24 * time.Hour
+	r := newRenewalTestApi(t)
+	r.drawWindow(t, 0, 0, 0)
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+	expired := renewalTestNetworkJwt(t, renewalTestBaseTime.Add(-40*day), renewalTestBaseTime.Add(-10*day), "sign-in")
+	r.startDevice(t, newRenewalTestLocalState(t, t.TempDir(), expired, clientJwt), clientJwt)
+	request := r.transport.takeRenewal(t, expired)
+	now := r.clock.Now()
+	renewed := renewalTestNetworkJwt(t, now.Add(-16*day), now.Add(14*day), "renewed")
+	request.answer(renewalTestReplyJwt(renewed))
+	r.requireRenewed(t)
+	r.clock.requireArmed(t, 5*time.Minute)
+	r.transport.requireNone(t)
+
+	// the same token, a new generation, a minute later
+	r.clock.Advance(time.Minute)
+	r.startDevice(t, newRenewalTestLocalState(t, t.TempDir(), renewed, clientJwt), clientJwt)
+	r.clock.requireArmed(t, 4*time.Minute)
+	r.transport.requireNone(t)
+
+	r.clock.Advance(4 * time.Minute)
+	r.transport.takeRenewal(t, renewed).answer(renewalTestReplyJwt(renewalTestRenewedJwt(t, r.clock.Now(), "renewed-again")))
+	r.requireRenewed(t)
 }

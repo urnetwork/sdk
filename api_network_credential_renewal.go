@@ -41,9 +41,9 @@ func networkCredentialDueAtOnce(byJwt string, now time.Time) bool {
 }
 
 // When the scheduled renewal of a network token falls: now for a token due at
-// once, and any other at its drawn point of the refresh window
-// (jwtRefreshTime), the client token's schedule. The renewer holds each
-// renewal to at least MinRefreshTimeout after the previous one.
+// once, and any other at its point of the refresh window (jwtRefreshTime), the
+// client token's schedule. The renewer holds each renewal to at least
+// MinRefreshTimeout after the previous one.
 func networkCredentialRenewalTime(byJwt string, now time.Time, draw float64, settings *apiTokenRefreshSettings) time.Time {
 	if networkCredentialDueAtOnce(byJwt, now) {
 		return now
@@ -305,10 +305,12 @@ type apiNetworkCredentialRenewer struct {
 	settings *apiTokenRefreshSettings
 	clock    apiRefreshClock
 	jitter   func(time.Duration) time.Duration
-	// draws a token's point in its refresh window, in [0, 1)
-	draw func() float64
-	// tests observe each completed renewal attempt; installed before start
+	// a token's point in its refresh window, in [0, 1) (jwtRefreshDraw)
+	draw func(byJwt string) float64
+	// tests observe each completed renewal attempt, and each time the worker
+	// parks with nothing to renew; installed before start
 	testingAfterRenew func()
+	testingParked     func()
 
 	// owned by run
 	// the token the schedule was computed for, and its renewal time
@@ -335,7 +337,7 @@ func newApiNetworkCredentialRenewer(ctx context.Context, api *Api, settings *api
 		settings: settings,
 		clock:    systemApiRefreshClock{},
 		jitter:   networkRenewalJitter,
-		draw:     mathrand.Float64,
+		draw:     jwtRefreshDraw,
 	}
 }
 
@@ -394,6 +396,13 @@ func (self *apiNetworkCredentialRenewer) run() {
 		notify := self.monitor.NotifyChannel()
 		target, ok := self.api.currentNetworkRenewalTarget()
 		if !ok {
+			// keep no copy of a credential that is no longer renewed, such as
+			// one signed out
+			self.scheduledByJwt = ""
+			self.scheduledTime = time.Time{}
+			if self.testingParked != nil {
+				self.testingParked()
+			}
 			select {
 			case <-self.ctx.Done():
 				return
@@ -442,22 +451,28 @@ func (self *apiNetworkCredentialRenewer) run() {
 }
 
 // Starts the state of a new credential generation over, and schedules a token
-// the first time it is the target. The schedule of a token is read
-// once: every renewal draws its token's point again, while a token without
-// `iat` has a lifetime relative to the time it is read, which would recede if
-// it were read again on every pass.
+// the first time it is the target. The schedule of a token is read once: a
+// token without `iat` has a lifetime relative to the time it is read, which
+// would recede if it were read again on every pass.
+//
+// A new generation of the same token (a device started from another
+// LocalState that keeps it) keeps the floor of its last renewal: a renewal
+// that answered a token already past its point would otherwise renew again at
+// once. A new sign-in starts the floor over.
 func (self *apiNetworkCredentialRenewer) track(target networkRenewalTarget, now time.Time) {
 	if target.generation != self.generation {
 		self.generation = target.generation
 		self.failures = 0
 		self.anomalies = 0
 		self.notBefore = time.Time{}
-		self.lastRenewalTime = time.Time{}
 		self.retrying.Store(false)
+		if target.byJwt != self.scheduledByJwt {
+			self.lastRenewalTime = time.Time{}
+		}
 	}
 	if target.byJwt != self.scheduledByJwt {
 		self.scheduledByJwt = target.byJwt
-		self.scheduledTime = networkCredentialRenewalTime(target.byJwt, now, self.draw(), self.settings)
+		self.scheduledTime = networkCredentialRenewalTime(target.byJwt, now, self.draw(target.byJwt), self.settings)
 	}
 }
 

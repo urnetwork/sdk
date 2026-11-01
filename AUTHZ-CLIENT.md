@@ -34,8 +34,9 @@ still accept a client token from an ordinary network.
 
   A hosted device's session `Api` never receives a network credential.
 - **Renewal.** `/auth/refresh` refreshes only client tokens ("Client ID is
-  required"), and the SDK refreshes the client token exactly as before. The
-  network token renews at `POST /auth/network-refresh`
+  required"), and the SDK refreshes the client token on the schedule of
+  `apiTokenRefreshSettings` (`device_token_manager.go`), described under When
+  below. The network token renews at `POST /auth/network-refresh`
   (`api_network_credential_renewal.go`), a Network only route.
   - **Which `Api` renews.** An `Api` renews the network token it keeps beside
     a device's client token when the LocalState that device started from
@@ -51,11 +52,19 @@ still accept a client token from an ordinary network.
     token), a headless backend, and a hosted device's session `Api` have no
     LocalState behind a network token. One `Api` has one renewer.
   - **When.** On the client token's schedule (`apiTokenRefreshSettings` in
-    `device_token_manager.go`): at a point drawn uniformly between 40% and
-    50% of the token's lifetime, measured from `iat`, so never later than its
-    half-life. Each renewal draws again, so clients that renewed together do
-    not stay in lockstep. A token loaded past its point renews at once, and
-    a renewal is never sooner than 5 minutes after the previous one. A
+    `device_token_manager.go`): at the token's point between 40% and 50% of
+    its lifetime, measured from `iat`, so never later than its half-life. The
+    point is a hash of the token's id (`jti`, else its signature), so points
+    are uniform across tokens: every renewal answers a token with its own
+    point, clients that renewed together do not stay in lockstep, and every
+    process that loads a token takes the same point, so a restart neither
+    renews early nor in a burst. A token loaded past its point renews at
+    once. Within one process, a renewal is never sooner than 5 minutes after
+    the previous renewal of the same token, also when a device starts from
+    another LocalState that keeps it. The floor is not persisted: another
+    process, or this one relaunched, may renew a token that is already past
+    its point at once, so a renewal that answers such a token (a device clock
+    far ahead of the server's) can renew once more right after a relaunch. A
     token with no `exp` (a legacy token) or an expired one renews at once.
     That works while the server still accepts it (vault `auth.yml`
     `reject_missing_expiration` and `reject_expired` off), which is how the
