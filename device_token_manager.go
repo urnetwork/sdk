@@ -293,13 +293,13 @@ func (self *apiTokenRefreshSettings) refreshFraction(draw float64) float64 {
 	return min(start+(end-start)*draw, end)
 }
 
-// The point of a token in its refresh window, in [0, 1): a hash of the token's
-// id (`jti`), or of its signature when it has none, read as a fraction. The
-// point is uniform across tokens, each new token has its own, and every
-// process that loads a token takes the same one. A point drawn afresh by each
-// process instead moved every restart's tokens: a mass restart renewed the
-// tokens whose new point had already passed in one burst, and frequent
-// restarts pulled renewals early.
+// The point of a token in its refresh window, in [0, 1): a hash of the
+// token's id (`jti`), else of its signature, else of its whole text (an
+// unsigned token without an id, or text that is not a JWT), as a fraction.
+// Points are uniform across tokens, each new token has its own, and every
+// process that loads a token takes the same one. A point drawn per process
+// instead moved every restart's tokens: a mass restart renewed those whose new
+// point had passed in one burst, and frequent restarts pulled renewals early.
 func jwtRefreshDraw(byJwt string) float64 {
 	seed := "token:" + byJwt
 	claims := gojwt.MapClaims{}

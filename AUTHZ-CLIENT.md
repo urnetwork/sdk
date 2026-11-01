@@ -54,22 +54,26 @@ still accept a client token from an ordinary network.
   - **When.** On the client token's schedule (`apiTokenRefreshSettings` in
     `device_token_manager.go`): at the token's point between 40% and 50% of
     its lifetime, measured from `iat`, so never later than its half-life. The
-    point is a hash of the token's id (`jti`, else its signature), so points
-    are uniform across tokens: every renewal answers a token with its own
-    point, clients that renewed together do not stay in lockstep, and every
-    process that loads a token takes the same point, so a restart neither
-    renews early nor in a burst. A token loaded past its point renews at
-    once. Within one process, a renewal is never sooner than 5 minutes after
-    the previous renewal of the same token, also when a device starts from
-    another LocalState that keeps it. The floor is not persisted: another
-    process, or this one relaunched, may renew a token that is already past
-    its point at once, so a renewal that answers such a token (a device clock
-    far ahead of the server's) can renew once more right after a relaunch. A
-    token with no `exp` (a legacy token) or an expired one renews at once.
-    That works while the server still accepts it (vault `auth.yml`
-    `reject_missing_expiration` and `reject_expired` off), which is how the
-    installed base moves to renewable tokens before those gates flip. An API
-    key never renews: it does not expire, and the server refuses it.
+    point is a hash of the token's id (`jti`), else of its signature, else of
+    its whole text (an unsigned token without an id, or text that is not a
+    JWT), so points are uniform across tokens: every renewal answers a token
+    with its own point, clients that renewed together do not stay in lockstep,
+    and every process that loads a token takes the same point. A restart
+    therefore moves no token's point and renews nothing early, but a token
+    loaded past its point renews at once, including every token whose point
+    passed while its app was not running: after a fleet-wide outage those
+    renew together when the apps come back (before the window they renewed 5
+    minutes after the load). Within one process, a renewal is never sooner
+    than 5 minutes after the previous renewal of the same token, also when a
+    device starts from another LocalState that keeps it. The floor is not
+    persisted: another process, or this one relaunched, may renew a token that
+    is already past its point at once, so a renewal that answers such a token
+    (a device clock far ahead of the server's) can renew once more right after
+    a relaunch. A token with no `exp` (a legacy token) or an expired one
+    renews at once. That works while the server still accepts it (vault
+    `auth.yml` `reject_missing_expiration` and `reject_expired` off), which is
+    how the installed base moves to renewable tokens before those gates flip.
+    An API key never renews: it does not expire, and the server refuses it.
   - **Persisted.** The renewal replaces `by_jwt` in LocalState with a
     compare-and-swap that keeps the client token, the instance and the device
     owner. A sign-out or a new sign-in that races it wins, and the renewal is
