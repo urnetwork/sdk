@@ -97,6 +97,13 @@ const extenderProvideTcpRetryTimeout = 3 * time.Minute
 // not spend them.
 const extenderMeasurementOptOutHold = 5 * time.Minute
 
+// The least time between two log lines of one kind of forward dial failure
+// (extenderForwardDialErrorLog). An extender whose egress cannot reach the
+// operator fails every forward the same way, so one line a minute, with the
+// count of the failures since, says as much as one line a failure. One
+// minute, as the sdk's other error log throttles.
+const extenderForwardDialErrorLogInterval = 1 * time.Minute
+
 type deviceLocalExtender struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -107,6 +114,10 @@ type deviceLocalExtender struct {
 	settings   *deviceLocalExtenderSettings
 	privateKey ed25519.PrivateKey
 	publicKey  ed25519.PublicKey
+
+	// the server's forward dial failures, logged at most once an interval
+	// for each kind (A7)
+	forwardDialErrorLog *extenderForwardDialErrorLog
 
 	// What the role serves with, built by startServing once it holds tcp 443
 	// and nil before: in the constructor when the port is free, else in the
@@ -196,17 +207,27 @@ func newDeviceLocalExtender(
 	}
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 
+	now := time.Now
+	if settings.Now != nil {
+		now = settings.Now
+	}
+	forwardDialErrorLogInterval := settings.ForwardDialErrorLogInterval
+	if forwardDialErrorLogInterval == 0 {
+		forwardDialErrorLogInterval = extenderForwardDialErrorLogInterval
+	}
+
 	cancelCtx, cancel := context.WithCancel(ctx)
 	self := &deviceLocalExtender{
-		ctx:           cancelCtx,
-		cancel:        cancel,
-		done:          make(chan struct{}),
-		log:           log,
-		settings:      settings,
-		privateKey:    privateKey,
-		publicKey:     publicKey,
-		statusMonitor: connect.NewMonitorValue(extenderProvideState{Enabled: true}),
-		wakeMonitor:   connect.NewMonitor(),
+		ctx:                 cancelCtx,
+		cancel:              cancel,
+		done:                make(chan struct{}),
+		log:                 log,
+		settings:            settings,
+		privateKey:          privateKey,
+		publicKey:           publicKey,
+		forwardDialErrorLog: newExtenderForwardDialErrorLog(log, now, forwardDialErrorLogInterval),
+		statusMonitor:       connect.NewMonitorValue(extenderProvideState{Enabled: true}),
+		wakeMonitor:         connect.NewMonitor(),
 	}
 
 	// tcp 443 first, the one port an extender requires (G2)
@@ -550,6 +571,11 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.ListenErrorHandler = func(carrier string, err error) {
 		self.wakeMonitor.NotifyAll()
 	}
+	// a forward dial that fails is logged, at most once a minute for each
+	// kind, so an extender whose egress cannot reach the operator says so;
+	// with no handler every forward failed silently, and so did the forward
+	// of every activation probe (A7, connect#230)
+	settings.ErrorHandler = self.forwardDialErrorLog.report
 	// the lag.dev measurement API and the lifecycle behind it, or no API at
 	// all (lag.dev/PLAN.md C4, M3, M10)
 	self.measurementSettings(settings)
@@ -1164,4 +1190,80 @@ func extenderReporterApiUrl(settings *deviceLocalExtenderSettings) string {
 		}
 	}
 	return ""
+}
+
+// The forward dial failures of the role's extender server (A7), logged at
+// most once an interval for each kind: the stream forward's dial, and the
+// datagram relay's. The server dials the operator host a client asked for
+// only after it has answered the request, so a dial that fails leaves the
+// client a stream that closes and nothing else. An extender whose egress
+// cannot reach the operator fails every forward that way, the forward of
+// every activation probe included, and until the role logged it the
+// extender kept no trace of why (connect#230). The first failure of a kind
+// is logged at once, and the rest of the interval only counted, the count
+// riding on the next line. Every other stage the server reports is a
+// client's own failure and is not logged.
+//
+// The whitelist confines a forward to the operator's hosts (A5), so a line
+// names an operator host and never a client or its destination.
+//
+// Safe for concurrent use: report is the server's ErrorHandler and runs on
+// each connection's goroutine.
+type extenderForwardDialErrorLog struct {
+	log connect.Logger
+	now func() time.Time
+	// the least time between two lines of one kind; non-positive logs every
+	// failure
+	interval time.Duration
+
+	stateLock sync.Mutex
+	// by stage, when its last line was logged and how many of its failures
+	// were not logged since
+	stageLogTimes       map[string]time.Time
+	stageUnloggedCounts map[string]int
+}
+
+func newExtenderForwardDialErrorLog(
+	log connect.Logger,
+	now func() time.Time,
+	interval time.Duration,
+) *extenderForwardDialErrorLog {
+	return &extenderForwardDialErrorLog{
+		log:                 log,
+		now:                 now,
+		interval:            interval,
+		stageLogTimes:       map[string]time.Time{},
+		stageUnloggedCounts: map[string]int{},
+	}
+}
+
+// The ErrorHandler of the role's extender server (extender.ExtenderSettings).
+// It runs synchronously in the server, so it only logs, outside the lock.
+func (self *extenderForwardDialErrorLog) report(stage string, err error) {
+	switch stage {
+	case extender.ExtenderErrorStageForwardDial, extender.ExtenderErrorStageDatagramForwardDial:
+	default:
+		return
+	}
+	now := self.now()
+	logged, unloggedCount := func() (bool, int) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if logTime, ok := self.stageLogTimes[stage]; ok && 0 < self.interval && now.Sub(logTime) < self.interval {
+			self.stageUnloggedCounts[stage] += 1
+			return false, 0
+		}
+		unloggedCount := self.stageUnloggedCounts[stage]
+		self.stageLogTimes[stage] = now
+		delete(self.stageUnloggedCounts, stage)
+		return true, unloggedCount
+	}()
+	if !logged {
+		return
+	}
+	if 0 < unloggedCount {
+		self.log.Infof("[extender]provide %s err = %s (%d more since the last)\n", stage, err, unloggedCount)
+	} else {
+		self.log.Infof("[extender]provide %s err = %s\n", stage, err)
+	}
 }
