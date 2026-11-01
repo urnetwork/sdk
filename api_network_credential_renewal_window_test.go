@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sync"
@@ -166,6 +167,8 @@ func TestNetworkCredentialRelaunchKeepsTheTokensPoint(t *testing.T) {
 	day := 24 * time.Hour
 	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
 	settings := defaultApiTokenRefreshSettings()
+	// the draw a renewer is built with, which the harness replaces
+	productionDraw := newApiNetworkCredentialRenewer(context.Background(), nil, settings).draw
 	pastCount := 0
 	for i := 0; i < 8; i += 1 {
 		// 13.5 of 30 days old: 45% of its lifetime
@@ -173,7 +176,7 @@ func TestNetworkCredentialRelaunchKeepsTheTokensPoint(t *testing.T) {
 		point := networkCredentialRenewalTime(networkJwt, renewalTestBaseTime, jwtRefreshDraw(networkJwt), settings)
 		for _, process := range []string{"first", "relaunched"} {
 			r := newRenewalTestApi(t)
-			r.api.networkRenewer.draw = jwtRefreshDraw
+			r.api.networkRenewer.draw = productionDraw
 			r.startDevice(t, newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt), clientJwt)
 			if point.After(r.clock.Now()) {
 				r.clock.requireArmed(t, point.Sub(r.clock.Now()))
