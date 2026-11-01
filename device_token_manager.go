@@ -2,6 +2,8 @@ package sdk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	mathrand "math/rand"
@@ -19,6 +21,10 @@ import (
 // Api is the single owner of the mutable bearer token, so headless users such
 // as the subnet miner and validator get exactly the same scheduling, retry,
 // rotation, and rejection behavior as the apps without constructing a device.
+//
+// It refreshes on the schedule of apiTokenRefreshSettings: each token at its
+// point of the refresh window, never sooner than the floor after the previous
+// attempt, and after a failed attempt, again after a uniform wait.
 type apiTokenManager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -26,6 +32,7 @@ type apiTokenManager struct {
 	done   chan struct{}
 
 	refreshMonitor *connect.Monitor
+	startOnce      sync.Once
 	active         atomic.Bool
 
 	// A DeviceRemote can make a new API transport usable while an older direct
@@ -38,8 +45,23 @@ type apiTokenManager struct {
 	activeRefreshAttempt  *apiTokenRefreshAttempt
 	failedRefreshPending  bool
 	transportRetryPending bool
-	// Immutable after the worker starts; tests install a deterministic barrier.
-	retryTimeout func() time.Duration
+
+	// Immutable after the worker starts. Tests install a controlled clock, a
+	// deterministic window draw, and a deterministic barrier for the retry
+	// wait, and observe the step between Start's request and its activation,
+	// and each time the worker parks dormant.
+	settings                 *apiTokenRefreshSettings
+	clock                    apiRefreshClock
+	refreshDraw              func(byJwt string) float64
+	retryTimeout             func() time.Duration
+	testingBetweenStartSteps func()
+	testingDormant           func()
+
+	// Owned by run: the token the schedule was made for and its refresh time,
+	// and when the last refresh attempt began (zero before the first).
+	scheduledByJwt         string
+	scheduledRefreshTime   time.Time
+	lastRefreshAttemptTime time.Time
 
 	// refreshPending makes a refresh request LEVEL-triggered instead of edge-triggered.
 	//
@@ -47,7 +69,7 @@ type apiTokenManager struct {
 	// fresh one. The run loop captures that channel at the TOP of each iteration -- so a
 	// RefreshToken() landing while the loop is inside the /auth/refresh http call closes
 	// a channel nobody is listening to any more. The request would be silently DROPPED,
-	// and the next scheduled refresh is half a token lifetime away. The flag survives
+	// and the next scheduled refresh is up to half a token lifetime away. The flag survives
 	// across iterations, so a request made at any moment is honored on the next pass.
 	refreshPending atomic.Bool
 }
@@ -115,7 +137,7 @@ func validateRefreshedClientJwt(previousByJwt string, refreshedByJwt string) err
 	return nil
 }
 
-func newApiTokenManager(ctx context.Context, api *Api) *apiTokenManager {
+func newApiTokenManager(ctx context.Context, api *Api, settings *apiTokenRefreshSettings) *apiTokenManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	manager := &apiTokenManager{
 		ctx:            cancelCtx,
@@ -123,6 +145,8 @@ func newApiTokenManager(ctx context.Context, api *Api) *apiTokenManager {
 		api:            api,
 		done:           make(chan struct{}),
 		refreshMonitor: connect.NewMonitor(),
+		settings:       settings,
+		clock:          systemApiRefreshClock{},
 	}
 	go func() {
 		defer close(manager.done)
@@ -168,77 +192,189 @@ func jwtIssuedAt(byJwt string) time.Time {
 	return issuedAt.Time
 }
 
-// minRefreshTimeout is the floor on the scheduled refresh interval, and it is
-// the load-bearing half of the schedule.
+// The schedule of an API's credential refreshes: the client JWT refreshes of
+// apiTokenManager and the network credential renewals of
+// apiNetworkCredentialRenewer. Neither worker changes it.
 //
-// The refresh point used to be a FIXED lead subtracted from the token's `exp`
-// (14 days, calibrated to a 30-day server lifetime). The server later shortened
-// its lifetime to 24h, which made the lead exceed the token's entire life, so
-// every computed timeout was ~13 days in the PAST. A non-positive timeout means
-// no sleep, and since a successful refresh yields another 24h token, success
-// re-armed the same condition: an unbounded refresh loop at ~30ms per pass, 593
-// refreshes in one observed 22-minute session.
+// A scheduled refresh falls at a point of the token's own lifetime, from `iat`
+// to `exp`, in the refresh window between RefreshWindowStart and
+// RefreshWindowEnd of the lifetime (owner decision, 2026-11-01). Each token's
+// point comes from a hash of its id (jwtRefreshDraw), so points are uniform
+// across tokens and every process takes the same one for a token. That is
+// what spreads clients that refreshed together -- after a mass refusal, or
+// when a process hosting many devices restarts -- across the window. At
+// exactly the half-life, such a group refreshed in lockstep every cycle,
+// indefinitely. The window ends at the half-life, so a token keeps at least
+// half its life for the retries after a failed refresh, and a token loaded
+// past its point refreshes at once.
 //
-// The half-life schedule below is the correctness fix; this floor is what makes
-// the failure mode non-catastrophic the NEXT time the server changes its
-// lifetime, or a clock is skewed, or an `exp` is malformed. Any interval derived
-// from a server-controlled value needs a floor, or it is one config change away
-// from a hot loop.
-const minRefreshTimeout = 5 * time.Minute
+// The lifetime is server policy that the sdk cannot hardcode: it was 30 days,
+// then 24h, then 30 days again. A schedule derived from each token is right for
+// whatever lifetime the server picks next. The refresh point used to be a fixed
+// 14-day lead before `exp`, written for 30-day tokens; with 24h tokens every
+// refresh was due in the past, and since a successful refresh yields another
+// such token, success re-armed the same condition: 593 refreshes in one
+// observed 22-minute session. MinRefreshTimeout is what keeps the next lifetime
+// change, a skewed clock or a malformed `exp` from doing that again.
+type apiTokenRefreshSettings struct {
+	// The start of the refresh window, as a fraction of the token's lifetime.
+	// 0.4 spreads a group over the last tenth of the lifetime before the
+	// half-life (3 days of a 30-day token), while the mean scheduled refresh
+	// rate rises only from 1/0.5 to 1/0.45 per lifetime, about 11%.
+	// Non-positive starts the window at `iat`.
+	RefreshWindowStart float64
+	// The end of the refresh window, as a fraction of the token's lifetime: the
+	// half-life, 0.5, which no token's point passes. At or below
+	// RefreshWindowStart, every token refreshes at the window's start.
+	RefreshWindowEnd float64
+	// The least time from one refresh attempt to the next scheduled one. Any
+	// schedule derived from a server-controlled value needs a floor, or it is
+	// one config change away from a hot loop. The floor wins over the window:
+	// a lifetime shorter than twice the floor refreshes after the floor, later
+	// than its half-life. Immediate refreshes (Start, RefreshToken, a new token)
+	// and the retries after a failure are not held by it. Non-positive is for
+	// tests only: nothing then spaces the requests, so a token that arrives
+	// already due is refreshed again and again without a wait.
+	MinRefreshTimeout time.Duration
+	// How long after it is first scheduled a token without a readable `exp`
+	// refreshes, including an empty or unparseable one. A refreshable legacy
+	// token without an expiration must not become permanent, so it is
+	// revalidated weekly. Also the cap of the network renewer's anomaly
+	// spacing (networkRenewalAnomalyTimeout). Non-positive refreshes such a
+	// token as often as the floor allows.
+	NoExpirationRefreshTimeout time.Duration
+	// After a failed client JWT refresh, the next attempt waits a time drawn
+	// uniformly from [0, RefreshRetryTimeout), which spreads clients that failed
+	// together across the interval. Non-positive is for tests only: a failure
+	// is then retried without a wait, in a loop for as long as it lasts.
+	RefreshRetryTimeout time.Duration
 
-// noExpirationRefreshTimeout is the fallback when the stored jwt has no usable
-// `exp` -- including when it is empty or unparseable. A refreshable legacy token
-// without an expiration must not become permanent, so it is revalidated on a
-// conservative weekly cadence.
-const noExpirationRefreshTimeout = 7 * 24 * time.Hour
+	// A failed network credential renewal waits at least this long, plus a
+	// jitter drawn from an interval that starts at
+	// NetworkRenewalRetryJitterBase and doubles with each further failure in
+	// a row, up to NetworkRenewalMaxRetryJitter. The minimum keeps any jitter,
+	// even none, from retrying in a loop; non-positive (for tests only)
+	// leaves only the jitter, and a non-positive jitter interval adds none.
+	NetworkRenewalMinRetryTimeout time.Duration
+	NetworkRenewalRetryJitterBase time.Duration
+	NetworkRenewalMaxRetryJitter  time.Duration
+	// A renewal the server answers with another 4xx (a server that predates
+	// the route answers 404) is tried again after this. Non-positive is for
+	// tests only: the refused renewal is then retried at once, in a loop.
+	NetworkRenewalRefusedRetryTimeout time.Duration
+}
 
-// jwtRefreshTimeout is the delay until the next SCHEDULED refresh of `byJwt`.
-//
-// Pure and total by design: it is the entire schedule, so it can be pinned
-// against real tokens without a network, a clock, or a running device. It never
-// returns less than minRefreshTimeout -- callers that want an immediate refresh
-// (an explicit RefreshToken request, or the one Start arms at launch) override
-// it deliberately.
-func jwtRefreshTimeout(byJwt string, now time.Time) time.Duration {
-	issuedTime := jwtIssuedAt(byJwt)
-	expirationTime := jwtExpiration(byJwt)
+func defaultApiTokenRefreshSettings() *apiTokenRefreshSettings {
+	return &apiTokenRefreshSettings{
+		RefreshWindowStart:                0.4,
+		RefreshWindowEnd:                  0.5,
+		MinRefreshTimeout:                 5 * time.Minute,
+		NoExpirationRefreshTimeout:        7 * 24 * time.Hour,
+		RefreshRetryTimeout:               15 * time.Minute,
+		NetworkRenewalMinRetryTimeout:     10 * time.Second,
+		NetworkRenewalRetryJitterBase:     30 * time.Second,
+		NetworkRenewalMaxRetryJitter:      15 * time.Minute,
+		NetworkRenewalRefusedRetryTimeout: 24 * time.Hour,
+	}
+}
 
-	var refreshTimeout time.Duration
-	if expirationTime.IsZero() {
-		// no expiration, or none we can read (including an empty jwt): refresh at
-		// an arbitrary long interval
-		refreshTimeout = noExpirationRefreshTimeout
-	} else {
-		// Refresh at the token's HALF-LIFE, derived from the token itself.
-		//
-		// The server's token lifetime is not a constant this sdk can hardcode: it
-		// was 30 days, then became 24h, and the hardcoded 14-day lead this
-		// replaces silently became a hot loop when it did (see minRefreshTimeout).
-		// A half-life is correct for whatever lifetime the server chooses, and it
-		// is the cadence the server documents for sdk clients.
-		//
-		// Prefer `iat` so the half-life is of the token's REAL lifetime rather than
-		// of whatever happens to remain right now -- halving the remainder on every
-		// pass would make the interval collapse geometrically toward the floor.
-		// Fall back to now when `iat` is absent or nonsensical. (The no-`iat`
-		// fallback is deliberately NOT a fixed `exp - 12h` lead: that is the same
-		// shape as the 14-day lead that caused the storm, and it lands in the past
-		// for any token shorter than 12h.)
-		lifetimeStart := issuedTime
-		if lifetimeStart.IsZero() || !lifetimeStart.Before(expirationTime) {
-			lifetimeStart = now
+// The point of a token's lifetime that a window draw selects: draw 0 is the
+// window's start and 1 its end. A draw outside [0, 1] is clamped, so no draw
+// falls after the window's end.
+func (self *apiTokenRefreshSettings) refreshFraction(draw float64) float64 {
+	start := max(self.RefreshWindowStart, 0)
+	end := max(self.RefreshWindowEnd, start)
+	if !(0 <= draw) {
+		// negative, or not a number
+		draw = 0
+	} else if 1 < draw {
+		draw = 1
+	}
+	return min(start+(end-start)*draw, end)
+}
+
+// The point of a token in its refresh window, in [0, 1): a hash of the
+// token's id (`jti`), else of its signature, else of its whole text (an
+// unsigned token without an id, or text that is not a JWT), as a fraction.
+// Points are uniform across tokens, each new token has its own, and every
+// process that loads a token takes the same one. A point drawn per process
+// instead moved every restart's tokens: a mass restart renewed those whose new
+// point had passed in one burst, and frequent restarts pulled renewals early.
+func jwtRefreshDraw(byJwt string) float64 {
+	seed := "token:" + byJwt
+	claims := gojwt.MapClaims{}
+	if _, parts, err := gojwt.NewParser().ParseUnverified(byJwt, claims); err == nil {
+		if id, ok := claims["jti"].(string); ok && id != "" {
+			seed = "jti:" + id
+		} else if 3 <= len(parts) && parts[2] != "" {
+			seed = "signature:" + parts[2]
 		}
-		refreshTime := lifetimeStart.Add(expirationTime.Sub(lifetimeStart) / 2)
-		refreshTimeout = refreshTime.Sub(now)
 	}
+	sum := sha256.Sum256([]byte(seed))
+	// the top 53 bits, the precision of a float64 fraction
+	return float64(binary.BigEndian.Uint64(sum[:8])>>11) / float64(uint64(1)<<53)
+}
 
-	// A token already past its half-life -- a device resumed after being offline,
-	// a skewed clock, a server that shortened its lifetime again -- is refreshed
-	// after the floor rather than in a tight loop.
-	if refreshTimeout < minRefreshTimeout {
-		refreshTimeout = minRefreshTimeout
+// The time source of an API's refresh workers. Tests install a controlled
+// one.
+type apiRefreshClock interface {
+	Now() time.Time
+	// After starts a timer of d; stop releases it.
+	After(d time.Duration) (c <-chan time.Time, stop func())
+}
+
+type systemApiRefreshClock struct{}
+
+func (systemApiRefreshClock) Now() time.Time {
+	return time.Now()
+}
+
+func (systemApiRefreshClock) After(d time.Duration) (<-chan time.Time, func()) {
+	timer := time.NewTimer(d)
+	return timer.C, func() {
+		stopApiTokenTimer(timer)
 	}
-	return refreshTimeout
+}
+
+// When the scheduled refresh of `byJwt` falls, for a window draw in [0, 1]
+// (refreshFraction). A token without a readable `exp` refreshes
+// NoExpirationRefreshTimeout from now; any other at its drawn point, which is
+// in the past for a token loaded late in its life.
+//
+// Pure and total, so the schedule can be pinned against real tokens without a
+// network, a clock or a running device. jwtRefreshTimeout spaces the result
+// from the previous attempt.
+func jwtRefreshTime(byJwt string, now time.Time, draw float64, settings *apiTokenRefreshSettings) time.Time {
+	expirationTime := jwtExpiration(byJwt)
+	if expirationTime.IsZero() {
+		return now.Add(settings.NoExpirationRefreshTimeout)
+	}
+	// The point is of the token's real lifetime, from `iat`, rather than of
+	// whatever remains now: a fraction of the remainder on every pass would
+	// collapse geometrically toward the floor. Without a sensible `iat` the
+	// lifetime counts from now. That fallback is deliberately not a fixed lead
+	// before `exp`, the shape of the 14-day lead that caused the storm, which
+	// lands in the past for any token shorter than the lead.
+	lifetimeStart := jwtIssuedAt(byJwt)
+	if lifetimeStart.IsZero() || !lifetimeStart.Before(expirationTime) {
+		lifetimeStart = now
+	}
+	lifetime := float64(expirationTime.Sub(lifetimeStart))
+	return lifetimeStart.Add(time.Duration(settings.refreshFraction(draw) * lifetime))
+}
+
+// The wait from now until a scheduled refresh at refreshTime, held to at
+// least MinRefreshTimeout after the previous refresh attempt (zero when there
+// was none). It is 0 when the refresh is due: a token
+// loaded past its point refreshes promptly, and the floor, rather than the
+// schedule, keeps one scheduled refresh from following another in a loop.
+func jwtRefreshTimeout(refreshTime time.Time, previousAttemptTime time.Time, now time.Time, settings *apiTokenRefreshSettings) time.Duration {
+	if !previousAttemptTime.IsZero() {
+		if earliest := previousAttemptTime.Add(settings.MinRefreshTimeout); refreshTime.Before(earliest) {
+			refreshTime = earliest
+		}
+	}
+	return max(refreshTime.Sub(now), 0)
 }
 
 func stopApiTokenTimer(timer *time.Timer) {
@@ -250,14 +386,25 @@ func stopApiTokenTimer(timer *time.Timer) {
 	}
 }
 
+// Activates the worker, once. The first refresh runs immediately: an app start
+// with a stored jwt must find out right away when the jwt's client no longer
+// exists on the server (see refreshToken), instead of silently running against
+// a dead client until the scheduled refresh window.
+//
+// The request is recorded before the worker is active. In the other order, a
+// wake between the two steps (setDeviceByJwt's TokenChanged lands just before
+// StartJwtRefresh) found an active worker with nothing requested, scheduled
+// the stored token, and refreshed one past its point at once, before the
+// request refreshed it again.
 func (self *apiTokenManager) Start() {
-	if self.active.CompareAndSwap(false, true) {
-		// the first refresh runs immediately: an app start with a stored jwt must
-		// find out right away when the jwt's client no longer exists on the server
-		// (see refreshToken), instead of silently running against a dead client
-		// until the scheduled refresh window
-		self.RefreshToken()
-	}
+	self.startOnce.Do(func() {
+		self.refreshPending.Store(true)
+		if self.testingBetweenStartSteps != nil {
+			self.testingBetweenStartSteps()
+		}
+		self.active.Store(true)
+		self.refreshMonitor.NotifyAll()
+	})
 }
 
 func (self *apiTokenManager) TokenChanged() {
@@ -347,13 +494,39 @@ func (self *apiTokenManager) transportRetryIsPending() bool {
 	return self.transportRetryPending
 }
 
-// nextRetryTimeout owns the randomized outage backoff. Tests replace it with
-// a barrier so transport/wait races are forced rather than scheduled by luck.
+// The randomized outage backoff, uniform over [0, RefreshRetryTimeout). Tests
+// replace it with a barrier so transport/wait races are forced rather than
+// scheduled by luck.
 func (self *apiTokenManager) nextRetryTimeout() time.Duration {
 	if self.retryTimeout != nil {
 		return self.retryTimeout()
 	}
-	return time.Duration(mathrand.Int63n(int64(15 * time.Minute)))
+	if self.settings.RefreshRetryTimeout <= 0 {
+		return 0
+	}
+	return time.Duration(mathrand.Int63n(int64(self.settings.RefreshRetryTimeout)))
+}
+
+// The point of `byJwt` in its refresh window (jwtRefreshDraw), or the test's.
+func (self *apiTokenManager) drawRefreshPoint(byJwt string) float64 {
+	if self.refreshDraw != nil {
+		return self.refreshDraw(byJwt)
+	}
+	return jwtRefreshDraw(byJwt)
+}
+
+// The wait until the scheduled refresh of `byJwt`. A token is scheduled once,
+// when it is first seen: a refresh installs a new token with its own point,
+// and a wake that changes nothing keeps the schedule it has. A token without
+// `iat` keeps its lifetime start the same way, rather than receding on every
+// pass. Owned by run.
+func (self *apiTokenManager) scheduledRefreshTimeout(byJwt string) time.Duration {
+	now := self.clock.Now()
+	if byJwt != self.scheduledByJwt {
+		self.scheduledByJwt = byJwt
+		self.scheduledRefreshTime = jwtRefreshTime(byJwt, now, self.drawRefreshPoint(byJwt), self.settings)
+	}
+	return jwtRefreshTimeout(self.scheduledRefreshTime, self.lastRefreshAttemptTime, now, self.settings)
 }
 
 func (self *apiTokenManager) run() {
@@ -371,6 +544,13 @@ func (self *apiTokenManager) run() {
 		byJwt := self.api.GetByJwt()
 
 		if !self.active.Load() || !jwtCanRefresh(byJwt) {
+			// keep no copy of a credential that is no longer scheduled, such as
+			// one signed out
+			self.scheduledByJwt = ""
+			self.scheduledRefreshTime = time.Time{}
+			if self.testingDormant != nil {
+				self.testingDormant()
+			}
 			select {
 			case <-self.ctx.Done():
 				return
@@ -385,7 +565,7 @@ func (self *apiTokenManager) run() {
 			// timeout) sent the monitor's edge to a channel we are no longer
 			// listening to. The level-triggered flag above is what honors that
 			// request now instead of sleeping out the schedule.
-			refreshTimeout = jwtRefreshTimeout(byJwt, time.Now())
+			refreshTimeout = self.scheduledRefreshTimeout(byJwt)
 		}
 
 		if 0 < refreshTimeout {
@@ -393,15 +573,15 @@ func (self *apiTokenManager) run() {
 				"[api-token]waiting %.2fs to refresh the jwt",
 				float64(refreshTimeout/time.Millisecond)/1000.0,
 			)
-			timer := time.NewTimer(refreshTimeout)
+			timeout, stopTimeout := self.clock.After(refreshTimeout)
 			select {
 			case <-self.ctx.Done():
-				stopApiTokenTimer(timer)
+				stopTimeout()
 				return
 			case <-refreshNotify:
-				stopApiTokenTimer(timer)
+				stopTimeout()
 				continue
-			case <-timer.C:
+			case <-timeout:
 			}
 		} else {
 			// The wait above is the ONLY place this branch of the outer loop would
@@ -409,8 +589,9 @@ func (self *apiTokenManager) run() {
 			// non-positive. A closed device otherwise still enters refreshToken --
 			// 297 attempts in 497ms against a cancelled ClientStrategy in one
 			// observed teardown. The zero-timeout path stays legitimately reachable
-			// (the refresh Start arms, an explicit RefreshToken), so the guarantee
-			// must not depend on the schedule above being positive.
+			// (the refresh Start arms, an explicit RefreshToken, a token loaded past
+			// its refresh point), so the guarantee must not depend on the schedule
+			// above being positive.
 			select {
 			case <-self.ctx.Done():
 				return
@@ -428,6 +609,8 @@ func (self *apiTokenManager) run() {
 		}
 
 		for {
+			// the floor of the next scheduled refresh counts from here
+			self.lastRefreshAttemptTime = self.clock.Now()
 			attempt := self.beginRefreshAttempt()
 			self.api.logger().Infof("[api-token]refreshing the jwt now")
 			outcome := self.refreshTokenWithContext(attempt.ctx, byJwt)
@@ -487,7 +670,7 @@ func (self *apiTokenManager) run() {
 				outcome.err,
 			)
 
-			timer := time.NewTimer(randomTimeout)
+			retryWait, stopRetryWait := self.clock.After(randomTimeout)
 			select {
 			case <-self.ctx.Done():
 				// Cancellation has to stop run(), not just the retry. This return
@@ -495,17 +678,17 @@ func (self *apiTokenManager) run() {
 				// CLOSURE; the outer loop then immediately re-entered the refresh,
 				// discarding a correctly-computed backoff ("Will retry in
 				// 128.69s") in the same millisecond, 297 times.
-				stopApiTokenTimer(timer)
+				stopRetryWait()
 				return
 			case <-retryNotify:
-				stopApiTokenTimer(timer)
+				stopRetryWait()
 				if !self.refreshPending.Load() && self.transportRetryIsPending() {
 					continue
 				}
 				// The token or an explicit refresh request changed; recalculate
 				// from the API's current state rather than retrying the captured
 				// JWT.
-			case <-timer.C:
+			case <-retryWait:
 				continue
 			}
 			break

@@ -61,6 +61,8 @@ func testingRunnableTokenManager(ctx context.Context, api *Api) *apiTokenManager
 		cancel:         cancel,
 		api:            api,
 		refreshMonitor: connect.NewMonitor(),
+		settings:       defaultApiTokenRefreshSettings(),
+		clock:          systemApiRefreshClock{},
 	}
 	manager.active.Store(true)
 	manager.refreshPending.Store(true)
@@ -78,81 +80,49 @@ func testingRunnableTokenManager(ctx context.Context, api *Api) *apiTokenManager
 // median 6.4ms apart.
 //
 // The invariant that matters is not the exact interval, it is that NO token the
-// server can hand us -- of any lifetime, at any age, with any clock skew -- can
-// produce a timeout that lets the loop spin.
+// server can hand us -- of any lifetime, at any age, with any clock skew, at any
+// point of its refresh window -- can schedule a refresh sooner than the floor
+// after the attempt that just fetched it.
 func TestJwtRefreshTimeoutNeverHotLoops(t *testing.T) {
 	now := time.Date(2026, 8, 11, 0, 7, 44, 0, time.UTC)
+	settings := defaultApiTokenRefreshSettings()
 
-	cases := []struct {
-		name   string
-		claims map[string]any
-	}{
-		{
-			// the exact shape that caused the storm: the server's current 24h token
-			"24h token, freshly issued",
-			map[string]any{"iat": now.Unix(), "exp": now.Add(24 * time.Hour).Unix()},
-		},
-		{
-			// the shape the old 14-day lead was written for
-			"30d token, freshly issued",
-			map[string]any{"iat": now.Unix(), "exp": now.Add(30 * 24 * time.Hour).Unix()},
-		},
-		{"1h token", map[string]any{"iat": now.Unix(), "exp": now.Add(time.Hour).Unix()}},
-		{"1m token", map[string]any{"iat": now.Unix(), "exp": now.Add(time.Minute).Unix()}},
-		{"token already past its half-life", map[string]any{"iat": now.Add(-20 * time.Hour).Unix(), "exp": now.Add(4 * time.Hour).Unix()}},
-		{"already expired token", map[string]any{"iat": now.Add(-48 * time.Hour).Unix(), "exp": now.Add(-24 * time.Hour).Unix()}},
-		{"no iat (pre-audit server)", map[string]any{"exp": now.Add(24 * time.Hour).Unix()}},
-		{"iat in the future (skewed clock)", map[string]any{"iat": now.Add(time.Hour).Unix(), "exp": now.Add(24 * time.Hour).Unix()}},
-		{"iat after exp (nonsense)", map[string]any{"iat": now.Add(48 * time.Hour).Unix(), "exp": now.Add(24 * time.Hour).Unix()}},
-		{"exp at the epoch", map[string]any{"exp": 0}},
-		{"no exp at all", map[string]any{"user_id": "u"}},
+	claimsList := []map[string]any{
+		// the exact shape that caused the storm: a 24h token
+		{"iat": now.Unix(), "exp": now.Add(24 * time.Hour).Unix()},
+		// the shape the old 14-day lead was written for
+		{"iat": now.Unix(), "exp": now.Add(30 * 24 * time.Hour).Unix()},
+		{"iat": now.Unix(), "exp": now.Add(time.Hour).Unix()},
+		{"iat": now.Unix(), "exp": now.Add(time.Minute).Unix()},
+		// already past its window
+		{"iat": now.Add(-20 * time.Hour).Unix(), "exp": now.Add(4 * time.Hour).Unix()},
+		// already expired
+		{"iat": now.Add(-48 * time.Hour).Unix(), "exp": now.Add(-24 * time.Hour).Unix()},
+		// no iat (pre-audit server)
+		{"exp": now.Add(24 * time.Hour).Unix()},
+		// iat in the future (skewed clock)
+		{"iat": now.Add(time.Hour).Unix(), "exp": now.Add(24 * time.Hour).Unix()},
+		// iat after exp (nonsense)
+		{"iat": now.Add(48 * time.Hour).Unix(), "exp": now.Add(24 * time.Hour).Unix()},
+		// exp at the epoch
+		{"exp": 0},
+		// no exp at all
+		{"user_id": "u"},
+	}
+	byJwts := []string{"", "not-a-jwt", "a.b.c", "test-jwt"}
+	for _, claims := range claimsList {
+		byJwts = append(byJwts, testingJwt(claims))
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := jwtRefreshTimeout(testingJwt(c.claims), now)
-			if got < minRefreshTimeout {
-				t.Fatalf("timeout = %s, which is below the %s floor -- the loop can spin", got, minRefreshTimeout)
+	for _, byJwt := range byJwts {
+		for _, draw := range []float64{0, 0.5, 1} {
+			// the attempt that fetched the token began now
+			refreshTime := jwtRefreshTime(byJwt, now, draw, settings)
+			got := jwtRefreshTimeout(refreshTime, now, now, settings)
+			if got < settings.MinRefreshTimeout {
+				t.Fatalf("%q draw %v: timeout = %s, below the %s floor -- the loop can spin", byJwt, draw, got, settings.MinRefreshTimeout)
 			}
-		})
-	}
-
-	// the degenerate inputs must not spin either
-	for _, jwt := range []string{"", "not-a-jwt", "a.b.c", "test-jwt"} {
-		if got := jwtRefreshTimeout(jwt, now); got < minRefreshTimeout {
-			t.Fatalf("timeout for %q = %s, below the %s floor", jwt, got, minRefreshTimeout)
 		}
-	}
-}
-
-// TestJwtRefreshTimeoutIsHalfLife pins the schedule itself: half of the token's
-// own lifetime, measured from `iat`, which is what the server documents for sdk
-// clients and is correct for whatever lifetime the server picks next.
-func TestJwtRefreshTimeoutIsHalfLife(t *testing.T) {
-	now := time.Date(2026, 8, 11, 0, 7, 44, 0, time.UTC)
-
-	cases := []struct {
-		lifetime time.Duration
-		want     time.Duration
-	}{
-		{24 * time.Hour, 12 * time.Hour},
-		{30 * 24 * time.Hour, 15 * 24 * time.Hour},
-		{2 * time.Hour, time.Hour},
-	}
-	for _, c := range cases {
-		jwt := testingJwt(map[string]any{"iat": now.Unix(), "exp": now.Add(c.lifetime).Unix()})
-		got := jwtRefreshTimeout(jwt, now)
-		if got != c.want {
-			t.Fatalf("lifetime %s: timeout = %s, want %s", c.lifetime, got, c.want)
-		}
-	}
-
-	// Halving must be of the token's REAL lifetime, not of the remaining time --
-	// otherwise repeated passes collapse the interval geometrically toward the
-	// floor. A 24h token read 6h in still refreshes at its 12h mark, i.e. in 6h.
-	jwt := testingJwt(map[string]any{"iat": now.Unix(), "exp": now.Add(24 * time.Hour).Unix()})
-	if got := jwtRefreshTimeout(jwt, now.Add(6*time.Hour)); got != 6*time.Hour {
-		t.Fatalf("6h into a 24h token: timeout = %s, want 6h", got)
 	}
 }
 
@@ -325,7 +295,7 @@ func TestTokenManagerRunSchedulesAfterSuccess(t *testing.T) {
 	manager.cancel()
 	<-done
 
-	// exactly one: the immediate first refresh. The next is 12h away.
+	// exactly one: the immediate first refresh. The next is 9.6h to 12h away.
 	if got != 1 {
 		t.Fatalf("%d refreshes in 1.5s, want 1 (the immediate first) -- success is re-arming the loop", got)
 	}

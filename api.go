@@ -166,8 +166,10 @@ func newApi(
 		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
 	}
-	api.tokenManager = newApiTokenManager(cancelCtx, api)
-	api.networkRenewer = newApiNetworkCredentialRenewer(cancelCtx, api)
+	// both workers read the same immutable schedule
+	refreshSettings := defaultApiTokenRefreshSettings()
+	api.tokenManager = newApiTokenManager(cancelCtx, api, refreshSettings)
+	api.networkRenewer = newApiNetworkCredentialRenewer(cancelCtx, api, refreshSettings)
 	return api
 }
 
@@ -353,10 +355,10 @@ func (self *Api) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
 	})
 }
 
-// StartJwtRefresh idempotently enables the API-owned refresh worker. Network
-// login JWTs are not refreshable and remain dormant; a client JWT containing
-// client_id and device_id is validated/refreshed immediately and then ahead of
-// expiry.
+// Idempotently enables the API-owned refresh worker. Network login JWTs are
+// not refreshable and remain dormant; a client JWT containing client_id and
+// device_id is validated/refreshed immediately, and then each token at a point
+// drawn between 40% and 50% of its lifetime (apiTokenRefreshSettings).
 //
 //gomobile:noexport
 func (self *Api) StartJwtRefresh() {

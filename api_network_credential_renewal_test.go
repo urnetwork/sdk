@@ -203,7 +203,9 @@ type renewalTestApi struct {
 }
 
 // An API on a controlled clock and in-memory transport. Its renewer jitters by
-// the whole interval, so each backoff is exact.
+// the whole interval, so each backoff is exact, and draws the end of each
+// token's refresh window, the half-life, so each schedule is in whole days.
+// Tests of the draw install their own.
 func newRenewalTestApi(t *testing.T) *renewalTestApi {
 	t.Helper()
 	ctx, api := newTestApiForURL(t, renewalTestApiUrl)
@@ -215,6 +217,9 @@ func newRenewalTestApi(t *testing.T) *renewalTestApi {
 	api.networkRenewer.clock = clock
 	api.networkRenewer.jitter = func(interval time.Duration) time.Duration {
 		return interval
+	}
+	api.networkRenewer.draw = func(string) float64 {
+		return 1
 	}
 	api.networkRenewer.testingAfterRenew = func() {
 		renewed <- struct{}{}
@@ -317,65 +322,80 @@ func renewalTestReplyJwt(byJwt string) string {
 	return fmt.Sprintf(`{"by_jwt":%q}`, byJwt)
 }
 
+// A network token renews at its drawn point of the client token's refresh
+// window, 40% to 50% of its lifetime from `iat`; legacy, expired and malformed
+// tokens renew now.
 func TestNetworkCredentialRenewalSchedule(t *testing.T) {
 	now := renewalTestBaseTime
 	day := 24 * time.Hour
+	settings := defaultApiTokenRefreshSettings()
 	for _, c := range []struct {
 		name  string
 		byJwt string
+		draw  float64
 		want  time.Duration
 	}{
-		{"half-life", renewalTestNetworkJwt(t, now.Add(-time.Hour), now.Add(-time.Hour+30*day), "a"), 15*day - time.Hour},
-		{"past the half-life: the floor", renewalTestNetworkJwt(t, now.Add(-20*day), now.Add(10*day), "b"), minRefreshTimeout},
-		{"a short lifetime: the floor", renewalTestNetworkJwt(t, now, now.Add(2*time.Minute), "c"), minRefreshTimeout},
-		{"no iat: half of what remains", renewalTestNetworkJwt(t, time.Time{}, now.Add(30*day), "d"), 15 * day},
-		{"no exp (legacy): now", renewalTestNetworkJwt(t, now.Add(-400*day), time.Time{}, "e"), 0},
-		{"no claims at all (legacy): now", renewalTestNetworkJwt(t, time.Time{}, time.Time{}, "f"), 0},
-		{"expired: now", renewalTestNetworkJwt(t, now.Add(-40*day), now.Add(-10*day), "g"), 0},
-		{"expiring this instant: now", renewalTestNetworkJwt(t, now.Add(-30*day), now, "h"), 0},
+		{"the window's start", renewalTestNetworkJwt(t, now.Add(-time.Hour), now.Add(-time.Hour+30*day), "a"), 0, 12*day - time.Hour},
+		{"the middle of the window", renewalTestNetworkJwt(t, now.Add(-time.Hour), now.Add(-time.Hour+30*day), "a"), 0.5, 13*day + 11*time.Hour},
+		{"the half-life", renewalTestNetworkJwt(t, now.Add(-time.Hour), now.Add(-time.Hour+30*day), "a"), 1, 15*day - time.Hour},
+		{"past its point: overdue", renewalTestNetworkJwt(t, now.Add(-13*day), now.Add(17*day), "b"), 0, -day},
+		{"past the half-life: overdue", renewalTestNetworkJwt(t, now.Add(-20*day), now.Add(10*day), "b"), 1, -5 * day},
+		{"a short lifetime", renewalTestNetworkJwt(t, now, now.Add(2*time.Minute), "c"), 0, 48 * time.Second},
+		{"no iat: of what remains", renewalTestNetworkJwt(t, time.Time{}, now.Add(30*day), "d"), 1, 15 * day},
+		{"no exp (legacy): now", renewalTestNetworkJwt(t, now.Add(-400*day), time.Time{}, "e"), 1, 0},
+		{"no claims at all (legacy): now", renewalTestNetworkJwt(t, time.Time{}, time.Time{}, "f"), 1, 0},
+		{"expired: now", renewalTestNetworkJwt(t, now.Add(-40*day), now.Add(-10*day), "g"), 1, 0},
+		{"expiring this instant: now", renewalTestNetworkJwt(t, now.Add(-30*day), now, "h"), 1, 0},
 		{"malformed exp: now", renewalTestJwt(t, gojwt.MapClaims{
 			"network_id": credentialTestNetworkId,
 			"user_id":    credentialTestUserId,
 			"exp":        "soon",
-		}), 0},
+		}), 1, 0},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			connect.AssertEqual(t, networkCredentialRenewalTimeout(c.byJwt, now), c.want)
-		})
+		got := networkCredentialRenewalTime(c.byJwt, now, c.draw, settings).Sub(now)
+		if diff := got - c.want; diff < -time.Microsecond || time.Microsecond < diff {
+			t.Errorf("%s: renews in %s, want %s", c.name, got, c.want)
+		}
 	}
 }
 
-// Renewals that answer a token due at once are spaced from minRefreshTimeout,
-// doubling up to noExpirationRefreshTimeout.
+// Renewals that answer a token due at once are spaced from MinRefreshTimeout,
+// doubling up to NoExpirationRefreshTimeout.
 func TestNetworkRenewalAnomalySpacingIsBounded(t *testing.T) {
-	want := minRefreshTimeout
+	settings := defaultApiTokenRefreshSettings()
+	want := settings.MinRefreshTimeout
 	for consecutive := 1; consecutive <= 20; consecutive += 1 {
-		got := networkRenewalAnomalyTimeout(consecutive)
+		got := networkRenewalAnomalyTimeout(consecutive, settings)
 		connect.AssertEqual(t, got, want)
-		want = min(2*want, noExpirationRefreshTimeout)
+		want = min(2*want, settings.NoExpirationRefreshTimeout)
 	}
-	connect.AssertEqual(t, networkRenewalAnomalyTimeout(0), minRefreshTimeout)
+	connect.AssertEqual(t, networkRenewalAnomalyTimeout(0, settings), settings.MinRefreshTimeout)
 }
 
-// A failed renewal waits at least networkRenewalMinRetryTimeout whatever the
+// A failed renewal waits at least NetworkRenewalMinRetryTimeout whatever the
 // jitter, and the jitter interval doubles to its cap.
 func TestNetworkRenewalRetryBackoffIsBounded(t *testing.T) {
+	settings := defaultApiTokenRefreshSettings()
+	connect.AssertEqual(t, settings.NetworkRenewalMinRetryTimeout, 10*time.Second)
+	connect.AssertEqual(t, settings.NetworkRenewalRetryJitterBase, 30*time.Second)
+	connect.AssertEqual(t, settings.NetworkRenewalMaxRetryJitter, 15*time.Minute)
+	connect.AssertEqual(t, settings.NetworkRenewalRefusedRetryTimeout, 24*time.Hour)
 	full := func(interval time.Duration) time.Duration { return interval }
 	none := func(interval time.Duration) time.Duration { return 0 }
 	excessive := func(interval time.Duration) time.Duration { return 10 * interval }
 	negative := func(interval time.Duration) time.Duration { return -interval }
-	interval := networkRenewalRetryJitterBase
+	interval := settings.NetworkRenewalRetryJitterBase
 	for failures := 1; failures <= 20; failures += 1 {
-		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, full), networkRenewalMinRetryTimeout+interval)
-		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, none), networkRenewalMinRetryTimeout)
-		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, excessive), networkRenewalMinRetryTimeout+interval)
-		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, negative), networkRenewalMinRetryTimeout)
-		interval = min(2*interval, networkRenewalMaxRetryJitter)
+		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, full, settings), settings.NetworkRenewalMinRetryTimeout+interval)
+		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, none, settings), settings.NetworkRenewalMinRetryTimeout)
+		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, excessive, settings), settings.NetworkRenewalMinRetryTimeout+interval)
+		connect.AssertEqual(t, networkRenewalRetryTimeout(failures, negative, settings), settings.NetworkRenewalMinRetryTimeout)
+		interval = min(2*interval, settings.NetworkRenewalMaxRetryJitter)
 	}
 	for i := 0; i < 1000; i += 1 {
-		jittered := networkRenewalJitter(networkRenewalMaxRetryJitter)
-		if jittered < 0 || networkRenewalMaxRetryJitter <= jittered {
-			t.Fatalf("jitter %s is outside [0, %s)", jittered, networkRenewalMaxRetryJitter)
+		jittered := networkRenewalJitter(settings.NetworkRenewalMaxRetryJitter)
+		if jittered < 0 || settings.NetworkRenewalMaxRetryJitter <= jittered {
+			t.Fatalf("jitter %s is outside [0, %s)", jittered, settings.NetworkRenewalMaxRetryJitter)
 		}
 	}
 	connect.AssertEqual(t, networkRenewalJitter(0), time.Duration(0))
@@ -423,8 +443,8 @@ func TestOnlyANetworkTokenRenews(t *testing.T) {
 // client token, to POST /auth/network-refresh. The renewal replaces the
 // network credential in LocalState and in the API and leaves the client
 // token, the instance and the device as they are; the admin calls carry it
-// from then on, and the next renewal is at its half-life. A relaunch adopts
-// it.
+// from then on, and the next renewal is at its drawn point (the harness draws
+// the half-life). A relaunch adopts it.
 func TestNetworkCredentialRenewalRenewsAndPersists(t *testing.T) {
 	r := newRenewalTestApi(t)
 	home := t.TempDir()
@@ -436,11 +456,9 @@ func TestNetworkCredentialRenewalRenewsAndPersists(t *testing.T) {
 	r.startDevice(t, localState, clientJwt)
 	connect.AssertEqual(t, r.api.networkCredential(), networkJwt)
 
-	// past its half-life: renewed after the floor
-	r.clock.requireArmed(t, minRefreshTimeout)
-	r.transport.requireNone(t)
-	r.clock.Advance(minRefreshTimeout)
+	// past its window: renewed at once
 	request := r.transport.takeRenewal(t, networkJwt)
+	r.clock.requireNotArmed(t)
 	if request.byJwt == clientJwt {
 		t.Fatal("the renewal carried the client token")
 	}
@@ -483,8 +501,8 @@ func TestNetworkCredentialRenewalRenewsAndPersists(t *testing.T) {
 	t.Cleanup(relaunchedState.Close)
 	relaunched.startDevice(t, relaunchedState, clientJwt)
 	connect.AssertEqual(t, relaunched.api.networkCredential(), renewedJwt)
-	// its clock starts again at the base time, before the renewal was issued
-	relaunched.clock.requireArmed(t, 15*day+minRefreshTimeout)
+	// its clock starts again at the base time, when the renewal was issued
+	relaunched.clock.requireArmed(t, 15*day)
 }
 
 // An expired or legacy (no exp) sign-in token renews at once, while the
@@ -762,7 +780,10 @@ func TestRejectedNetworkCredentialIsDroppedOnly(t *testing.T) {
 	r.api.SetByJwt(newLoginJwt)
 	r.startDevice(t, localState, clientJwt)
 	connect.AssertEqual(t, r.api.networkCredential(), newLoginJwt)
-	r.clock.requireArmed(t, minRefreshTimeout)
+	// past its window, and this sign-in was never renewed: at once
+	r.transport.takeRenewal(t, newLoginJwt).answer(renewalTestReplyJwt(renewalTestRenewedJwt(t, r.clock.Now(), "renewed")))
+	r.requireRenewed(t)
+	r.clock.requireArmed(t, 15*day)
 }
 
 // A refusal in the result is one the server repeats for this token: renewal
@@ -838,7 +859,8 @@ func TestRenewalFailuresBackOff(t *testing.T) {
 		&connect.HttpStatusError{StatusCode: http.StatusGatewayTimeout, Status: "504 Gateway Timeout"},
 		&connect.HttpStatusError{StatusCode: http.StatusInternalServerError, Status: "500 Internal Server Error"},
 	}
-	interval := networkRenewalRetryJitterBase
+	settings := defaultApiTokenRefreshSettings()
+	interval := settings.NetworkRenewalRetryJitterBase
 	for i, err := range transient {
 		request := r.transport.takeRenewal(t, networkJwt)
 		if err == nil {
@@ -847,28 +869,28 @@ func TestRenewalFailuresBackOff(t *testing.T) {
 			request.fail(err)
 		}
 		r.requireRenewed(t)
-		backoff := networkRenewalMinRetryTimeout + interval
+		backoff := settings.NetworkRenewalMinRetryTimeout + interval
 		r.clock.requireArmed(t, backoff)
 		r.transport.requireNone(t)
 		if i < len(transient)-1 {
 			r.clock.Advance(backoff)
 		}
-		interval = min(2*interval, networkRenewalMaxRetryJitter)
+		interval = min(2*interval, settings.NetworkRenewalMaxRetryJitter)
 	}
-	connect.AssertEqual(t, interval, networkRenewalMaxRetryJitter)
+	connect.AssertEqual(t, interval, settings.NetworkRenewalMaxRetryJitter)
 
 	// a usable transport retries the failed renewal now
 	r.api.remoteTransportAvailable()
 	request := r.transport.takeRenewal(t, networkJwt)
 	request.fail(&connect.HttpStatusError{StatusCode: http.StatusNotFound, Status: "404 Not Found"})
 	r.requireRenewed(t)
-	r.clock.requireArmed(t, networkRenewalRefusedRetryTimeout)
+	r.clock.requireArmed(t, settings.NetworkRenewalRefusedRetryTimeout)
 	// ... but not a refused one
 	r.api.remoteTransportAvailable()
 	r.clock.requireNotArmed(t)
 	r.transport.requireNone(t)
 
-	r.clock.Advance(networkRenewalRefusedRetryTimeout)
+	r.clock.Advance(settings.NetworkRenewalRefusedRetryTimeout)
 	renewedJwt := renewalTestRenewedJwt(t, r.clock.Now(), "renewed")
 	r.transport.takeRenewal(t, networkJwt).answer(renewalTestReplyJwt(renewedJwt))
 	r.requireRenewed(t)
@@ -888,8 +910,9 @@ func TestRenewalsOfTokensDueAtOnceAreSpaced(t *testing.T) {
 	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt)
 	r.startDevice(t, localState, clientJwt)
 
+	settings := defaultApiTokenRefreshSettings()
 	byJwt := networkJwt
-	want := minRefreshTimeout
+	want := settings.MinRefreshTimeout
 	for i := 0; i < 8; i += 1 {
 		request := r.transport.takeRenewal(t, byJwt)
 		now := r.clock.Now()
@@ -905,7 +928,7 @@ func TestRenewalsOfTokensDueAtOnceAreSpaced(t *testing.T) {
 		r.clock.requireArmed(t, want)
 		connect.AssertEqual(t, localState.GetByJwt(), byJwt)
 		r.clock.Advance(want)
-		want = min(2*want, noExpirationRefreshTimeout)
+		want = min(2*want, settings.NoExpirationRefreshTimeout)
 	}
 
 	// a normal token ends the spacing
@@ -932,7 +955,8 @@ func TestRenewalThatCannotBePersistedIsRetried(t *testing.T) {
 	}
 	request.answer(renewalTestReplyJwt(renewalTestRenewedJwt(t, r.clock.Now(), "renewed")))
 	r.requireRenewed(t)
-	r.clock.requireArmed(t, networkRenewalMinRetryTimeout+networkRenewalRetryJitterBase)
+	settings := defaultApiTokenRefreshSettings()
+	r.clock.requireArmed(t, settings.NetworkRenewalMinRetryTimeout+settings.NetworkRenewalRetryJitterBase)
 	connect.AssertEqual(t, r.api.networkCredential(), networkJwt)
 }
 
@@ -960,13 +984,9 @@ func TestApisSharingALocalStateStayConsistent(t *testing.T) {
 			}
 			first := newRenewalTestApi(t)
 			second := newRenewalTestApi(t)
+			// past its window: both renew at once
 			first.startDevice(t, localState, clientJwt)
 			second.startDevice(t, otherState, clientJwt)
-			first.clock.requireArmed(t, minRefreshTimeout)
-			second.clock.requireArmed(t, minRefreshTimeout)
-
-			first.clock.Advance(minRefreshTimeout)
-			second.clock.Advance(minRefreshTimeout)
 			firstRequest := first.transport.takeRenewal(t, networkJwt)
 			secondRequest := second.transport.takeRenewal(t, networkJwt)
 
@@ -997,7 +1017,7 @@ func TestNetworkCredentialRenewerSharesTheApiLifetime(t *testing.T) {
 		r := newRenewalTestApi(t)
 		localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt)
 		r.startDevice(t, localState, clientJwt)
-		r.clock.requireArmed(t, networkCredentialRenewalTimeout(networkJwt, renewalTestBaseTime))
+		r.clock.requireArmed(t, networkCredentialRenewalTime(networkJwt, renewalTestBaseTime, 1, defaultApiTokenRefreshSettings()).Sub(renewalTestBaseTime))
 		ctx, cancel := context.WithTimeout(context.Background(), renewalTestStepLimit)
 		defer cancel()
 		if err := r.api.CloseAndWait(ctx); err != nil {

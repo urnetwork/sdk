@@ -34,8 +34,9 @@ still accept a client token from an ordinary network.
 
   A hosted device's session `Api` never receives a network credential.
 - **Renewal.** `/auth/refresh` refreshes only client tokens ("Client ID is
-  required"), and the SDK refreshes the client token exactly as before. The
-  network token renews at `POST /auth/network-refresh`
+  required"), and the SDK refreshes the client token on the schedule of
+  `apiTokenRefreshSettings` (`device_token_manager.go`), described under When
+  below. The network token renews at `POST /auth/network-refresh`
   (`api_network_credential_renewal.go`), a Network only route.
   - **Which `Api` renews.** An `Api` renews the network token it keeps beside
     a device's client token when the LocalState that device started from
@@ -50,12 +51,29 @@ still accept a client token from an ordinary network.
     Nothing else renews: ur.io's account host (ur.io keeps and renews its own
     token), a headless backend, and a hosted device's session `Api` have no
     LocalState behind a network token. One `Api` has one renewer.
-  - **When.** At the token's half-life, and never sooner than 5 minutes. A
-    token with no `exp` (a legacy token) or an expired one renews at once.
-    That works while the server still accepts it (vault `auth.yml`
-    `reject_missing_expiration` and `reject_expired` off), which is how the
-    installed base moves to renewable tokens before those gates flip. An API
-    key never renews: it does not expire, and the server refuses it.
+  - **When.** On the client token's schedule (`apiTokenRefreshSettings` in
+    `device_token_manager.go`): at the token's point between 40% and 50% of
+    its lifetime, measured from `iat`, so never later than its half-life. The
+    point is a hash of the token's id (`jti`), else of its signature, else of
+    its whole text (an unsigned token without an id, or text that is not a
+    JWT), so points are uniform across tokens: every renewal answers a token
+    with its own point, clients that renewed together do not stay in lockstep,
+    and every process that loads a token takes the same point. A restart
+    therefore moves no token's point and renews nothing early, but a token
+    loaded past its point renews at once, including every token whose point
+    passed while its app was not running: after a fleet-wide outage those
+    renew together when the apps come back (before the window they renewed 5
+    minutes after the load). Within one process, a renewal is never sooner
+    than 5 minutes after the previous renewal of the same token, also when a
+    device starts from another LocalState that keeps it. The floor is not
+    persisted: another process, or this one relaunched, may renew a token that
+    is already past its point at once, so a renewal that answers such a token
+    (a device clock far ahead of the server's) can renew once more right after
+    a relaunch. A token with no `exp` (a legacy token) or an expired one
+    renews at once. That works while the server still accepts it (vault
+    `auth.yml` `reject_missing_expiration` and `reject_expired` off), which is
+    how the installed base moves to renewable tokens before those gates flip.
+    An API key never renews: it does not expire, and the server refuses it.
   - **Persisted.** The renewal replaces `by_jwt` in LocalState with a
     compare-and-swap that keeps the client token, the instance and the device
     owner. A sign-out or a new sign-in that races it wins, and the renewal is
@@ -189,8 +207,8 @@ client token. It can happen when all of these hold:
    `/network/auth-client`) to the first build with this SDK.
 3. **The network token outlives 30 days.** Addressed by renewal: the server
    renews a network token at `POST /auth/network-refresh`, which a client
-   token can never call, and the SDK renews the kept one at its half-life
-   (Renewal, above). What still holds:
+   token can never call, and the SDK renews the kept one between 40% and 50%
+   of its lifetime (Renewal, above). What still holds:
    - Renewal runs only while the app runs. A token of an app that was not
      opened for 30 days expires. While `reject_expired` is off it renews on
      the next launch; once it is on, that user signs in again for the account

@@ -30,59 +30,50 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-const (
-	// a failed renewal is retried after at least this long, plus jitter
-	networkRenewalMinRetryTimeout = 10 * time.Second
-	// the jitter interval after the first failed renewal, which doubles with
-	// each further failure in a row
-	networkRenewalRetryJitterBase = 30 * time.Second
-	// the largest jitter interval
-	networkRenewalMaxRetryJitter = 15 * time.Minute
-	// a renewal the server answers with another 4xx (a server that predates
-	// the route answers 404) is tried again after this
-	networkRenewalRefusedRetryTimeout = 24 * time.Hour
-)
-
-// networkCredentialRenewalTimeout is the delay until the scheduled renewal of
-// a network token, where 0 means now. A token without a readable expiration (a
-// legacy token) or an expired one is renewed now, while the server still
-// accepts it (vault auth.yml reject_missing_expiration and reject_expired
-// off): renewing is how the installed base moves to tokens that renew before
-// those gates flip. Any other token is renewed at its half-life, and never
-// sooner than minRefreshTimeout (jwtRefreshTimeout).
-func networkCredentialRenewalTimeout(byJwt string, now time.Time) time.Duration {
+// Reports a network token to renew now, while the server still accepts it
+// (vault auth.yml reject_missing_expiration and reject_expired off): one
+// without a readable expiration (a legacy token), or an expired one. Renewing
+// is how the installed base moves to tokens that renew before those gates
+// flip.
+func networkCredentialDueAtOnce(byJwt string, now time.Time) bool {
 	expirationTime := jwtExpiration(byJwt)
-	if expirationTime.IsZero() || !now.Before(expirationTime) {
-		return 0
-	}
-	return jwtRefreshTimeout(byJwt, now)
+	return expirationTime.IsZero() || !now.Before(expirationTime)
 }
 
-// networkRenewalAnomalyTimeout spaces renewals that answer a token which is
-// itself due at once (a server that mints no expiration, or a clock far ahead
-// of the server's). The spacing doubles from minRefreshTimeout with each such
-// renewal in a row, up to noExpirationRefreshTimeout, so neither can make
-// renewal a loop.
-func networkRenewalAnomalyTimeout(consecutive int) time.Duration {
-	timeout := minRefreshTimeout
-	for i := 1; i < consecutive && timeout < noExpirationRefreshTimeout; i += 1 {
+// When the scheduled renewal of a network token falls: now for a token due at
+// once, and any other at its point of the refresh window (jwtRefreshTime), the
+// client token's schedule. The renewer holds each renewal to at least
+// MinRefreshTimeout after the previous one.
+func networkCredentialRenewalTime(byJwt string, now time.Time, draw float64, settings *apiTokenRefreshSettings) time.Time {
+	if networkCredentialDueAtOnce(byJwt, now) {
+		return now
+	}
+	return jwtRefreshTime(byJwt, now, draw, settings)
+}
+
+// Spaces renewals that answer a token which is itself due at once (a server
+// that mints no expiration, or a clock far ahead of the server's). The spacing
+// doubles from MinRefreshTimeout with each such renewal in a row, up to
+// NoExpirationRefreshTimeout, so neither can make renewal a loop.
+func networkRenewalAnomalyTimeout(consecutive int, settings *apiTokenRefreshSettings) time.Duration {
+	timeout := settings.MinRefreshTimeout
+	for i := 1; i < consecutive && timeout < settings.NoExpirationRefreshTimeout; i += 1 {
 		timeout *= 2
 	}
-	return min(timeout, noExpirationRefreshTimeout)
+	return min(timeout, settings.NoExpirationRefreshTimeout)
 }
 
-// networkRenewalRetryTimeout is the backoff after the given number of failed
-// renewals in a row: networkRenewalMinRetryTimeout plus jitter over an
-// interval that doubles from networkRenewalRetryJitterBase up to
-// networkRenewalMaxRetryJitter. The floor keeps any jitter, even none, from
-// retrying in a loop.
-func networkRenewalRetryTimeout(failures int, jitter func(time.Duration) time.Duration) time.Duration {
-	interval := networkRenewalRetryJitterBase
-	for i := 1; i < failures && interval < networkRenewalMaxRetryJitter; i += 1 {
+// The backoff after the given number of failed renewals in a row:
+// NetworkRenewalMinRetryTimeout plus jitter over an interval that doubles from
+// NetworkRenewalRetryJitterBase up to NetworkRenewalMaxRetryJitter. The minimum
+// keeps any jitter, even none, from retrying in a loop.
+func networkRenewalRetryTimeout(failures int, jitter func(time.Duration) time.Duration, settings *apiTokenRefreshSettings) time.Duration {
+	interval := settings.NetworkRenewalRetryJitterBase
+	for i := 1; i < failures && interval < settings.NetworkRenewalMaxRetryJitter; i += 1 {
 		interval *= 2
 	}
-	interval = min(interval, networkRenewalMaxRetryJitter)
-	return networkRenewalMinRetryTimeout + max(0, min(jitter(interval), interval))
+	interval = min(interval, settings.NetworkRenewalMaxRetryJitter)
+	return settings.NetworkRenewalMinRetryTimeout + max(0, min(jitter(interval), interval))
 }
 
 func networkRenewalJitter(interval time.Duration) time.Duration {
@@ -287,27 +278,6 @@ func (self *Api) haltNetworkRenewalTarget(target networkRenewalTarget) bool {
 	return true
 }
 
-// networkRenewalClock is the renewer's time source. Tests install a
-// controlled one.
-type networkRenewalClock interface {
-	Now() time.Time
-	// After starts a timer of d; stop releases it.
-	After(d time.Duration) (c <-chan time.Time, stop func())
-}
-
-type systemNetworkRenewalClock struct{}
-
-func (systemNetworkRenewalClock) Now() time.Time {
-	return time.Now()
-}
-
-func (systemNetworkRenewalClock) After(d time.Duration) (<-chan time.Time, func()) {
-	timer := time.NewTimer(d)
-	return timer.C, func() {
-		stopApiTokenTimer(timer)
-	}
-}
-
 var closedNetworkRenewerDone = func() chan struct{} {
 	done := make(chan struct{})
 	close(done)
@@ -332,10 +302,15 @@ type apiNetworkCredentialRenewer struct {
 	done      chan struct{}
 
 	// immutable once started; tests install deterministic ones
-	clock  networkRenewalClock
-	jitter func(time.Duration) time.Duration
-	// tests observe each completed renewal attempt; installed before start
+	settings *apiTokenRefreshSettings
+	clock    apiRefreshClock
+	jitter   func(time.Duration) time.Duration
+	// a token's point in its refresh window, in [0, 1) (jwtRefreshDraw)
+	draw func(byJwt string) float64
+	// tests observe each completed renewal attempt, and each time the worker
+	// parks with nothing to renew; installed before start
 	testingAfterRenew func()
+	testingParked     func()
 
 	// owned by run
 	// the token the schedule was computed for, and its renewal time
@@ -349,16 +324,20 @@ type apiNetworkCredentialRenewer struct {
 	notBefore time.Time
 	// renewals in a row that answered a token due at once
 	anomalies int
+	// when this generation was last renewed; zero before its first renewal
+	lastRenewalTime time.Time
 }
 
-func newApiNetworkCredentialRenewer(ctx context.Context, api *Api) *apiNetworkCredentialRenewer {
+func newApiNetworkCredentialRenewer(ctx context.Context, api *Api, settings *apiTokenRefreshSettings) *apiNetworkCredentialRenewer {
 	return &apiNetworkCredentialRenewer{
-		ctx:     ctx,
-		api:     api,
-		monitor: connect.NewMonitor(),
-		done:    make(chan struct{}),
-		clock:   systemNetworkRenewalClock{},
-		jitter:  networkRenewalJitter,
+		ctx:      ctx,
+		api:      api,
+		monitor:  connect.NewMonitor(),
+		done:     make(chan struct{}),
+		settings: settings,
+		clock:    systemApiRefreshClock{},
+		jitter:   networkRenewalJitter,
+		draw:     jwtRefreshDraw,
 	}
 }
 
@@ -417,6 +396,13 @@ func (self *apiNetworkCredentialRenewer) run() {
 		notify := self.monitor.NotifyChannel()
 		target, ok := self.api.currentNetworkRenewalTarget()
 		if !ok {
+			// keep no copy of a credential that is no longer renewed, such as
+			// one signed out
+			self.scheduledByJwt = ""
+			self.scheduledTime = time.Time{}
+			if self.testingParked != nil {
+				self.testingParked()
+			}
 			select {
 			case <-self.ctx.Done():
 				return
@@ -433,6 +419,14 @@ func (self *apiNetworkCredentialRenewer) run() {
 		due := self.scheduledTime
 		if due.Before(self.notBefore) {
 			due = self.notBefore
+		}
+		// A renewal answers a fresh token whose point is a window away, but one
+		// already past its point (a skewed clock, a lifetime shorter than the
+		// floor) would be due again at once: renewals are spaced by the floor.
+		if !self.lastRenewalTime.IsZero() {
+			if earliest := self.lastRenewalTime.Add(self.settings.MinRefreshTimeout); due.Before(earliest) {
+				due = earliest
+			}
 		}
 		if now.Before(due) {
 			timeout, stop := self.clock.After(due.Sub(now))
@@ -456,10 +450,15 @@ func (self *apiNetworkCredentialRenewer) run() {
 	}
 }
 
-// track starts the state of a new credential generation over, and schedules
-// a token the first time it is the target. The schedule of a token is read
-// once: a token without `iat` has a half-life relative to the time it is
-// read, which would recede if it were read again on every pass.
+// Starts the state of a new credential generation over, and schedules a token
+// the first time it is the target. The schedule of a token is read once: a
+// token without `iat` has a lifetime relative to the time it is read, which
+// would recede if it were read again on every pass.
+//
+// A new generation of the same token (a device started from another
+// LocalState that keeps it) keeps the floor of its last renewal: a renewal
+// that answered a token already past its point would otherwise renew again at
+// once. A new sign-in starts the floor over.
 func (self *apiNetworkCredentialRenewer) track(target networkRenewalTarget, now time.Time) {
 	if target.generation != self.generation {
 		self.generation = target.generation
@@ -467,10 +466,13 @@ func (self *apiNetworkCredentialRenewer) track(target networkRenewalTarget, now 
 		self.anomalies = 0
 		self.notBefore = time.Time{}
 		self.retrying.Store(false)
+		if target.byJwt != self.scheduledByJwt {
+			self.lastRenewalTime = time.Time{}
+		}
 	}
 	if target.byJwt != self.scheduledByJwt {
 		self.scheduledByJwt = target.byJwt
-		self.scheduledTime = now.Add(networkCredentialRenewalTimeout(target.byJwt, now))
+		self.scheduledTime = networkCredentialRenewalTime(target.byJwt, now, self.draw(target.byJwt), self.settings)
 	}
 }
 
@@ -508,11 +510,11 @@ func (self *apiNetworkCredentialRenewer) renew(target networkRenewalTarget) {
 			}
 		case refusedNetworkRenewal(err):
 			self.failures = 0
-			self.retryAt(now.Add(networkRenewalRefusedRetryTimeout), false)
-			log.Infof("[api-network]renewal unavailable (%v); trying again in %s", err, networkRenewalRefusedRetryTimeout)
+			self.retryAt(now.Add(self.settings.NetworkRenewalRefusedRetryTimeout), false)
+			log.Infof("[api-network]renewal unavailable (%v); trying again in %s", err, self.settings.NetworkRenewalRefusedRetryTimeout)
 		default:
 			self.failures += 1
-			retryTimeout := networkRenewalRetryTimeout(self.failures, self.jitter)
+			retryTimeout := networkRenewalRetryTimeout(self.failures, self.jitter, self.settings)
 			self.retryAt(now.Add(retryTimeout), true)
 			log.Infof("[api-network]renewal failed (%v); trying again in %.2fs", err, float64(retryTimeout/time.Millisecond)/1000.0)
 		}
@@ -536,7 +538,7 @@ func (self *apiNetworkCredentialRenewer) renew(target networkRenewalTarget) {
 	if err != nil {
 		// LocalState could not be written; the kept credential is unchanged
 		self.failures += 1
-		retryTimeout := networkRenewalRetryTimeout(self.failures, self.jitter)
+		retryTimeout := networkRenewalRetryTimeout(self.failures, self.jitter, self.settings)
 		self.retryAt(now.Add(retryTimeout), false)
 		log.Errorf("[api-network]failed to persist the renewed network credential: %v", err)
 		return
@@ -548,9 +550,10 @@ func (self *apiNetworkCredentialRenewer) renew(target networkRenewalTarget) {
 	}
 	self.failures = 0
 	self.retryAt(time.Time{}, false)
-	if networkCredentialRenewalTimeout(keptByJwt, now) == 0 {
+	self.lastRenewalTime = now
+	if networkCredentialDueAtOnce(keptByJwt, now) {
 		self.anomalies += 1
-		self.notBefore = now.Add(networkRenewalAnomalyTimeout(self.anomalies))
+		self.notBefore = now.Add(networkRenewalAnomalyTimeout(self.anomalies, self.settings))
 	} else {
 		self.anomalies = 0
 	}
