@@ -1,8 +1,9 @@
 // The device settings json through the real c abi: a c host reads the
-// defaults, edits the provider extender controls (EXTENDER.md G1, F3) and
-// builds a device from the edited json with urnet_new_device_local, on a space
-// that keeps no local state. A json that names only some fields, or none,
-// keeps the defaults for the rest.
+// defaults, edits the provider extender controls (EXTENDER.md G1, F3) or the
+// strict window handover's off switch (CPUOPT3 D2) and builds a device from
+// the edited json with urnet_new_device_local, on a space that keeps no local
+// state. A json that names only some fields, or none, keeps the defaults for
+// the rest.
 package main
 
 import (
@@ -159,6 +160,27 @@ func TestDeviceLocalSettingsJsonThroughTheAbi(t *testing.T) {
 	dnsPrivilegedPortDevice := newDevice(edit(dnsPrivilegedPort))
 	if !getProvideExtender(dnsPrivilegedPortDevice) {
 		t.Fatal("the setting read off with only the 53 opt-in edited on")
+	}
+
+	// the strict window handover is on in the defaults; a host turns it off
+	// by editing the json, the device builds from it, and the json decodes
+	// over the defaults with the handover off, as urnet_new_device_local
+	// decodes it
+	if defaults["StrictWindowHandover"] != true {
+		t.Fatalf("the default settings json has StrictWindowHandover = %v, expected true", defaults["StrictWindowHandover"])
+	}
+	handoverOff := readDefaults()
+	handoverOff["StrictWindowHandover"] = false
+	handoverOffJson := edit(handoverOff)
+	newDevice(handoverOffJson)
+	handoverOffC := cString(*handoverOffJson)
+	defer cStringFree(handoverOffC)
+	decoded := sdk.DefaultDeviceLocalSettings()
+	if !goJson(handoverOffC, decoded, "urnet_new_device_local") || decoded.StrictWindowHandover {
+		t.Fatal("the settings json edited off did not turn the handover off")
+	}
+	if !decoded.ProvideExtenderEnabled || !decoded.DefaultProvideExtender {
+		t.Error("the handover's off switch changed the extender controls")
 	}
 
 	// a json that names one field keeps the defaults for the rest

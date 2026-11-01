@@ -405,6 +405,9 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 	return &DeviceLocalSettings{
 		MemoryTargetByteCount: memoryTargetByteCount,
 		LowMemoryProfile:      lowMemoryProfile,
+		// a strict window hands a drained slot to its replacement instead of
+		// building candidates its hard max refuses (see the field)
+		StrictWindowHandover: true,
 		// this works with the `SequenceBufferSize` to control packet loss during back pressure
 		SendTimeout:        5 * time.Second,
 		SequenceBufferSize: bufferSize,
@@ -835,12 +838,15 @@ type DeviceLocalSettings struct {
 	// (`connect.MultiClientSettings.StrictWindowHandover`) for every multi
 	// client of the device: a window at its hard max builds no candidate the
 	// hard max refuses, and a drained client hands its slot to its
-	// replacement. Off by default, which keeps the windows as before. The
-	// proxy service turns it on for its hosted devices (proxy.yml
-	// window_strict_handover); apps leave it off until an app release turns
-	// it on (CPUOPT3 D2, owner question 5). gobind binds this bool for the
-	// apps; it does not cross the c abi json, so a c abi host keeps it off.
-	StrictWindowHandover bool `json:"-"`
+	// replacement. On by default for every host (CPUOPT3 D2: the owner turned
+	// it on for apps). It acts only on strict windows, which the low-memory
+	// profile gives iOS, Android and the hosted proxy devices; other windows
+	// plan as before either way. A host turns it off for an emergency:
+	// gomobile hosts with setStrictWindowHandover(false) on
+	// Sdk.defaultDeviceLocalSettings() and Sdk.newDeviceLocal, c abi hosts
+	// with "StrictWindowHandover": false in the settings json, and the proxy
+	// service with proxy.yml window_strict_handover: false.
+	StrictWindowHandover bool
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
