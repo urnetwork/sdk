@@ -3570,6 +3570,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LastSampleTime: number
  *   LastError: string
  *   Extenders: ExtenderInfoList | null
+ *   GatedPreference: boolean
+ *   GatedMode: string
+ *   GatedFallbackReason: string
+ *   GatedUsableCount: number
+ *   GatedReleaseOutcome: string
+ *   GatedRecordExpireTime: number
  */
 
 /* FeedbackSendArgs (json):
@@ -4146,6 +4152,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   extender_root_public_keys?: string[]
  *   extender_hosts?: string[]
  *   extender_reset_id?: string
+ *   extender_gated_preference?: boolean
  *   vless?: VlessSettings | null
  *   control_doh_urls_ipv4?: string[]
  *   control_doh_urls_ipv6?: string[]

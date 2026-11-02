@@ -153,6 +153,21 @@ type ExtenderStatus struct {
 	LastSampleTime int64
 	LastError      string
 	Extenders      *ExtenderInfoList
+
+	// The gated preference (connect/EXTENDER-UPDATE2.md §1.1), labels and
+	// counts only: whether it is on for this space; its mode -- off, attempt,
+	// gated or fallback, empty before a connection first needed an extender;
+	// why the verified open fallback is in force, empty outside it; the
+	// usable gated identities of the host's families; what the last release
+	// request came to (ok, a refusal or empty outcome, or failed), empty
+	// before the first; and the earliest expiry of the gated records held,
+	// unix milliseconds, 0 for none.
+	GatedPreference       bool
+	GatedMode             string
+	GatedFallbackReason   string
+	GatedUsableCount      int
+	GatedReleaseOutcome   string
+	GatedRecordExpireTime int64
 }
 
 type ExtenderStatusChangeListener interface {
@@ -201,6 +216,15 @@ func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
 	status.ReserveCount = self.extenderDirectory.UsableCount(0)
 	status.WarningCount = snapshot.WarningCount
 	status.HoldCount = snapshot.HoldCount
+	gated := self.extenderDirectory.GatedPreference()
+	status.GatedPreference = gated.Enabled
+	status.GatedMode = gated.Mode
+	status.GatedFallbackReason = gated.FallbackReason
+	status.GatedReleaseOutcome = gated.ReleaseOutcome
+	// live, where the policy's own count is as of its last judgment
+	gatedRecords := self.extenderDirectory.GatedRecordSummary()
+	status.GatedUsableCount = gatedRecords.UsableCount
+	status.GatedRecordExpireTime = extenderStatusTimeMs(gatedRecords.EarliestExpireTime)
 	for _, entry := range snapshot.Entries {
 		ip := entry.Ip.String()
 		extenderInfo := &ExtenderInfo{
