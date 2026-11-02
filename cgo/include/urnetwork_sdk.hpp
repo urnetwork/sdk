@@ -2204,6 +2204,12 @@ struct ExtenderStatus {
 	int64_t LastSampleTime{};
 	std::string LastError{};
 	std::optional<ExtenderInfoList> Extenders;
+	bool GatedPreference{};
+	std::string GatedMode{};
+	std::string GatedFallbackReason{};
+	int64_t GatedUsableCount{};
+	std::string GatedReleaseOutcome{};
+	int64_t GatedRecordExpireTime{};
 };
 
 struct FeedbackSendNeeds {
@@ -2814,6 +2820,7 @@ struct NetworkSpaceValues {
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
 	std::optional<std::string> extender_reset_id;
+	std::optional<bool> extender_gated_preference;
 	std::optional<VlessSettings> vless;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
@@ -10016,6 +10023,12 @@ inline void to_json(nlohmann::json& j, const ExtenderStatus& v) {
 	if (v.Extenders) {
 		j["Extenders"] = *v.Extenders;
 	}
+	j["GatedPreference"] = v.GatedPreference;
+	j["GatedMode"] = v.GatedMode;
+	j["GatedFallbackReason"] = v.GatedFallbackReason;
+	j["GatedUsableCount"] = v.GatedUsableCount;
+	j["GatedReleaseOutcome"] = v.GatedReleaseOutcome;
+	j["GatedRecordExpireTime"] = v.GatedRecordExpireTime;
 }
 inline void from_json(const nlohmann::json& j, ExtenderStatus& v) {
 	if (!j.is_object()) {
@@ -10067,6 +10080,24 @@ inline void from_json(const nlohmann::json& j, ExtenderStatus& v) {
 		ExtenderInfoList tmp{};
 		it->get_to(tmp);
 		v.Extenders = std::move(tmp);
+	}
+	if (auto it = j.find("GatedPreference"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedPreference);
+	}
+	if (auto it = j.find("GatedMode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedMode);
+	}
+	if (auto it = j.find("GatedFallbackReason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedFallbackReason);
+	}
+	if (auto it = j.find("GatedUsableCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedUsableCount);
+	}
+	if (auto it = j.find("GatedReleaseOutcome"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedReleaseOutcome);
+	}
+	if (auto it = j.find("GatedRecordExpireTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GatedRecordExpireTime);
 	}
 }
 
@@ -12939,6 +12970,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.extender_reset_id) {
 		j["extender_reset_id"] = *v.extender_reset_id;
 	}
+	if (v.extender_gated_preference) {
+		j["extender_gated_preference"] = *v.extender_gated_preference;
+	}
 	if (v.vless) {
 		j["vless"] = *v.vless;
 	}
@@ -13050,6 +13084,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.extender_reset_id = std::move(tmp);
+	}
+	if (auto it = j.find("extender_gated_preference"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.extender_gated_preference = std::move(tmp);
 	}
 	if (auto it = j.find("vless"); it != j.end() && !it->is_null()) {
 		VlessSettings tmp{};

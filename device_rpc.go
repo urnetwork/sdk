@@ -7294,6 +7294,14 @@ type ExtenderStatusRpc struct {
 	LastSampleTime       int64
 	LastError            string
 	Extenders            []*ExtenderInfo
+	// the gated preference (EXTENDER-UPDATE2 §1.1); an older peer leaves
+	// them zero, which reads as the preference off
+	GatedPreference       bool
+	GatedMode             string
+	GatedFallbackReason   string
+	GatedUsableCount      int
+	GatedReleaseOutcome   string
+	GatedRecordExpireTime int64
 }
 
 func newExtenderStatusRpc(status *ExtenderStatus) *ExtenderStatusRpc {
@@ -7315,6 +7323,13 @@ func newExtenderStatusRpc(status *ExtenderStatus) *ExtenderStatusRpc {
 		HoldCount:            status.HoldCount,
 		LastSampleTime:       status.LastSampleTime,
 		LastError:            status.LastError,
+
+		GatedPreference:       status.GatedPreference,
+		GatedMode:             status.GatedMode,
+		GatedFallbackReason:   status.GatedFallbackReason,
+		GatedUsableCount:      status.GatedUsableCount,
+		GatedReleaseOutcome:   status.GatedReleaseOutcome,
+		GatedRecordExpireTime: status.GatedRecordExpireTime,
 	}
 	if status.Extenders != nil {
 		for _, extenderInfo := range status.Extenders.getAll() {
@@ -7350,6 +7365,13 @@ func (self *ExtenderStatusRpc) toExtenderStatus() *ExtenderStatus {
 		LastSampleTime:       self.LastSampleTime,
 		LastError:            self.LastError,
 		Extenders:            NewExtenderInfoList(),
+
+		GatedPreference:       self.GatedPreference,
+		GatedMode:             self.GatedMode,
+		GatedFallbackReason:   self.GatedFallbackReason,
+		GatedUsableCount:      self.GatedUsableCount,
+		GatedReleaseOutcome:   self.GatedReleaseOutcome,
+		GatedRecordExpireTime: self.GatedRecordExpireTime,
 	}
 	for _, extenderInfo := range self.Extenders {
 		if extenderInfo == nil {

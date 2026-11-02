@@ -120,6 +120,11 @@ type NetworkSpaceValues struct {
 	// the tunnel process that imports the space at its next start, whether or
 	// not that process could be told at once. Empty is a space never reset.
 	ExtenderResetId string `json:"extender_reset_id,omitempty"`
+	// ExtenderGatedPreference turns on the gated-preferred extender selection
+	// and the gated release fetch together (connect/EXTENDER-UPDATE2.md §1.1):
+	// the cohort control, off by default and applied in place
+	// (extender_release_space.go). A hosted space never turns it on.
+	ExtenderGatedPreference bool `json:"extender_gated_preference,omitempty"`
 
 	// A VLESS server the client strategy also dials through (vless_settings.go).
 	// Nil, off or invalid is a space without VLESS. Applied in place like the
@@ -272,6 +277,12 @@ type NetworkSpace struct {
 	// The refresh loop that fills the directory (E3). Nil for a space whose
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
+	// The gated release of this space (extender_release_space.go): its fetch,
+	// none for a space with no directory and for a hosted one, the ways the
+	// fetch regains control reach after the cached open records
+	// (extender_control_reach.go), and the account monitor. Ready from
+	// construction on.
+	extenderRelease extenderReleaseSpace
 	// stateLock guards the node, which the provider extender role replaces
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
@@ -391,7 +402,8 @@ func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
 	controlDohChanged := self.applyControlDohValues(values)
 	vlessChanged := self.applyVlessValues(values)
 	extenderChanged := self.applyExtenderValues(values)
-	return controlDohChanged || vlessChanged || extenderChanged
+	gatedPreferenceChanged := self.applyExtenderGatedPreferenceValues(values)
+	return controlDohChanged || vlessChanged || extenderChanged || gatedPreferenceChanged
 }
 
 // Replaces the space's bootstrap DoH servers and the client strategy's DoH
@@ -756,6 +768,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 		clientStrategySettings.Log,
 	)
 	networkSpace.startExtenderStatusWatch()
+	networkSpace.startExtenderRelease()
 	return networkSpace
 }
 
@@ -1363,6 +1376,7 @@ func NewNetworkSpaceWithUrls(
 			log,
 		)
 		networkSpace.startExtenderStatusWatch()
+		networkSpace.startExtenderRelease()
 	}
 	return networkSpace
 }
@@ -1749,6 +1763,8 @@ func (self *NetworkSpace) close() {
 			return extenderNode
 		}()
 		extenderNode.Close()
+		// the release fetch writes into the directory too
+		self.closeExtenderRelease()
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Close()
 		}
@@ -2199,6 +2215,7 @@ func onlyInPlaceValuesChanged(
 		other.ControlDohUrlsIpv4 = nil
 		other.ControlDohUrlsIpv6 = nil
 		other.IngressCountryCode = ""
+		other.ExtenderGatedPreference = false
 		return other
 	}
 	if !reflect.DeepEqual(withoutInPlaceValues(previous), withoutInPlaceValues(next)) {
@@ -2215,7 +2232,8 @@ func inPlaceValuesChanged(
 ) bool {
 	return extenderValuesChanged(key, previous, next) ||
 		vlessValuesChanged(previous, next) ||
-		controlDohValuesChanged(previous, next)
+		controlDohValuesChanged(previous, next) ||
+		extenderGatedPreferenceValuesChanged(previous, next)
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
