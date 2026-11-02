@@ -21,7 +21,7 @@ func jsStringArg(args []js.Value, i int) string {
 	return ""
 }
 
-// URnetworkBittensorWalletIds() -> ["talisman", "taocom"]
+// URnetworkBittensorWalletIds() -> ["talisman", "taocom", "walletconnect"]
 func BittensorWalletIds(this js.Value, args []js.Value) any {
 	walletIds := sdk.BittensorWalletIdList()
 	out := []any{}

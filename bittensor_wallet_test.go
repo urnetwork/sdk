@@ -87,9 +87,17 @@ func TestBittensorWalletCatalog(t *testing.T) {
 	if BittensorWalletInjectedName(BittensorWalletTalisman) != "talisman" {
 		t.Fatal("talisman injected name")
 	}
-	// tao.com documents no extension api: never guess one
-	if BittensorWalletInjectedName(BittensorWalletTaoCom) != "" {
-		t.Fatal("tao.com must have no injected name")
+	// what the TAO.com extension's package injects (v3.0.26, read and not run)
+	if BittensorWalletInjectedName(BittensorWalletTaoCom) != "@opentensor/bittensor-extension" {
+		t.Fatal("tao.com injected name")
+	}
+	if BittensorWalletInjectedName(BittensorWalletWalletConnect) != "" || BittensorWalletInjectedName(BittensorWalletManual) != "" {
+		t.Fatal("a wallet without an extension has an injected name")
+	}
+	// signing by hand is offered by name, on the screens that offer it: not a
+	// product, and not in the list the apps show
+	if BittensorWalletDisplayName(BittensorWalletManual) != "" {
+		t.Fatal("manual is not a product")
 	}
 	if BittensorWalletDisplayName("subwallet-js") != "" || BittensorWalletTransportFor("subwallet-js", BittensorWalletPlatformWeb) != "" {
 		t.Fatal("an unsupported wallet resolved")
@@ -98,10 +106,10 @@ func TestBittensorWalletCatalog(t *testing.T) {
 
 func TestBittensorWalletTransportSelection(t *testing.T) {
 	want := map[string][3]string{
-		BittensorWalletPlatformWeb:     {BittensorWalletTransportExtension, BittensorWalletTransportManual, BittensorWalletTransportWalletConnect},
-		BittensorWalletPlatformMacos:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
-		BittensorWalletPlatformWindows: {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
-		BittensorWalletPlatformLinux:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformWeb:     {BittensorWalletTransportExtension, BittensorWalletTransportExtension, BittensorWalletTransportWalletConnect},
+		BittensorWalletPlatformMacos:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformWindows: {BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformLinux:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge, BittensorWalletTransportBrowserBridge},
 		BittensorWalletPlatformIos:     {BittensorWalletTransportManual, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
 		BittensorWalletPlatformAndroid: {BittensorWalletTransportManual, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
 	}
@@ -115,6 +123,12 @@ func TestBittensorWalletTransportSelection(t *testing.T) {
 		if got := BittensorWalletTransportFor(BittensorWalletWalletConnect, platform); got != transports[2] {
 			t.Errorf("walletconnect on %s: %q, want %q", platform, got, transports[2])
 		}
+		if got := BittensorWalletTransportFor(BittensorWalletManual, platform); got != BittensorWalletTransportManual {
+			t.Errorf("manual on %s: %q", platform, got)
+		}
+	}
+	if BittensorWalletTransportFor(BittensorWalletManual, "tvos") != "" {
+		t.Fatal("manual on an unknown platform resolved")
 	}
 	if BittensorWalletTransportFor(BittensorWalletTalisman, "tvos") != "" {
 		t.Fatal("an unknown platform resolved")
@@ -169,12 +183,31 @@ func TestBittensorSignRawDataAndSignatureNormalize(t *testing.T) {
 			t.Errorf("normalize %q: %q", in, got)
 		}
 	}
+	// what real btcli printed (bittensor-cli 9.23.2 at 80 columns, bittensor
+	// 11.3.0), whole: Support inbox 8167's manual path tells people to run it
+	btcli9Hex := "489aadc4884bfecd0c0a9a359db8a633d8218b70c3e2cbe9074b59c48390f65b3cc1851165a19aed3b7630fff4b06932fc1327d96bbfc7bc561bc8661a907e8b"
+	btcli11Hex := "3e447a2103656826c66f0c99f8e5198da77c50ceab7b051064b4166e8b4744341072b11ab910d0dc0fb8e44c8aa7f4cbcc328f1a4521be8ea799e87172624f87"
+	for in, wantHex := range map[string]string{
+		"489aadc4884bfecd0c0a9a359db8a633d8218b70c3e2cbe9074b59c48390f65b3cc1851165a19aed\n3b7630fff4b06932fc1327d96bbfc7bc561bc8661a907e8b":                                                                               btcli9Hex,
+		"489aadc4884bfecd0c0a9a359db8a633d8218b70c3e2cbe9074b59c48390f65b3cc1851165a19aed\r\n3b7630fff4b06932fc1327d96bbfc7bc561bc8661a907e8b":                                                                             btcli9Hex,
+		"Signature:\n489aadc4884bfecd0c0a9a359db8a633d8218b70c3e2cbe9074b59c48390f65b3cc1851165a19aed\n3b7630fff4b06932fc1327d96bbfc7bc561bc8661a907e8b\nSigner address: 5DHqLacxpVxpygYXLZmqrSuhmHv1NnutYxsL4xjrMzXm6i5U": btcli9Hex,
+		"  signed_message  " + btcli11Hex + "\n  signer_address  5FuqvKqpskxSHv3vbVmxTwFnxsk1JdjXC1F4GzERkC6zmhXZ":                                                                                                         btcli11Hex,
+		`{"signed_message": "` + btcli11Hex + `", "signer_address": "5FuqvKqpskxSHv3vbVmxTwFnxsk1JdjXC1F4GzERkC6zmhXZ"}`:                                                                                                   btcli11Hex,
+	} {
+		if got := NormalizeBittensorSignature(in); got != "0x"+wantHex {
+			t.Errorf("normalize %q: %q", in, got)
+		}
+	}
 	for _, bad := range []string{
 		"",
 		"0x",
 		"0x" + strings.Repeat("ab", 63),
 		"0x" + strings.Repeat("ab", 65),
 		"0x" + strings.Repeat("zz", 64),
+		// one of btcli 9's two lines
+		"489aadc4884bfecd0c0a9a359db8a633d8218b70c3e2cbe9074b59c48390f65b3cc1851165a19aed",
+		"not a signature at all",
+		"Signer address: 5DHqLacxpVxpygYXLZmqrSuhmHv1NnutYxsL4xjrMzXm6i5U",
 		// a base64 (solana style) signature is not hex
 		"q83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vq83vqw==",
 	} {
@@ -365,6 +398,7 @@ func TestBittensorWalletBridgeReturnPassesThePageErrorCode(t *testing.T) {
 		BittensorWalletBridgeErrorAddressMismatch:          "address_mismatch",
 		BittensorWalletBridgeErrorExtensionNotFound:        "extension_not_found",
 		BittensorWalletBridgeErrorNoAccount:                "no_account",
+		BittensorWalletBridgeErrorExtensionNotAuthorized:   "extension_not_authorized",
 		BittensorWalletBridgeErrorUserRejected:             "user_rejected",
 		BittensorWalletBridgeErrorWalletConnectExpired:     "walletconnect_expired",
 		BittensorWalletBridgeErrorWalletConnectUnavailable: "walletconnect_unavailable",
@@ -559,7 +593,7 @@ func TestBittensorWalletManualSession(t *testing.T) {
 		t.Fatalf("manual: %+v", r)
 	}
 	// manual entry after expiry
-	late := newBittensorTestSession(t, BittensorWalletTaoCom, BittensorWalletPlatformWeb, BittensorWalletPurposeLogin)
+	late := newBittensorTestSession(t, BittensorWalletManual, BittensorWalletPlatformWeb, BittensorWalletPurposeLogin)
 	late.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis)
 	if r := late.HandleSignature(bittensorTestAliceSs58, bittensorTestSignature, bittensorTestNowMillis+bittensorTestExpiresInMillis); r.ErrorCode != BittensorWalletErrorExpired {
 		t.Fatalf("late: %+v", r)

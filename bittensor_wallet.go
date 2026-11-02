@@ -13,11 +13,12 @@ package sdk
 //     window.injectedWeb3["talisman"] (the Polkadot.js extension API:
 //     enable, accounts.get, signer.signRaw). Talisman publishes no deep link
 //     or WalletConnect interface for its mobile app.
-//   - TAO.com. The extension and the iOS app publish no programmatic
-//     interface (no injection name, deep link scheme, WalletConnect or SDK in
-//     the official docs or support center), so TAO.com is manual entry: the
-//     user pastes the coldkey address and a signature over the challenge.
-//     The same manual entry serves any other wallet.
+//   - TAO.com. The browser extension injects
+//     window.injectedWeb3["@opentensor/bittensor-extension"], the same
+//     Polkadot.js extension API (read in its Chrome Web Store package, v3.0.26,
+//     not run, and not documented by TAO.com, so a page must handle it being
+//     missing). Its popup has no place to sign pasted text: only a website's
+//     request signs. Its iOS app publishes no interface, so manual there.
 //   - WalletConnect (product decision 2026-10-04): any substrate wallet that
 //     speaks WalletConnect v2 (Nova, Nightly, ...), over the polkadot
 //     namespace (polkadot_signMessage) on the Bittensor finney chain.
@@ -26,8 +27,13 @@ package sdk
 //
 //	               web            macos/windows/linux   ios/android
 //	talisman       extension      browser_bridge        manual
-//	taocom         manual         manual                manual
+//	taocom         extension      browser_bridge        manual
 //	walletconnect  walletconnect  browser_bridge        browser_bridge
+//	manual         manual         manual                manual
+//
+// manual is signing by hand with btcli or any wallet that can sign a pasted
+// message, for the screens that offer it under its own name (ur.io). It is not
+// a product, so it has no display name and is not in BittensorWalletIdList.
 //
 // On the apps, WalletConnect runs on the bridge page (a QR on desktop, an
 // "Open wallet" deep link on a phone) with the app's configured
@@ -65,6 +71,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 const (
@@ -72,6 +79,8 @@ const (
 	BittensorWalletTaoCom   = "taocom"
 	// any WalletConnect v2 substrate wallet (Nova, Nightly, ...)
 	BittensorWalletWalletConnect = "walletconnect"
+	// signing by hand: btcli, or any wallet that can sign a pasted message
+	BittensorWalletManual = "manual"
 )
 
 const (
@@ -154,6 +163,10 @@ const (
 	BittensorWalletBridgeErrorExtensionNotFound = "extension_not_found"
 	// the wallet shared no account with the page
 	BittensorWalletBridgeErrorNoAccount = "no_account"
+	// the extension has not allowed the page to use an account: the user
+	// rejected or closed its connect window, holds no account in it, removed
+	// the site from its connected sites, or a connect request is still open
+	BittensorWalletBridgeErrorExtensionNotAuthorized = "extension_not_authorized"
 	// the user declined the connection or the signature in the wallet
 	BittensorWalletBridgeErrorUserRejected = "user_rejected"
 	// the WalletConnect pairing or request expired before the wallet answered
@@ -175,6 +188,8 @@ const (
 	// the Polkadot.js extension api name Talisman injects under
 	// window.injectedWeb3
 	BittensorTalismanInjectedName = "talisman"
+	// the name TAO.com's extension injects there (its package name)
+	BittensorTaoComInjectedName = "@opentensor/bittensor-extension"
 	// the app name shown by the extension's authorization prompt
 	BittensorWalletDappName = "URnetwork"
 
@@ -220,48 +235,52 @@ func BittensorWalletDisplayName(walletId string) string {
 }
 
 // BittensorWalletInjectedName is the window.injectedWeb3 key of the wallet's
-// documented extension, or "" when the wallet documents none.
+// extension, or "" when it has none.
 func BittensorWalletInjectedName(walletId string) string {
-	if walletId == BittensorWalletTalisman {
+	switch walletId {
+	case BittensorWalletTalisman:
 		return BittensorTalismanInjectedName
+	case BittensorWalletTaoCom:
+		return BittensorTaoComInjectedName
+	default:
+		return ""
 	}
-	return ""
 }
 
 // BittensorWalletTransportFor picks the transport for a wallet on a
 // platform. Returns "" for an unknown wallet or platform.
 func BittensorWalletTransportFor(walletId string, platform string) string {
 	switch walletId {
-	case BittensorWalletTalisman, BittensorWalletTaoCom, BittensorWalletWalletConnect:
+	case BittensorWalletTalisman, BittensorWalletTaoCom, BittensorWalletWalletConnect, BittensorWalletManual:
 	default:
 		return ""
 	}
+	var mobile bool
 	switch platform {
-	case BittensorWalletPlatformWeb:
-		switch walletId {
-		case BittensorWalletTalisman:
-			return BittensorWalletTransportExtension
-		case BittensorWalletWalletConnect:
-			return BittensorWalletTransportWalletConnect
-		default:
-			return BittensorWalletTransportManual
-		}
-	case BittensorWalletPlatformMacos, BittensorWalletPlatformWindows, BittensorWalletPlatformLinux:
-		switch walletId {
-		case BittensorWalletTalisman, BittensorWalletWalletConnect:
-			return BittensorWalletTransportBrowserBridge
-		default:
-			return BittensorWalletTransportManual
-		}
+	case BittensorWalletPlatformWeb, BittensorWalletPlatformMacos, BittensorWalletPlatformWindows, BittensorWalletPlatformLinux:
 	case BittensorWalletPlatformIos, BittensorWalletPlatformAndroid:
-		// Talisman and TAO.com document no mobile deep link; WalletConnect
-		// pairs on the bridge page, which deep links to the wallet app
-		if walletId == BittensorWalletWalletConnect {
-			return BittensorWalletTransportBrowserBridge
-		}
-		return BittensorWalletTransportManual
+		mobile = true
 	default:
 		return ""
+	}
+	switch {
+	case walletId == BittensorWalletManual:
+		return BittensorWalletTransportManual
+	case platform == BittensorWalletPlatformWeb:
+		if walletId == BittensorWalletWalletConnect {
+			return BittensorWalletTransportWalletConnect
+		}
+		return BittensorWalletTransportExtension
+	case !mobile:
+		return BittensorWalletTransportBrowserBridge
+	case walletId == BittensorWalletWalletConnect:
+		// WalletConnect pairs on the bridge page, which deep links to the
+		// wallet app
+		return BittensorWalletTransportBrowserBridge
+	default:
+		// Talisman and TAO.com have no extension on a phone and document no
+		// mobile deep link
+		return BittensorWalletTransportManual
 	}
 }
 
@@ -308,18 +327,30 @@ func BittensorSignRawData(message string) string {
 }
 
 // NormalizeBittensorSignature returns the signature as 0x + 128 lowercase hex
-// characters, or "" when it is not a 64-byte hex signature. Accepts the
-// wallet forms: with or without 0x, either case, surrounding whitespace.
+// characters, or "" when it holds no 64-byte hex signature. Accepts what wallets
+// and btcli print: with or without 0x, either case, surrounding whitespace, a
+// line break inside it (btcli 9 breaks it at the terminal's width), and btcli's
+// labels or --json output around it.
 func NormalizeBittensorSignature(signature string) string {
-	s := strings.TrimSpace(signature)
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		s = s[2:]
+	var hexText strings.Builder
+	for _, token := range strings.FieldsFunc(signature, isBittensorSignatureSeparator) {
+		if strings.HasPrefix(token, "0x") || strings.HasPrefix(token, "0X") {
+			token = token[2:]
+		}
+		if _, err := hex.DecodeString(token + token); err == nil {
+			hexText.WriteString(token)
+		}
 	}
-	raw, err := hex.DecodeString(s)
+	raw, err := hex.DecodeString(hexText.String())
 	if err != nil || len(raw) != bittensorSignatureByteCount {
 		return ""
 	}
 	return "0x" + hex.EncodeToString(raw)
+}
+
+// What separates a signature from what is around it in a paste.
+func isBittensorSignatureSeparator(r rune) bool {
+	return unicode.IsSpace(r) || strings.ContainsRune("\"'`,:;=(){}[]", r)
 }
 
 // BittensorSignRequest is what the extension transport passes to
@@ -861,6 +892,7 @@ func bittensorWalletKnownBridgeError(code string) string {
 		BittensorWalletBridgeErrorAddressMismatch,
 		BittensorWalletBridgeErrorExtensionNotFound,
 		BittensorWalletBridgeErrorNoAccount,
+		BittensorWalletBridgeErrorExtensionNotAuthorized,
 		BittensorWalletBridgeErrorUserRejected,
 		BittensorWalletBridgeErrorWalletConnectExpired,
 		BittensorWalletBridgeErrorWalletConnectUnavailable,
