@@ -456,15 +456,17 @@ func TestDeviceLocalProviderExtenderCamouflageFollowsTheRole(t *testing.T) {
 	t.Run("closed with a verification in flight", func(t *testing.T) {
 		installTestProvideBorrowList(t, testProvideCamouflageBorrowName)
 		entered := make(chan struct{})
-		ended := make(chan struct{})
+		release := make(chan struct{})
 		var once sync.Once
 		configureTestProvideCamouflage(t, func(settings *extender.ExtenderCamouflageRoleSettings) {
 			settings.FirstVerificationTimeout = time.Millisecond
 			settings.VerifyBorrowName = func(ctx context.Context, network string, borrowName string) bool {
 				once.Do(func() {
 					close(entered)
+					// past the cancel, until the test lets it go, so what is
+					// measured below is that the role waits for it
 					<-ctx.Done()
-					close(ended)
+					<-release
 				})
 				return false
 			}
@@ -477,11 +479,21 @@ func TestDeviceLocalProviderExtenderCamouflageFollowsTheRole(t *testing.T) {
 		case <-time.After(60 * time.Second):
 			t.Fatal("the verification never ran")
 		}
-		fixture.extender().Close()
+		closed := make(chan struct{})
+		go func() {
+			defer close(closed)
+			fixture.extender().Close()
+		}()
 		select {
-		case <-ended:
-		default:
+		case <-closed:
 			t.Fatal("the role closed with the verification in flight")
+		case <-time.After(500 * time.Millisecond):
+		}
+		close(release)
+		select {
+		case <-closed:
+		case <-time.After(60 * time.Second):
+			t.Fatal("the role did not close once the verification ended")
 		}
 	})
 }
