@@ -858,8 +858,10 @@ func (self *deviceLocalExtender) run() {
 	// The server keeps its own carriers up (extender/extender_carrier.go). This
 	// reads what it serves: the tcp carrier's return is for the activation to
 	// hear, and a port that stays lost, or a server that ended, which nothing
-	// here can bring back, means asking the provider for a new role.
-	tcpServing := self.tcpCarrierServing()
+	// here can bring back, means asking the provider for a new role. The role
+	// bound tcp before its server started, so a first read that finds it gone is
+	// a port already lost, which arms the wait like any other.
+	tcpServing := true
 	serverDone := self.server.Done()
 	var restartAfter <-chan time.Time
 	for {
