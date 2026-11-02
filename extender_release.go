@@ -144,13 +144,10 @@ func defaultExtenderReleaseSettings() *extenderReleaseSettings {
 // carriers it can use, which change the operator's eligibility and never the
 // disclosure budget. `countryCode` is the directory's SpoofCountryCode, ""
 // for the global list. The decision is connect's
-// ExtenderClientCapabilities (EXTENDER-UPDATE2 §3.2), which this build's
-// connect does not have yet; until it does this names none -- what that
-// function answers today, with the borrow list an empty placeholder -- and
-// the change is the one line below.
+// ExtenderClientCapabilities (EXTENDER-UPDATE2 §3.2), which names none while the
+// bundled borrow list is an empty placeholder.
 func extenderReleaseCapabilities(connectSettings *connect.ConnectSettings, countryCode string) []string {
-	// return connect.ExtenderClientCapabilities(connectSettings, countryCode)
-	return nil
+	return connect.ExtenderClientCapabilities(connectSettings, countryCode)
 }
 
 // The request (contract R). An empty `ip_versions` is any family.
@@ -168,16 +165,6 @@ type extenderReleaseAnswer struct {
 	// the operator's retry time, clamped; zero for none
 	retryAfter time.Duration
 }
-
-// The outcomes of contract R the schedule branches on, by their wire names
-// (the server's connect.ExtenderReleaseOutcome*). Every other outcome is
-// read through connect.NormalizeExtenderGatedReleaseOutcome.
-const (
-	extenderReleaseOutcomeOk          = "ok"
-	extenderReleaseOutcomeEmpty       = "empty"
-	extenderReleaseOutcomeRateLimited = "rate_limited"
-	extenderReleaseOutcomeUnavailable = "unavailable"
-)
 
 // The kinds of request that got no answer to read, a fixed label set.
 const (
@@ -237,9 +224,9 @@ func parseExtenderReleaseAnswer(body []byte, settings *extenderReleaseSettings) 
 	case outcome != "":
 		answer.outcome = connect.NormalizeExtenderGatedReleaseOutcome(outcome)
 	case refusal != "":
-		answer.outcome = extenderReleaseOutcomeUnavailable
+		answer.outcome = connect.ExtenderReleaseOutcomeUnavailable
 	default:
-		answer.outcome = extenderReleaseOutcomeOk
+		answer.outcome = connect.ExtenderReleaseOutcomeOk
 	}
 	if raw, ok := fields["retry_after_seconds"]; ok {
 		var seconds float64
@@ -421,10 +408,10 @@ func (self *extenderReleaseSchedule) answered(
 	case 0 < retryAfter:
 		self.wait = retryAfter
 		self.notBefore = now.Add(retryAfter)
-	case outcome == extenderReleaseOutcomeRateLimited:
+	case outcome == connect.ExtenderReleaseOutcomeRateLimited:
 		self.wait = settings.RateLimitWindow
 		self.notBefore = now.Add(self.wait)
-	case outcome == extenderReleaseOutcomeUnavailable:
+	case outcome == connect.ExtenderReleaseOutcomeUnavailable:
 		// the operator could not answer, which may pass soon: a failure's
 		// backoff, without its control reach
 		self.failedBackoff(settings)
@@ -1034,9 +1021,9 @@ func (self *extenderReleaseFetcher) land(
 	summary := self.directory.GatedRecordSummary()
 	released := 0 < applied && 0 < summary.CurrentCount
 	outcome := answer.outcome
-	if outcome == extenderReleaseOutcomeOk && !released {
+	if outcome == connect.ExtenderReleaseOutcomeOk && !released {
 		// a route that answered ok with nothing usable is empty to the policy
-		outcome = extenderReleaseOutcomeEmpty
+		outcome = connect.ExtenderReleaseOutcomeEmpty
 	}
 	self.directory.SetGatedReleaseOutcome(outcome)
 
