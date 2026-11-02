@@ -534,6 +534,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
+#define URNET_WINBACK_OFFER_STORE_APPLE "apple"
+#define URNET_WINBACK_OFFER_STORE_PLAY "play"
+#define URNET_WINBACK_OFFER_STORE_STRIPE "stripe"
 #define URNET_WINDOW_TYPE_AUTO "auto"
 #define URNET_WINDOW_TYPE_QUALITY "quality"
 #define URNET_WINDOW_TYPE_SPEED "speed"
@@ -5507,6 +5510,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   guest?: boolean
  *   price_tier?: PriceTier | null
  *   onboarding_offer?: OnboardingOffer | null
+ *   winback_offer?: WinbackOffer | null
  *   experiments?: ExperimentAssignmentList | null
  *   crypto_assets?: CryptoPaymentAssetList | null
  *   crypto_term?: CryptoTerm | null
@@ -5865,6 +5869,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_public_key: string
  *   client_ipv4: string
  *   config: string
+ */
+
+/* WinbackOffer (json):
+ *   expires_at: string
+ *   percent_off: number
+ *   plan: string
+ *   store: string
+ *   play_offer_tag?: string
+ *   apple_offer_id?: string
  */
 
 /* WindowSizeSettings (json):

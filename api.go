@@ -1909,6 +1909,10 @@ type SubscriptionBalanceResult struct {
 	PriceTier *PriceTier `json:"price_tier,omitempty"`
 	// OnboardingOffer is the caller's welcome offer; nil when none was issued.
 	OnboardingOffer *OnboardingOffer `json:"onboarding_offer,omitempty"`
+	// WinbackOffer is the caller's win-back offer, the monthly plan's first
+	// month at a discount for a network that paid before; nil when there is
+	// none, and from an older server.
+	WinbackOffer *WinbackOffer `json:"winback_offer,omitempty"`
 	// Experiments is the caller's variant per experiment surface; nil when no
 	// experiment runs.
 	Experiments *ExperimentAssignmentList `json:"experiments,omitempty"`
