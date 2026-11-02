@@ -426,7 +426,9 @@ func TestExtenderSeedRecoveryReachesTheGatedRelease(t *testing.T) {
 				values.ExtenderGatedPreference = true
 			})
 
-			testSeedWaitForTimeout(t, 60*time.Second, func() bool {
+			// when the fetch's first request fails ahead of the recovery, its next
+			// one keeps the fetch's 60 s spacing, after the trigger's own ask
+			testSeedWaitForTimeout(t, 120*time.Second, func() bool {
 				return 0 < api.servedAuthorized("POST", "/network/extender-release")
 			})
 			// the empty answer lands, which is the open fallback's reason

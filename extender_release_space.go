@@ -161,10 +161,12 @@ func (self *NetworkSpace) extenderReleaseCredentialChanged() {
 	}
 }
 
-// Asks for a gated release now: what the seed bootstrap calls once it has
-// regained control reach. Non-blocking; it shares the one coalesced request
-// and the retry budget with every other trigger, within the rate limit, and
-// does nothing while no identity is bound or the preference is off.
+// Asks for a gated release now: what the seed bootstrap and an import call once
+// they have established control reach. Non-blocking; it shares the one coalesced
+// request with every other trigger, and does nothing while no identity is bound
+// or the preference is off. A failure backoff is for the route that failed, so
+// this clears it; the hourly cap, the spacing and any retry time the operator
+// gave still hold (extenderReleaseSchedule.reachEstablished).
 func (self *NetworkSpace) requestExtenderRelease() {
 	if self == nil {
 		return
