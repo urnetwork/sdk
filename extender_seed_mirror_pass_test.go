@@ -314,3 +314,61 @@ func TestExtenderSeedMirrorPassWithoutAValidMirrorKeepsItsBounds(t *testing.T) {
 		t.Errorf("the mirrors were fetched again in their backoff: %d passes", len(results))
 	}
 }
+
+// A dual-stack mirror is two entries with one url, each dialed at its own
+// address: the family this path cannot reach holds up nothing, and the bundle
+// comes through the other (connect's ExtenderSeedMirror takes one address per
+// entry).
+func TestExtenderSeedMirrorPassDualStackMirrorIsTwoEntries(t *testing.T) {
+	clock := newTestSeedClock()
+	envelope := testSeedEnvelope(t, clock.Now(), testSeedBundleSpec{sequence: 23})
+	mirror := newTestSeedMirror(t, testSeedBytes(t, envelope))
+	dialer := newTestSeedDialer()
+	// the recorded dialer refuses the v6 address, which goes nowhere on this path
+	unreachable := "[2001:db8::7]:443"
+	dialer.route(mirror.address(), mirror.address())
+	roots := x509.NewCertPool()
+	for _, certificate := range mirror.server.TLS.Certificates {
+		roots.AddCert(certificate.Leaf)
+	}
+	testSeedInstallConnectSettings(t, dialer, func(connectSettings *connect.ConnectSettings) {
+		connectSettings.TlsConfig = &tls.Config{RootCAs: roots}
+	})
+	testSeedInstallEmbedded(t, "")
+	testSeedInstallMirrors(
+		t,
+		ExtenderSeedMirrorValue{Url: "https://" + testSeedMirrorHost, Address: unreachable},
+		ExtenderSeedMirrorValue{Url: "https://" + testSeedMirrorHost, Address: mirror.address()},
+	)
+	passes := &testSeedConnectMirrorPasses{}
+	passes.install(t, clock, 30*time.Second, 15*time.Second)
+	space := newTestSeedSpace(t, testSeedStoragePath(t))
+	passes.space = space
+	if status := space.GetExtenderSeedStatus(); status.MirrorCount != 2 || status.DnsIndependentMirrorCount != 2 {
+		t.Fatalf("the status counts the two entries as %+v", status)
+	}
+
+	result := space.getExtenderSeed().awaitPass(context.Background())
+	if !result.usable || result.outcome != ExtenderSeedPassOutcomeApplied {
+		t.Fatalf("the pass over a dual-stack mirror: %+v", result)
+	}
+	results := passes.list()
+	if len(results) != 1 || len(results[0].Mirrors) != 2 {
+		t.Fatalf("the connect passes are %+v", results)
+	}
+	if outcome := results[0].Mirrors[1].Outcome; outcome != connect.ExtenderSeedMirrorOutcomeAccepted {
+		t.Errorf("the reachable address ended %s", outcome)
+	}
+	// how it failed is the dialer's to say; it supplied nothing
+	if outcome := results[0].Mirrors[0].Outcome; outcome == connect.ExtenderSeedMirrorOutcomeAccepted || outcome == connect.ExtenderSeedMirrorOutcomeIdentical {
+		t.Errorf("the unreachable address ended %s", outcome)
+	}
+	if !dialer.dialedAddress(mirror.address()) {
+		t.Errorf("the reachable address was not dialed: %v", dialer.dialed())
+	}
+	for _, address := range dialer.dialed() {
+		if address != unreachable && address != mirror.address() {
+			t.Errorf("the pass dialed %s, which neither entry configures", address)
+		}
+	}
+}

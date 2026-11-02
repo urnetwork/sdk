@@ -37,6 +37,17 @@ func TestExtenderSeedMirrorEntries(t *testing.T) {
 			entries: []entry{{url: "https://mirror.seed.example:8443/a/seed.bin", address: "203.0.113.7:8443", dnsIndependent: true}},
 		},
 		{
+			name: "a dual-stack mirror is two entries with one url",
+			mirrors: []ExtenderSeedMirrorValue{
+				{Url: "https://mirror.seed.example", Address: "203.0.113.7"},
+				{Url: "https://mirror.seed.example", Address: "2001:db8::7"},
+			},
+			entries: []entry{
+				{url: "https://mirror.seed.example/v1/seed.bin", address: "203.0.113.7:443", dnsIndependent: true},
+				{url: "https://mirror.seed.example/v1/seed.bin", address: "[2001:db8::7]:443", dnsIndependent: true},
+			},
+		},
+		{
 			name: "v6 addresses, with and without a port",
 			mirrors: []ExtenderSeedMirrorValue{
 				{Url: "https://mirror.seed.example", Address: "[2001:db8::7]:9443"},

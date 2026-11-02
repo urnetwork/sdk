@@ -64,7 +64,8 @@ type ExtenderSeedMirrorValue struct {
 	Url string `json:"url,omitempty"`
 	// An ip literal, optionally with a port, to dial in place of resolving
 	// the url's host: the dns-independent route. Without a port the url's
-	// port is used, 443 by default. Empty resolves the host.
+	// port is used, 443 by default. Empty resolves the host. An entry names
+	// one address, so a dual-stack mirror is two entries with one url.
 	Address string `json:"address,omitempty"`
 }
 
