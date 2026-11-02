@@ -318,6 +318,28 @@ inline constexpr const char* ExtenderProvideStateOff = "off";
 inline constexpr const char* ExtenderProvideStateSettingUp = "setting_up";
 inline constexpr const char* ExtenderRoleFeed = "feed";
 inline constexpr const char* ExtenderRoleMember = "member";
+inline constexpr const char* ExtenderSeedImportErrorConflict = "import_extender_seed_conflict";
+inline constexpr const char* ExtenderSeedImportErrorExpired = "import_extender_seed_expired";
+inline constexpr const char* ExtenderSeedImportErrorForeignNetwork = "import_extender_seed_foreign_network";
+inline constexpr const char* ExtenderSeedImportErrorForged = "import_extender_seed_forged";
+inline constexpr const char* ExtenderSeedImportErrorGatedRecord = "import_extender_seed_gated_record";
+inline constexpr const char* ExtenderSeedImportErrorInvalid = "import_extender_seed_invalid";
+inline constexpr const char* ExtenderSeedImportErrorInvalidRecord = "import_extender_seed_invalid_record";
+inline constexpr const char* ExtenderSeedImportErrorNoRootKeys = "import_extender_seed_no_root_keys";
+inline constexpr const char* ExtenderSeedImportErrorNotYetValid = "import_extender_seed_not_yet_valid";
+inline constexpr const char* ExtenderSeedImportErrorRollback = "import_extender_seed_rollback";
+inline constexpr const char* ExtenderSeedImportErrorTooLarge = "import_extender_seed_too_large";
+inline constexpr const char* ExtenderSeedImportErrorUnavailable = "import_extender_seed_unavailable";
+inline constexpr const char* ExtenderSeedImportOutcomeAccepted = "accepted";
+inline constexpr const char* ExtenderSeedImportOutcomeIdentical = "identical";
+inline constexpr const char* ExtenderSeedPassOutcomeApplied = "applied";
+inline constexpr const char* ExtenderSeedPassOutcomeCanceled = "canceled";
+inline constexpr const char* ExtenderSeedPassOutcomeFailed = "failed";
+inline constexpr const char* ExtenderSeedPassOutcomeNothingNew = "nothing_new";
+inline constexpr const char* ExtenderSeedSourceEmbedded = "embedded";
+inline constexpr const char* ExtenderSeedSourceImport = "import";
+inline constexpr const char* ExtenderSeedSourceMirror = "mirror";
+inline constexpr const char* ExtenderSeedSourceStore = "store";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
 inline constexpr const char* IpFamilyFilterV4Capable = "v4-capable";
 inline constexpr const char* IpFamilyFilterV6Capable = "v6-capable";
@@ -761,6 +783,9 @@ struct ExportResult;
 struct ExtenderImportResult;
 struct ExtenderInfo;
 struct ExtenderProvideStatus;
+struct ExtenderSeedImportResult;
+struct ExtenderSeedMirrorValue;
+struct ExtenderSeedStatus;
 struct ExtenderSettings;
 struct ExtenderShareDecodeResult;
 struct ExtenderShareResult;
@@ -2153,6 +2178,36 @@ struct ExtenderProvideStatus {
 	int64_t ConnectionCount{};
 };
 
+struct ExtenderSeedImportResult {
+	bool Ok{};
+	std::string Error{};
+	std::string Outcome{};
+	std::string NetworkHost{};
+	int64_t Sequence{};
+	int64_t ExpireTime{};
+	int64_t RecordCount{};
+	int64_t RevocationCount{};
+	int64_t UsableCount{};
+};
+
+struct ExtenderSeedMirrorValue {
+	std::optional<std::string> url;
+	std::optional<std::string> address;
+};
+
+struct ExtenderSeedStatus {
+	int64_t LastPassTime{};
+	std::string LastPassOutcome{};
+	std::string LastPassError{};
+	int64_t Sequence{};
+	int64_t ExpireTime{};
+	std::string Source{};
+	int64_t EmbeddedCount{};
+	std::string EmbeddedError{};
+	int64_t MirrorCount{};
+	int64_t DnsIndependentMirrorCount{};
+};
+
 struct ExtenderSettings {
 	std::string DnsName{};
 	bool DnsNameDefault{};
@@ -2819,6 +2874,7 @@ struct NetworkSpaceValues {
 	std::optional<std::string> gossip_url;
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
+	std::optional<std::vector<ExtenderSeedMirrorValue>> extender_seed_mirrors;
 	std::optional<std::string> extender_reset_id;
 	std::optional<bool> extender_gated_preference;
 	std::optional<VlessSettings> vless;
@@ -4430,6 +4486,12 @@ inline void to_json(nlohmann::json& j, const ExtenderInfo& v);
 inline void from_json(const nlohmann::json& j, ExtenderInfo& v);
 inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v);
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v);
+inline void to_json(nlohmann::json& j, const ExtenderSeedImportResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderSeedImportResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderSeedMirrorValue& v);
+inline void from_json(const nlohmann::json& j, ExtenderSeedMirrorValue& v);
+inline void to_json(nlohmann::json& j, const ExtenderSeedStatus& v);
+inline void from_json(const nlohmann::json& j, ExtenderSeedStatus& v);
 inline void to_json(nlohmann::json& j, const ExtenderSettings& v);
 inline void from_json(const nlohmann::json& j, ExtenderSettings& v);
 inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v);
@@ -9864,6 +9926,125 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ExtenderSeedImportResult& v) {
+	j = nlohmann::json::object();
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["Outcome"] = v.Outcome;
+	j["NetworkHost"] = v.NetworkHost;
+	j["Sequence"] = v.Sequence;
+	j["ExpireTime"] = v.ExpireTime;
+	j["RecordCount"] = v.RecordCount;
+	j["RevocationCount"] = v.RevocationCount;
+	j["UsableCount"] = v.UsableCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderSeedImportResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("Outcome"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Outcome);
+	}
+	if (auto it = j.find("NetworkHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkHost);
+	}
+	if (auto it = j.find("Sequence"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Sequence);
+	}
+	if (auto it = j.find("ExpireTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExpireTime);
+	}
+	if (auto it = j.find("RecordCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecordCount);
+	}
+	if (auto it = j.find("RevocationCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RevocationCount);
+	}
+	if (auto it = j.find("UsableCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UsableCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderSeedMirrorValue& v) {
+	j = nlohmann::json::object();
+	if (v.url) {
+		j["url"] = *v.url;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+}
+inline void from_json(const nlohmann::json& j, ExtenderSeedMirrorValue& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.url = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderSeedStatus& v) {
+	j = nlohmann::json::object();
+	j["LastPassTime"] = v.LastPassTime;
+	j["LastPassOutcome"] = v.LastPassOutcome;
+	j["LastPassError"] = v.LastPassError;
+	j["Sequence"] = v.Sequence;
+	j["ExpireTime"] = v.ExpireTime;
+	j["Source"] = v.Source;
+	j["EmbeddedCount"] = v.EmbeddedCount;
+	j["EmbeddedError"] = v.EmbeddedError;
+	j["MirrorCount"] = v.MirrorCount;
+	j["DnsIndependentMirrorCount"] = v.DnsIndependentMirrorCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderSeedStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("LastPassTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastPassTime);
+	}
+	if (auto it = j.find("LastPassOutcome"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastPassOutcome);
+	}
+	if (auto it = j.find("LastPassError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastPassError);
+	}
+	if (auto it = j.find("Sequence"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Sequence);
+	}
+	if (auto it = j.find("ExpireTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExpireTime);
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("EmbeddedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EmbeddedCount);
+	}
+	if (auto it = j.find("EmbeddedError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EmbeddedError);
+	}
+	if (auto it = j.find("MirrorCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MirrorCount);
+	}
+	if (auto it = j.find("DnsIndependentMirrorCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsIndependentMirrorCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ExtenderSettings& v) {
 	j = nlohmann::json::object();
 	j["DnsName"] = v.DnsName;
@@ -12967,6 +13148,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.extender_hosts) {
 		j["extender_hosts"] = *v.extender_hosts;
 	}
+	if (v.extender_seed_mirrors) {
+		j["extender_seed_mirrors"] = *v.extender_seed_mirrors;
+	}
 	if (v.extender_reset_id) {
 		j["extender_reset_id"] = *v.extender_reset_id;
 	}
@@ -13079,6 +13263,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.extender_hosts = std::move(tmp);
+	}
+	if (auto it = j.find("extender_seed_mirrors"); it != j.end() && !it->is_null()) {
+		std::vector<ExtenderSeedMirrorValue> tmp{};
+		it->get_to(tmp);
+		v.extender_seed_mirrors = std::move(tmp);
 	}
 	if (auto it = j.find("extender_reset_id"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
@@ -20358,8 +20547,12 @@ public:
 	void close() const;
 	std::optional<ExtenderShareDecodeResult> decodeShare(const std::string& text) const;
 	void extenderStatusChanged(const std::optional<ExtenderStatus>& status) const;
+	std::optional<ExtenderSeedStatus> getSeedStatus() const;
 	std::optional<ExtenderSettings> getSettings() const;
 	std::optional<ExtenderStatus> getStatus() const;
+	std::optional<ExtenderSeedImportResult> importSeed(const std::string& text) const;
+	std::optional<ExtenderSeedImportResult> importSeedData(const uint8_t* data, int32_t data_len) const;
+	std::optional<ExtenderSeedImportResult> importSeedFile(const std::string& path) const;
 	std::optional<ExtenderImportResult> importShare(const std::string& text, bool use_settings) const;
 	std::optional<ExtenderSettings> resetExtenders() const;
 	std::optional<ExtenderSettings> setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const;
@@ -20617,6 +20810,7 @@ public:
 	std::optional<StringList> getExtenderHosts() const;
 	std::string getExtenderResetId() const;
 	std::optional<StringList> getExtenderRootPublicKeys() const;
+	std::optional<ExtenderSeedStatus> getExtenderSeedStatus() const;
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::string getGossipUrl() const;
 	std::string getHostName() const;
@@ -20635,6 +20829,9 @@ public:
 	std::optional<VlessSettings> getVlessSettings() const;
 	std::string getWallet() const;
 	bool hasPlatformFamilyUrls() const;
+	std::optional<ExtenderSeedImportResult> importExtenderSeed(const std::string& text) const;
+	std::optional<ExtenderSeedImportResult> importExtenderSeedData(const uint8_t* data, int32_t data_len) const;
+	std::optional<ExtenderSeedImportResult> importExtenderSeedFile(const std::string& path) const;
 	std::string resetExtenders() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	bool same(const NetworkSpace& other) const;
@@ -31804,6 +32001,14 @@ inline void ExtenderViewController::extenderStatusChanged(const std::optional<Ex
 	}
 	urnet_extender_view_controller_extender_status_changed(handle(), status_c);
 }
+inline std::optional<ExtenderSeedStatus> ExtenderViewController::getSeedStatus() const {
+	char* r_c = urnet_extender_view_controller_get_seed_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedStatus>(r_s->c_str());
+}
 inline std::optional<ExtenderSettings> ExtenderViewController::getSettings() const {
 	char* r_c = urnet_extender_view_controller_get_settings(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -31819,6 +32024,30 @@ inline std::optional<ExtenderStatus> ExtenderViewController::getStatus() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ExtenderStatus>(r_s->c_str());
+}
+inline std::optional<ExtenderSeedImportResult> ExtenderViewController::importSeed(const std::string& text) const {
+	char* r_c = urnet_extender_view_controller_import_seed(handle(), text.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSeedImportResult> ExtenderViewController::importSeedData(const uint8_t* data, int32_t data_len) const {
+	char* r_c = urnet_extender_view_controller_import_seed_data(handle(), data, data_len);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSeedImportResult> ExtenderViewController::importSeedFile(const std::string& path) const {
+	char* r_c = urnet_extender_view_controller_import_seed_file(handle(), path.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
 }
 inline std::optional<ExtenderImportResult> ExtenderViewController::importShare(const std::string& text, bool use_settings) const {
 	char* r_c = urnet_extender_view_controller_import_share(handle(), text.c_str(), use_settings);
@@ -32963,6 +33192,14 @@ inline std::optional<StringList> NetworkSpace::getExtenderRootPublicKeys() const
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline std::optional<ExtenderSeedStatus> NetworkSpace::getExtenderSeedStatus() const {
+	char* r_c = urnet_network_space_get_extender_seed_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedStatus>(r_s->c_str());
+}
 inline std::optional<ExtenderStatus> NetworkSpace::getExtenderStatus() const {
 	char* r_c = urnet_network_space_get_extender_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -33050,6 +33287,30 @@ inline std::string NetworkSpace::getWallet() const {
 inline bool NetworkSpace::hasPlatformFamilyUrls() const {
 	bool r = urnet_network_space_has_platform_family_urls(handle());
 	return r;
+}
+inline std::optional<ExtenderSeedImportResult> NetworkSpace::importExtenderSeed(const std::string& text) const {
+	char* r_c = urnet_network_space_import_extender_seed(handle(), text.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSeedImportResult> NetworkSpace::importExtenderSeedData(const uint8_t* data, int32_t data_len) const {
+	char* r_c = urnet_network_space_import_extender_seed_data(handle(), data, data_len);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSeedImportResult> NetworkSpace::importExtenderSeedFile(const std::string& path) const {
+	char* r_c = urnet_network_space_import_extender_seed_file(handle(), path.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSeedImportResult>(r_s->c_str());
 }
 inline std::string NetworkSpace::resetExtenders() const {
 	char* r_c = urnet_network_space_reset_extenders(handle());

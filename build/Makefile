@@ -69,6 +69,8 @@ _build_android:
 	# the extender network's []string surface is the same case: the ExtenderHosts and
 	# ExtenderRootPublicKeys package helpers and the NetworkSpaceValues fields they read are
 	# the go-side variants of the StringList form the mobile ExtenderSettings carries
+	# NetworkSpaceValues.ExtenderSeedMirrors is a go-side setting too: a build's seed mirrors come
+	# from the bundled table for its host, and no app screen sets them
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	# note llvm-objcopy and checksec take one library per call (objcopy reads a second path as its output file).

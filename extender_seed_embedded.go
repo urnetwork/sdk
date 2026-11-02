@@ -48,8 +48,8 @@ import (
 //     sequence just embedded. A valid embedded bundle raises the floor itself
 //     when it is first accepted; the line matters for an install whose first
 //     start comes after the bundle expired.
-//  4. Build as usual, and run `go test -run 'TestExtenderSeedEmbedded' .` in
-//     the sdk, which refuses a resource that does not parse or that carries
+//  4. Build as usual, and run `go test -run TestExtenderSeedEmbeddedResourceParses .`
+//     in the sdk, which refuses a resource that does not parse or that carries
 //     too many bundles.
 //
 // Do not commit a production bundle to the repository: it expires, and an
