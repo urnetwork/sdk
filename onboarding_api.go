@@ -149,6 +149,60 @@ func (self *OnboardingOffer) SecondsUntilExpiry() int64 {
 	return remaining
 }
 
+// Win-back offer stores (WinbackOffer.Store): where the network redeems it.
+const (
+	// Google Play: the monthly base plan's developer-determined offer that
+	// carries WinbackOffer.PlayOfferTag. Play enforces nothing on such an
+	// offer, so an app buys it only while the plan response carries it.
+	WinbackOfferStorePlay = "play"
+	// Stripe: the server applies the discount at checkout; an app only shows it.
+	WinbackOfferStoreStripe = "stripe"
+	// App Store: Apple's own win-back offer WinbackOffer.AppleOfferId, which
+	// the App Store presents itself (Manage Subscriptions, and StoreKit's
+	// messages in the app).
+	WinbackOfferStoreApple = "apple"
+)
+
+// WinbackOffer is the network's win-back offer (mmm/reengagement/PLAN.md "THE
+// STORES"): PercentOff off the first month of Plan (PlanMonthly; there is none
+// on the yearly plan) for a network that paid before and lapsed, redeemable on
+// Store until ExpiresAt. The plan response carries it only while the network
+// may redeem it, so the deadline is the only state an app checks.
+type WinbackOffer struct {
+	// RFC 3339
+	ExpiresAt  string `json:"expires_at"`
+	PercentOff int    `json:"percent_off"`
+	Plan       string `json:"plan"`
+	// one of the WinbackOfferStore* values
+	Store string `json:"store"`
+	// the Play offer tag (WinbackOfferStorePlay only)
+	PlayOfferTag string `json:"play_offer_tag,omitempty"`
+	// the App Store win-back offer id (WinbackOfferStoreApple only)
+	AppleOfferId string `json:"apple_offer_id,omitempty"`
+}
+
+// ExpiresAtUnixMillis is ExpiresAt as unix milliseconds, 0 when unparseable.
+func (self *WinbackOffer) ExpiresAtUnixMillis() int64 {
+	t, err := time.Parse(time.RFC3339Nano, self.ExpiresAt)
+	if err != nil {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
+// IsActiveAt reports whether the offer can be redeemed at nowUnixMillis (the
+// device clock): it takes something off and its deadline is readable and
+// later. An unreadable deadline is no offer.
+func (self *WinbackOffer) IsActiveAt(nowUnixMillis int64) bool {
+	expiresAt := self.ExpiresAtUnixMillis()
+	return 0 < self.PercentOff && 0 < expiresAt && nowUnixMillis < expiresAt
+}
+
+// IsActive is IsActiveAt the device's current time.
+func (self *WinbackOffer) IsActive() bool {
+	return self.IsActiveAt(time.Now().UnixMilli())
+}
+
 // ExperimentAssignment is the caller's variant for one experiment surface.
 type ExperimentAssignment struct {
 	Surface      string `json:"surface"`
