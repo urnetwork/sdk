@@ -5,6 +5,8 @@ package sdk
 import (
 	"context"
 	"errors"
+
+	"github.com/urnetwork/connect"
 )
 
 // device_local_extender_mobile.go — the builds that carry no extender role
@@ -44,6 +46,11 @@ func (self *deviceLocalExtender) statusUpdate() chan struct{} {
 }
 
 func (self *deviceLocalExtender) Close() {
+}
+
+// No role, so no activation to hand over.
+func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorState {
+	return nil
 }
 
 // No role, so no measurement API to turn off or on (lag.dev/PLAN.md C4).

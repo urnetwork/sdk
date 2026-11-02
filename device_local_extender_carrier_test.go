@@ -18,16 +18,15 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
-// What the role does when its server loses a carrier (EXTENDER.md G2). On
-// 2026-11-01 extenders whose servers had closed reported listening and kept posting
+// What the role does when its server loses a carrier (EXTENDER.md G2). On 2026-11-01
+// extenders whose servers had probably closed reported listening and kept posting
 // activations, for good, while their processes stayed connected as providers. The
 // server now rebuilds a lost carrier itself (connect/extender/extender_carrier.go);
 // these are what the role says meanwhile, what it posts, and what it does about a
 // carrier that does not come back.
 
-// A tcp listener that a test can kill from outside, as whatever ended the listener
-// on 2026-11-01 did: Accept fails with an error that no retry helps, and the role's
-// process is otherwise untouched.
+// A tcp listener that a test can kill from outside: Accept fails with an error that no
+// retry helps, and the role's process is otherwise untouched.
 type testCarrierListener struct {
 	net.Listener
 	failed   chan struct{}
@@ -152,6 +151,25 @@ func testRestartAfter(settings *deviceLocalExtenderSettings, waits chan time.Dur
 	}
 }
 
+// A role's replacement posts nothing for a record still good within a test: the post
+// it owes goes within this spread, and one in a million lands in the minutes a test
+// runs.
+func testNoReplacedPost(settings *deviceLocalExtenderSettings) {
+	settings.ConfigureActivator = func(settings *connect.ExtenderActivatorSettings) {
+		settings.ReplacedPostJitter = 24 * 365 * time.Hour
+	}
+}
+
+// The node of an extender that activated both families, once its swaps are done.
+func testExtenderNodeOfBothFamilies(fixture *testProvideExtenderFixture) *spaceExtenderNode {
+	fixture.t.Helper()
+	fixture.waitNodeListenAddrs([]string{
+		fmt.Sprintf("/ip4/%s/tcp/%d", testProvideExtenderIpv4, fixture.tcpPort),
+		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, fixture.tcpPort),
+	})
+	return fixture.networkSpace.getExtenderNode()
+}
+
 // A lost tcp carrier is not listening in the status, with the cause, and posts
 // nothing. It comes back by itself and, with nothing owed, posts nothing either: the
 // record is still good, and the role does not spend the operator's budgets for a
@@ -163,9 +181,13 @@ func TestDeviceLocalProviderExtenderReportsALostTcpCarrier(t *testing.T) {
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 		binds.configure(settings)
 		testRestartAfter(settings, waits, make(chan time.Time))
+		settings.ConfigureActivator = func(settings *connect.ExtenderActivatorSettings) {
+			settings.CarrierReturnJitter = -1
+		}
 	})
 	fixture.waitActivated()
 	postCountV4, postCountV6 := fixture.operator.postCount(4), fixture.operator.postCount(6)
+	node := testExtenderNodeOfBothFamilies(fixture)
 
 	holdBind := make(chan struct{})
 	binds.setHold(holdBind)
@@ -197,8 +219,8 @@ func TestDeviceLocalProviderExtenderReportsALostTcpCarrier(t *testing.T) {
 		t.Fatalf("carriers = %v, expected the udp carriers", carriers)
 	}
 	wait := <-waits
-	if wait < extenderProvideTcpLostTimeout+extenderProvideRestartMinJitter/2 ||
-		extenderProvideTcpLostTimeout+extenderProvideRestartMinJitter <= wait {
+	if wait < extenderProvideTcpLostTimeout+extenderProvideRestartFloor ||
+		extenderProvideTcpLostTimeout+extenderProvideRestartFloor+extenderProvideRestartMinJitter <= wait {
 		t.Fatalf("the role would ask to be replaced after %s", wait)
 	}
 
@@ -221,17 +243,25 @@ func TestDeviceLocalProviderExtenderReportsALostTcpCarrier(t *testing.T) {
 	if count := binds.count.Load(); count != 2 {
 		t.Fatalf("tcp binds = %d, expected the one rebuild", count)
 	}
+	// the addresses never moved, so the node stayed through the flap, and its peers
+	// with it
+	if current := fixture.networkSpace.getExtenderNode(); current != node {
+		t.Fatal("the node was rebuilt for a flap")
+	}
 }
 
-// A revocation that arrived while the listener was gone is what the listener's
-// return must answer at once: the family was refused nothing and holds on a backoff
-// that kept doubling with no post, up to six hours.
+// A revocation that arrived while the listener was gone is what the listener's return
+// must answer: its post was held back, and nothing but the return or the next look
+// at the floor would post it.
 func TestDeviceLocalProviderExtenderPostsOnceTheTcpCarrierReturns(t *testing.T) {
 	testFastExtenderCarrierRebuild(t)
 	binds := &testCarrierBinds{}
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 		binds.configure(settings)
 		testRestartAfter(settings, make(chan time.Duration, 16), make(chan time.Time))
+		settings.ConfigureActivator = func(settings *connect.ExtenderActivatorSettings) {
+			settings.CarrierReturnJitter = -1
+		}
 	})
 	fixture.waitActivated()
 	postCountV4 := fixture.operator.postCount(4)
@@ -264,7 +294,8 @@ func TestDeviceLocalProviderExtenderPostsOnceTheTcpCarrierReturns(t *testing.T) 
 		t.Fatalf("posts = %d for a revoked listener that is gone, expected %d", count, postCountV4)
 	}
 
-	// the wait is now far longer than this test: only the return can post
+	// the next look is minutes off on a clock that is not moving: only the return can
+	// post
 	close(holdBind)
 	binds.setHold(nil)
 	for range 2 {
@@ -291,9 +322,11 @@ func TestDeviceLocalProviderExtenderReplacedWhenTheTcpPortIsTaken(t *testing.T) 
 		testRestartAfter(settings, restartWaits, restartFire)
 		testTcpRetry(settings, retryWaits, retry)
 		testRecordUdpBinds(settings, udpBinds)
+		testNoReplacedPost(settings)
 	})
 	fixture.waitActivated()
 	firstRole := fixture.extender()
+	postCountV4 := fixture.operator.postCount(4)
 
 	// the holder's rebuild loses the port to another process of this host
 	binds.setRefuse(fmt.Errorf("bind: address already in use"))
@@ -323,12 +356,20 @@ func TestDeviceLocalProviderExtenderReplacedWhenTheTcpPortIsTaken(t *testing.T) 
 		t.Fatalf("the replacement bound udp %v without tcp 443", udpPorts)
 	}
 
-	// the other process exits, and the retry takes the port
+	// the other process exits, and the retry takes the port. The role that was off in
+	// between had no activation, so it handed on what the first one held: the record
+	// was good all along, and nothing is posted for it
 	binds.setRefuse(nil)
 	retry <- time.Time{}
-	fixture.waitActivated()
+	fixture.waitStatus("the replacement serving", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening && status.ActivatedV4 && status.ActivatedV6
+	})
 	if binds.current() == nil {
 		t.Fatal("the replacement holds no listener")
+	}
+	fixture.step(2 * time.Minute)
+	if count := fixture.operator.postCount(4); count != postCountV4 {
+		t.Fatalf("posts = %d for a record still good, expected %d", count, postCountV4)
 	}
 }
 
@@ -367,8 +408,9 @@ func TestDeviceLocalProviderExtenderKeepsTheRoleIfTheTcpPortReturns(t *testing.T
 }
 
 // A server gone for good, which nothing ends but a bug, is the role's to replace: the
-// status stops saying listening, the activation stops posting, and a new role serves
-// and activates. The change listener hears the new role too.
+// status stops saying listening, the activation stops posting, and a new role serves.
+// It keeps what the old one's activation held, so a fleet replaced together does not
+// post together. The change listener hears the new role too.
 func TestDeviceLocalProviderExtenderReplacedWhenItsServerEnds(t *testing.T) {
 	binds := &testCarrierBinds{}
 	restartWaits := make(chan time.Duration, 16)
@@ -376,6 +418,9 @@ func TestDeviceLocalProviderExtenderReplacedWhenItsServerEnds(t *testing.T) {
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 		binds.configure(settings)
 		testRestartAfter(settings, restartWaits, restartFire)
+		// far enough from the lost port's wait to tell the two apart
+		settings.RestartJitter = 1 * time.Minute
+		testNoReplacedPost(settings)
 	})
 	fixture.waitActivated()
 	firstRole := fixture.extender()
@@ -391,7 +436,7 @@ func TestDeviceLocalProviderExtenderReplacedWhenItsServerEnds(t *testing.T) {
 	if carriers := firstRole.currentServer().Carriers(); len(carriers) != 0 {
 		t.Fatalf("carriers = %v of a server that ended", carriers)
 	}
-	testExtenderRestartWaitUnder(t, restartWaits, extenderProvideRestartMinJitter)
+	testExtenderRestartWaitUnder(t, restartWaits, extenderProvideRestartFloor+1*time.Minute)
 
 	firstRole.currentActivator().Reactivate()
 	fixture.step(2 * time.Minute)
@@ -401,11 +446,159 @@ func TestDeviceLocalProviderExtenderReplacedWhenItsServerEnds(t *testing.T) {
 
 	restartFire <- time.Time{}
 	testExtenderRoleReplaced(t, fixture, firstRole)
-	// a new role's first pass is a new client strategy and a hello of its own
-	fixture.waitActivated()
+	fixture.waitStatus("the replacement serving", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening && status.ActivatedV4 && status.ActivatedV6
+	})
 	serving := fixture.extender().currentServer()
 	if !slices.Contains(serving.Carriers(), connect.ExtenderCarrierTcp) {
 		t.Fatalf("carriers = %v of the replacement", serving.Carriers())
+	}
+	fixture.step(2 * time.Minute)
+	if count := fixture.operator.postCount(4); count != postCountV4 {
+		t.Fatalf("posts = %d after the replacement, expected %d", count, postCountV4)
+	}
+
+	// turning the role off and on is not a replacement: it starts as a new one does
+	fixture.device.SetProvideExtender(false)
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPost()
+}
+
+// The role's wait for a port whose loss it reads first: the role bound tcp before its
+// server started, so a first read that finds it gone is a port already lost, and
+// taking that read as the starting state would see no change, and never replace it.
+func TestDeviceLocalProviderExtenderReplacedWhenTheTcpPortIsLostBeforeItsFirstRead(t *testing.T) {
+	testFastExtenderCarrierRebuild(t)
+	binds := &testCarrierBinds{}
+	waits := make(chan time.Duration, 16)
+	activatorStarting := make(chan struct{})
+	portLost := make(chan struct{})
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		binds.configure(settings)
+		testRestartAfter(settings, waits, make(chan time.Time))
+		// the one step of the role's loop between the bind and its first read
+		settings.ConfigureActivator = func(settings *connect.ExtenderActivatorSettings) {
+			close(activatorStarting)
+			<-portLost
+		}
+	})
+	select {
+	case <-activatorStarting:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the role did not start its activation")
+	}
+	holdBind := make(chan struct{})
+	t.Cleanup(func() { close(holdBind) })
+	binds.setHold(holdBind)
+	binds.current().fail()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		// the provider has the role a moment after the role has started
+		role := fixture.extender()
+		if role != nil && !slices.Contains(role.currentServer().Carriers(), connect.ExtenderCarrierTcp) {
+			break
+		}
+		if deadline.Before(time.Now()) {
+			t.Fatal("the server did not lose its tcp carrier")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(portLost)
+
+	select {
+	case wait := <-waits:
+		if wait < extenderProvideTcpLostTimeout {
+			t.Fatalf("the role would ask to be replaced after %s", wait)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("the role never armed its wait for the lost port")
+	}
+}
+
+// A role replaced while the operator has said to wait goes on waiting, whatever
+// else the replacement starts. This is what kept a fleet of replaced roles from posting
+// at once.
+func TestDeviceLocalProviderExtenderReplacementKeepsARefusalsHold(t *testing.T) {
+	binds := &testCarrierBinds{}
+	restartFire := make(chan time.Time)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		binds.configure(settings)
+		testRestartAfter(settings, make(chan time.Duration, 16), restartFire)
+	})
+	fixture.waitActivated()
+	firstRole := fixture.extender()
+
+	fixture.operator.setRefusal("the test's refusal")
+	firstRole.currentActivator().Reactivate()
+	fixture.waitPost()
+	fixture.waitPost()
+	fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	postCountV4 := fixture.operator.postCount(4)
+
+	firstRole.currentServer().Close()
+	restartFire <- time.Time{}
+	testExtenderRoleReplaced(t, fixture, firstRole)
+	fixture.waitStatus("the refusal carried over", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening && status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	fixture.step(time.Minute)
+	fixture.step(time.Minute)
+	if count := fixture.operator.postCount(4); count != postCountV4 {
+		t.Fatalf("posts = %d inside the hold, expected %d", count, postCountV4)
+	}
+}
+
+// What the role hears of its carriers reaches the activation: a post made with the
+// quic carrier being rebuilt leaves it off the record, and its return posts the family
+// again rather than leaving that for the tick.
+func TestDeviceLocalProviderExtenderPostsARecordMissingACarrierWhenItReturns(t *testing.T) {
+	testFastExtenderCarrierRebuild(t)
+	holdQuicBind := make(chan struct{})
+	holdingQuicBind := &atomic.Bool{}
+	var quicConn atomic.Pointer[net.PacketConn]
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		quicAddressSuffix := fmt.Sprintf(":%d", settings.UdpPort)
+		listenPacket := settings.ListenPacket
+		settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
+			quic := strings.HasSuffix(address, quicAddressSuffix)
+			if quic && holdingQuicBind.Load() {
+				<-holdQuicBind
+			}
+			conn, err := listenPacket(network, address)
+			if quic && err == nil {
+				quicConn.Store(&conn)
+			}
+			return conn, err
+		}
+		settings.ConfigureActivator = func(settings *connect.ExtenderActivatorSettings) {
+			settings.CarrierReturnJitter = -1
+		}
+	})
+	fixture.waitActivated()
+
+	holdingQuicBind.Store(true)
+	(*quicConn.Load()).Close()
+	deadline := time.Now().Add(60 * time.Second)
+	for slices.Contains(fixture.extender().currentServer().Carriers(), connect.ExtenderCarrierQuic) {
+		if deadline.Before(time.Now()) {
+			t.Fatal("the server did not lose its quic carrier")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	fixture.extender().currentActivator().Reactivate()
+	for range 2 {
+		if post := fixture.waitPost(); slices.Contains(post.args.Carriers, connect.ExtenderCarrierQuic) {
+			t.Fatalf("post offered %v with the carrier down", post.args.Carriers)
+		}
+	}
+
+	close(holdQuicBind)
+	for range 2 {
+		if post := fixture.waitPost(); !slices.Contains(post.args.Carriers, connect.ExtenderCarrierQuic) {
+			t.Fatalf("post offered %v with the carrier back", post.args.Carriers)
+		}
 	}
 }
 
@@ -460,12 +653,22 @@ func TestDeviceLocalProviderExtenderPanicIsPaced(t *testing.T) {
 		case <-time.After(60 * time.Second):
 			t.Fatalf("role %d did not ask to be replaced", i)
 		}
-		if wait < jitter/2 || jitter <= wait {
-			t.Fatalf("role %d would ask after %s, expected half to all of %s", i, wait, jitter)
+		if wait < extenderProvideRestartFloor || extenderProvideRestartFloor+jitter <= wait {
+			t.Fatalf("role %d would ask after %s, expected the floor and up to %s", i, wait, jitter)
 		}
 		time.Sleep(20 * time.Millisecond)
 		if count := builds.Load(); count != int64(i+1) {
 			t.Fatalf("%d roles built while role %d waits, expected %d", count, i, i+1)
+		}
+		// the status says so through the wait, which can be an hour, without what the
+		// panic said, which may name anything
+		fixture.waitStatus("the failed role", func(status *ExtenderProvideStatus) bool {
+			return status.ErrorCase == ExtenderProvideErrorListen &&
+				strings.Contains(status.Reason, errExtenderRoleLoopFailed.Error()) &&
+				!strings.Contains(status.Reason, "the test's panic")
+		})
+		if status := fixture.device.GetExtenderProvideStatus(); status.Listening || status.ActivatedV4 || status.ActivatedV6 {
+			t.Fatalf("status = %+v of a role that failed", status)
 		}
 		select {
 		case fire <- time.Time{}:
@@ -525,7 +728,11 @@ func TestDeviceLocalProviderExtenderRestartSpreadDoubles(t *testing.T) {
 		t.Fatalf("first role's spread = %s, expected the default", jitter)
 	}
 
-	expected := []time.Duration{1 * time.Minute, 2 * time.Minute, 4 * time.Minute}
+	expected := []time.Duration{
+		extenderProvideRestartMinJitter,
+		2 * extenderProvideRestartMinJitter,
+		4 * extenderProvideRestartMinJitter,
+	}
 	for _, expectedJitter := range expected {
 		provider.restartExtender(fixture.extender())
 		if jitter := <-jitters; jitter != expectedJitter {
