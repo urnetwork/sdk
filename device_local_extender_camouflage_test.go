@@ -10,9 +10,14 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -497,7 +502,7 @@ func TestNetworkSpaceNamesItsApiHostsForTheCamouflageClock(t *testing.T) {
 		NewNetworkSpaceKey(testProvideExtenderHost, "main"),
 		func(values *NetworkSpaceValues) {},
 	)
-	if hosts := stored.clientStrategySettings.PlatformApiHosts; !slices.Equal(hosts, expected) {
+	if hosts := stored.clientStrategy.PlatformApiHosts(); !slices.Equal(hosts, expected) {
 		t.Fatalf("a stored space's hosts = %v, expected %v", hosts, expected)
 	}
 	if hosts := stored.derivedClientStrategySettings().PlatformApiHosts; !slices.Equal(hosts, expected) {
@@ -521,4 +526,47 @@ func TestNetworkSpaceNamesItsApiHostsForTheCamouflageClock(t *testing.T) {
 	if 0 < len(strategySettings.PlatformApiHosts) {
 		t.Fatalf("the caller's settings were written: %v", strategySettings.PlatformApiHosts)
 	}
+}
+
+// An api call of a space corrects the camouflage clock when its chain verified, and
+// not when it did not, through the transport every api call of the sdk takes.
+func TestNetworkSpaceApiCallCorrectsTheCamouflageClock(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	const skew = 10 * time.Minute
+
+	apiCall := func(t *testing.T, tlsConfig *tls.Config) time.Duration {
+		t.Helper()
+		t.Cleanup(connect.Testing_SetExtenderCamouflageLocalClock(func() time.Time {
+			return time.Now().Add(-skew)
+		}))
+		settings := testOfflineClientStrategySettings()
+		settings.EnableResilient = false
+		settings.Log = connect.NewNoopLogger()
+		settings.ConnectSettings.TlsConfig = tlsConfig
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		networkSpace := NewNetworkSpaceWithUrls(ctx, server.URL, "wss"+strings.TrimPrefix(server.URL, "https"), settings)
+		defer networkSpace.close()
+		if _, err := networkSpace.api.transportHttpGetRaw()(ctx, server.URL+"/hello", ""); err != nil {
+			t.Fatal(err)
+		}
+		return connect.Testing_ExtenderCamouflageClockOffset(make([]byte, ed25519.PublicKeySize))
+	}
+
+	t.Run("a verified chain", func(t *testing.T) {
+		offset := apiCall(t, &tls.Config{RootCAs: roots})
+		if offset < skew-time.Minute || skew+time.Minute < offset {
+			t.Fatalf("offset = %s, expected about +%s to cancel the skew", offset, skew)
+		}
+	})
+	t.Run("no verified chain", func(t *testing.T) {
+		if offset := apiCall(t, &tls.Config{InsecureSkipVerify: true}); offset != 0 {
+			t.Fatalf("offset = %s, expected the clock not to move", offset)
+		}
+	})
 }
