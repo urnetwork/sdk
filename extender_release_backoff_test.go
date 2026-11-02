@@ -191,6 +191,24 @@ func TestExtenderReleaseReachEstablishedWhileARequestIsOut(t *testing.T) {
 	}
 }
 
+// When that request is the first failure of its run, it takes no walk either:
+// reach is already there, and a walk would hold the next request for as long as a
+// pass runs.
+func TestExtenderReleaseReachEstablishedSkipsTheWalk(t *testing.T) {
+	harness := newTestReleaseHarness(t, nil)
+	harness.setByJwt(testReleaseByJwt(t, connect.NewId(), connect.NewId()))
+	harness.fetcher.bind(harness.credential)
+	post := harness.nextPost()
+
+	harness.fetcher.trigger(extenderReleaseTriggerRequest)
+	post.fail(errTestReleaseNoRoute)
+
+	harness.nextPost()
+	if reaches := harness.reaches(); reaches != 0 {
+		t.Fatalf("%d walks after a failure that reach had overtaken", reaches)
+	}
+}
+
 // An answer to the request that was out satisfies the trigger it coalesced: no
 // request follows it early, whether the answer released a record or asked for a
 // wait.
