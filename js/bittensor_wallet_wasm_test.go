@@ -22,8 +22,12 @@ func TestBittensorWalletWasmExports(t *testing.T) {
 		t.Fatalf("talisman: %v", talisman)
 	}
 	taoCom := g.Call("URnetworkBittensorWalletInfo", "taocom", "web")
-	if taoCom.Get("transport").String() != "manual" || taoCom.Get("injectedName").String() != "" {
+	if taoCom.Get("transport").String() != "extension" || taoCom.Get("injectedName").String() != "@opentensor/bittensor-extension" {
 		t.Fatalf("taocom: %v", taoCom)
+	}
+	manual := g.Call("URnetworkBittensorWalletInfo", "manual", "web")
+	if manual.Get("transport").String() != "manual" || manual.Get("injectedName").String() != "" || manual.Get("displayName").String() != "" {
+		t.Fatalf("manual: %v", manual)
 	}
 	walletConnect := g.Call("URnetworkBittensorWalletInfo", "walletconnect")
 	if walletConnect.Get("transport").String() != "walletconnect" || walletConnect.Get("displayName").String() != "WalletConnect" ||
