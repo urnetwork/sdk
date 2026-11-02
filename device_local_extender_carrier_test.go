@@ -473,6 +473,13 @@ func TestDeviceLocalProviderExtenderPanicIsPaced(t *testing.T) {
 			t.Fatalf("role %d did not wait on its wait", i)
 		}
 	}
+	// the last replacement is over once its role asks in turn, which leaves nothing
+	// reading the test's seams when its cleanup restores them
+	select {
+	case <-waits:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the last role did not ask to be replaced")
+	}
 	if fixture.extender() == nil && builds.Load() < 4 {
 		t.Fatal("no role is running")
 	}
