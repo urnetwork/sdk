@@ -27,6 +27,7 @@ export interface NetworkSpaceValues {
   extender_hosts?: string[];
   extender_seed_mirrors?: ExtenderSeedMirrorValue[];
   extender_reset_id?: string;
+  extender_gated_preference?: boolean;
   vless?: VlessSettings | null;
   control_doh_urls_ipv4?: string[];
   control_doh_urls_ipv6?: string[];
