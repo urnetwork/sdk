@@ -144,13 +144,10 @@ func defaultExtenderReleaseSettings() *extenderReleaseSettings {
 // carriers it can use, which change the operator's eligibility and never the
 // disclosure budget. `countryCode` is the directory's SpoofCountryCode, ""
 // for the global list. The decision is connect's
-// ExtenderClientCapabilities (EXTENDER-UPDATE2 §3.2), which this build's
-// connect does not have yet; until it does this names none -- what that
-// function answers today, with the borrow list an empty placeholder -- and
-// the change is the one line below.
+// ExtenderClientCapabilities (EXTENDER-UPDATE2 §3.2), which names none while the
+// bundled borrow list is an empty placeholder.
 func extenderReleaseCapabilities(connectSettings *connect.ConnectSettings, countryCode string) []string {
-	// return connect.ExtenderClientCapabilities(connectSettings, countryCode)
-	return nil
+	return connect.ExtenderClientCapabilities(connectSettings, countryCode)
 }
 
 // The request (contract R). An empty `ip_versions` is any family.
