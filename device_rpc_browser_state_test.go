@@ -192,7 +192,7 @@ func TestBrowserStateOnlyRemoveConnectedProviderIsAsynchronous(t *testing.T) {
 		log:         settings.logger(),
 		timeout:     time.Second,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	deviceRemote := &DeviceRemote{
 		settings:        settings,

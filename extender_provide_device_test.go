@@ -129,7 +129,7 @@ func testExtenderProvideDeviceProcess(
 		log:         settings.logger(),
 		timeout:     settings.RpcCallTimeout,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	t.Cleanup(func() { service.Close() })
 

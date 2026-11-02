@@ -458,7 +458,7 @@ func TestExtenderStatusMissingMethodKeepsTheRpcSessionAlive(t *testing.T) {
 		log:         settings.logger(),
 		timeout:     time.Second,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	defer service.Close()
 

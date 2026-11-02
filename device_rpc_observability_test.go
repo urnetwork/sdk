@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/rpc"
 	"strings"
 	"sync"
 	"testing"
@@ -70,7 +69,7 @@ func TestDeviceRpcAttemptErrorResultIsBounded(t *testing.T) {
 		{name: "unexpected eof", err: io.ErrUnexpectedEOF, want: "eof"},
 		{name: "closed network", err: net.ErrClosed, want: "closed"},
 		{name: "closed pipe", err: io.ErrClosedPipe, want: "closed"},
-		{name: "rpc error", err: rpc.ServerError("private server response"), want: "rpc-error"},
+		{name: "rpc error", err: deviceRpcServerError("private server response"), want: "rpc-error"},
 		{name: "network timeout", err: testingDeviceRpcTimeoutError{}, want: "timeout"},
 		{name: "other", err: errors.New("signedProxyId=private endpoint=private"), want: "transport-error"},
 	}

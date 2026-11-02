@@ -286,7 +286,7 @@ func TestSocketRemoteCanceledOpenArrivesAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	go rpcServer.ServeConn(server)
-	remote := &DeviceRemote{ctx: ctx, cancel: cancel, settings: defaultDeviceRpcSettings(), service: &rpcClient{ctx: ctx, client: rpc.NewClient(client), timeout: time.Second, closeClient: client.Close}}
+	remote := &DeviceRemote{ctx: ctx, cancel: cancel, settings: defaultDeviceRpcSettings(), service: &rpcClient{ctx: ctx, client: newDeviceRpcClient(client), timeout: time.Second, closeClient: client.Close}}
 	t.Cleanup(func() { cancel(); client.Close(); server.Close(); local.sockets.close(); local.sockets.workers.Wait() })
 	dialCtx, stopDial := context.WithCancel(ctx)
 	defer stopDial()
