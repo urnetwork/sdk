@@ -276,9 +276,17 @@ func newDeviceLocalExtender(
 		defer close(self.done)
 		self.run()
 	}, func(err error) {
-		// the status would otherwise stand as it last was, for good
 		self.log.Errorf("[extender]provide the role's loop failed: %s\n", err)
 		cancel()
+		// the status would otherwise stand as it last was through the wait, which
+		// can be an hour. The cause stays in the log: what it names is unknown, and
+		// the status reaches the app
+		self.statusMonitor.Set(extenderProvideState{
+			Enabled: true,
+			ListenError: extenderListenErrorText(map[string]error{
+				connect.ExtenderCarrierTcp: errExtenderRoleLoopFailed,
+			}),
+		})
 		// a role that fails like this may well fail the same way again, so it
 		// waits like any other that asks. The wait is on what the role was built
 		// under, since its own context has just ended
@@ -648,10 +656,14 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.ListenErrorHandler = func(carrier string, err error) {
 		self.wakeMonitor.NotifyAll()
 	}
-	// a carrier that was lost, or came back, is in the status, and the tcp
-	// carrier's return is for the activation to hear (run)
+	// a carrier that was lost, or came back, is in the status, and the activation
+	// hears of it (run hears of the tcp carrier's return for it), since a record that
+	// left off a carrier is posted when it returns (G3)
 	settings.CarriersChangeHandler = func() {
 		self.wakeMonitor.NotifyAll()
+		if activator := self.currentActivator(); activator != nil {
+			activator.CarriersChanged()
+		}
 	}
 	// a forward dial that fails is logged, at most once a minute for each
 	// kind, so an extender whose egress cannot reach the operator says so;
@@ -988,21 +1000,32 @@ func (self *deviceLocalExtender) tcpCarrierServing() bool {
 	return slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp)
 }
 
-// The channel that fires when it is time to ask for a new role: `wait`, and a
-// further half to all of the spread, which keeps a fleet from starting over
-// together. Half of it is a floor: no role is replaced at once, however it ended, so
-// a role that fails as it starts is rebuilt at the pace the spread doubles to, not
-// as fast as it can fail.
+// What the status says of a role whose loop failed, until its replacement.
+var errExtenderRoleLoopFailed = errors.New("the extender role failed and will be replaced")
+
+// The channel that fires when it is time to ask for a new role: `wait`, the floor
+// that keeps a role that fails as it starts from being rebuilt as fast as it can
+// fail, and a draw of the spread, which keeps a fleet from starting over together.
 func (self *deviceLocalExtender) afterRestartWait(wait time.Duration) <-chan time.Time {
 	jitter := self.settings.RestartJitter
 	if jitter <= 0 {
 		jitter = extenderProvideRestartMinJitter
 	}
-	wait += jitter/2 + time.Duration(mathrand.Int64N(int64(jitter/2)))
+	wait += extenderProvideRestartFloor + time.Duration(mathrand.Int64N(int64(jitter)))
 	if self.settings.RestartAfter != nil {
 		return self.settings.RestartAfter(wait)
 	}
 	return time.After(wait)
+}
+
+// What the activation of this role hands to the role that replaces it, nil when it
+// never started. Call it after Close.
+func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorState {
+	activator := self.currentActivator()
+	if activator == nil {
+		return nil
+	}
+	return activator.State()
 }
 
 // Asks the provider for a new role. Not joined, and not on the caller's
@@ -1085,6 +1108,10 @@ func (self *deviceLocalExtender) startActivator() {
 		settings.Now = self.settings.Now
 	}
 	settings.IpVersionSupported = self.settings.IpVersionSupported
+	settings.PreviousState = self.settings.ActivatorState
+	if self.settings.ConfigureActivator != nil {
+		self.settings.ConfigureActivator(settings)
+	}
 
 	activator := connect.NewExtenderActivator(self.ctx, settings)
 	self.stateLock.Lock()
@@ -1153,6 +1180,15 @@ func (self *deviceLocalExtender) activatorStatus() *connect.ExtenderActivatorSta
 // address the operator no longer publishes for it.
 func (self *deviceLocalExtender) updateNode() {
 	if !self.gossipNodeRuns() {
+		return
+	}
+	// A lost tcp carrier takes the mesh address with it for now, and usually comes
+	// back within seconds. Rebuilding the node each way would cost its peers for an
+	// address that is only away, so it waits to see: the carrier's return finds the
+	// addresses as they were, and a port that stays lost gets a new role, which
+	// builds its node as any does. A family that really moved or went meanwhile is
+	// read when the carrier returns.
+	if !self.tcpCarrierServing() {
 		return
 	}
 	listenAddrs, err := self.meshListenAddrs()

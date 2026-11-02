@@ -67,7 +67,8 @@ const (
 	// other carrier and tries the port again every few minutes (EXTENDER.md
 	// G2). The reason is the bind error.
 	ExtenderProvideErrorTcpUnavailable = "tcp_unavailable"
-	// No carrier bound. The reason is the bind failures.
+	// No carrier bound, the tcp carrier was lost and is being bound again, or the
+	// role failed and is being replaced (EXTENDER.md G2). The reason says which.
 	ExtenderProvideErrorListen = "listen"
 	// The last activation failed and no family is active.
 	ExtenderProvideErrorActivationFailed = "activation_failed"
@@ -355,21 +356,24 @@ func (self *ExtenderProvideStatus) withState(
 	return self
 }
 
-// What one extender role is built from (G2, G3). The provider fills it from
-// the network space and the device's own egress; a test replaces the ports,
-// the listen seams and the operator urls through
-// `DeviceLocalSettings.providerExtenderSettings`.
 // The spread of the wait before a role asks to be replaced (G2), so a fleet that
-// lost its listeners together does not start over, and post its activations,
-// together. Half of it is a floor under the wait. A replacement that did not last
-// doubles it to the max, which is what keeps a role that ends at once from being
-// rebuilt in a loop.
-const extenderProvideRestartMinJitter = 1 * time.Minute
+// lost its listeners together does not start over together. A replacement that did
+// not last doubles it to the max, which is what keeps a role that ends at once from
+// being rebuilt in a loop.
+const extenderProvideRestartMinJitter = 5 * time.Minute
 const extenderProvideRestartMaxJitter = 1 * time.Hour
+
+// The least of that wait, under the spread: no role is replaced at once, however it
+// ended, so one that fails as it starts is never rebuilt as fast as it can fail.
+const extenderProvideRestartFloor = 1 * time.Minute
 
 // How long a role must have run for its replacement to start the spread over.
 const extenderProvideRestartStableTimeout = 1 * time.Hour
 
+// What one extender role is built from (G2, G3). The provider fills it from
+// the network space and the device's own egress; a test replaces the ports,
+// the listen seams and the operator urls through
+// `DeviceLocalSettings.providerExtenderSettings`.
 type deviceLocalExtenderSettings struct {
 	Log connect.Logger
 
@@ -416,6 +420,12 @@ type deviceLocalExtenderSettings struct {
 	// When set, replaces time.After as the wait before this role asks to be
 	// replaced. Tests fire it, and see the wait the role asked for.
 	RestartAfter func(wait time.Duration) <-chan time.Time
+	// What the activation of the role this one replaces handed over (G2), so its
+	// holds and its status outlive the role. Nil starts as a new process does.
+	ActivatorState *connect.ExtenderActivatorState
+	// ConfigureActivator, when set, adjusts the activation loop's settings before
+	// it is built. Tests pin when a post goes through it.
+	ConfigureActivator func(settings *connect.ExtenderActivatorSettings)
 
 	// The admission limits of this extender (EXTENDER.md A12), each a rate
 	// per minute: the distinct source subnets it admits, and the actions of
