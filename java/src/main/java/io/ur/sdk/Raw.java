@@ -967,8 +967,12 @@ public interface Raw extends Library {
   void urnet_extender_view_controller_close(long a0);
   Pointer urnet_extender_view_controller_decode_share(long a0, String a1);
   void urnet_extender_view_controller_extender_status_changed(long a0, String a1);
+  Pointer urnet_extender_view_controller_get_seed_status(long a0);
   Pointer urnet_extender_view_controller_get_settings(long a0);
   Pointer urnet_extender_view_controller_get_status(long a0);
+  Pointer urnet_extender_view_controller_import_seed(long a0, String a1);
+  Pointer urnet_extender_view_controller_import_seed_data(long a0, Pointer a1, int a2);
+  Pointer urnet_extender_view_controller_import_seed_file(long a0, String a1);
   Pointer urnet_extender_view_controller_import_share(long a0, String a1, byte a2);
   Pointer urnet_extender_view_controller_reset_extenders(long a0);
   Pointer urnet_extender_view_controller_set_settings(long a0, String a1, String a2, String a3);
@@ -1133,6 +1137,7 @@ public interface Raw extends Library {
   Pointer urnet_network_space_get_extender_hosts(long a0);
   Pointer urnet_network_space_get_extender_reset_id(long a0);
   Pointer urnet_network_space_get_extender_root_public_keys(long a0);
+  Pointer urnet_network_space_get_extender_seed_status(long a0);
   Pointer urnet_network_space_get_extender_status(long a0);
   Pointer urnet_network_space_get_gossip_url(long a0);
   Pointer urnet_network_space_get_host_name(long a0);
@@ -1151,6 +1156,9 @@ public interface Raw extends Library {
   Pointer urnet_network_space_get_vless_settings(long a0);
   Pointer urnet_network_space_get_wallet(long a0);
   byte urnet_network_space_has_platform_family_urls(long a0);
+  Pointer urnet_network_space_import_extender_seed(long a0, String a1);
+  Pointer urnet_network_space_import_extender_seed_data(long a0, Pointer a1, int a2);
+  Pointer urnet_network_space_import_extender_seed_file(long a0, String a1);
   Pointer urnet_network_space_reset_extenders(long a0);
   long urnet_network_space_reset_local_state_if_current(long a0, long a1, PointerByReference a2);
   byte urnet_network_space_same(long a0, long a1);

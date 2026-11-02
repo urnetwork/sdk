@@ -1235,10 +1235,12 @@ const extenderMeasurementKeyFileName = "extender-measurement-key.pem"
 // extender's id, which the kept identity keeps, so a new key after a sign-out
 // would only have the operator issue the same name again. Manual extender
 // hosts and the private extender live in the space's values, which a sign-out
-// never touches.
+// never touches. The accepted seed bundles and their sequence floors
+// (.extender_seeds, extender_seed_store.go) are extender state too.
 func keptAcrossSignOut(name string) bool {
 	switch name {
 	case extenderStoreFileName,
+		extenderSeedStoreFileName,
 		extenderGossipModeFileName,
 		extenderKeyFileName,
 		provideExtenderFileName,
