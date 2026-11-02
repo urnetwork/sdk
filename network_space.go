@@ -292,6 +292,8 @@ type NetworkSpace struct {
 	// (extender_control_reach.go), and the account monitor. Ready from
 	// construction on.
 	extenderRelease extenderReleaseSpace
+	// the sender of the camouflage report (extender_camouflage_report.go)
+	extenderCamouflageReport extenderCamouflageReportSpace
 	// stateLock guards the node, which the provider extender role replaces
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
@@ -679,6 +681,13 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
 	clientStrategySettings.InternalDohDomains = networkSpaceDohDomains(&key, &values)
+	// the space's own api, whose authenticated Date corrects the clock a
+	// camouflaged extender hello seals with (EXTENDER-UPDATE2 §3.2)
+	clientStrategySettings.PlatformApiHosts = connect.PlatformApiHostNames(
+		apiUrl,
+		familyServiceUrl(apiUrl, 4),
+		familyServiceUrl(apiUrl, 6),
+	)
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	if apiAltEnabled {
@@ -782,6 +791,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	)
 	networkSpace.startExtenderStatusWatch()
 	networkSpace.startExtenderRelease()
+	networkSpace.startExtenderCamouflageReport()
 	networkSpace.startExtenderSeed()
 	return networkSpace
 }
@@ -1368,16 +1378,21 @@ func NewNetworkSpaceWithUrls(
 	if extenderNetworkHostName(&key, &values) != "" {
 		extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
 	}
-	if extenderDirectory != nil || altUrl != "" {
-		copiedSettings := *clientStrategySettings
-		if extenderDirectory != nil {
-			copiedSettings.ExtenderDirectory = extenderDirectory
-		}
-		if altUrl != "" {
-			copiedSettings.AltUrl = altUrl
-		}
-		clientStrategySettings = &copiedSettings
+	copiedSettings := *clientStrategySettings
+	// the space's own api, whose authenticated Date corrects the clock a
+	// camouflaged extender hello seals with (EXTENDER-UPDATE2 §3.2)
+	copiedSettings.PlatformApiHosts = connect.PlatformApiHostNames(
+		values.ApiUrl,
+		familyServiceUrl(values.ApiUrl, 4),
+		familyServiceUrl(values.ApiUrl, 6),
+	)
+	if extenderDirectory != nil {
+		copiedSettings.ExtenderDirectory = extenderDirectory
 	}
+	if altUrl != "" {
+		copiedSettings.AltUrl = altUrl
+	}
+	clientStrategySettings = &copiedSettings
 
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
 	api := newApi(cancelCtx, clientStrategy, values.ApiUrl)
@@ -1428,6 +1443,7 @@ func NewNetworkSpaceWithUrls(
 		)
 		networkSpace.startExtenderStatusWatch()
 		networkSpace.startExtenderRelease()
+		networkSpace.startExtenderCamouflageReport()
 		networkSpace.startExtenderSeed()
 	}
 	return networkSpace
@@ -1815,6 +1831,8 @@ func (self *NetworkSpace) close() {
 			return extenderNode
 		}()
 		extenderNode.Close()
+		// the camouflage report reads the release fetch's identity
+		self.closeExtenderCamouflageReport()
 		// the release fetch writes into the directory too
 		self.closeExtenderRelease()
 		// the seed bootstrap applies to the directory and writes its store, so

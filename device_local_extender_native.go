@@ -68,6 +68,11 @@ import (
 // has none either, and its activations ask the operator to withdraw the name
 // at once.
 //
+// The role runs the tcp carrier camouflage only when its settings ask, through
+// connect's ExtenderCamouflageRole, the one connectctl's extender runs
+// (EXTENDER.md P7, phase 14c). The key derives from the identity seed, so there
+// is nothing more to keep, and a seed that cannot serve one is the start error.
+//
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
 
@@ -102,6 +107,11 @@ const extenderProvideTcpRetryTimeout = 3 * time.Minute
 // took the port could use. The same wait as that retry, so the role moves between
 // a host's processes on the one cadence.
 const extenderProvideTcpLostTimeout = extenderProvideTcpRetryTimeout
+
+// When set, adjusts the camouflage role's settings before each role builds it.
+// Tests install a clock and a fake borrowed site through it; production leaves
+// it nil.
+var configureExtenderCamouflageRole func(settings *extender.ExtenderCamouflageRoleSettings)
 
 // How long the measurements setting must stay off before the activation tells
 // the operator of the opt-out (lag.dev/PLAN.md C4, C9). The operator revokes
@@ -149,6 +159,11 @@ type deviceLocalExtender struct {
 	// measurements are posted to the operator through (GEOMAP §2.1, §2.5)
 	pingReporter *connect.ExtenderPingReporter
 	peerPinger   *connect.ExtenderPeerPinger
+	// the tcp carrier camouflage (EXTENDER.md P7), nil unless the role's settings
+	// ask for it; built in the constructor and never replaced
+	camouflage *extender.ExtenderCamouflageRole
+	// the camouflage's standing as last logged, read and written by the loop alone
+	camouflageStanding string
 	// the lag.dev measurement key and certificate (lag.dev/PLAN.md C4), nil
 	// when the role can serve no measurement API; built with the server. Set
 	// under the state lock, for setMeasurementsEnabled (currentMeasurementCert)
@@ -229,6 +244,11 @@ func newDeviceLocalExtender(
 	if forwardDialErrorLogInterval == 0 {
 		forwardDialErrorLogInterval = extenderForwardDialErrorLogInterval
 	}
+	camouflage, err := newExtenderProvideCamouflage(settings)
+	if err != nil {
+		log.Infof("[extender]provide camouflage err = %s\n", err)
+		return nil, err
+	}
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	self := &deviceLocalExtender{
@@ -239,6 +259,7 @@ func newDeviceLocalExtender(
 		settings:            settings,
 		privateKey:          privateKey,
 		publicKey:           publicKey,
+		camouflage:          camouflage,
 		forwardDialErrorLog: newExtenderForwardDialErrorLog(log, now, forwardDialErrorLogInterval),
 		statusMonitor:       connect.NewMonitorValue(extenderProvideState{Enabled: true}),
 		wakeMonitor:         connect.NewMonitor(),
@@ -261,6 +282,25 @@ func newDeviceLocalExtender(
 		self.requestRestart()
 	})
 	return self, nil
+}
+
+// The camouflage a role's settings ask for (EXTENDER.md P7), nil when they ask
+// for none. An error is the role's start error.
+func newExtenderProvideCamouflage(settings *deviceLocalExtenderSettings) (*extender.ExtenderCamouflageRole, error) {
+	if !settings.CamouflageEnabled {
+		return nil, nil
+	}
+	camouflageSettings := extender.DefaultExtenderCamouflageRoleSettings()
+	camouflageSettings.Splice = settings.CamouflageSplice
+	if 0 < settings.CamouflageRevalidationInterval {
+		camouflageSettings.RevalidationInterval = settings.CamouflageRevalidationInterval
+	}
+	camouflageSettings.IpVersionSupported = settings.IpVersionSupported
+	camouflageSettings.Now = settings.Now
+	if configureExtenderCamouflageRole != nil {
+		configureExtenderCamouflageRole(camouflageSettings)
+	}
+	return extender.NewExtenderCamouflageRole(settings.IdentityKeySeed, camouflageSettings)
 }
 
 // Builds and starts what the role serves with, on the tcp 443 listener it
@@ -323,6 +363,9 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		defer self.stateLock.Unlock()
 		self.server = server
 	}()
+	// what this role's tcp camouflage comes to goes in the space's report, while the
+	// space's cohort control has the report on
+	settings.NetworkSpace.setExtenderCamouflageReportSource(server)
 	// a panic here closes the server on its way out, which the loop reads as a
 	// server gone for good (run)
 	go connect.HandleError(func() {
@@ -332,6 +375,9 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		}
 		self.wakeMonitor.NotifyAll()
 	})
+	if self.camouflage != nil {
+		self.camouflage.Start(self.ctx, server)
+	}
 
 	// what this extender measures of its peers goes to the operator in
 	// batches, under the same client credential the activation uses. The
@@ -605,6 +651,10 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	// the lag.dev measurement API and the lifecycle behind it, or no API at
 	// all (lag.dev/PLAN.md C4, M3, M10)
 	self.measurementSettings(settings)
+	// the tcp carrier camouflage, when the role's settings ask (EXTENDER.md P7)
+	if self.camouflage != nil {
+		self.camouflage.ConfigureServer(settings)
+	}
 	if configureExtenderServer != nil {
 		configureExtenderServer(settings)
 	}
@@ -853,6 +903,10 @@ func (self *deviceLocalExtender) run() {
 		<-self.ctx.Done()
 		return
 	}
+	if self.camouflage != nil {
+		// the first post carries the key when the names verify in good time (P5)
+		self.camouflage.WaitFirstVerification(self.ctx)
+	}
 	self.startActivator()
 
 	// The server keeps its own carriers up (extender/extender_carrier.go). This
@@ -888,6 +942,7 @@ func (self *deviceLocalExtender) run() {
 
 		self.updateNode()
 		self.publish()
+		self.logCamouflageStatus()
 
 		select {
 		case <-self.ctx.Done():
@@ -986,9 +1041,16 @@ func (self *deviceLocalExtender) startActivator() {
 			return true
 		}
 	}
-	// the mesh addresses follow the activated families, which the loop reads
-	// from the activator's own status; this only wakes it (D2, G2)
+	if self.camouflage != nil {
+		settings.PublishedRealityPublicKey = self.camouflage.PublishedRealityPublicKey
+	}
+	// the safe-flip gate reads the record (EXTENDER-UPDATE2 §3.2); the mesh
+	// addresses follow the activated families, which the loop reads from the
+	// activator's own status, so this only wakes it (D2, G2)
 	settings.OnActivated = func(ipVersion int, result *connect.ExtenderActivateResult) {
+		if self.camouflage != nil {
+			self.camouflage.ObserveActivation(result, self.directory().RootKeys())
+		}
 		self.wakeMonitor.NotifyAll()
 	}
 	if 0 < self.settings.ActivateTimeout {
@@ -1015,6 +1077,10 @@ func (self *deviceLocalExtender) startActivator() {
 	self.stateLock.Lock()
 	self.activator = activator
 	self.stateLock.Unlock()
+	if self.camouflage != nil {
+		// a name that verifies after a post went out with no key is posted at once
+		self.camouflage.SetReactivate(activator.Reactivate)
+	}
 	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
 		// the operator holding another key's request or certificate asks for a
 		// pass at once, which carries this key's request (lag.dev/PLAN.md C4)
@@ -1031,6 +1097,25 @@ func (self *deviceLocalExtender) currentActivator() *connect.ExtenderActivator {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.activator
+}
+
+// Logs the camouflage's standing when it changed (EXTENDER-UPDATE2 §3.3). Its counts
+// follow what clients and probers do, so they do not trigger a line themselves: the
+// phase, the reason and the verified names change only at a pass or a gate.
+func (self *deviceLocalExtender) logCamouflageStatus() {
+	if self.camouflage == nil {
+		return
+	}
+	status := self.server.CamouflageStatus()
+	standing := fmt.Sprintf("%s %s %d", status.Phase, status.DegradedReason, status.VerifiedTargetCount)
+	if standing == self.camouflageStanding {
+		return
+	}
+	self.camouflageStanding = standing
+	self.log.Infof(
+		"[extender]provide camouflage: %s\n",
+		extender.ExtenderCamouflageStatusLine(status, self.server.CamouflageStats()),
+	)
 }
 
 // The activator's change counter, or a monitor that never fires before the
@@ -1274,6 +1359,10 @@ func (self *deviceLocalExtender) Close() {
 		if activator := self.currentActivator(); activator != nil {
 			activator.Close()
 		}
+		// a verification in flight dials through the server's splice
+		if self.camouflage != nil {
+			self.camouflage.Close()
+		}
 		if self.listener == nil {
 			// off for want of tcp 443 to the end: nothing else was built
 			return
@@ -1283,6 +1372,7 @@ func (self *deviceLocalExtender) Close() {
 		// last
 		self.peerPinger.Close()
 		self.pingReporter.Close()
+		self.settings.NetworkSpace.clearExtenderCamouflageReportSource(self.currentServer())
 		self.currentServer().CloseAndWait()
 		// a server closed before it bound never took the tcp listener
 		self.heldTcpListener.release()
