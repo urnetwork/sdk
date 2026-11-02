@@ -162,8 +162,10 @@ func TestExtenderSeedMirrorBackoff(t *testing.T) {
 }
 
 // A pass in flight ends when the bound identity changes, and its caller sees
-// no reach; what it saw before the change is not applied after it (§2.3; the
-// account monitor is slice A's).
+// no reach; nothing it fetched is applied (§2.3). The change comes through the
+// release binding as a device's does (extender_release_space.go): a token of
+// another identity moves the account monitor, and a refresh of the same
+// identity's does not.
 func TestExtenderSeedAccountChangeCancelsThePass(t *testing.T) {
 	entered := make(chan struct{})
 	ended := make(chan error, 1)
@@ -176,12 +178,36 @@ func TestExtenderSeedAccountChangeCancelsThePass(t *testing.T) {
 	space, _ := newTestSeedLifecycleSpace(t, mirrorPass, nil)
 	seed := space.getExtenderSeed()
 
+	networkId := connect.NewId()
+	clientId := connect.NewId()
+	var byJwt atomic.Pointer[string]
+	setByJwt := func(networkId connect.Id, clientId connect.Id) {
+		value := testReleaseByJwt(t, networkId, clientId)
+		byJwt.Store(&value)
+	}
+	setByJwt(networkId, clientId)
+	unbind := space.bindExtenderRelease(func() string {
+		return *byJwt.Load()
+	})
+	t.Cleanup(unbind)
+
 	result := make(chan *extenderSeedPassResult, 1)
 	go func() {
 		result <- seed.awaitPass(context.Background())
 	}()
 	<-entered
-	testSeedChangeAccount(space)
+
+	// a refresh of the same identity's token is no account change
+	setByJwt(networkId, clientId)
+	space.extenderReleaseCredentialChanged()
+	select {
+	case err := <-ended:
+		t.Fatalf("a token refresh ended the pass with %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	setByJwt(networkId, connect.NewId())
+	space.extenderReleaseCredentialChanged()
 	select {
 	case err := <-ended:
 		if !errors.Is(err, context.Canceled) {
@@ -197,12 +223,6 @@ func TestExtenderSeedAccountChangeCancelsThePass(t *testing.T) {
 		t.Errorf("the status after the canceled pass is %+v", status)
 	}
 	testSeedRequireNothingApplied(t, space)
-}
-
-// An account change of the bound identity, as slice A's monitor reports one.
-func testSeedChangeAccount(space *NetworkSpace) {
-	accountMonitor := space.extenderAccountMonitor()
-	accountMonitor.Set(accountMonitor.Value() + 1)
 }
 
 // A path change of the physical network ends the pass in flight; connect's
@@ -455,9 +475,7 @@ func TestExtenderSeedTriggerRecoversAColdStart(t *testing.T) {
 		reachable.Store(true)
 		return result
 	}}
-	releases := &testSeedReleaseCounter{}
 	space, _ := newTestSeedLifecycleSpace(t, mirrorPass, func(settings *extenderSeedSettings) {
-		settings.RequestRelease = releases.request
 		settings.ControlProbe = func(ctx context.Context) error {
 			answered := reachable.Load()
 			select {
@@ -471,7 +489,7 @@ func TestExtenderSeedTriggerRecoversAColdStart(t *testing.T) {
 		}
 	})
 	testSeedWaitFor(t, func() bool {
-		return 0 < releases.requests()
+		return 0 < space.extenderReleaseRequestCount()
 	})
 	// asked once before the pass, which did not answer, and once after it,
 	// through the seed, which did; the woken network client may hold the
@@ -611,8 +629,8 @@ func TestExtenderSeedResetHoldsThePassInFlight(t *testing.T) {
 	}
 }
 
-// The seed bootstrap is one of the space's control reaches (slice A's
-// addExtenderControlReach): the release fetch's walk reaches it when nothing
+// The seed bootstrap is one of the space's control reaches
+// (addExtenderControlReach): the release fetch's walk reaches it when nothing
 // cached gives reach, and no longer once the bootstrap is closed.
 func TestExtenderSeedIsAControlReachOfTheSpace(t *testing.T) {
 	envelope := testSeedEnvelope(t, time.Now(), testSeedBundleSpec{sequence: 6})

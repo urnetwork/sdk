@@ -18,7 +18,6 @@ import (
 	"os"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -430,20 +429,6 @@ func newTestSeedSpace(t *testing.T, storagePath string) *NetworkSpace {
 		cancel()
 	})
 	return space
-}
-
-// Counts the gated release requests of the seed bootstraps a test builds,
-// installed as their RequestRelease.
-type testSeedReleaseCounter struct {
-	count atomic.Int32
-}
-
-func (self *testSeedReleaseCounter) request() {
-	self.count.Add(1)
-}
-
-func (self *testSeedReleaseCounter) requests() int {
-	return int(self.count.Load())
 }
 
 // A temporary storage directory, removed with the test.

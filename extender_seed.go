@@ -45,10 +45,10 @@ import (
 // A pass runs for two callers, and one at a time: a second caller joins the
 // pass in flight rather than starting another.
 //
-//   - The release fetch (slice A), through the control reach it walks when
-//     `POST /network/extender-release` cannot reach the operator. The answer is
-//     whether a verified open record became usable, and the fetch retries at
-//     once when it did.
+//   - The release fetch (extender_release.go), through the control reach it
+//     walks when `POST /network/extender-release` cannot reach the operator
+//     (extender_control_reach.go). The answer is whether a verified open
+//     record became usable, and the fetch retries at once when it did.
 //   - The space's own trigger, for a cold start no release fetch is waiting
 //     on -- a signed-out app that cannot reach its login: once the network
 //     client's first attempt has ended with nothing usable, it asks the
@@ -134,9 +134,6 @@ type extenderSeedSettings struct {
 	ControlProbe func(ctx context.Context) error
 	// When set, replaces the mirror pass. Nil is connect's.
 	MirrorPass func(ctx context.Context, request *extenderSeedMirrorRequest) *extenderSeedMirrorResult
-	// When set, replaces the request of a gated release once a seed has given
-	// reach. Nil is the space's release fetch (requestExtenderRelease).
-	RequestRelease func()
 }
 
 func defaultExtenderSeedSettings() *extenderSeedSettings {
@@ -507,8 +504,8 @@ func (self *spaceExtenderSeed) primaryNetworkHost() string {
 	return connect.NormalizeExtenderNetworkHost(extenderNetworkHostName(&self.space.key, &values))
 }
 
-// extenderControlReach (slice A): makes verified extender candidates
-// available that can carry the control route without the route that failed.
+// extenderControlReach: makes verified extender candidates available that can
+// carry the control route without the route that failed.
 // True when a verified open record became newly usable, so the release fetch
 // retries at once; false when there was nothing new, when the pass failed or
 // was canceled, and when ctx ended first. A caller that gives up leaves the
@@ -629,14 +626,11 @@ func (self *spaceExtenderSeed) networkChanged() {
 	self.wake.NotifyAll()
 }
 
-// Cancels `pass` when the bound identity changes while it runs (slice A's
-// account monitor), and returns what stops the watch. A hosted space never
-// binds, and its value never moves.
+// Cancels `pass` when the bound identity changes while it runs (the release
+// fetch's account monitor, extender_release_space.go), and returns what stops
+// the watch. A space that binds no identity never moves its monitor.
 func (self *spaceExtenderSeed) cancelOnAccountChange(pass *extenderSeedPass) (stop func()) {
 	accountMonitor := self.space.extenderAccountMonitor()
-	if accountMonitor == nil {
-		return func() {}
-	}
 	account, update := accountMonitor.Get()
 	stopped := make(chan struct{})
 	watchDone := make(chan struct{})
@@ -1108,24 +1102,13 @@ func (self *spaceExtenderSeed) attempt() {
 	case result.usable:
 		if err := self.probeControl(); err == nil {
 			self.resetAttempt()
-			self.requestRelease()
+			self.space.requestExtenderRelease()
 		} else {
 			self.failAttempt()
 		}
 	default:
 		self.failAttempt()
 	}
-}
-
-// Asks the space's release fetch for a gated release (slice A): it coalesces
-// the request with its own and does nothing without a bound identity or with
-// the gated preference off.
-func (self *spaceExtenderSeed) requestRelease() {
-	if self.settings.RequestRelease != nil {
-		self.settings.RequestRelease()
-		return
-	}
-	self.space.requestExtenderRelease()
 }
 
 func (self *spaceExtenderSeed) deferAttempt(timeout time.Duration) {

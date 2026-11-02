@@ -105,6 +105,20 @@ func (self *testSeedApi) served(method string, path string) int {
 	return count
 }
 
+// How many requests of `method` and `path` the operator served with a client
+// token.
+func (self *testSeedApi) servedAuthorized(method string, path string) int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	count := 0
+	for _, request := range self.requests {
+		if request.method == method && request.path == path && request.auth {
+			count += 1
+		}
+	}
+	return count
+}
+
 func (self *testSeedApi) address() string {
 	return self.server.Listener.Addr().String()
 }
@@ -279,11 +293,9 @@ func TestExtenderSeedRecoveryWithDnsAndControlBlocked(t *testing.T) {
 			testSeedInstallConnectSettings(t, dialer, func(connectSettings *connect.ConnectSettings) {
 				connectSettings.TlsConfig = &tls.Config{RootCAs: roots}
 			})
-			releases := &testSeedReleaseCounter{}
 			testSeedInstallSettings(t, func(settings *extenderSeedSettings) {
 				settings.Now = clock.Now
 				settings.ControlProbeTimeout = 15 * time.Second
-				settings.RequestRelease = releases.request
 			})
 
 			space := newTestSeedSpace(t, testSeedStoragePath(t))
@@ -300,7 +312,7 @@ func TestExtenderSeedRecoveryWithDnsAndControlBlocked(t *testing.T) {
 			// not wait on it. The waits below allow for both.
 			recoveryStart := time.Now()
 			testSeedWaitForTimeout(t, 60*time.Second, func() bool {
-				return 0 < releases.requests()
+				return 0 < space.extenderReleaseRequestCount()
 			})
 			t.Logf("the gated release was requested %s after the cold start", time.Since(recoveryStart).Round(time.Millisecond))
 
@@ -349,5 +361,101 @@ func testSeedWaitForTimeout(t *testing.T, timeout time.Duration, done func() boo
 			t.Fatal("timed out")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// The same cold start for a signed-in device of the gated cohort, through the
+// real release fetch: its first request reaches nothing, and the operator's
+// release route is then reached with the device's token, through the seed's
+// extender (§1.1 rule 4, §2.3). With no gated record there is no gated attempt
+// to wait out, so the open record is drawn at once. With the automatic loop off
+// only the fetch's own walk of the control reaches can run the pass, which pins
+// that path; with it on, the loop and the fetch share one pass and whichever
+// comes first gives the reach.
+func TestExtenderSeedRecoveryReachesTheGatedRelease(t *testing.T) {
+	for _, automaticLoop := range []bool{false, true} {
+		t.Run(fmt.Sprintf("automatic loop %v", automaticLoop), func(t *testing.T) {
+			testSeedEnableBlockedNetworkClient(t, true)
+			extenderSeedLoopDisabled.Store(!automaticLoop)
+
+			clock := newTestSeedClock()
+			now := clock.Now()
+			record := testSeedRecord(t, testSeedRecordSpec{
+				index:      0,
+				issueTime:  now.Add(-2 * time.Hour),
+				expireTime: now.Add(48 * time.Hour),
+			})
+			envelope := testSeedEnvelope(t, now, testSeedBundleSpec{
+				sequence: 41,
+				records:  []*protocol.ExtenderRecord{record},
+			})
+
+			api := newTestSeedApi(t)
+			extenderAddress := newTestSeedExtender(t, 0, api, record)
+			dialer := newTestSeedDialer()
+			dialer.route(testSeedExtenderAddress(0), extenderAddress)
+			mirror := newTestSeedMirror(t, testSeedBytes(t, envelope))
+			dialer.route(mirror.address(), mirror.address())
+			roots := api.roots.Clone()
+			for _, certificate := range mirror.server.TLS.Certificates {
+				roots.AddCert(certificate.Leaf)
+			}
+			testSeedInstallEmbedded(t, "")
+			testSeedInstallMirrors(t, ExtenderSeedMirrorValue{
+				Url:     "https://" + testSeedMirrorHost,
+				Address: mirror.address(),
+			})
+			testSeedInstallConnectSettings(t, dialer, func(connectSettings *connect.ConnectSettings) {
+				connectSettings.TlsConfig = &tls.Config{RootCAs: roots}
+			})
+			testSeedInstallSettings(t, func(settings *extenderSeedSettings) {
+				settings.Now = clock.Now
+				settings.ControlProbeTimeout = 15 * time.Second
+			})
+
+			space := newTestSeedSpace(t, testSeedStoragePath(t))
+			hint := netip.MustParseAddr("198.51.100.99")
+			space.extenderDirectory.AddBootstrap(hint, connect.ExtenderSourceImport)
+
+			// a signed-in device, in the gated cohort
+			byJwt := testReleaseByJwt(t, connect.NewId(), connect.NewId())
+			t.Cleanup(space.bindExtenderRelease(func() string {
+				return byJwt
+			}))
+			space.updateInPlaceValues(func(values *NetworkSpaceValues) {
+				values.ExtenderGatedPreference = true
+			})
+
+			testSeedWaitForTimeout(t, 60*time.Second, func() bool {
+				return 0 < api.servedAuthorized("POST", "/network/extender-release")
+			})
+			// the empty answer lands, which is the open fallback's reason
+			testSeedWaitForTimeout(t, 30*time.Second, func() bool {
+				return 0 < space.extenderReleaseStats().OutcomeCounts["empty"]
+			})
+
+			stats := space.extenderReleaseStats()
+			if !automaticLoop && stats.ControlReachCount == 0 {
+				t.Errorf("the fetch reached the operator without its control reach: %+v", stats)
+			}
+			if mirror.hits() == 0 {
+				t.Error("the mirror was never fetched")
+			}
+			if !dialer.dialedAddress(testSeedExtenderAddress(0)) {
+				t.Errorf("the seed's extender was never dialed: %v", dialer.dialed())
+			}
+			for _, address := range dialer.dialed() {
+				if strings.HasPrefix(address, hint.String()+":") {
+					t.Errorf("the unsigned hint was dialed: %s", address)
+				}
+				if host, _, err := net.SplitHostPort(address); err == nil && host == testSeedMirrorHost {
+					t.Errorf("the mirror was resolved by name: %s", address)
+				}
+			}
+			entry := testSeedDirectoryEntry(space, 0)
+			if entry == nil || entry.Source != connect.ExtenderSourceSeed || entry.SuccessCount == 0 {
+				t.Errorf("the seed's extender is %+v", entry)
+			}
+		})
 	}
 }

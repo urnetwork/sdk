@@ -71,6 +71,10 @@ func TestExtenderSeedImportAppliesAValidBundle(t *testing.T) {
 	if status.Sequence != 3 || status.Source != ExtenderSeedSourceImport || status.ExpireTime != result.ExpireTime {
 		t.Errorf("the status after the import is %+v", status)
 	}
+	// what it made usable may carry the gated release
+	if count := space.extenderReleaseRequestCount(); count != 1 {
+		t.Errorf("the import requested the gated release %d times", count)
+	}
 
 	// the same bundle again, in each form, changes nothing
 	again := space.ImportExtenderSeedData(testSeedBytes(t, envelope))
@@ -96,6 +100,9 @@ func TestExtenderSeedImportAppliesAValidBundle(t *testing.T) {
 		t.Errorf("a missing file: %+v", missing)
 	}
 
+	if count := space.extenderReleaseRequestCount(); count != 1 {
+		t.Errorf("an import that made nothing new usable requested the gated release: %d", count)
+	}
 	// an import applies; it never dials
 	if dialed := dialer.dialed(); len(dialed) != 0 {
 		t.Errorf("the import dialed %v", dialed)

@@ -171,7 +171,7 @@ func (self *spaceExtenderSeed) importArtifact(artifact []byte) *ExtenderSeedImpo
 		// imported, and the release fetch takes its chance through it; the
 		// fetch is a no-op without a bound identity
 		self.wakeNetworkClient()
-		self.requestRelease()
+		self.space.requestExtenderRelease()
 	}
 	return &ExtenderSeedImportResult{
 		Ok:              true,
