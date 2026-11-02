@@ -69,6 +69,13 @@ type deviceLocalProvider struct {
 	// whether the extender role also binds its dns carrier on 53, the
 	// device's ProvideExtenderDnsPrivilegedPort (L2)
 	extenderDnsPrivilegedPort bool
+	// extenderRoleChanged, when set, is called after a role asked to be replaced
+	// and has been, which the device's watch of the status must hear of (F3)
+	extenderRoleChanged func()
+	// when the running role was built, and the spread of the wait before the
+	// next role asks to be replaced. Taken with extenderLock.
+	extenderStartTime     time.Time
+	extenderRestartJitter time.Duration
 	// extenderSettingsConfigure, when set, adjusts the extender role's
 	// settings before it is built. Tests bind ephemeral carrier ports and
 	// point the activation at an in-process operator through it.
@@ -1419,7 +1426,43 @@ func shareDevicePeerKeyPinStore(client, device *connect.ClientSettings) {
 func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 	self.extenderLock.Lock()
 	defer self.extenderLock.Unlock()
+	self.setExtenderEnabledWithLock(enabled)
+}
 
+// Replaces a role that asked for it: its server ended, or its tcp carrier stayed
+// lost (G2). A role that is no longer the one running was stopped or replaced
+// since it asked, and a setting that turned the role off meanwhile stands. The
+// wait before the next ask doubles while the replacements do not last, so a role
+// that ends at once is not rebuilt in a loop.
+func (self *deviceLocalProvider) restartExtender(role *deviceLocalExtender) {
+	self.extenderLock.Lock()
+	defer self.extenderLock.Unlock()
+
+	current, closed := func() (*deviceLocalExtender, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.extender, self.closed
+	}()
+	if closed || current != role {
+		return
+	}
+	if extenderProvideRestartStableTimeout <= time.Since(self.extenderStartTime) {
+		self.extenderRestartJitter = 0
+	} else {
+		self.extenderRestartJitter = min(
+			max(2*self.extenderRestartJitter, extenderProvideRestartMinJitter),
+			extenderProvideRestartMaxJitter,
+		)
+	}
+	self.setExtenderEnabledWithLock(false)
+	self.setExtenderEnabledWithLock(true)
+	// the watch of the status holds the old role's channel (F3)
+	if self.extenderRoleChanged != nil {
+		self.extenderRoleChanged()
+	}
+}
+
+func (self *deviceLocalProvider) setExtenderEnabledWithLock(enabled bool) {
 	current, closed := func() (*deviceLocalExtender, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -1451,6 +1494,7 @@ func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 		self.setExtenderStartError(err)
 		return
 	}
+	self.extenderStartTime = time.Now()
 	extender, err := newDeviceLocalExtender(self.ctx, settings)
 	if err != nil {
 		self.setExtenderStartError(err)
@@ -1524,6 +1568,8 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ByJwt:                  self.byJwt,
 		ClientStrategySettings: self.clientStrategySettings,
 		DialContext:            connectSettings.DialContext,
+		Restart:                self.restartExtender,
+		RestartJitter:          self.extenderRestartJitter,
 	}
 	settings.MeasurementsEnabled = self.extenderMeasurementsEnabled
 	if self.extenderSettingsConfigure != nil {

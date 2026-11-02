@@ -108,13 +108,15 @@ type ExtenderProvideStatus struct {
 	// activates nothing, ListenError names the tcp carrier, and the bind is
 	// tried again every few minutes, the role starting the moment it holds the
 	// port. On a host with several provider processes the first to take the
-	// port serves the extender and the others report this. Empty while the
-	// role holds the port or is not asked to run.
+	// port serves the extender and the others report this. Empty while the role
+	// holds the port or is not asked to run.
 	TcpUnavailableError string
-	// True while at least one carrier is bound.
+	// True while the tcp carrier is serving, the one port an extender requires
+	// (G2). A role that lost it reports false, with what ended it in ListenError
+	// and no family activated, while it binds the port again.
 	Listening bool
-	// The carriers that failed to bind, as "<carrier>: <error>" joined by
-	// "; ". Empty when every configured carrier bound.
+	// The carriers that failed to bind or were lost, as "<carrier>: <error>"
+	// joined by "; ". Empty when every configured carrier is serving.
 	ListenError string
 	ActivatedV4 bool
 	ActivatedV6 bool
@@ -357,6 +359,17 @@ func (self *ExtenderProvideStatus) withState(
 // the network space and the device's own egress; a test replaces the ports,
 // the listen seams and the operator urls through
 // `DeviceLocalSettings.providerExtenderSettings`.
+// The spread of the wait before a role asks to be replaced (G2), so a fleet that
+// lost its listeners together does not start over, and post its activations,
+// together. Half of it is a floor under the wait. A replacement that did not last
+// doubles it to the max, which is what keeps a role that ends at once from being
+// rebuilt in a loop.
+const extenderProvideRestartMinJitter = 1 * time.Minute
+const extenderProvideRestartMaxJitter = 1 * time.Hour
+
+// How long a role must have run for its replacement to start the spread over.
+const extenderProvideRestartStableTimeout = 1 * time.Hour
+
 type deviceLocalExtenderSettings struct {
 	Log connect.Logger
 
@@ -391,6 +404,18 @@ type deviceLocalExtenderSettings struct {
 	// 443 while another process holds it (G2). Tests fire the retry through
 	// it, and hold the role without a sleep.
 	TcpRetryAfter func(wait time.Duration) <-chan time.Time
+
+	// Asks the provider to replace this role with a new one, which is how a role
+	// whose server ended, or whose tcp carrier stayed lost, comes back (G2). The
+	// provider fills it. Nil leaves the role reporting what happened.
+	Restart func(role *deviceLocalExtender)
+	// The spread of the wait before this role asks to be replaced, doubling
+	// with each replacement that did not last (deviceLocalProvider.restartExtender).
+	// Zero takes extenderProvideRestartMinJitter.
+	RestartJitter time.Duration
+	// When set, replaces time.After as the wait before this role asks to be
+	// replaced. Tests fire it, and see the wait the role asked for.
+	RestartAfter func(wait time.Duration) <-chan time.Time
 
 	// The admission limits of this extender (EXTENDER.md A12), each a rate
 	// per minute: the distinct source subnets it admits, and the actions of
