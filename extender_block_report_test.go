@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1418,6 +1419,101 @@ func TestExtenderBlockReportChangesCancelThePassInFlight(t *testing.T) {
 				return harness.reporter.statsValue().AttemptCounts[connect.ExtenderBlockAttemptAborted] == 1
 			})
 			if stats := harness.reporter.statsValue(); stats.CountedAttemptCount != 0 || stats.ControlFailureCount != 0 {
+				t.Fatalf("stats %+v", stats)
+			}
+		})
+	}
+}
+
+// Root cause guarded: the account watch read its starting value inside its own
+// goroutine, so a change that landed before that goroutine first ran was taken for
+// the starting value, and the operation in flight was never canceled. A single
+// processor makes the order certain: the goroutine cannot run until this one waits.
+func TestExtenderBlockReportAccountWatchIsArmedAtStart(t *testing.T) {
+	harness := newTestBlockReportHarness(t)
+	ctx, done := harness.reporter.operation(time.Minute, false)
+	defer done()
+
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+	harness.started = true
+	harness.reporter.start()
+	harness.accountMonitor.Update(func(generation uint64) uint64 {
+		return generation + 1
+	})
+
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("an account change right after the start did not end the operation")
+	}
+}
+
+// Root cause guarded: a change between the look that asked for an operation and the
+// operation's start had no operation for the watch to end, so the attempt or the
+// report went ahead for up to its whole deadline. Nothing is asked, dialed or sent
+// now, and a report is counted as discarded.
+func TestExtenderBlockReportChangeBeforeAnOperationStartsEndsIt(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(harness *testBlockReportHarness)
+	}{
+		{
+			name: "an account change",
+			change: func(harness *testBlockReportHarness) {
+				harness.accountMonitor.Update(func(generation uint64) uint64 {
+					return generation + 1
+				})
+			},
+		},
+		{
+			name: "the cohort going off",
+			change: func(harness *testBlockReportHarness) {
+				harness.reporter.setEnabled(false)
+			},
+		},
+	} {
+		t.Run(test.name+" ahead of an attempt", func(t *testing.T) {
+			harness := newTestBlockReportHarness(t)
+			harness.released("192.0.2.1")
+			harness.dialFailed("192.0.2.1")
+			harness.clock.advance(harness.settings.Evidence.AttemptSettleTimeout)
+
+			act, _ := harness.reporter.next()
+			if act == nil {
+				t.Fatal("no attempt was due")
+			}
+			test.change(harness)
+			act()
+
+			if events := harness.takeEvents(); 0 < len(events) {
+				t.Fatalf("the attempt went ahead: %v", events)
+			}
+		})
+		t.Run(test.name+" ahead of a report", func(t *testing.T) {
+			harness := newTestBlockReportHarness(t)
+			harness.released("192.0.2.1")
+			harness.dialFailed("192.0.2.1")
+			harness.runFor(harness.settings.Evidence.AttemptSettleTimeout + harness.settings.Evidence.AttemptInterval)
+			harness.clock.advance(harness.settings.Evidence.AttemptInterval)
+			// the third attempt
+			act, _ := harness.reporter.next()
+			if act == nil {
+				t.Fatal("no attempt was due")
+			}
+			act()
+
+			act, _ = harness.reporter.next()
+			if act == nil {
+				t.Fatal("no report was due")
+			}
+			test.change(harness)
+			act()
+
+			if reports := harness.reports(); 0 < len(reports) {
+				t.Fatalf("%d reports went ahead", len(reports))
+			}
+			if stats := harness.reporter.statsValue(); stats.ReportCounts[extenderBlockReportDiscarded] != 1 {
 				t.Fatalf("stats %+v", stats)
 			}
 		})
