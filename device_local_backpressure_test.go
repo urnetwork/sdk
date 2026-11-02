@@ -15,6 +15,23 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
+const (
+	// The stack's default floor on the client's retransmission timeout.
+	routeLocalDefaultRtoFloor = 200 * time.Millisecond
+	// The floor on the client's retransmission timeout in the overload round, above
+	// every flow deadline (runEchoFlow), so that no timer fires during the test.
+	// With one in play the retransmit count moves with nothing lost. The NAT ends a
+	// flow on the client's FIN without acknowledging it, so at the default floor
+	// each closed flow retransmits its FIN (the NAT's reset then ends it), and a
+	// stalled ACK retransmits data the NAT already holds. Under load the count then
+	// said whether the round outlasted the floor, not whether a segment was lost.
+	// A lost segment cannot pass unseen: a flow cannot finish its echo without
+	// repairing it, and the one repair left, a fast retransmit on duplicate ACKs, is
+	// counted. Without enough duplicate ACKs the flow misses its deadline instead
+	// (TestDeviceLocalRouteLocalOverloadBackpressureSeesALostSegment).
+	routeLocalOverloadRtoFloor = 5 * time.Minute
+)
+
 // TestDeviceLocalRouteLocalOverloadBackpressure drives the routeLocal path in the
 // burst regime the steady-state load test deliberately avoids (that test keeps its
 // windows small so "no packet is ever dropped"): many parallel flows with large
@@ -36,10 +53,97 @@ import (
 // client-side TCP retransmits (a retransmit means a segment was lost after gvisor
 // emitted it). With the non-blocking send (timeout 0) this guard is what fails
 // whenever a burst finds the channel momentarily full.
+//
+// A retransmit means that only with no retransmission timer in play, which is why
+// the client runs above every flow deadline (routeLocalOverloadRtoFloor).
 func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping overload backpressure test in -short mode")
 	}
+
+	result := runRouteLocalOverload(t, nil)
+
+	for _, flowErr := range result.flowErrs {
+		t.Errorf("overload flow: %v", flowErr)
+	}
+
+	// The core backpressure contract: the routeLocal send must block (apply
+	// backpressure) rather than drop, so the bridge -- which uses production IoLoop
+	// drop semantics -- never drops a packet. This is the exact regression guard for
+	// the sendPacket SendTimeout fix (with a non-blocking send this count is non-zero
+	// whenever a burst finds the NAT channel momentarily full).
+	if result.drops != 0 {
+		t.Errorf("device send dropped %d packets under overload; the routeLocal send must block (backpressure), not drop", result.drops)
+	}
+
+	// Zero client-side retransmits is a stronger check that no segment was lost
+	// anywhere.
+	if result.retransmits != 0 || result.rtoTimeouts != 0 {
+		t.Errorf("client tcp saw loss under overload: retransmits=%d rto timeouts=%d, want 0/0 (the source->NAT link must be lossless)",
+			result.retransmits, result.rtoTimeouts)
+	}
+}
+
+// A segment lost on the source->NAT link is still seen with no timer in play, which
+// is what lets the overload test run its client without one. The lost segment is an
+// early one of the overload round, so its flow has most of its data still to send:
+// the data after the gap draws the NAT's duplicate ACKs, and the client retransmits
+// on those. An ACK carrying echoed data or a changed window resets the client's
+// count of them, and when three in a row never arrive the flow misses its deadline.
+func TestDeviceLocalRouteLocalOverloadBackpressureSeesALostSegment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping overload backpressure test in -short mode")
+	}
+
+	const lostDataSegmentNumber = 32
+
+	dataSegmentCount := 0
+	lost := false
+	result := runRouteLocalOverload(t, func(packet []byte) bool {
+		_, payload, err := connect.ParseIpPathWithPayload(packet)
+		if err != nil || len(payload) == 0 {
+			return false
+		}
+		dataSegmentCount += 1
+		if dataSegmentCount != lostDataSegmentNumber {
+			return false
+		}
+		lost = true
+		return true
+	})
+
+	if !lost {
+		t.Fatalf("the round sent %d data segments, none of them number %d", dataSegmentCount, lostDataSegmentNumber)
+	}
+	if result.retransmits == 0 && len(result.flowErrs) == 0 {
+		t.Errorf("a lost segment passed unseen: every flow echoed its payload with no retransmit counted")
+	}
+	if result.rtoTimeouts != 0 {
+		t.Errorf("a timer fired during the round: rto timeouts=%d, want 0", result.rtoTimeouts)
+	}
+	if result.drops != 0 {
+		t.Errorf("device send dropped %d packets", result.drops)
+	}
+}
+
+// What the client saw of one overload round.
+type routeLocalOverloadResult struct {
+	// the flows that did not echo their whole payload
+	flowErrs    []error
+	drops       int64
+	retransmits uint64
+	rtoTimeouts uint64
+}
+
+// Runs a warm-up and then the overload round, all flows in parallel against the
+// throttled echo server, over a bridge with production IoLoop drop semantics.
+// Anything left running after the teardown fails the test.
+//
+// loseSegment, when set, sees the source's packets from the start of the overload
+// round on, and a packet it answers true for never reaches the device. It runs on
+// the bridge goroutine, one packet at a time.
+func runRouteLocalOverload(t *testing.T, loseSegment func(packet []byte) bool) routeLocalOverloadResult {
+	t.Helper()
 
 	const (
 		flows        = 16
@@ -80,6 +184,8 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 	tunSettings.Log = connect.NewNoopLogger()
 	tunSettings.TcpSendBuffer = connect.TcpBufferRange{Min: 64 << 10, Default: 512 << 10, Max: 1 << 20}
 	tunSettings.TcpReceiveBuffer = connect.TcpBufferRange{Min: 64 << 10, Default: 512 << 10, Max: 1 << 20}
+	tunSettings.TcpMaxRto = routeLocalOverloadRtoFloor
+	tunSettings.TcpMinRto = routeLocalOverloadRtoFloor
 	tun, err := connect.CreateTun(ctx, tunSettings)
 	if err != nil {
 		device.Close()
@@ -92,6 +198,7 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 
 	// production-semantics bridge: drop (return to pool) when the device send fails.
 	var drops atomic.Int64
+	var overloadStarted atomic.Bool
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -103,6 +210,10 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 				return
 			}
 			for _, packet := range packets[:n] {
+				if loseSegment != nil && overloadStarted.Load() && loseSegment(packet) {
+					MessagePoolReturn(packet)
+					continue
+				}
 				if !device.SendPacketNoCopy(packet, int32(len(packet))) {
 					drops.Add(1)
 					MessagePoolReturn(packet)
@@ -134,6 +245,7 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 
 	// the overload round: all flows in parallel against the throttled server
 	start := time.Now()
+	overloadStarted.Store(true)
 	errs := make(chan error, flows)
 	for f := 0; f < flows; f += 1 {
 		payload := makeLoadPayload(100+f, bytesPerFlow)
@@ -141,38 +253,27 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 			errs <- runEchoFlow(ctx, tun, echoAddr, payload)
 		}()
 	}
+	flowErrs := []error{}
 	for f := 0; f < flows; f += 1 {
 		if err := <-errs; err != nil {
-			t.Errorf("overload flow: %v", err)
+			flowErrs = append(flowErrs, err)
 		}
 	}
 	elapsed := time.Since(start)
 
+	// Every flow has closed. Read the counters once each close has outlasted the
+	// stack's default floor, so what they say cannot depend on how long the round ran.
+	time.Sleep(2 * routeLocalDefaultRtoFloor)
+
 	stats := tun.Stats()
-	retransmits := stats.TCP.Retransmits.Value()
-	rtoTimeouts := stats.TCP.Timeouts.Value()
+	result := routeLocalOverloadResult{
+		flowErrs:    flowErrs,
+		drops:       drops.Load(),
+		retransmits: stats.TCP.Retransmits.Value(),
+		rtoTimeouts: stats.TCP.Timeouts.Value(),
+	}
 	t.Logf("overload: %d flows x %s in %v, bridge drops=%d, tcp retransmits=%d rto timeouts=%d",
-		flows, humanBytes(bytesPerFlow), elapsed.Round(time.Millisecond), drops.Load(), retransmits, rtoTimeouts)
-
-	// The core backpressure contract, asserted in every build: the routeLocal send
-	// must block (apply backpressure) rather than drop, so the bridge -- which uses
-	// production IoLoop drop semantics -- never drops a packet. This is the exact
-	// regression guard for the sendPacket SendTimeout fix (with a non-blocking send
-	// this count is non-zero whenever a burst finds the NAT channel momentarily full).
-	if d := drops.Load(); d != 0 {
-		t.Errorf("device send dropped %d packets under overload; the routeLocal send must block (backpressure), not drop", d)
-	}
-
-	// Zero client-side retransmits is a stronger check that no segment was lost
-	// anywhere, but it only holds at full speed. Under -race gvisor runs ~30x
-	// slower, so the throttled round-trip routinely exceeds gvisor's 200ms minimum
-	// RTO and it fires SPURIOUS retransmits with no actual loss (drops==0 above
-	// proves nothing was dropped). So assert it only without -race, matching the
-	// raceEnabled gating used elsewhere in this package.
-	if !raceEnabled && (retransmits != 0 || rtoTimeouts != 0) {
-		t.Errorf("client tcp saw loss under overload: retransmits=%d rto timeouts=%d, want 0/0 (the source->NAT link must be lossless)",
-			retransmits, rtoTimeouts)
-	}
+		flows, humanBytes(bytesPerFlow), elapsed.Round(time.Millisecond), result.drops, result.retransmits, result.rtoTimeouts)
 
 	teardown()
 	// settle before the leak checks: tun.Close() releases the gvisor stack's
@@ -181,6 +282,7 @@ func TestDeviceLocalRouteLocalOverloadBackpressure(t *testing.T) {
 	sampleStable()
 	reportGoroutineLeaks(t, baseStacks, captureGoroutineStacks(), 5)
 	reportPoolLeaks(t, basePool, 8)
+	return result
 }
 
 // startThrottledTcpEchoServer starts a loopback echo server that reads each
