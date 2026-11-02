@@ -122,6 +122,14 @@ type testProvideExtenderOperator struct {
 	// keeps each signed record newer than the last, which is what the newest
 	// wins rule of B5 needs when two activations land in the same instant
 	issueSerial int
+	// signs the camouflage key an activation posts into its record, as an
+	// operator with phase 14b does; off ignores it, as one without does
+	signCamouflageKey bool
+	// has the record require tcp-camouflage-v1 when it carries a key, as an
+	// operator does for an extender in its capability cohort
+	requireCamouflage bool
+	// the lifetime of a record, zero for the fixture's two weeks
+	recordLifetime time.Duration
 }
 
 func newTestProvideExtenderOperator(
@@ -256,9 +264,25 @@ func (self *testProvideExtenderOperator) activateResult(
 	}
 	self.issueSerial += 1
 	issueTime := now.Add(time.Duration(self.issueSerial) * time.Millisecond)
+	recordLifetime := 14 * 24 * time.Hour
+	if 0 < self.recordLifetime {
+		recordLifetime = self.recordLifetime
+	}
+	var realityPublicKey []byte
+	var requiredCapabilities []string
+	if self.signCamouflageKey && args.RealityPublicKeyHex != "" {
+		var keyErr error
+		if realityPublicKey, keyErr = connect.ParseExtenderRealityPublicKeyHex(args.RealityPublicKeyHex); keyErr != nil {
+			self.stateLock.Unlock()
+			return nil, keyErr
+		}
+		if self.requireCamouflage {
+			requiredCapabilities = []string{connect.ExtenderCapabilityTcpCamouflageV1}
+		}
+	}
 	self.stateLock.Unlock()
 
-	expireTime := now.Add(14 * 24 * time.Hour)
+	expireTime := now.Add(recordLifetime)
 	addresses := []*protocol.ExtenderAddress{}
 	for _, activatedIp := range activatedIps {
 		addr := netip.MustParseAddr(activatedIp)
@@ -283,6 +307,9 @@ func (self *testProvideExtenderOperator) activateResult(
 		IssueTimeMs:  uint64(issueTime.UnixMilli()),
 		ExpireTimeMs: uint64(expireTime.UnixMilli()),
 		NetworkHost:  testProvideExtenderHost,
+
+		RealityPublicKey:     realityPublicKey,
+		RequiredCapabilities: requiredCapabilities,
 	})
 	if err != nil {
 		return nil, err
