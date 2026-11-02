@@ -123,6 +123,24 @@ func TestExtenderReleaseReachEstablishedKeepsTheOperatorsWait(t *testing.T) {
 	}
 }
 
+// An answer ends what a failure before it left, so reach established after that
+// answer finds the operator's wait and leaves it.
+func TestExtenderReleaseReachEstablishedAfterAnAnswerKeepsItsWait(t *testing.T) {
+	harness := newTestReleaseHarness(t, nil)
+	testReleaseFailedRequests(t, harness, 1)
+	harness.advanceToDue()
+	harness.nextPost().answer(testReleaseAnswer(connect.ExtenderReleaseOutcomeEpochSpent, 3600))
+	harness.requireParked("the answer")
+	if wait := harness.dueIn(); wait != time.Hour {
+		t.Fatalf("the answer waits %s", wait)
+	}
+	harness.fetcher.trigger(extenderReleaseTriggerRequest)
+	harness.requireParked("reach after the answer")
+	if wait := harness.dueIn(); wait != time.Hour {
+		t.Fatalf("reach shortened the operator's wait to %s", wait)
+	}
+}
+
 // A path change and the directory's own ask are triggers, and neither says reach
 // was established: the backoff stands.
 func TestExtenderReleaseOtherTriggersKeepTheBackoff(t *testing.T) {
@@ -174,18 +192,33 @@ func TestExtenderReleaseReachEstablishedWhileARequestIsOut(t *testing.T) {
 }
 
 // An answer to the request that was out satisfies the trigger it coalesced: no
-// request follows it early, and the operator's wait stands.
+// request follows it early, whether the answer released a record or asked for a
+// wait.
 func TestExtenderReleaseReachEstablishedAnsweredByTheRequestOut(t *testing.T) {
-	harness := newTestReleaseHarness(t, nil)
-	harness.setByJwt(testReleaseByJwt(t, connect.NewId(), connect.NewId()))
-	harness.fetcher.bind(harness.credential)
-	post := harness.nextPost()
-	harness.fetcher.trigger(extenderReleaseTriggerRequest)
-	post.answer(testReleaseAnswer(connect.ExtenderReleaseOutcomeEpochSpent, 3600))
-	harness.requireParked("an answer to the request that was out")
-	if wait := harness.dueIn(); wait != time.Hour {
-		t.Fatalf("the next request is due in %s", wait)
-	}
+	t.Run("a wait", func(t *testing.T) {
+		harness := newTestReleaseHarness(t, nil)
+		harness.setByJwt(testReleaseByJwt(t, connect.NewId(), connect.NewId()))
+		harness.fetcher.bind(harness.credential)
+		post := harness.nextPost()
+		harness.fetcher.trigger(extenderReleaseTriggerRequest)
+		post.answer(testReleaseAnswer(connect.ExtenderReleaseOutcomeEpochSpent, 3600))
+		harness.requireParked("an answer to the request that was out")
+		if wait := harness.dueIn(); wait != time.Hour {
+			t.Fatalf("the next request is due in %s", wait)
+		}
+	})
+	t.Run("a record", func(t *testing.T) {
+		harness := newTestReleaseHarness(t, nil)
+		harness.setByJwt(testReleaseByJwt(t, connect.NewId(), connect.NewId()))
+		harness.fetcher.bind(harness.credential)
+		post := harness.nextPost()
+		harness.fetcher.trigger(extenderReleaseTriggerRequest)
+		post.answer(testReleaseAnswer("ok", 0, harness.gatedRecord(testReleaseExtenderKey(t), harness.clock.Now(), "192.0.2.10")))
+		harness.requireParked("an answer to the request that was out")
+		if wait := harness.dueIn(); wait < time.Hour {
+			t.Fatalf("the next request is due in %s", wait)
+		}
+	})
 }
 
 // Reach established while the fetch's own walk runs, by a pass the walk did not
