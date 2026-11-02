@@ -78,6 +78,67 @@ func TestSubscriptionBalanceResultOnboardingFields(t *testing.T) {
 	connect.AssertEqual(t, int64(0), (&OnboardingOffer{ExpiresAt: "garbage"}).ExpiresAtUnixMillis())
 }
 
+// TestSubscriptionBalanceResultWinbackOffer pins the win-back field's decode:
+// each store's shape comes through next to the welcome offer, the deadline
+// alone decides whether it is active, and a response without the field (no
+// offer, or an older server) decodes to nil.
+func TestSubscriptionBalanceResultWinbackOffer(t *testing.T) {
+	cases := []struct {
+		offer        string
+		store        string
+		playOfferTag string
+		appleOfferId string
+	}{
+		{`{"expires_at": "2099-11-16T12:00:00Z", "percent_off": 50, "plan": "monthly", "store": "play", "play_offer_tag": "winback-monthly-50"}`, WinbackOfferStorePlay, "winback-monthly-50", ""},
+		{`{"expires_at": "2099-11-16T12:00:00Z", "percent_off": 50, "plan": "monthly", "store": "stripe"}`, WinbackOfferStoreStripe, "", ""},
+		{`{"expires_at": "2099-11-16T12:00:00Z", "percent_off": 50, "plan": "monthly", "store": "apple", "apple_offer_id": "winback_monthly_50"}`, WinbackOfferStoreApple, "", "winback_monthly_50"},
+	}
+	for _, c := range cases {
+		body := `{"balance_byte_count": 1, "onboarding_offer": null, "winback_offer": ` + c.offer + `}`
+		var result SubscriptionBalanceResult
+		connect.AssertEqual(t, nil, json.Unmarshal([]byte(body), &result))
+		connect.AssertEqual(t, true, result.OnboardingOffer == nil)
+		offer := result.WinbackOffer
+		connect.AssertEqual(t, true, offer != nil)
+		connect.AssertEqual(t, c.store, offer.Store)
+		connect.AssertEqual(t, 50, offer.PercentOff)
+		connect.AssertEqual(t, PlanMonthly, offer.Plan)
+		connect.AssertEqual(t, c.playOfferTag, offer.PlayOfferTag)
+		connect.AssertEqual(t, c.appleOfferId, offer.AppleOfferId)
+		connect.AssertEqual(t, time.Date(2099, 11, 16, 12, 0, 0, 0, time.UTC).UnixMilli(), offer.ExpiresAtUnixMillis())
+		connect.AssertEqual(t, true, offer.IsActive())
+
+		// the wire shape survives a round trip (the web reads the object)
+		out, err := json.Marshal(&result)
+		connect.AssertEqual(t, nil, err)
+		var back SubscriptionBalanceResult
+		connect.AssertEqual(t, nil, json.Unmarshal(out, &back))
+		connect.AssertEqual(t, *offer, *back.WinbackOffer)
+	}
+
+	// the deadline decides: active until it, not at it or after it, and never
+	// with an unreadable one or nothing off
+	offer := &WinbackOffer{ExpiresAt: "2020-11-16T12:00:00Z", PercentOff: 50, Plan: PlanMonthly, Store: WinbackOfferStoreStripe}
+	deadline := offer.ExpiresAtUnixMillis()
+	connect.AssertEqual(t, true, offer.IsActiveAt(deadline-1))
+	connect.AssertEqual(t, false, offer.IsActiveAt(deadline))
+	connect.AssertEqual(t, false, offer.IsActiveAt(deadline+1))
+	connect.AssertEqual(t, false, offer.IsActive())
+	connect.AssertEqual(t, false, (&WinbackOffer{ExpiresAt: "garbage", PercentOff: 50}).IsActiveAt(0))
+	connect.AssertEqual(t, int64(0), (&WinbackOffer{ExpiresAt: "garbage"}).ExpiresAtUnixMillis())
+	connect.AssertEqual(t, false, (&WinbackOffer{ExpiresAt: "2099-11-16T12:00:00Z"}).IsActive())
+
+	// no offer, and an older server
+	for _, body := range []string{`{"balance_byte_count": 1, "winback_offer": null}`, `{"balance_byte_count": 1}`} {
+		var old SubscriptionBalanceResult
+		connect.AssertEqual(t, nil, json.Unmarshal([]byte(body), &old))
+		connect.AssertEqual(t, true, old.WinbackOffer == nil)
+		out, err := json.Marshal(&old)
+		connect.AssertEqual(t, nil, err)
+		connect.AssertEqual(t, false, strings.Contains(string(out), "winback_offer"))
+	}
+}
+
 // TestNetworkCreateArgsProductUpdates pins the sign-up opt-out wire field: the
 // zero value sends product_updates true, the opt-out sends false.
 func TestNetworkCreateArgsProductUpdates(t *testing.T) {

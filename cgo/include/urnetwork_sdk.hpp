@@ -585,6 +585,9 @@ inline constexpr const char* WalletAuthErrorCodeSignatureMismatch = "signature_m
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
+inline constexpr const char* WinbackOfferStoreApple = "apple";
+inline constexpr const char* WinbackOfferStorePlay = "play";
+inline constexpr const char* WinbackOfferStoreStripe = "stripe";
 inline constexpr const char* WindowTypeAuto = "auto";
 inline constexpr const char* WindowTypeQuality = "quality";
 inline constexpr const char* WindowTypeSpeed = "speed";
@@ -997,6 +1000,7 @@ struct StripePaymentSheetResult;
 struct StripePricesResult;
 struct SubprotocolStats;
 struct Subscription;
+struct WinbackOffer;
 struct SubscriptionBalanceResult;
 struct SubscriptionCreatePaymentIdArgs;
 struct SubscriptionCreatePaymentIdError;
@@ -3922,6 +3926,15 @@ struct Subscription {
 	std::string plan{};
 };
 
+struct WinbackOffer {
+	std::string expires_at{};
+	int64_t percent_off{};
+	std::string plan{};
+	std::string store{};
+	std::optional<std::string> play_offer_tag;
+	std::optional<std::string> apple_offer_id;
+};
+
 struct SubscriptionBalanceResult {
 	int64_t start_balance_byte_count{};
 	int64_t balance_byte_count{};
@@ -3934,6 +3947,7 @@ struct SubscriptionBalanceResult {
 	std::optional<bool> guest;
 	std::optional<PriceTier> price_tier;
 	std::optional<OnboardingOffer> onboarding_offer;
+	std::optional<WinbackOffer> winback_offer;
 	std::optional<ExperimentAssignmentList> experiments;
 	std::optional<CryptoPaymentAssetList> crypto_assets;
 	std::optional<CryptoTerm> crypto_term;
@@ -4914,6 +4928,8 @@ inline void to_json(nlohmann::json& j, const SubprotocolStats& v);
 inline void from_json(const nlohmann::json& j, SubprotocolStats& v);
 inline void to_json(nlohmann::json& j, const Subscription& v);
 inline void from_json(const nlohmann::json& j, Subscription& v);
+inline void to_json(nlohmann::json& j, const WinbackOffer& v);
+inline void from_json(const nlohmann::json& j, WinbackOffer& v);
 inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v);
 inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v);
 inline void to_json(nlohmann::json& j, const SubscriptionCreatePaymentIdArgs& v);
@@ -18020,6 +18036,47 @@ inline void from_json(const nlohmann::json& j, Subscription& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const WinbackOffer& v) {
+	j = nlohmann::json::object();
+	j["expires_at"] = v.expires_at;
+	j["percent_off"] = v.percent_off;
+	j["plan"] = v.plan;
+	j["store"] = v.store;
+	if (v.play_offer_tag) {
+		j["play_offer_tag"] = *v.play_offer_tag;
+	}
+	if (v.apple_offer_id) {
+		j["apple_offer_id"] = *v.apple_offer_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, WinbackOffer& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expires_at);
+	}
+	if (auto it = j.find("percent_off"); it != j.end() && !it->is_null()) {
+		it->get_to(v.percent_off);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		it->get_to(v.plan);
+	}
+	if (auto it = j.find("store"); it != j.end() && !it->is_null()) {
+		it->get_to(v.store);
+	}
+	if (auto it = j.find("play_offer_tag"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.play_offer_tag = std::move(tmp);
+	}
+	if (auto it = j.find("apple_offer_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.apple_offer_id = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	j = nlohmann::json::object();
 	j["start_balance_byte_count"] = v.start_balance_byte_count;
@@ -18044,6 +18101,9 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	}
 	if (v.onboarding_offer) {
 		j["onboarding_offer"] = *v.onboarding_offer;
+	}
+	if (v.winback_offer) {
+		j["winback_offer"] = *v.winback_offer;
 	}
 	if (v.experiments) {
 		j["experiments"] = *v.experiments;
@@ -18106,6 +18166,11 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 		OnboardingOffer tmp{};
 		it->get_to(tmp);
 		v.onboarding_offer = std::move(tmp);
+	}
+	if (auto it = j.find("winback_offer"); it != j.end() && !it->is_null()) {
+		WinbackOffer tmp{};
+		it->get_to(tmp);
+		v.winback_offer = std::move(tmp);
 	}
 	if (auto it = j.find("experiments"); it != j.end() && !it->is_null()) {
 		ExperimentAssignmentList tmp{};
