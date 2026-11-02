@@ -267,6 +267,28 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_PROVIDE_STATE_SETTING_UP "setting_up"
 #define URNET_EXTENDER_ROLE_FEED "feed"
 #define URNET_EXTENDER_ROLE_MEMBER "member"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_CONFLICT "import_extender_seed_conflict"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_EXPIRED "import_extender_seed_expired"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_FOREIGN_NETWORK "import_extender_seed_foreign_network"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_FORGED "import_extender_seed_forged"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_GATED_RECORD "import_extender_seed_gated_record"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_INVALID "import_extender_seed_invalid"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_INVALID_RECORD "import_extender_seed_invalid_record"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_NOT_YET_VALID "import_extender_seed_not_yet_valid"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_NO_ROOT_KEYS "import_extender_seed_no_root_keys"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_ROLLBACK "import_extender_seed_rollback"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_TOO_LARGE "import_extender_seed_too_large"
+#define URNET_EXTENDER_SEED_IMPORT_ERROR_UNAVAILABLE "import_extender_seed_unavailable"
+#define URNET_EXTENDER_SEED_IMPORT_OUTCOME_ACCEPTED "accepted"
+#define URNET_EXTENDER_SEED_IMPORT_OUTCOME_IDENTICAL "identical"
+#define URNET_EXTENDER_SEED_PASS_OUTCOME_APPLIED "applied"
+#define URNET_EXTENDER_SEED_PASS_OUTCOME_CANCELED "canceled"
+#define URNET_EXTENDER_SEED_PASS_OUTCOME_FAILED "failed"
+#define URNET_EXTENDER_SEED_PASS_OUTCOME_NOTHING_NEW "nothing_new"
+#define URNET_EXTENDER_SEED_SOURCE_EMBEDDED "embedded"
+#define URNET_EXTENDER_SEED_SOURCE_IMPORT "import"
+#define URNET_EXTENDER_SEED_SOURCE_MIRROR "mirror"
+#define URNET_EXTENDER_SEED_SOURCE_STORE "store"
 #define URNET_IP_FAMILY_DUALSTACK "dualstack"
 #define URNET_IP_FAMILY_FILTER_V4_CAPABLE "v4-capable"
 #define URNET_IP_FAMILY_FILTER_V6_CAPABLE "v6-capable"
@@ -1747,8 +1769,12 @@ char* urnet_extender_view_controller_build_share(uint64_t self, bool include_set
 void urnet_extender_view_controller_close(uint64_t self);
 char* urnet_extender_view_controller_decode_share(uint64_t self, const char* text);
 void urnet_extender_view_controller_extender_status_changed(uint64_t self, const char* status_json);
+char* urnet_extender_view_controller_get_seed_status(uint64_t self);
 char* urnet_extender_view_controller_get_settings(uint64_t self);
 char* urnet_extender_view_controller_get_status(uint64_t self);
+char* urnet_extender_view_controller_import_seed(uint64_t self, const char* text);
+char* urnet_extender_view_controller_import_seed_data(uint64_t self, const uint8_t* data, int32_t data_len);
+char* urnet_extender_view_controller_import_seed_file(uint64_t self, const char* path);
 char* urnet_extender_view_controller_import_share(uint64_t self, const char* text, bool use_settings);
 char* urnet_extender_view_controller_reset_extenders(uint64_t self);
 char* urnet_extender_view_controller_set_settings(uint64_t self, const char* dns_name, const char* gossip_url, const char* hosts_json);
@@ -1955,6 +1981,7 @@ char* urnet_network_space_get_extender_gossip_mode(uint64_t self);
 char* urnet_network_space_get_extender_hosts(uint64_t self);
 char* urnet_network_space_get_extender_reset_id(uint64_t self);
 char* urnet_network_space_get_extender_root_public_keys(uint64_t self);
+char* urnet_network_space_get_extender_seed_status(uint64_t self);
 char* urnet_network_space_get_extender_status(uint64_t self);
 char* urnet_network_space_get_gossip_url(uint64_t self);
 char* urnet_network_space_get_host_name(uint64_t self);
@@ -1973,6 +2000,9 @@ char* urnet_network_space_get_store(uint64_t self);
 char* urnet_network_space_get_vless_settings(uint64_t self);
 char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
+char* urnet_network_space_import_extender_seed(uint64_t self, const char* text);
+char* urnet_network_space_import_extender_seed_data(uint64_t self, const uint8_t* data, int32_t data_len);
+char* urnet_network_space_import_extender_seed_file(uint64_t self, const char* path);
 char* urnet_network_space_reset_extenders(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 bool urnet_network_space_same(uint64_t self, uint64_t other);
@@ -3522,6 +3552,36 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ConnectionCount: number
  */
 
+/* ExtenderSeedImportResult (json):
+ *   Ok: boolean
+ *   Error: string
+ *   Outcome: string
+ *   NetworkHost: string
+ *   Sequence: number
+ *   ExpireTime: number
+ *   RecordCount: number
+ *   RevocationCount: number
+ *   UsableCount: number
+ */
+
+/* ExtenderSeedMirrorValue (json):
+ *   url?: string
+ *   address?: string
+ */
+
+/* ExtenderSeedStatus (json):
+ *   LastPassTime: number
+ *   LastPassOutcome: string
+ *   LastPassError: string
+ *   Sequence: number
+ *   ExpireTime: number
+ *   Source: string
+ *   EmbeddedCount: number
+ *   EmbeddedError: string
+ *   MirrorCount: number
+ *   DnsIndependentMirrorCount: number
+ */
+
 /* ExtenderSettings (json):
  *   DnsName: string
  *   DnsNameDefault: boolean
@@ -3573,6 +3633,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LastSampleTime: number
  *   LastError: string
  *   Extenders: ExtenderInfoList | null
+ *   GatedPreference: boolean
+ *   GatedMode: string
+ *   GatedFallbackReason: string
+ *   GatedUsableCount: number
+ *   GatedReleaseOutcome: string
+ *   GatedRecordExpireTime: number
  */
 
 /* FeedbackSendArgs (json):
@@ -4148,7 +4214,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   gossip_url?: string
  *   extender_root_public_keys?: string[]
  *   extender_hosts?: string[]
+ *   extender_seed_mirrors?: ExtenderSeedMirrorValue[]
  *   extender_reset_id?: string
+ *   extender_gated_preference?: boolean
  *   vless?: VlessSettings | null
  *   control_doh_urls_ipv4?: string[]
  *   control_doh_urls_ipv6?: string[]

@@ -55,6 +55,7 @@ func generateTypes() ([]byte, error) {
 		sdk.NetworkSpaceValues{},
 		sdk.ExportNetworkSpace{},
 		sdk.NetExtender{},
+		sdk.ExtenderSeedMirrorValue{},
 		sdk.VlessSettings{},
 		sdk.ProxyAuthResult{},
 		sdk.ProxyConfigResult{},

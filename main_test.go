@@ -34,6 +34,10 @@ func TestMain(m *testing.M) {
 	SetExtenderNetworkClientEnabled(false)
 	extenderNodeEnabled = false
 	extenderProvideRoleEnabled = false
+	// the seed bootstrap's automatic loop asks the control route and the
+	// mirrors once a network client's first attempt leaves nothing usable;
+	// the seed tests that exercise it turn it back on
+	extenderSeedLoopDisabled.Store(true)
 	newNetworkSpaceConnectSettings = testOfflineConnectSettings
 	os.Exit(m.Run())
 }

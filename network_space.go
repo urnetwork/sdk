@@ -112,6 +112,15 @@ type NetworkSpaceValues struct {
 	// the mesh deliver -- which is what separates them from the legacy
 	// `NetExtender`, whose single address overrides everything.
 	ExtenderHosts []string `json:"extender_hosts,omitempty"`
+	// ExtenderSeedMirrors are the https mirrors of the space's authenticated
+	// seed bundle (extender_seed_mirrors.go; connect EXTENDER-UPDATE2.md
+	// §2.3), each a url and optionally the address that reaches it without
+	// dns. Empty takes the bundled table for the host the extender network is
+	// keyed by, which is empty until the operator's mirrors exist. A mirror
+	// only distributes the signed bundle; it is never a trust anchor. Applied
+	// in place, and kept by "Reset extenders": it is a setting, not something
+	// the space learned.
+	ExtenderSeedMirrors []ExtenderSeedMirrorValue `json:"extender_seed_mirrors,omitempty"`
 	// ExtenderResetId is the latest reset of this space's extender state
 	// (EXTENDER.md E7), a ULID. `ResetExtenders` sets it with the extender
 	// values above cleared, and every process that holds the space resets its
@@ -120,6 +129,11 @@ type NetworkSpaceValues struct {
 	// the tunnel process that imports the space at its next start, whether or
 	// not that process could be told at once. Empty is a space never reset.
 	ExtenderResetId string `json:"extender_reset_id,omitempty"`
+	// ExtenderGatedPreference turns on the gated-preferred extender selection
+	// and the gated release fetch together (connect/EXTENDER-UPDATE2.md §1.1):
+	// the cohort control, off by default and applied in place
+	// (extender_release_space.go). A hosted space never turns it on.
+	ExtenderGatedPreference bool `json:"extender_gated_preference,omitempty"`
 
 	// A VLESS server the client strategy also dials through (vless_settings.go).
 	// Nil, off or invalid is a space without VLESS. Applied in place like the
@@ -272,6 +286,12 @@ type NetworkSpace struct {
 	// The refresh loop that fills the directory (E3). Nil for a space whose
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
+	// The gated release of this space (extender_release_space.go): its fetch,
+	// none for a space with no directory and for a hosted one, the ways the
+	// fetch regains control reach after the cached open records
+	// (extender_control_reach.go), and the account monitor. Ready from
+	// construction on.
+	extenderRelease extenderReleaseSpace
 	// stateLock guards the node, which the provider extender role replaces
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
@@ -319,6 +339,10 @@ type NetworkSpace struct {
 	// re-subscribes to the node it now has
 	extenderNodeMonitor           *connect.Monitor
 	extenderStatusChangeListeners *connect.CallbackList[ExtenderStatusChangeListener]
+	// The seed bootstrap (extender_seed.go), set once at construction under
+	// stateLock. Nil for a space that runs none: no directory, or the space a
+	// cloud host shares among its hosted devices.
+	extenderSeed *spaceExtenderSeed
 	// The manager that owns this space, nil for one built directly (a url-only
 	// or headless space). It is the only way an extender settings change made
 	// from inside the space -- the settings screen and a share import (K6, K7)
@@ -391,7 +415,8 @@ func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
 	controlDohChanged := self.applyControlDohValues(values)
 	vlessChanged := self.applyVlessValues(values)
 	extenderChanged := self.applyExtenderValues(values)
-	return controlDohChanged || vlessChanged || extenderChanged
+	gatedPreferenceChanged := self.applyExtenderGatedPreferenceValues(values)
+	return controlDohChanged || vlessChanged || extenderChanged || gatedPreferenceChanged
 }
 
 // Replaces the space's bootstrap DoH servers and the client strategy's DoH
@@ -756,6 +781,8 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 		clientStrategySettings.Log,
 	)
 	networkSpace.startExtenderStatusWatch()
+	networkSpace.startExtenderRelease()
+	networkSpace.startExtenderSeed()
 	return networkSpace
 }
 
@@ -894,20 +921,27 @@ func extenderNetworkClientRuns(key *NetworkSpaceKey, values *NetworkSpaceValues)
 // the new ones starting; the other values are taken as they come, since a host
 // added after the reset belongs to the space after it.
 //
+// The mirrors of the seed bundle are extender values too, but nothing is
+// built from them: a change of the mirrors alone restarts nothing, and the
+// seed bootstrap fetches from the new ones at its next pass.
+//
 // Returns whether anything changed. Values outside the extender set are
 // ignored: only a rebuilt space may change those.
 func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
-	changed, resetId, closed := func() (bool, string, bool) {
+	changed, restart, mirrorsChanged, resetId, closed := func() (bool, bool, bool, string, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if !extenderValuesChanged(&self.key, &self.values, values) {
-			return false, "", self.closed
+			return false, false, false, "", self.closed
 		}
+		restart := extenderNetworkValuesChanged(&self.key, &self.values, values)
+		mirrorsChanged := extenderSeedMirrorValuesChanged(&self.key, &self.values, values)
 		self.values.NetExtender = values.NetExtender
 		self.values.ExtenderDnsName = values.ExtenderDnsName
 		self.values.GossipUrl = values.GossipUrl
 		self.values.ExtenderRootPublicKeys = slices.Clone(values.ExtenderRootPublicKeys)
 		self.values.ExtenderHosts = slices.Clone(values.ExtenderHosts)
+		self.values.ExtenderSeedMirrors = slices.Clone(values.ExtenderSeedMirrors)
 		self.values.ExtenderResetId = values.ExtenderResetId
 		resetId := ""
 		if extenderResetIdNewer(values.ExtenderResetId, self.appliedExtenderResetId) {
@@ -915,13 +949,20 @@ func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
 			// one reset only one resets
 			resetId = values.ExtenderResetId
 			self.appliedExtenderResetId = resetId
+			// a claimed reset is applied by the restart, or not at all
+			restart = true
 		}
-		return true, resetId, self.closed
+		return true, restart, mirrorsChanged, resetId, self.closed
 	}()
 	if !changed || closed {
 		return changed
 	}
-	self.restartExtenderNetwork(resetId)
+	if restart {
+		self.restartExtenderNetwork(resetId)
+	}
+	if mirrorsChanged {
+		self.extenderSeedMirrorsChanged()
+	}
 	return true
 }
 
@@ -951,6 +992,9 @@ func (self *NetworkSpace) restartExtenderNetwork(resetId string) {
 	// alone.
 	if resetId == "" && self.extenderDirectory != nil && rootKeySet != nil {
 		self.extenderDirectory.SetRootKeys(rootKeySet)
+		// a seed floor whose bundle the new anchor no longer verifies was set
+		// by authority the space no longer grants, and is dropped now
+		self.revalidateExtenderSeed()
 	}
 	// the node watches the client for the operator address, so it is rebuilt
 	// on the replacement rather than left watching a closed one; for a reset
@@ -972,7 +1016,14 @@ func (self *NetworkSpace) restartExtenderNetwork(resetId string) {
 			previousNetworkClient.Close()
 		}
 		if resetId != "" {
+			// the seed bootstrap applies to the directory and writes the seed
+			// store, so it is held between passes until both are reset, as
+			// the client and the node are stopped first: nothing a pass read
+			// before the reset lands after it
+			resumeExtenderSeed := self.suspendExtenderSeed()
 			self.extenderDirectory.Reset(rootKeySet)
+			self.resetExtenderSeed()
+			resumeExtenderSeed()
 		}
 	}
 	if resetId != "" && self.asyncLocalState != nil {
@@ -1029,13 +1080,26 @@ func (self *NetworkSpace) restartExtenderNetwork(resetId string) {
 	self.extenderStatusChanged()
 }
 
+// Reports whether two value sets differ in any extender value a running space
+// takes in place: what the extender network is built from
+// (extenderNetworkValuesChanged), or the mirrors of its seed bundle, which the
+// seed bootstrap reads at its next pass and which restart nothing.
+func extenderValuesChanged(
+	key *NetworkSpaceKey,
+	previous *NetworkSpaceValues,
+	next *NetworkSpaceValues,
+) bool {
+	return extenderNetworkValuesChanged(key, previous, next) ||
+		extenderSeedMirrorValuesChanged(key, previous, next)
+}
+
 // Reports whether two value sets differ in anything the extender network is
 // built from (K6): the dns name, the gossip url, the root keys, the manual
 // hosts, the legacy custom extender and the latest reset (E7). The comparison
 // is of the EFFECTIVE values, so an edit that only adds whitespace, or that
 // spells out the derived default a blank field already means, restarts
 // nothing.
-func extenderValuesChanged(
+func extenderNetworkValuesChanged(
 	key *NetworkSpaceKey,
 	previous *NetworkSpaceValues,
 	next *NetworkSpaceValues,
@@ -1363,6 +1427,8 @@ func NewNetworkSpaceWithUrls(
 			log,
 		)
 		networkSpace.startExtenderStatusWatch()
+		networkSpace.startExtenderRelease()
+		networkSpace.startExtenderSeed()
 	}
 	return networkSpace
 }
@@ -1749,6 +1815,11 @@ func (self *NetworkSpace) close() {
 			return extenderNode
 		}()
 		extenderNode.Close()
+		// the release fetch writes into the directory too
+		self.closeExtenderRelease()
+		// the seed bootstrap applies to the directory and writes its store, so
+		// it is joined before both close
+		self.closeExtenderSeed()
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Close()
 		}
@@ -2194,11 +2265,13 @@ func onlyInPlaceValuesChanged(
 		other.GossipUrl = ""
 		other.ExtenderRootPublicKeys = nil
 		other.ExtenderHosts = nil
+		other.ExtenderSeedMirrors = nil
 		other.ExtenderResetId = ""
 		other.Vless = nil
 		other.ControlDohUrlsIpv4 = nil
 		other.ControlDohUrlsIpv6 = nil
 		other.IngressCountryCode = ""
+		other.ExtenderGatedPreference = false
 		return other
 	}
 	if !reflect.DeepEqual(withoutInPlaceValues(previous), withoutInPlaceValues(next)) {
@@ -2215,7 +2288,8 @@ func inPlaceValuesChanged(
 ) bool {
 	return extenderValuesChanged(key, previous, next) ||
 		vlessValuesChanged(previous, next) ||
-		controlDohValuesChanged(previous, next)
+		controlDohValuesChanged(previous, next) ||
+		extenderGatedPreferenceValuesChanged(previous, next)
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {

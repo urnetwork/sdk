@@ -25,7 +25,9 @@ export interface NetworkSpaceValues {
   gossip_url?: string;
   extender_root_public_keys?: string[];
   extender_hosts?: string[];
+  extender_seed_mirrors?: ExtenderSeedMirrorValue[];
   extender_reset_id?: string;
+  extender_gated_preference?: boolean;
   vless?: VlessSettings | null;
   control_doh_urls_ipv4?: string[];
   control_doh_urls_ipv6?: string[];
@@ -40,6 +42,11 @@ export interface ExportNetworkSpace {
 export interface NetExtender {
   ip: string;
   secret: string;
+}
+
+export interface ExtenderSeedMirrorValue {
+  url?: string;
+  address?: string;
 }
 
 export interface VlessSettings {

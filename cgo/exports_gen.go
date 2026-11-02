@@ -14143,6 +14143,20 @@ func urnet_extender_view_controller_extender_status_changed(self C.uint64_t, sta
 	self_.ExtenderStatusChanged(status_)
 }
 
+//export urnet_extender_view_controller_get_seed_status
+func urnet_extender_view_controller_get_seed_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_get_seed_status")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_get_seed_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSeedStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_get_seed_status")
+}
+
 //export urnet_extender_view_controller_get_settings
 func urnet_extender_view_controller_get_settings(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_extender_view_controller_get_settings")
@@ -14169,6 +14183,48 @@ func urnet_extender_view_controller_get_status(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_extender_view_controller_get_status")
+}
+
+//export urnet_extender_view_controller_import_seed
+func urnet_extender_view_controller_import_seed(self C.uint64_t, text *C.char) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_import_seed")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_import_seed")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportSeed(goString(text))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_import_seed")
+}
+
+//export urnet_extender_view_controller_import_seed_data
+func urnet_extender_view_controller_import_seed_data(self C.uint64_t, data *C.uint8_t, data_len C.int32_t) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_import_seed_data")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_import_seed_data")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportSeedData(goBytes(data, data_len))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_import_seed_data")
+}
+
+//export urnet_extender_view_controller_import_seed_file
+func urnet_extender_view_controller_import_seed_file(self C.uint64_t, path *C.char) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_import_seed_file")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_import_seed_file")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportSeedFile(goString(path))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_import_seed_file")
 }
 
 //export urnet_extender_view_controller_import_share
@@ -16842,6 +16898,20 @@ func urnet_network_space_get_extender_root_public_keys(self C.uint64_t) *C.char 
 	return cJson(r0, "urnet_network_space_get_extender_root_public_keys")
 }
 
+//export urnet_network_space_get_extender_seed_status
+func urnet_network_space_get_extender_seed_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_seed_status")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_seed_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderSeedStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_extender_seed_status")
+}
+
 //export urnet_network_space_get_extender_status
 func urnet_network_space_get_extender_status(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_extender_status")
@@ -17050,6 +17120,48 @@ func urnet_network_space_has_platform_family_urls(self C.uint64_t) C.bool {
 	}
 	r0 := self_.HasPlatformFamilyUrls()
 	return C.bool(r0)
+}
+
+//export urnet_network_space_import_extender_seed
+func urnet_network_space_import_extender_seed(self C.uint64_t, text *C.char) *C.char {
+	defer cgoGuard("urnet_network_space_import_extender_seed")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_import_extender_seed")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportExtenderSeed(goString(text))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_import_extender_seed")
+}
+
+//export urnet_network_space_import_extender_seed_data
+func urnet_network_space_import_extender_seed_data(self C.uint64_t, data *C.uint8_t, data_len C.int32_t) *C.char {
+	defer cgoGuard("urnet_network_space_import_extender_seed_data")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_import_extender_seed_data")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportExtenderSeedData(goBytes(data, data_len))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_import_extender_seed_data")
+}
+
+//export urnet_network_space_import_extender_seed_file
+func urnet_network_space_import_extender_seed_file(self C.uint64_t, path *C.char) *C.char {
+	defer cgoGuard("urnet_network_space_import_extender_seed_file")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_import_extender_seed_file")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportExtenderSeedFile(goString(path))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_import_extender_seed_file")
 }
 
 //export urnet_network_space_reset_extenders

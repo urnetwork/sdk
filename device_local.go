@@ -945,7 +945,10 @@ type DeviceLocal struct {
 	networkId        string
 	apiJwtRefreshSub Sub
 	apiAuthLogoutSub Sub
-	authPublication  *deviceAuthPublicationGate
+	// Releases this device's binding of the space's gated release fetch to
+	// its client token (extender_release_space.go). Set at construction.
+	extenderReleaseUnbind func()
+	authPublication       *deviceAuthPublicationGate
 	// Explicit key saves are separate from preference autosave. Capture and
 	// commit one current value at a time without holding callback/native locks.
 	providerKeySaveLock sync.Mutex
@@ -2183,6 +2186,14 @@ func newDeviceLocalWithOverridesForPlatform(
 	// in this tenant's name.
 	if provider != nil && !settings.HostedIncompatible {
 		provider.enableProbeAttestor(log, settings.providerPingReporterSettings)
+	}
+
+	// the space's gated release is keyed by this device's client token
+	// (connect/EXTENDER-UPDATE2.md §1.1). A hosted device never binds: its
+	// space is shared by unrelated customers.
+	deviceLocal.extenderReleaseUnbind = func() {}
+	if !settings.HostedIncompatible {
+		deviceLocal.extenderReleaseUnbind = networkSpace.bindExtenderRelease(api.GetByJwt)
 	}
 
 	ownedClientStrategyTransferred = true
@@ -3850,6 +3861,8 @@ func (self *DeviceLocal) GetAuthLogoutCause() string {
 }
 
 func (self *DeviceLocal) authLogout() {
+	// a sign-out is an account change to the gated release
+	self.networkSpace.extenderReleaseCredentialChanged()
 	for _, listener := range self.authLogoutListeners.Get() {
 		connect.HandleError(func() {
 			listener.AuthLogout()
@@ -3858,6 +3871,8 @@ func (self *DeviceLocal) authLogout() {
 }
 
 func (self *DeviceLocal) jwtRefreshed(jwt string) {
+	// a token of another identity is an account change to the gated release
+	self.networkSpace.extenderReleaseCredentialChanged()
 	for _, listener := range self.jwtRefreshListeners.Get() {
 		connect.HandleError(func() {
 			listener.JwtRefreshed(jwt)
@@ -5959,6 +5974,11 @@ func (self *DeviceLocal) CloseAndWait(ctx context.Context) error {
 }
 
 func (self *DeviceLocal) close() {
+	// before any device lock: the unbind may wait on a release answer being
+	// applied
+	if self.extenderReleaseUnbind != nil {
+		self.extenderReleaseUnbind()
+	}
 	if self.authPublication != nil {
 		self.authPublication.Close()
 	}
