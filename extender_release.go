@@ -45,10 +45,11 @@ import (
 // so the normal refresh is six hours after an answer, a jitter drawn once per
 // answer brings it earlier and never later, and the refresh is due no later
 // than ExpiryMargin before the earliest expiry, which leaves room for bounded
-// retries. A failure backs off from a minute to half an hour; a refusal waits
-// out the retry time the operator gave, or a wait of its own; and the client
-// never asks more than RateLimitCount times an hour, nor twice within
-// MinRequestInterval of an answer, whatever triggered it.
+// retries. A failure backs off from a minute to half an hour, until control
+// reach is newly established (requestExtenderRelease), which clears the backoff;
+// a refusal waits out the retry time the operator gave, or a wait of its own;
+// and the client never asks more than RateLimitCount times an hour, nor twice
+// within MinRequestInterval of an answer, whatever triggered it.
 //
 // An account change -- a client token of another network or client, a
 // sign-out -- cancels the request that is out and discards its answer, which
@@ -321,6 +322,12 @@ type extenderReleaseSchedule struct {
 	// request goes at once, MinRequestInterval aside, once per failure run
 	reachRetry bool
 	reachTried bool
+	// the last request ended with no answer to read, so `backoff` and
+	// `notBefore` are about the route it took, not an answer of the operator's
+	unanswered bool
+	// control reach was established while a request was out, or while the walk
+	// after it ran; if that request failed, its failure was the old route's
+	reachEstablishedOut bool
 	// the families the last request named
 	ipVersions []int
 }
@@ -395,6 +402,8 @@ func (self *extenderReleaseSchedule) answered(
 	self.lastTime = now
 	self.backoff = 0
 	self.reachTried = false
+	self.unanswered = false
+	self.reachEstablishedOut = false
 	self.released = released
 	self.jitter = 0
 	switch {
@@ -431,9 +440,44 @@ func (self *extenderReleaseSchedule) answered(
 // A request that got no answer at `now`. The records held are not lost by it.
 func (self *extenderReleaseSchedule) failed(now time.Time, settings *extenderReleaseSettings) {
 	self.lastTime = now
+	self.unanswered = true
 	self.failedBackoff(settings)
 	self.wait = self.backoff
 	self.notBefore = now.Add(self.backoff)
+}
+
+// Control reach was newly established at `now` by something other than this
+// fetch's own walk: the seed bootstrap's trigger, or an import. A backoff from a
+// request with no answer was about the route that failed, so it no longer holds
+// the next request, and a later failure starts a new run with a walk of its own.
+// With no backoff the limits are the rate limit: the hourly cap and
+// MinRequestInterval from the last request's end (limitedUntil). What an answer
+// asked for, a retry time above all, is the operator's and stands.
+func (self *extenderReleaseSchedule) reachEstablished(now time.Time) {
+	if !self.unanswered {
+		return
+	}
+	self.unanswered = false
+	self.backoff = 0
+	self.wait = 0
+	self.notBefore = now
+	self.reachTried = false
+}
+
+// A fetch ended, having coalesced reach established while it ran. A request that
+// failed began on the route before that reach, so the next one goes at once
+// within the hourly cap, as after the fetch's own walk found reach. A trigger that
+// landed after an answer is an ordinary trigger, under every limit.
+func (self *extenderReleaseSchedule) fetchEnded(now time.Time) {
+	if !self.reachEstablishedOut {
+		return
+	}
+	self.reachEstablishedOut = false
+	self.early = true
+	if self.unanswered {
+		self.reachEstablished(now)
+		self.reachRetry = true
+	}
 }
 
 func (self *extenderReleaseSchedule) failedBackoff(settings *extenderReleaseSettings) {
@@ -539,6 +583,7 @@ type extenderReleaseStoredState struct {
 	JitterMs         int64   `json:"jitter_ms,omitempty"`
 	NotBeforeMs      int64   `json:"not_before_ms,omitempty"`
 	BackoffMs        int64   `json:"backoff_ms,omitempty"`
+	Unanswered       bool    `json:"unanswered,omitempty"`
 	NoRecordCount    int     `json:"no_record_count,omitempty"`
 	Released         bool    `json:"released,omitempty"`
 	ReleasedExpireMs int64   `json:"released_expire_ms,omitempty"`
@@ -774,7 +819,13 @@ func (self *extenderReleaseFetcher) trigger(source string) {
 		addExtenderReleaseCount(&self.stats.TriggerCounts, source)
 		if self.requestCancel != nil {
 			// coalesced into the request that is out
+			if source == extenderReleaseTriggerRequest {
+				self.schedule.reachEstablishedOut = true
+			}
 			return false
+		}
+		if source == extenderReleaseTriggerRequest {
+			self.schedule.reachEstablished(self.settings.Now())
 		}
 		self.schedule.early = true
 		return true
@@ -797,6 +848,13 @@ func (self *extenderReleaseFetcher) networkChanged() {
 	if wanted {
 		self.trigger(extenderReleaseTriggerPath)
 	}
+}
+
+// The bound credential and identity, which the block report sender reads.
+func (self *extenderReleaseFetcher) boundCredential() (func() string, extenderReleaseIdentity) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.credential, self.identity
 }
 
 func (self *extenderReleaseFetcher) statsValue() extenderReleaseStats {
@@ -903,6 +961,7 @@ func (self *extenderReleaseFetcher) fetch() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.requestCancel = nil
+		self.schedule.fetchEnded(self.settings.Now())
 	}()
 
 	responseBytes, requestErr := self.settings.Post(requestCtx, self.apiUrl+extenderReleasePath, argsBytes, byJwt)
@@ -976,7 +1035,9 @@ func (self *extenderReleaseFetcher) land(
 			addExtenderReleaseCount(&self.stats.OutcomeCounts, connect.ExtenderGatedReleaseFailed)
 			addExtenderReleaseCount(&self.stats.FailureCounts, failure)
 			self.schedule.failed(now, self.settings)
-			reach := (failure == extenderReleaseFailureTransport || failure == extenderReleaseFailureTimeout) &&
+			// with reach established meanwhile there is nothing for a walk to find
+			reach := !self.schedule.reachEstablishedOut &&
+				(failure == extenderReleaseFailureTransport || failure == extenderReleaseFailureTimeout) &&
 				!self.schedule.reachTried
 			if reach {
 				self.schedule.reachTried = true
@@ -1148,6 +1209,7 @@ func storedExtenderReleaseSchedule(schedule *extenderReleaseSchedule) *extenderR
 		JitterMs:      schedule.jitter.Milliseconds(),
 		NotBeforeMs:   extenderReleaseTimeMs(schedule.notBefore),
 		BackoffMs:     schedule.backoff.Milliseconds(),
+		Unanswered:    schedule.unanswered,
 		NoRecordCount: schedule.noRecordCount,
 		Released:      schedule.released,
 		IpVersions:    slices.Clone(schedule.ipVersions),
@@ -1166,6 +1228,7 @@ func restoreExtenderReleaseSchedule(storedState *extenderReleaseStoredState) ext
 		jitter:        time.Duration(storedState.JitterMs) * time.Millisecond,
 		notBefore:     extenderReleaseTimeFromMs(storedState.NotBeforeMs),
 		backoff:       time.Duration(storedState.BackoffMs) * time.Millisecond,
+		unanswered:    storedState.Unanswered,
 		noRecordCount: storedState.NoRecordCount,
 		released:      storedState.Released,
 		ipVersions:    slices.Clone(storedState.IpVersions),

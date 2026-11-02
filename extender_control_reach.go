@@ -136,6 +136,18 @@ func (self *NetworkSpace) extenderControlReachOrder() []extenderControlReach {
 	return append(reaches, self.extenderRelease.reaches.list()...)
 }
 
+// Asks the control route: `/hello` through the space's client strategy, which
+// takes whatever route the strategy has -- direct while the directory is empty,
+// a verified extender once one is usable. Nil is an answer from the operator.
+func (self *NetworkSpace) askExtenderControl(ctx context.Context) error {
+	request, err := connect.HelloRequestFromUrl(ctx, self.apiUrl, "")
+	if err != nil {
+		return err
+	}
+	_, err = connect.HttpGetWithStrategyRaw(ctx, self.clientStrategy, request.URL.String(), "")
+	return err
+}
+
 // Tries each reach of the space in order and stops at the first that made
 // something new dialable. Reports whether one did.
 func (self *NetworkSpace) obtainExtenderControlReach(ctx context.Context) bool {
