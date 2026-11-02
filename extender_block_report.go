@@ -338,13 +338,16 @@ func buildExtenderBlockReporter(
 
 func (self *extenderBlockReporter) start() {
 	self.unsubNetworkChange = connect.AddNetworkChangeListener(self.networkChanged)
+	// read before the goroutine exists, so a change that lands before it first runs
+	// is a change and not its starting value
+	account, update := self.accountMonitor.Get()
 	go connect.HandleError(func() {
 		defer close(self.runDone)
 		self.run()
 	}, self.cancel)
 	go connect.HandleError(func() {
 		defer close(self.watchDone)
-		self.watchAccount()
+		self.watchAccount(account, update)
 	}, self.cancel)
 }
 
@@ -397,8 +400,7 @@ func (self *extenderBlockReporter) networkChanged() {
 // it is in an operation, and wakes the loop to forget. A bind, an unbind and a
 // token of another identity all advance the monitor, so the loop needs no other
 // word of the binding.
-func (self *extenderBlockReporter) watchAccount() {
-	account, update := self.accountMonitor.Get()
+func (self *extenderBlockReporter) watchAccount(account uint64, update chan struct{}) {
 	for {
 		select {
 		case <-self.ctx.Done():
@@ -534,7 +536,9 @@ func (self *extenderBlockReporter) next() (act func(), wait time.Duration) {
 }
 
 // Starts one operation: what an account change, a disable or a close ends, and a
-// path change too when `pathBound`. Returns its context and its end.
+// path change too when `pathBound`. Returns its context and its end. An account
+// change or a disable since the look that asked for it had no operation to end, so
+// it ends this one at the start.
 func (self *extenderBlockReporter) operation(timeout time.Duration, pathBound bool) (context.Context, func()) {
 	ctx, cancel := context.WithTimeout(self.ctx, timeout)
 	func() {
@@ -542,6 +546,9 @@ func (self *extenderBlockReporter) operation(timeout time.Duration, pathBound bo
 		defer self.stateLock.Unlock()
 		self.operationCancel = cancel
 		self.operationPathBound = pathBound
+		if !self.enabled || self.accountMonitor.Value() != self.accountGeneration {
+			cancel()
+		}
 	}()
 	return ctx, func() {
 		func() {
@@ -588,6 +595,11 @@ func (self *extenderBlockReporter) attempt(suspects []connect.ExtenderBlockSuspe
 	ctx, done := self.operation(self.settings.AttemptPassTimeout+2*self.settings.ControlProbeTimeout, true)
 	defer done()
 
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 	if !self.askControl(ctx) {
 		return
 	}
@@ -658,6 +670,12 @@ func (self *extenderBlockReporter) report(
 
 	ctx, done := self.operation(self.settings.RequestTimeout, false)
 	defer done()
+	select {
+	case <-ctx.Done():
+		self.reportCame(extenderBlockReportDiscarded)
+		return
+	default:
+	}
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
