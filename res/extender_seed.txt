@@ -1,0 +1,4 @@
+# Extender seed bundles this build carries (connect EXTENDER-UPDATE2.md 2.3).
+# The format and the release steps are in sdk/extender_seed_embedded.go.
+# A release adds one `ur-seed:1:` line per network it ships with. By default
+# this file carries no bundle.

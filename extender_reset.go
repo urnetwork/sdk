@@ -96,6 +96,7 @@ func (self *NetworkSpace) applyStoredExtenderReset() {
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Reset(spaceExtenderRootKeySet(&self.key, &self.values))
 		}
+		self.resetExtenderSeed()
 		appliedResetId = self.values.ExtenderResetId
 		if self.asyncLocalState != nil {
 			if err := self.asyncLocalState.GetLocalState().setExtenderResetId(appliedResetId); err != nil {
@@ -135,6 +136,10 @@ func (self *NetworkSpace) applyExtenderResetForRebuild(resetId string) {
 	defer self.extenderRestartLock.Unlock()
 
 	self.stopExtenderNode()
+	// the seed bootstrap writes the store the replacement reads, so it stops
+	// before the store is cleared, as the client and the node do
+	self.closeExtenderSeed()
+	self.resetExtenderSeed()
 	if self.extenderDirectory != nil {
 		previousNetworkClient := func() *connect.ExtenderNetworkClient {
 			self.stateLock.Lock()
