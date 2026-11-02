@@ -113,6 +113,7 @@ func (self *NetworkSpace) applyExtenderGatedPreference(enabled bool) {
 	if fetcher := self.extenderRelease.fetcher.Load(); fetcher != nil {
 		fetcher.setEnabled(enabled)
 	}
+	self.applyExtenderCamouflageReport(enabled)
 }
 
 // Whether the cohort control differs between two value sets.
