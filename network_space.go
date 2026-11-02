@@ -681,6 +681,13 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
 	clientStrategySettings.InternalDohDomains = networkSpaceDohDomains(&key, &values)
+	// the space's own api, whose authenticated Date corrects the clock a
+	// camouflaged extender hello seals with (EXTENDER-UPDATE2 §3.2)
+	clientStrategySettings.PlatformApiHosts = connect.PlatformApiHostNames(
+		apiUrl,
+		familyServiceUrl(apiUrl, 4),
+		familyServiceUrl(apiUrl, 6),
+	)
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	if apiAltEnabled {
@@ -1371,16 +1378,21 @@ func NewNetworkSpaceWithUrls(
 	if extenderNetworkHostName(&key, &values) != "" {
 		extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
 	}
-	if extenderDirectory != nil || altUrl != "" {
-		copiedSettings := *clientStrategySettings
-		if extenderDirectory != nil {
-			copiedSettings.ExtenderDirectory = extenderDirectory
-		}
-		if altUrl != "" {
-			copiedSettings.AltUrl = altUrl
-		}
-		clientStrategySettings = &copiedSettings
+	copiedSettings := *clientStrategySettings
+	// the space's own api, whose authenticated Date corrects the clock a
+	// camouflaged extender hello seals with (EXTENDER-UPDATE2 §3.2)
+	copiedSettings.PlatformApiHosts = connect.PlatformApiHostNames(
+		values.ApiUrl,
+		familyServiceUrl(values.ApiUrl, 4),
+		familyServiceUrl(values.ApiUrl, 6),
+	)
+	if extenderDirectory != nil {
+		copiedSettings.ExtenderDirectory = extenderDirectory
 	}
+	if altUrl != "" {
+		copiedSettings.AltUrl = altUrl
+	}
+	clientStrategySettings = &copiedSettings
 
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
 	api := newApi(cancelCtx, clientStrategy, values.ApiUrl)

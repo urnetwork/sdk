@@ -468,6 +468,18 @@ type deviceLocalExtenderSettings struct {
 	// extenderForwardDialErrorLogInterval; a negative value logs every
 	// failure.
 	ForwardDialErrorLogInterval time.Duration
+
+	// The tcp carrier camouflage of this extender (EXTENDER.md P7, phase 14c;
+	// EXTENDER-UPDATE2 §3), the settings `connectctl extender` takes as flags.
+	// Off: the provider fills none of them, so a provider extender serves and
+	// activates as it always has, and only `providerExtenderSettings` turns it
+	// on. CamouflageSplice is the initial posture, off for Phase A, on for
+	// Phase B once this extender's records have settled, and means nothing
+	// without CamouflageEnabled. CamouflageRevalidationInterval is how often the
+	// borrowed names are verified again, zero for the connect default.
+	CamouflageEnabled              bool
+	CamouflageSplice               bool
+	CamouflageRevalidationInterval time.Duration
 }
 
 // The bound dns ports of one extender as one string (F3, L2), ascending.
