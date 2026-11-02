@@ -169,16 +169,6 @@ type extenderReleaseAnswer struct {
 	retryAfter time.Duration
 }
 
-// The outcomes of contract R the schedule branches on, by their wire names
-// (the server's connect.ExtenderReleaseOutcome*). Every other outcome is
-// read through connect.NormalizeExtenderGatedReleaseOutcome.
-const (
-	extenderReleaseOutcomeOk          = "ok"
-	extenderReleaseOutcomeEmpty       = "empty"
-	extenderReleaseOutcomeRateLimited = "rate_limited"
-	extenderReleaseOutcomeUnavailable = "unavailable"
-)
-
 // The kinds of request that got no answer to read, a fixed label set.
 const (
 	extenderReleaseFailureTransport = "transport"
@@ -237,9 +227,9 @@ func parseExtenderReleaseAnswer(body []byte, settings *extenderReleaseSettings) 
 	case outcome != "":
 		answer.outcome = connect.NormalizeExtenderGatedReleaseOutcome(outcome)
 	case refusal != "":
-		answer.outcome = extenderReleaseOutcomeUnavailable
+		answer.outcome = connect.ExtenderReleaseOutcomeUnavailable
 	default:
-		answer.outcome = extenderReleaseOutcomeOk
+		answer.outcome = connect.ExtenderReleaseOutcomeOk
 	}
 	if raw, ok := fields["retry_after_seconds"]; ok {
 		var seconds float64
@@ -421,10 +411,10 @@ func (self *extenderReleaseSchedule) answered(
 	case 0 < retryAfter:
 		self.wait = retryAfter
 		self.notBefore = now.Add(retryAfter)
-	case outcome == extenderReleaseOutcomeRateLimited:
+	case outcome == connect.ExtenderReleaseOutcomeRateLimited:
 		self.wait = settings.RateLimitWindow
 		self.notBefore = now.Add(self.wait)
-	case outcome == extenderReleaseOutcomeUnavailable:
+	case outcome == connect.ExtenderReleaseOutcomeUnavailable:
 		// the operator could not answer, which may pass soon: a failure's
 		// backoff, without its control reach
 		self.failedBackoff(settings)
@@ -1034,9 +1024,9 @@ func (self *extenderReleaseFetcher) land(
 	summary := self.directory.GatedRecordSummary()
 	released := 0 < applied && 0 < summary.CurrentCount
 	outcome := answer.outcome
-	if outcome == extenderReleaseOutcomeOk && !released {
+	if outcome == connect.ExtenderReleaseOutcomeOk && !released {
 		// a route that answered ok with nothing usable is empty to the policy
-		outcome = extenderReleaseOutcomeEmpty
+		outcome = connect.ExtenderReleaseOutcomeEmpty
 	}
 	self.directory.SetGatedReleaseOutcome(outcome)
 
