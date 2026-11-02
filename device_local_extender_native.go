@@ -344,6 +344,9 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		defer self.stateLock.Unlock()
 		self.server = server
 	}()
+	// what this role's tcp camouflage comes to goes in the space's report, while the
+	// space's cohort control has the report on
+	settings.NetworkSpace.setExtenderCamouflageReportSource(server)
 	go connect.HandleError(func() {
 		if err := server.ListenAndServe(); err != nil {
 			// every carrier failed to bind; the status carries which and why
@@ -1253,6 +1256,7 @@ func (self *deviceLocalExtender) Close() {
 		// last
 		self.peerPinger.Close()
 		self.pingReporter.Close()
+		self.settings.NetworkSpace.clearExtenderCamouflageReportSource(self.currentServer())
 		self.currentServer().CloseAndWait()
 		// a server closed before it bound never took the tcp listener
 		self.heldTcpListener.release()

@@ -292,6 +292,8 @@ type NetworkSpace struct {
 	// (extender_control_reach.go), and the account monitor. Ready from
 	// construction on.
 	extenderRelease extenderReleaseSpace
+	// the sender of the camouflage report (extender_camouflage_report.go)
+	extenderCamouflageReport extenderCamouflageReportSpace
 	// stateLock guards the node, which the provider extender role replaces
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
@@ -789,6 +791,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	)
 	networkSpace.startExtenderStatusWatch()
 	networkSpace.startExtenderRelease()
+	networkSpace.startExtenderCamouflageReport()
 	networkSpace.startExtenderSeed()
 	return networkSpace
 }
@@ -1440,6 +1443,7 @@ func NewNetworkSpaceWithUrls(
 		)
 		networkSpace.startExtenderStatusWatch()
 		networkSpace.startExtenderRelease()
+		networkSpace.startExtenderCamouflageReport()
 		networkSpace.startExtenderSeed()
 	}
 	return networkSpace
@@ -1827,6 +1831,8 @@ func (self *NetworkSpace) close() {
 			return extenderNode
 		}()
 		extenderNode.Close()
+		// the camouflage report reads the release fetch's identity
+		self.closeExtenderCamouflageReport()
 		// the release fetch writes into the directory too
 		self.closeExtenderRelease()
 		// the seed bootstrap applies to the directory and writes its store, so

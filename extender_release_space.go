@@ -151,6 +151,7 @@ func (self *NetworkSpace) applyExtenderGatedPreference(enabled bool) {
 	if blockReporter := self.extenderRelease.blockReporter.Load(); blockReporter != nil {
 		blockReporter.setEnabled(enabled)
 	}
+	self.applyExtenderCamouflageReport(enabled)
 }
 
 // Whether the cohort control differs between two value sets.
