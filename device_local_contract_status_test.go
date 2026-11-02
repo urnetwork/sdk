@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -102,6 +103,104 @@ func TestDeviceLocalContractStatusErrorClears(t *testing.T) {
 	// a healthy status inside the same window resets the error state
 	device.updateContractStatus(&connect.ContractStatus{})
 	connect.AssertEqual(t, false, device.GetContractStatus().InsufficientBalance)
+}
+
+// A result that says nothing about the account does not clear an account error,
+// however long ago it was reported. The window only summarizes what is still
+// inside it, so a Setup result arriving after a refusal aged out summarized to "no
+// error". The platform answers Setup for a failure on its own side, and an account
+// that is out of balance then read as funded: the app withdrew its out of balance
+// alert, and the desktop tunnels' failsafe took it as the balance having come back.
+func TestDeviceLocalContractStatusUnrelatedErrorKeepsAccountError(t *testing.T) {
+	for _, accountKind := range []testingContractErrorKind{testingInsufficientBalanceErrorKind, testingNoPermissionErrorKind} {
+		for _, unrelated := range []protocol.ContractError{
+			protocol.ContractError_Setup,
+			protocol.ContractError_Reliability,
+			protocol.ContractError_Trust,
+			protocol.ContractError_Invalid,
+		} {
+			t.Run(accountKind.contractError.String()+"/"+unrelated.String(), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					device := newContractErrorLogDevice(newTestingContractErrorLogger())
+					// past the window on the bubble's clock
+					ageOut := 2 * device.settings.NetContractStatusDuration
+
+					device.updateContractStatus(testingContractErrorStatus(accountKind.contractError))
+					connect.AssertEqual(t, true, accountKind.inStatus(device.GetContractStatus()))
+
+					// the account's error is out of the window, and this is the only update
+					time.Sleep(ageOut)
+					device.updateContractStatus(testingContractErrorStatus(unrelated))
+					connect.AssertEqual(t, 1, testing_contractStatusUpdateCount(device))
+					if !accountKind.inStatus(device.GetContractStatus()) {
+						t.Fatalf("%s cleared %s", unrelated, accountKind.contractError)
+					}
+
+					// only a healthy status ends it
+					time.Sleep(ageOut)
+					device.updateContractStatus(&connect.ContractStatus{})
+					if accountKind.inStatus(device.GetContractStatus()) {
+						t.Fatalf("a healthy status did not clear %s", accountKind.contractError)
+					}
+				})
+			})
+		}
+	}
+}
+
+// A result that says nothing about the account adds nothing to the status either.
+func TestDeviceLocalContractStatusUnrelatedErrorRaisesNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		device := newContractErrorLogDevice(newTestingContractErrorLogger())
+		device.updateContractStatus(testingContractErrorStatus(protocol.ContractError_Setup))
+		if contractStatus := device.GetContractStatus(); *contractStatus != (ContractStatus{}) {
+			t.Fatalf("a setup result reads %+v", contractStatus)
+		}
+	})
+}
+
+// What a refused account's session reports and what it can read back: the status
+// raised by the refusal, no exits and an empty window while no provider is
+// admitted, the same generation as long as the destination stands, and a new
+// destination resetting the status along with the generation. The desktop tunnels'
+// failsafe reads these (connect's TestOutOfBalanceWindowAdmitsNoExit is the window
+// behind them).
+func TestDeviceLocalContractStatusOutOfBalanceSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device := testing_newContractStatusDevice(ctx, t, 10, 10*time.Minute)
+	defer device.Close()
+
+	initial := device.GetContractStatus()
+	if initial == nil || *initial != (ContractStatus{}) {
+		t.Fatalf("a new device reads a contract status: %+v", initial)
+	}
+	generation := device.GetWindowStatus().ConnectionGeneration
+
+	insufficientBalance := protocol.ContractError_InsufficientBalance
+	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})
+	connect.AssertEqual(t, true, device.GetContractStatus().InsufficientBalance)
+	window := device.GetWindowStatus()
+	connect.AssertEqual(t, generation, window.ConnectionGeneration)
+	connect.AssertEqual(t, 0, window.ProviderStateAdded)
+	connect.AssertEqual(t, false, window.MinSatisfied)
+	connect.AssertEqual(t, 0, device.GetExits().Len())
+
+	// the same generation: a granted contract is what clears it
+	device.updateContractStatus(&connect.ContractStatus{})
+	connect.AssertEqual(t, false, device.GetContractStatus().InsufficientBalance)
+	connect.AssertEqual(t, generation, device.GetWindowStatus().ConnectionGeneration)
+
+	// a new destination: cleared with the generation moved, which is how a reader
+	// tells a reset from a grant
+	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})
+	connect.AssertEqual(t, true, device.GetContractStatus().InsufficientBalance)
+	device.SetConnectLocation(nil)
+	connect.AssertEqual(t, false, device.GetContractStatus().InsufficientBalance)
+	if next := device.GetWindowStatus().ConnectionGeneration; next <= generation {
+		t.Fatalf("the reset did not move the generation: %d then %d", generation, next)
+	}
 }
 
 type testingContractStatusChangeListener func(*ContractStatus)
