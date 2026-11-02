@@ -1325,7 +1325,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1262) ==
+== skipped (1263) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2584,6 +2584,7 @@ WalletValidateAddressResult: data: crosses as json
 WebsocketDeviceRpcDialer.Dial: skipped: net.Conn internal; used by DeviceRemote internally
 WebsocketDeviceRpcListener.Accept: skipped: net.Conn internal; used by DeviceLocal internally
 WgConfig: data: crosses as json
+WinbackOffer: data: crosses as json
 WindowSizeSettings: data: crosses as json
 WindowStatus: data: crosses as json
 WindowStatusChangeListener: callback interface: crosses as c function pointer
