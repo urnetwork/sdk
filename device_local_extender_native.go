@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	mathrand "math/rand/v2"
 	"net"
 	"net/netip"
 	"path/filepath"
@@ -78,6 +79,10 @@ const extenderProvideSupported = true
 // leaves it nil.
 var configureExtenderLagLifecycle func(settings *extender.ExtenderLagLifecycleSettings)
 
+// When set, adjusts each role's server settings before the server is built.
+// Tests shorten a carrier's rebuild through it; production leaves it nil.
+var configureExtenderServer func(settings *extender.ExtenderSettings)
+
 // Budget of the wait for the carriers to bind before the role gives up on
 // activating. A bind that has not settled in this long is a bind that is not
 // going to.
@@ -88,6 +93,15 @@ const extenderProvideListenTimeout = 60 * time.Second
 // per-operator children; the role moves to another of them within this of
 // the holder exiting.
 const extenderProvideTcpRetryTimeout = 3 * time.Minute
+
+// How long a tcp carrier that was serving may stay lost before the role asks to
+// be replaced (G2). The server binds a lost port again by itself, so a port still
+// gone after this is one another process took or the host refuses, and the new
+// role is what G2 says then: off, saying why, trying the port every
+// extenderProvideTcpRetryTimeout, and holding no udp carrier the process that
+// took the port could use. The same wait as that retry, so the role moves between
+// a host's processes on the one cadence.
+const extenderProvideTcpLostTimeout = extenderProvideTcpRetryTimeout
 
 // How long the measurements setting must stay off before the activation tells
 // the operator of the opt-out (lag.dev/PLAN.md C4, C9). The operator revokes
@@ -240,7 +254,12 @@ func newDeviceLocalExtender(
 	go connect.HandleError(func() {
 		defer close(self.done)
 		self.run()
-	}, cancel)
+	}, func(err error) {
+		// the status would otherwise stand as it last was, for good
+		self.log.Errorf("[extender]provide the role's loop failed: %s\n", err)
+		cancel()
+		self.requestRestart()
+	})
 	return self, nil
 }
 
@@ -304,13 +323,15 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		defer self.stateLock.Unlock()
 		self.server = server
 	}()
+	// a panic here closes the server on its way out, which the loop reads as a
+	// server gone for good (run)
 	go connect.HandleError(func() {
 		if err := server.ListenAndServe(); err != nil {
 			// every carrier failed to bind; the status carries which and why
-			self.log.Infof("[extender]provide listen err = %s\n", err)
+			self.log.Errorf("[extender]provide listen err = %s\n", err)
 		}
 		self.wakeMonitor.NotifyAll()
-	}, self.cancel)
+	})
 
 	// what this extender measures of its peers goes to the operator in
 	// batches, under the same client credential the activation uses. The
@@ -571,6 +592,11 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.ListenErrorHandler = func(carrier string, err error) {
 		self.wakeMonitor.NotifyAll()
 	}
+	// a carrier that was lost, or came back, is in the status, and the tcp
+	// carrier's return is for the activation to hear (run)
+	settings.CarriersChangeHandler = func() {
+		self.wakeMonitor.NotifyAll()
+	}
 	// a forward dial that fails is logged, at most once a minute for each
 	// kind, so an extender whose egress cannot reach the operator says so;
 	// with no handler every forward failed silently, and so did the forward
@@ -579,6 +605,9 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	// the lag.dev measurement API and the lifecycle behind it, or no API at
 	// all (lag.dev/PLAN.md C4, M3, M10)
 	self.measurementSettings(settings)
+	if configureExtenderServer != nil {
+		configureExtenderServer(settings)
+	}
 	return settings
 }
 
@@ -826,6 +855,13 @@ func (self *deviceLocalExtender) run() {
 	}
 	self.startActivator()
 
+	// The server keeps its own carriers up (extender/extender_carrier.go). This
+	// reads what it serves: the tcp carrier's return is for the activation to
+	// hear, and a port that stays lost, or a server that ended, which nothing
+	// here can bring back, means asking the provider for a new role.
+	tcpServing := self.tcpCarrierServing()
+	serverDone := self.server.Done()
+	var restartAfter <-chan time.Time
 	for {
 		// subscribe before the reads below, so a change in between is carried
 		// by the channel rather than lost
@@ -838,6 +874,16 @@ func (self *deviceLocalExtender) run() {
 		// the ping counts the status carries (GEOMAP §2.1)
 		_, pingerUpdate := self.peerPinger.StatusMonitor().Get()
 
+		if serving := self.tcpCarrierServing(); serving != tcpServing {
+			tcpServing = serving
+			if serving {
+				restartAfter = nil
+				self.currentActivator().TcpCarrierReturned()
+			} else {
+				restartAfter = self.afterRestartWait(extenderProvideTcpLostTimeout)
+			}
+		}
+
 		self.updateNode()
 		self.publish()
 
@@ -848,8 +894,56 @@ func (self *deviceLocalExtender) run() {
 		case <-activatorUpdate:
 		case <-directoryUpdate:
 		case <-pingerUpdate:
+		case <-serverDone:
+			if self.ctx.Err() != nil {
+				return
+			}
+			// nothing ends a server but its context or Close, and this role did
+			// neither, so this is not expected and nothing here can undo it
+			serverDone = nil
+			tcpServing = false
+			self.log.Errorf("[extender]provide the server ended under a running role\n")
+			restartAfter = self.afterRestartWait(0)
+		case <-restartAfter:
+			restartAfter = nil
+			self.log.Errorf(
+				"[extender]provide the server is not serving tcp %d, replacing the role = %s\n",
+				self.settings.TcpPort,
+				extenderListenErrorText(self.server.ListenErrors()),
+			)
+			self.requestRestart()
 		}
 	}
+}
+
+// Whether the tcp carrier is serving, the one port an extender requires (G2).
+func (self *deviceLocalExtender) tcpCarrierServing() bool {
+	return slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp)
+}
+
+// The channel that fires when it is time to ask for a new role: `wait`, and up to
+// the spread that keeps a fleet from starting over together.
+func (self *deviceLocalExtender) afterRestartWait(wait time.Duration) <-chan time.Time {
+	jitter := self.settings.RestartJitter
+	if jitter <= 0 {
+		jitter = extenderProvideRestartMinJitter
+	}
+	wait += time.Duration(mathrand.Int64N(int64(jitter)))
+	if self.settings.RestartAfter != nil {
+		return self.settings.RestartAfter(wait)
+	}
+	return time.After(wait)
+}
+
+// Asks the provider for a new role. Not joined, and not on the caller's
+// goroutine, because replacing this role closes it, which joins its loop.
+func (self *deviceLocalExtender) requestRestart() {
+	if self.settings.Restart == nil {
+		return
+	}
+	go connect.HandleError(func() {
+		self.settings.Restart(self)
+	})
 }
 
 // Builds the activation loop over the carriers that bound (G3).
@@ -1012,11 +1106,22 @@ func (self *deviceLocalExtender) publish() {
 }
 
 func (self *deviceLocalExtender) state() extenderProvideState {
+	listenErrors := self.server.ListenErrors()
 	state := extenderProvideState{
 		Enabled:     true,
-		Listening:   0 < len(self.server.Carriers()),
-		ListenError: extenderListenErrorText(self.server.ListenErrors()),
+		Listening:   self.tcpCarrierServing(),
+		ListenError: extenderListenErrorText(listenErrors),
 		DnsPorts:    extenderDnsPortsText(self.server.DnsPorts()),
+	}
+	// a server gone for good has lost its carriers to no error of theirs
+	if !state.Listening && state.ListenError == "" {
+		select {
+		case <-self.server.Done():
+			state.ListenError = extenderListenErrorText(map[string]error{
+				connect.ExtenderCarrierTcp: errors.New("the extender server ended"),
+			})
+		default:
+		}
 	}
 
 	var lastActivationTime time.Time
@@ -1047,6 +1152,15 @@ func (self *deviceLocalExtender) state() extenderProvideState {
 			// family, so the case the rule picks matches the text (N2, N3)
 			state.LastActivationRefused = family.LastRefused
 		}
+	}
+	// A tcp carrier that was lost is what the status says, with why: no record
+	// the operator published is any use to a client while it is gone, so no
+	// family reads as active (N3).
+	if !state.Listening && state.ListenError != "" {
+		state.ActivatedV4 = false
+		state.ActivatedV6 = false
+		state.Ipv4 = ""
+		state.Ipv6 = ""
 	}
 	state.LastActivationTime = extenderStatusTimeMs(lastActivationTime)
 	state.RevokedTime = extenderStatusTimeMs(self.updateRevoked())

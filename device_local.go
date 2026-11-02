@@ -2076,6 +2076,9 @@ func newDeviceLocalWithOverridesForPlatform(
 		// are installed here (G2, L2)
 		provider.extenderDnsPrivilegedPort = settings.ProvideExtenderDnsPrivilegedPort
 		provider.extenderSettingsConfigure = settings.providerExtenderSettings
+		provider.extenderRoleChanged = func() {
+			deviceLocal.extenderProvideMonitor.NotifyAll()
+		}
 		// the role reads the measurements setting as it starts, and a change
 		// reaches a running role through setExtenderMeasurementsEnabled
 		// (lag.dev/PLAN.md C4)
