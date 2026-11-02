@@ -535,3 +535,51 @@ func TestExtenderCamouflageReportBodyHoldsNoIdentity(t *testing.T) {
 	post.reply <- nil
 	seams.requireParked("after it")
 }
+
+// The post goes over the space's own api transport, the one every other call of the
+// space takes, so a client whose control route crosses an extender can still report.
+func TestExtenderCamouflageReportPostsOverTheSpacesApiTransport(t *testing.T) {
+	seams := newTestCamouflageSpaceSeams(t)
+	seamsConfigure := extenderCamouflageReportConfigure
+	extenderCamouflageReportConfigure = func(settings *connect.ExtenderCamouflageReporterSettings) {
+		post := settings.Post
+		seamsConfigure(settings)
+		settings.Post = post
+	}
+	networkSpaceManager := NewNetworkSpaceManager(t.TempDir())
+	t.Cleanup(networkSpaceManager.Close)
+	key := NewNetworkSpaceKey("space.example", "main")
+	networkSpace := networkSpaceManager.updateNetworkSpace(key, func(values *NetworkSpaceValues) {
+		values.ExtenderGatedPreference = true
+	})
+	type transportPost struct {
+		requestUrl string
+		byJwt      string
+	}
+	transportPosts := make(chan *transportPost, 8)
+	networkSpace.api.setHttpPostRaw(func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+		if strings.HasSuffix(requestUrl, connect.ExtenderCamouflageReportPath) {
+			transportPosts <- &transportPost{requestUrl: requestUrl, byJwt: byJwt}
+			return []byte(`{"outcome":"accepted"}`), nil
+		}
+		return []byte(testReleaseAnswer("empty", 0)), nil
+	})
+	networkSpace.setExtenderCamouflageReportSource(&testCamouflageSpaceSource{})
+	byJwt := testReleaseByJwt(t, connect.NewId(), connect.NewId())
+	defer networkSpace.bindExtenderRelease(func() string { return byJwt })()
+
+	wait := seams.requireParked("bound")
+	seams.clock.advance(wait)
+	seams.fire <- seams.clock.Now()
+	select {
+	case post := <-transportPosts:
+		if post.byJwt != byJwt {
+			t.Errorf("the report went under another credential")
+		}
+		if !strings.HasPrefix(post.requestUrl, networkSpace.apiUrl) {
+			t.Errorf("url = %q, want under %q", post.requestUrl, networkSpace.apiUrl)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the report did not take the api transport")
+	}
+}
