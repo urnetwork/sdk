@@ -3200,6 +3200,18 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				netContractStatus.Premium = true
 			}
 		}
+		// a result that says nothing about the account (setup, reliability, trust,
+		// a malformed contract) leaves its error as it stood. A refusal aged out of
+		// the window is still the last word on the balance when such a result
+		// pushes it out: clearing it there withdrew the app's out of balance alert,
+		// and reads to a desktop tunnel's failsafe as the balance having come back
+		if contractStatus.Error != nil &&
+			*contractStatus.Error != protocol.ContractError_InsufficientBalance &&
+			*contractStatus.Error != protocol.ContractError_NoPermission &&
+			self.netContractStatus != nil {
+			netContractStatus.InsufficientBalance = self.netContractStatus.InsufficientBalance
+			netContractStatus.NoPermission = self.netContractStatus.NoPermission
+		}
 
 		// only the new update's error is logged. The summary above visits
 		// every update still in the window, and logging there repeated each
