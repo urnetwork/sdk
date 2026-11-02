@@ -850,6 +850,13 @@ func (self *extenderReleaseFetcher) networkChanged() {
 	}
 }
 
+// The bound credential and identity, which the block report sender reads.
+func (self *extenderReleaseFetcher) boundCredential() (func() string, extenderReleaseIdentity) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.credential, self.identity
+}
+
 func (self *extenderReleaseFetcher) statsValue() extenderReleaseStats {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

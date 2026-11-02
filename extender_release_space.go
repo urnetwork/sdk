@@ -43,6 +43,9 @@ type extenderReleaseSpace struct {
 	account     *connect.MonitorValue[uint64]
 	// requestExtenderRelease calls, whatever each came to
 	requestCount atomic.Uint64
+	// the block report sender (extender_block_report.go); set once, at
+	// construction, nil exactly when `fetcher` is
+	blockReporter atomic.Pointer[extenderBlockReporter]
 }
 
 func (self *extenderReleaseSpace) accountMonitor() *connect.MonitorValue[uint64] {
@@ -54,6 +57,10 @@ func (self *extenderReleaseSpace) accountMonitor() *connect.MonitorValue[uint64]
 
 // Test seam: adjusts the settings of every fetcher built after it is set.
 var extenderReleaseConfigure func(settings *extenderReleaseSettings)
+
+// Test seam: adjusts the settings of every block report sender built after it
+// is set.
+var extenderBlockReportConfigure func(settings *extenderBlockReportSettings)
 
 // Builds the space's fetcher. Runs once, in the constructor, after the
 // directory, the api and the strategy exist.
@@ -91,11 +98,39 @@ func (self *NetworkSpace) startExtenderRelease() {
 		self.logger(),
 	)
 	self.extenderRelease.fetcher.Store(fetcher)
+
+	blockSettings := defaultExtenderBlockReportSettings()
+	blockSettings.Post = settings.Post
+	blockSettings.ControlProbe = self.askExtenderControl
+	blockSettings.Attempt = func(ctx context.Context, suspect connect.ExtenderBlockSuspect) string {
+		return directory.AttemptBlockSuspect(ctx, suspect, func(ctx context.Context, extenderConfig *connect.ExtenderConfig) error {
+			// no attestor: the dial identifies no client, and says only whether
+			// the extender answers
+			_, err := connect.ProbeExtenderLatency(ctx, connectSettings, extenderConfig, nil)
+			return err
+		})
+	}
+	if extenderBlockReportConfigure != nil {
+		extenderBlockReportConfigure(blockSettings)
+	}
+	self.extenderRelease.blockReporter.Store(newExtenderBlockReporter(
+		self.ctx,
+		directory,
+		self.apiUrl,
+		fetcher.boundCredential,
+		self.extenderRelease.accountMonitor(),
+		blockSettings,
+		self.logger(),
+	))
+
 	self.applyExtenderGatedPreference(self.valuesCopy().ExtenderGatedPreference)
 }
 
 // Stops the fetcher; the space closes the directory after it.
 func (self *NetworkSpace) closeExtenderRelease() {
+	if blockReporter := self.extenderRelease.blockReporter.Load(); blockReporter != nil {
+		blockReporter.Close()
+	}
 	if fetcher := self.extenderRelease.fetcher.Load(); fetcher != nil {
 		fetcher.Close()
 	}
@@ -112,6 +147,9 @@ func (self *NetworkSpace) applyExtenderGatedPreference(enabled bool) {
 	self.extenderDirectory.SetGatedPreference(settings)
 	if fetcher := self.extenderRelease.fetcher.Load(); fetcher != nil {
 		fetcher.setEnabled(enabled)
+	}
+	if blockReporter := self.extenderRelease.blockReporter.Load(); blockReporter != nil {
+		blockReporter.setEnabled(enabled)
 	}
 }
 
@@ -196,6 +234,17 @@ func (self *NetworkSpace) extenderAccountMonitor() *connect.MonitorValue[uint64]
 		return connect.NewMonitorValue[uint64](0)
 	}
 	return self.extenderRelease.accountMonitor()
+}
+
+// The block report sender's counts, empty for a space that runs none.
+func (self *NetworkSpace) extenderBlockReportStats() extenderBlockReportStats {
+	if self == nil {
+		return extenderBlockReportStats{}
+	}
+	if blockReporter := self.extenderRelease.blockReporter.Load(); blockReporter != nil {
+		return blockReporter.statsValue()
+	}
+	return extenderBlockReportStats{}
 }
 
 // The fetcher's counts, empty for a space that runs none.

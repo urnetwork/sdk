@@ -52,6 +52,8 @@ type testSeedApi struct {
 
 	stateLock sync.Mutex
 	requests  []testSeedApiRequest
+	// the public keys reported to the block report route, in order
+	blockReports []string
 }
 
 func newTestSeedApi(t *testing.T) *testSeedApi {
@@ -82,6 +84,20 @@ func newTestSeedApi(t *testing.T) *testSeedApi {
 				"count":     0,
 				"probation": true,
 				"outcome":   "empty",
+			})
+		case "/network/extender-block-report":
+			args := &extenderBlockReportArgs{}
+			if err := json.NewDecoder(r.Body).Decode(args); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				self.blockReports = append(self.blockReports, args.PublicKeyHex)
+			}()
+			json.NewEncoder(w).Encode(map[string]any{
+				"recorded": true,
 			})
 		default:
 			http.NotFound(w, r)
@@ -117,6 +133,13 @@ func (self *testSeedApi) servedAuthorized(method string, path string) int {
 		}
 	}
 	return count
+}
+
+// The public keys the operator was told of, in order.
+func (self *testSeedApi) blockReported() []string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return append([]string(nil), self.blockReports...)
 }
 
 func (self *testSeedApi) address() string {
