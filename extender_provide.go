@@ -361,8 +361,9 @@ func (self *ExtenderProvideStatus) withState(
 // `DeviceLocalSettings.providerExtenderSettings`.
 // The spread of the wait before a role asks to be replaced (G2), so a fleet that
 // lost its listeners together does not start over, and post its activations,
-// together. A replacement that did not last doubles it to the max, which is what
-// keeps a role that ends at once from being rebuilt in a loop.
+// together. Half of it is a floor under the wait. A replacement that did not last
+// doubles it to the max, which is what keeps a role that ends at once from being
+// rebuilt in a loop.
 const extenderProvideRestartMinJitter = 1 * time.Minute
 const extenderProvideRestartMaxJitter = 1 * time.Hour
 

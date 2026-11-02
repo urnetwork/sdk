@@ -279,7 +279,17 @@ func newDeviceLocalExtender(
 		// the status would otherwise stand as it last was, for good
 		self.log.Errorf("[extender]provide the role's loop failed: %s\n", err)
 		cancel()
-		self.requestRestart()
+		// a role that fails like this may well fail the same way again, so it
+		// waits like any other that asks. The wait is on what the role was built
+		// under, since its own context has just ended
+		restartAfter := self.afterRestartWait(0)
+		go connect.HandleError(func() {
+			select {
+			case <-ctx.Done():
+			case <-restartAfter:
+				self.requestRestart()
+			}
+		})
 	})
 	return self, nil
 }
@@ -978,14 +988,17 @@ func (self *deviceLocalExtender) tcpCarrierServing() bool {
 	return slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp)
 }
 
-// The channel that fires when it is time to ask for a new role: `wait`, and up to
-// the spread that keeps a fleet from starting over together.
+// The channel that fires when it is time to ask for a new role: `wait`, and a
+// further half to all of the spread, which keeps a fleet from starting over
+// together. Half of it is a floor: no role is replaced at once, however it ended, so
+// a role that fails as it starts is rebuilt at the pace the spread doubles to, not
+// as fast as it can fail.
 func (self *deviceLocalExtender) afterRestartWait(wait time.Duration) <-chan time.Time {
 	jitter := self.settings.RestartJitter
 	if jitter <= 0 {
 		jitter = extenderProvideRestartMinJitter
 	}
-	wait += time.Duration(mathrand.Int64N(int64(jitter)))
+	wait += jitter/2 + time.Duration(mathrand.Int64N(int64(jitter/2)))
 	if self.settings.RestartAfter != nil {
 		return self.settings.RestartAfter(wait)
 	}

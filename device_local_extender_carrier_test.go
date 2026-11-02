@@ -3,6 +3,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"slices"
@@ -196,7 +197,8 @@ func TestDeviceLocalProviderExtenderReportsALostTcpCarrier(t *testing.T) {
 		t.Fatalf("carriers = %v, expected the udp carriers", carriers)
 	}
 	wait := <-waits
-	if wait < extenderProvideTcpLostTimeout || extenderProvideTcpLostTimeout+extenderProvideRestartMinJitter <= wait {
+	if wait < extenderProvideTcpLostTimeout+extenderProvideRestartMinJitter/2 ||
+		extenderProvideTcpLostTimeout+extenderProvideRestartMinJitter <= wait {
 		t.Fatalf("the role would ask to be replaced after %s", wait)
 	}
 
@@ -421,6 +423,84 @@ func TestDeviceLocalProviderExtenderRestartOfAStoppedRoleIsNothing(t *testing.T)
 	fixture.device.provider.restartExtender(role)
 	if fixture.extender() != nil {
 		t.Fatal("a replacement of a stopped role started one")
+	}
+}
+
+// A role whose loop panics is replaced at the pace any other is, not as fast as it
+// can fail: a loop that panics as it starts, with nothing to wait on, would otherwise
+// rebuild the role, and post its activations, thousands of times a second. It is not
+// replaced until the wait ends, the wait has its floor, and the spread doubles while
+// the replacements do not last.
+func TestDeviceLocalProviderExtenderPanicIsPaced(t *testing.T) {
+	tcpPort := testFreeTcpPort(t)
+	testHoldTcpPort(t, tcpPort)
+	builds := &atomic.Int64{}
+	waits := make(chan time.Duration, 16)
+	fire := make(chan time.Time)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		builds.Add(1)
+		settings.TcpPort = tcpPort
+		// the loop's first wait, which with the port held is the first thing it does
+		settings.TcpRetryAfter = func(wait time.Duration) <-chan time.Time {
+			panic("the test's panic in the role's loop")
+		}
+		testRestartAfter(settings, waits, fire)
+	})
+
+	// each role asks, and the next one is built only when its wait ends
+	for i, jitter := range []time.Duration{
+		extenderProvideRestartMinJitter,
+		extenderProvideRestartMinJitter,
+		2 * extenderProvideRestartMinJitter,
+		4 * extenderProvideRestartMinJitter,
+	} {
+		var wait time.Duration
+		select {
+		case wait = <-waits:
+		case <-time.After(60 * time.Second):
+			t.Fatalf("role %d did not ask to be replaced", i)
+		}
+		if wait < jitter/2 || jitter <= wait {
+			t.Fatalf("role %d would ask after %s, expected half to all of %s", i, wait, jitter)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if count := builds.Load(); count != int64(i+1) {
+			t.Fatalf("%d roles built while role %d waits, expected %d", count, i, i+1)
+		}
+		select {
+		case fire <- time.Time{}:
+		case <-time.After(60 * time.Second):
+			t.Fatalf("role %d did not wait on its wait", i)
+		}
+	}
+	if fixture.extender() == nil && builds.Load() < 4 {
+		t.Fatal("no role is running")
+	}
+}
+
+// A device that closes while a failed role waits leaves nothing waiting.
+func TestDeviceLocalProviderExtenderPanicWaitEndsWithTheDevice(t *testing.T) {
+	tcpPort := testFreeTcpPort(t)
+	testHoldTcpPort(t, tcpPort)
+	builds := &atomic.Int64{}
+	waits := make(chan time.Duration, 16)
+	fire := make(chan time.Time, 1)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		builds.Add(1)
+		settings.TcpPort = tcpPort
+		settings.TcpRetryAfter = func(wait time.Duration) <-chan time.Time {
+			panic("the test's panic in the role's loop")
+		}
+		testRestartAfter(settings, waits, fire)
+	})
+	<-waits
+	if err := fixture.device.CloseAndWait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fire <- time.Time{}
+	time.Sleep(20 * time.Millisecond)
+	if count := builds.Load(); count != 1 {
+		t.Fatalf("%d roles built after the device closed", count)
 	}
 }
 
