@@ -112,11 +112,7 @@ func (self *NetworkSpace) extenderCamouflageReportStats() connect.ExtenderCamouf
 // yet. The sender reads it at each look and each post, so nothing goes out under an
 // identity the account monitor has not announced.
 func (self *extenderReleaseFetcher) boundByJwt() string {
-	credential, identity := func() (func() string, extenderReleaseIdentity) {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		return self.credential, self.identity
-	}()
+	credential, identity := self.boundCredential()
 	if credential == nil || identity.empty() {
 		return ""
 	}
