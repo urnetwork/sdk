@@ -1138,12 +1138,7 @@ func (self *spaceExtenderSeed) probeControl() error {
 	if self.settings.ControlProbe != nil {
 		return self.settings.ControlProbe(ctx)
 	}
-	request, err := connect.HelloRequestFromUrl(ctx, self.space.apiUrl, "")
-	if err != nil {
-		return err
-	}
-	_, err = connect.HttpGetWithStrategyRaw(ctx, self.space.clientStrategy, request.URL.String(), "")
-	return err
+	return self.space.askExtenderControl(ctx)
 }
 
 // The seed state of a space as the apps and the diagnostics show it. Times
