@@ -68,6 +68,16 @@ const (
 	bittensorConvertBurnMarginBps uint64 = 1_000
 )
 
+// bittensorFundsDisclaimer is what every easy flow shows, in the owner's words
+// (2026-11-03), and every convert result a sheet draws carries it. The string key
+// apps localize it by is the key flow's; this is the one place convert takes it
+// from, so convert follows the key flow's field and key.
+const bittensorFundsDisclaimer = "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds."
+
+// newBittensorChainEngineForExport is how the exported calls get their engine:
+// the settings' endpoint, under the release's pins. Tests answer from a fake chain.
+var newBittensorChainEngineForExport = newBittensorChainEngine
+
 // Stable codes in SnError.Code, so the apps can localize them. Each comes with a
 // message fit to show as it is.
 const (
@@ -157,8 +167,10 @@ type BittensorConvertEstimateResult struct {
 	// BittensorConvertSubmit can run with this estimate
 	CanConvert bool `json:"can_convert"`
 	// what the user should know before going ahead, fit to show as it is; "" for nothing
-	Notice string   `json:"notice,omitempty"`
-	Error  *SnError `json:"error,omitempty"`
+	Notice string `json:"notice,omitempty"`
+	// the disclaimer every screen that draws this shows, fit to show as it is
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
 }
 
 // BittensorConvertEstimateCallback receives one estimate.
@@ -172,9 +184,11 @@ type BittensorConvertSubmission struct {
 	TxHash      string `json:"tx_hash,omitempty"`
 	ColdkeySs58 string `json:"coldkey_ss58,omitempty"`
 	// the first and last blocks it can land in; after the last it never can
-	FirstBlock int64    `json:"first_block,omitempty"`
-	LastBlock  int64    `json:"last_block,omitempty"`
-	Error      *SnError `json:"error,omitempty"`
+	FirstBlock int64 `json:"first_block,omitempty"`
+	LastBlock  int64 `json:"last_block,omitempty"`
+	// the disclaimer every screen that draws this shows, fit to show as it is
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
 }
 
 // BittensorConvertSubmitCallback receives one submission.
@@ -191,9 +205,11 @@ type BittensorConvertReceipt struct {
 	// the TAO that reached the key, before a fee paid in TAO
 	TaoReceivedRao int64 `json:"tao_received_rao"`
 	// the network fee, in SN25α or in TAO, whichever paid it
-	FeeAlphaRao int64    `json:"fee_alpha_rao"`
-	FeeTaoRao   int64    `json:"fee_tao_rao"`
-	Error       *SnError `json:"error,omitempty"`
+	FeeAlphaRao int64 `json:"fee_alpha_rao"`
+	FeeTaoRao   int64 `json:"fee_tao_rao"`
+	// the disclaimer every screen that draws this shows, fit to show as it is
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
 }
 
 // BittensorConvertReceiptCallback receives one receipt.
@@ -232,22 +248,28 @@ func BittensorConvertEstimateForBurn(settings *SnChainSettings, coldkeySs58 stri
 	})
 }
 
+// bittensorConvertEstimateFor is every exported estimate, and every result it
+// gives carries the disclaimer.
 func bittensorConvertEstimateFor(
 	ctx context.Context,
 	settings *SnChainSettings,
 	coldkeySs58 string,
 	estimate func(engine *bittensorChainEngine, coldkey [32]byte) *BittensorConvertEstimateResult,
 ) *BittensorConvertEstimateResult {
-	coldkeySs58 = strings.TrimSpace(coldkeySs58)
-	coldkey, err := snColdkeyBytes(coldkeySs58)
-	if err != nil {
-		return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: newSnError(SnErrorCodeInvalidAddress, "This is not a Bittensor address.")}
-	}
-	engine, snErr := newBittensorChainEngine(settings)
-	if snErr != nil {
-		return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: snErr}
-	}
-	return estimate(engine, coldkey)
+	result := func() *BittensorConvertEstimateResult {
+		coldkeySs58 = strings.TrimSpace(coldkeySs58)
+		coldkey, err := snColdkeyBytes(coldkeySs58)
+		if err != nil {
+			return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: newSnError(SnErrorCodeInvalidAddress, "This is not a Bittensor address.")}
+		}
+		engine, snErr := newBittensorChainEngineForExport(settings)
+		if snErr != nil {
+			return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: snErr}
+		}
+		return estimate(engine, coldkey)
+	}()
+	result.FundsDisclaimer = bittensorFundsDisclaimer
+	return result
 }
 
 // FormatTaoAmount renders rao as TAO with six decimals: "0.000500". Convert's

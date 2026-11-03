@@ -21,19 +21,27 @@ func BittensorConvertSubmit(settings *SnChainSettings, mnemonic string, estimate
 	go connect.HandleError(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bittensorConvertSubmitTimeout)
 		defer cancel()
+		callback.Result(bittensorConvertSubmitFor(ctx, settings, mnemonic, estimate), nil)
+	})
+}
+
+// bittensorConvertSubmitFor is the exported submit, and every result it gives
+// carries the disclaimer.
+func bittensorConvertSubmitFor(ctx context.Context, settings *SnChainSettings, mnemonic string, estimate *BittensorConvertEstimateResult) *BittensorConvertSubmission {
+	submission := func() *BittensorConvertSubmission {
 		signer, err := bittensorSignerFromPhrase(mnemonic)
 		if err != nil {
 			// the signer's errors are fixed text, and this one is fixed here too
-			callback.Result(&BittensorConvertSubmission{Error: newSnError(BittensorLocalKeyErrorInvalidPhrase, "This recovery phrase can't be read.")}, nil)
-			return
+			return &BittensorConvertSubmission{Error: newSnError(BittensorLocalKeyErrorInvalidPhrase, "This recovery phrase can't be read.")}
 		}
-		engine, snErr := newBittensorChainEngine(settings)
+		engine, snErr := newBittensorChainEngineForExport(settings)
 		if snErr != nil {
-			callback.Result(&BittensorConvertSubmission{Error: snErr}, nil)
-			return
+			return &BittensorConvertSubmission{Error: snErr}
 		}
-		callback.Result(engine.convertSubmit(ctx, signer, estimate), nil)
-	})
+		return engine.convertSubmit(ctx, signer, estimate)
+	}()
+	submission.FundsDisclaimer = bittensorFundsDisclaimer
+	return submission
 }
 
 // BittensorConvertWait says what a sent conversion did, once a finalized block
@@ -46,11 +54,20 @@ func BittensorConvertWait(settings *SnChainSettings, submission *BittensorConver
 	go connect.HandleError(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bittensorChainLandTimeout)
 		defer cancel()
-		engine, snErr := newBittensorChainEngine(settings)
-		if snErr != nil {
-			callback.Result(&BittensorConvertReceipt{Error: snErr}, nil)
-			return
-		}
-		callback.Result(engine.convertWait(ctx, submission), nil)
+		callback.Result(bittensorConvertWaitFor(ctx, settings, submission), nil)
 	})
+}
+
+// bittensorConvertWaitFor is the exported wait, and every receipt it gives
+// carries the disclaimer.
+func bittensorConvertWaitFor(ctx context.Context, settings *SnChainSettings, submission *BittensorConvertSubmission) *BittensorConvertReceipt {
+	receipt := func() *BittensorConvertReceipt {
+		engine, snErr := newBittensorChainEngineForExport(settings)
+		if snErr != nil {
+			return &BittensorConvertReceipt{Error: snErr}
+		}
+		return engine.convertWait(ctx, submission)
+	}()
+	receipt.FundsDisclaimer = bittensorFundsDisclaimer
+	return receipt
 }

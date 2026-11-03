@@ -1581,6 +1581,7 @@ struct BittensorConvertEstimateResult {
 	std::optional<bool> burn_already_covered;
 	bool can_convert{};
 	std::optional<std::string> notice;
+	std::string funds_disclaimer{};
 	std::optional<SnError> error;
 };
 
@@ -1592,6 +1593,7 @@ struct BittensorConvertReceipt {
 	int64_t tao_received_rao{};
 	int64_t fee_alpha_rao{};
 	int64_t fee_tao_rao{};
+	std::string funds_disclaimer{};
 	std::optional<SnError> error;
 };
 
@@ -1600,6 +1602,7 @@ struct BittensorConvertSubmission {
 	std::optional<std::string> coldkey_ss58;
 	std::optional<int64_t> first_block;
 	std::optional<int64_t> last_block;
+	std::string funds_disclaimer{};
 	std::optional<SnError> error;
 };
 
@@ -7195,6 +7198,7 @@ inline void to_json(nlohmann::json& j, const BittensorConvertEstimateResult& v) 
 	if (v.notice) {
 		j["notice"] = *v.notice;
 	}
+	j["funds_disclaimer"] = v.funds_disclaimer;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -7293,6 +7297,9 @@ inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v
 		it->get_to(tmp);
 		v.notice = std::move(tmp);
 	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
+	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
 		it->get_to(tmp);
@@ -7315,6 +7322,7 @@ inline void to_json(nlohmann::json& j, const BittensorConvertReceipt& v) {
 	j["tao_received_rao"] = v.tao_received_rao;
 	j["fee_alpha_rao"] = v.fee_alpha_rao;
 	j["fee_tao_rao"] = v.fee_tao_rao;
+	j["funds_disclaimer"] = v.funds_disclaimer;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -7350,6 +7358,9 @@ inline void from_json(const nlohmann::json& j, BittensorConvertReceipt& v) {
 	if (auto it = j.find("fee_tao_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.fee_tao_rao);
 	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
+	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
 		it->get_to(tmp);
@@ -7371,6 +7382,7 @@ inline void to_json(nlohmann::json& j, const BittensorConvertSubmission& v) {
 	if (v.last_block) {
 		j["last_block"] = *v.last_block;
 	}
+	j["funds_disclaimer"] = v.funds_disclaimer;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -7398,6 +7410,9 @@ inline void from_json(const nlohmann::json& j, BittensorConvertSubmission& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.last_block = std::move(tmp);
+	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};

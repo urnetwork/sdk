@@ -56,6 +56,8 @@ func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 		BurnTaoNeededRao:       1_722_954,
 		BurnAlreadyCovered:     true,
 		CanConvert:             true,
+		Notice:                 "notice",
+		FundsDisclaimer:        "disclaimer",
 		Error:                  &sdk.SnError{Code: sdk.BittensorConvertErrorPriceMoved, Message: "moved"},
 	}
 	encoded, err := json.Marshal(estimate)
@@ -66,7 +68,7 @@ func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coldkey_ss58", "amount_rao", "limit_price_rao", "min_tao_rao", "can_convert", "max_amount_rao", "min_amount_rao", "fee_in_alpha", "remainder_swept_alpha_rao"} {
+	for _, name := range []string{"coldkey_ss58", "amount_rao", "limit_price_rao", "min_tao_rao", "can_convert", "max_amount_rao", "min_amount_rao", "fee_in_alpha", "remainder_swept_alpha_rao", "notice", "funds_disclaimer"} {
 		if _, ok := fields[name]; !ok {
 			t.Errorf("no %s in %s", name, encoded)
 		}
@@ -82,10 +84,11 @@ func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 
 func TestBittensorConvertSubmissionJsonRoundTrip(t *testing.T) {
 	submission := &sdk.BittensorConvertSubmission{
-		TxHash:      "0xcf1e4cafeab3397b",
-		ColdkeySs58: "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV",
-		FirstBlock:  9_422_017,
-		LastBlock:   9_422_080,
+		TxHash:          "0xcf1e4cafeab3397b",
+		ColdkeySs58:     "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV",
+		FirstBlock:      9_422_017,
+		LastBlock:       9_422_080,
+		FundsDisclaimer: "disclaimer",
 	}
 	encoded, err := json.Marshal(submission)
 	if err != nil {
@@ -97,5 +100,19 @@ func TestBittensorConvertSubmissionJsonRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(submission, back) {
 		t.Fatalf("round trip\n got %+v\nwant %+v", back, submission)
+	}
+}
+
+func TestBittensorConvertReceiptJsonCarriesTheDisclaimer(t *testing.T) {
+	encoded, err := json.Marshal(&sdk.BittensorConvertReceipt{TxHash: "0x12", FundsDisclaimer: "disclaimer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := map[string]any{}
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["funds_disclaimer"] != "disclaimer" {
+		t.Fatalf("receipt json %s", encoded)
 	}
 }

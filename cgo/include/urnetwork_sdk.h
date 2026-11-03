@@ -2916,6 +2916,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   burn_already_covered?: boolean
  *   can_convert: boolean
  *   notice?: string
+ *   funds_disclaimer: string
  *   error?: SnError | null
  */
 
@@ -2927,6 +2928,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   tao_received_rao: number
  *   fee_alpha_rao: number
  *   fee_tao_rao: number
+ *   funds_disclaimer: string
  *   error?: SnError | null
  */
 
@@ -2935,6 +2937,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   coldkey_ss58?: string
  *   first_block?: number
  *   last_block?: number
+ *   funds_disclaimer: string
  *   error?: SnError | null
  */
 

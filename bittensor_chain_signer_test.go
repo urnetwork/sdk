@@ -13,6 +13,7 @@ import (
 	"github.com/ChainSafe/go-schnorrkel"
 
 	"github.com/urnetwork/sdk/internal/subtensor"
+	"github.com/urnetwork/sdk/sn/ss58"
 )
 
 // substrate's published development phrase, nobody's funds, and the account
@@ -228,4 +229,105 @@ type convertRecordingSigner struct {
 func (self *convertRecordingSigner) Sign(payload []byte) ([64]byte, error) {
 	self.payload = append([]byte(nil), payload...)
 	return self.Signer.Sign(payload)
+}
+
+type convertReceiptCallbackFunc func(receipt *BittensorConvertReceipt)
+
+func (self convertReceiptCallbackFunc) Result(receipt *BittensorConvertReceipt, err error) {
+	self(receipt)
+}
+
+// Every result an exported convert call gives a screen carries the owner's
+// disclaimer, word for word, refusals included: the estimate, the burn estimate,
+// the submission and the receipt.
+func TestConvertResultsCarryTheFundsDisclaimer(t *testing.T) {
+	const want = "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds."
+	chain := newConvertFakeChain(t)
+	chain.landEvents = func(index uint32) string {
+		return convertEvents(index, convertSuccessEvent())
+	}
+	real := newBittensorChainEngineForExport
+	newBittensorChainEngineForExport = func(settings *SnChainSettings) (*bittensorChainEngine, *SnError) {
+		// no settings keep their real refusal; any other answers from the fake chain
+		if settings == nil {
+			return real(settings)
+		}
+		return convertEngine(chain), nil
+	}
+	t.Cleanup(func() {
+		newBittensorChainEngineForExport = real
+	})
+	signer, err := bittensorSignerFromPhrase(convertTestDevPhrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := signer.PublicKey()
+	address, err := ss58.Encode(public, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	estimate := func(call func(callback BittensorConvertEstimateCallback)) *BittensorConvertEstimateResult {
+		t.Helper()
+		results := make(chan *BittensorConvertEstimateResult, 1)
+		call(convertEstimateCallbackFunc(func(result *BittensorConvertEstimateResult) {
+			results <- result
+		}))
+		return <-results
+	}
+	submit := func(phrase string, estimate *BittensorConvertEstimateResult) *BittensorConvertSubmission {
+		t.Helper()
+		results := make(chan *BittensorConvertSubmission, 1)
+		BittensorConvertSubmit(DefaultSnChainSettings(), phrase, estimate, convertSubmitCallbackFunc(func(submission *BittensorConvertSubmission) {
+			results <- submission
+		}))
+		return <-results
+	}
+	wait := func(submission *BittensorConvertSubmission) *BittensorConvertReceipt {
+		t.Helper()
+		results := make(chan *BittensorConvertReceipt, 1)
+		BittensorConvertWait(DefaultSnChainSettings(), submission, convertReceiptCallbackFunc(func(receipt *BittensorConvertReceipt) {
+			results <- receipt
+		}))
+		return <-results
+	}
+	check := func(name string, got string, ok bool) {
+		t.Helper()
+		if !ok {
+			t.Fatalf("%s: CONTROL FAILED: not the result this case is for", name)
+		}
+		if got != want {
+			t.Errorf("%s: the disclaimer is %q", name, got)
+		}
+	}
+
+	converting := estimate(func(callback BittensorConvertEstimateCallback) {
+		BittensorConvertEstimate(DefaultSnChainSettings(), address, 1_000_000_000, callback)
+	})
+	check("an estimate", converting.FundsDisclaimer, converting.CanConvert)
+	tooLow := estimate(func(callback BittensorConvertEstimateCallback) {
+		BittensorConvertEstimate(DefaultSnChainSettings(), address, 1, callback)
+	})
+	check("a refused estimate", tooLow.FundsDisclaimer, tooLow.Error != nil && tooLow.Error.Code == BittensorConvertErrorAmountTooLow)
+	notAnAddress := estimate(func(callback BittensorConvertEstimateCallback) {
+		BittensorConvertEstimate(DefaultSnChainSettings(), "not an address", 1, callback)
+	})
+	check("an estimate for no address", notAnAddress.FundsDisclaimer, notAnAddress.Error != nil && notAnAddress.Error.Code == SnErrorCodeInvalidAddress)
+	noSettings := estimate(func(callback BittensorConvertEstimateCallback) {
+		BittensorConvertEstimate(nil, address, 1, callback)
+	})
+	check("an estimate with no settings", noSettings.FundsDisclaimer, noSettings.Error != nil && noSettings.Error.Code == SnErrorCodeChainNotConfigured)
+	burn := estimate(func(callback BittensorConvertEstimateCallback) {
+		BittensorConvertEstimateForBurn(DefaultSnChainSettings(), address, callback)
+	})
+	check("a burn estimate", burn.FundsDisclaimer, burn.BurnRao != 0)
+
+	sent := submit(convertTestDevPhrase, converting)
+	check("a submission", sent.FundsDisclaimer, sent.Error == nil && sent.TxHash != "")
+	refused := submit("not a phrase", converting)
+	check("a refused submission", refused.FundsDisclaimer, refused.Error != nil && refused.TxHash == "")
+
+	landed := wait(sent)
+	check("a receipt", landed.FundsDisclaimer, landed.Error == nil && landed.BlockNumber != 0)
+	nothing := wait(nil)
+	check("a receipt for nothing sent", nothing.FundsDisclaimer, nothing.Error != nil)
 }
