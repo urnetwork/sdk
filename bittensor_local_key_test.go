@@ -559,9 +559,9 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 	}
 
 	// why the library's errors never come out: given this, its error quotes two words of the phrase
-	tabbed := strings.Replace(valid, " ", "\t", 1)
+	tabbed := strings.Replace(strings.Replace(valid, " ", "\t", 1), " ", "  ", 1)
 	if _, err := bip39.MnemonicToByteArray(tabbed); err == nil || !strings.Contains(err.Error(), "hotel") {
-		t.Fatalf("CONTROL FAILED: the library's error for a tab is %v, so the rows below show less than they say", err)
+		t.Fatalf("CONTROL FAILED: the library's error for this phrase is %v, so the rows below show less than they say", err)
 	}
 
 	for _, row := range []struct {
@@ -586,7 +586,8 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 		{"a tab in one gap", testingBittensorLocalKeyPhraseWithWord(valid, 2, "jar\thover"), errBittensorLocalKeyWord},
 		// one space apart and nothing around them: a split on any whitespace would let these through
 		{"a double space", strings.Replace(valid, " ", "  ", 1), errBittensorLocalKeyWordCount},
-		{"a tab for one space", tabbed, errBittensorLocalKeyWordCount},
+		{"a tab for one space", strings.Replace(valid, " ", "\t", 1), errBittensorLocalKeyWordCount},
+		{"a tab and a double space", tabbed, errBittensorLocalKeyWord},
 		{"a leading space", " " + valid, errBittensorLocalKeyWordCount},
 		{"a trailing space", valid + " ", errBittensorLocalKeyWordCount},
 		{"a trailing line", valid + "\n", errBittensorLocalKeyWord},
