@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -619,5 +620,143 @@ func TestSnClaimStatusOnADeviceLinksTheTransaction(t *testing.T) {
 	service.relayStatus, service.relayBody = http.StatusBadGateway, "down"
 	if result = device.snClaimStatus(context.Background()); result.Error == nil || result.ShowsTile || result.ShowsClaimed || result.ClaimTxHash != "" || result.ClaimTxUrl != "" {
 		t.Fatalf("unread %+v", result)
+	}
+}
+
+// A device and a page with no device share one set of rules (snClaimStatusOf, and
+// the web's SnClaimStatusOf in sn_claim_relay_js.go): the public ledger is read
+// only for an answer without balances and with a wallet to read it for, and the
+// gas only when the device's own claim could pay something.
+func TestSnClaimStatusOfReadsOnlyWhatItNeeds(t *testing.T) {
+	ledgerReads, gasReads := 0, 0
+	ledger := func() (*SnClaimRelayAccountList, *SnError) {
+		ledgerReads++
+		list := NewSnClaimRelayAccountList()
+		list.Add(&SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonRelayNotRunning, ClaimNowReason: SnClaimReasonRelayNotRunning})
+		return list, nil
+	}
+	needsGas := func() bool {
+		gasReads++
+		return true
+	}
+	paused := func() *SnClaimRelayResult {
+		return testClaimRelayAnswer("griefing_stop", &SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 100_000_000, Reason: SnClaimReasonRelayPaused})
+	}
+
+	// an answer with balances: no ledger read, and the gas, since the device's own
+	// claim could pay
+	result := snClaimStatusOf(paused(), nil, "a", true, ledger, needsGas, nil)
+	if ledgerReads != 0 || gasReads != 1 || result.Action != SnClaimActionTopUpGas || !result.SelfClaimNeedsGas {
+		t.Fatalf("answered: %d ledger, %d gas reads, %+v", ledgerReads, gasReads, result)
+	}
+	// a device that cannot send its own claim, or with nothing of the wallet's to
+	// claim, never reads the gas
+	snClaimStatusOf(paused(), nil, "a", false, ledger, needsGas, nil)
+	snClaimStatusOf(paused(), nil, "b", true, ledger, needsGas, nil)
+	if gasReads != 1 {
+		t.Fatalf("%d gas reads", gasReads)
+	}
+	// no gas read at all, as on a page: never short
+	if result = snClaimStatusOf(paused(), nil, "a", true, ledger, nil, nil); result.Action != SnClaimActionSelfClaim || result.SelfClaimNeedsGas {
+		t.Fatalf("no gas read: %+v", result)
+	}
+
+	// no answer and no wallet: nothing to read the ledger for
+	result = snClaimStatusOf(nil, errors.New("Failed to fetch"), "", true, ledger, needsGas, nil)
+	if ledgerReads != 0 || result.Error == nil || result.Error.Code != SnErrorCodeLedgerUnavailable || result.Error.Message != "Failed to fetch" || result.RelayState != SnClaimRelayStateUnavailable {
+		t.Fatalf("no wallet: %d ledger reads, %+v (%+v)", ledgerReads, result, result.Error)
+	}
+	// no answer, with a wallet: the ledger once, and its balances stand in
+	result = snClaimStatusOf(nil, nil, "a", true, ledger, needsGas, nil)
+	if ledgerReads != 1 || result.Error != nil || result.Action != SnClaimActionTopUpGas || result.RelayState != SnClaimRelayStateUnavailable {
+		t.Fatalf("fallback: %d ledger reads, %+v (%+v)", ledgerReads, result, result.Error)
+	}
+	// nothing that reads the ledger: unavailable, never zero
+	result = snClaimStatusOf(nil, nil, "a", true, nil, needsGas, nil)
+	if result.Error == nil || result.Error.Message != "the claim relay did not answer" || result.Action != SnClaimActionNone || result.ShowsTile {
+		t.Fatalf("no ledger: %+v (%+v)", result, result.Error)
+	}
+	// an answer that says it could not read the balances keeps its state
+	failed := testClaimRelayAnswer("cap_reached")
+	failed.Error = &SnClaimRelayError{Message: "The balances could not be read."}
+	result = snClaimStatusOf(failed, nil, "", true, ledger, needsGas, nil)
+	if result.Error == nil || result.Error.Message != "The balances could not be read." || result.RelayState != "cap_reached" {
+		t.Fatalf("relay error: %+v (%+v)", result, result.Error)
+	}
+}
+
+// The ledger's read as the relay's accounts: what a claim pays now, what a root
+// not final yet adds, and no relay behind them. A read not made, or without
+// accounts or a code, is the ledger unavailable, never zero.
+func TestSnClaimLedgerRelayAccounts(t *testing.T) {
+	ledgerAccounts := NewSnLedgerAccountList()
+	ledgerAccounts.Add(&SnLedgerAccount{NoId: 1, Index: 42, FinalizedRao: 2_100_000_000, ClaimableRao: 842_000_000, Pending: true, PendingRao: 2_200_000_000})
+	ledgerAccounts.Add(&SnLedgerAccount{NoId: 2, Index: 7, FinalizedRao: 5, PaidRao: 5})
+	accounts, snErr := snClaimLedgerRelayAccounts(&SnLedgerAccountsResult{Accounts: ledgerAccounts}, "a")
+	if snErr != nil || accounts.Len() != 2 {
+		t.Fatalf("accounts %v, %+v", accounts, snErr)
+	}
+	first, second := accounts.getAll()[0], accounts.getAll()[1]
+	if first.ColdkeySs58 != "a" || first.NoId != 1 || first.Index != 42 || first.ClaimableRao != 842_000_000 || first.PendingRao != 100_000_000 ||
+		first.Reason != SnClaimReasonRelayNotRunning || first.ClaimNowReason != SnClaimReasonRelayNotRunning || first.ClaimNowAvailable {
+		t.Fatalf("first %+v", first)
+	}
+	if second.ClaimableRao != 0 || second.PendingRao != 0 || second.Reason != SnClaimReasonNothingPending {
+		t.Fatalf("second %+v", second)
+	}
+	for _, c := range []struct {
+		name   string
+		ledger *SnLedgerAccountsResult
+		code   string
+		text   string
+	}{
+		{"not read", nil, SnErrorCodeLedgerUnavailable, "the ledger could not be read"},
+		{"no accounts", &SnLedgerAccountsResult{}, SnErrorCodeLedgerUnavailable, "the ledger could not be read"},
+		{"no code", &SnLedgerAccountsResult{Error: &SnError{}}, SnErrorCodeLedgerUnavailable, "the ledger could not be read"},
+		{"its own code", &SnLedgerAccountsResult{Accounts: NewSnLedgerAccountList(), Error: &SnError{Code: SnErrorCodeChainRpcUnreachable, Message: "rpc down"}}, SnErrorCodeChainRpcUnreachable, "rpc down"},
+	} {
+		if accounts, snErr := snClaimLedgerRelayAccounts(c.ledger, "a"); accounts != nil || snErr == nil || snErr.Code != c.code || snErr.Message != c.text {
+			t.Errorf("%s: %v, %+v", c.name, accounts, snErr)
+		}
+	}
+}
+
+// A tap through snClaimNowOf, as a page sends it: nothing is posted for an
+// address that is not one or with no wallet to name, and a post with no answer is
+// the server's failure.
+func TestSnClaimNowOfPostsOnlyForAnAddress(t *testing.T) {
+	_, aliceSs58 := testAliceSs58(t)
+	posts := []string{}
+	post := func(answer *SnClaimRelayClaimNowResult, err error) func(*SnClaimRelayClaimNowArgs) (*SnClaimRelayClaimNowResult, error) {
+		return func(args *SnClaimRelayClaimNowArgs) (*SnClaimRelayClaimNowResult, error) {
+			posts = append(posts, args.ColdkeySs58)
+			return answer, err
+		}
+	}
+	wallet := func(coldkey string, ok bool) func() (string, bool) {
+		return func() (string, bool) { return coldkey, ok }
+	}
+	if result := snClaimNowOf("", wallet(" "+aliceSs58+" ", true), post(&SnClaimRelayClaimNowResult{Requested: true}, nil)); !result.Requested || len(posts) != 1 || posts[0] != aliceSs58 {
+		t.Fatalf("taken: %+v, posts %q", result, posts)
+	}
+	if result := snClaimNowOf(aliceSs58, wallet("", false), post(nil, nil)); result.Error == nil || result.Error.Code != SnErrorCodeServer || result.Requested {
+		t.Fatalf("no answer: %+v", result)
+	}
+	if result := snClaimNowOf(aliceSs58, wallet("", false), post(nil, errors.New("Service unavailable"))); result.Error == nil || result.Error.Code != SnErrorCodeServer || result.Error.Message != "Service unavailable" {
+		t.Fatalf("failed: %+v", result)
+	}
+	posted := len(posts)
+	if result := snClaimNowOf("", wallet("", false), post(&SnClaimRelayClaimNowResult{Requested: true}, nil)); result.Error == nil || result.Error.Code != SnErrorCodeConnectWalletFirst {
+		t.Fatalf("no wallet: %+v", result)
+	}
+	// a wallet with no coldkey is no address
+	if result := snClaimNowOf("", wallet(" ", true), post(&SnClaimRelayClaimNowResult{Requested: true}, nil)); result.Error == nil || result.Error.Code != SnErrorCodeInvalidAddress {
+		t.Fatalf("empty wallet: %+v", result)
+	}
+	if result := snClaimNowOf("not an address", wallet(aliceSs58, true), post(&SnClaimRelayClaimNowResult{Requested: true}, nil)); result.Error == nil || result.Error.Code != SnErrorCodeInvalidAddress {
+		t.Fatalf("not an address: %+v", result)
+	}
+	if len(posts) != posted {
+		t.Fatalf("posted %d more", len(posts)-posted)
 	}
 }

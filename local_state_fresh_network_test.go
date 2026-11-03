@@ -10,12 +10,18 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/urnetwork/connect"
 )
 
 // The extender state a test seeds, to find after a removal.
 type testingExtenderState struct {
 	directory []byte
 	keySeed   []byte
+	// a key made for a network the identity is not registered to (C2c)
+	networkId      connect.Id
+	networkKeySeed []byte
 }
 
 // Seeds every piece of extender state, with the provider extender switched off
@@ -39,7 +45,20 @@ func testingSeedExtenderState(t *testing.T, localState *LocalState) testingExten
 	if err := localState.SetConnectLocation(testingStoredLocation("account-destination")); err != nil {
 		t.Fatal(err)
 	}
-	return testingExtenderState{directory: directory, keySeed: keySeed}
+	networkId := connect.NewId()
+	networkKeySeed, err := connect.NewExtenderKeySeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := localState.setExtenderNetworkKeySeed(networkId, networkKeySeed, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	return testingExtenderState{
+		directory:      directory,
+		keySeed:        keySeed,
+		networkId:      networkId,
+		networkKeySeed: networkKeySeed,
+	}
 }
 
 // The removal kept every piece of extender state, in this object and on disk,
@@ -58,6 +77,9 @@ func testingRequireExtenderStateKept(t *testing.T, localState *LocalState, seede
 		}
 		if keySeed, err := state.GetOrCreateExtenderKeySeed(); err != nil || !bytes.Equal(keySeed, seeded.keySeed) {
 			t.Error("the sign-out replaced the extender identity")
+		}
+		if keySeed, _, ok := state.getExtenderNetworkKeySeed(seeded.networkId); !ok || !bytes.Equal(keySeed, seeded.networkKeySeed) {
+			t.Error("the sign-out removed the key made for a network")
 		}
 		if state.GetProvideExtender() {
 			t.Error("the sign-out reset the provider extender setting")

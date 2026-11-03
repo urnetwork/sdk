@@ -352,3 +352,83 @@ func (self *LocalState) GetOrCreateExtenderKeySeed() ([]byte, error) {
 	}
 	return seed, nil
 }
+
+// The extender identity keys this installation made for a network that
+// `.extender_key` is registered to another network for (EXTENDER.md C2c, B1):
+// at most one per network, made when the operator refused the key the network
+// ran under as another network's. `.extender_key` stays as it was, so a device
+// that goes back to the account that holds it presents it again, with its
+// history; a network with no key here runs under `.extender_key`. Kept across a
+// sign-out with `.extender_key` (keptAcrossSignOut).
+const extenderNetworkKeysFileName = ".extender_network_keys"
+
+// The stored document of the network keys, by network id.
+type extenderNetworkKeysState struct {
+	Networks map[string]*extenderNetworkKeyState `json:"networks"`
+}
+
+type extenderNetworkKeyState struct {
+	SeedHex string `json:"seed_hex"`
+	// when the key was made, which is how often a network's key is replaced
+	// is bounded (NetworkSpace.renewExtenderKeyForNetwork)
+	CreateTime time.Time `json:"create_time"`
+}
+
+// The key this installation made for a network, and when, ok false when it
+// made none or the file cannot be read: the network then runs under
+// `.extender_key`, as it did before it had a key of its own.
+func (self *LocalState) getExtenderNetworkKeySeed(networkId connect.Id) (seed []byte, createTime time.Time, ok bool) {
+	self.extenderNetworkKeysLock.Lock()
+	defer self.extenderNetworkKeysLock.Unlock()
+	keyState := self.extenderNetworkKeysWithLock().Networks[networkId.String()]
+	if keyState == nil {
+		return nil, time.Time{}, false
+	}
+	seed, err := connect.ParseExtenderKeySeedHex(keyState.SeedHex)
+	if err != nil {
+		return nil, time.Time{}, false
+	}
+	return seed, keyState.CreateTime, true
+}
+
+// Stores the key made for a network in place of any it had. The document is
+// written whole to a file beside it and renamed over it, so a read in another
+// process never sees half of it.
+func (self *LocalState) setExtenderNetworkKeySeed(networkId connect.Id, seed []byte, createTime time.Time) error {
+	if _, err := connect.ExtenderPublicKeyFromSeed(seed); err != nil {
+		return err
+	}
+	self.extenderNetworkKeysLock.Lock()
+	defer self.extenderNetworkKeysLock.Unlock()
+	keysState := self.extenderNetworkKeysWithLock()
+	keysState.Networks[networkId.String()] = &extenderNetworkKeyState{
+		SeedHex:    connect.ExtenderKeySeedHex(seed),
+		CreateTime: createTime.UTC(),
+	}
+	stateBytes, err := json.Marshal(keysState)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(self.localStorageDir, extenderNetworkKeysFileName)
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, stateBytes, LocalStorageFilePermissions); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
+}
+
+// The stored network keys, none when the file is missing or unreadable.
+// Called with extenderNetworkKeysLock held.
+func (self *LocalState) extenderNetworkKeysWithLock() *extenderNetworkKeysState {
+	keysState := &extenderNetworkKeysState{}
+	path := filepath.Join(self.localStorageDir, extenderNetworkKeysFileName)
+	if stateBytes, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(stateBytes, keysState); err != nil {
+			keysState = &extenderNetworkKeysState{}
+		}
+	}
+	if keysState.Networks == nil {
+		keysState.Networks = map[string]*extenderNetworkKeyState{}
+	}
+	return keysState
+}
