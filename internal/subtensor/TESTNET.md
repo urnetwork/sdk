@@ -5,7 +5,7 @@ testnet TAO only. `TestConvertTestnetRehearsal` pins the testnet genesis hash, s
 other chain, and it runs the same code the apps call. Keep the output of every step.
 
 Rate limit: the public endpoints allow about 100 requests a minute per source. A rehearsal run
-uses about 20.
+makes about 40, and waiting for a transaction about 20 a minute.
 
 Run everything from the sdk checkout, with its sibling repositories in place. The commands assume
 `bittensor-cli` 9.23 and a zsh or bash shell. Set the phrase only in the shell that runs the test.
@@ -117,8 +117,8 @@ low.
 
 ## 6. The remainder
 
-Top up C if needed so it holds about 3 times `min_amount_rao`, with no TAO. Convert `min_amount_rao`,
-which leaves less than the nominator minimum (0.02 TAO of value):
+Top up C if needed so it holds about 3 times `min_amount_rao`, and less TAO than the fee. Convert
+`min_amount_rao`, which leaves less than the nominator minimum (0.02 TAO of value):
 
 ```sh
 BT_CONVERT_TESTNET_ACTION=convert BT_CONVERT_TESTNET_AMOUNT_RAO=MIN go test -count=1 -run TestConvertTestnetRehearsal -v .
