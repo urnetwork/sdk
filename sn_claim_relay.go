@@ -283,18 +283,26 @@ func snClaimAction(account *SnClaimRelayAccount, selfClaimAvailable bool, selfCl
 	return SnClaimActionSelfClaim
 }
 
-// snClaimStatusPrimary picks the account the top level describes.
+// snClaimStatusPrimary picks the account the top level describes: the connected
+// wallet's before any other, and one with something to claim before one without.
 func snClaimStatusPrimary(accounts []*SnClaimRelayAccount) *SnClaimRelayAccount {
-	var first *SnClaimRelayAccount
-	for _, account := range accounts {
+	rank := func(account *SnClaimRelayAccount) int {
+		value := 0
 		if account.Connected {
-			return account
+			value += 2
 		}
-		if first == nil || first.ClaimableRao <= 0 && 0 < account.ClaimableRao {
-			first = account
+		if 0 < account.ClaimableRao {
+			value += 1
+		}
+		return value
+	}
+	var primary *SnClaimRelayAccount
+	for _, account := range accounts {
+		if primary == nil || rank(primary) < rank(account) {
+			primary = account
 		}
 	}
-	return first
+	return primary
 }
 
 // snClaimStatusBuild turns the server's answer and the device's gas key into what

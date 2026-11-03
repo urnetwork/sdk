@@ -110,6 +110,16 @@ func TestSnClaimStatusBuildDrawsThePrimaryAccount(t *testing.T) {
 		t.Fatalf("result %+v", result)
 	}
 
+	// of the connected wallet's accounts, one with something to claim
+	result = snClaimStatusBuild(testClaimRelayAnswer("running",
+		&SnClaimRelayAccount{ColdkeySs58: other, ClaimableRao: 5, Reason: SnClaimReasonQueued},
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: 1, Reason: SnClaimReasonNothingPending},
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: 2, ClaimableRao: 7, Reason: SnClaimReasonQueued},
+	), connected, true, false)
+	if result.ColdkeySs58 != connected || result.ClaimableRao != 7 {
+		t.Fatalf("result %+v", result)
+	}
+
 	// no accounts: nothing to do, and the connected wallet is still named
 	result = snClaimStatusBuild(testClaimRelayAnswer("no_key"), connected, true, false)
 	if result.RelayState != "no_key" || result.ColdkeySs58 != connected || result.Action != SnClaimActionNone || result.Reason != SnClaimReasonNothingPending || result.Accounts.Len() != 0 {
