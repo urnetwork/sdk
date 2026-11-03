@@ -72,11 +72,34 @@ var mobileExtenderStringSliceIds = map[string]bool{
 	"NetworkSpaceValues.ExtenderSeedMirrors": true,
 }
 
+// The Top 200 claim's Go-only forms (sn_fleet_claim.go, sn_fleet_device.go,
+// sn_fleet_disclaimer.go). Each takes a context: `provider` holds its client key
+// itself (NewSnFleetDeviceWithClientKey) and runs the checks on its own context, and
+// tests drive one pass at a time. Apps reach the same operations through the
+// callback forms gobind binds: SnFleetClaim's Tap, Advance, Refresh,
+// SubmitWalletAuthorization and Leave, and SnFleetDevice's Check, Start, Close,
+// Leave and Reset, on a claim from NewSnFleetClaim and a device from
+// NewSnFleetDeviceForLocal or NewSnFleetDeviceForRemote (sn_fleet_test.go). Keep
+// both gobind records of the constructor: the package facade's and the return
+// type's.
+var mobileSnFleetGoOnlyIds = map[string]bool{
+	"NewSnFleetDeviceWithClientKey":               true,
+	"SnFleetDevice.NewSnFleetDeviceWithClientKey": true,
+	"SnFleetClaim.AdvanceSync":                    true,
+	"SnFleetClaim.LeaveSync":                      true,
+	"SnFleetClaim.RefreshSync":                    true,
+	"SnFleetClaim.SubmitWalletAuthorizationSync":  true,
+	"SnFleetClaim.TapSync":                        true,
+	"SnFleetDevice.CheckSync":                     true,
+	"SnFleetDevice.LeaveSync":                     true,
+	"SnFleetDevice.RunWithContext":                true,
+}
+
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
 // callbacks retain the non-joining Close methods so they cannot self-join.
 func allowedMobileOmission(identifier string) bool {
 	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] ||
-		mobileExtenderStringSliceIds[identifier] {
+		mobileExtenderStringSliceIds[identifier] || mobileSnFleetGoOnlyIds[identifier] {
 		return true
 	}
 	parts := strings.SplitN(identifier, ".", 2)
