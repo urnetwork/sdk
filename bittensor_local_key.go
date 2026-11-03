@@ -65,6 +65,7 @@ var (
 	errBittensorLocalKeyWord      = errors.New(BittensorLocalKeyErrorInvalidPhrase + ": it holds something that is not on the BIP39 list")
 	errBittensorLocalKeyChecksum  = errors.New(BittensorLocalKeyErrorInvalidPhrase + ": its checksum does not match")
 	errBittensorLocalKeyGenerate  = errors.New(BittensorLocalKeyErrorFailed + ": could not make a new key")
+	errBittensorLocalKeyAddress   = errors.New(BittensorLocalKeyErrorFailed + ": could not derive the address")
 	errBittensorLocalKeySign      = errors.New(BittensorLocalKeyErrorFailed + ": could not sign")
 )
 
@@ -78,6 +79,7 @@ type BittensorLocalKey struct {
 }
 
 // The address alone, so a key that reaches a log line through %v or %s does not carry its phrase.
+// gobind's java toString answers this too, where it would otherwise print every field.
 func (self BittensorLocalKey) String() string {
 	return "BittensorLocalKey(" + self.Address + ")"
 }
@@ -126,11 +128,11 @@ func BittensorLocalKeyAddress(mnemonic string) (string, error) {
 	// nil only if the library's expansion made a scalar it cannot read
 	publicKey := miniSecret.Public()
 	if publicKey == nil {
-		return "", errBittensorLocalKeyGenerate
+		return "", errBittensorLocalKeyAddress
 	}
 	address, err := ss58.Encode(publicKey.Encode(), SnSs58Prefix)
 	if err != nil {
-		return "", errBittensorLocalKeyGenerate
+		return "", errBittensorLocalKeyAddress
 	}
 	return address, nil
 }
