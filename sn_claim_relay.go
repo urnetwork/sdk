@@ -4,8 +4,9 @@ package sdk
 // claims. URnetwork claims for every consented coldkey and pays the gas (server
 // controller/sn_claim_relay.go): automatically once a balance is worth 0.0125 TAO,
 // and on a "Claim now" tap once it clears the transfer floor, at most once per
-// coldkey per 30 days. The device's own claim with its gas key (sn_ledger_claim.go)
-// stays as the fallback.
+// coldkey per 30 days, counted from a paid claim URnetwork would not have sent by
+// itself. The device's own claim with its gas key (sn_ledger_claim.go) stays as the
+// fallback.
 //
 // SnClaimStatus reads what is pending and why, and chooses between the two, so an
 // app only draws the answer: Action is what its main control does, and Reason says
@@ -50,7 +51,8 @@ const (
 	SnClaimNowReasonUnderFloor = "under_floor"
 	// already asked for, and URnetwork will send it
 	SnClaimNowReasonRequested = "requested"
-	// used for this coldkey in the last 30 days: see ClaimNowNextAtMillis
+	// URnetwork paid a Claim now of this coldkey in the last 30 days: see
+	// ClaimNowNextAtMillis
 	SnClaimNowReasonLimit = "limit"
 )
 
@@ -170,7 +172,8 @@ type SnClaimRelayClaimNowArgs struct {
 type SnClaimRelayClaimNowResult struct {
 	Requested bool   `json:"requested"`
 	Reason    string `json:"reason,omitempty"`
-	// when this coldkey's limit ends, unix milliseconds
+	// when this coldkey's limit ends, unix milliseconds, for a tap the limit
+	// refused
 	NextAtMillis int64              `json:"next_at_millis,omitempty"`
 	Error        *SnClaimRelayError `json:"error,omitempty"`
 }
@@ -246,7 +249,8 @@ type SnClaimNowResult struct {
 	Requested bool `json:"requested"`
 	// why not, as SnClaimStatusResult.ClaimNowReason
 	Reason string `json:"reason,omitempty"`
-	// when this coldkey's limit ends, unix milliseconds
+	// when this coldkey's limit ends, unix milliseconds, for a tap the limit
+	// refused
 	NextAtMillis int64    `json:"next_at_millis,omitempty"`
 	Error        *SnError `json:"error,omitempty"`
 }
