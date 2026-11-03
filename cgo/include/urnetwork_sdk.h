@@ -158,6 +158,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_NOW_CONSENT_FAILED "save_now_consent_failed"
 #define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_NOW_SHOWING "save_now_showing"
 #define URNET_BITTENSOR_LOCAL_KEY_STATE_STORE_UNAVAILABLE "store_unavailable"
+#define URNET_BITTENSOR_LOCAL_KEY_STORE_ABSENT "store_absent"
 #define URNET_BITTENSOR_LOCAL_KEY_STORE_UNAVAILABLE "store_unavailable"
 #define URNET_BITTENSOR_LOCAL_KEY_WORD_EMPTY ""
 #define URNET_BITTENSOR_LOCAL_KEY_WORD_RIGHT "right"

@@ -165,6 +165,11 @@ const (
 	BittensorLocalKeyCopySeconds = 60
 	// a store's answer for "cannot answer now", which is neither a phrase nor an address
 	BittensorLocalKeyStoreUnavailable = "store_unavailable"
+	// a store's answer for "this device has no secure storage for a key at all", as a Linux desktop with
+	// no Secret Service. It is never a phrase or an address either. No key can be made or kept here, so
+	// the card offers what it offers a session that can't make one: the wallet the user already has. The
+	// first sentence of the funds disclaimer would be untrue on such a device, so no screen offers a key.
+	BittensorLocalKeyStoreAbsent = "store_absent"
 )
 
 const (
@@ -187,9 +192,11 @@ type BittensorLocalKeyStore interface {
 	// Adds the network's item: the phrase as its secret, the address readable without the secret. It
 	// must never replace an item. False if one is there or the store refused.
 	AddKey(networkId string, mnemonic string, address string) bool
-	// The item's phrase. "" with no item, BittensorLocalKeyStoreUnavailable if the store cannot answer.
+	// The item's phrase. "" with no item, BittensorLocalKeyStoreUnavailable if the store cannot answer,
+	// BittensorLocalKeyStoreAbsent if the device has no secure storage for one.
 	KeyPhrase(networkId string) string
-	// The item's address, without touching the secret. "" and BittensorLocalKeyStoreUnavailable as above.
+	// The item's address, without touching the secret. "", BittensorLocalKeyStoreUnavailable and
+	// BittensorLocalKeyStoreAbsent as above.
 	KeyAddress(networkId string) string
 	// Removes the item. False if the store refused. No item is not a refusal. The flow checks the
 	// result by reading again.
@@ -328,6 +335,12 @@ func (bittensorLocalKeyNoStore) ReadNote(string, string) string {
 func (bittensorLocalKeyNoStore) WriteNote(string, string, string) {
 }
 
+// A store's answer that is neither a phrase nor an address: it can't answer now, or the device has no
+// secure storage at all.
+func bittensorLocalKeyStoreCannotSay(answer string) bool {
+	return answer == BittensorLocalKeyStoreUnavailable || answer == BittensorLocalKeyStoreAbsent
+}
+
 // The consent calls this flow makes. *Api is the real one.
 type bittensorLocalKeyConsentApi interface {
 	HasNetworkCredential() bool
@@ -372,15 +385,17 @@ type bittensorLocalKeyCardInputs struct {
 	currentEpoch     int64
 	justLinked       bool
 	storeUnavailable bool
-	storedAddress    string
-	savedAddress     string
-	deletedAddress   string
-	saveNowAddress   string
-	saveNowFailed    bool
-	busy             bool
-	linkGeneration   int64
-	failureCode      string
-	failureMessage   string
+	// the device has no secure storage for a key: none can be made or kept here
+	storeAbsent    bool
+	storedAddress  string
+	savedAddress   string
+	deletedAddress string
+	saveNowAddress string
+	saveNowFailed  bool
+	busy           bool
+	linkGeneration int64
+	failureCode    string
+	failureMessage string
 }
 
 // The payout key's flow for one network on this device. One visit of the Earnings screen makes one.
@@ -412,6 +427,7 @@ type BittensorLocalKeyFlow struct {
 
 	// read from the store by reload
 	storeUnavailable bool
+	storeAbsent      bool
 	storedAddress    string
 	savedAddress     string
 	deletedAddress   string
@@ -542,6 +558,7 @@ func (self *BittensorLocalKeyFlow) cardInputsWithLock(hasNetworkCredential bool)
 		currentEpoch:         self.currentEpoch,
 		justLinked:           self.justLinked,
 		storeUnavailable:     self.storeUnavailable,
+		storeAbsent:          self.storeAbsent,
 		storedAddress:        self.storedAddress,
 		savedAddress:         self.savedAddress,
 		deletedAddress:       self.deletedAddress,
@@ -594,7 +611,8 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 	card.KeySaved = hasStoredKey && in.savedAddress == in.storedAddress
 	card.BackupReminder = hasStoredKey && !card.KeySaved
 
-	mayMakeKey := in.hasNetworkCredential && !in.guest && in.networkId != ""
+	// a device with no secure storage keeps no key, so it makes none: the wallet card, as for a guest
+	mayMakeKey := in.hasNetworkCredential && !in.guest && in.networkId != "" && !in.storeAbsent
 	active := in.consentRead == bittensorLocalKeyConsentActive
 	switch {
 	case in.consentRead == bittensorLocalKeyConsentUnread:
@@ -786,7 +804,8 @@ func (self *BittensorLocalKeyFlow) reload() {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.storeUnavailable = storedAddress == BittensorLocalKeyStoreUnavailable
-	if self.storeUnavailable {
+	self.storeAbsent = storedAddress == BittensorLocalKeyStoreAbsent
+	if self.storeUnavailable || self.storeAbsent {
 		self.storedAddress = ""
 	} else {
 		self.storedAddress = storedAddress
@@ -947,7 +966,7 @@ func (self *BittensorLocalKeyFlow) finishSetup(replaceConfirmed bool) {
 	phrase := self.store.KeyPhrase(self.networkId)
 	address := self.store.KeyAddress(self.networkId)
 	switch {
-	case phrase == BittensorLocalKeyStoreUnavailable || address == BittensorLocalKeyStoreUnavailable:
+	case bittensorLocalKeyStoreCannotSay(phrase) || bittensorLocalKeyStoreCannotSay(address):
 		self.finish(BittensorLocalKeyFailureStoreUnavailable, "")
 		return
 	case phrase == "" || address == "":
@@ -1040,7 +1059,7 @@ func (self *BittensorLocalKeyFlow) Reveal(authenticated bool) {
 
 	if phrase == "" {
 		phrase = self.store.KeyPhrase(self.networkId)
-		if phrase == "" || phrase == BittensorLocalKeyStoreUnavailable {
+		if phrase == "" || bittensorLocalKeyStoreCannotSay(phrase) {
 			self.setFailure(BittensorLocalKeyFailureStoreUnavailable, "")
 			return
 		}
@@ -1174,7 +1193,7 @@ func (self *BittensorLocalKeyFlow) beginConfirmation(purpose string) {
 
 	if phrase == "" {
 		phrase = self.store.KeyPhrase(self.networkId)
-		if phrase == "" || phrase == BittensorLocalKeyStoreUnavailable {
+		if phrase == "" || bittensorLocalKeyStoreCannotSay(phrase) {
 			self.setFailure(BittensorLocalKeyFailureStoreUnavailable, "")
 			return
 		}
@@ -1524,8 +1543,8 @@ func (self *BittensorLocalKeyFlow) setFailure(failureCode string, failureMessage
 func (self *BittensorLocalKeyFlow) Reminder(currentEpoch int64, claimOpenMillis int64, epochBlocks int64, claimable bool) *BittensorLocalKeyReminder {
 	self.stateLock.Lock()
 	// a store that can't answer, as on a locked device, says nothing about the key: a reminder posted
-	// stays posted
-	if self.storeUnavailable {
+	// stays posted. Nor does a device that has no secure storage now, which may have had some before.
+	if self.storeUnavailable || self.storeAbsent {
 		self.stateLock.Unlock()
 		return &BittensorLocalKeyReminder{Action: BittensorLocalKeyReminderNone}
 	}
@@ -1582,10 +1601,10 @@ func (self *BittensorLocalKeyFlow) ReminderDelivered() {
 
 // Whether the network has a key on this device whose phrase is not known to be saved. The logout and
 // account deletion confirmations warn on it, from a flow made just to ask, with no Api. A store that
-// cannot answer warns nothing: a logout keeps the key anyway.
+// cannot answer warns nothing: a logout keeps the key anyway. Nor does a device with no secure storage.
 func (self *BittensorLocalKeyFlow) NeedsBackup() bool {
 	address := self.store.KeyAddress(self.networkId)
-	if address == "" || address == BittensorLocalKeyStoreUnavailable {
+	if address == "" || bittensorLocalKeyStoreCannotSay(address) {
 		return false
 	}
 	return self.store.ReadNote(self.networkId, bittensorLocalKeyNoteSavedAddress) != address

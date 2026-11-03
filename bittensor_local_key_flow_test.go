@@ -86,7 +86,9 @@ type testingLocalKeyStore struct {
 	readBackMnemonic string
 	readBackAddress  string
 	unavailable      bool
-	refuseDelete     bool
+	// the device has no secure storage at all, as a Linux desktop with no Secret Service
+	absent       bool
+	refuseDelete bool
 	// says it deleted and did not
 	deleteDoesNothing bool
 }
@@ -103,7 +105,7 @@ func (self *testingLocalKeyStore) AddKey(networkId string, mnemonic string, addr
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.log.add("store.add")
-	if self.refuseAdd || self.unavailable {
+	if self.refuseAdd || self.unavailable || self.absent {
 		return false
 	}
 	if _, exists := self.items[networkId]; exists {
@@ -117,6 +119,9 @@ func (self *testingLocalKeyStore) KeyPhrase(networkId string) string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.log.add("store.phrase")
+	if self.absent {
+		return BittensorLocalKeyStoreAbsent
+	}
 	if self.unavailable {
 		return BittensorLocalKeyStoreUnavailable
 	}
@@ -130,6 +135,9 @@ func (self *testingLocalKeyStore) KeyAddress(networkId string) string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.log.add("store.address")
+	if self.absent {
+		return BittensorLocalKeyStoreAbsent
+	}
 	if self.unavailable {
 		return BittensorLocalKeyStoreUnavailable
 	}
@@ -143,7 +151,7 @@ func (self *testingLocalKeyStore) DeleteKey(networkId string) bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.log.add("store.delete")
-	if self.refuseDelete {
+	if self.refuseDelete || self.absent {
 		return false
 	}
 	if !self.deleteDoesNothing {
@@ -469,6 +477,103 @@ func TestBittensorLocalKeyFlowLockedStoreOffersNothingAndAnItemIsNeverReplaced(t
 	}
 	if run.log.has("store.delete") {
 		t.Fatal("the flow deleted an item it did not write")
+	}
+}
+
+// A device with no secure storage at all, as a Linux desktop with no Secret Service, offers no key: not
+// the one tap, not Save now (whose Keep would store it), not Change wallet's key. The card is the
+// wallet card, as for a session that can't make a key, so the disclaimer's first sentence never shows
+// there, and the claim card carries the last one. A consent in force reads as paid elsewhere.
+func TestBittensorLocalKeyFlowNoSecureStorageOffersOnlyTheWallet(t *testing.T) {
+	// the control: the same store with secure storage offers the key
+	control := newTestingLocalKeyRunWithNoConsent(t)
+	if card := control.requireState(BittensorLocalKeyStateNone); !card.OffersSetUp || !card.ShowsKeyPath {
+		t.Fatalf("CONTROL FAILED: the card is %+v", card)
+	}
+
+	run := newTestingLocalKeyRunWithNoConsent(t)
+	run.store.absent = true
+	run.flow.Reload()
+	card := run.requireState(BittensorLocalKeyStateNone)
+	if card.OffersSetUp || card.OffersSaveFirst || card.OffersFinishSetup || card.OffersKeyScreen || card.ShowsKeyPath ||
+		!card.OffersWallet || card.StoredAddress != "" || card.BackupReminder {
+		t.Fatalf("no secure storage offers %+v", card)
+	}
+	if card.FundsDisclaimer != BittensorFundsDisclaimerNone || card.ClaimFundsDisclaimer != BittensorFundsDisclaimerFundsOnly {
+		t.Fatalf("the wallet card's disclaimers are %q and %q", card.FundsDisclaimer, card.ClaimFundsDisclaimer)
+	}
+	for place, want := range map[string]string{
+		BittensorFundsDisclaimerPlacePayoutCard:   BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceClaimCard:    BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceChangeWallet: BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceClaimSheet:   BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceConvert:      BittensorFundsDisclaimerFundsOnly,
+	} {
+		if got := run.flow.FundsDisclaimerAt(place); got != want {
+			t.Errorf("no secure storage: %s says %q, want %q", place, got, want)
+		}
+	}
+
+	run.flow.setUpPayouts(true)
+	run.flow.SaveFirst(true)
+	for _, event := range []string{"generate", "store.add", "api.challenge", "sign"} {
+		if run.log.has(event) {
+			t.Fatalf("%s happened with no secure storage: %v", event, run.log.all())
+		}
+	}
+	if got := run.flow.GetCard(); got.FailureCode != BittensorLocalKeyFailureNotAllowed {
+		t.Fatalf("the card is %+v", got)
+	}
+	run.flow.OpenScreen()
+	if screen := run.flow.GetScreen(); screen.Open || screen.SaveNow {
+		t.Fatalf("no secure storage opened %+v", screen)
+	}
+	if run.flow.NeedsBackup() {
+		t.Fatal("no secure storage warns of a key")
+	}
+	if got := run.flow.Reminder(42, bittensorLocalKeyFlowTestNowMillis+1000, 50_400, true); got.Action != BittensorLocalKeyReminderNone {
+		t.Fatalf("no secure storage reminds: %+v", got)
+	}
+
+	// a consent in force is paid to a key that is not here
+	run.flow.SetConsent(true, testingLocalKeyFromSeed(t, 2).Address, 40)
+	card = run.requireState(BittensorLocalKeyStateElsewhere)
+	if card.OffersSetUp || card.OffersSaveFirst || !card.OffersWallet || card.FundsDisclaimer != BittensorFundsDisclaimerFundsOnly {
+		t.Fatalf("no secure storage with a consent shows %+v", card)
+	}
+	if got := run.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceChangeWallet); got != BittensorFundsDisclaimerNone {
+		t.Fatalf("Change wallet offers a key with no secure storage: %q", got)
+	}
+}
+
+// A screen open on a key whose store has gone shows no words, and never the store's answer as words.
+func TestBittensorLocalKeyFlowRevealWhenTheSecureStorageIsGone(t *testing.T) {
+	run := newTestingLocalKeyRunLinked(t)
+	run.flow.OpenScreen()
+	run.store.absent = true
+	run.flow.Reveal(true)
+	screen := run.flow.GetScreen()
+	if screen.Revealed || run.flow.PhraseToCopy() != "" || len(run.flow.RevealedWords().values) != 0 ||
+		screen.FailureCode != BittensorLocalKeyFailureStoreUnavailable {
+		t.Fatalf("the screen is %+v", screen)
+	}
+	run.flow.ConfirmKeep()
+	screen = run.flow.GetScreen()
+	if screen.Confirming != BittensorLocalKeyConfirmNone || screen.FailureCode != BittensorLocalKeyFailureStoreUnavailable {
+		t.Fatalf("the screen is %+v", screen)
+	}
+	// finish setup reads the phrase again, and the store's answer is never signed with
+	run.flow.SetConsent(true, testingLocalKeyFromSeed(t, 2).Address, 50)
+	if card := run.flow.GetCard(); !card.OffersFinishSetup {
+		t.Fatalf("CONTROL FAILED: the card is %+v", card)
+	}
+	events := len(run.log.all())
+	run.flow.finishSetup(true)
+	if got := run.log.all()[events:]; slices.Contains(got, "sign") || slices.Contains(got, "api.challenge") {
+		t.Fatalf("finish setup went on with no secure storage: %v", got)
+	}
+	if code := run.flow.GetCard().FailureCode; code != BittensorLocalKeyFailureStoreUnavailable {
+		t.Fatalf("finish setup failed with %q", code)
 	}
 }
 
@@ -1661,6 +1766,15 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 		{"the store cannot answer", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storeUnavailable: true}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateStoreUnavailable, ShowsKeyPath: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
+		{"no secure storage, no consent", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, storeAbsent: true}), BittensorLocalKeyCard{
+			State: BittensorLocalKeyStateNone, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly,
+		}},
+		{"no secure storage, another consent", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: other, storeAbsent: true}), BittensorLocalKeyCard{
+			State: BittensorLocalKeyStateElsewhere, Address: other, OffersWallet: true, ReplacesPayoutWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
+		}},
+		{"no secure storage, a key this device deleted", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, deletedAddress: key, storeAbsent: true}), BittensorLocalKeyCard{
+			State: BittensorLocalKeyStateSavedAndDeleted, Address: key, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
+		}},
 		{"the consent cannot be read", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentUnavailable}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateConsentUnavailable, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly,
 		}},
@@ -1705,8 +1819,13 @@ func TestBittensorLocalKeyFlowEveryEasyFlowCardCarriesTheFundsDisclaimer(t *test
 				for _, savedAddress := range []string{"", key} {
 					for _, deletedAddress := range []string{"", deleted, key} {
 						for _, saveNowAddress := range []string{"", other} {
-							for _, flags := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31} {
+							for flags := 0; flags < 64; flags++ {
 								if consentRead != bittensorLocalKeyConsentActive && consentAddress != "" {
+									continue
+								}
+								// with no secure storage the store reads no key, and it is not one that can't answer
+								storeAbsent := flags&32 != 0
+								if storeAbsent && (storedAddress != "" || flags&2 != 0) {
 									continue
 								}
 								in := bittensorLocalKeyCardInputs{
@@ -1721,11 +1840,22 @@ func TestBittensorLocalKeyFlowEveryEasyFlowCardCarriesTheFundsDisclaimer(t *test
 									storeUnavailable:     flags&2 != 0,
 									hasNetworkCredential: flags&4 != 0,
 									guest:                flags&8 != 0,
+									storeAbsent:          storeAbsent,
 								}
 								if flags&16 != 0 {
 									in.networkId = ""
 								}
 								card := bittensorLocalKeyCardOf(in)
+								// no secure storage: nothing offers a key, and with no consent the card is the
+								// wallet card
+								if storeAbsent && saveNowAddress == "" {
+									if card.OffersSetUp || card.OffersSaveFirst || card.OffersFinishSetup || card.ShowsKeyPath {
+										t.Fatalf("no secure storage offers a key: %+v from %+v", card, in)
+									}
+									if card.State == BittensorLocalKeyStateNone && card.FundsDisclaimer != BittensorFundsDisclaimerNone {
+										t.Fatalf("no secure storage shows %q on the wallet card: %+v from %+v", card.FundsDisclaimer, card, in)
+									}
+								}
 								checked += 1
 								seen[card.State+"/"+card.FundsDisclaimer] = true
 								showsEasyFlow := easyFlowStates[card.State] || card.ShowsKeyPath || card.OffersSetUp || card.OffersSaveFirst ||
