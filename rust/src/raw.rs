@@ -21,6 +21,10 @@ pub type urnet_auth_password_reset_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_auth_verify_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_verify_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_wallet_challenge_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_failed_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_sent_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_estimate_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_block_action_overrides_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_block_action_stats_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_block_action_window_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -1373,6 +1377,9 @@ pub struct Raw {
     pub urnet_wallet_view_controller_validate_address: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_validate_address_cb, *mut c_void) -> (),
     pub urnet_websocket_device_rpc_listener_close: unsafe extern "C" fn(u64, *mut *mut c_char) -> bool,
     pub urnet_alpha_from_rao: unsafe extern "C" fn(i64) -> f64,
+    pub urnet_bittensor_convert_estimate: unsafe extern "C" fn(*const c_char, *const c_char, i64, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_estimate_for_burn: unsafe extern "C" fn(*const c_char, *const c_char, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_submit: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, urnet_bittensor_convert_confirmed_cb, urnet_bittensor_convert_failed_cb, urnet_bittensor_convert_sent_cb, *mut c_void) -> (),
     pub urnet_bittensor_local_key_address: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_generate: unsafe extern "C" fn(*mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_sign: unsafe extern "C" fn(*const c_char, *const c_char, *mut *mut c_char) -> *mut c_char,
@@ -1423,6 +1430,8 @@ pub struct Raw {
     pub urnet_format_points: unsafe extern "C" fn(f64) -> *mut c_char,
     pub urnet_format_rank: unsafe extern "C" fn(i64) -> *mut c_char,
     pub urnet_format_share_bps: unsafe extern "C" fn(i64) -> *mut c_char,
+    pub urnet_format_tao: unsafe extern "C" fn(i64) -> *mut c_char,
+    pub urnet_format_tao_amount: unsafe extern "C" fn(i64) -> *mut c_char,
     pub urnet_free_memory: unsafe extern "C" fn() -> (),
     pub urnet_generate_device_rpc_key_material: unsafe extern "C" fn(*mut *mut c_char) -> u64,
     pub urnet_generate_nonce: unsafe extern "C" fn() -> *mut c_char,
@@ -2739,6 +2748,9 @@ impl Raw {
             urnet_wallet_view_controller_validate_address: unsafe { *library.get(b"urnet_wallet_view_controller_validate_address\0")? },
             urnet_websocket_device_rpc_listener_close: unsafe { *library.get(b"urnet_websocket_device_rpc_listener_close\0")? },
             urnet_alpha_from_rao: unsafe { *library.get(b"urnet_alpha_from_rao\0")? },
+            urnet_bittensor_convert_estimate: unsafe { *library.get(b"urnet_bittensor_convert_estimate\0")? },
+            urnet_bittensor_convert_estimate_for_burn: unsafe { *library.get(b"urnet_bittensor_convert_estimate_for_burn\0")? },
+            urnet_bittensor_convert_submit: unsafe { *library.get(b"urnet_bittensor_convert_submit\0")? },
             urnet_bittensor_local_key_address: unsafe { *library.get(b"urnet_bittensor_local_key_address\0")? },
             urnet_bittensor_local_key_generate: unsafe { *library.get(b"urnet_bittensor_local_key_generate\0")? },
             urnet_bittensor_local_key_sign: unsafe { *library.get(b"urnet_bittensor_local_key_sign\0")? },
@@ -2789,6 +2801,8 @@ impl Raw {
             urnet_format_points: unsafe { *library.get(b"urnet_format_points\0")? },
             urnet_format_rank: unsafe { *library.get(b"urnet_format_rank\0")? },
             urnet_format_share_bps: unsafe { *library.get(b"urnet_format_share_bps\0")? },
+            urnet_format_tao: unsafe { *library.get(b"urnet_format_tao\0")? },
+            urnet_format_tao_amount: unsafe { *library.get(b"urnet_format_tao_amount\0")? },
             urnet_free_memory: unsafe { *library.get(b"urnet_free_memory\0")? },
             urnet_generate_device_rpc_key_material: unsafe { *library.get(b"urnet_generate_device_rpc_key_material\0")? },
             urnet_generate_nonce: unsafe { *library.get(b"urnet_generate_nonce\0")? },

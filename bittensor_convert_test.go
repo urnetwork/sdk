@@ -1224,18 +1224,16 @@ func TestConvertExportsOnlyTypedCalls(t *testing.T) {
 	want := map[string]string{
 		"BittensorConvertEstimate":        "settings,coldkeySs58,amountRao,callback",
 		"BittensorConvertEstimateForBurn": "settings,coldkeySs58,callback",
+		"BittensorConvertSubmit":          "settings,mnemonic,estimate,callback",
 		"FormatTao":                       "rao",
 		"FormatTaoAmount":                 "rao",
 	}
 	got := map[string]string{}
 	types := map[string]string{}
 	fileSet := token.NewFileSet()
-	for _, path := range []string{"bittensor_convert.go", "bittensor_chain.go", "bittensor_chain_signer.go"} {
+	for _, path := range []string{"bittensor_convert.go", "bittensor_convert_submit.go", "bittensor_chain.go", "bittensor_chain_signer.go"} {
 		file, err := parser.ParseFile(fileSet, path, nil, 0)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			t.Fatal(err)
 		}
 		for _, declaration := range file.Decls {
