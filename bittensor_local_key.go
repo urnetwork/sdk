@@ -22,7 +22,7 @@ package sdk
 // (build/check_apple_size.sh). ur.io offers no local key, since a browser has no safe place for one.
 // TestBittensorLocalKeyStaysOutOfTheExtensionAndTheBrowser holds both.
 //
-// All exported functions are pure and safe for concurrent use.
+// All of it is safe for concurrent use.
 
 import (
 	"crypto/rand"
