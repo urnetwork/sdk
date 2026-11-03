@@ -1556,11 +1556,14 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	}
 
 	// the relay's forward dial is the device's own egress: the extender
-	// narrows it by the client's family itself (A7, G2)
+	// narrows it by the client's family itself (A7, G2). A proxy the strategy
+	// names is left out, as it is from the role's activations (C2): the operator
+	// proved this host's address, and a proxy can't keep the client's family
 	connectSettings := *connect.DefaultConnectSettings()
 	if self.clientStrategySettings != nil {
 		connectSettings = self.clientStrategySettings.ConnectSettings
 	}
+	connectSettings.ProxySettings = nil
 	if self.dialContextSettings != nil {
 		connectSettings.DialContextSettings = self.dialContextSettings
 	}
