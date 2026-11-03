@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -71,6 +72,10 @@ func TestLicenseCatalogParses(t *testing.T) {
 		}
 		if strings.TrimSpace(f.Texts[entry.Text]) == "" {
 			t.Errorf("%s %s: no license text (%q)", entry.Name, entry.Version, entry.Text)
+		}
+		// an app shows this: a binary file taken for a license is not a license text
+		if !utf8.ValidString(f.Texts[entry.Text]) {
+			t.Errorf("%s %s: the license text %q is not utf-8", entry.Name, entry.Version, entry.Text)
 		}
 		if len(entry.Apps) == 0 {
 			t.Errorf("%s %s: no apps", entry.Name, entry.Version)
