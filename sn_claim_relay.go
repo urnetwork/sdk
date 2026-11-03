@@ -252,9 +252,10 @@ type SnClaimStatusResult struct {
 	// days between two Claim now of one coldkey
 	ClaimNowPeriodDays int64 `json:"claim_now_period_days"`
 	// the Settlement v2 tile shows for this status: it was read, and the primary
-	// account has a claimable or pending balance. A device whose own wallet's ledger
-	// has a tile shows that one, as before the relay; otherwise the tile shows
-	// exactly while this is true
+	// account has a claimable or pending balance, or shows the claimed state, which
+	// is reached from the tile. A device whose own wallet's ledger has a tile shows
+	// that one, as before the relay; otherwise the tile shows exactly while this is
+	// true
 	ShowsTile bool `json:"shows_tile"`
 	// the claimed state, "Claimed by URnetwork" with the transaction: URnetwork's
 	// claim is the primary account's latest, and nothing is claimable now
@@ -385,10 +386,10 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 	result.ClaimNowNextAtMillis = primary.ClaimNowNextAtMillis
 	result.SelfClaimAvailable = snClaimSelfClaimAvailable(relay, primary, selfClaimConfigured)
 	result.SelfClaimNeedsGas = result.SelfClaimAvailable && selfClaimNeedsGas
-	result.ShowsTile = snClaimStatusShowsTile(primary)
 	result.ClaimTxHash = primary.ClaimTxHash
 	result.ClaimAmountRao = primary.ClaimAmountRao
 	result.ShowsClaimed = primary.ClaimTxHash != "" && primary.ClaimableRao <= 0
+	result.ShowsTile = snClaimStatusShowsTile(primary, result.ShowsClaimed)
 	return result
 }
 
@@ -396,10 +397,12 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 var snClaimTxHashPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{64}$`)
 
 // snClaimStatusShowsTile is when a network with no wallet on this device shows the
-// Settlement v2 tile, as Apple's Earnings first drew it: while the primary account
-// has a claimable or pending balance.
-func snClaimStatusShowsTile(primary *SnClaimRelayAccount) bool {
-	return primary != nil && (0 < primary.ClaimableRao || 0 < primary.PendingRao)
+// Settlement v2 tile: while the primary account has a claimable or pending
+// balance, as Apple's Earnings first drew it, and while it shows the claimed
+// state, so that a balance URnetwork claimed in full stays reachable with its
+// transaction.
+func snClaimStatusShowsTile(primary *SnClaimRelayAccount, showsClaimed bool) bool {
+	return primary != nil && (0 < primary.ClaimableRao || 0 < primary.PendingRao || showsClaimed)
 }
 
 // snClaimStatusLinkTransactions names the explorer's page of each claim's
