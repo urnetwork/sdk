@@ -531,6 +531,22 @@ inline constexpr const char* SOL = "SOL";
 inline constexpr const char* SnAlphaSymbol = "SN25α";
 inline constexpr int64_t SnChainIdMainnet = 964;
 inline constexpr int64_t SnChainIdTestnet = 945;
+inline constexpr const char* SnClaimActionClaimNow = "claim_now";
+inline constexpr const char* SnClaimActionNone = "none";
+inline constexpr const char* SnClaimActionSelfClaim = "self_claim";
+inline constexpr const char* SnClaimActionTopUpGas = "top_up_gas";
+inline constexpr const char* SnClaimActionWait = "wait";
+inline constexpr const char* SnClaimNowReasonLimit = "limit";
+inline constexpr const char* SnClaimNowReasonRequested = "requested";
+inline constexpr const char* SnClaimNowReasonUnderFloor = "under_floor";
+inline constexpr const char* SnClaimReasonCapReached = "cap_reached";
+inline constexpr const char* SnClaimReasonNothingPending = "nothing_pending";
+inline constexpr const char* SnClaimReasonQueued = "queued";
+inline constexpr const char* SnClaimReasonRefused = "refused";
+inline constexpr const char* SnClaimReasonRelayNotRunning = "relay_not_running";
+inline constexpr const char* SnClaimReasonRelayPaused = "relay_paused";
+inline constexpr const char* SnClaimReasonUnderThreshold = "under_threshold";
+inline constexpr const char* SnClaimRelayStateUnavailable = "unavailable";
 inline constexpr const char* SnClaimStatusClaimable = "claimable";
 inline constexpr const char* SnClaimStatusClaimed = "claimed";
 inline constexpr const char* SnClaimStatusExpired = "expired";
@@ -1000,6 +1016,13 @@ struct SetPayoutWalletResult;
 struct SetPointsLeaderboardPublicArgs;
 struct SetPointsLeaderboardPublicError;
 struct SetPointsLeaderboardPublicResult;
+struct SnClaimNowResult;
+struct SnClaimRelayAccount;
+struct SnClaimRelayClaimNowArgs;
+struct SnClaimRelayError;
+struct SnClaimRelayClaimNowResult;
+struct SnClaimRelayResult;
+struct SnClaimStatusResult;
 struct SnEpochSchedule;
 struct SnClaimsResult;
 struct SnWallet;
@@ -1159,6 +1182,7 @@ using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
 using RegionalDnsServerList = std::vector<RegionalDnsServer>;
+using SnClaimRelayAccountList = std::vector<SnClaimRelayAccount>;
 using SnEpochClaimList = std::vector<SnEpochClaim>;
 using SnLedgerAccountList = std::vector<SnLedgerAccount>;
 using SnLedgerUnsignedTxList = std::vector<SnLedgerUnsignedTx>;
@@ -3595,6 +3619,74 @@ struct SetPointsLeaderboardPublicResult {
 	std::optional<SetPointsLeaderboardPublicError> error;
 };
 
+struct SnClaimNowResult {
+	bool requested{};
+	std::optional<std::string> reason;
+	std::optional<int64_t> next_at_millis;
+	std::optional<SnError> error;
+};
+
+struct SnClaimRelayAccount {
+	std::string coldkey_ss58{};
+	int64_t no_id{};
+	int64_t index{};
+	int64_t claimable_rao{};
+	int64_t value_tao_rao{};
+	int64_t pending_rao{};
+	std::string reason{};
+	bool claim_now_available{};
+	std::optional<std::string> claim_now_reason;
+	std::optional<int64_t> claim_now_next_at_millis;
+	std::optional<bool> connected;
+	std::optional<std::string> action;
+};
+
+struct SnClaimRelayClaimNowArgs {
+	std::string coldkey_ss58{};
+};
+
+struct SnClaimRelayError {
+	std::string message{};
+};
+
+struct SnClaimRelayClaimNowResult {
+	bool requested{};
+	std::optional<std::string> reason;
+	std::optional<int64_t> next_at_millis;
+	std::optional<SnClaimRelayError> error;
+};
+
+struct SnClaimRelayResult {
+	std::string state{};
+	int64_t automatic_threshold_tao_rao{};
+	int64_t transfer_floor_tao_rao{};
+	int64_t automatic_threshold_rao{};
+	int64_t transfer_floor_rao{};
+	int64_t claim_now_period_days{};
+	std::optional<SnClaimRelayAccountList> accounts;
+	std::optional<SnClaimRelayError> error;
+};
+
+struct SnClaimStatusResult {
+	std::string relay_state{};
+	std::optional<std::string> coldkey_ss58;
+	std::string action{};
+	std::string reason{};
+	int64_t claimable_rao{};
+	int64_t value_tao_rao{};
+	int64_t pending_rao{};
+	bool claim_now_available{};
+	std::optional<std::string> claim_now_reason;
+	std::optional<int64_t> claim_now_next_at_millis;
+	bool self_claim_available{};
+	bool self_claim_needs_gas{};
+	int64_t automatic_threshold_rao{};
+	int64_t transfer_floor_rao{};
+	int64_t claim_now_period_days{};
+	std::optional<SnClaimRelayAccountList> accounts;
+	std::optional<SnError> error;
+};
+
 struct SnEpochSchedule {
 	int64_t epoch{};
 	int64_t epoch_blocks{};
@@ -4990,6 +5082,20 @@ inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v)
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v);
 inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v);
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v);
+inline void to_json(nlohmann::json& j, const SnClaimNowResult& v);
+inline void from_json(const nlohmann::json& j, SnClaimNowResult& v);
+inline void to_json(nlohmann::json& j, const SnClaimRelayAccount& v);
+inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v);
+inline void to_json(nlohmann::json& j, const SnClaimRelayClaimNowArgs& v);
+inline void from_json(const nlohmann::json& j, SnClaimRelayClaimNowArgs& v);
+inline void to_json(nlohmann::json& j, const SnClaimRelayError& v);
+inline void from_json(const nlohmann::json& j, SnClaimRelayError& v);
+inline void to_json(nlohmann::json& j, const SnClaimRelayClaimNowResult& v);
+inline void from_json(const nlohmann::json& j, SnClaimRelayClaimNowResult& v);
+inline void to_json(nlohmann::json& j, const SnClaimRelayResult& v);
+inline void from_json(const nlohmann::json& j, SnClaimRelayResult& v);
+inline void to_json(nlohmann::json& j, const SnClaimStatusResult& v);
+inline void from_json(const nlohmann::json& j, SnClaimStatusResult& v);
 inline void to_json(nlohmann::json& j, const SnEpochSchedule& v);
 inline void from_json(const nlohmann::json& j, SnEpochSchedule& v);
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v);
@@ -16384,6 +16490,325 @@ inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult&
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnClaimNowResult& v) {
+	j = nlohmann::json::object();
+	j["requested"] = v.requested;
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.next_at_millis) {
+		j["next_at_millis"] = *v.next_at_millis;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnClaimNowResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("requested"); it != j.end() && !it->is_null()) {
+		it->get_to(v.requested);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("next_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.next_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimRelayAccount& v) {
+	j = nlohmann::json::object();
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["no_id"] = v.no_id;
+	j["index"] = v.index;
+	j["claimable_rao"] = v.claimable_rao;
+	j["value_tao_rao"] = v.value_tao_rao;
+	j["pending_rao"] = v.pending_rao;
+	j["reason"] = v.reason;
+	j["claim_now_available"] = v.claim_now_available;
+	if (v.claim_now_reason) {
+		j["claim_now_reason"] = *v.claim_now_reason;
+	}
+	if (v.claim_now_next_at_millis) {
+		j["claim_now_next_at_millis"] = *v.claim_now_next_at_millis;
+	}
+	if (v.connected) {
+		j["connected"] = *v.connected;
+	}
+	if (v.action) {
+		j["action"] = *v.action;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("claimable_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claimable_rao);
+	}
+	if (auto it = j.find("value_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value_tao_rao);
+	}
+	if (auto it = j.find("pending_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending_rao);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason);
+	}
+	if (auto it = j.find("claim_now_available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_now_available);
+	}
+	if (auto it = j.find("claim_now_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_now_reason = std::move(tmp);
+	}
+	if (auto it = j.find("claim_now_next_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.claim_now_next_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("connected"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.connected = std::move(tmp);
+	}
+	if (auto it = j.find("action"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.action = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimRelayClaimNowArgs& v) {
+	j = nlohmann::json::object();
+	j["coldkey_ss58"] = v.coldkey_ss58;
+}
+inline void from_json(const nlohmann::json& j, SnClaimRelayClaimNowArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimRelayError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SnClaimRelayError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimRelayClaimNowResult& v) {
+	j = nlohmann::json::object();
+	j["requested"] = v.requested;
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.next_at_millis) {
+		j["next_at_millis"] = *v.next_at_millis;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnClaimRelayClaimNowResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("requested"); it != j.end() && !it->is_null()) {
+		it->get_to(v.requested);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("next_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.next_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnClaimRelayError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimRelayResult& v) {
+	j = nlohmann::json::object();
+	j["state"] = v.state;
+	j["automatic_threshold_tao_rao"] = v.automatic_threshold_tao_rao;
+	j["transfer_floor_tao_rao"] = v.transfer_floor_tao_rao;
+	j["automatic_threshold_rao"] = v.automatic_threshold_rao;
+	j["transfer_floor_rao"] = v.transfer_floor_rao;
+	j["claim_now_period_days"] = v.claim_now_period_days;
+	if (v.accounts) {
+		j["accounts"] = *v.accounts;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnClaimRelayResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("automatic_threshold_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.automatic_threshold_tao_rao);
+	}
+	if (auto it = j.find("transfer_floor_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.transfer_floor_tao_rao);
+	}
+	if (auto it = j.find("automatic_threshold_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.automatic_threshold_rao);
+	}
+	if (auto it = j.find("transfer_floor_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.transfer_floor_rao);
+	}
+	if (auto it = j.find("claim_now_period_days"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_now_period_days);
+	}
+	if (auto it = j.find("accounts"); it != j.end() && !it->is_null()) {
+		SnClaimRelayAccountList tmp{};
+		it->get_to(tmp);
+		v.accounts = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnClaimRelayError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnClaimStatusResult& v) {
+	j = nlohmann::json::object();
+	j["relay_state"] = v.relay_state;
+	if (v.coldkey_ss58) {
+		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+	j["action"] = v.action;
+	j["reason"] = v.reason;
+	j["claimable_rao"] = v.claimable_rao;
+	j["value_tao_rao"] = v.value_tao_rao;
+	j["pending_rao"] = v.pending_rao;
+	j["claim_now_available"] = v.claim_now_available;
+	if (v.claim_now_reason) {
+		j["claim_now_reason"] = *v.claim_now_reason;
+	}
+	if (v.claim_now_next_at_millis) {
+		j["claim_now_next_at_millis"] = *v.claim_now_next_at_millis;
+	}
+	j["self_claim_available"] = v.self_claim_available;
+	j["self_claim_needs_gas"] = v.self_claim_needs_gas;
+	j["automatic_threshold_rao"] = v.automatic_threshold_rao;
+	j["transfer_floor_rao"] = v.transfer_floor_rao;
+	j["claim_now_period_days"] = v.claim_now_period_days;
+	if (v.accounts) {
+		j["accounts"] = *v.accounts;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnClaimStatusResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("relay_state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.relay_state);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coldkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("action"); it != j.end() && !it->is_null()) {
+		it->get_to(v.action);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason);
+	}
+	if (auto it = j.find("claimable_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claimable_rao);
+	}
+	if (auto it = j.find("value_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value_tao_rao);
+	}
+	if (auto it = j.find("pending_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending_rao);
+	}
+	if (auto it = j.find("claim_now_available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_now_available);
+	}
+	if (auto it = j.find("claim_now_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_now_reason = std::move(tmp);
+	}
+	if (auto it = j.find("claim_now_next_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.claim_now_next_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("self_claim_available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.self_claim_available);
+	}
+	if (auto it = j.find("self_claim_needs_gas"); it != j.end() && !it->is_null()) {
+		it->get_to(v.self_claim_needs_gas);
+	}
+	if (auto it = j.find("automatic_threshold_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.automatic_threshold_rao);
+	}
+	if (auto it = j.find("transfer_floor_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.transfer_floor_rao);
+	}
+	if (auto it = j.find("claim_now_period_days"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_now_period_days);
+	}
+	if (auto it = j.find("accounts"); it != j.end() && !it->is_null()) {
+		SnClaimRelayAccountList tmp{};
+		it->get_to(tmp);
+		v.accounts = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnEpochSchedule& v) {
 	j = nlohmann::json::object();
 	j["epoch"] = v.epoch;
@@ -20276,6 +20701,10 @@ struct SnClaimCallback {
 	std::function<void(int64_t epoch, std::string message)> failed;
 	std::function<void(int64_t epoch, std::string tx_hash)> sent;
 };
+using SnClaimNowCallback = std::function<void(std::optional<SnClaimNowResult> result, std::optional<std::string> err_param)>;
+using SnClaimRelayCallback = std::function<void(std::optional<SnClaimRelayResult> result, std::optional<std::string> err_param)>;
+using SnClaimRelayClaimNowCallback = std::function<void(std::optional<SnClaimRelayClaimNowResult> result, std::optional<std::string> err_param)>;
+using SnClaimStatusCallback = std::function<void(std::optional<SnClaimStatusResult> result, std::optional<std::string> err_param)>;
 using SnClaimsCallback = std::function<void(std::optional<SnClaimsResult> result, std::optional<std::string> err_param)>;
 using SnConnectWalletCallback = std::function<void(std::optional<SnConnectWalletResult> result, std::optional<std::string> err_param)>;
 using SnEpochCallback = std::function<void(std::optional<SnEpochResult> result, std::optional<std::string> err_param)>;
@@ -20646,6 +21075,8 @@ public:
 	void setPayoutWallet(const std::optional<SetPayoutWalletArgs>& payout_wallet, SetPayoutWalletCallback callback) const;
 	void setPointsLeaderboardPublic(const std::optional<SetPointsLeaderboardPublicArgs>& args, SetPointsLeaderboardPublicCallback callback) const;
 	void signOut(SessionSignOutCallback callback) const;
+	void snClaimRelay(SnClaimRelayCallback callback) const;
+	void snClaimRelayClaimNow(const std::optional<SnClaimRelayClaimNowArgs>& args, SnClaimRelayClaimNowCallback callback) const;
 	void snEpoch(SnEpochCallback callback) const;
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
@@ -21081,6 +21512,8 @@ public:
 	std::string signSnFleetBinding(const std::string& binding_json) const;
 	void simulateNetworkChange() const;
 	void snClaim(const std::optional<Int64List>& epochs, SnClaimCallback callback) const;
+	void snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const;
+	void snClaimStatus(SnClaimStatusCallback callback) const;
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
@@ -21227,6 +21660,8 @@ public:
 	std::string signSnFleetBinding(const std::string& binding_json) const;
 	void simulateNetworkChange() const;
 	void snClaim(const std::optional<Int64List>& epochs, SnClaimCallback callback) const;
+	void snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const;
+	void snClaimStatus(SnClaimStatusCallback callback) const;
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
@@ -26702,6 +27137,150 @@ inline void retained_sn_claim_sent(void* user_data, int64_t epoch, const char* t
 	}
 }
 
+inline void retained_sn_claim_now(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimNowCallback*>(user_data);
+	try {
+		std::optional<SnClaimNowResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimNowResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_claim_now(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimNowCallback*>(user_data);
+	try {
+		std::optional<SnClaimNowResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimNowResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_claim_relay(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimRelayCallback*>(user_data);
+	try {
+		std::optional<SnClaimRelayResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimRelayResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_claim_relay(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimRelayCallback*>(user_data);
+	try {
+		std::optional<SnClaimRelayResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimRelayResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_claim_relay_claim_now(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimRelayClaimNowCallback*>(user_data);
+	try {
+		std::optional<SnClaimRelayClaimNowResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimRelayClaimNowResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_claim_relay_claim_now(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimRelayClaimNowCallback*>(user_data);
+	try {
+		std::optional<SnClaimRelayClaimNowResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimRelayClaimNowResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_claim_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimStatusCallback*>(user_data);
+	try {
+		std::optional<SnClaimStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_claim_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnClaimStatusCallback*>(user_data);
+	try {
+		std::optional<SnClaimStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnClaimStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sn_claims(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SnClaimsCallback*>(user_data);
 	try {
@@ -30335,6 +30914,20 @@ inline void Api::signOut(SessionSignOutCallback callback) const {
 	auto* callback_fn = callback ? new SessionSignOutCallback(std::move(callback)) : nullptr;
 	urnet_api_sign_out(handle(), callback_fn ? &detail::oneshot_session_sign_out : nullptr, callback_fn);
 }
+inline void Api::snClaimRelay(SnClaimRelayCallback callback) const {
+	auto* callback_fn = callback ? new SnClaimRelayCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_claim_relay(handle(), callback_fn ? &detail::oneshot_sn_claim_relay : nullptr, callback_fn);
+}
+inline void Api::snClaimRelayClaimNow(const std::optional<SnClaimRelayClaimNowArgs>& args, SnClaimRelayClaimNowCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new SnClaimRelayClaimNowCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_claim_relay_claim_now(handle(), args_c, callback_fn ? &detail::oneshot_sn_claim_relay_claim_now : nullptr, callback_fn);
+}
 inline void Api::snEpoch(SnEpochCallback callback) const {
 	auto* callback_fn = callback ? new SnEpochCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_epoch(handle(), callback_fn ? &detail::oneshot_sn_epoch : nullptr, callback_fn);
@@ -32272,6 +32865,14 @@ inline void DeviceLocal::snClaim(const std::optional<Int64List>& epochs, SnClaim
 	}
 	urnet_device_local_sn_claim(handle(), epochs_c, callback_fn ? &detail::retained_sn_claim_confirmed : nullptr, callback_fn ? &detail::retained_sn_claim_done : nullptr, callback_fn ? &detail::retained_sn_claim_failed : nullptr, callback_fn ? &detail::retained_sn_claim_sent : nullptr, callback_fn.get());
 }
+inline void DeviceLocal::snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const {
+	auto* callback_fn = callback ? new SnClaimNowCallback(std::move(callback)) : nullptr;
+	urnet_device_local_sn_claim_now(handle(), coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_claim_now : nullptr, callback_fn);
+}
+inline void DeviceLocal::snClaimStatus(SnClaimStatusCallback callback) const {
+	auto* callback_fn = callback ? new SnClaimStatusCallback(std::move(callback)) : nullptr;
+	urnet_device_local_sn_claim_status(handle(), callback_fn ? &detail::oneshot_sn_claim_status : nullptr, callback_fn);
+}
 inline std::optional<SnUnsignedTxList> DeviceLocal::snClaimTransactions(const std::optional<Int64List>& epochs) const {
 	std::string epochs_json;
 	const char* epochs_c = nullptr;
@@ -32880,6 +33481,14 @@ inline void DeviceRemote::snClaim(const std::optional<Int64List>& epochs, SnClai
 		retain(callback_fn);
 	}
 	urnet_device_remote_sn_claim(handle(), epochs_c, callback_fn ? &detail::retained_sn_claim_confirmed : nullptr, callback_fn ? &detail::retained_sn_claim_done : nullptr, callback_fn ? &detail::retained_sn_claim_failed : nullptr, callback_fn ? &detail::retained_sn_claim_sent : nullptr, callback_fn.get());
+}
+inline void DeviceRemote::snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const {
+	auto* callback_fn = callback ? new SnClaimNowCallback(std::move(callback)) : nullptr;
+	urnet_device_remote_sn_claim_now(handle(), coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_claim_now : nullptr, callback_fn);
+}
+inline void DeviceRemote::snClaimStatus(SnClaimStatusCallback callback) const {
+	auto* callback_fn = callback ? new SnClaimStatusCallback(std::move(callback)) : nullptr;
+	urnet_device_remote_sn_claim_status(handle(), callback_fn ? &detail::oneshot_sn_claim_status : nullptr, callback_fn);
 }
 inline std::optional<SnUnsignedTxList> DeviceRemote::snClaimTransactions(const std::optional<Int64List>& epochs) const {
 	std::string epochs_json;

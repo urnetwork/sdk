@@ -114,6 +114,8 @@ EXPORTS
 	urnet_api_set_payout_wallet
 	urnet_api_set_points_leaderboard_public
 	urnet_api_sign_out
+	urnet_api_sn_claim_relay
+	urnet_api_sn_claim_relay_claim_now
 	urnet_api_sn_epoch
 	urnet_api_sn_epoch_sync
 	urnet_api_sn_get_wallet
@@ -646,6 +648,8 @@ EXPORTS
 	urnet_device_local_sign_sn_fleet_binding
 	urnet_device_local_simulate_network_change
 	urnet_device_local_sn_claim
+	urnet_device_local_sn_claim_now
+	urnet_device_local_sn_claim_status
 	urnet_device_local_sn_claim_transactions
 	urnet_device_local_sn_claims
 	urnet_device_local_sn_gas_balance
@@ -745,6 +749,8 @@ EXPORTS
 	urnet_device_remote_sign_sn_fleet_binding
 	urnet_device_remote_simulate_network_change
 	urnet_device_remote_sn_claim
+	urnet_device_remote_sn_claim_now
+	urnet_device_remote_sn_claim_status
 	urnet_device_remote_sn_claim_transactions
 	urnet_device_remote_sn_claims
 	urnet_device_remote_sn_gas_balance
