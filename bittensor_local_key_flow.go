@@ -163,6 +163,9 @@ type BittensorLocalKeyCard struct {
 	Address string `json:"address"`
 	// the address of the key on this device. "" if none
 	StoredAddress string `json:"stored_address"`
+	// with no consent in force the card is the key's: the one tap, Finish setup or the store's refusal.
+	// False keeps the wallet card, for a guest or a session that isn't the owner's
+	ShowsKeyPath bool `json:"shows_key_path"`
 	// the main button: make the key, store it, sign, with no screen in between
 	OffersSetUp bool `json:"offers_set_up"`
 	// the smaller link: the Key screen first, and nothing on disk
@@ -234,6 +237,32 @@ type BittensorLocalKeyReminder struct {
 	Action string `json:"action"`
 	// with BittensorLocalKeyReminderSchedule, unix milliseconds
 	AtMillis int64 `json:"at_millis"`
+}
+
+// Stands in for a nil store, so a flow with none reads as a store that cannot answer.
+type bittensorLocalKeyNoStore struct{}
+
+func (bittensorLocalKeyNoStore) AddKey(string, string, string) bool {
+	return false
+}
+
+func (bittensorLocalKeyNoStore) KeyPhrase(string) string {
+	return BittensorLocalKeyStoreUnavailable
+}
+
+func (bittensorLocalKeyNoStore) KeyAddress(string) string {
+	return BittensorLocalKeyStoreUnavailable
+}
+
+func (bittensorLocalKeyNoStore) DeleteKey(string) bool {
+	return false
+}
+
+func (bittensorLocalKeyNoStore) ReadNote(string, string) string {
+	return ""
+}
+
+func (bittensorLocalKeyNoStore) WriteNote(string, string, string) {
 }
 
 // The consent calls this flow makes. *Api is the real one.
@@ -349,8 +378,12 @@ type BittensorLocalKeyFlow struct {
 	failureMessage string
 }
 
-// api may be nil, as with no session: the flow then offers nothing that signs.
+// api may be nil, as with no session: the flow then offers nothing that signs. store may be nil, and
+// reads as a store that cannot answer.
 func NewBittensorLocalKeyFlow(api *Api, networkId string, store BittensorLocalKeyStore) *BittensorLocalKeyFlow {
+	if store == nil {
+		store = bittensorLocalKeyNoStore{}
+	}
 	var consentApi bittensorLocalKeyConsentApi = bittensorLocalKeyNoConsentApi{}
 	ctx := context.Background()
 	if api != nil {
@@ -482,6 +515,7 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 	}
 	if in.storeUnavailable {
 		card.State = BittensorLocalKeyStateStoreUnavailable
+		card.ShowsKeyPath = true
 		return card
 	}
 	hasStoredKey := in.storedAddress != ""
@@ -530,6 +564,7 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 		card.OffersSetUp = mayMakeKey
 		card.OffersSaveFirst = mayMakeKey
 	}
+	card.ShowsKeyPath = card.State == BittensorLocalKeyStateSaveLaterNotLinked || card.State == BittensorLocalKeyStateNone && card.OffersSetUp
 	switch card.State {
 	case BittensorLocalKeyStateSaveLaterLinked, BittensorLocalKeyStateSavedAndDeleted:
 		if in.currentEpoch == 0 {
@@ -1271,29 +1306,31 @@ func (self *BittensorLocalKeyFlow) ReminderDelivered() {
 }
 
 // Whether the network has a key on this device whose phrase is not known to be saved. The logout and
-// account deletion confirmations warn on it. A store that cannot answer warns nothing: a logout keeps
-// the key anyway.
-func BittensorLocalKeyNeedsBackup(store BittensorLocalKeyStore, networkId string) bool {
-	address := store.KeyAddress(networkId)
+// account deletion confirmations warn on it, from a flow made just to ask, with no Api. A store that
+// cannot answer warns nothing: a logout keeps the key anyway.
+func (self *BittensorLocalKeyFlow) NeedsBackup() bool {
+	address := self.store.KeyAddress(self.networkId)
 	if address == "" || address == BittensorLocalKeyStoreUnavailable {
 		return false
 	}
-	return store.ReadNote(networkId, bittensorLocalKeyNoteSavedAddress) != address
+	return self.store.ReadNote(self.networkId, bittensorLocalKeyNoteSavedAddress) != address
 }
 
 // Removes everything this device holds for the network, after an account deletion. False if the key
 // could not be shown gone.
-func BittensorLocalKeyForgetNetwork(store BittensorLocalKeyStore, networkId string) bool {
-	deleted := store.DeleteKey(networkId)
-	gone := deleted && store.KeyAddress(networkId) == "" && store.KeyPhrase(networkId) == ""
+func (self *BittensorLocalKeyFlow) ForgetNetwork() bool {
+	deleted := self.store.DeleteKey(self.networkId)
+	gone := deleted && self.store.KeyAddress(self.networkId) == "" && self.store.KeyPhrase(self.networkId) == ""
 	for _, name := range []string{
 		bittensorLocalKeyNoteSavedAddress,
 		bittensorLocalKeyNoteDeletedAddress,
 		bittensorLocalKeyNoteReminderAtMillis,
 		bittensorLocalKeyNoteReminderDelivered,
 	} {
-		store.WriteNote(networkId, name, "")
+		self.store.WriteNote(self.networkId, name, "")
 	}
+	self.reload()
+	self.publish()
 	return gone
 }
 

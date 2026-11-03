@@ -942,7 +942,7 @@ func TestBittensorLocalKeyFlowDeletingAnUnlinkedKeyGoesBackToNone(t *testing.T) 
 // The user can prove the phrase is saved and keep the key: the reminder ends and the key stays.
 func TestBittensorLocalKeyFlowKeepEndsTheReminderAndKeepsTheKey(t *testing.T) {
 	run := newTestingLocalKeyRunLinked(t)
-	if !BittensorLocalKeyNeedsBackup(run.store, bittensorLocalKeyFlowTestNetwork) {
+	if !run.flow.NeedsBackup() {
 		t.Fatal("an unsaved key needs no backup")
 	}
 	run.flow.OpenScreen()
@@ -968,7 +968,7 @@ func TestBittensorLocalKeyFlowKeepEndsTheReminderAndKeepsTheKey(t *testing.T) {
 	if run.log.has("store.delete") || run.store.items[bittensorLocalKeyFlowTestNetwork].mnemonic != run.key.Mnemonic {
 		t.Fatal("keeping the key deleted it")
 	}
-	if BittensorLocalKeyNeedsBackup(run.store, bittensorLocalKeyFlowTestNetwork) {
+	if run.flow.NeedsBackup() {
 		t.Fatal("a saved key still warns at logout")
 	}
 	run.flow.OpenScreen()
@@ -1072,7 +1072,7 @@ func TestBittensorLocalKeyFlowSurvivesLogoutByNetworkId(t *testing.T) {
 	if card := other.requireState(BittensorLocalKeyStateNone); card.StoredAddress != "" || card.BackupReminder {
 		t.Fatalf("another network sees %+v", card)
 	}
-	if BittensorLocalKeyNeedsBackup(store, bittensorLocalKeyFlowTestOtherNetwork) {
+	if other.flow.NeedsBackup() {
 		t.Fatal("another network warns about this network's key")
 	}
 	other.flow.OpenScreen()
@@ -1094,7 +1094,7 @@ func TestBittensorLocalKeyFlowSurvivesLogoutByNetworkId(t *testing.T) {
 	if card.StoredAddress != before.key.Address || !card.BackupReminder {
 		t.Fatalf("after signing in again the card is %+v", card)
 	}
-	if !BittensorLocalKeyNeedsBackup(store, bittensorLocalKeyFlowTestNetwork) {
+	if !after.flow.NeedsBackup() {
 		t.Fatal("the logout warning does not see an unsaved key")
 	}
 	after.flow.OpenScreen()
@@ -1105,7 +1105,7 @@ func TestBittensorLocalKeyFlowSurvivesLogoutByNetworkId(t *testing.T) {
 }
 
 // Account deletion removes the key and everything noted about it, and says if it could not.
-func TestBittensorLocalKeyForgetNetwork(t *testing.T) {
+func TestBittensorLocalKeyFlowForgetNetwork(t *testing.T) {
 	run := newTestingLocalKeyRunLinked(t)
 	run.flow.OpenScreen()
 	run.flow.ConfirmKeep(true)
@@ -1116,7 +1116,7 @@ func TestBittensorLocalKeyForgetNetwork(t *testing.T) {
 	if len(run.store.notes) == 0 {
 		t.Fatal("CONTROL FAILED: nothing is noted")
 	}
-	if !BittensorLocalKeyForgetNetwork(run.store, bittensorLocalKeyFlowTestNetwork) {
+	if !run.flow.ForgetNetwork() {
 		t.Fatal("the key could not be shown gone")
 	}
 	if len(run.store.items) != 0 || len(run.store.notes) != 0 {
@@ -1129,7 +1129,7 @@ func TestBittensorLocalKeyForgetNetwork(t *testing.T) {
 	} {
 		run = newTestingLocalKeyRunLinked(t)
 		set(run.store)
-		if BittensorLocalKeyForgetNetwork(run.store, bittensorLocalKeyFlowTestNetwork) {
+		if run.flow.ForgetNetwork() {
 			t.Fatal("a key still there reads as gone")
 		}
 	}
@@ -1189,6 +1189,16 @@ func TestBittensorLocalKeyFlowOnlyTheOwnerAndNoGuestsMakeAKey(t *testing.T) {
 	flow.SetConsent(false, "", 0)
 	if card := flow.GetCard(); card.OffersSetUp || !card.OwnerOnly {
 		t.Fatalf("the card is %+v", card)
+	}
+
+	// and a nil store, which reads as a store that cannot answer
+	flow = NewBittensorLocalKeyFlow(nil, bittensorLocalKeyFlowTestNetwork, nil)
+	flow.SetConsent(false, "", 0)
+	if card := flow.GetCard(); card.State != BittensorLocalKeyStateStoreUnavailable || card.OffersSetUp {
+		t.Fatalf("the card is %+v", card)
+	}
+	if flow.NeedsBackup() || flow.ForgetNetwork() {
+		t.Fatal("no store says it holds a key, or that it forgot one")
 	}
 }
 
@@ -1277,7 +1287,7 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 	}{
 		{"nothing read", owner(bittensorLocalKeyCardInputs{}), BittensorLocalKeyCard{State: BittensorLocalKeyStateLoading}},
 		{"none", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateNone, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true,
+			State: BittensorLocalKeyStateNone, ShowsKeyPath: true, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true,
 		}},
 		{"save now, showing", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, saveNowAddress: key}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSaveNowShowing, Address: key,
@@ -1286,10 +1296,10 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 			State: BittensorLocalKeyStateSaveNowConsentFailed, Address: key, FailureCode: BittensorLocalKeyFailureConsent, FailureMessage: "x",
 		}},
 		{"save later, not linked", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterNotLinked, Address: key, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true,
+			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: key, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true,
 		}},
 		{"save later, not linked, another consent", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: other, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterNotLinked, Address: other, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, ReplacesPayoutWallet: true,
+			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: other, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, ReplacesPayoutWallet: true,
 		}},
 		{"save later, linked", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true,
@@ -1319,7 +1329,7 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OwnerOnly: true, OffersKeyScreen: true, BackupReminder: true,
 		}},
 		{"the store cannot answer", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storeUnavailable: true}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateStoreUnavailable,
+			State: BittensorLocalKeyStateStoreUnavailable, ShowsKeyPath: true,
 		}},
 		{"the consent cannot be read", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentUnavailable}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateConsentUnavailable,
