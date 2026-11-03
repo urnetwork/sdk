@@ -411,6 +411,47 @@ func apiCredentialCases() []apiCredentialCase {
 			_, err := api.SnGetWalletSyncWithContext(ctx)
 			return err
 		}},
+		// a device's own part of a Top 200 claim (sn_fleet_api.go), whose
+		// handlers take a client token only
+		{"snFleetDeviceWork", "GET /sn/fleet/device", "/sn/fleet/device", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetDeviceWork(ctx, false)
+			return err
+		}},
+		{"snFleetDeviceWorkNeedConsent", "GET /sn/fleet/device", "/sn/fleet/device", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetDeviceWork(ctx, true)
+			return err
+		}},
+		{"snFleetDeviceSignature", "POST /sn/fleet/device/signature", "/sn/fleet/device/signature", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetDeviceSignature(ctx, &snFleetDeviceSignatureArgs{})
+			return err
+		}},
+		{"snFleetDeviceBinding", "GET /sn/fleet/device/binding", "/sn/fleet/device/binding", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetDeviceBinding(ctx)
+			return err
+		}},
+		{"snFleetDeviceLeave", "POST /sn/fleet/device/leave", "/sn/fleet/device/leave", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetDeviceLeave(ctx, &snFleetDeviceLeaveArgs{})
+			return err
+		}},
+		// the claim relay (sn_claim_relay.go): the network's coldkeys, which
+		// its claims only ever pay. The apps show it and tap Claim now on a
+		// device
+		{"SnClaimRelay", "GET /sn/claim-relay", "/sn/claim-relay", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnClaimRelayResult]) { api.SnClaimRelay(cb) })
+		}},
+		{"SnClaimRelaySyncWithContext", "GET /sn/claim-relay", "/sn/claim-relay", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.SnClaimRelaySyncWithContext(ctx)
+			return err
+		}},
+		{"SnClaimRelayClaimNow", "POST /sn/claim-relay/claim-now", "/sn/claim-relay/claim-now", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnClaimRelayClaimNowResult]) {
+				api.SnClaimRelayClaimNow(&SnClaimRelayClaimNowArgs{}, cb)
+			})
+		}},
+		{"SnClaimRelayClaimNowSyncWithContext", "POST /sn/claim-relay/claim-now", "/sn/claim-relay/claim-now", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.SnClaimRelayClaimNowSyncWithContext(ctx, &SnClaimRelayClaimNowArgs{})
+			return err
+		}},
 
 		// App admin routes: the apps sent these with the device's client token
 		{"GetNetworkSessions", "GET /network/sessions", "/network/sessions", sendsNetwork, func(ctx context.Context, api *Api) error {
@@ -567,6 +608,23 @@ func apiCredentialCases() []apiCredentialCase {
 		}},
 		{"SnNetworkWalletMappingChallengeSyncWithContext", "POST /sn/wallet/network-consent", "/sn/wallet/network-consent", sendsNetwork, func(ctx context.Context, api *Api) error {
 			_, err := api.SnNetworkWalletMappingChallengeSyncWithContext(ctx, &SnNetworkWalletMappingChallengeArgs{})
+			return err
+		}},
+		// the network's own part of a Top 200 claim (sn_fleet_api.go)
+		{"snFleetClaimStatus", "GET /sn/fleet/claim", "/sn/fleet/claim", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetClaimStatus(ctx)
+			return err
+		}},
+		{"snFleetAuthorize", "POST /sn/fleet/authorization", "/sn/fleet/authorization", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetAuthorize(ctx, &snFleetAuthorizationArgs{})
+			return err
+		}},
+		{"snFleetHotkeySignatures", "POST /sn/fleet/hotkey-signatures", "/sn/fleet/hotkey-signatures", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetHotkeySignatures(ctx, &snFleetHotkeySignaturesArgs{})
+			return err
+		}},
+		{"snFleetTopUp", "POST /sn/fleet/top-up", "/sn/fleet/top-up", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.snFleetTopUp(ctx)
 			return err
 		}},
 		{"RegisterNetworkClientSyncWithContext", "POST /network/register-client-v1", "/network/register-client-v1", sendsNetwork, func(ctx context.Context, api *Api) error {
