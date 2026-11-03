@@ -68,11 +68,13 @@ const (
 	bittensorConvertBurnMarginBps uint64 = 1_000
 )
 
-// bittensorFundsDisclaimer is what every easy flow shows, in the owner's words
-// (2026-11-03), and every convert result a sheet draws carries it. The string key
-// apps localize it by is the key flow's; this is the one place convert takes it
-// from, so convert follows the key flow's field and key.
-const bittensorFundsDisclaimer = "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds."
+// bittensorConvertFundsDisclaimer is the id of the funds disclaimer every easy flow
+// shows (owner, 2026-11-03), and every convert result a sheet draws carries it.
+// An app shows the text it has under this id in the user's language. Convert only
+// runs with the key in the app's secure storage, so it is the full disclaimer, the
+// owner's three sentences. The id is the key flow's: once its
+// BittensorFundsDisclaimerFull is on main, convert takes that instead of the literal.
+const bittensorConvertFundsDisclaimer = "bittensor_funds_disclaimer"
 
 // newBittensorChainEngineForExport is how the exported calls get their engine:
 // the settings' endpoint, under the release's pins. Tests answer from a fake chain.
@@ -168,7 +170,7 @@ type BittensorConvertEstimateResult struct {
 	CanConvert bool `json:"can_convert"`
 	// what the user should know before going ahead, fit to show as it is; "" for nothing
 	Notice string `json:"notice,omitempty"`
-	// the disclaimer every screen that draws this shows, fit to show as it is
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
 	FundsDisclaimer string   `json:"funds_disclaimer"`
 	Error           *SnError `json:"error,omitempty"`
 }
@@ -186,7 +188,7 @@ type BittensorConvertSubmission struct {
 	// the first and last blocks it can land in; after the last it never can
 	FirstBlock int64 `json:"first_block,omitempty"`
 	LastBlock  int64 `json:"last_block,omitempty"`
-	// the disclaimer every screen that draws this shows, fit to show as it is
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
 	FundsDisclaimer string   `json:"funds_disclaimer"`
 	Error           *SnError `json:"error,omitempty"`
 }
@@ -207,7 +209,7 @@ type BittensorConvertReceipt struct {
 	// the network fee, in SN25α or in TAO, whichever paid it
 	FeeAlphaRao int64 `json:"fee_alpha_rao"`
 	FeeTaoRao   int64 `json:"fee_tao_rao"`
-	// the disclaimer every screen that draws this shows, fit to show as it is
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
 	FundsDisclaimer string   `json:"funds_disclaimer"`
 	Error           *SnError `json:"error,omitempty"`
 }
@@ -268,7 +270,7 @@ func bittensorConvertEstimateFor(
 		}
 		return estimate(engine, coldkey)
 	}()
-	result.FundsDisclaimer = bittensorFundsDisclaimer
+	result.FundsDisclaimer = bittensorConvertFundsDisclaimer
 	return result
 }
 

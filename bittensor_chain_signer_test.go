@@ -237,11 +237,12 @@ func (self convertReceiptCallbackFunc) Result(receipt *BittensorConvertReceipt, 
 	self(receipt)
 }
 
-// Every result an exported convert call gives a screen carries the owner's
-// disclaimer, word for word, refusals included: the estimate, the burn estimate,
-// the submission and the receipt.
+// Every result an exported convert call gives a screen carries the id of the full
+// funds disclaimer, refusals included: the estimate, the burn estimate, the
+// submission and the receipt. Convert only runs with the key on this device, so it
+// is never the funds-only text or none.
 func TestConvertResultsCarryTheFundsDisclaimer(t *testing.T) {
-	const want = "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds."
+	const want = "bittensor_funds_disclaimer"
 	chain := newConvertFakeChain(t)
 	chain.landEvents = func(index uint32) string {
 		return convertEvents(index, convertSuccessEvent())

@@ -40,7 +40,7 @@ func bittensorConvertSubmitFor(ctx context.Context, settings *SnChainSettings, m
 		}
 		return engine.convertSubmit(ctx, signer, estimate)
 	}()
-	submission.FundsDisclaimer = bittensorFundsDisclaimer
+	submission.FundsDisclaimer = bittensorConvertFundsDisclaimer
 	return submission
 }
 
@@ -68,6 +68,6 @@ func bittensorConvertWaitFor(ctx context.Context, settings *SnChainSettings, sub
 		}
 		return engine.convertWait(ctx, submission)
 	}()
-	receipt.FundsDisclaimer = bittensorFundsDisclaimer
+	receipt.FundsDisclaimer = bittensorConvertFundsDisclaimer
 	return receipt
 }
