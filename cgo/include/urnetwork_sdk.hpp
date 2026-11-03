@@ -36379,12 +36379,18 @@ inline std::optional<SnChainSettings> newSnChainSettings() {
 	}
 	return detail::parseJson<SnChainSettings>(r_s->c_str());
 }
-inline SnFleetClaim newSnFleetClaim(const Api& api, SnFleetClaimStore store) {
+inline SnFleetClaim newSnFleetClaim(const Api& api, const std::optional<SnChainSettings>& settings, SnFleetClaimStore store) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
 	std::shared_ptr<SnFleetClaimStore> store_fn;
 	if ((static_cast<bool>(store.load_sn_fleet_coldkey_phrase) || static_cast<bool>(store.load_sn_fleet_hotkey_seed) || static_cast<bool>(store.save_sn_fleet_hotkey_seed))) {
 		store_fn = std::make_shared<SnFleetClaimStore>(std::move(store));
 	}
-	SnFleetClaim r(urnet_new_sn_fleet_claim(api.handle(), store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_hotkey_seed : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_save_sn_fleet_hotkey_seed : nullptr, store_fn.get()));
+	SnFleetClaim r(urnet_new_sn_fleet_claim(api.handle(), settings_c, store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_hotkey_seed : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_save_sn_fleet_hotkey_seed : nullptr, store_fn.get()));
 	if (store_fn) {
 		r.retain(store_fn);
 	}

@@ -18488,7 +18488,7 @@ func urnet_new_sn_chain_settings() *C.char {
 }
 
 //export urnet_new_sn_fleet_claim
-func urnet_new_sn_fleet_claim(api C.uint64_t, store_load_sn_fleet_coldkey_phrase C.urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb, store_load_sn_fleet_hotkey_seed C.urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb, store_save_sn_fleet_hotkey_seed C.urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb, store_user_data unsafe.Pointer) C.uint64_t {
+func urnet_new_sn_fleet_claim(api C.uint64_t, settings *C.char, store_load_sn_fleet_coldkey_phrase C.urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb, store_load_sn_fleet_hotkey_seed C.urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb, store_save_sn_fleet_hotkey_seed C.urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb, store_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_new_sn_fleet_claim")
 	var api_ *sdk.Api
 	if api != 0 {
@@ -18498,11 +18498,18 @@ func urnet_new_sn_fleet_claim(api C.uint64_t, store_load_sn_fleet_coldkey_phrase
 			return 0
 		}
 	}
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_new_sn_fleet_claim") {
+			return 0
+		}
+	}
 	var store_ sdk.SnFleetClaimStore
 	if store_load_sn_fleet_coldkey_phrase != nil {
 		store_ = &cAdapterSnFleetClaimStore{cbLoadSnFleetColdkeyPhrase: store_load_sn_fleet_coldkey_phrase, cbLoadSnFleetHotkeySeed: store_load_sn_fleet_hotkey_seed, cbSaveSnFleetHotkeySeed: store_save_sn_fleet_hotkey_seed, userData: store_user_data}
 	}
-	r0 := sdk.NewSnFleetClaim(api_, store_)
+	r0 := sdk.NewSnFleetClaim(api_, settings_, store_)
 	if r0 == nil {
 		return 0
 	}
