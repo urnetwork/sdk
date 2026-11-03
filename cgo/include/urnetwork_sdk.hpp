@@ -209,6 +209,7 @@ inline constexpr const char* BittensorLocalKeyStateSaveNowConsentFailed = "save_
 inline constexpr const char* BittensorLocalKeyStateSaveNowShowing = "save_now_showing";
 inline constexpr const char* BittensorLocalKeyStateSavedAndDeleted = "saved_and_deleted";
 inline constexpr const char* BittensorLocalKeyStateStoreUnavailable = "store_unavailable";
+inline constexpr const char* BittensorLocalKeyStoreAbsent = "store_absent";
 inline constexpr const char* BittensorLocalKeyStoreUnavailable = "store_unavailable";
 inline constexpr const char* BittensorLocalKeyWordEmpty = "";
 inline constexpr const char* BittensorLocalKeyWordRight = "right";
