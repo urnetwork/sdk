@@ -525,12 +525,98 @@ func testingBittensorLocalKeyRefusals(t *testing.T, name string, phrase string, 
 	}
 }
 
-// No word of the phrase in text.
+// No word of the phrase in text, even inside another word. Only for a fixed phrase and a text whose
+// parts are all known: the words are short English words, so a phrase made at random has one inside
+// "coldkey" (old) or "signature" (nature) about one run in six. testingRequireNoPhrasePiece is the
+// check for any phrase.
 func testingRequireNoPhraseText(t *testing.T, name string, text string, phrase string) {
 	t.Helper()
 	for _, word := range strings.Fields(phrase) {
 		if strings.Contains(text, word) {
 			t.Errorf("%s: the word %q is in %q", name, word, text)
+		}
+	}
+}
+
+// No piece of the phrase in text, for any phrase, a random one included: see testingPhrasePieceIn.
+func testingRequireNoPhrasePiece(t *testing.T, name string, text string, phrase string) {
+	t.Helper()
+	if len(strings.Fields(phrase)) < 2 {
+		t.Fatalf("CONTROL FAILED: %q has no two words to look for", phrase)
+	}
+	if piece := testingPhrasePieceIn(text, phrase); piece != "" {
+		t.Errorf("%s: %q of the phrase is in %q", name, piece, text)
+	}
+}
+
+// The first piece of the phrase in text, "" for none. A piece is two neighboring words of the phrase, in
+// their order: as whole words with anything but letters between them (a space, "+", "%20", a comma,
+// quotes, a newline), or run together, in any case. So the phrase, or any part of it longer than one
+// word, is found however a request or a log line spells it. One word alone is not a piece: in English
+// text, an address or hex it turns up by chance, as a word ("network") or inside one ("old" in
+// "coldkey"), while two neighbors in order turn up about once in 2048² looks.
+func testingPhrasePieceIn(text string, phrase string) string {
+	words := strings.Fields(strings.ToLower(phrase))
+	lower := strings.ToLower(text)
+	tokens := strings.FieldsFunc(lower, func(r rune) bool {
+		return r < 'a' || 'z' < r
+	})
+	for i := 0; i+1 < len(words); i += 1 {
+		piece := words[i] + " " + words[i+1]
+		if strings.Contains(lower, words[i]+words[i+1]) {
+			return piece
+		}
+		for j := 0; j+1 < len(tokens); j += 1 {
+			if tokens[j] == words[i] && tokens[j+1] == words[i+1] {
+				return piece
+			}
+		}
+	}
+	return ""
+}
+
+// The check for any phrase finds the phrase and its parts however they are spelled, and none of what
+// made the plain word check fail on random phrases: words inside the request's own words, or a word
+// of the phrase that is also a word of the request.
+func TestBittensorLocalKeyPhrasePieceCheck(t *testing.T) {
+	phrase := "old nature network vault issue once rough main settle all wall work"
+	words := strings.Fields(phrase)
+	request := `{"coldkey_ss58":"5Hpm9fq3W3dQgwWpAwDS2ZHKAdnk86QRCu7iX4GnmDxycrte","message":"Approve URnetwork network wallet mapping\n{\"settlement_vault\":\"0x08\",\"issued_at\":1791244800,\"nonce\":[208],\"through_epoch\":65578,\"domain\":{}}","signature":"0xcbcf2d314ec60eadb90085796d7ff52774c7cf69"}`
+	// the phrase's words are in the request on their own, or inside its words, so the plain check fails
+	for _, word := range words {
+		if !strings.Contains(request, word) {
+			t.Fatalf("CONTROL FAILED: %q is not in the request, so it shows less than it says", word)
+		}
+	}
+	if piece := testingPhrasePieceIn(request, phrase); piece != "" {
+		t.Fatalf("a request that holds no piece of the phrase has %q", piece)
+	}
+	for _, text := range []string{
+		phrase,
+		`{"mnemonic":"` + phrase + `"}`,
+		`{"words":["` + strings.Join(words, `","`) + `"]}`,
+		strings.Join(words, "+"),
+		strings.Join(words, "%20"),
+		strings.Join(words, "\n"),
+		strings.Join(words, ""),
+		strings.ToUpper(phrase),
+		strings.ToUpper(words[2][:1]) + words[2][1:] + " " + strings.ToUpper(words[3][:1]) + words[3][1:],
+		"the words were " + words[4] + " " + words[5] + ", then nothing",
+		"key=" + words[10] + words[11],
+		request + " " + strings.Join(words[6:8], " "),
+	} {
+		if testingPhrasePieceIn(text, phrase) == "" {
+			t.Errorf("a piece of the phrase is in %q, and the check misses it", text)
+		}
+	}
+	// two words that are neighbors only out of order, or apart, are not a piece
+	for _, text := range []string{
+		words[1] + " " + words[0],
+		words[0] + " and " + words[1],
+		words[0] + "x" + words[1],
+	} {
+		if piece := testingPhrasePieceIn(text, phrase); piece != "" {
+			t.Errorf("%q has no piece, and the check found %q", text, piece)
 		}
 	}
 }

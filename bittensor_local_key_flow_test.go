@@ -1725,8 +1725,13 @@ func TestBittensorLocalKeyFlowThroughTheRealApi(t *testing.T) {
 	if err != nil || !valid || args.ColdkeySs58 != stored.address {
 		t.Fatalf("the server's check refused the consent: %v, %v, %s", valid, err, args.ColdkeySs58)
 	}
+	// the key is new each run, and its words are English: the check is for pieces of the phrase, which
+	// the request's own words never make by chance
 	for _, request := range requests {
-		testingRequireNoPhraseText(t, request.route, request.body, stored.mnemonic)
+		testingRequireNoPhrasePiece(t, request.route, request.route+" "+request.body, stored.mnemonic)
+	}
+	if testingPhrasePieceIn(submitted.body+" "+stored.mnemonic, stored.mnemonic) == "" {
+		t.Fatal("CONTROL FAILED: the check misses this phrase in this request")
 	}
 
 	again := NewBittensorLocalKeyFlow(api, bittensorLocalKeyFlowTestNetwork, store)
