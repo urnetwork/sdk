@@ -437,3 +437,50 @@ func (self *snDevice) SignSnFleetBinding(bindingJson string) (string, error) {
 	}
 	return "0x" + hex.EncodeToString(signature), nil
 }
+
+// snFleetRevokeJson is the wire form of a revocation a device is asked to sign.
+type snFleetRevokeJson struct {
+	ChainId        snFlexUint  `json:"chain_id"`
+	Netuid         snFlexUint  `json:"netuid"`
+	Coordinator    snFlexBytes `json:"coordinator"`
+	ClientId       snFlexBytes `json:"client_id"`
+	Generation     snFlexUint  `json:"generation"`
+	EffectiveEpoch snFlexUint  `json:"effective_epoch"`
+}
+
+// SignSnFleetRevoke signs a revocation of this client's own fleet binding (json:
+// chain_id, netuid, coordinator, client_id, generation, effective_epoch) with this
+// device's client key, for Leave. The coordinator needs nothing else, so any device
+// can leave by itself. Only the canonical digest is signed, and only for this
+// client's id. Returns the 64-byte signature as 0x hex.
+func (self *snDevice) SignSnFleetRevoke(revokeJson string) (string, error) {
+	decoder := json.NewDecoder(strings.NewReader(revokeJson))
+	decoder.DisallowUnknownFields()
+	var j snFleetRevokeJson
+	if err := decoder.Decode(&j); err != nil {
+		return "", fmt.Errorf("revoke json: %w", err)
+	}
+	if j.Netuid > 0xffff || len(j.Coordinator) != 20 || len(j.ClientId) != 16 {
+		return "", errors.New("revoke json has a malformed netuid, coordinator or client_id")
+	}
+	revoke := protocol.FleetRevoke{
+		ChainID:        uint64(j.ChainId),
+		Netuid:         uint16(j.Netuid),
+		Coordinator:    [20]byte(j.Coordinator),
+		ClientID:       [16]byte(j.ClientId),
+		Generation:     uint64(j.Generation),
+		EffectiveEpoch: uint64(j.EffectiveEpoch),
+	}
+	if revoke.ClientID != [16]byte(self.clientId) {
+		return "", errors.New("revoke client_id is not this device")
+	}
+	key, err := self.snClientPrivateKey()
+	if err != nil {
+		return "", err
+	}
+	signature, err := revoke.SignClient(key)
+	if err != nil {
+		return "", err
+	}
+	return "0x" + hex.EncodeToString(signature), nil
+}

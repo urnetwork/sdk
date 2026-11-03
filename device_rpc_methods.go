@@ -215,6 +215,7 @@ var deviceLocalRpcMethods = sync.OnceValue(func() map[string]*deviceRpcMethod {
 		"Shuffle":                                            (*DeviceLocalRpc).Shuffle,
 		"ShuffleExits":                                       (*DeviceLocalRpc).ShuffleExits,
 		"SignSnFleetBinding":                                 (*DeviceLocalRpc).SignSnFleetBinding,
+		"SignSnFleetRevoke":                                  (*DeviceLocalRpc).SignSnFleetRevoke,
 		"SimulateNetworkChange":                              (*DeviceLocalRpc).SimulateNetworkChange,
 		"Socket":                                             (*DeviceLocalRpc).Socket,
 		"StallExit":                                          (*DeviceLocalRpc).StallExit,

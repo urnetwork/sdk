@@ -184,6 +184,15 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_claims_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_connect_wallet_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_epoch_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_fleet_claim_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate IntPtr urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate IntPtr urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate byte urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_fleet_device_check_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_fleet_device_leave_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_fleet_device_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate IntPtr urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb(IntPtr a0);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate byte urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_gas_balance_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_get_wallet_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_head_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
@@ -867,6 +876,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_set_tunnel_dns_setting(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_shuffle_exits(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_sign_sn_fleet_binding(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_sign_sn_fleet_revoke(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_simulate_network_change(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_sn_claim(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, IntPtr a6);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_sn_claim_now(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_claim_now_cb a2, IntPtr a3);
@@ -980,6 +990,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_device_remote_set_sn_chain_settings(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_remote_shuffle_exits(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_remote_sign_sn_fleet_binding(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_remote_sign_sn_fleet_revoke(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_remote_simulate_network_change(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_remote_sn_claim(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, IntPtr a6);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_remote_sn_claim_now(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_claim_now_cb a2, IntPtr a3);
@@ -1351,6 +1362,16 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_session_sign_out_result_get_credential_cleared(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_session_sign_out_result_get_operation_id(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_session_sign_out_result_get_revocation_confirmed(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_advance(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_leave(ulong a0, ulong a1, urnet_sn_fleet_device_leave_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_refresh(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_submit_wallet_authorization(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_fleet_claim_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_tap(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_device_check(ulong a0, urnet_sn_fleet_device_check_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_device_close(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_device_leave(ulong a0, urnet_sn_fleet_device_leave_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_sn_fleet_device_reset(ulong a0, out IntPtr a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_device_start(ulong a0, urnet_sn_fleet_device_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_socket_close(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_socket_close_read(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_socket_close_write(ulong a0, out IntPtr a1);
@@ -1563,6 +1584,9 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_purchase_started_event([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2, byte a3, double a4, [MarshalAs(UnmanagedType.LPUTF8Str)] string a5);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_signup_optout_changed_event(byte a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_sn_chain_settings();
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_sn_fleet_claim(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb a2, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb a3, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb a4, IntPtr a5);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_sn_fleet_device_for_local(ulong a0, ulong a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, IntPtr a4);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_sn_fleet_device_for_remote(ulong a0, ulong a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, IntPtr a4);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_subscription_balance_view_controller(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_new_time_unix_milli(long a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_transfer_path([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);

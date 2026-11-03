@@ -184,6 +184,15 @@ public interface Raw extends Library {
   interface urnet_sn_claims_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_connect_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_epoch_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_fleet_claim_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb extends Callback { byte invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_fleet_device_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_fleet_device_leave_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_fleet_device_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb extends Callback { Pointer invoke(Pointer a0); }
+  interface urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb extends Callback { byte invoke(Pointer a0, String a1); }
   interface urnet_sn_gas_balance_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_get_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_head_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -867,6 +876,7 @@ public interface Raw extends Library {
   void urnet_device_local_set_tunnel_dns_setting(long a0, String a1);
   void urnet_device_local_shuffle_exits(long a0);
   Pointer urnet_device_local_sign_sn_fleet_binding(long a0, String a1, PointerByReference a2);
+  Pointer urnet_device_local_sign_sn_fleet_revoke(long a0, String a1, PointerByReference a2);
   void urnet_device_local_simulate_network_change(long a0);
   void urnet_device_local_sn_claim(long a0, String a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, Pointer a6);
   void urnet_device_local_sn_claim_now(long a0, String a1, urnet_sn_claim_now_cb a2, Pointer a3);
@@ -980,6 +990,7 @@ public interface Raw extends Library {
   byte urnet_device_remote_set_sn_chain_settings(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_shuffle_exits(long a0);
   Pointer urnet_device_remote_sign_sn_fleet_binding(long a0, String a1, PointerByReference a2);
+  Pointer urnet_device_remote_sign_sn_fleet_revoke(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_simulate_network_change(long a0);
   void urnet_device_remote_sn_claim(long a0, String a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, Pointer a6);
   void urnet_device_remote_sn_claim_now(long a0, String a1, urnet_sn_claim_now_cb a2, Pointer a3);
@@ -1351,6 +1362,16 @@ public interface Raw extends Library {
   byte urnet_session_sign_out_result_get_credential_cleared(long a0);
   Pointer urnet_session_sign_out_result_get_operation_id(long a0);
   byte urnet_session_sign_out_result_get_revocation_confirmed(long a0);
+  void urnet_sn_fleet_claim_advance(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
+  void urnet_sn_fleet_claim_leave(long a0, long a1, urnet_sn_fleet_device_leave_cb a2, Pointer a3);
+  void urnet_sn_fleet_claim_refresh(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
+  void urnet_sn_fleet_claim_submit_wallet_authorization(long a0, String a1, urnet_sn_fleet_claim_cb a2, Pointer a3);
+  void urnet_sn_fleet_claim_tap(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
+  void urnet_sn_fleet_device_check(long a0, urnet_sn_fleet_device_check_cb a1, Pointer a2);
+  void urnet_sn_fleet_device_close(long a0);
+  void urnet_sn_fleet_device_leave(long a0, urnet_sn_fleet_device_leave_cb a1, Pointer a2);
+  byte urnet_sn_fleet_device_reset(long a0, PointerByReference a1);
+  void urnet_sn_fleet_device_start(long a0, urnet_sn_fleet_device_cb a1, Pointer a2);
   byte urnet_socket_close(long a0, PointerByReference a1);
   byte urnet_socket_close_read(long a0, PointerByReference a1);
   byte urnet_socket_close_write(long a0, PointerByReference a1);
@@ -1563,6 +1584,9 @@ public interface Raw extends Library {
   Pointer urnet_new_purchase_started_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_signup_optout_changed_event(byte a0);
   Pointer urnet_new_sn_chain_settings();
+  long urnet_new_sn_fleet_claim(long a0, String a1, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb a2, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb a3, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb a4, Pointer a5);
+  long urnet_new_sn_fleet_device_for_local(long a0, long a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, Pointer a4);
+  long urnet_new_sn_fleet_device_for_remote(long a0, long a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, Pointer a4);
   long urnet_new_subscription_balance_view_controller(long a0);
   long urnet_new_time_unix_milli(long a0);
   Pointer urnet_new_transfer_path(String a0, String a1, String a2);
