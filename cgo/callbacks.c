@@ -729,6 +729,42 @@ void urnet_invoke_sn_epoch(urnet_sn_epoch_cb cb, void* user_data, const char* re
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sn_fleet_claim(urnet_sn_fleet_claim_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+char* urnet_invoke_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase(urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb cb, void* user_data, const char* network_id) {
+	return cb(user_data, network_id);
+}
+
+char* urnet_invoke_sn_fleet_claim_store_load_sn_fleet_hotkey_seed(urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb cb, void* user_data, const char* network_id) {
+	return cb(user_data, network_id);
+}
+
+bool urnet_invoke_sn_fleet_claim_store_save_sn_fleet_hotkey_seed(urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb cb, void* user_data, const char* network_id, const char* seed_hex) {
+	return cb(user_data, network_id, seed_hex);
+}
+
+void urnet_invoke_sn_fleet_device_check(urnet_sn_fleet_device_check_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_fleet_device_leave(urnet_sn_fleet_device_leave_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_fleet_device(urnet_sn_fleet_device_cb cb, void* user_data, const char* result_json) {
+	cb(user_data, result_json);
+}
+
+char* urnet_invoke_sn_fleet_device_store_load_sn_fleet_device_state(urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb cb, void* user_data) {
+	return cb(user_data);
+}
+
+bool urnet_invoke_sn_fleet_device_store_save_sn_fleet_device_state(urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb cb, void* user_data, const char* state_json) {
+	return cb(user_data, state_json);
+}
+
 void urnet_invoke_sn_gas_balance(urnet_sn_gas_balance_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

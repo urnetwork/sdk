@@ -587,6 +587,52 @@ inline constexpr const char* SnErrorCodeProofMismatch = "proof_mismatch";
 inline constexpr const char* SnErrorCodeServer = "server_error";
 inline constexpr const char* SnErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* SnErrorCodeWalletBlocked = "wallet_blocked";
+inline constexpr const char* SnFleetClaimErrorAuthorizationRefused = "authorization_refused";
+inline constexpr const char* SnFleetClaimErrorBadBinding = "bad_binding";
+inline constexpr const char* SnFleetClaimErrorBadManifest = "bad_manifest";
+inline constexpr const char* SnFleetClaimErrorChain = "chain_unavailable";
+inline constexpr const char* SnFleetClaimErrorHotkeyOwnedElsewhere = "hotkey_owned_elsewhere";
+inline constexpr const char* SnFleetClaimErrorRegistrationClosed = "registration_closed";
+inline constexpr const char* SnFleetClaimErrorSecretStore = "secret_store_failed";
+inline constexpr const char* SnFleetClaimErrorServer = "server_unavailable";
+inline constexpr const char* SnFleetClaimErrorTopUpRefused = "top_up_refused";
+inline constexpr const char* SnFleetClaimErrorWalletSignature = "wallet_signature_invalid";
+inline constexpr int64_t SnFleetClaimMaxBurnRao = 5000000;
+inline constexpr const char* SnFleetClaimStageBound = "bound";
+inline constexpr const char* SnFleetClaimStageChoosingDevices = "choosing_devices";
+inline constexpr const char* SnFleetClaimStageClosed = "closed";
+inline constexpr const char* SnFleetClaimStageConverting = "converting";
+inline constexpr const char* SnFleetClaimStageFailed = "failed";
+inline constexpr const char* SnFleetClaimStageHotkeyElsewhere = "hotkey_elsewhere";
+inline constexpr const char* SnFleetClaimStageNeedsFunds = "needs_funds";
+inline constexpr const char* SnFleetClaimStageNeedsTap = "needs_tap";
+inline constexpr const char* SnFleetClaimStageNeedsWalletAuthorization = "needs_wallet_authorization";
+inline constexpr const char* SnFleetClaimStageNeedsWalletRegistration = "needs_wallet_registration";
+inline constexpr const char* SnFleetClaimStageNoConsent = "no_consent";
+inline constexpr const char* SnFleetClaimStageRegistering = "registering";
+inline constexpr const char* SnFleetClaimStageWaitingBurn = "waiting_burn";
+inline constexpr const char* SnFleetClaimStageWaitingDevices = "waiting_devices";
+inline constexpr const char* SnFleetClaimStageWaitingMirror = "waiting_mirror";
+inline constexpr const char* SnFleetClaimStageWaitingRegisterWindow = "waiting_register_window";
+inline constexpr const char* SnFleetClaimStageWaitingTopUp = "waiting_top_up";
+inline constexpr const char* SnFleetDeviceActionNone = "none";
+inline constexpr const char* SnFleetDeviceActionPinned = "pinned";
+inline constexpr const char* SnFleetDeviceActionRefused = "refused";
+inline constexpr const char* SnFleetDeviceActionResent = "resent";
+inline constexpr const char* SnFleetDeviceActionSigned = "signed";
+inline constexpr const char* SnFleetRefusalBadAuthorization = "bad_authorization";
+inline constexpr const char* SnFleetRefusalBadBinding = "bad_binding";
+inline constexpr const char* SnFleetRefusalBadConsent = "bad_consent";
+inline constexpr const char* SnFleetRefusalBadHotkeySignature = "bad_hotkey_signature";
+inline constexpr const char* SnFleetRefusalColdkeyChanged = "coldkey_changed";
+inline constexpr const char* SnFleetRefusalColdkeyNotPinned = "coldkey_not_pinned";
+inline constexpr const char* SnFleetRefusalGenerationReplayed = "generation_replayed";
+inline constexpr const char* SnFleetRefusalHotkeyChanged = "hotkey_changed";
+inline constexpr const char* SnFleetRefusalLeft = "device_left";
+inline constexpr const char* SnFleetRefusalNotAuthorized = "hotkey_not_authorized";
+inline constexpr const char* SnFleetRefusalOtherClient = "other_client";
+inline constexpr const char* SnFleetRefusalOtherClientKey = "other_client_key";
+inline constexpr const char* SnFleetRefusalStateUnreadable = "state_unreadable";
 inline constexpr int64_t SnNetworkConsentEpochSpan = 65535;
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
@@ -731,6 +777,8 @@ class ReferralCodeViewController;
 class SessionLastUsed;
 class SessionOperationResult;
 class SessionSignOutResult;
+class SnFleetClaim;
+class SnFleetDevice;
 class Socket;
 class SubscriptionBalanceViewController;
 class Tunnel;
@@ -1046,6 +1094,9 @@ struct SnWallet;
 struct SnConnectWalletResult;
 struct SnEpochClaim;
 struct SnEpochResult;
+struct SnFleetClaimState;
+struct SnFleetDeviceCheckResult;
+struct SnFleetDeviceLeaveOutcome;
 struct SnGasBalanceResult;
 struct SnGasKey;
 struct SnGetWalletResult;
@@ -3793,6 +3844,46 @@ struct SnEpochResult {
 	std::optional<std::string> rpc_url;
 };
 
+struct SnFleetClaimState {
+	std::string stage{};
+	std::optional<std::string> error_code;
+	std::optional<std::string> error_message;
+	std::optional<int64_t> retry_after_seconds;
+	bool claim_prompt{};
+	std::optional<std::string> coldkey_address;
+	std::optional<std::string> hotkey_address;
+	std::optional<int64_t> netuid;
+	bool registered{};
+	std::optional<int64_t> uid;
+	std::optional<std::string> wallet_message;
+	std::optional<int64_t> burn_limit_rao;
+	std::optional<int64_t> register_after_block;
+	std::optional<int64_t> current_epoch;
+	int64_t chosen{};
+	int64_t ready{};
+	int64_t bound{};
+	int64_t refused{};
+	int64_t still_to_update{};
+	bool top_up_used{};
+	std::string funds_disclaimer{};
+};
+
+struct SnFleetDeviceCheckResult {
+	std::string action{};
+	std::optional<std::string> refusal_code;
+	std::optional<std::string> refusal_message;
+	std::optional<int64_t> generation;
+	bool binding_open{};
+	int64_t next_check_seconds{};
+	std::optional<bool> send_failed;
+};
+
+struct SnFleetDeviceLeaveOutcome {
+	bool left{};
+	int64_t effective_epoch{};
+	std::string funds_disclaimer{};
+};
+
 struct SnGasBalanceResult {
 	std::string address{};
 	std::string wei{};
@@ -5140,6 +5231,12 @@ inline void to_json(nlohmann::json& j, const SnEpochClaim& v);
 inline void from_json(const nlohmann::json& j, SnEpochClaim& v);
 inline void to_json(nlohmann::json& j, const SnEpochResult& v);
 inline void from_json(const nlohmann::json& j, SnEpochResult& v);
+inline void to_json(nlohmann::json& j, const SnFleetClaimState& v);
+inline void from_json(const nlohmann::json& j, SnFleetClaimState& v);
+inline void to_json(nlohmann::json& j, const SnFleetDeviceCheckResult& v);
+inline void from_json(const nlohmann::json& j, SnFleetDeviceCheckResult& v);
+inline void to_json(nlohmann::json& j, const SnFleetDeviceLeaveOutcome& v);
+inline void from_json(const nlohmann::json& j, SnFleetDeviceLeaveOutcome& v);
 inline void to_json(nlohmann::json& j, const SnGasBalanceResult& v);
 inline void from_json(const nlohmann::json& j, SnGasBalanceResult& v);
 inline void to_json(nlohmann::json& j, const SnGasKey& v);
@@ -17276,6 +17373,217 @@ inline void from_json(const nlohmann::json& j, SnEpochResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnFleetClaimState& v) {
+	j = nlohmann::json::object();
+	j["stage"] = v.stage;
+	if (v.error_code) {
+		j["error_code"] = *v.error_code;
+	}
+	if (v.error_message) {
+		j["error_message"] = *v.error_message;
+	}
+	if (v.retry_after_seconds) {
+		j["retry_after_seconds"] = *v.retry_after_seconds;
+	}
+	j["claim_prompt"] = v.claim_prompt;
+	if (v.coldkey_address) {
+		j["coldkey_address"] = *v.coldkey_address;
+	}
+	if (v.hotkey_address) {
+		j["hotkey_address"] = *v.hotkey_address;
+	}
+	if (v.netuid) {
+		j["netuid"] = *v.netuid;
+	}
+	j["registered"] = v.registered;
+	if (v.uid) {
+		j["uid"] = *v.uid;
+	}
+	if (v.wallet_message) {
+		j["wallet_message"] = *v.wallet_message;
+	}
+	if (v.burn_limit_rao) {
+		j["burn_limit_rao"] = *v.burn_limit_rao;
+	}
+	if (v.register_after_block) {
+		j["register_after_block"] = *v.register_after_block;
+	}
+	if (v.current_epoch) {
+		j["current_epoch"] = *v.current_epoch;
+	}
+	j["chosen"] = v.chosen;
+	j["ready"] = v.ready;
+	j["bound"] = v.bound;
+	j["refused"] = v.refused;
+	j["still_to_update"] = v.still_to_update;
+	j["top_up_used"] = v.top_up_used;
+	j["funds_disclaimer"] = v.funds_disclaimer;
+}
+inline void from_json(const nlohmann::json& j, SnFleetClaimState& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("stage"); it != j.end() && !it->is_null()) {
+		it->get_to(v.stage);
+	}
+	if (auto it = j.find("error_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.error_code = std::move(tmp);
+	}
+	if (auto it = j.find("error_message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.error_message = std::move(tmp);
+	}
+	if (auto it = j.find("retry_after_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_seconds = std::move(tmp);
+	}
+	if (auto it = j.find("claim_prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_prompt);
+	}
+	if (auto it = j.find("coldkey_address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coldkey_address = std::move(tmp);
+	}
+	if (auto it = j.find("hotkey_address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.hotkey_address = std::move(tmp);
+	}
+	if (auto it = j.find("netuid"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.netuid = std::move(tmp);
+	}
+	if (auto it = j.find("registered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.registered);
+	}
+	if (auto it = j.find("uid"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.uid = std::move(tmp);
+	}
+	if (auto it = j.find("wallet_message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.wallet_message = std::move(tmp);
+	}
+	if (auto it = j.find("burn_limit_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.burn_limit_rao = std::move(tmp);
+	}
+	if (auto it = j.find("register_after_block"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.register_after_block = std::move(tmp);
+	}
+	if (auto it = j.find("current_epoch"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.current_epoch = std::move(tmp);
+	}
+	if (auto it = j.find("chosen"); it != j.end() && !it->is_null()) {
+		it->get_to(v.chosen);
+	}
+	if (auto it = j.find("ready"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ready);
+	}
+	if (auto it = j.find("bound"); it != j.end() && !it->is_null()) {
+		it->get_to(v.bound);
+	}
+	if (auto it = j.find("refused"); it != j.end() && !it->is_null()) {
+		it->get_to(v.refused);
+	}
+	if (auto it = j.find("still_to_update"); it != j.end() && !it->is_null()) {
+		it->get_to(v.still_to_update);
+	}
+	if (auto it = j.find("top_up_used"); it != j.end() && !it->is_null()) {
+		it->get_to(v.top_up_used);
+	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnFleetDeviceCheckResult& v) {
+	j = nlohmann::json::object();
+	j["action"] = v.action;
+	if (v.refusal_code) {
+		j["refusal_code"] = *v.refusal_code;
+	}
+	if (v.refusal_message) {
+		j["refusal_message"] = *v.refusal_message;
+	}
+	if (v.generation) {
+		j["generation"] = *v.generation;
+	}
+	j["binding_open"] = v.binding_open;
+	j["next_check_seconds"] = v.next_check_seconds;
+	if (v.send_failed) {
+		j["send_failed"] = *v.send_failed;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnFleetDeviceCheckResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("action"); it != j.end() && !it->is_null()) {
+		it->get_to(v.action);
+	}
+	if (auto it = j.find("refusal_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.refusal_code = std::move(tmp);
+	}
+	if (auto it = j.find("refusal_message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.refusal_message = std::move(tmp);
+	}
+	if (auto it = j.find("generation"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.generation = std::move(tmp);
+	}
+	if (auto it = j.find("binding_open"); it != j.end() && !it->is_null()) {
+		it->get_to(v.binding_open);
+	}
+	if (auto it = j.find("next_check_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.next_check_seconds);
+	}
+	if (auto it = j.find("send_failed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.send_failed = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnFleetDeviceLeaveOutcome& v) {
+	j = nlohmann::json::object();
+	j["left"] = v.left;
+	j["effective_epoch"] = v.effective_epoch;
+	j["funds_disclaimer"] = v.funds_disclaimer;
+}
+inline void from_json(const nlohmann::json& j, SnFleetDeviceLeaveOutcome& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("left"); it != j.end() && !it->is_null()) {
+		it->get_to(v.left);
+	}
+	if (auto it = j.find("effective_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.effective_epoch);
+	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnGasBalanceResult& v) {
 	j = nlohmann::json::object();
 	j["address"] = v.address;
@@ -20789,6 +21097,19 @@ using SnClaimStatusCallback = std::function<void(std::optional<SnClaimStatusResu
 using SnClaimsCallback = std::function<void(std::optional<SnClaimsResult> result, std::optional<std::string> err_param)>;
 using SnConnectWalletCallback = std::function<void(std::optional<SnConnectWalletResult> result, std::optional<std::string> err_param)>;
 using SnEpochCallback = std::function<void(std::optional<SnEpochResult> result, std::optional<std::string> err_param)>;
+using SnFleetClaimCallback = std::function<void(std::optional<SnFleetClaimState> result, std::optional<std::string> err_param)>;
+struct SnFleetClaimStore {
+	std::function<std::string(std::string network_id)> load_sn_fleet_coldkey_phrase;
+	std::function<std::string(std::string network_id)> load_sn_fleet_hotkey_seed;
+	std::function<bool(std::string network_id, std::string seed_hex)> save_sn_fleet_hotkey_seed;
+};
+using SnFleetDeviceCheckCallback = std::function<void(std::optional<SnFleetDeviceCheckResult> result, std::optional<std::string> err_param)>;
+using SnFleetDeviceLeaveCallback = std::function<void(std::optional<SnFleetDeviceLeaveOutcome> result, std::optional<std::string> err_param)>;
+using SnFleetDeviceListener = std::function<void(std::optional<SnFleetDeviceCheckResult> result)>;
+struct SnFleetDeviceStore {
+	std::function<std::string()> load_sn_fleet_device_state;
+	std::function<bool(std::string state_json)> save_sn_fleet_device_state;
+};
 using SnGasBalanceCallback = std::function<void(std::optional<SnGasBalanceResult> result, std::optional<std::string> err_param)>;
 using SnGetWalletCallback = std::function<void(std::optional<SnGetWalletResult> result, std::optional<std::string> err_param)>;
 using SnHeadCallback = std::function<void(std::optional<SnHeadResult> result, std::optional<std::string> err_param)>;
@@ -21593,6 +21914,7 @@ public:
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
 	void shuffleExits() const;
 	std::string signSnFleetBinding(const std::string& binding_json) const;
+	std::string signSnFleetRevoke(const std::string& revoke_json) const;
 	void simulateNetworkChange() const;
 	void snClaim(const std::optional<Int64List>& epochs, SnClaimCallback callback) const;
 	void snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const;
@@ -21741,6 +22063,7 @@ public:
 	void setSnChainSettings(const std::optional<SnChainSettings>& settings) const;
 	void shuffleExits() const;
 	std::string signSnFleetBinding(const std::string& binding_json) const;
+	std::string signSnFleetRevoke(const std::string& revoke_json) const;
 	void simulateNetworkChange() const;
 	void snClaim(const std::optional<Int64List>& epochs, SnClaimCallback callback) const;
 	void snClaimNow(const std::string& coldkey_ss58, SnClaimNowCallback callback) const;
@@ -22319,6 +22642,28 @@ public:
 	bool getCredentialCleared() const;
 	std::string getOperationId() const;
 	bool getRevocationConfirmed() const;
+};
+
+class SnFleetClaim final : public detail::Handle {
+public:
+	SnFleetClaim() = default;
+	explicit SnFleetClaim(uint64_t h) : detail::Handle(h) {}
+	void advance(SnFleetClaimCallback callback) const;
+	void leave(const SnFleetDevice& device, SnFleetDeviceLeaveCallback callback) const;
+	void refresh(SnFleetClaimCallback callback) const;
+	void submitWalletAuthorization(const std::string& signature, SnFleetClaimCallback callback) const;
+	void tap(SnFleetClaimCallback callback) const;
+};
+
+class SnFleetDevice final : public detail::Handle {
+public:
+	SnFleetDevice() = default;
+	explicit SnFleetDevice(uint64_t h) : detail::Handle(h) {}
+	void check(SnFleetDeviceCheckCallback callback) const;
+	void close() const;
+	void leave(SnFleetDeviceLeaveCallback callback) const;
+	void reset() const;
+	void start(SnFleetDeviceListener listener) const;
 };
 
 class Socket final : public detail::Handle {
@@ -27470,6 +27815,209 @@ inline void oneshot_sn_epoch(void* user_data, const char* result_json, const cha
 	} catch (...) {
 	}
 	delete f;
+}
+
+inline void retained_sn_fleet_claim(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetClaimCallback*>(user_data);
+	try {
+		std::optional<SnFleetClaimState> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetClaimState>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_fleet_claim(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetClaimCallback*>(user_data);
+	try {
+		std::optional<SnFleetClaimState> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetClaimState>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline char* retained_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase(void* user_data, const char* network_id) {
+	auto* f = static_cast<SnFleetClaimStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->load_sn_fleet_coldkey_phrase) {
+			r = f->load_sn_fleet_coldkey_phrase(std::string(network_id ? network_id : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline char* retained_sn_fleet_claim_store_load_sn_fleet_hotkey_seed(void* user_data, const char* network_id) {
+	auto* f = static_cast<SnFleetClaimStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->load_sn_fleet_hotkey_seed) {
+			r = f->load_sn_fleet_hotkey_seed(std::string(network_id ? network_id : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline bool retained_sn_fleet_claim_store_save_sn_fleet_hotkey_seed(void* user_data, const char* network_id, const char* seed_hex) {
+	auto* f = static_cast<SnFleetClaimStore*>(user_data);
+	bool r{};
+	try {
+		if (f->save_sn_fleet_hotkey_seed) {
+			r = f->save_sn_fleet_hotkey_seed(std::string(network_id ? network_id : ""), std::string(seed_hex ? seed_hex : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+
+inline void retained_sn_fleet_device_check(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetDeviceCheckCallback*>(user_data);
+	try {
+		std::optional<SnFleetDeviceCheckResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceCheckResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_fleet_device_check(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetDeviceCheckCallback*>(user_data);
+	try {
+		std::optional<SnFleetDeviceCheckResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceCheckResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_fleet_device_leave(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetDeviceLeaveCallback*>(user_data);
+	try {
+		std::optional<SnFleetDeviceLeaveOutcome> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceLeaveOutcome>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_fleet_device_leave(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnFleetDeviceLeaveCallback*>(user_data);
+	try {
+		std::optional<SnFleetDeviceLeaveOutcome> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceLeaveOutcome>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_fleet_device(void* user_data, const char* result_json) {
+	auto* f = static_cast<SnFleetDeviceListener*>(user_data);
+	try {
+		std::optional<SnFleetDeviceCheckResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceCheckResult>(result_json);
+		}
+		(*f)(std::move(result_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_fleet_device(void* user_data, const char* result_json) {
+	auto* f = static_cast<SnFleetDeviceListener*>(user_data);
+	try {
+		std::optional<SnFleetDeviceCheckResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnFleetDeviceCheckResult>(result_json);
+		}
+		(*f)(std::move(result_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline char* retained_sn_fleet_device_store_load_sn_fleet_device_state(void* user_data) {
+	auto* f = static_cast<SnFleetDeviceStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->load_sn_fleet_device_state) {
+			r = f->load_sn_fleet_device_state();
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline bool retained_sn_fleet_device_store_save_sn_fleet_device_state(void* user_data, const char* state_json) {
+	auto* f = static_cast<SnFleetDeviceStore*>(user_data);
+	bool r{};
+	try {
+		if (f->save_sn_fleet_device_state) {
+			r = f->save_sn_fleet_device_state(std::string(state_json ? state_json : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
 }
 
 inline void retained_sn_gas_balance(void* user_data, const char* result_json, const char* err_param) {
@@ -32941,6 +33489,14 @@ inline std::string DeviceLocal::signSnFleetBinding(const std::string& binding_js
 	}
 	return detail::takeString(r_c);
 }
+inline std::string DeviceLocal::signSnFleetRevoke(const std::string& revoke_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_sign_sn_fleet_revoke(handle(), revoke_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
 inline void DeviceLocal::simulateNetworkChange() const {
 	urnet_device_local_simulate_network_change(handle());
 }
@@ -33553,6 +34109,14 @@ inline void DeviceRemote::shuffleExits() const {
 inline std::string DeviceRemote::signSnFleetBinding(const std::string& binding_json) const {
 	char* err_c = nullptr;
 	char* r_c = urnet_device_remote_sign_sn_fleet_binding(handle(), binding_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string DeviceRemote::signSnFleetRevoke(const std::string& revoke_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_remote_sign_sn_fleet_revoke(handle(), revoke_json.c_str(), &err_c);
 	if (err_c) {
 		detail::throwError(err_c);
 	}
@@ -35833,6 +36397,57 @@ inline bool SessionSignOutResult::getRevocationConfirmed() const {
 	bool r = urnet_session_sign_out_result_get_revocation_confirmed(handle());
 	return r;
 }
+inline void SnFleetClaim::advance(SnFleetClaimCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_advance(handle(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
+}
+inline void SnFleetClaim::leave(const SnFleetDevice& device, SnFleetDeviceLeaveCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetDeviceLeaveCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_leave(handle(), device.handle(), callback_fn ? &detail::oneshot_sn_fleet_device_leave : nullptr, callback_fn);
+}
+inline void SnFleetClaim::refresh(SnFleetClaimCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_refresh(handle(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
+}
+inline void SnFleetClaim::submitWalletAuthorization(const std::string& signature, SnFleetClaimCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_submit_wallet_authorization(handle(), signature.c_str(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
+}
+inline void SnFleetClaim::tap(SnFleetClaimCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_tap(handle(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
+}
+inline void SnFleetDevice::check(SnFleetDeviceCheckCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetDeviceCheckCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_device_check(handle(), callback_fn ? &detail::oneshot_sn_fleet_device_check : nullptr, callback_fn);
+}
+inline void SnFleetDevice::close() const {
+	urnet_sn_fleet_device_close(handle());
+}
+inline void SnFleetDevice::leave(SnFleetDeviceLeaveCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetDeviceLeaveCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_device_leave(handle(), callback_fn ? &detail::oneshot_sn_fleet_device_leave : nullptr, callback_fn);
+}
+inline void SnFleetDevice::reset() const {
+	char* err_c = nullptr;
+	bool ok = urnet_sn_fleet_device_reset(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sn_fleet_device_reset failed");
+	}
+}
+inline void SnFleetDevice::start(SnFleetDeviceListener listener) const {
+	std::shared_ptr<SnFleetDeviceListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SnFleetDeviceListener>(std::move(listener));
+	}
+	if (listener_fn) {
+		retain(listener_fn);
+	}
+	urnet_sn_fleet_device_start(handle(), listener_fn ? &detail::retained_sn_fleet_device : nullptr, listener_fn.get());
+}
 inline void Socket::close() const {
 	char* err_c = nullptr;
 	bool ok = urnet_socket_close(handle(), &err_c);
@@ -37288,6 +37903,45 @@ inline std::optional<SnChainSettings> newSnChainSettings() {
 		return std::nullopt;
 	}
 	return detail::parseJson<SnChainSettings>(r_s->c_str());
+}
+inline SnFleetClaim newSnFleetClaim(const Api& api, const std::optional<SnChainSettings>& settings, SnFleetClaimStore store) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::shared_ptr<SnFleetClaimStore> store_fn;
+	if ((static_cast<bool>(store.load_sn_fleet_coldkey_phrase) || static_cast<bool>(store.load_sn_fleet_hotkey_seed) || static_cast<bool>(store.save_sn_fleet_hotkey_seed))) {
+		store_fn = std::make_shared<SnFleetClaimStore>(std::move(store));
+	}
+	SnFleetClaim r(urnet_new_sn_fleet_claim(api.handle(), settings_c, store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_load_sn_fleet_hotkey_seed : nullptr, store_fn ? &detail::retained_sn_fleet_claim_store_save_sn_fleet_hotkey_seed : nullptr, store_fn.get()));
+	if (store_fn) {
+		r.retain(store_fn);
+	}
+	return r;
+}
+inline SnFleetDevice newSnFleetDeviceForLocal(const Api& api, const DeviceLocal& device, SnFleetDeviceStore store) {
+	std::shared_ptr<SnFleetDeviceStore> store_fn;
+	if ((static_cast<bool>(store.load_sn_fleet_device_state) || static_cast<bool>(store.save_sn_fleet_device_state))) {
+		store_fn = std::make_shared<SnFleetDeviceStore>(std::move(store));
+	}
+	SnFleetDevice r(urnet_new_sn_fleet_device_for_local(api.handle(), device.handle(), store_fn ? &detail::retained_sn_fleet_device_store_load_sn_fleet_device_state : nullptr, store_fn ? &detail::retained_sn_fleet_device_store_save_sn_fleet_device_state : nullptr, store_fn.get()));
+	if (store_fn) {
+		r.retain(store_fn);
+	}
+	return r;
+}
+inline SnFleetDevice newSnFleetDeviceForRemote(const Api& api, const DeviceRemote& device, SnFleetDeviceStore store) {
+	std::shared_ptr<SnFleetDeviceStore> store_fn;
+	if ((static_cast<bool>(store.load_sn_fleet_device_state) || static_cast<bool>(store.save_sn_fleet_device_state))) {
+		store_fn = std::make_shared<SnFleetDeviceStore>(std::move(store));
+	}
+	SnFleetDevice r(urnet_new_sn_fleet_device_for_remote(api.handle(), device.handle(), store_fn ? &detail::retained_sn_fleet_device_store_load_sn_fleet_device_state : nullptr, store_fn ? &detail::retained_sn_fleet_device_store_save_sn_fleet_device_state : nullptr, store_fn.get()));
+	if (store_fn) {
+		r.retain(store_fn);
+	}
+	return r;
 }
 inline SubscriptionBalanceViewController newSubscriptionBalanceViewController(const Api& api) {
 	SubscriptionBalanceViewController r(urnet_new_subscription_balance_view_controller(api.handle()));
