@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +85,9 @@ const (
 	snFleetDeviceCheckMax = 8 * 24 * time.Hour
 	// a run that finds its saved check overdue makes it within this, spread out
 	snFleetDeviceCheckOverdue = time.Hour
+	// a server without the route yet: it gets one when binding is about to open, and
+	// asking daily until then would only be load
+	snFleetDeviceCheckNoRoute = 7 * 24 * time.Hour
 
 	snFleetDeviceCheckTimeout = 2 * time.Minute
 )
@@ -573,7 +577,10 @@ func (self *SnFleetDevice) RunWithContext(ctx context.Context, listener SnFleetD
 		if ctx.Err() != nil {
 			return
 		}
-		if err != nil {
+		var status *connect.HttpStatusError
+		if errors.As(err, &status) && status.StatusCode == http.StatusNotFound {
+			delay = self.nextCheck(int64(snFleetDeviceCheckNoRoute / time.Second))
+		} else if err != nil {
 			delay = self.nextCheck(0)
 		} else {
 			delay = time.Duration(result.NextCheckSeconds) * time.Second

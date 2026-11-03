@@ -529,7 +529,8 @@ func TestSnFleetDeviceRunIsSlowAndJittered(t *testing.T) {
 	}
 	checked := 0
 	device.RunWithContext(ctx, testingFleetListener(func(*SnFleetDeviceCheckResult) { checked += 1 }))
-	want := []time.Duration{12 * time.Hour, snFleetDeviceCheckDefault, 6 * time.Hour, 6 * time.Hour}
+	// a server without the route waits a week; then the server's cadence
+	want := []time.Duration{12 * time.Hour, snFleetDeviceCheckNoRoute, 6 * time.Hour, 6 * time.Hour}
 	if len(delays) != len(want) {
 		t.Fatalf("delays %v", delays)
 	}
@@ -592,6 +593,27 @@ func TestSnFleetDeviceRestartKeepsTheServersSchedule(t *testing.T) {
 	device.saveNextCheck(time.Hour)
 	if unreadable.saves != 0 {
 		t.Fatalf("saved %q over a state it couldn't read", unreadable.saved)
+	}
+}
+
+// Any other failure waits the slow interval, and never less.
+func TestSnFleetDeviceRunWaitsADayAfterAFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := &testingFleetServer{workErr: &connect.HttpStatusError{StatusCode: 503}}
+	device := newTestingFleetDevice(t, server, newTestingFleetSigner(t), &testingFleetMemoryStore{})
+	delays := []time.Duration{}
+	device.sleep = func(ctx context.Context, delay time.Duration) bool {
+		delays = append(delays, delay)
+		if len(delays) == 3 {
+			cancel()
+			return false
+		}
+		return true
+	}
+	device.RunWithContext(ctx, nil)
+	if len(delays) != 3 || delays[1] != snFleetDeviceCheckDefault || delays[2] != snFleetDeviceCheckDefault {
+		t.Fatalf("delays %v", delays)
 	}
 }
 
