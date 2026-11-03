@@ -1373,6 +1373,9 @@ public interface Raw extends Library {
   void urnet_wallet_view_controller_validate_address(long a0, String a1, String a2, urnet_validate_address_cb a3, Pointer a4);
   byte urnet_websocket_device_rpc_listener_close(long a0, PointerByReference a1);
   double urnet_alpha_from_rao(long a0);
+  Pointer urnet_bittensor_local_key_address(String a0, PointerByReference a1);
+  Pointer urnet_bittensor_local_key_generate(PointerByReference a0);
+  Pointer urnet_bittensor_local_key_sign(String a0, String a1, PointerByReference a2);
   Pointer urnet_bittensor_sign_raw_data(String a0);
   Pointer urnet_bittensor_wallet_display_name(String a0);
   Pointer urnet_bittensor_wallet_id_list();
