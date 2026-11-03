@@ -17,8 +17,13 @@ import (
 // dmcaReclaimFlowTtl is the DMCA flow idle TTL for the mux/security test. It must
 // exceed the reclaim-phase fill duration (even under -race, where 40k sends take a
 // few seconds) so the flow table accumulates fully before the idle scan reclaims
-// it. The scan interval is FlowTtl/4 clamped to a 5s minimum.
+// it.
 const dmcaReclaimFlowTtl = 15 * time.Second
+
+// How often the idle scan runs in the mux/security test. A policy that shortens
+// FlowTtl has to shorten this too: the default stays 75s whatever FlowTtl is, so
+// the reclaim phase would end before the first scan.
+const dmcaReclaimFlowScanInterval = 1 * time.Second
 
 // TestDeviceLocalMuxSecurityLoadStability drives packets through a real DeviceLocal
 // over the MUX UPGRADE path (not routeLocal) so that the client-egress security
@@ -130,15 +135,16 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 		) {
 		})
 
-		// Use a short DMCA FlowTtl so the idle-scan actually reclaims flows within
-		// the test (the scan interval is FlowTtl/4 clamped to a 5s minimum). CFAA
-		// and web-standard settings stay at their defaults, so the full chain runs.
+		// Use a short DMCA FlowTtl and scan interval so the idle-scan actually
+		// reclaims flows within the test. CFAA and web-standard settings stay at
+		// their defaults, so the full chain runs.
 		device.SetClientSecurityPolicyGenerator(func(policyCtx context.Context, stats *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy {
 			dmca := connect.DefaultDmcaSecurityPolicySettings()
 			// Long enough that the whole reclaim fill (even under -race) completes
 			// before any flow is idle past it, so the table accumulates fully; the
 			// reclaim phase then idles past this to trigger the scan.
 			dmca.FlowTtl = dmcaReclaimFlowTtl
+			dmca.FlowScanInterval = dmcaReclaimFlowScanInterval
 			return connect.NewSecurityPolicy(
 				policyCtx,
 				connect.DefaultCfaaSecurityPolicySettings(),
@@ -251,15 +257,15 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 	// --- exercise the real DMCA idle-scan TTL reclaim ---
 	// Fill the flow table with many distinct fresh flows (BitTorrent handshakes ->
 	// Incident, so each is tracked but dropped rather than egressed), then idle past
-	// FlowTtl + the (>=5s clamped) scan interval and confirm the scan drains the
-	// table: live heap drops back while the device stays up. A broken reclaim leaves
+	// FlowTtl + the scan interval and confirm the scan drains the table: live heap
+	// drops back while the device stays up. A broken reclaim leaves
 	// the flows (and heap) resident. The capacity-LRU (MaxFlows) is left at its
 	// default, so reclaimFlows stays below it and this isolates the time-based scan.
 	const (
 		reclaimFlows        = 40000
-		reclaimIdle         = dmcaReclaimFlowTtl + 7*time.Second // > FlowTtl + scan interval(>=5s)
-		reclaimFillMinBytes = 3 << 20                            // the fill must build a substantial flow table
-		reclaimMinDropBytes = 2 << 20                            // and the idle scan must reclaim most of it
+		reclaimIdle         = dmcaReclaimFlowTtl + 5*dmcaReclaimFlowScanInterval // > FlowTtl + scan interval
+		reclaimFillMinBytes = 3 << 20                                            // the fill must build a substantial flow table
+		reclaimMinDropBytes = 2 << 20                                            // and the idle scan must reclaim most of it
 	)
 	fillStart := time.Now()
 	fillDmcaFlows(device, reclaimFlows)
