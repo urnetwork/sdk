@@ -5,10 +5,14 @@ package sdk
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/protocol"
 	"github.com/urnetwork/sdk/sn/ss58"
 )
@@ -88,6 +92,8 @@ type testingFleetClaimChain struct {
 	registers   []uint64
 	commitments [][32]byte
 	writeErr    error
+	// what the registration's own checks say, before anything is signed
+	registerErr error
 	seeds       [][32]byte
 	phrases     []string
 	uidReads    int
@@ -132,6 +138,9 @@ func (self *testingFleetClaimChain) ConvertForBurn(_ context.Context, phrase str
 func (self *testingFleetClaimChain) RegisterLimit(_ context.Context, phrase string, _ uint16, _ [32]byte, limitRao uint64) error {
 	self.phrases = append(self.phrases, phrase)
 	self.registers = append(self.registers, limitRao)
+	if self.registerErr != nil {
+		return self.registerErr
+	}
 	return self.writeErr
 }
 
@@ -884,4 +893,123 @@ func TestSnFleetClaimStateHoldsNoSecret(t *testing.T) {
 			t.Fatalf("a secret in %q", state.ErrorMessage)
 		}
 	}
+}
+
+// A registration its checks refuse sends nothing, and each refusal says what to do.
+// One already on chain is a registration that landed.
+func TestSnFleetClaimRegisterRefusedBeforeSigning(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		err   error
+		stage string
+		code  string
+		retry int64
+	}{
+		{"registered already", errSnFleetRegisterRegistered, SnFleetClaimStageRegistering, "", snFleetClaimRetryShort},
+		{"the burn rose", errSnFleetRegisterBurnRose, SnFleetClaimStageFailed, SnFleetClaimErrorChain, snFleetClaimRetryShort},
+		{"short", errSnFleetRegisterShort, SnFleetClaimStageFailed, SnFleetClaimErrorChain, snFleetClaimRetryShort},
+		{"closed", errSnFleetRegistrationClosed, SnFleetClaimStageFailed, SnFleetClaimErrorRegistrationClosed, snFleetClaimRetryLong},
+		{"another coldkey's", errSnFleetHotkeyOwnedElsewhere, SnFleetClaimStageFailed, SnFleetClaimErrorHotkeyOwnedElsewhere, snFleetClaimRetryLong},
+		{"unread", fmt.Errorf("%w: down", errSnFleetRegisterCheckedFailed), SnFleetClaimStageFailed, SnFleetClaimErrorChain, snFleetClaimRetryLong},
+	} {
+		fixture := newTestingFleetClaim(t)
+		fixture.chain.registerErr = test.err
+		state := fixture.claim.TapSync(context.Background())
+		testingFleetExpectStage(t, state, test.stage)
+		if state.ErrorCode != test.code || state.RetryAfterSeconds != test.retry || len(fixture.chain.registers) != 1 {
+			t.Fatalf("%s: %+v, %d registrations", test.name, state, len(fixture.chain.registers))
+		}
+	}
+}
+
+// The convert's fake chain, answering also a hotkey's UID and owner and whether the
+// subnet takes registrations.
+type testingFleetRegisterChain struct {
+	*convertFakeChain
+	uid     string
+	owner   string
+	allowed string
+}
+
+func (self *testingFleetRegisterChain) Call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+	if method == "state_getStorage" {
+		key := params[0].(string)
+		for prefix, value := range map[string]string{
+			"0x" + "658faa385070e074c85bf6b568cf0555aab1b4e78e1ea8305462ee53b3686dc8": self.uid,
+			"0x" + "658faa385070e074c85bf6b568cf0555eca6b7a1fdc9f689184ecb4f359c0518": self.owner,
+			"0x" + "658faa385070e074c85bf6b568cf0555d5fe74da02c7b4bbb340fb368eee3e77": self.allowed,
+		} {
+			if strings.HasPrefix(key, prefix) {
+				self.reads["state_getStorage "+prefix[:20]+"…"+prefix[len(prefix)-8:]] += 1
+				if value == "" {
+					return json.RawMessage("null"), nil
+				}
+				return json.Marshal(value)
+			}
+		}
+	}
+	return self.convertFakeChain.Call(ctx, method, params...)
+}
+
+func (self *testingFleetRegisterChain) Batch(ctx context.Context, calls []evm.BatchCall) ([]evm.BatchResult, error) {
+	results := make([]evm.BatchResult, len(calls))
+	for i, call := range calls {
+		results[i].Result, results[i].Err = self.Call(ctx, call.Method, call.Params...)
+	}
+	return results, nil
+}
+
+// register_limit is signed only when everything it checks that can be read says it
+// would pass, since the chain keeps the fee of one that fails: the burn within the
+// limit, the key paying the burn and fee and keeping its deposit, the subnet taking
+// registrations, the hotkey free and not another coldkey's.
+func TestSnFleetClaimRegisterLimitChecksBeforeItSigns(t *testing.T) {
+	coldkeySigner, err := bittensorSignerFromPhrase(convertTestDevPhrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coldkey := coldkeySigner.PublicKey()
+	hotkey := testingFleetPublic(t, testingFleetHotkeySeed)
+	register := func(name string, change func(chain *testingFleetRegisterChain), limit uint64) (error, *testingFleetRegisterChain) {
+		t.Helper()
+		chain := &testingFleetRegisterChain{convertFakeChain: newConvertFakeChain(t), allowed: "0x01"}
+		chain.free = 10_000_000
+		chain.landEvents = func(index uint32) string { return convertEvents(index, convertSuccessEvent()) }
+		if change != nil {
+			change(chain)
+		}
+		engine := newBittensorChainEngineWithRpc(chain, bittensorMainnetPins)
+		engine.sleep = func(ctx context.Context, wait time.Duration) error {
+			chain.head += 1
+			return ctx.Err()
+		}
+		claimChain := &snFleetClaimEngineChain{testEngine: engine}
+		return claimChain.RegisterLimit(context.Background(), convertTestDevPhrase, 25, hotkey, limit), chain
+	}
+	refused := func(name string, want error, change func(chain *testingFleetRegisterChain), limit uint64) {
+		t.Helper()
+		err, chain := register(name, change, limit)
+		if !errors.Is(err, want) || len(chain.submitted) != 0 {
+			t.Fatalf("%s: %v, %d sent", name, err, len(chain.submitted))
+		}
+	}
+
+	if err, chain := register("passes", nil, 500_000); err != nil || len(chain.submitted) != 1 {
+		t.Fatalf("passes: %v, %d sent", err, len(chain.submitted))
+	}
+	ownHex := "0x" + hex.EncodeToString(coldkey[:])
+	if err, chain := register("its own coldkey's hotkey", func(chain *testingFleetRegisterChain) { chain.owner = ownHex }, 500_000); err != nil || len(chain.submitted) != 1 {
+		t.Fatalf("its own: %v, %d sent", err, len(chain.submitted))
+	}
+	refused("the burn rose", errSnFleetRegisterBurnRose, nil, 499_999)
+	// the fee 1,100,000, the deposit 500 and the burn 500,000
+	refused("one rao short", errSnFleetRegisterShort, func(chain *testingFleetRegisterChain) { chain.free = 1_600_499 }, 500_000)
+	if err, _ := register("just enough", func(chain *testingFleetRegisterChain) { chain.free = 1_600_500 }, 500_000); err != nil {
+		t.Fatalf("just enough: %v", err)
+	}
+	refused("frozen", errSnFleetRegisterShort, func(chain *testingFleetRegisterChain) { chain.frozen = 9_000_000 }, 500_000)
+	refused("closed", errSnFleetRegistrationClosed, func(chain *testingFleetRegisterChain) { chain.allowed = "0x00" }, 500_000)
+	refused("registered", errSnFleetRegisterRegistered, func(chain *testingFleetRegisterChain) { chain.uid = "0x4600" }, 500_000)
+	refused("another coldkey's", errSnFleetHotkeyOwnedElsewhere, func(chain *testingFleetRegisterChain) { chain.owner = "0x" + strings.Repeat("ab", 32) }, 500_000)
+	refused("unread", errSnFleetRegisterCheckedFailed, func(chain *testingFleetRegisterChain) { chain.allowed = "0x02" }, 500_000)
 }

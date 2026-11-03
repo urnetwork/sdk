@@ -23,7 +23,7 @@ package sdk
 //   - A sale worth less than the runtime's minimum stake (0.002 TAO) is refused,
 //     unless it empties the position, which only a key that pays its fee in TAO
 //     can aim for exactly. MinAmountRao is that floor.
-//   - Stake left under the nominator minimum (0.01 TAO of value) is sold with the
+//   - Stake left under the nominator minimum (0.02 TAO of value) is sold with the
 //     sale that left it, at the market price. RemainderSweptAlphaRao says so.
 //   - A call that fails after its fee was charged keeps the fee.
 //
@@ -31,6 +31,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +40,7 @@ import (
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk/internal/subtensor"
+	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/ss58"
 )
 
@@ -57,6 +59,7 @@ const (
 	bittensorConvertLimitSanityBps uint64 = 3_000
 
 	bittensorConvertEstimateTimeout = 60 * time.Second
+	bittensorConvertSubmitTimeout   = 2 * time.Minute
 	// reads a typed amount does not repeat
 	bittensorConvertStateTtl = 12 * time.Second
 
@@ -65,8 +68,20 @@ const (
 	bittensorConvertBurnMarginBps uint64 = 1_000
 )
 
-// Stable codes in SnError.Code and in BittensorConvertCallback.Failed, so the
-// apps can localize them. Each comes with a message fit to show as it is.
+// bittensorConvertFundsDisclaimer is the id of the funds disclaimer every easy flow
+// shows (owner, 2026-11-03), and every convert result a sheet draws carries it.
+// An app shows the text it has under this id in the user's language. Convert only
+// runs with the key in the app's secure storage, so it is the full disclaimer, the
+// owner's three sentences. The id is the key flow's: once its
+// BittensorFundsDisclaimerFull is on main, convert takes that instead of the literal.
+const bittensorConvertFundsDisclaimer = "bittensor_funds_disclaimer"
+
+// newBittensorChainEngineForExport is how the exported calls get their engine:
+// the settings' endpoint, under the release's pins. Tests answer from a fake chain.
+var newBittensorChainEngineForExport = newBittensorChainEngine
+
+// Stable codes in SnError.Code, so the apps can localize them. Each comes with a
+// message fit to show as it is.
 const (
 	// the runtime's call or transaction format is not the one this sdk knows:
 	// nothing was signed, and an app update is what fixes it
@@ -152,18 +167,41 @@ type BittensorConvertEstimateResult struct {
 	BurnAlreadyCovered bool `json:"burn_already_covered,omitempty"`
 
 	// BittensorConvertSubmit can run with this estimate
-	CanConvert bool     `json:"can_convert"`
-	Error      *SnError `json:"error,omitempty"`
+	CanConvert bool `json:"can_convert"`
+	// what the user should know before going ahead, fit to show as it is; "" for nothing
+	Notice string `json:"notice,omitempty"`
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
 }
 
 // BittensorConvertEstimateCallback receives one estimate.
 type BittensorConvertEstimateCallback connect.ApiCallback[*BittensorConvertEstimateResult]
 
-// BittensorConvertReceipt is what a finalized conversion did, in rao.
+// BittensorConvertSubmission says a conversion was sent and where to look for
+// what it did. It holds nothing secret, so an app can keep it and call
+// BittensorConvertWait again after it was away. When Error is set nothing was sent,
+// unless TxHash is set too: then it may have been, and only waiting can tell.
+type BittensorConvertSubmission struct {
+	TxHash      string `json:"tx_hash,omitempty"`
+	ColdkeySs58 string `json:"coldkey_ss58,omitempty"`
+	// the first and last blocks it can land in; after the last it never can
+	FirstBlock int64 `json:"first_block,omitempty"`
+	LastBlock  int64 `json:"last_block,omitempty"`
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
+}
+
+// BittensorConvertSubmitCallback receives one submission.
+type BittensorConvertSubmitCallback connect.ApiCallback[*BittensorConvertSubmission]
+
+// BittensorConvertReceipt is what a finalized conversion did, in rao. When Error
+// is set the sale did not happen; a block number says the fee was still charged.
 type BittensorConvertReceipt struct {
-	TxHash         string `json:"tx_hash"`
-	BlockNumber    int64  `json:"block_number"`
-	ExtrinsicIndex int64  `json:"extrinsic_index"`
+	TxHash         string `json:"tx_hash,omitempty"`
+	BlockNumber    int64  `json:"block_number,omitempty"`
+	ExtrinsicIndex int64  `json:"extrinsic_index,omitempty"`
 	// the SN25α sold, with a remainder swept along and the pool's fee
 	AlphaSoldRao int64 `json:"alpha_sold_rao"`
 	// the TAO that reached the key, before a fee paid in TAO
@@ -171,18 +209,13 @@ type BittensorConvertReceipt struct {
 	// the network fee, in SN25α or in TAO, whichever paid it
 	FeeAlphaRao int64 `json:"fee_alpha_rao"`
 	FeeTaoRao   int64 `json:"fee_tao_rao"`
+	// the id of the disclaimer every screen that draws this shows, in the app's strings
+	FundsDisclaimer string   `json:"funds_disclaimer"`
+	Error           *SnError `json:"error,omitempty"`
 }
 
-// BittensorConvertCallback receives the progress of BittensorConvertSubmit. A
-// run ends in exactly one of Confirmed and Failed. Sent comes at most once,
-// before them: from then on the transaction may land even if the app goes away.
-// Failed's code is a BittensorConvertError* or SnErrorCode* value, and its
-// message is fit to show as it is.
-type BittensorConvertCallback interface {
-	Sent(txHash string)
-	Confirmed(receipt *BittensorConvertReceipt)
-	Failed(code string, message string)
-}
+// BittensorConvertReceiptCallback receives one receipt.
+type BittensorConvertReceiptCallback connect.ApiCallback[*BittensorConvertReceipt]
 
 // BittensorConvertEstimate says what converting the amount of SN25α would do
 // for the key at the address. An amount of 0 gives the limits alone. It holds no
@@ -217,22 +250,28 @@ func BittensorConvertEstimateForBurn(settings *SnChainSettings, coldkeySs58 stri
 	})
 }
 
+// bittensorConvertEstimateFor is every exported estimate, and every result it
+// gives carries the disclaimer.
 func bittensorConvertEstimateFor(
 	ctx context.Context,
 	settings *SnChainSettings,
 	coldkeySs58 string,
 	estimate func(engine *bittensorChainEngine, coldkey [32]byte) *BittensorConvertEstimateResult,
 ) *BittensorConvertEstimateResult {
-	coldkeySs58 = strings.TrimSpace(coldkeySs58)
-	coldkey, err := snColdkeyBytes(coldkeySs58)
-	if err != nil {
-		return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: newSnError(SnErrorCodeInvalidAddress, "This is not a Bittensor address.")}
-	}
-	engine, snErr := newBittensorChainEngine(settings)
-	if snErr != nil {
-		return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: snErr}
-	}
-	return estimate(engine, coldkey)
+	result := func() *BittensorConvertEstimateResult {
+		coldkeySs58 = strings.TrimSpace(coldkeySs58)
+		coldkey, err := snColdkeyBytes(coldkeySs58)
+		if err != nil {
+			return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: newSnError(SnErrorCodeInvalidAddress, "This is not a Bittensor address.")}
+		}
+		engine, snErr := newBittensorChainEngineForExport(settings)
+		if snErr != nil {
+			return &BittensorConvertEstimateResult{ColdkeySs58: coldkeySs58, Error: snErr}
+		}
+		return estimate(engine, coldkey)
+	}()
+	result.FundsDisclaimer = bittensorConvertFundsDisclaimer
+	return result
 }
 
 // FormatTaoAmount renders rao as TAO with six decimals: "0.000500". Convert's
@@ -274,6 +313,11 @@ type bittensorConvertState struct {
 	feeReserveRao uint64
 	minAmountRao  uint64
 	maxAmountRao  uint64
+}
+
+// floorRao is the least a sale may pay unless it empties the position.
+func (self *bittensorConvertState) floorRao() uint64 {
+	return max(self.minStakeRao, self.depositRao)
 }
 
 // One state, so typing an amount does not read it all again.
@@ -346,6 +390,14 @@ func (self *bittensorChainEngine) convertState(ctx context.Context, coldkey [32]
 	return state, nil
 }
 
+// forgetConvertState drops the kept reads: a conversion changed them.
+func forgetConvertState() {
+	bittensorConvertStateCache.Lock()
+	defer bittensorConvertStateCache.Unlock()
+	bittensorConvertStateCache.state = nil
+	bittensorConvertStateCache.key = ""
+}
+
 var errBittensorConvertNoPrice = errors.New("the subnet has no price")
 
 // convertLimits works out how the fee is paid and which amounts are possible.
@@ -382,12 +434,8 @@ func (self *bittensorChainEngine) convertLimits(ctx context.Context, state *bitt
 	// The runtime's floor: a sale paying at least the minimum stake, and at
 	// least the deposit for a key that has none yet. It runs when the sale lands,
 	// after the price has moved, and a refusal then keeps the fee, so the floor
-	// has to hold at the price limit. A sale this small barely moves the price.
-	worstPrice, ok := bittensorConvertLimit(sale.PriceRao, 1)
-	if !ok {
-		return errBittensorConvertNoPrice
-	}
-	minimum, err := self.convertAmountPaying(ctx, state, max(state.minStakeRao, state.depositRao), worstPrice)
+	// has to hold at the sale's price limit.
+	minimum, err := self.convertAmountPaying(ctx, state.floorRao(), sale.PriceRao)
 	if err != nil {
 		return err
 	}
@@ -408,19 +456,54 @@ func (self *bittensorChainEngine) convertLimits(ctx context.Context, state *bitt
 // price by the impact, in basis points. The price may also move by
 // bittensorConvertSlippageBps before the sale lands.
 func bittensorConvertLimit(priceRao uint64, impactBps uint64) (uint64, bool) {
-	limit, ok := bittensorMulDiv(priceRao, bittensorBasisPoints-bittensorConvertSlippageBps-bittensorConvertImpactLimitFactor*impactBps, bittensorBasisPoints)
+	allowance := bittensorConvertSlippageBps + bittensorConvertImpactLimitFactor*impactBps
+	if bittensorConvertMaxImpactBps < impactBps || bittensorBasisPoints <= allowance {
+		return 0, false
+	}
+	limit, ok := bittensorMulDiv(priceRao, bittensorBasisPoints-allowance, bittensorBasisPoints)
 	return limit, ok && limit != 0
 }
 
-// convertAmountPaying is the least alpha whose sale pays at least the TAO when
-// it is priced at or above the price.
-func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, state *bittensorConvertState, taoRao uint64, priceRao uint64) (uint64, error) {
+// bittensorConvertSaleImpact is how far a sale moves its own average price, in
+// basis points, from the runtime's simulation of it.
+func bittensorConvertSaleImpact(simulation subtensor.SwapSimulation) (uint64, bool) {
+	return bittensorMulDivCeil(simulation.TaoSlippageRao, bittensorBasisPoints, simulation.TaoRao+simulation.TaoSlippageRao)
+}
+
+// bittensorConvertPromise is the least TAO a sale pays if it runs at all: every
+// alpha that goes into the pool sells at or above the sale's own limit. The
+// runtime's floors are checked against what the sale pays when it runs, so the
+// amounts here are sized by this.
+func bittensorConvertPromise(priceRao uint64, simulation subtensor.SwapSimulation) (promise uint64, limit uint64, impactBps uint64, err error) {
+	impactBps, ok := bittensorConvertSaleImpact(simulation)
+	if !ok {
+		return 0, 0, 0, errBittensorConvertNoPrice
+	}
+	if bittensorConvertMaxImpactBps < impactBps {
+		return 0, 0, impactBps, errBittensorConvertPoolTooShallow
+	}
+	limit, ok = bittensorConvertLimit(priceRao, impactBps)
+	if !ok {
+		return 0, 0, impactBps, errBittensorConvertNoPrice
+	}
+	promise, ok = bittensorMulDiv(simulation.AlphaRao, limit, uint64(SnRaoPerAlpha))
+	if !ok {
+		return 0, 0, impactBps, errBittensorConvertNoPrice
+	}
+	return promise, limit, impactBps, nil
+}
+
+var errBittensorConvertPoolTooShallow = errors.New("the pool moves too far for this sale")
+
+// convertAmountPaying is the least alpha whose sale promises at least the TAO at
+// today's price. A sale pays close to in proportion to its amount, so each try
+// scales the amount by how far the last one fell short.
+func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, taoRao uint64, priceRao uint64) (uint64, error) {
 	amount, ok := bittensorMulDivCeil(taoRao, uint64(SnRaoPerAlpha), priceRao)
 	if !ok {
 		return 0, errBittensorConvertNoPrice
 	}
-	// the first try is short by the pool's fee, the second by rounding
-	for range 4 {
+	for range 8 {
 		simulation, err := self.chain.SimulateSell(ctx, self.pins.netuid, amount)
 		if err != nil {
 			return 0, err
@@ -429,19 +512,21 @@ func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, state
 		if simulation.TaoRao == 0 {
 			return 0, errBittensorConvertNoPrice
 		}
-		paid, ok := bittensorMulDiv(simulation.AlphaRao, priceRao, uint64(SnRaoPerAlpha))
-		if !ok {
-			return 0, errBittensorConvertNoPrice
+		paid, _, _, err := bittensorConvertPromise(priceRao, simulation)
+		if err != nil {
+			return 0, err
 		}
-		paid = min(paid, simulation.TaoRao)
 		if taoRao <= paid {
 			return amount, nil
 		}
-		more, ok := bittensorMulDivCeil(taoRao-paid, uint64(SnRaoPerAlpha), priceRao)
+		if paid == 0 {
+			return 0, errBittensorConvertNoPrice
+		}
+		next, ok := bittensorMulDivCeil(amount, taoRao, paid)
 		if !ok {
 			return 0, errBittensorConvertNoPrice
 		}
-		amount += more + 1
+		amount = max(next, amount) + 1
 	}
 	return 0, errBittensorConvertNoPrice
 }
@@ -478,6 +563,8 @@ func bittensorConvertErrorFromErr(err error) *SnError {
 		return newSnError(BittensorChainErrorWrongChain, "The Bittensor network endpoint in this app's settings is for another chain.")
 	case errors.Is(err, errBittensorConvertNoPrice):
 		return newSnError(BittensorConvertErrorPriceMoved, "The subnet has no price to convert at right now. Try again later.")
+	case errors.Is(err, errBittensorConvertPoolTooShallow):
+		return newSnError(BittensorConvertErrorPriceImpact, "The subnet's pool is too small to convert this right now. Try again later.")
 	}
 	snErr := snErrorFromErr(err)
 	switch snErr.Code {
@@ -527,25 +614,24 @@ func (self *bittensorChainEngine) convertEstimateFrom(ctx context.Context, state
 		result.Error = newSnError(BittensorConvertErrorPriceImpact, "The subnet's pool can't take this much at once. Try a smaller amount.")
 		return result
 	}
-	withoutImpact := simulation.TaoRao + simulation.TaoSlippageRao
-	impactBps, ok := bittensorMulDivCeil(simulation.TaoSlippageRao, bittensorBasisPoints, withoutImpact)
-	if !ok {
-		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
-		return result
-	}
+	minTao, limit, impactBps, err := bittensorConvertPromise(state.sale.PriceRao, simulation)
 	result.PriceImpactBps = int64(impactBps)
-	if bittensorConvertMaxImpactBps < impactBps {
+	switch {
+	case errors.Is(err, errBittensorConvertPoolTooShallow):
 		result.Error = newSnError(BittensorConvertErrorPriceImpact, "Converting this much at once would move the price too far. Convert less at a time.")
 		return result
-	}
-	limit, ok := bittensorConvertLimit(state.sale.PriceRao, impactBps)
-	if !ok {
+	case err != nil || minTao == 0:
 		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
 		return result
 	}
-	minTao, ok := bittensorMulDiv(simulation.AlphaRao, limit, uint64(SnRaoPerAlpha))
-	if !ok || minTao == 0 {
-		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
+	// the runtime refuses a sale under its floor, and keeps the fee, unless the
+	// sale empties the position, which only a key paying in TAO can aim for
+	emptiesPosition := !state.feeInAlpha && amount == state.sale.StakeRao
+	if minTao < state.floorRao() && !emptiesPosition {
+		result.Error = newSnError(BittensorConvertErrorAmountTooLow, fmt.Sprintf(
+			"The network's smallest conversion is about %s.",
+			FormatAlpha(int64(max(state.minAmountRao, amount+1))),
+		))
 		return result
 	}
 	expected := simulation.TaoRao
@@ -578,7 +664,29 @@ func (self *bittensorChainEngine) convertEstimateFrom(ctx context.Context, state
 	result.LimitPriceRao = int64(limit)
 	result.PoolFeeAlphaRao = int64(simulation.AlphaFeeRao)
 	result.CanConvert = true
+	result.Notice = state.notice(result)
 	return result
+}
+
+// notice says what a sheet's numbers do not: where the fee comes from, and that
+// the rest of the stake goes too.
+func (self *bittensorConvertState) notice(result *BittensorConvertEstimateResult) string {
+	notices := []string{}
+	if result.FeeInAlpha {
+		notices = append(notices, fmt.Sprintf(
+			"This key has no TAO, so the network fee of about %s comes out of its %s.",
+			FormatAlpha(result.FeeAlphaRao),
+			SnAlphaSymbol,
+		))
+	}
+	if 0 < result.RemainderSweptAlphaRao {
+		notices = append(notices, fmt.Sprintf(
+			"The other %s converts too, because the network doesn't keep stake worth less than %s.",
+			FormatAlpha(result.RemainderSweptAlphaRao),
+			FormatTao(int64(self.sale.NominatorMinimumRao)),
+		))
+	}
+	return strings.Join(notices, " ")
 }
 
 // refuseStake says why this key can convert nothing, whatever the amount.
@@ -665,12 +773,8 @@ func (self *bittensorChainEngine) convertEstimateForBurn(ctx context.Context, co
 		target += state.feeRao
 	}
 	// the sale has to pay enough even at its limit, and at least the runtime's floor
-	target = max(target, state.minStakeRao, state.depositRao)
-	limit, ok := bittensorConvertLimit(state.sale.PriceRao, 1)
-	if !ok {
-		return fail(errBittensorConvertNoPrice)
-	}
-	amount, err := self.convertAmountPaying(ctx, state, target, limit)
+	target = max(target, state.floorRao())
+	amount, err := self.convertAmountPaying(ctx, target, state.sale.PriceRao)
 	if err != nil {
 		return fail(err)
 	}
@@ -691,82 +795,123 @@ func (self *bittensorChainEngine) convertEstimateForBurn(ctx context.Context, co
 
 // convertSubmit checks the estimate still holds, then signs and sends. A refusal
 // here signs nothing.
-func (self *bittensorChainEngine) convertSubmit(ctx context.Context, signer subtensor.Signer, estimate *BittensorConvertEstimateResult, callback BittensorConvertCallback) {
+func (self *bittensorChainEngine) convertSubmit(ctx context.Context, signer subtensor.Signer, estimate *BittensorConvertEstimateResult) *BittensorConvertSubmission {
+	refuse := func(failure *SnError) *BittensorConvertSubmission {
+		return &BittensorConvertSubmission{Error: failure}
+	}
 	if estimate == nil || !estimate.CanConvert || estimate.AmountRao <= 0 || estimate.LimitPriceRao <= 0 || estimate.MinTaoRao <= 0 {
-		callback.Failed(BittensorConvertErrorPriceMoved, "Estimate the amount again first.")
-		return
+		return refuse(newSnError(BittensorConvertErrorPriceMoved, "Estimate the amount again first."))
 	}
 	coldkey := signer.PublicKey()
 	estimated, err := snColdkeyBytes(estimate.ColdkeySs58)
 	if err != nil || estimated != coldkey {
-		callback.Failed(BittensorConvertErrorKeyMismatch, "This recovery phrase doesn't open the key this was estimated for.")
-		return
+		return refuse(newSnError(BittensorConvertErrorKeyMismatch, "This recovery phrase doesn't open the key this was estimated for."))
 	}
 	amount, limit, minTao := uint64(estimate.AmountRao), uint64(estimate.LimitPriceRao), uint64(estimate.MinTaoRao)
 	fresh := self.convertEstimateWith(ctx, coldkey, estimate.AmountRao, false)
 	if fresh.Error != nil {
-		callback.Failed(fresh.Error.Code, fresh.Error.Message)
-		return
+		return refuse(fresh.Error)
 	}
+	priceMoved := newSnError(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
 	price := uint64(fresh.PriceRao)
 	// the chain would refuse it and keep the fee
 	if price < limit {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	// no estimate of this sdk asks for a limit this far under the price
 	floor, ok := bittensorMulDiv(price, bittensorBasisPoints-bittensorConvertLimitSanityBps, bittensorBasisPoints)
 	if !ok || limit < floor {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	simulation, err := self.chain.SimulateSell(ctx, self.pins.netuid, amount)
 	if err != nil {
-		failure := bittensorConvertErrorFromErr(err)
-		callback.Failed(failure.Code, failure.Message)
-		return
+		return refuse(bittensorConvertErrorFromErr(err))
 	}
 	if simulation.TaoRao < minTao {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	call, err := subtensor.NewRemoveStakeLimit(self.pins.escrowHotkey, self.pins.netuid, amount, limit)
 	if err != nil {
-		failure := bittensorConvertErrorFromErr(err)
-		callback.Failed(failure.Code, failure.Message)
-		return
+		return refuse(bittensorConvertErrorFromErr(err))
 	}
-	txHash := ""
-	outcome, err := self.submitCall(ctx, signer, call, func(hash string) {
-		txHash = hash
-		callback.Sent(hash)
-	})
+	signed, err := self.signCall(ctx, signer, call)
 	if err != nil {
-		code, message := bittensorConvertSendFailure(err, txHash != "")
-		callback.Failed(code, message)
-		return
+		return refuse(bittensorConvertErrorFromErr(err))
 	}
-	if !outcome.Success {
-		code, message := bittensorConvertDispatchFailure(outcome.Failure)
-		callback.Failed(code, message)
-		return
+	first, last := signed.landingBlocks()
+	submission := &BittensorConvertSubmission{
+		TxHash:      "0x" + hex.EncodeToString(signed.signed.Hash[:]),
+		ColdkeySs58: estimate.ColdkeySs58,
+		FirstBlock:  int64(first),
+		LastBlock:   int64(last),
 	}
-	callback.Confirmed(bittensorConvertReceiptFrom(outcome, txHash, coldkey, self.pins.escrowHotkey))
+	// whatever comes of it, what a sheet draws next reads the chain again
+	defer forgetConvertState()
+	if err := self.chain.Submit(ctx, signed.signed); err != nil {
+		var refusal *subtensor.SubmitRefusal
+		if errors.As(err, &refusal) {
+			code, message := bittensorConvertPoolRefusal(refusal)
+			return refuse(newSnError(code, message))
+		}
+		// the node may have taken it before the answer was lost
+		code, message := bittensorConvertWaitFailure(err)
+		submission.Error = newSnError(code, message)
+	}
+	return submission
 }
 
-// bittensorConvertSendFailure says what a failed send or wait means.
-func bittensorConvertSendFailure(err error, sent bool) (string, string) {
-	var refusal *subtensor.SubmitRefusal
-	switch {
-	case errors.Is(err, subtensor.ErrExpired):
-		return BittensorConvertErrorExpired, "This conversion didn't land in time and now can't. Nothing was charged. You can try again."
-	case errors.As(err, &refusal):
-		return bittensorConvertPoolRefusal(refusal)
-	case sent:
-		return BittensorConvertErrorOutcomeUnknown, "This conversion was sent, and its result couldn't be read. Check your balances in a few minutes before trying again."
+// convertWait waits for a submission's finalized outcome. An endpoint that fails
+// on the way is tried again until the context ends.
+func (self *bittensorChainEngine) convertWait(ctx context.Context, submission *BittensorConvertSubmission) *BittensorConvertReceipt {
+	fail := func(code string, message string) *BittensorConvertReceipt {
+		return &BittensorConvertReceipt{Error: newSnError(code, message)}
 	}
-	failure := bittensorConvertErrorFromErr(err)
-	return failure.Code, failure.Message
+	if submission == nil || submission.TxHash == "" {
+		return fail(BittensorConvertErrorRefused, "Nothing was sent to wait for.")
+	}
+	hash, hashErr := evm.ParseHexBytes(submission.TxHash)
+	coldkey, coldkeyErr := snColdkeyBytes(submission.ColdkeySs58)
+	first, last := uint64(max(submission.FirstBlock, 0)), uint64(max(submission.LastBlock, 0))
+	if hashErr != nil || len(hash) != 32 || coldkeyErr != nil || first == 0 || last < first || subtensor.EraPeriodBlocks < last-first {
+		return fail(BittensorConvertErrorRefused, "Nothing was sent to wait for.")
+	}
+	defer forgetConvertState()
+	var meta *subtensor.Metadata
+	for meta == nil {
+		view, _, err := self.quoteView(ctx)
+		switch {
+		case err == nil:
+			meta = view.meta
+		case errors.Is(err, errBittensorChainWrongChain):
+			failure := bittensorConvertErrorFromErr(err)
+			return fail(failure.Code, failure.Message)
+		default:
+			if err := self.sleep(ctx, self.poll); err != nil {
+				code, message := bittensorConvertWaitFailure(err)
+				return fail(code, message)
+			}
+		}
+	}
+	outcome, err := self.waitCall(ctx, meta, [32]byte(hash), first, last)
+	if err != nil {
+		code, message := bittensorConvertWaitFailure(err)
+		return fail(code, message)
+	}
+	receipt := bittensorConvertReceiptFrom(outcome, submission.TxHash, coldkey, self.pins.escrowHotkey)
+	if !outcome.Success {
+		code, message := bittensorConvertDispatchFailure(outcome.Failure)
+		receipt.Error = newSnError(code, message)
+	}
+	return receipt
+}
+
+// bittensorConvertWaitFailure says what it means when a sent transaction's result
+// cannot be told.
+func bittensorConvertWaitFailure(err error) (string, string) {
+	if errors.Is(err, subtensor.ErrExpired) {
+		return BittensorConvertErrorExpired, "This conversion didn't land in time and now can't. Nothing was charged. You can try again."
+	}
+	return BittensorConvertErrorOutcomeUnknown, "This conversion may have been sent, and its result couldn't be read. Check your balances in a few minutes before trying again."
 }
 
 // bittensorConvertPoolRefusal reads the chain's refusal of a transaction it did
@@ -783,7 +928,7 @@ func bittensorConvertPoolRefusal(refusal *subtensor.SubmitRefusal) (string, stri
 		return BittensorConvertErrorPending, pending
 	case strings.Contains(data, "pay some fees"):
 		return BittensorConvertErrorBalanceTooLow, "This key holds too little to pay the network fee."
-	case strings.Contains(data, "bad signature"), strings.Contains(data, "future"):
+	case strings.Contains(data, "bad signature"):
 		return BittensorConvertErrorRuntimeChanged, "The Bittensor network has changed how this works. Update the app to convert."
 	}
 	return BittensorConvertErrorRefused, "The Bittensor network refused this conversion. Nothing was charged."

@@ -107,6 +107,10 @@ const (
 	SnFleetClaimErrorBadBinding  = "bad_binding"
 	// the server refused the top-up
 	SnFleetClaimErrorTopUpRefused = "top_up_refused"
+	// the subnet takes no registrations now; nothing was sent
+	SnFleetClaimErrorRegistrationClosed = "registration_closed"
+	// the fleet hotkey is another coldkey's, as after the payout wallet changed
+	SnFleetClaimErrorHotkeyOwnedElsewhere = "hotkey_owned_elsewhere"
 )
 
 const (
@@ -702,11 +706,34 @@ func (self *SnFleetClaim) register(ctx context.Context, status *snFleetClaimStat
 		return state
 	}
 	if err := self.chain.RegisterLimit(ctx, phrase, netuid, hotkey, burn); err != nil {
-		return snFleetClaimFail(state, SnFleetClaimErrorChain, "The registration couldn't be sent. Try again.")
+		return snFleetClaimRegisterRefused(state, err)
 	}
 	state.Stage = SnFleetClaimStageRegistering
 	state.RetryAfterSeconds = snFleetClaimRetryShort
 	return state
+}
+
+// What a registration's checks or its transaction said. Nothing was signed for what
+// the checks refused, so nothing paid a fee.
+func snFleetClaimRegisterRefused(state *SnFleetClaimState, err error) *SnFleetClaimState {
+	switch {
+	case errors.Is(err, errSnFleetRegisterRegistered):
+		// an earlier registration landed
+		state.Stage = SnFleetClaimStageRegistering
+		state.RetryAfterSeconds = snFleetClaimRetryShort
+		return state
+	case errors.Is(err, errSnFleetRegisterBurnRose), errors.Is(err, errSnFleetRegisterShort):
+		snFleetClaimFail(state, SnFleetClaimErrorChain, "The burn moved while registering, so nothing was sent. Try again.")
+		state.RetryAfterSeconds = snFleetClaimRetryShort
+		return state
+	case errors.Is(err, errSnFleetRegistrationClosed):
+		return snFleetClaimFail(state, SnFleetClaimErrorRegistrationClosed, "The subnet isn't taking registrations right now, so nothing was sent.")
+	case errors.Is(err, errSnFleetHotkeyOwnedElsewhere):
+		return snFleetClaimFail(state, SnFleetClaimErrorHotkeyOwnedElsewhere, "This device's fleet hotkey belongs to another coldkey, so this one can't register it. Nothing was sent.")
+	case errors.Is(err, errSnFleetRegisterCheckedFailed):
+		return snFleetClaimFail(state, SnFleetClaimErrorChain, "The chain can't be read right now, so nothing was sent.")
+	}
+	return snFleetClaimFail(state, SnFleetClaimErrorChain, "The registration couldn't be sent. Try again.")
 }
 
 // The stored hotkey. An empty answer is a device with none; anything else that

@@ -475,6 +475,69 @@ func TestAChangedRuntimeRefuses(t *testing.T) {
 	}
 }
 
+// The same for the Top 200 calls: an argument of another width, or the
+// commitment's Raw40 at another index, refuses.
+func TestAChangedRuntimeRefusesTheOtherCalls(t *testing.T) {
+	register, err := NewRegisterLimit(25, [32]byte{7}, 550_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitment, err := NewSetFleetCommitment(25, [32]byte{8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	variant := func(meta *Metadata, pallet string, name string) *metadataVariant {
+		return meta.types[meta.pallets[pallet].calls].variantByName(name)
+	}
+	widerThan64 := func(meta *Metadata) uint32 {
+		for id, ty := range meta.types {
+			if ty.kind == typeDefPrimitive && ty.primitive == primitiveU128 {
+				return id
+			}
+		}
+		t.Fatal("no u128 in the fixture")
+		return 0
+	}
+	for _, row := range []struct {
+		name   string
+		call   *Call
+		change func(*Metadata)
+	}{
+		{"register_limit's limit is wider", register, func(meta *Metadata) {
+			variant(meta, "SubtensorModule", "register_limit").fields[2].ty = widerThan64(meta)
+		}},
+		{"register_limit's arguments swapped", register, func(meta *Metadata) {
+			fields := variant(meta, "SubtensorModule", "register_limit").fields
+			fields[0], fields[1] = fields[1], fields[0]
+		}},
+		{"register_limit moved", register, func(meta *Metadata) {
+			variant(meta, "SubtensorModule", "register_limit").index = 135
+		}},
+		{"Raw40 moved", commitment, func(meta *Metadata) {
+			info, _ := meta.resolve(variant(meta, "Commitments", "set_commitment").fields[1].ty)
+			data, _ := meta.resolve(info.elem)
+			data.variantByName("Raw40").index = 42
+		}},
+		{"set_commitment moved", commitment, func(meta *Metadata) {
+			variant(meta, "Commitments", "set_commitment").index = 1
+		}},
+		{"the pallet moved", commitment, func(meta *Metadata) {
+			meta.pallets["Commitments"].index = 19
+		}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			meta := runtime486Metadata(t)
+			if _, err := testPrepare(meta, row.call); err != nil {
+				t.Fatalf("CONTROL FAILED: the unchanged runtime refused: %v", err)
+			}
+			row.change(meta)
+			if prepared, err := testPrepare(meta, row.call); prepared != nil || !IsRuntimeChanged(err) {
+				t.Fatalf("prepared %v, %v", prepared != nil, err)
+			}
+		})
+	}
+}
+
 // A runtime upgrade that adds an extension with no bytes changes nothing to
 // sign, so it needs no release.
 func TestAnEmptyNewExtensionStillSigns(t *testing.T) {
@@ -1164,7 +1227,8 @@ func TestReadSaleState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.StakeRao != 5_000_000_000 || state.Balance != (AccountBalance{}) || state.PriceRao != 4_153_679 || state.NominatorMinimumRao != 10_000_000 {
+	// 2,000,000 rao of minimum stake times 10,000,000 millionths, as the runtime works it out
+	if state.StakeRao != 5_000_000_000 || state.Balance != (AccountBalance{}) || state.PriceRao != 4_153_679 || state.NominatorMinimumRao != 20_000_000 {
 		t.Fatalf("state %+v", state)
 	}
 }
@@ -1193,7 +1257,7 @@ func TestAccountBalanceDecodesTheRuntimesLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if balance != (AccountBalance{FreeRao: 123_456, ReservedRao: 7, FrozenRao: 9}) {
+	if balance != (AccountBalance{FreeRao: 123_456, ReservedRao: 7, FrozenRao: 9, Providers: 1, Sufficients: 1}) {
 		t.Fatalf("balance %+v", balance)
 	}
 	rpc.answers["state_getStorage"] = func(params []any) (any, error) {

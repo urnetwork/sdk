@@ -23,6 +23,13 @@ const (
 	// and the hotkey (twox64 concat). Checked against the same three.
 	storageCommitmentOf = "ca407206ec1ab726b2636c4b145ac287419a60ae8b01e6dcaebd7317e43c69bf"
 
+	// twox128("SubtensorModule") ‖ twox128("Owner"), then the hotkey (blake2_128
+	// concat): the coldkey a hotkey belongs to. Checked against mainnet's UID 70.
+	storageSubtensorOwner = "658faa385070e074c85bf6b568cf0555eca6b7a1fdc9f689184ecb4f359c0518"
+	// twox128("SubtensorModule") ‖ twox128("NetworkRegistrationAllowed"), then the
+	// netuid (identity). Checked against mainnet's SN25.
+	storageNetworkRegistrationAllowed = "658faa385070e074c85bf6b568cf0555d5fe74da02c7b4bbb340fb368eee3e77"
+
 	// a u64 deposit, a u32 block, compact vec length 1, the Raw40 variant, then the
 	// tag and the 32-byte hash
 	fleetRegistrationBytes = 8 + 4 + 1 + 1 + len(FleetCommitmentTag) + 32
@@ -45,6 +52,21 @@ func commitmentOfStorageKey(netuid uint16, hotkey [32]byte) string {
 	suffix = binary.LittleEndian.AppendUint64(suffix, xxhash.Sum64(hotkey[:]))
 	suffix = append(suffix, hotkey[:]...)
 	return storageKey(storageCommitmentOf, suffix)
+}
+
+func ownerStorageKey(hotkey [32]byte) string {
+	hash, err := blake2b.New(16, nil)
+	if err != nil {
+		panic(err)
+	}
+	hash.Write(hotkey[:])
+	suffix := hash.Sum(nil)
+	suffix = append(suffix, hotkey[:]...)
+	return storageKey(storageSubtensorOwner, suffix)
+}
+
+func registrationAllowedStorageKey(netuid uint16) string {
+	return storageKey(storageNetworkRegistrationAllowed, binary.LittleEndian.AppendUint16(nil, netuid))
 }
 
 // parseOptionalStorage is a state_getStorage answer's bytes, nil for an absent key.
@@ -98,4 +120,46 @@ func parseFleetRegistration(value []byte) (hash [32]byte, found bool) {
 	}
 	copy(hash[:], field[len(FleetCommitmentTag):])
 	return hash, hash != ([32]byte{})
+}
+
+// ReadHotkeyOwner is the coldkey a hotkey belongs to, none for a hotkey no coldkey
+// has registered. Registering a hotkey another coldkey owns fails after its fee.
+func (self *Chain) ReadHotkeyOwner(ctx context.Context, hotkey [32]byte) (owner [32]byte, found bool, err error) {
+	raw, err := self.rpc.Call(ctx, "state_getStorage", ownerStorageKey(hotkey))
+	if err != nil {
+		return owner, false, err
+	}
+	value, err := parseOptionalStorage(raw)
+	if err != nil {
+		return owner, false, err
+	}
+	if value == nil {
+		return owner, false, nil
+	}
+	if len(value) != 32 {
+		return owner, false, runtimeChanged("SubtensorModule.Owner is %d bytes", len(value))
+	}
+	owner = [32]byte(value)
+	// the map's fallback is the zero account
+	return owner, owner != ([32]byte{}), nil
+}
+
+// ReadRegistrationAllowed says whether the subnet takes registrations, which it does
+// unless the key says otherwise.
+func (self *Chain) ReadRegistrationAllowed(ctx context.Context, netuid uint16) (bool, error) {
+	raw, err := self.rpc.Call(ctx, "state_getStorage", registrationAllowedStorageKey(netuid))
+	if err != nil {
+		return false, err
+	}
+	value, err := parseOptionalStorage(raw)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case value == nil:
+		return true, nil
+	case len(value) == 1 && value[0] <= 1:
+		return value[0] == 1, nil
+	}
+	return false, runtimeChanged("SubtensorModule.NetworkRegistrationAllowed is %x", value)
 }

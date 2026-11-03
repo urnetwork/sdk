@@ -13,58 +13,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ChainSafe/go-schnorrkel"
-
 	"github.com/urnetwork/sdk/internal/subtensor"
 )
-
-// a sr25519 key the flow signs a transaction with, for as long as the transaction
-type snFleetSigner struct {
-	secret *schnorrkel.SecretKey
-	public [32]byte
-}
-
-func newSnFleetSigner(mini *schnorrkel.MiniSecretKey) (*snFleetSigner, error) {
-	secret := mini.ExpandEd25519()
-	public, err := secret.Public()
-	if err != nil {
-		return nil, errors.New("this key can't be used")
-	}
-	return &snFleetSigner{secret: secret, public: public.Encode()}, nil
-}
-
-func (self *snFleetSigner) PublicKey() [32]byte {
-	return self.public
-}
-
-func (self *snFleetSigner) Sign(payload []byte) ([64]byte, error) {
-	signature, err := self.secret.Sign(schnorrkel.NewSigningContext([]byte(bittensorLocalKeySigningContext), payload))
-	if err != nil {
-		return [64]byte{}, errBittensorLocalKeySign
-	}
-	return signature.Encode(), nil
-}
-
-func snFleetSignerFromPhrase(phrase string) (*snFleetSigner, error) {
-	mini, err := bittensorLocalKeyMiniSecret(phrase)
-	if err != nil {
-		return nil, err
-	}
-	return newSnFleetSigner(mini)
-}
-
-func snFleetSignerFromSeed(seed [32]byte) (*snFleetSigner, error) {
-	mini, err := schnorrkel.NewMiniSecretKeyFromRaw(seed)
-	if err != nil {
-		return nil, errors.New("the fleet hotkey seed can't be used")
-	}
-	return newSnFleetSigner(mini)
-}
 
 // snFleetClaimEngineChain builds its engine when the flow first needs the chain, so
 // a claim with nothing to do reads and dials nothing.
 type snFleetClaimEngineChain struct {
 	settings *SnChainSettings
+	// the engine, in place of one from the settings
+	testEngine *bittensorChainEngine
 }
 
 func newSnFleetClaimEngineChain(settings *SnChainSettings) *snFleetClaimEngineChain {
@@ -72,6 +29,9 @@ func newSnFleetClaimEngineChain(settings *SnChainSettings) *snFleetClaimEngineCh
 }
 
 func (self *snFleetClaimEngineChain) engine() (*bittensorChainEngine, error) {
+	if self.testEngine != nil {
+		return self.testEngine, nil
+	}
 	engine, failure := newBittensorChainEngine(self.settings)
 	if failure != nil {
 		return nil, errors.New(failure.Message)
@@ -183,19 +143,9 @@ func (self *snFleetClaimEngineChain) FleetCommitment(ctx context.Context, netuid
 	return engine.chain.ReadFleetCommitment(ctx, netuid, hotkey)
 }
 
-// A sale's callback, turned back into one answer for the flow's pass.
-type snFleetConvertResult struct {
-	err error
-}
-
-func (self *snFleetConvertResult) Sent(string) {}
-
-func (self *snFleetConvertResult) Confirmed(*BittensorConvertReceipt) {}
-
-func (self *snFleetConvertResult) Failed(code string, message string) {
-	self.err = fmt.Errorf("%s: %s", code, message)
-}
-
+// The sale the plan found, through the convert's own checks, which refuse before
+// signing what the chain would refuse after taking the fee. It waits for the
+// finalized outcome, so the next pass reads the balance the sale left.
 func (self *snFleetClaimEngineChain) ConvertForBurn(ctx context.Context, coldkeyPhrase string, plan *snFleetBurnPlan) error {
 	if plan == nil || plan.Convert == nil {
 		return errors.New("there is no sale to make")
@@ -204,13 +154,19 @@ func (self *snFleetClaimEngineChain) ConvertForBurn(ctx context.Context, coldkey
 	if err != nil {
 		return err
 	}
-	signer, err := snFleetSignerFromPhrase(coldkeyPhrase)
+	signer, err := bittensorSignerFromPhrase(coldkeyPhrase)
 	if err != nil {
 		return err
 	}
-	result := &snFleetConvertResult{}
-	engine.convertSubmit(ctx, signer, plan.Convert, result)
-	return result.err
+	submission := engine.convertSubmit(ctx, signer, plan.Convert)
+	if submission.Error != nil && submission.TxHash == "" {
+		return fmt.Errorf("%s: %s", submission.Error.Code, submission.Error.Message)
+	}
+	receipt := engine.convertWait(ctx, submission)
+	if receipt.Error != nil {
+		return fmt.Errorf("%s: %s", receipt.Error.Code, receipt.Error.Message)
+	}
+	return nil
 }
 
 func snFleetClaimOutcome(outcome *subtensor.Outcome, err error) error {
@@ -227,20 +183,93 @@ func snFleetClaimOutcome(outcome *subtensor.Outcome, err error) error {
 	return nil
 }
 
+// What register_limit would refuse, read before it's signed: the chain takes the fee
+// before the call runs and keeps it when the call fails.
+var (
+	errSnFleetRegisterBurnRose      = errors.New("the burn rose past its limit")
+	errSnFleetRegisterShort         = errors.New("the key can't pay the burn and its fee and keep its deposit")
+	errSnFleetRegistrationClosed    = errors.New("the subnet isn't taking registrations")
+	errSnFleetRegisterRegistered    = errors.New("the hotkey is registered already")
+	errSnFleetHotkeyOwnedElsewhere  = errors.New("the hotkey belongs to another coldkey")
+	errSnFleetRegisterCheckedFailed = errors.New("the registration can't be checked right now")
+)
+
+// register_limit, once everything it checks that can be read says it would pass: the
+// burn within the limit, the key paying the burn and the fee and keeping its deposit,
+// the subnet taking registrations, and the hotkey free and not another coldkey's.
 func (self *snFleetClaimEngineChain) RegisterLimit(ctx context.Context, coldkeyPhrase string, netuid uint16, hotkey [32]byte, limitRao uint64) error {
 	engine, err := self.engine()
 	if err != nil {
 		return err
 	}
-	signer, err := snFleetSignerFromPhrase(coldkeyPhrase)
+	signer, err := bittensorSignerFromPhrase(coldkeyPhrase)
 	if err != nil {
 		return err
 	}
+	coldkey := signer.PublicKey()
 	call, err := subtensor.NewRegisterLimit(netuid, hotkey, limitRao)
 	if err != nil {
 		return err
 	}
+	if err := self.registerWouldPass(ctx, engine, coldkey, netuid, hotkey, limitRao, call); err != nil {
+		return err
+	}
 	return snFleetClaimOutcome(engine.submitCall(ctx, signer, call, nil))
+}
+
+func (self *snFleetClaimEngineChain) registerWouldPass(ctx context.Context, engine *bittensorChainEngine, coldkey [32]byte, netuid uint16, hotkey [32]byte, limitRao uint64, call *subtensor.Call) error {
+	unread := func(err error) error {
+		return fmt.Errorf("%w: %w", errSnFleetRegisterCheckedFailed, err)
+	}
+	view, _, err := engine.quoteView(ctx)
+	if err != nil {
+		return unread(err)
+	}
+	burn, err := engine.chain.ReadBurn(ctx, view.meta, netuid)
+	if err != nil {
+		return unread(err)
+	}
+	if limitRao < burn {
+		return errSnFleetRegisterBurnRose
+	}
+	fee, err := engine.quoteFee(ctx, view, coldkey, call)
+	if err != nil {
+		return unread(err)
+	}
+	balance, err := engine.freeBalance(ctx, view, coldkey)
+	if err != nil {
+		return unread(err)
+	}
+	deposit, err := view.meta.ExistentialDeposit()
+	if err != nil {
+		return unread(err)
+	}
+	// the fee comes off first, and what stays must cover the account's deposit or
+	// what's frozen, whichever is more
+	kept := max(deposit, balance.FrozenRao)
+	if balance.FreeRao < fee || balance.FreeRao-fee < kept || balance.FreeRao-fee-kept < burn {
+		return errSnFleetRegisterShort
+	}
+	allowed, err := engine.chain.ReadRegistrationAllowed(ctx, netuid)
+	if err != nil {
+		return unread(err)
+	}
+	if !allowed {
+		return errSnFleetRegistrationClosed
+	}
+	if _, registered, err := engine.chain.ReadHotkeyUid(ctx, netuid, hotkey); err != nil {
+		return unread(err)
+	} else if registered {
+		return errSnFleetRegisterRegistered
+	}
+	owner, owned, err := engine.chain.ReadHotkeyOwner(ctx, hotkey)
+	if err != nil {
+		return unread(err)
+	}
+	if owned && owner != coldkey {
+		return errSnFleetHotkeyOwnedElsewhere
+	}
+	return nil
 }
 
 func (self *snFleetClaimEngineChain) SetFleetCommitment(ctx context.Context, hotkeySeed [32]byte, netuid uint16, hash [32]byte) error {
@@ -248,7 +277,7 @@ func (self *snFleetClaimEngineChain) SetFleetCommitment(ctx context.Context, hot
 	if err != nil {
 		return err
 	}
-	signer, err := snFleetSignerFromSeed(hotkeySeed)
+	signer, err := bittensorSignerFromSeed(hotkeySeed)
 	if err != nil {
 		return err
 	}

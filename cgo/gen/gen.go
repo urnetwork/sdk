@@ -94,6 +94,7 @@ var behavioralTypes = map[string]bool{
 	"ClientEventQueue": true,
 	// one wallet-connect proof: lock-guarded session state and methods
 	"BittensorWalletSession": true,
+	"BittensorLocalKeyFlow":  true,
 	// the Top 200 claim, both halves: lock-guarded, with their stores behind them
 	"SnFleetClaim":  true,
 	"SnFleetDevice": true,

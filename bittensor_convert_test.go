@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -327,22 +328,31 @@ func (self *convertTestSigner) Sign(payload []byte) ([64]byte, error) {
 	return [64]byte(bytes.Repeat([]byte{0x5a}, 64)), nil
 }
 
+// A sheet's run: submit, then wait if it was sent.
 type convertTestCallback struct {
 	sent      []string
 	confirmed []*BittensorConvertReceipt
 	failed    [][2]string
 }
 
-func (self *convertTestCallback) Sent(txHash string) {
-	self.sent = append(self.sent, txHash)
-}
-
-func (self *convertTestCallback) Confirmed(receipt *BittensorConvertReceipt) {
+func (self *convertTestCallback) run(ctx context.Context, engine *bittensorChainEngine, signer subtensor.Signer, estimate *BittensorConvertEstimateResult) {
+	submission := engine.convertSubmit(ctx, signer, estimate)
+	if submission.Error != nil && submission.TxHash == "" {
+		self.failed = append(self.failed, [2]string{submission.Error.Code, submission.Error.Message})
+		return
+	}
+	if submission.Error != nil {
+		self.failed = append(self.failed, [2]string{submission.Error.Code, submission.Error.Message})
+	}
+	self.sent = append(self.sent, submission.TxHash)
+	receipt := engine.convertWait(ctx, submission)
+	if receipt.Error != nil {
+		if submission.Error == nil {
+			self.failed = append(self.failed, [2]string{receipt.Error.Code, receipt.Error.Message})
+		}
+		return
+	}
 	self.confirmed = append(self.confirmed, receipt)
-}
-
-func (self *convertTestCallback) Failed(code string, message string) {
-	self.failed = append(self.failed, [2]string{code, message})
 }
 
 var convertTestColdkey = [32]byte{0xd4, 0x35, 0x93}
@@ -402,6 +412,8 @@ func TestConvertEstimateForAKeyWithNoTao(t *testing.T) {
 		t.Fatalf("hotkey %s", result.HotkeySs58)
 	}
 
+	// enough stake that what the sale leaves is over the nominator minimum
+	chain.stake = 10_000_000_000
 	amount := convertEstimateOf(t, chain, 1_000_000_000)
 	if !amount.CanConvert || amount.Error != nil {
 		t.Fatalf("amount: %+v", amount.Error)
@@ -421,7 +433,30 @@ func TestConvertEstimateForAKeyWithNoTao(t *testing.T) {
 		t.Fatalf("min tao %d", amount.MinTaoRao)
 	}
 	if amount.RemainderSweptAlphaRao != 0 {
-		t.Fatalf("swept %d with 3.8 SN25α left, worth more than the nominator minimum", amount.RemainderSweptAlphaRao)
+		t.Fatalf("swept %d with 8.8 SN25α left, worth more than the nominator minimum", amount.RemainderSweptAlphaRao)
+	}
+}
+
+// A sheet shows these as they are.
+func TestConvertEstimateNotices(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	chain.stake = 10_000_000_000
+	result := convertEstimateOf(t, chain, 1_000_000_000)
+	if result.Notice != "This key has no TAO, so the network fee of about 0.1515 SN25α comes out of its SN25α." {
+		t.Fatalf("notice %q", result.Notice)
+	}
+	chain.stake = 3_000_000_000
+	result = convertEstimateOf(t, chain, 1_000_000_000)
+	if !strings.Contains(result.Notice, "The other 1.8485 SN25α converts too, because the network doesn't keep stake worth less than 0.020000 TAO.") {
+		t.Fatalf("notice %q", result.Notice)
+	}
+	chain.free = 10_000_000
+	chain.stake = 10_000_000_000
+	if result := convertEstimateOf(t, chain, 1_000_000_000); result.Notice != "" {
+		t.Fatalf("notice %q with nothing to say", result.Notice)
+	}
+	if result := convertEstimateOf(t, chain, 0); result.Notice != "" {
+		t.Fatalf("notice %q for the limits alone", result.Notice)
 	}
 }
 
@@ -477,7 +512,7 @@ func TestConvertFeeIsPaidInAlphaUnlessTheKeyKeepsItsDeposit(t *testing.T) {
 func TestConvertEstimateSaysWhatIsSweptAlong(t *testing.T) {
 	chain := newConvertFakeChain(t)
 	chain.stake = 3_000_000_000
-	// 0.01 TAO of value is 2.4075 SN25α
+	// the nominator minimum, 0.02 TAO of value, is 4.8150 SN25α at this price
 	result := convertEstimateOf(t, chain, 1_000_000_000)
 	if result.RemainderSweptAlphaRao != 3_000_000_000-1_000_000_000-151_519_172 {
 		t.Fatalf("swept %d", result.RemainderSweptAlphaRao)
@@ -497,10 +532,15 @@ func TestConvertEstimateSaysWhatIsSweptAlong(t *testing.T) {
 
 	// exactly at the minimum nothing is swept
 	chain = newConvertFakeChain(t)
-	minimumLeft, _ := bittensorMulDiv(chain.nominatorMin, 1_000_000_000, chain.price)
+	// 20,000,000 rao at the price, worked out apart from the code
+	const minimumLeft = 4_815_008_574
 	chain.stake = 1_000_000_000 + 151_519_172 + minimumLeft
 	if result := convertEstimateOf(t, chain, 1_000_000_000); result.RemainderSweptAlphaRao != 0 {
 		t.Fatalf("swept %d at the minimum", result.RemainderSweptAlphaRao)
+	}
+	chain.stake -= 1
+	if result := convertEstimateOf(t, chain, 1_000_000_000); result.RemainderSweptAlphaRao != minimumLeft-1 {
+		t.Fatalf("swept %d just under the minimum", result.RemainderSweptAlphaRao)
 	}
 }
 
@@ -584,6 +624,64 @@ func TestConvertEstimateRefusals(t *testing.T) {
 		}
 		convertWantCode(t, convertEstimateOf(t, chain, 2_000_000_000), BittensorConvertErrorPriceImpact)
 	})
+	t.Run("another chain", func(t *testing.T) {
+		chain := newConvertFakeChain(t)
+		chain.genesis = [32]byte{1}
+		convertWantCode(t, convertEstimateOf(t, chain, 1_000_000_000), BittensorChainErrorWrongChain)
+	})
+	t.Run("the vault names another hotkey", func(t *testing.T) {
+		chain := newConvertFakeChain(t)
+		chain.escrow = [32]byte{1}
+		convertWantCode(t, convertEstimateOf(t, chain, 1_000_000_000), BittensorChainErrorWrongChain)
+	})
+}
+
+// The smallest amount is found whatever the pool's fee and depth: the chain's
+// promise for it, every alpha into the pool sold at or above the sale's own
+// limit, meets the floor, and a thousand rao less does not.
+func TestConvertMinimumUnderAnyPool(t *testing.T) {
+	// the promise for an amount, from the fake pool, worked out here
+	promise := func(chain *convertFakeChain, amount uint64) uint64 {
+		t.Helper()
+		sale := chain.simulate(amount)
+		tao := binary.LittleEndian.Uint64(sale[0:8])
+		into := binary.LittleEndian.Uint64(sale[8:16])
+		slippage := binary.LittleEndian.Uint64(sale[32:40])
+		impact := (slippage*10_000 + tao + slippage - 1) / (tao + slippage)
+		limit := chain.price * (10_000 - 200 - 3*impact) / 10_000
+		return into * limit / 1_000_000_000
+	}
+	for _, row := range []struct {
+		name         string
+		poolFeeParts uint64
+		poolDepth    uint64
+	}{
+		{"today's pool", 33, 2_500_000_000_000_000},
+		{"a pool fee of 9%", 6_000, 2_500_000_000_000_000},
+		{"a pool fee of 30%", 20_000, 2_500_000_000_000_000},
+		{"a shallow pool", 33, 20_000_000_000},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			chain := newConvertFakeChain(t)
+			chain.stake = 50_000_000_000
+			chain.poolFeeParts, chain.poolDepth = row.poolFeeParts, row.poolDepth
+			limits := convertEstimateOf(t, chain, 0)
+			if limits.Error != nil || limits.MinAmountRao == 0 {
+				t.Fatalf("%+v", limits.Error)
+			}
+			if paid := promise(chain, uint64(limits.MinAmountRao)); paid < 2_000_000 {
+				t.Fatalf("the minimum %d promises %d, under the floor", limits.MinAmountRao, paid)
+			}
+			if paid := promise(chain, uint64(limits.MinAmountRao)-1_000); 2_000_000 <= paid {
+				t.Fatalf("the minimum %d is not the least: a thousand rao less promises %d", limits.MinAmountRao, paid)
+			}
+			minimum := convertEstimateOf(t, chain, limits.MinAmountRao)
+			if !minimum.CanConvert || minimum.MinTaoRao < 2_000_000 {
+				t.Fatalf("the minimum: %+v %+v", minimum, minimum.Error)
+			}
+			convertWantCode(t, convertEstimateOf(t, chain, limits.MinAmountRao-1), BittensorConvertErrorAmountTooLow)
+		})
+	}
 }
 
 // A sale that lands after the price falls still pays the floor: refused there,
@@ -735,7 +833,7 @@ func convertRun(t *testing.T, chain *convertFakeChain, estimate *BittensorConver
 	t.Helper()
 	signer := &convertTestSigner{public: convertTestColdkey}
 	callback := &convertTestCallback{}
-	convertEngine(chain).convertSubmit(context.Background(), signer, estimate, callback)
+	callback.run(context.Background(), convertEngine(chain), signer, estimate)
 	if len(callback.confirmed)+len(callback.failed) != 1 {
 		t.Fatalf("a run ended %d confirmed and %d failed", len(callback.confirmed), len(callback.failed))
 	}
@@ -879,6 +977,19 @@ func TestConvertPriceLimitHolds(t *testing.T) {
 			t.Fatalf("failed %v", callback.failed)
 		}
 	})
+	t.Run("the price fell past the limit and the sale would still pay enough", func(t *testing.T) {
+		// the chain refuses by the price, whatever the sale would pay, and keeps the fee
+		moved := newConvertFakeChain(t)
+		moved.price = uint64(estimate.LimitPriceRao) - 1
+		moved.poolFeeParts = 0
+		signer, callback := convertRun(t, moved, estimate)
+		if len(signer.payloads) != 0 || len(moved.submitted) != 0 {
+			t.Fatal("signed or sent past the limit")
+		}
+		if callback.failed[0][0] != BittensorConvertErrorPriceMoved {
+			t.Fatalf("failed %v", callback.failed)
+		}
+	})
 	t.Run("the sale would pay less than was promised", func(t *testing.T) {
 		moved := newConvertFakeChain(t)
 		moved.price = uint64(estimate.LimitPriceRao)
@@ -888,8 +999,12 @@ func TestConvertPriceLimitHolds(t *testing.T) {
 		if len(signer.payloads) != 0 {
 			t.Fatal("signed under the promised minimum")
 		}
-		if callback.failed[0][0] != BittensorConvertErrorPriceMoved {
+		// refused by the promise, not by anything before it
+		if callback.failed[0][0] != BittensorConvertErrorPriceMoved || !strings.Contains(callback.failed[0][1], "has moved since this estimate") {
 			t.Fatalf("failed %v", callback.failed)
+		}
+		if fresh := convertEstimateOf(t, moved, estimate.AmountRao); !fresh.CanConvert {
+			t.Fatalf("CONTROL FAILED: the new estimate refuses, so the promise was never checked: %+v", fresh.Error)
 		}
 	})
 	t.Run("the price rose and the limit stays what was shown", func(t *testing.T) {
@@ -1139,9 +1254,83 @@ func TestConvertTransportFailureAfterSendingIsUnknown(t *testing.T) {
 		cancel()
 		return ctx.Err()
 	}
-	engine.convertSubmit(ctx, signer, estimate, callback)
+	callback.run(ctx, engine, signer, estimate)
 	if len(callback.sent) != 1 || len(callback.failed) != 1 || callback.failed[0][0] != BittensorConvertErrorOutcomeUnknown {
 		t.Fatalf("sent %v, failed %v", callback.sent, callback.failed)
+	}
+}
+
+// An answer lost on the way back from the node does not say it was not sent.
+func TestConvertSubmitWhoseAnswerWasLost(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	convertLandSuccess(chain)
+	estimate := convertEstimateOf(t, chain, 1_000_000_000)
+	lost := &convertLostAnswerRpc{convertFakeChain: chain}
+	engine := newBittensorChainEngineWithRpc(lost, bittensorMainnetPins)
+	engine.sleep = convertEngine(chain).sleep
+	ctx := context.Background()
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error == nil || submission.Error.Code != BittensorConvertErrorOutcomeUnknown || submission.TxHash == "" {
+		t.Fatalf("submission %+v", submission)
+	}
+	// the node had taken it, and waiting finds it
+	receipt := engine.convertWait(ctx, submission)
+	if receipt.Error != nil || receipt.BlockNumber == 0 {
+		t.Fatalf("receipt %+v %+v", receipt, receipt.Error)
+	}
+}
+
+type convertLostAnswerRpc struct {
+	*convertFakeChain
+}
+
+func (self *convertLostAnswerRpc) Call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+	answer, err := self.convertFakeChain.Call(ctx, method, params...)
+	if err == nil && method == "author_submitExtrinsic" {
+		return nil, fmt.Errorf("%w: the connection dropped", evm.ErrUnreachable)
+	}
+	return answer, err
+}
+
+// A submission is all an app has to keep to find out later what happened, and what
+// is not one refuses.
+func TestConvertWaitAfterTheAppWasAway(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	convertLandSuccess(chain)
+	engine := convertEngine(chain)
+	ctx := context.Background()
+	estimate := engine.convertEstimate(ctx, convertTestColdkey, 1_000_000_000)
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error != nil {
+		t.Fatal(submission.Error)
+	}
+	encoded, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := &BittensorConvertSubmission{}
+	if err := json.Unmarshal(encoded, kept); err != nil {
+		t.Fatal(err)
+	}
+	fresh := convertEngine(chain)
+	for range 2 {
+		if receipt := fresh.convertWait(ctx, kept); receipt.Error != nil || receipt.TaoReceivedRao == 0 {
+			t.Fatalf("receipt %+v %+v", receipt, receipt.Error)
+		}
+	}
+	for name, bad := range map[string]*BittensorConvertSubmission{
+		"nil":             nil,
+		"not sent":        {Error: newSnError(BittensorConvertErrorPriceMoved, "no")},
+		"a bad hash":      {TxHash: "0x12", ColdkeySs58: kept.ColdkeySs58, FirstBlock: 1, LastBlock: 2},
+		"a bad key":       {TxHash: kept.TxHash, ColdkeySs58: "no", FirstBlock: 1, LastBlock: 2},
+		"no blocks":       {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58},
+		"backwards":       {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58, FirstBlock: 5, LastBlock: 4},
+		"longer than era": {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58, FirstBlock: 5, LastBlock: 5 + 65},
+	} {
+		receipt := fresh.convertWait(ctx, bad)
+		if receipt.Error == nil || receipt.Error.Code != BittensorConvertErrorRefused {
+			t.Errorf("%s: %+v", name, receipt)
+		}
 	}
 }
 
@@ -1201,34 +1390,115 @@ func TestConvertReadsAreKeptForATypedAmountOnly(t *testing.T) {
 	// signing reads the metadata itself, cached or not
 	estimate := engine.convertEstimate(ctx, convertTestColdkey, 1_000_000_000)
 	before := chain.reads["state_getMetadata"]
-	callback := &convertTestCallback{}
-	engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate, callback)
-	if len(callback.confirmed) != 1 {
-		t.Fatalf("failed %v", callback.failed)
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error != nil {
+		t.Fatal(submission.Error)
 	}
 	if chain.reads["state_getMetadata"] <= before {
 		t.Fatal("signed under kept metadata")
 	}
+	// what a sheet draws while it waits reads what the conversion is changing
+	chain.stake = 2
+	if result := engine.convertEstimate(ctx, convertTestColdkey, 0); result.StakeRao != 2 {
+		t.Fatalf("a sent conversion left the old stake in place: %d", result.StakeRao)
+	}
+	if receipt := engine.convertWait(ctx, submission); receipt.Error != nil {
+		t.Fatal(receipt.Error)
+	}
+	// and what comes after it, what it changed
+	chain.stake = 1
+	if result := engine.convertEstimate(ctx, convertTestColdkey, 0); result.StakeRao != 1 {
+		t.Fatalf("a finished conversion left the old stake in place: %d", result.StakeRao)
+	}
 }
 
-// One thing can be converted, one way: no exported function takes a call, a
-// pallet, a hotkey, a chain or bytes, and the list of them is here on purpose.
+// Every sdk file that can reach the encoder, now and later: no exported function
+// or method there takes bytes, a call or a pallet, so nothing outside the sdk can
+// choose what gets signed.
+func TestNothingExportedChoosesACall(t *testing.T) {
+	const encoder = `"github.com/urnetwork/sdk/internal/subtensor"`
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileSet := token.NewFileSet()
+	scanned := []string{}
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		importsEncoder := false
+		for _, spec := range file.Imports {
+			if spec.Path.Value == encoder {
+				importsEncoder = true
+			}
+		}
+		if !importsEncoder {
+			continue
+		}
+		scanned = append(scanned, path)
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || !function.Name.IsExported() || function.Type.Params == nil {
+				continue
+			}
+			// a signer's own methods, on an unexported type
+			if function.Recv != nil {
+				if star, ok := function.Recv.List[0].Type.(*ast.StarExpr); ok {
+					if name, ok := star.X.(*ast.Ident); ok && !ast.IsExported(name.Name) {
+						continue
+					}
+				}
+			}
+			for _, param := range function.Type.Params.List {
+				if _, isSlice := param.Type.(*ast.ArrayType); isSlice {
+					t.Errorf("%s: %s takes a slice", path, function.Name.Name)
+				}
+				ast.Inspect(param.Type, func(node ast.Node) bool {
+					if selector, ok := node.(*ast.SelectorExpr); ok {
+						if name, ok := selector.X.(*ast.Ident); ok && name.Name == "subtensor" {
+							t.Errorf("%s: %s takes a subtensor.%s", path, function.Name.Name, selector.Sel.Name)
+						}
+					}
+					return true
+				})
+				for _, name := range param.Names {
+					lower := strings.ToLower(name.Name)
+					if strings.Contains(lower, "call") && !strings.Contains(lower, "callback") || strings.Contains(lower, "pallet") || strings.Contains(lower, "payload") {
+						t.Errorf("%s: %s takes %s", path, function.Name.Name, name.Name)
+					}
+				}
+			}
+		}
+	}
+	for _, want := range []string{"bittensor_chain.go", "bittensor_chain_signer.go", "bittensor_convert.go"} {
+		if !slices.Contains(scanned, want) {
+			t.Errorf("CONTROL FAILED: %s is not among the files scanned, %v", want, scanned)
+		}
+	}
+}
+
+// One thing can be converted, one way, and the list of what is exported for it is
+// here on purpose.
 func TestConvertExportsOnlyTypedCalls(t *testing.T) {
 	want := map[string]string{
 		"BittensorConvertEstimate":        "settings,coldkeySs58,amountRao,callback",
 		"BittensorConvertEstimateForBurn": "settings,coldkeySs58,callback",
+		"BittensorConvertSubmit":          "settings,mnemonic,estimate,callback",
+		"BittensorConvertWait":            "settings,submission,callback",
 		"FormatTao":                       "rao",
 		"FormatTaoAmount":                 "rao",
 	}
 	got := map[string]string{}
 	types := map[string]string{}
 	fileSet := token.NewFileSet()
-	for _, path := range []string{"bittensor_convert.go", "bittensor_chain.go", "bittensor_chain_signer.go"} {
+	for _, path := range []string{"bittensor_convert.go", "bittensor_convert_submit.go", "bittensor_chain.go", "bittensor_chain_signer.go"} {
 		file, err := parser.ParseFile(fileSet, path, nil, 0)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			t.Fatal(err)
 		}
 		for _, declaration := range file.Decls {

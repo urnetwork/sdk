@@ -23,6 +23,15 @@ module URnetwork
       callback :urnet_auth_verify_send_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_wallet_challenge_cb, [:pointer, :string, :string], :void
       callback :urnet_bittensor_convert_estimate_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_convert_receipt_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_convert_submit_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_local_key_flow_cb, [:pointer], :void
+      callback :urnet_bittensor_local_key_store_add_key_cb, [:pointer, :string, :string, :string], :bool
+      callback :urnet_bittensor_local_key_store_delete_key_cb, [:pointer, :string], :bool
+      callback :urnet_bittensor_local_key_store_key_address_cb, [:pointer, :string], :pointer
+      callback :urnet_bittensor_local_key_store_key_phrase_cb, [:pointer, :string], :pointer
+      callback :urnet_bittensor_local_key_store_read_note_cb, [:pointer, :string, :string], :pointer
+      callback :urnet_bittensor_local_key_store_write_note_cb, [:pointer, :string, :string, :string], :void
       callback :urnet_block_action_overrides_change_cb, [:pointer, :string], :void
       callback :urnet_block_action_stats_cb, [:pointer], :void
       callback :urnet_block_action_window_change_cb, [:pointer, :string], :void
@@ -167,6 +176,10 @@ module URnetwork
       callback :urnet_sn_claim_done_cb, [:pointer], :void
       callback :urnet_sn_claim_failed_cb, [:pointer, :int64, :string], :void
       callback :urnet_sn_claim_sent_cb, [:pointer, :int64, :string], :void
+      callback :urnet_sn_claim_now_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_relay_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_relay_claim_now_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_status_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_claims_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_connect_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_epoch_cb, [:pointer, :string, :string], :void
@@ -375,6 +388,8 @@ module URnetwork
       attach_function :urnet_api_set_payout_wallet, [:uint64, :string, :urnet_set_payout_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_set_points_leaderboard_public, [:uint64, :string, :urnet_set_points_leaderboard_public_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sign_out, [:uint64, :urnet_session_sign_out_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_claim_relay, [:uint64, :urnet_sn_claim_relay_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_claim_relay_claim_now, [:uint64, :string, :urnet_sn_claim_relay_claim_now_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_epoch, [:uint64, :urnet_sn_epoch_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_epoch_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_get_wallet, [:uint64, :urnet_sn_get_wallet_cb, :pointer], :void, blocking: true
@@ -424,6 +439,38 @@ module URnetwork
       attach_function :urnet_async_local_state_parse_by_jwt, [:uint64, :urnet_parse_by_jwt_cb, :pointer], :void, blocking: true
       attach_function :urnet_async_local_state_set_by_client_jwt, [:uint64, :string, :urnet_commit_cb, :pointer], :void, blocking: true
       attach_function :urnet_async_local_state_set_by_jwt, [:uint64, :string, :urnet_commit_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener, [:uint64, :urnet_bittensor_local_key_flow_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_cancel_confirmation, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_close, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_close_screen, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_confirm_delete, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_confirm_keep, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_finish_setup, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_forget_network, [:uint64], :bool, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_get_card, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_get_screen, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_go_string, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_hide, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_needs_backup, [:uint64], :bool, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_open_screen, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_phrase_to_copy, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_reload, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_reminder, [:uint64, :int64, :int64, :int64, :bool], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_reminder_delivered, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_reminder_scheduled, [:uint64, :int64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_retry_save_now, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_reveal, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_revealed_words, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_save_first, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_capture_active, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_consent, [:uint64, :bool, :string, :int64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_consent_unavailable, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_current_epoch, [:uint64, :int64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_guest, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_top200_registered, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_set_up_payouts, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_string, [:uint64], :pointer, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_submit_words, [:uint64, :string, :string], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_bridge_url, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_cancel, [:uint64], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_challenge_args, [:uint64, :string], :pointer, blocking: true
@@ -830,6 +877,8 @@ module URnetwork
       attach_function :urnet_device_local_sign_sn_fleet_revoke, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_simulate_network_change, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_sn_claim, [:uint64, :string, :urnet_sn_claim_confirmed_cb, :urnet_sn_claim_done_cb, :urnet_sn_claim_failed_cb, :urnet_sn_claim_sent_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_local_sn_claim_now, [:uint64, :string, :urnet_sn_claim_now_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_local_sn_claim_status, [:uint64, :urnet_sn_claim_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_claim_transactions, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_sn_claims, [:uint64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_gas_balance, [:uint64, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true
@@ -942,6 +991,8 @@ module URnetwork
       attach_function :urnet_device_remote_sign_sn_fleet_revoke, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_remote_simulate_network_change, [:uint64], :void, blocking: true
       attach_function :urnet_device_remote_sn_claim, [:uint64, :string, :urnet_sn_claim_confirmed_cb, :urnet_sn_claim_done_cb, :urnet_sn_claim_failed_cb, :urnet_sn_claim_sent_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_remote_sn_claim_now, [:uint64, :string, :urnet_sn_claim_now_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_remote_sn_claim_status, [:uint64, :urnet_sn_claim_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_claim_transactions, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_remote_sn_claims, [:uint64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_gas_balance, [:uint64, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true
@@ -1396,6 +1447,8 @@ module URnetwork
       attach_function :urnet_alpha_from_rao, [:int64], :double, blocking: true
       attach_function :urnet_bittensor_convert_estimate, [:string, :string, :int64, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_convert_estimate_for_burn, [:string, :string, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_convert_submit, [:string, :string, :string, :urnet_bittensor_convert_submit_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_convert_wait, [:string, :string, :urnet_bittensor_convert_receipt_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_local_key_address, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_generate, [:pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_sign, [:string, :string, :pointer], :pointer, blocking: true
@@ -1492,6 +1545,7 @@ module URnetwork
       attach_function :urnet_nano_points_to_points, [:int64], :double, blocking: true
       attach_function :urnet_network_changed, [], :void, blocking: true
       attach_function :urnet_new_async_local_state, [:string], :uint64, blocking: true
+      attach_function :urnet_new_bittensor_local_key_flow, [:uint64, :string, :urnet_bittensor_local_key_store_add_key_cb, :urnet_bittensor_local_key_store_delete_key_cb, :urnet_bittensor_local_key_store_key_address_cb, :urnet_bittensor_local_key_store_key_phrase_cb, :urnet_bittensor_local_key_store_read_note_cb, :urnet_bittensor_local_key_store_write_note_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_bittensor_wallet_session, [:string, :string, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_client_event_queue, [:uint64, :string, :string, :string], :uint64, blocking: true
       attach_function :urnet_new_client_info, [:string, :string], :pointer, blocking: true

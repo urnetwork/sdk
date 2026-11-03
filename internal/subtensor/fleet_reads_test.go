@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/urnetwork/sdk/sn/evm"
@@ -95,5 +96,57 @@ func TestReadFleetValuesAbsentAndOtherFormats(t *testing.T) {
 	failed := NewChain(&fleetReadsRpc{err: errors.New("down")})
 	if _, registered, err := failed.ReadHotkeyUid(context.Background(), 25, hotkey); err == nil || registered {
 		t.Fatal("a failed read looked unregistered")
+	}
+}
+
+// The keys of a hotkey's owner and of the subnet taking registrations, as read on
+// mainnet on 2026-11-03 at spec 486: UID 70's hotkey and SN25.
+func TestReadRegistrationChecksFromMainnetBytes(t *testing.T) {
+	hotkey := fleetReadsHotkey(t, "9834e4fc47eb07e0b61b0968d03ddcd8b4ac9e7d374adfa853ad1c4ad8871061")
+	if key := ownerStorageKey(hotkey); key != "0x658faa385070e074c85bf6b568cf0555eca6b7a1fdc9f689184ecb4f359c0518b8bbc92996f5c1e5acfbdc5791f9b26e9834e4fc47eb07e0b61b0968d03ddcd8b4ac9e7d374adfa853ad1c4ad8871061" {
+		t.Fatalf("owner key %s", key)
+	}
+	if key := registrationAllowedStorageKey(25); key != "0x658faa385070e074c85bf6b568cf0555d5fe74da02c7b4bbb340fb368eee3e771900" {
+		t.Fatalf("allowed key %s", key)
+	}
+	coldkey := fleetReadsHotkey(t, "94732473f442f5aa2d9ed55054f4548125da672c7c9a1acaf43097aa25493166")
+	chain := NewChain(&fleetReadsRpc{storage: map[string]string{
+		ownerStorageKey(hotkey):           "0x" + hex.EncodeToString(coldkey[:]),
+		registrationAllowedStorageKey(25): "0x01",
+	}})
+	owner, found, err := chain.ReadHotkeyOwner(context.Background(), hotkey)
+	if err != nil || !found || owner != coldkey {
+		t.Fatalf("owner %x %t %v", owner, found, err)
+	}
+	if allowed, err := chain.ReadRegistrationAllowed(context.Background(), 25); err != nil || !allowed {
+		t.Fatalf("%t %v", allowed, err)
+	}
+
+	empty := NewChain(&fleetReadsRpc{storage: map[string]string{
+		ownerStorageKey(hotkey):           "0x" + strings.Repeat("00", 32),
+		registrationAllowedStorageKey(26): "0x00",
+	}})
+	if _, found, err := empty.ReadHotkeyOwner(context.Background(), hotkey); err != nil || found {
+		t.Fatalf("the zero account is no owner: %t %v", found, err)
+	}
+	if _, found, err := empty.ReadHotkeyOwner(context.Background(), [32]byte{9}); err != nil || found {
+		t.Fatalf("an absent owner: %t %v", found, err)
+	}
+	if allowed, err := empty.ReadRegistrationAllowed(context.Background(), 25); err != nil || !allowed {
+		t.Fatalf("absent is allowed: %t %v", allowed, err)
+	}
+	if allowed, err := empty.ReadRegistrationAllowed(context.Background(), 26); err != nil || allowed {
+		t.Fatalf("closed: %t %v", allowed, err)
+	}
+	odd := NewChain(&fleetReadsRpc{storage: map[string]string{registrationAllowedStorageKey(25): "0x02", ownerStorageKey(hotkey): "0x01"}})
+	if _, err := odd.ReadRegistrationAllowed(context.Background(), 25); err == nil {
+		t.Fatal("an odd bool read")
+	}
+	if _, _, err := odd.ReadHotkeyOwner(context.Background(), hotkey); err == nil {
+		t.Fatal("a one-byte owner read")
+	}
+	failed := NewChain(&fleetReadsRpc{err: errors.New("down")})
+	if allowed, err := failed.ReadRegistrationAllowed(context.Background(), 25); err == nil || allowed {
+		t.Fatal("a failed read looked allowed")
 	}
 }

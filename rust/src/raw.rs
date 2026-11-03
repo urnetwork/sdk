@@ -22,6 +22,15 @@ pub type urnet_auth_verify_cb = Option<unsafe extern "C" fn(*mut c_void, *const 
 pub type urnet_auth_verify_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_wallet_challenge_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_bittensor_convert_estimate_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_receipt_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_submit_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_local_key_flow_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_bittensor_local_key_store_add_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, *const c_char) -> bool>;
+pub type urnet_bittensor_local_key_store_delete_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> bool>;
+pub type urnet_bittensor_local_key_store_key_address_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>;
+pub type urnet_bittensor_local_key_store_key_phrase_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>;
+pub type urnet_bittensor_local_key_store_read_note_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_char>;
+pub type urnet_bittensor_local_key_store_write_note_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, *const c_char) -> ()>;
 pub type urnet_block_action_overrides_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_block_action_stats_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_block_action_window_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -166,6 +175,10 @@ pub type urnet_sn_claim_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, 
 pub type urnet_sn_claim_done_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_sn_claim_failed_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char) -> ()>;
 pub type urnet_sn_claim_sent_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char) -> ()>;
+pub type urnet_sn_claim_now_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_relay_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_relay_claim_now_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_status_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_claims_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_connect_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_epoch_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -376,6 +389,8 @@ pub struct Raw {
     pub urnet_api_set_payout_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_set_payout_wallet_cb, *mut c_void) -> (),
     pub urnet_api_set_points_leaderboard_public: unsafe extern "C" fn(u64, *const c_char, urnet_set_points_leaderboard_public_cb, *mut c_void) -> (),
     pub urnet_api_sign_out: unsafe extern "C" fn(u64, urnet_session_sign_out_cb, *mut c_void) -> (),
+    pub urnet_api_sn_claim_relay: unsafe extern "C" fn(u64, urnet_sn_claim_relay_cb, *mut c_void) -> (),
+    pub urnet_api_sn_claim_relay_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_relay_claim_now_cb, *mut c_void) -> (),
     pub urnet_api_sn_epoch: unsafe extern "C" fn(u64, urnet_sn_epoch_cb, *mut c_void) -> (),
     pub urnet_api_sn_epoch_sync: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_get_wallet: unsafe extern "C" fn(u64, urnet_sn_get_wallet_cb, *mut c_void) -> (),
@@ -425,6 +440,38 @@ pub struct Raw {
     pub urnet_async_local_state_parse_by_jwt: unsafe extern "C" fn(u64, urnet_parse_by_jwt_cb, *mut c_void) -> (),
     pub urnet_async_local_state_set_by_client_jwt: unsafe extern "C" fn(u64, *const c_char, urnet_commit_cb, *mut c_void) -> (),
     pub urnet_async_local_state_set_by_jwt: unsafe extern "C" fn(u64, *const c_char, urnet_commit_cb, *mut c_void) -> (),
+    pub urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener: unsafe extern "C" fn(u64, urnet_bittensor_local_key_flow_cb, *mut c_void) -> u64,
+    pub urnet_bittensor_local_key_flow_cancel_confirmation: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_close: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_close_screen: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_confirm_delete: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_confirm_keep: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_finish_setup: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_forget_network: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_bittensor_local_key_flow_get_card: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_get_screen: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_go_string: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_hide: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_needs_backup: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_bittensor_local_key_flow_open_screen: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_phrase_to_copy: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_reload: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_reminder: unsafe extern "C" fn(u64, i64, i64, i64, bool) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_reminder_delivered: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_reminder_scheduled: unsafe extern "C" fn(u64, i64) -> (),
+    pub urnet_bittensor_local_key_flow_retry_save_now: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_reveal: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_revealed_words: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_save_first: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_set_capture_active: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_set_consent: unsafe extern "C" fn(u64, bool, *const c_char, i64) -> (),
+    pub urnet_bittensor_local_key_flow_set_consent_unavailable: unsafe extern "C" fn(u64) -> (),
+    pub urnet_bittensor_local_key_flow_set_current_epoch: unsafe extern "C" fn(u64, i64) -> (),
+    pub urnet_bittensor_local_key_flow_set_guest: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_set_top200_registered: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_set_up_payouts: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_bittensor_local_key_flow_string: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_bittensor_local_key_flow_submit_words: unsafe extern "C" fn(u64, *const c_char, *const c_char) -> (),
     pub urnet_bittensor_wallet_session_bridge_url: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_wallet_session_cancel: unsafe extern "C" fn(u64) -> (),
     pub urnet_bittensor_wallet_session_challenge_args: unsafe extern "C" fn(u64, *const c_char) -> *mut c_char,
@@ -831,6 +878,8 @@ pub struct Raw {
     pub urnet_device_local_sign_sn_fleet_revoke: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_local_simulate_network_change: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_local_sn_claim: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_confirmed_cb, urnet_sn_claim_done_cb, urnet_sn_claim_failed_cb, urnet_sn_claim_sent_cb, *mut c_void) -> (),
+    pub urnet_device_local_sn_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_now_cb, *mut c_void) -> (),
+    pub urnet_device_local_sn_claim_status: unsafe extern "C" fn(u64, urnet_sn_claim_status_cb, *mut c_void) -> (),
     pub urnet_device_local_sn_claim_transactions: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_local_sn_claims: unsafe extern "C" fn(u64, urnet_sn_claims_cb, *mut c_void) -> (),
     pub urnet_device_local_sn_gas_balance: unsafe extern "C" fn(u64, urnet_sn_gas_balance_cb, *mut c_void) -> (),
@@ -943,6 +992,8 @@ pub struct Raw {
     pub urnet_device_remote_sign_sn_fleet_revoke: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_remote_simulate_network_change: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_remote_sn_claim: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_confirmed_cb, urnet_sn_claim_done_cb, urnet_sn_claim_failed_cb, urnet_sn_claim_sent_cb, *mut c_void) -> (),
+    pub urnet_device_remote_sn_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_now_cb, *mut c_void) -> (),
+    pub urnet_device_remote_sn_claim_status: unsafe extern "C" fn(u64, urnet_sn_claim_status_cb, *mut c_void) -> (),
     pub urnet_device_remote_sn_claim_transactions: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_remote_sn_claims: unsafe extern "C" fn(u64, urnet_sn_claims_cb, *mut c_void) -> (),
     pub urnet_device_remote_sn_gas_balance: unsafe extern "C" fn(u64, urnet_sn_gas_balance_cb, *mut c_void) -> (),
@@ -1397,6 +1448,8 @@ pub struct Raw {
     pub urnet_alpha_from_rao: unsafe extern "C" fn(i64) -> f64,
     pub urnet_bittensor_convert_estimate: unsafe extern "C" fn(*const c_char, *const c_char, i64, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
     pub urnet_bittensor_convert_estimate_for_burn: unsafe extern "C" fn(*const c_char, *const c_char, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_submit: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, urnet_bittensor_convert_submit_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_wait: unsafe extern "C" fn(*const c_char, *const c_char, urnet_bittensor_convert_receipt_cb, *mut c_void) -> (),
     pub urnet_bittensor_local_key_address: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_generate: unsafe extern "C" fn(*mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_sign: unsafe extern "C" fn(*const c_char, *const c_char, *mut *mut c_char) -> *mut c_char,
@@ -1493,6 +1546,7 @@ pub struct Raw {
     pub urnet_nano_points_to_points: unsafe extern "C" fn(i64) -> f64,
     pub urnet_network_changed: unsafe extern "C" fn() -> (),
     pub urnet_new_async_local_state: unsafe extern "C" fn(*const c_char) -> u64,
+    pub urnet_new_bittensor_local_key_flow: unsafe extern "C" fn(u64, *const c_char, urnet_bittensor_local_key_store_add_key_cb, urnet_bittensor_local_key_store_delete_key_cb, urnet_bittensor_local_key_store_key_address_cb, urnet_bittensor_local_key_store_key_phrase_cb, urnet_bittensor_local_key_store_read_note_cb, urnet_bittensor_local_key_store_write_note_cb, *mut c_void) -> u64,
     pub urnet_new_bittensor_wallet_session: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, *const c_char, *mut *mut c_char) -> u64,
     pub urnet_new_client_event_queue: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char) -> u64,
     pub urnet_new_client_info: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
@@ -1761,6 +1815,8 @@ impl Raw {
             urnet_api_set_payout_wallet: unsafe { *library.get(b"urnet_api_set_payout_wallet\0")? },
             urnet_api_set_points_leaderboard_public: unsafe { *library.get(b"urnet_api_set_points_leaderboard_public\0")? },
             urnet_api_sign_out: unsafe { *library.get(b"urnet_api_sign_out\0")? },
+            urnet_api_sn_claim_relay: unsafe { *library.get(b"urnet_api_sn_claim_relay\0")? },
+            urnet_api_sn_claim_relay_claim_now: unsafe { *library.get(b"urnet_api_sn_claim_relay_claim_now\0")? },
             urnet_api_sn_epoch: unsafe { *library.get(b"urnet_api_sn_epoch\0")? },
             urnet_api_sn_epoch_sync: unsafe { *library.get(b"urnet_api_sn_epoch_sync\0")? },
             urnet_api_sn_get_wallet: unsafe { *library.get(b"urnet_api_sn_get_wallet\0")? },
@@ -1810,6 +1866,38 @@ impl Raw {
             urnet_async_local_state_parse_by_jwt: unsafe { *library.get(b"urnet_async_local_state_parse_by_jwt\0")? },
             urnet_async_local_state_set_by_client_jwt: unsafe { *library.get(b"urnet_async_local_state_set_by_client_jwt\0")? },
             urnet_async_local_state_set_by_jwt: unsafe { *library.get(b"urnet_async_local_state_set_by_jwt\0")? },
+            urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener: unsafe { *library.get(b"urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener\0")? },
+            urnet_bittensor_local_key_flow_cancel_confirmation: unsafe { *library.get(b"urnet_bittensor_local_key_flow_cancel_confirmation\0")? },
+            urnet_bittensor_local_key_flow_close: unsafe { *library.get(b"urnet_bittensor_local_key_flow_close\0")? },
+            urnet_bittensor_local_key_flow_close_screen: unsafe { *library.get(b"urnet_bittensor_local_key_flow_close_screen\0")? },
+            urnet_bittensor_local_key_flow_confirm_delete: unsafe { *library.get(b"urnet_bittensor_local_key_flow_confirm_delete\0")? },
+            urnet_bittensor_local_key_flow_confirm_keep: unsafe { *library.get(b"urnet_bittensor_local_key_flow_confirm_keep\0")? },
+            urnet_bittensor_local_key_flow_finish_setup: unsafe { *library.get(b"urnet_bittensor_local_key_flow_finish_setup\0")? },
+            urnet_bittensor_local_key_flow_forget_network: unsafe { *library.get(b"urnet_bittensor_local_key_flow_forget_network\0")? },
+            urnet_bittensor_local_key_flow_get_card: unsafe { *library.get(b"urnet_bittensor_local_key_flow_get_card\0")? },
+            urnet_bittensor_local_key_flow_get_screen: unsafe { *library.get(b"urnet_bittensor_local_key_flow_get_screen\0")? },
+            urnet_bittensor_local_key_flow_go_string: unsafe { *library.get(b"urnet_bittensor_local_key_flow_go_string\0")? },
+            urnet_bittensor_local_key_flow_hide: unsafe { *library.get(b"urnet_bittensor_local_key_flow_hide\0")? },
+            urnet_bittensor_local_key_flow_needs_backup: unsafe { *library.get(b"urnet_bittensor_local_key_flow_needs_backup\0")? },
+            urnet_bittensor_local_key_flow_open_screen: unsafe { *library.get(b"urnet_bittensor_local_key_flow_open_screen\0")? },
+            urnet_bittensor_local_key_flow_phrase_to_copy: unsafe { *library.get(b"urnet_bittensor_local_key_flow_phrase_to_copy\0")? },
+            urnet_bittensor_local_key_flow_reload: unsafe { *library.get(b"urnet_bittensor_local_key_flow_reload\0")? },
+            urnet_bittensor_local_key_flow_reminder: unsafe { *library.get(b"urnet_bittensor_local_key_flow_reminder\0")? },
+            urnet_bittensor_local_key_flow_reminder_delivered: unsafe { *library.get(b"urnet_bittensor_local_key_flow_reminder_delivered\0")? },
+            urnet_bittensor_local_key_flow_reminder_scheduled: unsafe { *library.get(b"urnet_bittensor_local_key_flow_reminder_scheduled\0")? },
+            urnet_bittensor_local_key_flow_retry_save_now: unsafe { *library.get(b"urnet_bittensor_local_key_flow_retry_save_now\0")? },
+            urnet_bittensor_local_key_flow_reveal: unsafe { *library.get(b"urnet_bittensor_local_key_flow_reveal\0")? },
+            urnet_bittensor_local_key_flow_revealed_words: unsafe { *library.get(b"urnet_bittensor_local_key_flow_revealed_words\0")? },
+            urnet_bittensor_local_key_flow_save_first: unsafe { *library.get(b"urnet_bittensor_local_key_flow_save_first\0")? },
+            urnet_bittensor_local_key_flow_set_capture_active: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_capture_active\0")? },
+            urnet_bittensor_local_key_flow_set_consent: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_consent\0")? },
+            urnet_bittensor_local_key_flow_set_consent_unavailable: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_consent_unavailable\0")? },
+            urnet_bittensor_local_key_flow_set_current_epoch: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_current_epoch\0")? },
+            urnet_bittensor_local_key_flow_set_guest: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_guest\0")? },
+            urnet_bittensor_local_key_flow_set_top200_registered: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_top200_registered\0")? },
+            urnet_bittensor_local_key_flow_set_up_payouts: unsafe { *library.get(b"urnet_bittensor_local_key_flow_set_up_payouts\0")? },
+            urnet_bittensor_local_key_flow_string: unsafe { *library.get(b"urnet_bittensor_local_key_flow_string\0")? },
+            urnet_bittensor_local_key_flow_submit_words: unsafe { *library.get(b"urnet_bittensor_local_key_flow_submit_words\0")? },
             urnet_bittensor_wallet_session_bridge_url: unsafe { *library.get(b"urnet_bittensor_wallet_session_bridge_url\0")? },
             urnet_bittensor_wallet_session_cancel: unsafe { *library.get(b"urnet_bittensor_wallet_session_cancel\0")? },
             urnet_bittensor_wallet_session_challenge_args: unsafe { *library.get(b"urnet_bittensor_wallet_session_challenge_args\0")? },
@@ -2216,6 +2304,8 @@ impl Raw {
             urnet_device_local_sign_sn_fleet_revoke: unsafe { *library.get(b"urnet_device_local_sign_sn_fleet_revoke\0")? },
             urnet_device_local_simulate_network_change: unsafe { *library.get(b"urnet_device_local_simulate_network_change\0")? },
             urnet_device_local_sn_claim: unsafe { *library.get(b"urnet_device_local_sn_claim\0")? },
+            urnet_device_local_sn_claim_now: unsafe { *library.get(b"urnet_device_local_sn_claim_now\0")? },
+            urnet_device_local_sn_claim_status: unsafe { *library.get(b"urnet_device_local_sn_claim_status\0")? },
             urnet_device_local_sn_claim_transactions: unsafe { *library.get(b"urnet_device_local_sn_claim_transactions\0")? },
             urnet_device_local_sn_claims: unsafe { *library.get(b"urnet_device_local_sn_claims\0")? },
             urnet_device_local_sn_gas_balance: unsafe { *library.get(b"urnet_device_local_sn_gas_balance\0")? },
@@ -2328,6 +2418,8 @@ impl Raw {
             urnet_device_remote_sign_sn_fleet_revoke: unsafe { *library.get(b"urnet_device_remote_sign_sn_fleet_revoke\0")? },
             urnet_device_remote_simulate_network_change: unsafe { *library.get(b"urnet_device_remote_simulate_network_change\0")? },
             urnet_device_remote_sn_claim: unsafe { *library.get(b"urnet_device_remote_sn_claim\0")? },
+            urnet_device_remote_sn_claim_now: unsafe { *library.get(b"urnet_device_remote_sn_claim_now\0")? },
+            urnet_device_remote_sn_claim_status: unsafe { *library.get(b"urnet_device_remote_sn_claim_status\0")? },
             urnet_device_remote_sn_claim_transactions: unsafe { *library.get(b"urnet_device_remote_sn_claim_transactions\0")? },
             urnet_device_remote_sn_claims: unsafe { *library.get(b"urnet_device_remote_sn_claims\0")? },
             urnet_device_remote_sn_gas_balance: unsafe { *library.get(b"urnet_device_remote_sn_gas_balance\0")? },
@@ -2782,6 +2874,8 @@ impl Raw {
             urnet_alpha_from_rao: unsafe { *library.get(b"urnet_alpha_from_rao\0")? },
             urnet_bittensor_convert_estimate: unsafe { *library.get(b"urnet_bittensor_convert_estimate\0")? },
             urnet_bittensor_convert_estimate_for_burn: unsafe { *library.get(b"urnet_bittensor_convert_estimate_for_burn\0")? },
+            urnet_bittensor_convert_submit: unsafe { *library.get(b"urnet_bittensor_convert_submit\0")? },
+            urnet_bittensor_convert_wait: unsafe { *library.get(b"urnet_bittensor_convert_wait\0")? },
             urnet_bittensor_local_key_address: unsafe { *library.get(b"urnet_bittensor_local_key_address\0")? },
             urnet_bittensor_local_key_generate: unsafe { *library.get(b"urnet_bittensor_local_key_generate\0")? },
             urnet_bittensor_local_key_sign: unsafe { *library.get(b"urnet_bittensor_local_key_sign\0")? },
@@ -2878,6 +2972,7 @@ impl Raw {
             urnet_nano_points_to_points: unsafe { *library.get(b"urnet_nano_points_to_points\0")? },
             urnet_network_changed: unsafe { *library.get(b"urnet_network_changed\0")? },
             urnet_new_async_local_state: unsafe { *library.get(b"urnet_new_async_local_state\0")? },
+            urnet_new_bittensor_local_key_flow: unsafe { *library.get(b"urnet_new_bittensor_local_key_flow\0")? },
             urnet_new_bittensor_wallet_session: unsafe { *library.get(b"urnet_new_bittensor_wallet_session\0")? },
             urnet_new_client_event_queue: unsafe { *library.get(b"urnet_new_client_event_queue\0")? },
             urnet_new_client_info: unsafe { *library.get(b"urnet_new_client_info\0")? },

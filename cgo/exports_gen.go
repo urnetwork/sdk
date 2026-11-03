@@ -387,6 +387,137 @@ func (self *cAdapterBittensorConvertEstimateCallback) Result(result *sdk.Bittens
 	}
 }
 
+type cAdapterBittensorConvertReceiptCallback struct {
+	cbResult C.urnet_bittensor_convert_receipt_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertReceiptCallback) Result(result *sdk.BittensorConvertReceipt, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_receipt_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_receipt_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_receipt(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorConvertSubmitCallback struct {
+	cbResult C.urnet_bittensor_convert_submit_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertSubmitCallback) Result(result *sdk.BittensorConvertSubmission, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_submit_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_submit_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_submit(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorLocalKeyFlowListener struct {
+	cbBittensorLocalKeyFlowChanged C.urnet_bittensor_local_key_flow_cb
+	userData                       unsafe.Pointer
+}
+
+func (self *cAdapterBittensorLocalKeyFlowListener) BittensorLocalKeyFlowChanged() {
+	defer cgoGuard("urnet_bittensor_local_key_flow_cb")
+	C.urnet_invoke_bittensor_local_key_flow(self.cbBittensorLocalKeyFlowChanged, self.userData)
+}
+
+type cAdapterBittensorLocalKeyStore struct {
+	cbAddKey     C.urnet_bittensor_local_key_store_add_key_cb
+	cbDeleteKey  C.urnet_bittensor_local_key_store_delete_key_cb
+	cbKeyAddress C.urnet_bittensor_local_key_store_key_address_cb
+	cbKeyPhrase  C.urnet_bittensor_local_key_store_key_phrase_cb
+	cbReadNote   C.urnet_bittensor_local_key_store_read_note_cb
+	cbWriteNote  C.urnet_bittensor_local_key_store_write_note_cb
+	userData     unsafe.Pointer
+}
+
+func (self *cAdapterBittensorLocalKeyStore) AddKey(networkId string, mnemonic string, address string) bool {
+	defer cgoGuard("urnet_bittensor_local_key_store_add_key_cb")
+	networkId_ := cString(string(networkId))
+	mnemonic_ := cString(string(mnemonic))
+	address_ := cString(string(address))
+	r0_ := C.urnet_invoke_bittensor_local_key_store_add_key(self.cbAddKey, self.userData, networkId_, mnemonic_, address_)
+	cStringFree(networkId_)
+	cStringFree(mnemonic_)
+	cStringFree(address_)
+	return bool(r0_)
+}
+
+func (self *cAdapterBittensorLocalKeyStore) DeleteKey(networkId string) bool {
+	defer cgoGuard("urnet_bittensor_local_key_store_delete_key_cb")
+	networkId_ := cString(string(networkId))
+	r0_ := C.urnet_invoke_bittensor_local_key_store_delete_key(self.cbDeleteKey, self.userData, networkId_)
+	cStringFree(networkId_)
+	return bool(r0_)
+}
+
+func (self *cAdapterBittensorLocalKeyStore) KeyAddress(networkId string) string {
+	defer cgoGuard("urnet_bittensor_local_key_store_key_address_cb")
+	networkId_ := cString(string(networkId))
+	r0_ := C.urnet_invoke_bittensor_local_key_store_key_address(self.cbKeyAddress, self.userData, networkId_)
+	cStringFree(networkId_)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
+func (self *cAdapterBittensorLocalKeyStore) KeyPhrase(networkId string) string {
+	defer cgoGuard("urnet_bittensor_local_key_store_key_phrase_cb")
+	networkId_ := cString(string(networkId))
+	r0_ := C.urnet_invoke_bittensor_local_key_store_key_phrase(self.cbKeyPhrase, self.userData, networkId_)
+	cStringFree(networkId_)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
+func (self *cAdapterBittensorLocalKeyStore) ReadNote(networkId string, name string) string {
+	defer cgoGuard("urnet_bittensor_local_key_store_read_note_cb")
+	networkId_ := cString(string(networkId))
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_bittensor_local_key_store_read_note(self.cbReadNote, self.userData, networkId_, name_)
+	cStringFree(networkId_)
+	cStringFree(name_)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
+func (self *cAdapterBittensorLocalKeyStore) WriteNote(networkId string, name string, value string) {
+	defer cgoGuard("urnet_bittensor_local_key_store_write_note_cb")
+	networkId_ := cString(string(networkId))
+	name_ := cString(string(name))
+	value_ := cString(string(value))
+	C.urnet_invoke_bittensor_local_key_store_write_note(self.cbWriteNote, self.userData, networkId_, name_, value_)
+	cStringFree(networkId_)
+	cStringFree(name_)
+	cStringFree(value_)
+}
+
 type cAdapterBlockActionOverridesChangeListener struct {
 	cbBlockActionOverridesChanged C.urnet_block_action_overrides_change_cb
 	userData                      unsafe.Pointer
@@ -2584,6 +2715,90 @@ func (self *cAdapterSnClaimCallback) Sent(epoch int64, txHash string) {
 	txHash_ := cString(string(txHash))
 	C.urnet_invoke_sn_claim_sent(self.cbSent, self.userData, C.int64_t(int64(epoch)), txHash_)
 	cStringFree(txHash_)
+}
+
+type cAdapterSnClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimNowCallback) Result(result *sdk.SnClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayCallback struct {
+	cbResult C.urnet_sn_claim_relay_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayCallback) Result(result *sdk.SnClaimRelayResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_relay_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayClaimNowCallback) Result(result *sdk.SnClaimRelayClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimStatusCallback struct {
+	cbResult C.urnet_sn_claim_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimStatusCallback) Result(result *sdk.SnClaimStatusResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_status_cb")
+	result_ := cJson(result, "urnet_sn_claim_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
 }
 
 type cAdapterSnClaimsCallback struct {
@@ -5591,6 +5806,41 @@ func urnet_api_sign_out(self C.uint64_t, callback_result C.urnet_session_sign_ou
 	self_.SignOut(callback_)
 }
 
+//export urnet_api_sn_claim_relay
+func urnet_api_sn_claim_relay(self C.uint64_t, callback_result C.urnet_sn_claim_relay_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimRelayCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelay(callback_)
+}
+
+//export urnet_api_sn_claim_relay_claim_now
+func urnet_api_sn_claim_relay_claim_now(self C.uint64_t, args *C.char, callback_result C.urnet_sn_claim_relay_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay_claim_now")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay_claim_now")
+	if !ok {
+		return
+	}
+	var args_ *sdk.SnClaimRelayClaimNowArgs
+	if args != nil {
+		args_ = &sdk.SnClaimRelayClaimNowArgs{}
+		if !goJson(args, args_, "urnet_api_sn_claim_relay_claim_now") {
+			return
+		}
+	}
+	var callback_ sdk.SnClaimRelayClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelayClaimNow(args_, callback_)
+}
+
 //export urnet_api_sn_epoch
 func urnet_api_sn_epoch(self C.uint64_t, callback_result C.urnet_sn_epoch_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_sn_epoch")
@@ -6485,6 +6735,54 @@ func urnet_bittensor_convert_estimate_for_burn(settings *C.char, coldkeySs58 *C.
 	sdk.BittensorConvertEstimateForBurn(settings_, goString(coldkeySs58), callback_)
 }
 
+//export urnet_bittensor_convert_submit
+func urnet_bittensor_convert_submit(settings *C.char, mnemonic *C.char, estimate *C.char, callback_result C.urnet_bittensor_convert_submit_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_submit")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_submit") {
+			return
+		}
+	}
+	var estimate_ *sdk.BittensorConvertEstimateResult
+	if estimate != nil {
+		estimate_ = &sdk.BittensorConvertEstimateResult{}
+		if !goJson(estimate, estimate_, "urnet_bittensor_convert_submit") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertSubmitCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertSubmitCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertSubmit(settings_, goString(mnemonic), estimate_, callback_)
+}
+
+//export urnet_bittensor_convert_wait
+func urnet_bittensor_convert_wait(settings *C.char, submission *C.char, callback_result C.urnet_bittensor_convert_receipt_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_wait")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var submission_ *sdk.BittensorConvertSubmission
+	if submission != nil {
+		submission_ = &sdk.BittensorConvertSubmission{}
+		if !goJson(submission, submission_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertReceiptCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertReceiptCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertWait(settings_, submission_, callback_)
+}
+
 //export urnet_bittensor_local_key_address
 func urnet_bittensor_local_key_address(mnemonic *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_bittensor_local_key_address")
@@ -6494,6 +6792,352 @@ func urnet_bittensor_local_key_address(mnemonic *C.char, outError **C.char) *C.c
 		return nil
 	}
 	return cString(string(r0))
+}
+
+//export urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener
+func urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener(self C.uint64_t, listener_bittensor_local_key_flow_changed C.urnet_bittensor_local_key_flow_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.BittensorLocalKeyFlowListener
+	if listener_bittensor_local_key_flow_changed != nil {
+		listener_ = &cAdapterBittensorLocalKeyFlowListener{cbBittensorLocalKeyFlowChanged: listener_bittensor_local_key_flow_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddBittensorLocalKeyFlowListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_bittensor_local_key_flow_cancel_confirmation
+func urnet_bittensor_local_key_flow_cancel_confirmation(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_cancel_confirmation")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_cancel_confirmation")
+	if !ok {
+		return
+	}
+	self_.CancelConfirmation()
+}
+
+//export urnet_bittensor_local_key_flow_close
+func urnet_bittensor_local_key_flow_close(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_close")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_bittensor_local_key_flow_close_screen
+func urnet_bittensor_local_key_flow_close_screen(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_close_screen")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_close_screen")
+	if !ok {
+		return
+	}
+	self_.CloseScreen()
+}
+
+//export urnet_bittensor_local_key_flow_confirm_delete
+func urnet_bittensor_local_key_flow_confirm_delete(self C.uint64_t, authenticated C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_confirm_delete")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_confirm_delete")
+	if !ok {
+		return
+	}
+	self_.ConfirmDelete(bool(authenticated))
+}
+
+//export urnet_bittensor_local_key_flow_confirm_keep
+func urnet_bittensor_local_key_flow_confirm_keep(self C.uint64_t, authenticated C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_confirm_keep")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_confirm_keep")
+	if !ok {
+		return
+	}
+	self_.ConfirmKeep(bool(authenticated))
+}
+
+//export urnet_bittensor_local_key_flow_finish_setup
+func urnet_bittensor_local_key_flow_finish_setup(self C.uint64_t, replaceConfirmed C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_finish_setup")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_finish_setup")
+	if !ok {
+		return
+	}
+	self_.FinishSetup(bool(replaceConfirmed))
+}
+
+//export urnet_bittensor_local_key_flow_forget_network
+func urnet_bittensor_local_key_flow_forget_network(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_bittensor_local_key_flow_forget_network")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_forget_network")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.ForgetNetwork()
+	return C.bool(r0)
+}
+
+//export urnet_bittensor_local_key_flow_get_card
+func urnet_bittensor_local_key_flow_get_card(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_get_card")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_get_card")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetCard()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_flow_get_card")
+}
+
+//export urnet_bittensor_local_key_flow_get_screen
+func urnet_bittensor_local_key_flow_get_screen(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_get_screen")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_get_screen")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetScreen()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_flow_get_screen")
+}
+
+//export urnet_bittensor_local_key_flow_go_string
+func urnet_bittensor_local_key_flow_go_string(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_go_string")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_go_string")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GoString()
+	return cString(string(r0))
+}
+
+//export urnet_bittensor_local_key_flow_hide
+func urnet_bittensor_local_key_flow_hide(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_hide")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_hide")
+	if !ok {
+		return
+	}
+	self_.Hide()
+}
+
+//export urnet_bittensor_local_key_flow_needs_backup
+func urnet_bittensor_local_key_flow_needs_backup(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_bittensor_local_key_flow_needs_backup")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_needs_backup")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.NeedsBackup()
+	return C.bool(r0)
+}
+
+//export urnet_bittensor_local_key_flow_open_screen
+func urnet_bittensor_local_key_flow_open_screen(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_open_screen")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_open_screen")
+	if !ok {
+		return
+	}
+	self_.OpenScreen()
+}
+
+//export urnet_bittensor_local_key_flow_phrase_to_copy
+func urnet_bittensor_local_key_flow_phrase_to_copy(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_phrase_to_copy")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_phrase_to_copy")
+	if !ok {
+		return nil
+	}
+	r0 := self_.PhraseToCopy()
+	return cString(string(r0))
+}
+
+//export urnet_bittensor_local_key_flow_reload
+func urnet_bittensor_local_key_flow_reload(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_reload")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_reload")
+	if !ok {
+		return
+	}
+	self_.Reload()
+}
+
+//export urnet_bittensor_local_key_flow_reminder
+func urnet_bittensor_local_key_flow_reminder(self C.uint64_t, currentEpoch C.int64_t, claimOpenMillis C.int64_t, epochBlocks C.int64_t, claimable C.bool) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_reminder")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_reminder")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Reminder(int64(currentEpoch), int64(claimOpenMillis), int64(epochBlocks), bool(claimable))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_flow_reminder")
+}
+
+//export urnet_bittensor_local_key_flow_reminder_delivered
+func urnet_bittensor_local_key_flow_reminder_delivered(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_reminder_delivered")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_reminder_delivered")
+	if !ok {
+		return
+	}
+	self_.ReminderDelivered()
+}
+
+//export urnet_bittensor_local_key_flow_reminder_scheduled
+func urnet_bittensor_local_key_flow_reminder_scheduled(self C.uint64_t, atMillis C.int64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_reminder_scheduled")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_reminder_scheduled")
+	if !ok {
+		return
+	}
+	self_.ReminderScheduled(int64(atMillis))
+}
+
+//export urnet_bittensor_local_key_flow_retry_save_now
+func urnet_bittensor_local_key_flow_retry_save_now(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_retry_save_now")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_retry_save_now")
+	if !ok {
+		return
+	}
+	self_.RetrySaveNow()
+}
+
+//export urnet_bittensor_local_key_flow_reveal
+func urnet_bittensor_local_key_flow_reveal(self C.uint64_t, authenticated C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_reveal")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_reveal")
+	if !ok {
+		return
+	}
+	self_.Reveal(bool(authenticated))
+}
+
+//export urnet_bittensor_local_key_flow_revealed_words
+func urnet_bittensor_local_key_flow_revealed_words(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_revealed_words")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_revealed_words")
+	if !ok {
+		return nil
+	}
+	r0 := self_.RevealedWords()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_flow_revealed_words")
+}
+
+//export urnet_bittensor_local_key_flow_save_first
+func urnet_bittensor_local_key_flow_save_first(self C.uint64_t, replaceConfirmed C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_save_first")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_save_first")
+	if !ok {
+		return
+	}
+	self_.SaveFirst(bool(replaceConfirmed))
+}
+
+//export urnet_bittensor_local_key_flow_set_capture_active
+func urnet_bittensor_local_key_flow_set_capture_active(self C.uint64_t, active C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_capture_active")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_capture_active")
+	if !ok {
+		return
+	}
+	self_.SetCaptureActive(bool(active))
+}
+
+//export urnet_bittensor_local_key_flow_set_consent
+func urnet_bittensor_local_key_flow_set_consent(self C.uint64_t, active C.bool, coldkeySs58 *C.char, fromEpoch C.int64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_consent")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_consent")
+	if !ok {
+		return
+	}
+	self_.SetConsent(bool(active), goString(coldkeySs58), int64(fromEpoch))
+}
+
+//export urnet_bittensor_local_key_flow_set_consent_unavailable
+func urnet_bittensor_local_key_flow_set_consent_unavailable(self C.uint64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_consent_unavailable")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_consent_unavailable")
+	if !ok {
+		return
+	}
+	self_.SetConsentUnavailable()
+}
+
+//export urnet_bittensor_local_key_flow_set_current_epoch
+func urnet_bittensor_local_key_flow_set_current_epoch(self C.uint64_t, currentEpoch C.int64_t) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_current_epoch")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_current_epoch")
+	if !ok {
+		return
+	}
+	self_.SetCurrentEpoch(int64(currentEpoch))
+}
+
+//export urnet_bittensor_local_key_flow_set_guest
+func urnet_bittensor_local_key_flow_set_guest(self C.uint64_t, guest C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_guest")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_guest")
+	if !ok {
+		return
+	}
+	self_.SetGuest(bool(guest))
+}
+
+//export urnet_bittensor_local_key_flow_set_top200_registered
+func urnet_bittensor_local_key_flow_set_top200_registered(self C.uint64_t, registered C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_top200_registered")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_top200_registered")
+	if !ok {
+		return
+	}
+	self_.SetTop200Registered(bool(registered))
+}
+
+//export urnet_bittensor_local_key_flow_set_up_payouts
+func urnet_bittensor_local_key_flow_set_up_payouts(self C.uint64_t, replaceConfirmed C.bool) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_set_up_payouts")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_set_up_payouts")
+	if !ok {
+		return
+	}
+	self_.SetUpPayouts(bool(replaceConfirmed))
+}
+
+//export urnet_bittensor_local_key_flow_string
+func urnet_bittensor_local_key_flow_string(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_string")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_string")
+	if !ok {
+		return nil
+	}
+	r0 := self_.String()
+	return cString(string(r0))
+}
+
+//export urnet_bittensor_local_key_flow_submit_words
+func urnet_bittensor_local_key_flow_submit_words(self C.uint64_t, firstWord *C.char, secondWord *C.char) {
+	defer cgoGuard("urnet_bittensor_local_key_flow_submit_words")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_submit_words")
+	if !ok {
+		return
+	}
+	self_.SubmitWords(goString(firstWord), goString(secondWord))
 }
 
 //export urnet_bittensor_local_key_generate
@@ -12291,6 +12935,34 @@ func urnet_device_local_sn_claim(self C.uint64_t, epochs *C.char, callback_confi
 	self_.SnClaim(epochs_, callback_)
 }
 
+//export urnet_device_local_sn_claim_now
+func urnet_device_local_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_local_sn_claim_status
+func urnet_device_local_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
+}
+
 //export urnet_device_local_sn_claim_transactions
 func urnet_device_local_sn_claim_transactions(self C.uint64_t, epochs *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_device_local_sn_claim_transactions")
@@ -13849,6 +14521,34 @@ func urnet_device_remote_sn_claim(self C.uint64_t, epochs *C.char, callback_conf
 		callback_ = &cAdapterSnClaimCallback{cbConfirmed: callback_confirmed, cbDone: callback_done, cbFailed: callback_failed, cbSent: callback_sent, userData: callback_user_data}
 	}
 	self_.SnClaim(epochs_, callback_)
+}
+
+//export urnet_device_remote_sn_claim_now
+func urnet_device_remote_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_remote_sn_claim_status
+func urnet_device_remote_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
 }
 
 //export urnet_device_remote_sn_claim_transactions
@@ -17965,6 +18665,28 @@ func urnet_network_user_view_controller_update_network_user(self C.uint64_t, net
 func urnet_new_async_local_state(localStorageHome *C.char) C.uint64_t {
 	defer cgoGuard("urnet_new_async_local_state")
 	r0 := sdk.NewAsyncLocalState(goString(localStorageHome))
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_bittensor_local_key_flow
+func urnet_new_bittensor_local_key_flow(api C.uint64_t, networkId *C.char, store_add_key C.urnet_bittensor_local_key_store_add_key_cb, store_delete_key C.urnet_bittensor_local_key_store_delete_key_cb, store_key_address C.urnet_bittensor_local_key_store_key_address_cb, store_key_phrase C.urnet_bittensor_local_key_store_key_phrase_cb, store_read_note C.urnet_bittensor_local_key_store_read_note_cb, store_write_note C.urnet_bittensor_local_key_store_write_note_cb, store_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_new_bittensor_local_key_flow")
+	var api_ *sdk.Api
+	if api != 0 {
+		var ok bool
+		api_, ok = resolveHandle[*sdk.Api](uint64(api), "urnet_new_bittensor_local_key_flow")
+		if !ok {
+			return 0
+		}
+	}
+	var store_ sdk.BittensorLocalKeyStore
+	if store_add_key != nil {
+		store_ = &cAdapterBittensorLocalKeyStore{cbAddKey: store_add_key, cbDeleteKey: store_delete_key, cbKeyAddress: store_key_address, cbKeyPhrase: store_key_phrase, cbReadNote: store_read_note, cbWriteNote: store_write_note, userData: store_user_data}
+	}
+	r0 := sdk.NewBittensorLocalKeyFlow(api_, goString(networkId), store_)
 	if r0 == nil {
 		return 0
 	}
