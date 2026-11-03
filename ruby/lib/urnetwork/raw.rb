@@ -429,6 +429,7 @@ module URnetwork
       attach_function :urnet_bittensor_local_key_flow_confirm_keep, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_finish_setup, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_forget_network, [:uint64], :bool, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_funds_disclaimer_at, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_flow_get_card, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_flow_get_screen, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_flow_go_string, [:uint64], :pointer, blocking: true

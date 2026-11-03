@@ -104,6 +104,16 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_FULL "bittensor_funds_disclaimer"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_FUNDS_ONLY "bittensor_funds_disclaimer_funds_only"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_NONE ""
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CLAIM_CARD "claim_card"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CONVERT "convert"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_DELETE_CONFIRMATION "delete_confirmation"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_KEEP_CONFIRMATION "keep_confirmation"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_KEY_SCREEN "key_screen"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_PAYOUT_CARD "payout_card"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_TOP200 "top200"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_DELETE "delete"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_KEEP "keep"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_NONE ""
@@ -1198,6 +1208,7 @@ void urnet_bittensor_local_key_flow_confirm_delete(uint64_t self, bool authentic
 void urnet_bittensor_local_key_flow_confirm_keep(uint64_t self, bool authenticated);
 void urnet_bittensor_local_key_flow_finish_setup(uint64_t self, bool replace_confirmed);
 bool urnet_bittensor_local_key_flow_forget_network(uint64_t self);
+char* urnet_bittensor_local_key_flow_funds_disclaimer_at(uint64_t self, const char* place);
 char* urnet_bittensor_local_key_flow_get_card(uint64_t self);
 char* urnet_bittensor_local_key_flow_get_screen(uint64_t self);
 char* urnet_bittensor_local_key_flow_go_string(uint64_t self);
@@ -2887,6 +2898,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   link_generation: number
  *   failure_code: string
  *   failure_message: string
+ *   funds_disclaimer: string
+ *   claim_funds_disclaimer: string
  */
 
 /* BittensorLocalKeyReminder (json):
@@ -2912,6 +2925,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   done: boolean
  *   failure_code: string
  *   failure_message: string
+ *   funds_disclaimer: string
  */
 
 /* BittensorSignRequest (json):
