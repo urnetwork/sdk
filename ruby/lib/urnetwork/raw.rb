@@ -173,6 +173,10 @@ module URnetwork
       callback :urnet_sn_claim_done_cb, [:pointer], :void
       callback :urnet_sn_claim_failed_cb, [:pointer, :int64, :string], :void
       callback :urnet_sn_claim_sent_cb, [:pointer, :int64, :string], :void
+      callback :urnet_sn_claim_now_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_relay_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_relay_claim_now_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_claim_status_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_claims_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_connect_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_epoch_cb, [:pointer, :string, :string], :void
@@ -372,6 +376,8 @@ module URnetwork
       attach_function :urnet_api_set_payout_wallet, [:uint64, :string, :urnet_set_payout_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_set_points_leaderboard_public, [:uint64, :string, :urnet_set_points_leaderboard_public_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sign_out, [:uint64, :urnet_session_sign_out_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_claim_relay, [:uint64, :urnet_sn_claim_relay_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_claim_relay_claim_now, [:uint64, :string, :urnet_sn_claim_relay_claim_now_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_epoch, [:uint64, :urnet_sn_epoch_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_epoch_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_get_wallet, [:uint64, :urnet_sn_get_wallet_cb, :pointer], :void, blocking: true
@@ -858,6 +864,8 @@ module URnetwork
       attach_function :urnet_device_local_sign_sn_fleet_binding, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_simulate_network_change, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_sn_claim, [:uint64, :string, :urnet_sn_claim_confirmed_cb, :urnet_sn_claim_done_cb, :urnet_sn_claim_failed_cb, :urnet_sn_claim_sent_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_local_sn_claim_now, [:uint64, :string, :urnet_sn_claim_now_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_local_sn_claim_status, [:uint64, :urnet_sn_claim_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_claim_transactions, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_sn_claims, [:uint64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_gas_balance, [:uint64, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true
@@ -969,6 +977,8 @@ module URnetwork
       attach_function :urnet_device_remote_sign_sn_fleet_binding, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_remote_simulate_network_change, [:uint64], :void, blocking: true
       attach_function :urnet_device_remote_sn_claim, [:uint64, :string, :urnet_sn_claim_confirmed_cb, :urnet_sn_claim_done_cb, :urnet_sn_claim_failed_cb, :urnet_sn_claim_sent_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_remote_sn_claim_now, [:uint64, :string, :urnet_sn_claim_now_cb, :pointer], :void, blocking: true
+      attach_function :urnet_device_remote_sn_claim_status, [:uint64, :urnet_sn_claim_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_claim_transactions, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_remote_sn_claims, [:uint64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_gas_balance, [:uint64, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true

@@ -2654,6 +2654,90 @@ func (self *cAdapterSnClaimCallback) Sent(epoch int64, txHash string) {
 	cStringFree(txHash_)
 }
 
+type cAdapterSnClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimNowCallback) Result(result *sdk.SnClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayCallback struct {
+	cbResult C.urnet_sn_claim_relay_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayCallback) Result(result *sdk.SnClaimRelayResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_relay_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayClaimNowCallback) Result(result *sdk.SnClaimRelayClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimStatusCallback struct {
+	cbResult C.urnet_sn_claim_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimStatusCallback) Result(result *sdk.SnClaimStatusResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_status_cb")
+	result_ := cJson(result, "urnet_sn_claim_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSnClaimsCallback struct {
 	cbResult C.urnet_sn_claims_cb
 	userData unsafe.Pointer
@@ -5515,6 +5599,41 @@ func urnet_api_sign_out(self C.uint64_t, callback_result C.urnet_session_sign_ou
 		callback_ = &cAdapterSessionSignOutCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SignOut(callback_)
+}
+
+//export urnet_api_sn_claim_relay
+func urnet_api_sn_claim_relay(self C.uint64_t, callback_result C.urnet_sn_claim_relay_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimRelayCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelay(callback_)
+}
+
+//export urnet_api_sn_claim_relay_claim_now
+func urnet_api_sn_claim_relay_claim_now(self C.uint64_t, args *C.char, callback_result C.urnet_sn_claim_relay_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay_claim_now")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay_claim_now")
+	if !ok {
+		return
+	}
+	var args_ *sdk.SnClaimRelayClaimNowArgs
+	if args != nil {
+		args_ = &sdk.SnClaimRelayClaimNowArgs{}
+		if !goJson(args, args_, "urnet_api_sn_claim_relay_claim_now") {
+			return
+		}
+	}
+	var callback_ sdk.SnClaimRelayClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelayClaimNow(args_, callback_)
 }
 
 //export urnet_api_sn_epoch
@@ -12514,6 +12633,34 @@ func urnet_device_local_sn_claim(self C.uint64_t, epochs *C.char, callback_confi
 	self_.SnClaim(epochs_, callback_)
 }
 
+//export urnet_device_local_sn_claim_now
+func urnet_device_local_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_local_sn_claim_status
+func urnet_device_local_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
+}
+
 //export urnet_device_local_sn_claim_transactions
 func urnet_device_local_sn_claim_transactions(self C.uint64_t, epochs *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_device_local_sn_claim_transactions")
@@ -14057,6 +14204,34 @@ func urnet_device_remote_sn_claim(self C.uint64_t, epochs *C.char, callback_conf
 		callback_ = &cAdapterSnClaimCallback{cbConfirmed: callback_confirmed, cbDone: callback_done, cbFailed: callback_failed, cbSent: callback_sent, userData: callback_user_data}
 	}
 	self_.SnClaim(epochs_, callback_)
+}
+
+//export urnet_device_remote_sn_claim_now
+func urnet_device_remote_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_remote_sn_claim_status
+func urnet_device_remote_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
 }
 
 //export urnet_device_remote_sn_claim_transactions

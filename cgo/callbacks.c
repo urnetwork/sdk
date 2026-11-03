@@ -689,6 +689,22 @@ void urnet_invoke_sn_claim_sent(urnet_sn_claim_sent_cb cb, void* user_data, int6
 	cb(user_data, epoch, tx_hash);
 }
 
+void urnet_invoke_sn_claim_now(urnet_sn_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_claim_relay(urnet_sn_claim_relay_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_claim_relay_claim_now(urnet_sn_claim_relay_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_claim_status(urnet_sn_claim_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

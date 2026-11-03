@@ -172,6 +172,10 @@ pub type urnet_sn_claim_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, 
 pub type urnet_sn_claim_done_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_sn_claim_failed_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char) -> ()>;
 pub type urnet_sn_claim_sent_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char) -> ()>;
+pub type urnet_sn_claim_now_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_relay_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_relay_claim_now_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_claim_status_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_claims_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_connect_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_epoch_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -373,6 +377,8 @@ pub struct Raw {
     pub urnet_api_set_payout_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_set_payout_wallet_cb, *mut c_void) -> (),
     pub urnet_api_set_points_leaderboard_public: unsafe extern "C" fn(u64, *const c_char, urnet_set_points_leaderboard_public_cb, *mut c_void) -> (),
     pub urnet_api_sign_out: unsafe extern "C" fn(u64, urnet_session_sign_out_cb, *mut c_void) -> (),
+    pub urnet_api_sn_claim_relay: unsafe extern "C" fn(u64, urnet_sn_claim_relay_cb, *mut c_void) -> (),
+    pub urnet_api_sn_claim_relay_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_relay_claim_now_cb, *mut c_void) -> (),
     pub urnet_api_sn_epoch: unsafe extern "C" fn(u64, urnet_sn_epoch_cb, *mut c_void) -> (),
     pub urnet_api_sn_epoch_sync: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_get_wallet: unsafe extern "C" fn(u64, urnet_sn_get_wallet_cb, *mut c_void) -> (),
@@ -859,6 +865,8 @@ pub struct Raw {
     pub urnet_device_local_sign_sn_fleet_binding: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_local_simulate_network_change: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_local_sn_claim: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_confirmed_cb, urnet_sn_claim_done_cb, urnet_sn_claim_failed_cb, urnet_sn_claim_sent_cb, *mut c_void) -> (),
+    pub urnet_device_local_sn_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_now_cb, *mut c_void) -> (),
+    pub urnet_device_local_sn_claim_status: unsafe extern "C" fn(u64, urnet_sn_claim_status_cb, *mut c_void) -> (),
     pub urnet_device_local_sn_claim_transactions: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_local_sn_claims: unsafe extern "C" fn(u64, urnet_sn_claims_cb, *mut c_void) -> (),
     pub urnet_device_local_sn_gas_balance: unsafe extern "C" fn(u64, urnet_sn_gas_balance_cb, *mut c_void) -> (),
@@ -970,6 +978,8 @@ pub struct Raw {
     pub urnet_device_remote_sign_sn_fleet_binding: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_remote_simulate_network_change: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_remote_sn_claim: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_confirmed_cb, urnet_sn_claim_done_cb, urnet_sn_claim_failed_cb, urnet_sn_claim_sent_cb, *mut c_void) -> (),
+    pub urnet_device_remote_sn_claim_now: unsafe extern "C" fn(u64, *const c_char, urnet_sn_claim_now_cb, *mut c_void) -> (),
+    pub urnet_device_remote_sn_claim_status: unsafe extern "C" fn(u64, urnet_sn_claim_status_cb, *mut c_void) -> (),
     pub urnet_device_remote_sn_claim_transactions: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_device_remote_sn_claims: unsafe extern "C" fn(u64, urnet_sn_claims_cb, *mut c_void) -> (),
     pub urnet_device_remote_sn_gas_balance: unsafe extern "C" fn(u64, urnet_sn_gas_balance_cb, *mut c_void) -> (),
@@ -1772,6 +1782,8 @@ impl Raw {
             urnet_api_set_payout_wallet: unsafe { *library.get(b"urnet_api_set_payout_wallet\0")? },
             urnet_api_set_points_leaderboard_public: unsafe { *library.get(b"urnet_api_set_points_leaderboard_public\0")? },
             urnet_api_sign_out: unsafe { *library.get(b"urnet_api_sign_out\0")? },
+            urnet_api_sn_claim_relay: unsafe { *library.get(b"urnet_api_sn_claim_relay\0")? },
+            urnet_api_sn_claim_relay_claim_now: unsafe { *library.get(b"urnet_api_sn_claim_relay_claim_now\0")? },
             urnet_api_sn_epoch: unsafe { *library.get(b"urnet_api_sn_epoch\0")? },
             urnet_api_sn_epoch_sync: unsafe { *library.get(b"urnet_api_sn_epoch_sync\0")? },
             urnet_api_sn_get_wallet: unsafe { *library.get(b"urnet_api_sn_get_wallet\0")? },
@@ -2258,6 +2270,8 @@ impl Raw {
             urnet_device_local_sign_sn_fleet_binding: unsafe { *library.get(b"urnet_device_local_sign_sn_fleet_binding\0")? },
             urnet_device_local_simulate_network_change: unsafe { *library.get(b"urnet_device_local_simulate_network_change\0")? },
             urnet_device_local_sn_claim: unsafe { *library.get(b"urnet_device_local_sn_claim\0")? },
+            urnet_device_local_sn_claim_now: unsafe { *library.get(b"urnet_device_local_sn_claim_now\0")? },
+            urnet_device_local_sn_claim_status: unsafe { *library.get(b"urnet_device_local_sn_claim_status\0")? },
             urnet_device_local_sn_claim_transactions: unsafe { *library.get(b"urnet_device_local_sn_claim_transactions\0")? },
             urnet_device_local_sn_claims: unsafe { *library.get(b"urnet_device_local_sn_claims\0")? },
             urnet_device_local_sn_gas_balance: unsafe { *library.get(b"urnet_device_local_sn_gas_balance\0")? },
@@ -2369,6 +2383,8 @@ impl Raw {
             urnet_device_remote_sign_sn_fleet_binding: unsafe { *library.get(b"urnet_device_remote_sign_sn_fleet_binding\0")? },
             urnet_device_remote_simulate_network_change: unsafe { *library.get(b"urnet_device_remote_simulate_network_change\0")? },
             urnet_device_remote_sn_claim: unsafe { *library.get(b"urnet_device_remote_sn_claim\0")? },
+            urnet_device_remote_sn_claim_now: unsafe { *library.get(b"urnet_device_remote_sn_claim_now\0")? },
+            urnet_device_remote_sn_claim_status: unsafe { *library.get(b"urnet_device_remote_sn_claim_status\0")? },
             urnet_device_remote_sn_claim_transactions: unsafe { *library.get(b"urnet_device_remote_sn_claim_transactions\0")? },
             urnet_device_remote_sn_claims: unsafe { *library.get(b"urnet_device_remote_sn_claims\0")? },
             urnet_device_remote_sn_gas_balance: unsafe { *library.get(b"urnet_device_remote_sn_gas_balance\0")? },
