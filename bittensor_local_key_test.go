@@ -8,6 +8,7 @@ package sdk
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -200,6 +201,19 @@ func TestBittensorLocalKeySubstrateBip39Vectors(t *testing.T) {
 		if hex.EncodeToString(seed[:]) != vector.seedHex {
 			t.Errorf("%q: seed %x, want %s", vector.phrase, seed, vector.seedHex)
 		}
+	}
+}
+
+// A wallet checks a phrase against this list, so ours has to be the same one. The hash is of
+// english.txt in the BIP's own repository:
+// https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
+func TestBittensorLocalKeyWordListIsTheBip39EnglishList(t *testing.T) {
+	if len(bip39.WordList) != 2048 {
+		t.Fatalf("%d words", len(bip39.WordList))
+	}
+	digest := sha256.Sum256([]byte(strings.Join(bip39.WordList, "\n") + "\n"))
+	if hex.EncodeToString(digest[:]) != "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda" {
+		t.Fatalf("the word list hashes to %x", digest)
 	}
 }
 
@@ -534,7 +548,7 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 		}
 	}
 
-	// valid phrases of the other BIP39 lengths: real checksums, only the length is wrong for this key
+	// from the substrate-bip39 table: real checksums, and only the length is wrong for this key
 	eighteen := "gravity machine north sort system female filter attitude volume fold club stay feature office ecology stable narrow fog"
 	twentyFour := "hamster diagram private dutch cause delay private meat slide toddler razor book happy fancy gospel tennis maple dilemma loan word shrug inflict delay length"
 	if _, err := bip39.MnemonicToByteArray(eighteen); err != nil {
@@ -542,6 +556,12 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 	}
 	if _, err := bip39.MnemonicToByteArray(twentyFour); err != nil {
 		t.Fatal(err)
+	}
+
+	// why the library's errors never come out: given this, its error quotes two words of the phrase
+	tabbed := strings.Replace(strings.Replace(valid, " ", "\t", 1), " ", "  ", 1)
+	if _, err := bip39.MnemonicToByteArray(tabbed); err == nil || !strings.Contains(err.Error(), "hotel") {
+		t.Fatalf("CONTROL FAILED: the library's error for this phrase is %v, so the rows below show less than they say", err)
 	}
 
 	for _, row := range []struct {
@@ -564,8 +584,10 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 		{"one capital", testingBittensorLocalKeyPhraseWithWord(valid, 0, "Hotel"), errBittensorLocalKeyWord},
 		{"a word from another list", testingBittensorLocalKeyPhraseWithWord(valid, 5, "秘"), errBittensorLocalKeyWord},
 		{"a tab in one gap", testingBittensorLocalKeyPhraseWithWord(valid, 2, "jar\thover"), errBittensorLocalKeyWord},
-		// the wrong count first would be accepted by a split on any space
+		// one space apart and nothing around them: a split on any whitespace would let these through
 		{"a double space", strings.Replace(valid, " ", "  ", 1), errBittensorLocalKeyWordCount},
+		{"a tab for one space", strings.Replace(valid, " ", "\t", 1), errBittensorLocalKeyWordCount},
+		{"a tab and a double space", tabbed, errBittensorLocalKeyWord},
 		{"a leading space", " " + valid, errBittensorLocalKeyWordCount},
 		{"a trailing space", valid + " ", errBittensorLocalKeyWordCount},
 		{"a trailing line", valid + "\n", errBittensorLocalKeyWord},
@@ -578,8 +600,7 @@ func TestBittensorLocalKeyRefusesMalformedPhrases(t *testing.T) {
 }
 
 // Every word of the list as the last word of a phrase: the checksum has 4 bits, so 128 of the 2048
-// pass, and each of the others gets the fixed text, which holds none of what was passed in. The
-// library's own errors can quote a word, and they never come out.
+// pass, and each of the others gets the fixed text, which holds none of what was passed in.
 func TestBittensorLocalKeyErrorsNeverHoldThePhrase(t *testing.T) {
 	valid := "hotel forest jar hover kite book view eight stuff angle legend defense"
 	checksumFailures := 0
