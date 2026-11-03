@@ -390,28 +390,26 @@ const generatedOperations: Array<{
     method: "GET", path: "/provider-work/v1/windows", query: [["domain", "d"], ["epoch", "7"], ["artifact", "a"], ["authority", "o"]], bearer: false },
   { name: "getVerifyOriginalRequest", call: c => c.getVerifyOriginalRequest({ request_id: "r" } as never),
     method: "POST", path: "/verify/original", bearer: false, body: { request_id: "r" } },
-  // the streaming posts: the provider work intake and the request closure
-  { name: "submitProviderWorkOwner", call: c => c.submitProviderWorkOwner({ schema: "urnetwork-sdk-whole-work-owner-v1" } as never),
-    method: "POST", path: "/provider-work/v1/owners", bearer: false, body: { schema: "urnetwork-sdk-whole-work-owner-v1" } },
-  { name: "submitProviderWorkRequest", call: c => c.submitProviderWorkRequest({ schema: "urnetwork-sdk-whole-work-request-v1" } as never),
-    method: "POST", path: "/provider-work/v1/requests", bearer: false, body: { schema: "urnetwork-sdk-whole-work-request-v1" } },
-  { name: "submitProviderWorkCut", call: c => c.submitProviderWorkCut({ request: "cmVx", cut: "Y3V0" }),
-    method: "POST", path: "/provider-work/v1/cuts", bearer: false, body: { request: "cmVx", cut: "Y3V0" } },
-  { name: "submitProviderWorkAuthority", call: c => c.submitProviderWorkAuthority({ schema: "urnetwork-whole-work-authority-v1" } as never),
-    method: "POST", path: "/provider-work/v1/authorities", bearer: false, body: { schema: "urnetwork-whole-work-authority-v1" } },
+  // the streaming post: the request closure
   { name: "closeVerifyOriginalRequest", call: c => c.closeVerifyOriginalRequest({ epoch: 7 } as never),
     method: "POST", path: "/verify/original/close", bearer: false, body: { epoch: 7 } },
   { name: "registerNetworkClient", call: c => c.registerNetworkClient({ registration_id: "g" } as never),
     method: "POST", path: "/network/register-client-v1", bearer: true, body: { registration_id: "g" } },
-  { name: "extenderRelease", call: c => c.extenderRelease({} as never),
-    method: "POST", path: "/network/extender-release", bearer: true, body: {} },
-  { name: "extenderBlockReport", call: c => c.extenderBlockReport({ extender_id: "x" } as never),
-    method: "POST", path: "/network/extender-block-report", bearer: true, body: { extender_id: "x" } },
-  { name: "testBalanceDrain", call: c => c.testBalanceDrain({ minutes: 5 } as never),
-    method: "POST", path: "/test/balance-drain", bearer: true, body: { minutes: 5 } },
-  { name: "testBalanceRestore", call: c => c.testBalanceRestore({} as never),
-    method: "POST", path: "/test/balance-restore", bearer: true, body: {} },
 ];
+
+// Operations the spec marks x-internal are not in the client: the Go sdk
+// makes these calls itself (the provider work intake, the extender directory
+// calls), and the acceptance-test routes are for the test runner. Their wire
+// shapes are the server's route tests and the Go sdk's.
+for (const name of [
+  "submitProviderWorkOwner", "submitProviderWorkRequest", "submitProviderWorkCut", "submitProviderWorkAuthority",
+  "extenderRelease", "extenderBlockReport", "testBalanceDrain", "testBalanceRestore",
+]) {
+  test(`the public client has no ${name} (x-internal)`, () => {
+    const client = createURNetworkApiClient({ fetch: async () => json(200, {}) });
+    assert.equal((client as unknown as Record<string, unknown>)[name], undefined);
+  });
+}
 
 for (const op of generatedOperations) {
   test(`generated ${op.name}: ${op.method} ${op.path}, ${op.bearer ? "bearer" : "no token"}`, async () => {

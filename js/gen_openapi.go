@@ -11,6 +11,16 @@
  * repo in the monoroot (../../connect/api/bringyour.yml from sdk/js). The
  * output is committed so npm consumers build without connect.
  *
+ * The client is the public api, as ur.io publishes the spec
+ * (mmm ur.io/react/scripts/publishable-spec.mjs): an operation marked
+ * `x-internal: true`, on itself or on its path item, is left out, and so is
+ * every component schema that nothing published reaches. A schema is
+ * published when the document without its x-internal operations (and without
+ * the paths they leave empty) points at it, by a `$ref` or by a
+ * `#/components/<section>/<name>` pointer in any string, directly or through
+ * another component that is published. A non-boolean `x-internal` is
+ * refused, so a marker the generator cannot read never publishes a route.
+ *
  * The output is a pure function of the spec bytes: document order is kept
  * (yaml.Node, never a Go map), nothing depends on time or the environment.
  */
@@ -80,7 +90,8 @@ func main() {
 			fail("generated OpenAPI client is stale: %s\n  regenerate with `make generate_openapi` (go run gen_openapi.go) and commit the result",
 				strings.Join(stale, ", "))
 		}
-		fmt.Printf("OpenAPI client is up to date with %s (%d operations)\n", *specPath, g.operationCount)
+		fmt.Printf("OpenAPI client is up to date with %s (%d operations; %d x-internal operations left out)\n",
+			*specPath, g.operationCount, g.internalCount)
 		return
 	}
 
@@ -92,7 +103,8 @@ func main() {
 			fail("%v", err)
 		}
 	}
-	fmt.Printf("Generated the OpenAPI client from %s (%d operations, %d schemas)\n", *specPath, g.operationCount, g.schemaCount)
+	fmt.Printf("Generated the OpenAPI client from %s (%d operations, %d schemas; left out %d x-internal operations and %d schemas nothing published reaches)\n",
+		*specPath, g.operationCount, g.schemaCount, g.internalCount, len(g.droppedSchemas))
 }
 
 func fail(format string, args ...any) {
@@ -247,10 +259,16 @@ var reservedMethodNames = map[string]bool{
  */
 
 type generator struct {
-	root           *yaml.Node
-	specSha        string
-	specVersion    string
+	root        *yaml.Node
+	specSha     string
+	specVersion string
+	// the published component schemas: the only ones emitted, and the only
+	// ones a $ref in the output may name
 	schemaNames    map[string]bool
+	droppedSchemas []string
+	// the operation nodes marked x-internal, on themselves or their path item
+	internalOps    map[*yaml.Node]bool
+	internalCount  int
 	schemaCount    int
 	operationCount int
 	globalSecurity *yaml.Node
@@ -274,20 +292,178 @@ func newGenerator(specBytes []byte) (*generator, error) {
 		specSha:        hex.EncodeToString(sum[:]),
 		specVersion:    str(get(get(root, "info"), "version")),
 		schemaNames:    map[string]bool{},
+		internalOps:    map[*yaml.Node]bool{},
 		globalSecurity: get(root, "security"),
 	}
 	for _, p := range pairs(get(get(root, "components"), "schemas")) {
 		if !identRe.MatchString(p.key) {
 			return nil, fmt.Errorf("schema name %q is not a TypeScript identifier", p.key)
 		}
-		g.schemaNames[p.key] = true
+	}
+	if err := g.markInternal(); err != nil {
+		return nil, err
+	}
+	published := g.publishedComponents()
+	for _, p := range pairs(get(get(root, "components"), "schemas")) {
+		if published["schemas/"+p.key] {
+			g.schemaNames[p.key] = true
+		} else {
+			g.droppedSchemas = append(g.droppedSchemas, p.key)
+		}
 	}
 	return g, nil
+}
+
+/*
+ * the public api: what is left once the x-internal operations are gone
+ */
+
+// internalMarker reads the `x-internal` marker of an operation or a path
+// item. Absent is false. Anything but a YAML boolean is refused: a quoted
+// "true" or a `yes` would otherwise publish a route its author meant to keep
+// out.
+func internalMarker(n *yaml.Node) (bool, error) {
+	marker := get(n, "x-internal")
+	if marker == nil {
+		return false, nil
+	}
+	var internal bool
+	if marker.Kind != yaml.ScalarNode || marker.Tag != "!!bool" || marker.Decode(&internal) != nil {
+		return false, fmt.Errorf("x-internal at line %d is not a boolean", lineOf(marker))
+	}
+	return internal, nil
+}
+
+// markInternal records every operation marked x-internal, on itself or on its
+// path item, after checking each marker is readable.
+func (g *generator) markInternal() error {
+	for _, pathPair := range pairs(get(g.root, "paths")) {
+		pathInternal, err := internalMarker(pathPair.value)
+		if err != nil {
+			return fmt.Errorf("%s: %w", pathPair.key, err)
+		}
+		for _, m := range httpMethods {
+			opNode := get(pathPair.value, m)
+			if opNode == nil {
+				continue
+			}
+			opInternal, err := internalMarker(opNode)
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", strings.ToUpper(m), pathPair.key, err)
+			}
+			if pathInternal || opInternal {
+				g.internalOps[opNode] = true
+				g.internalCount += 1
+			}
+		}
+	}
+	return nil
+}
+
+// a component pointer in any string: a $ref, a discriminator mapping, or prose
+// that spells one out (the pattern publishable-spec.mjs reads)
+var componentPointerRe = regexp.MustCompile("#/components/([^/\\s\"'`#]+)/([A-Za-z0-9._-]*[A-Za-z0-9_-])")
+
+// pointers adds every component the strings under n point at to found, as
+// "<section>/<name>". Mapping keys are names, not pointers, and are not read.
+func pointers(n *yaml.Node, found map[string]bool, seen map[*yaml.Node]bool) {
+	n = deref(n)
+	if n == nil || seen[n] {
+		return
+	}
+	seen[n] = true
+	switch n.Kind {
+	case yaml.ScalarNode:
+		for _, match := range componentPointerRe.FindAllStringSubmatch(n.Value, -1) {
+			found[match[1]+"/"+match[2]] = true
+		}
+	case yaml.MappingNode:
+		for i := 1; i < len(n.Content); i += 2 {
+			pointers(n.Content[i], found, seen)
+		}
+	case yaml.SequenceNode:
+		for _, c := range n.Content {
+			pointers(c, found, seen)
+		}
+	}
+}
+
+func isHttpMethod(key string) bool {
+	for _, m := range httpMethods {
+		if key == m {
+			return true
+		}
+	}
+	return false
+}
+
+// publishedComponents is every component the public api reaches, as
+// "<section>/<name>": what the document outside `components` points at once
+// the x-internal operations are gone, and what those components point at in
+// turn. A path whose every operation is x-internal goes whole, with its
+// path-level keys.
+func (g *generator) publishedComponents() map[string]bool {
+	found := map[string]bool{}
+	seen := map[*yaml.Node]bool{}
+	for _, top := range pairs(g.root) {
+		switch top.key {
+		case "components":
+		case "paths":
+			for _, pathPair := range pairs(top.value) {
+				hasInternal := false
+				hasPublished := false
+				for _, p := range pairs(pathPair.value) {
+					if isHttpMethod(p.key) {
+						if g.internalOps[p.value] {
+							hasInternal = true
+						} else {
+							hasPublished = true
+						}
+					}
+				}
+				if hasInternal && !hasPublished {
+					continue
+				}
+				for _, p := range pairs(pathPair.value) {
+					if !g.internalOps[p.value] {
+						pointers(p.value, found, seen)
+					}
+				}
+			}
+		default:
+			pointers(top.value, found, seen)
+		}
+	}
+
+	components := get(g.root, "components")
+	reached := map[string]bool{}
+	queue := []string{}
+	for c := range found {
+		queue = append(queue, c)
+	}
+	for 0 < len(queue) {
+		c := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		if reached[c] {
+			continue
+		}
+		reached[c] = true
+		section, name, _ := strings.Cut(c, "/")
+		next := map[string]bool{}
+		pointers(get(get(components, section), name), next, map[*yaml.Node]bool{})
+		for n := range next {
+			if !reached[n] {
+				queue = append(queue, n)
+			}
+		}
+	}
+	return reached
 }
 
 func (g *generator) header(sb *strings.Builder) {
 	sb.WriteString("// Auto-generated from the URnetwork OpenAPI spec (connect/api/bringyour.yml)\n")
 	sb.WriteString("// DO NOT EDIT - Generated by: go run gen_openapi.go (make generate_openapi)\n")
+	sb.WriteString("// The public api: x-internal operations, and the schemas only they reach, are left out\n")
 	sb.WriteString(fmt.Sprintf("// spec version: %s\n", g.specVersion))
 	sb.WriteString(fmt.Sprintf("// spec sha256: %s\n", g.specSha))
 	sb.WriteString("\n")
@@ -320,6 +496,11 @@ func (g *generator) refName(ref string) (string, error) {
 	}
 	name := strings.TrimPrefix(ref, prefix)
 	if !g.schemaNames[name] {
+		if get(get(get(g.root, "components"), "schemas"), name) != nil {
+			// published output reaching a schema the reachability walk left
+			// out: refuse rather than emit a type that names nothing
+			return "", fmt.Errorf("$ref %q names a schema left out as unpublished", ref)
+		}
 		return "", fmt.Errorf("dangling $ref %q", ref)
 	}
 	return name, nil
@@ -676,7 +857,9 @@ func (g *generator) operations() ([]*operation, error) {
 		pathParams := items(get(pathItem, "parameters"))
 		for _, m := range httpMethods {
 			opNode := get(pathItem, m)
-			if opNode == nil {
+			if opNode == nil || g.internalOps[opNode] {
+				// an x-internal operation is not read at all: the public
+				// client has no method, type or schema for it
 				continue
 			}
 			op, err := g.operation(path, m, opNode, pathParams)
@@ -945,6 +1128,10 @@ func (g *generator) generate() ([]byte, []byte, error) {
 	types.WriteString("// Go-reflected type of the same name.\n\n")
 
 	for _, p := range pairs(get(get(g.root, "components"), "schemas")) {
+		if !g.schemaNames[p.key] {
+			// nothing published reaches it
+			continue
+		}
 		g.schemaCount += 1
 		docComment(&types, "", str(get(p.value, "title")), str(get(p.value, "description")))
 		if isPlainObject(p.value) {
