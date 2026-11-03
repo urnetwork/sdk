@@ -15,10 +15,12 @@ package sdk
 // the Settlement v2 tile at all, and ShowsClaimed whether the claim is drawn as
 // claimed by URnetwork, with its transaction. A server that cannot answer leaves
 // the fallback working: the balances come from the public ledger, and the action
-// is the device's own claim.
+// is the device's own claim. A page with no device, the web's wasm, gets the same
+// rules over what it read with its own client (sn_claim_relay_js.go).
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -483,22 +485,58 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 	selfClaimConfigured := settings != nil && settings.validateLedgerClaims() == nil && self.GetSnGasKey() != nil
 
 	relay, err := self.api().SnClaimRelaySyncWithContext(ctx)
+	return snClaimStatusOf(
+		relay,
+		err,
+		connectedSs58,
+		selfClaimConfigured,
+		func() (*SnClaimRelayAccountList, *SnError) {
+			return self.snClaimLedgerAccounts(ctx, settings, connectedSs58)
+		},
+		func() bool {
+			return self.snClaimSelfClaimNeedsGas(ctx)
+		},
+		settings,
+	)
+}
+
+// snClaimStatusOf builds the status from what was read, on a device and on a page
+// with no device (sn_claim_relay_js.go), so both follow the same rules. relay is
+// the server's answer, nil when it did not answer, with relayErr saying why.
+// ledger reads the connected wallet's accounts from the public ledger, which stand
+// in for an answer without balances; it is called only then. needsGas says whether
+// the device's own claim is short of gas, asked only when that claim could pay
+// something; nil is never short. settings links each claim's transaction; nil
+// links none. Pure apart from what ledger and needsGas read.
+func snClaimStatusOf(
+	relay *SnClaimRelayResult,
+	relayErr error,
+	connectedSs58 string,
+	selfClaimConfigured bool,
+	ledger func() (*SnClaimRelayAccountList, *SnError),
+	needsGas func() bool,
+	settings *SnChainSettings,
+) *SnClaimStatusResult {
 	var relayError *SnError
 	switch {
-	case err != nil:
+	case relayErr != nil || relay == nil:
 		relay = nil
-		relayError = newSnError(SnErrorCodeLedgerUnavailable, err.Error())
+		message := "the claim relay did not answer"
+		if relayErr != nil {
+			message = relayErr.Error()
+		}
+		relayError = newSnError(SnErrorCodeLedgerUnavailable, message)
 	case relay.Error != nil:
 		relayError = newSnError(SnErrorCodeLedgerUnavailable, relay.Error.Message)
 	}
-	if relayError != nil && connectedSs58 != "" {
+	if relayError != nil && connectedSs58 != "" && ledger != nil {
 		// The relay's answer has no balances. The public ledger still has the
 		// connected wallet's, and the device's own claim still works.
 		state := SnClaimRelayStateUnavailable
 		if relay != nil {
 			state = relay.State
 		}
-		accounts, snErr := self.snClaimLedgerAccounts(ctx, settings, connectedSs58)
+		accounts, snErr := ledger()
 		if snErr == nil {
 			relay = &SnClaimRelayResult{State: state, Accounts: accounts}
 			relayError = nil
@@ -515,11 +553,11 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 		result.Error = relayError
 		return result
 	}
-	needsGas := false
-	if connectedSs58 != "" && selfClaimConfigured && snClaimAnyClaimable(relay, connectedSs58) {
-		needsGas = self.snClaimSelfClaimNeedsGas(ctx)
+	gasShort := false
+	if connectedSs58 != "" && selfClaimConfigured && needsGas != nil && snClaimAnyClaimable(relay, connectedSs58) {
+		gasShort = needsGas()
 	}
-	result := snClaimStatusBuild(relay, connectedSs58, selfClaimConfigured, needsGas)
+	result := snClaimStatusBuild(relay, connectedSs58, selfClaimConfigured, gasShort)
 	snClaimStatusLinkTransactions(result, settings)
 	return result
 }
@@ -543,9 +581,25 @@ func (self *snDevice) snClaimLedgerAccounts(ctx context.Context, settings *SnCha
 	fetch := func(ctx context.Context, requestUrl string) ([]byte, error) {
 		return api.getHttpGetRaw()(ctx, requestUrl, "")
 	}
-	ledger := snLedgerAccounts(ctx, fetch, self.snArtifactBaseUrl(settings), coldkeySs58)
-	if ledger.Error != nil {
-		return nil, ledger.Error
+	return snClaimLedgerRelayAccounts(snLedgerAccounts(ctx, fetch, self.snArtifactBaseUrl(settings), coldkeySs58), coldkeySs58)
+}
+
+// snClaimLedgerRelayAccounts turns a read of the connected wallet's accounts in the
+// public ledger into the relay's accounts, with no relay behind them. A read that
+// was not made or has no accounts is the ledger unavailable, never zero. Pure.
+func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 string) (*SnClaimRelayAccountList, *SnError) {
+	switch {
+	case ledger != nil && ledger.Error != nil:
+		code, message := ledger.Error.Code, ledger.Error.Message
+		if code == "" {
+			code = SnErrorCodeLedgerUnavailable
+		}
+		if message == "" {
+			message = "the ledger could not be read"
+		}
+		return nil, newSnError(code, message)
+	case ledger == nil || ledger.Accounts == nil:
+		return nil, newSnError(SnErrorCodeLedgerUnavailable, "the ledger could not be read")
 	}
 	accounts := NewSnClaimRelayAccountList()
 	for _, account := range ledger.Accounts.getAll() {
@@ -585,18 +639,45 @@ func (self *snDevice) SnClaimStatus(callback SnClaimStatusCallback) {
 // snClaimNow asks the relay to claim one coldkey's balance now, the connected
 // wallet's when none is named.
 func (self *snDevice) snClaimNow(ctx context.Context, coldkeySs58 string) *SnClaimNowResult {
+	return snClaimNowOf(
+		coldkeySs58,
+		func() (string, bool) {
+			wallet := self.GetSnWallet()
+			if wallet == nil {
+				return "", false
+			}
+			return wallet.ColdkeySs58, true
+		},
+		func(args *SnClaimRelayClaimNowArgs) (*SnClaimRelayClaimNowResult, error) {
+			return self.api().SnClaimRelayClaimNowSyncWithContext(ctx, args)
+		},
+	)
+}
+
+// snClaimNowOf is a Claim now tap on a device and on a page with no device
+// (sn_claim_relay_js.go). connected names the connected wallet's coldkey, false
+// without a wallet. post sends the tap to the server, and is not called for an
+// address that is not one.
+func snClaimNowOf(
+	coldkeySs58 string,
+	connected func() (string, bool),
+	post func(*SnClaimRelayClaimNowArgs) (*SnClaimRelayClaimNowResult, error),
+) *SnClaimNowResult {
 	coldkeySs58 = strings.TrimSpace(coldkeySs58)
 	if coldkeySs58 == "" {
-		wallet := self.GetSnWallet()
-		if wallet == nil {
+		wallet, ok := connected()
+		if !ok {
 			return &SnClaimNowResult{Error: newSnError(SnErrorCodeConnectWalletFirst, "connect a Bittensor wallet first")}
 		}
-		coldkeySs58 = strings.TrimSpace(wallet.ColdkeySs58)
+		coldkeySs58 = strings.TrimSpace(wallet)
 	}
 	if _, err := snColdkeyBytes(coldkeySs58); err != nil {
 		return &SnClaimNowResult{Error: newSnError(SnErrorCodeInvalidAddress, err.Error())}
 	}
-	answer, err := self.api().SnClaimRelayClaimNowSyncWithContext(ctx, &SnClaimRelayClaimNowArgs{ColdkeySs58: coldkeySs58})
+	answer, err := post(&SnClaimRelayClaimNowArgs{ColdkeySs58: coldkeySs58})
+	if err == nil && answer == nil {
+		err = errors.New("the claim relay did not answer")
+	}
 	if err != nil {
 		return &SnClaimNowResult{Error: newSnError(SnErrorCodeServer, err.Error())}
 	}
