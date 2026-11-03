@@ -847,6 +847,19 @@ type DeviceLocalSettings struct {
 	// with "StrictWindowHandover": false in the settings json, and the proxy
 	// service with proxy.yml window_strict_handover: false.
 	StrictWindowHandover bool
+	// Keeps every window client's identity key local: the client sends no
+	// `ClientKey` control (`connect.ClientSettings.SkipClientKeyPublication`),
+	// so the platform writes no signed registration for it. A discovery window
+	// builds a new client with a new key for each candidate, so a host that
+	// runs many devices pays one stored registration per candidate. Only
+	// for a host whose window clients' keys have no reader: encryption off and
+	// no close-report domain, as on a hosted device. A reader that turns up
+	// outranks this: a post-quantum performance profile raises the window
+	// client's sessions to required, and connect publishes anyway. The device's
+	// provider client doesn't read this and keeps publishing. Off by default and
+	// out of the settings json. Only the proxy service sets it; gobind binds it
+	// like any bool, and apps leave it off.
+	KeepWindowClientKeysLocal bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -5137,6 +5150,7 @@ func (self *DeviceLocal) applyDestination(
 						)
 						shareDevicePeerKeyPinStore(clientSettings, &self.settings.ClientSettings)
 						applyLocalDeviceApiKeyFetchers(clientSettings, self.settings.LocalApi, self.networkSpace.apiUrl)
+						clientSettings.SkipClientKeyPublication = self.settings.KeepWindowClientKeysLocal
 						// share the device budgets so every window client's
 						// queues draw from the same pools. Stamped before the
 						// mobile policy so the policy caps the receive hold
