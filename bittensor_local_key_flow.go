@@ -1254,6 +1254,12 @@ func (self *BittensorLocalKeyFlow) setFailure(failureCode string, failureMessage
 // reports nothing, so a later permission still gets the reminder. Nothing repeats after that.
 func (self *BittensorLocalKeyFlow) Reminder(currentEpoch int64, claimOpenMillis int64, epochBlocks int64, claimable bool) *BittensorLocalKeyReminder {
 	self.stateLock.Lock()
+	// a store that can't answer, as on a locked device, says nothing about the key: a reminder posted
+	// stays posted
+	if self.storeUnavailable {
+		self.stateLock.Unlock()
+		return &BittensorLocalKeyReminder{Action: BittensorLocalKeyReminderNone}
+	}
 	unsavedAndPaid := self.storedAddress != "" && self.savedAddress != self.storedAddress &&
 		self.consentRead == bittensorLocalKeyConsentActive && self.consentAddress == self.storedAddress
 	fromEpoch := self.consentFromEpoch

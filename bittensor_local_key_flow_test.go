@@ -1437,6 +1437,24 @@ func TestBittensorLocalKeyFlowReminder(t *testing.T) {
 		run.flow.setUpPayouts(false)
 		require(t, action(run, true), BittensorLocalKeyReminderNone, 0)
 	})
+
+	t.Run("a store that can't answer leaves a posted reminder alone", func(t *testing.T) {
+		run := newTestingLocalKeyRunLinked(t)
+		run.flow.ReminderScheduled(firstClaimOpen)
+		run.store.unavailable = true
+		run.flow.Reload()
+		if card := run.flow.GetCard(); card.State != BittensorLocalKeyStateStoreUnavailable || card.BackupReminder {
+			t.Fatalf("CONTROL FAILED: the card is %+v", card)
+		}
+		require(t, action(run, false), BittensorLocalKeyReminderNone, 0)
+		if run.store.ReadNote(bittensorLocalKeyFlowTestNetwork, bittensorLocalKeyNoteReminderAtMillis) == "" {
+			t.Fatal("a locked store took the reminder back")
+		}
+		// unlocked again, the key is still unsaved and the reminder is still the one posted
+		run.store.unavailable = false
+		run.flow.Reload()
+		require(t, action(run, false), BittensorLocalKeyReminderNone, 0)
+	})
 }
 
 // MARK: where the phrase goes
