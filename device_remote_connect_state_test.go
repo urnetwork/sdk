@@ -280,7 +280,7 @@ func testingInstallFakeDeviceService(t *testing.T, deviceRemote *DeviceRemote, r
 		log:         connect.NewNoopLogger(),
 		timeout:     time.Minute,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	done := make(chan struct{})
 	go func() {

@@ -68,6 +68,53 @@ SDK 80,434,776 bytes, signed extension 50,058,320 bytes (47.739 MiB). This
 removes 312,144 bytes from the failed extension and leaves 273,328 bytes below
 the unchanged ceiling. The signature and FIPS checks also passed.
 
+2026-11-02 (Go 1.27.3): turned on the linker's method pruning in the mobile
+bindings. The signed extension had grown past the ceiling, and this took it from
+52,827,232 to 47,738,704 bytes (45.527 MiB), with 4,690,096 bytes below it.
+
+| Artifact (sdk `2ae5419a`, connect `1d39adab`, apple `81c486f7`) | Before | After |
+| --- | ---: | ---: |
+| Full iOS arm64 SDK archive | 91,776,784 | 84,756,160 |
+| Extension iOS arm64 SDK archive | 85,890,912 | 78,977,376 |
+| Extension executable, unsigned, from `xcodebuild archive` | 52,704,560 | 47,625,952 |
+| Extension executable, signed | 52,827,232 | 47,738,704 |
+
+The go.o in the extension archive went from 64,911 functions to 53,882, and from
+18,484,388 to 16,536,532 bytes of text, 18,058,249 to 15,697,572 of pclntab, and
+5,534,272 to 4,943,424 of type data. The bindings' API is unchanged. No code that
+can run was removed: the linker drops a method only when nothing can reach it.
+
+Go's linker drops an exported method that nothing can reach, until a reachable
+function calls `reflect.Type.Method`, `reflect.Value.Method` or `MethodByName` with
+a name it can't read. From then on it keeps every exported method of every type
+that reaches an interface. The bindings had two such calls, each enough alone:
+
+- `net/rpc.suitableMethods`, behind `rpc.Server.Register`. The device rpc now has
+  its own client and server (`device_rpc_client.go`, `device_rpc_server.go`),
+  derived from net/rpc and speaking its protocol, and serves the methods listed in
+  `device_rpc_methods.go`. No mobile binding links net/rpc now, which also takes
+  out html/template and text/template, needed only by net/rpc's debug page.
+- `reflect.(*rtype).Methods` and `reflect.Value.Methods`, new in Go 1.26, whose
+  closures make that call. The linker keeps a method of any type when something
+  asks for a method of that name, and protobuf before v1.36.12 asked for one named
+  `Methods` (`MethodByName("Methods")` in `internal/descfmt`). `build/go.mod`
+  requires v1.36.12, which calls it through the interface. Only that module does:
+  gomobile builds under it, and a higher requirement in the root module would force
+  an update on every module that requires this one.
+
+`check_apple_size.sh` fails an artifact that has lost pruning, since
+`reflect.(*rtype).Methods` is in a binary's function table exactly when pruning is
+off, and `TestMobileBindingsLinkNothingThatKeepsEveryMethod` holds the two causes
+above without a build. To find a new cause: `gomobile bind -work -x` prints its
+`go build` line and keeps its work directory. Run that line in
+`$WORK/ios/src-arm64` with `-dumpdep` added to `-ldflags`, and read the lines marked
+`<ReflectMethod>`. Most are generated wrappers of a marked method, and the root is
+the one that a function, not a type, reaches first.
+
+An `xcodebuild build` of the extension, as `apple/build.sh` runs, is not what ships:
+it carries coverage instrumentation that `xcodebuild archive` doesn't (about 214 KB
+at these sizes), and no signature (about 113 to 123 KB).
+
 2026-08-18 bump (55 → 56 MiB, 52 → 53 MiB): intentional growth from the
 transport settings work — the per-carrier packet stats breakdown, the
 client/provider transport policy with its rpc plumbing and change listeners,

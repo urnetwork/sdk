@@ -721,7 +721,7 @@ func TestDeviceRemoteControlIpFamilyStatusIsTheDeviceProcessAnswer(t *testing.T)
 		log:         settings.logger(),
 		timeout:     settings.RpcCallTimeout,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	defer service.Close()
 
