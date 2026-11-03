@@ -51,7 +51,7 @@ func TestRpcOptionalMissingMethodKeepsSessionAlive(t *testing.T) {
 		log:         settings.logger(),
 		timeout:     time.Second,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	defer service.Close()
 
@@ -79,7 +79,7 @@ func TestRpcOptionalMissingMethodKeepsSessionAlive(t *testing.T) {
 }
 
 // TestRpcOptionalMissingMethodKeepsSessionAlive above serves the connection
-// with net/rpc's own ServeConn loop, which never stops on a missing method. The
+// with a ServeConn loop, which never stops on a missing method. The
 // production forward rpc does not use ServeConn: DeviceLocalRpc.run() drives
 // server.ServeRequest one request at a time so handler panics can be recovered,
 // and that loop decides for itself what to do with a serve error. This test
@@ -2896,7 +2896,7 @@ func testing_newReverseService(t *testing.T, ctx context.Context, server *testin
 		log:         settings.logger(),
 		timeout:     settings.RpcCallTimeout, // unused: reverse delivery blocks
 		closeClient: localConn.Close,
-		client:      rpc.NewClient(localConn),
+		client:      newDeviceRpcClient(localConn),
 	}
 	localRpc := &DeviceLocalRpc{
 		ctx:     ctx,
@@ -3294,7 +3294,7 @@ func TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification(t *testing.T) {
 		log:         settings.logger(),
 		timeout:     settings.RpcCallTimeout, // unused: reverse delivery blocks
 		closeClient: localConn.Close,
-		client:      rpc.NewClient(localConn),
+		client:      newDeviceRpcClient(localConn),
 	}
 	defer service.Close()
 
@@ -3351,7 +3351,7 @@ func (self *testing_panicRpc) Ping(_ bool, _ RpcVoid) error {
 }
 
 // TestDeviceLocalRpcServedPanicRecovered mirrors run()'s serial serve loop and
-// asserts that a panic in a served method does NOT crash the process (net/rpc
+// asserts that a panic in a served method does NOT crash the process (the server
 // does not recover handler panics — without the HandleError wrapper this test
 // binary would crash) and that serving continues with later calls.
 func TestDeviceLocalRpcServedPanicRecovered(t *testing.T) {
@@ -3362,11 +3362,11 @@ func TestDeviceLocalRpcServedPanicRecovered(t *testing.T) {
 	defer serverConn.Close()
 	defer clientConn.Close()
 
-	server := rpc.NewServer()
 	srv := &testing_panicRpc{pinged: make(chan struct{}, 1)}
-	if err := server.RegisterName("T", srv); err != nil {
-		t.Fatal(err)
-	}
+	server := newDeviceRpcServer("T", srv, newDeviceRpcMethods(map[string]any{
+		"Panic": (*testing_panicRpc).Panic,
+		"Ping":  (*testing_panicRpc).Ping,
+	}))
 
 	// the exact serve loop from DeviceLocalRpc.run()
 	go func() {
@@ -3382,13 +3382,13 @@ func TestDeviceLocalRpcServedPanicRecovered(t *testing.T) {
 		}
 	}()
 
-	client := rpc.NewClient(clientConn)
+	client := newDeviceRpcClient(clientConn)
 	defer client.Close()
 
 	var void RpcVoid
 	// fire the panicking call; the handler panics before writing a response, so
 	// this call never completes — we only need the server to have processed it
-	client.Go("T.Panic", true, &void, make(chan *rpc.Call, 1))
+	client.Go("T.Panic", true, &void, make(chan *deviceRpcCall, 1))
 
 	// serving must continue after the recovered panic: a later call still succeeds
 	done := make(chan error, 1)

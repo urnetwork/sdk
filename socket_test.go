@@ -13,7 +13,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
@@ -450,10 +449,7 @@ func socketTestRemote(t *testing.T, n *socketTestNetwork) (*DeviceRemote, *Devic
 	ctx, cancel := context.WithCancel(t.Context())
 	client, server := net.Pipe()
 	local := &DeviceLocalRpc{ctx: ctx, cancel: cancel, deviceLocal: n.device}
-	srv := rpc.NewServer()
-	if err := srv.RegisterName("DeviceLocalRpc", local); err != nil {
-		t.Fatal(err)
-	}
+	srv := newDeviceRpcServer("DeviceLocalRpc", local, deviceLocalRpcMethods())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -464,7 +460,7 @@ func socketTestRemote(t *testing.T, n *socketTestNetwork) (*DeviceRemote, *Devic
 			}
 		}
 	}()
-	remote := &DeviceRemote{ctx: ctx, cancel: cancel, settings: defaultDeviceRpcSettings(), service: &rpcClient{ctx: ctx, client: rpc.NewClient(client), timeout: time.Second, closeClient: client.Close}}
+	remote := &DeviceRemote{ctx: ctx, cancel: cancel, settings: defaultDeviceRpcSettings(), service: &rpcClient{ctx: ctx, client: newDeviceRpcClient(client), timeout: time.Second, closeClient: client.Close}}
 	t.Cleanup(func() {
 		cancel()
 		local.sockets.close()

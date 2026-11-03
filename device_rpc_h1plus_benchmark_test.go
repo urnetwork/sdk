@@ -113,7 +113,7 @@ type deviceRpcBenchFixture struct {
 	listener  *WebsocketDeviceRpcListener
 	server    *httptest.Server
 	muxes     [2]*deviceRpcMux
-	clients   [2]*rpc.Client
+	clients   [2]*deviceRpcClient
 	services  [2]*deviceRpcBenchEcho
 	served    chan struct{}
 	tlsCounts deviceRpcBenchCounts
@@ -204,7 +204,7 @@ func newDeviceRpcBenchFixture(t testing.TB, framed bool, payload []byte) *device
 			server.ServeConn(&deviceRpcBenchCountConn{Conn: callee, counts: &f.frames})
 			f.served <- struct{}{}
 		}()
-		f.clients[i] = rpc.NewClient(&deviceRpcBenchCountConn{Conn: caller, counts: &f.frames})
+		f.clients[i] = newDeviceRpcClient(&deviceRpcBenchCountConn{Conn: caller, counts: &f.frames})
 	}
 	return f
 }
@@ -258,7 +258,7 @@ func (f *deviceRpcBenchFixture) close(t testing.TB) {
 			// testing.Cleanup retains f until the containing test returns. Clear
 			// closed decoders/services here so post-close GC really measures the
 			// released session, rather than this fixture's own references.
-			f.clients = [2]*rpc.Client{}
+			f.clients = [2]*deviceRpcClient{}
 			f.muxes = [2]*deviceRpcMux{}
 			f.services = [2]*deviceRpcBenchEcho{}
 			f.server, f.listener = nil, nil
@@ -272,7 +272,7 @@ func (f *deviceRpcBenchFixture) close(t testing.TB) {
 	}
 }
 
-func deviceRpcBenchCall(client *rpc.Client, payload []byte, sequence uint64) error {
+func deviceRpcBenchCall(client *deviceRpcClient, payload []byte, sequence uint64) error {
 	var reply DeviceRpcBenchmarkReply
 	if err := client.Call("Benchmark.Echo", DeviceRpcBenchmarkRequest{Sequence: sequence, Payload: payload}, &reply); err != nil {
 		return err

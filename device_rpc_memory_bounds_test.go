@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"net/rpc"
 	"strings"
 	"sync"
 	"testing"
@@ -130,7 +129,7 @@ func TestDeviceLocalHttpAdmissionRejectsWithoutQueueing(t *testing.T) {
 }
 
 func TestHttpRpcServerErrorDoesNotRequireSessionTeardown(t *testing.T) {
-	var serverError error = rpc.ServerError("device rpc http concurrency limit reached")
+	var serverError error = deviceRpcServerError("device rpc http concurrency limit reached")
 	if httpRpcErrorRequiresCleanup(serverError) {
 		t.Fatal("http application error required rpc session teardown")
 	}

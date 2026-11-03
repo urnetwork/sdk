@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"net/rpc"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,7 +46,7 @@ import (
 //                            All calls to the device remote are forwarded
 //                            to the device local.
 
-// this uses `net/rpc` for simplicity, with tls auth, and
+// this uses the protocol of `net/rpc` for simplicity (device_rpc_client.go), with tls auth, and
 // the rpc is blocking on a single goproutine per peer
 
 type RemoteChangeListener interface {
@@ -853,7 +852,7 @@ func deviceRpcAttemptErrorResult(err error) string {
 	if errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
 		return "closed"
 	}
-	var rpcError rpc.ServerError
+	var rpcError deviceRpcServerError
 	if errors.As(err, &rpcError) {
 		return "rpc-error"
 	}
@@ -932,7 +931,7 @@ func (self *DeviceRemote) run() {
 				log:         self.log,
 				timeout:     self.settings.RpcCallTimeout,
 				closeClient: forwardConn.Close,
-				client:      rpc.NewClient(forwardConn),
+				client:      newDeviceRpcClient(forwardConn),
 			}
 			synced := false
 			defer func() {
@@ -983,12 +982,7 @@ func (self *DeviceRemote) run() {
 
 			self.log.Info("[dr]start device remote rpc")
 			deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
-			server := rpc.NewServer()
-			if err := server.Register(deviceRemoteRpc); err != nil {
-				logDeviceRpcAttempt(self.log, "sync-reverse", "setup-error")
-				self.log.Errorf("[dr]register reverse rpc: %v", err)
-				return
-			}
+			server := newDeviceRpcServer("DeviceRemoteRpc", deviceRemoteRpc, deviceRemoteRpcMethods())
 			reverseDone := make(chan struct{})
 			go connect.HandleError(func() {
 				defer func() {
@@ -5119,7 +5113,7 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 	}
 }
 
-// Streams cannot cross net/rpc as readers. Buffer one bounded request and send
+// Streams cannot cross the rpc as readers. Buffer one bounded request and send
 // it through the same HttpPostRaw RPC used by every other SDK API call. In the
 // extension mode this inherits RequireRemoteApi and therefore cannot fall back
 // to a page-side upload if the device service is unavailable.
@@ -8555,7 +8549,7 @@ func (self *DeviceProviderIdentities) toProviderIdentityList() *ProviderIdentity
 	return providerIdentities
 }
 
-// nil-able reply/event wrappers (net/rpc rejects nil args and replies)
+// nil-able reply/event wrappers (the rpc rejects nil args and replies)
 
 //gomobile:noexport
 type DevicePublicIdentityKey struct {
@@ -9015,7 +9009,7 @@ type DeviceRemoteDestinationExitListRpc struct {
 }
 
 // StallExit is the only reliability control that takes more than one
-// argument, and net/rpc takes exactly one, so the pair travels as a struct.
+// argument, and the rpc takes exactly one, so the pair travels as a struct.
 //
 //gomobile:noexport
 type DeviceRemoteStallExitRpc struct {
@@ -9079,14 +9073,14 @@ type DeviceRemoteProbeResultListRpc struct {
 
 type rpcClient = rpcClientWithTimeout
 
-// type rpcClient = rpc.Client
+// type rpcClient = deviceRpcClient
 
 type rpcClientWithTimeout struct {
 	ctx         context.Context
 	log         connect.Logger
 	timeout     time.Duration
 	closeClient func() error
-	client      *rpc.Client
+	client      *deviceRpcClient
 }
 
 func (self *rpcClientWithTimeout) Call(serviceMethod string, args any, reply any) error {
@@ -9165,7 +9159,7 @@ func rpcCallVoid(service *rpcClient, name string, arg any, cleanup func()) error
 }
 
 // rpcCallVoidAllowMissingMethod preserves a live connection when an older
-// peer does not yet expose an optional method. net/rpc reports that condition
+// peer does not yet expose an optional method. The rpc reports that condition
 // as an application-level ServerError; every transport error and every other
 // server error retains the ordinary teardown behavior.
 func rpcCallVoidAllowMissingMethod(service *rpcClient, name string, arg any, cleanup func()) error {
@@ -9185,13 +9179,13 @@ func rpcCallVoidAllowMissingMethod(service *rpcClient, name string, arg any, cle
 }
 
 func rpcMissingMethodError(err error) bool {
-	var serverError rpc.ServerError
+	var serverError deviceRpcServerError
 	return errors.As(err, &serverError) &&
 		strings.HasPrefix(string(serverError), "rpc: can't find method ")
 }
 
 // rpcCallHttpVoid keeps application-level rejections (body/concurrency limits)
-// scoped to the HTTP request. net/rpc reports those as rpc.ServerError; only a
+// scoped to the HTTP request. The rpc reports those as deviceRpcServerError; only a
 // transport failure should tear down the otherwise healthy tunnel RPC session.
 func rpcCallHttpVoid(service *rpcClient, name string, arg any, cleanup func()) error {
 	if arg == nil {
@@ -9210,7 +9204,7 @@ func rpcCallHttpVoid(service *rpcClient, name string, arg any, cleanup func()) e
 }
 
 func httpRpcErrorRequiresCleanup(err error) bool {
-	var serverError rpc.ServerError
+	var serverError deviceRpcServerError
 	return !errors.As(err, &serverError)
 }
 
@@ -9227,7 +9221,7 @@ func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 }
 
 // rpcCallNoArgAllowMissingMethod is rpcCallNoArg for a READ-ONLY value an
-// older peer may not expose yet. net/rpc reports that as an application-level
+// older peer may not expose yet. The rpc reports that as an application-level
 // ServerError, and the ordinary call tears the session down for it; here the
 // caller gets the zero value and a live connection instead. Every transport
 // error and every other server error keeps the ordinary teardown.
@@ -9781,9 +9775,9 @@ func newDeviceLocalRpc(
 	return deviceLocalRpc
 }
 
-// gobServerCodec is the standard net/rpc gob server codec (net/rpc keeps its own
-// unexported). It lets run() serve forward rpc one request at a time via
-// server.ServeRequest so handler panics can be recovered (see run()).
+// gobServerCodec is the net/rpc gob server codec. It lets run() serve forward rpc
+// one request at a time via server.ServeRequest so handler panics can be
+// recovered (see run()).
 type gobServerCodec struct {
 	rwc    net.Conn
 	dec    *gob.Decoder
@@ -9802,7 +9796,7 @@ func newGobServerCodec(conn net.Conn) *gobServerCodec {
 	}
 }
 
-func (self *gobServerCodec) ReadRequestHeader(r *rpc.Request) error {
+func (self *gobServerCodec) ReadRequestHeader(r *deviceRpcRequest) error {
 	return self.dec.Decode(r)
 }
 
@@ -9810,7 +9804,7 @@ func (self *gobServerCodec) ReadRequestBody(body any) error {
 	return self.dec.Decode(body)
 }
 
-func (self *gobServerCodec) WriteResponse(r *rpc.Response, body any) (err error) {
+func (self *gobServerCodec) WriteResponse(r *deviceRpcResponse, body any) (err error) {
 	if err = self.enc.Encode(r); err != nil {
 		if self.encBuf.Flush() == nil {
 			// couldn't encode the header; close to signal the broken connection
@@ -9864,10 +9858,9 @@ func (self *DeviceLocalRpc) run() {
 		self.sendLoop()
 	}, self.cancel)
 
-	server := rpc.NewServer()
-	server.Register(self)
+	server := newDeviceRpcServer("DeviceLocalRpc", self, deviceLocalRpcMethods())
 	// Serve forward rpc one request at a time (the methods are intended to run on
-	// a single goroutine) wrapped in HandleError. net/rpc does NOT recover handler
+	// a single goroutine) wrapped in HandleError. The server does NOT recover handler
 	// panics — without this, a panic in any served method (or in the core code it
 	// calls) crashes the whole network extension. ServeRequest runs the call
 	// synchronously, so a panic surfaces here, is recovered, and serving continues
@@ -9881,12 +9874,12 @@ func (self *DeviceLocalRpc) run() {
 		})
 		if serveErr != nil {
 			if strings.HasPrefix(serveErr.Error(), "rpc: can't find method ") {
-				// an older peer answering a newer optional method: net/rpc has
+				// an older peer answering a newer optional method: the server has
 				// already sent the error response and the connection is healthy,
 				// so keep serving instead of tearing down the session. This must
 				// stay a string prefix check: rpcMissingMethodError matches an
-				// rpc.ServerError, which only exists on the client side of
-				// net/rpc; the server returns a plain errors.New here, so an
+				// deviceRpcServerError, which only exists on the client side of
+				// the rpc; the server returns a plain errors.New here, so an
 				// errors.As test would never match and every miss would break
 				// through and close the connection.
 				continue
@@ -10744,7 +10737,7 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 		log:         self.settings.logger(),
 		timeout:     self.settings.RpcCallTimeout,
 		closeClient: self.reverseConn.Close,
-		client:      rpc.NewClient(self.reverseConn),
+		client:      newDeviceRpcClient(self.reverseConn),
 	}
 
 	// fire listeners with the current state

@@ -6288,6 +6288,42 @@ func urnet_async_local_state_set_by_jwt(self C.uint64_t, byJwt *C.char, callback
 	self_.SetByJwt(goString(byJwt), callback_)
 }
 
+//export urnet_bittensor_local_key_address
+func urnet_bittensor_local_key_address(mnemonic *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_address")
+	r0, err := sdk.BittensorLocalKeyAddress(goString(mnemonic))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_bittensor_local_key_generate
+func urnet_bittensor_local_key_generate(outError **C.char) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_generate")
+	r0, err := sdk.BittensorLocalKeyGenerate()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_generate")
+}
+
+//export urnet_bittensor_local_key_sign
+func urnet_bittensor_local_key_sign(mnemonic *C.char, message *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_sign")
+	r0, err := sdk.BittensorLocalKeySign(goString(mnemonic), goString(message))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
 //export urnet_bittensor_sign_raw_data
 func urnet_bittensor_sign_raw_data(message *C.char) *C.char {
 	defer cgoGuard("urnet_bittensor_sign_raw_data")
