@@ -85,6 +85,10 @@ func TestSnClaimStatusBuildDrawsThePrimaryAccount(t *testing.T) {
 	if result.AutomaticThresholdRao != 3_000_000_000 || result.TransferFloorRao != 24_000_000 || result.ClaimNowPeriodDays != 30 {
 		t.Fatalf("policy %+v", result)
 	}
+	// the policy's own TAO figures, for "once it's worth about 0.0125 TAO"
+	if result.AutomaticThresholdTaoRao != 12_500_000 || result.TransferFloorTaoRao != 100_000 {
+		t.Fatalf("policy in TAO %+v", result)
+	}
 	accounts := result.Accounts.getAll()
 	if len(accounts) != 2 || accounts[0].Connected || !accounts[1].Connected || accounts[0].Action != SnClaimActionWait || accounts[1].Action != SnClaimActionClaimNow {
 		t.Fatalf("accounts %+v %+v", accounts[0], accounts[1])

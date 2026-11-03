@@ -441,10 +441,11 @@ module URnetwork
       attach_function :urnet_async_local_state_set_by_jwt, [:uint64, :string, :urnet_commit_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener, [:uint64, :urnet_bittensor_local_key_flow_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_bittensor_local_key_flow_cancel_confirmation, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_check_words, [:uint64, :string, :string], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_flow_close, [:uint64], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_close_screen, [:uint64], :void, blocking: true
-      attach_function :urnet_bittensor_local_key_flow_confirm_delete, [:uint64, :bool], :void, blocking: true
-      attach_function :urnet_bittensor_local_key_flow_confirm_keep, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_confirm_delete, [:uint64], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_confirm_keep, [:uint64], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_finish_setup, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_forget_network, [:uint64], :bool, blocking: true
       attach_function :urnet_bittensor_local_key_flow_funds_disclaimer_at, [:uint64, :string], :pointer, blocking: true
@@ -471,7 +472,7 @@ module URnetwork
       attach_function :urnet_bittensor_local_key_flow_set_top200_registered, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_set_up_payouts, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_bittensor_local_key_flow_string, [:uint64], :pointer, blocking: true
-      attach_function :urnet_bittensor_local_key_flow_submit_words, [:uint64, :string, :string], :void, blocking: true
+      attach_function :urnet_bittensor_local_key_flow_submit_words, [:uint64, :string, :string, :bool], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_bridge_url, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_cancel, [:uint64], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_challenge_args, [:uint64, :string], :pointer, blocking: true

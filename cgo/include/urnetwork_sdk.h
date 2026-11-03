@@ -121,7 +121,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_FULL "bittensor_funds_disclaimer"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_FUNDS_ONLY "bittensor_funds_disclaimer_funds_only"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_NONE ""
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CHANGE_WALLET "change_wallet"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CLAIM_CARD "claim_card"
+#define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CLAIM_SHEET "claim_sheet"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_CONVERT "convert"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_DELETE_CONFIRMATION "delete_confirmation"
 #define URNET_BITTENSOR_FUNDS_DISCLAIMER_PLACE_KEEP_CONFIRMATION "keep_confirmation"
@@ -157,6 +159,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_NOW_SHOWING "save_now_showing"
 #define URNET_BITTENSOR_LOCAL_KEY_STATE_STORE_UNAVAILABLE "store_unavailable"
 #define URNET_BITTENSOR_LOCAL_KEY_STORE_UNAVAILABLE "store_unavailable"
+#define URNET_BITTENSOR_LOCAL_KEY_WORD_EMPTY ""
+#define URNET_BITTENSOR_LOCAL_KEY_WORD_RIGHT "right"
+#define URNET_BITTENSOR_LOCAL_KEY_WORD_TYPING "typing"
+#define URNET_BITTENSOR_LOCAL_KEY_WORD_WRONG "wrong"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
 #define URNET_BITTENSOR_TAO_COM_INJECTED_NAME "@opentensor/bittensor-extension"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
@@ -1309,10 +1315,11 @@ void urnet_async_local_state_set_by_jwt(uint64_t self, const char* by_jwt, urnet
 
 uint64_t urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener(uint64_t self, urnet_bittensor_local_key_flow_cb listener_bittensor_local_key_flow_changed, void* listener_user_data);
 void urnet_bittensor_local_key_flow_cancel_confirmation(uint64_t self);
+char* urnet_bittensor_local_key_flow_check_words(uint64_t self, const char* first_word, const char* second_word);
 void urnet_bittensor_local_key_flow_close(uint64_t self);
 void urnet_bittensor_local_key_flow_close_screen(uint64_t self);
-void urnet_bittensor_local_key_flow_confirm_delete(uint64_t self, bool authenticated);
-void urnet_bittensor_local_key_flow_confirm_keep(uint64_t self, bool authenticated);
+void urnet_bittensor_local_key_flow_confirm_delete(uint64_t self);
+void urnet_bittensor_local_key_flow_confirm_keep(uint64_t self);
 void urnet_bittensor_local_key_flow_finish_setup(uint64_t self, bool replace_confirmed);
 bool urnet_bittensor_local_key_flow_forget_network(uint64_t self);
 char* urnet_bittensor_local_key_flow_funds_disclaimer_at(uint64_t self, const char* place);
@@ -1339,7 +1346,7 @@ void urnet_bittensor_local_key_flow_set_guest(uint64_t self, bool guest);
 void urnet_bittensor_local_key_flow_set_top200_registered(uint64_t self, bool registered);
 void urnet_bittensor_local_key_flow_set_up_payouts(uint64_t self, bool replace_confirmed);
 char* urnet_bittensor_local_key_flow_string(uint64_t self);
-void urnet_bittensor_local_key_flow_submit_words(uint64_t self, const char* first_word, const char* second_word);
+void urnet_bittensor_local_key_flow_submit_words(uint64_t self, const char* first_word, const char* second_word, bool authenticated);
 
 /* ----- BittensorWalletSession ----- */
 
@@ -3102,9 +3109,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   save_now: boolean
  *   address: string
  *   revealed: boolean
+ *   revealed_until_millis: number
  *   needs_authentication: boolean
  *   hidden_by_capture: boolean
  *   confirming: string
+ *   confirm_needs_authentication: boolean
  *   first_word_position: number
  *   second_word_position: number
  *   words_rejected: boolean
@@ -3116,6 +3125,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   failure_code: string
  *   failure_message: string
  *   funds_disclaimer: string
+ */
+
+/* BittensorLocalKeyWordCheck (json):
+ *   first: string
+ *   second: string
+ *   ready: boolean
  */
 
 /* BittensorSignRequest (json):
@@ -5367,6 +5382,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   self_claim_needs_gas: boolean
  *   automatic_threshold_rao: number
  *   transfer_floor_rao: number
+ *   automatic_threshold_tao_rao: number
+ *   transfer_floor_tao_rao: number
  *   claim_now_period_days: number
  *   accounts: SnClaimRelayAccountList | null
  *   error?: SnError | null

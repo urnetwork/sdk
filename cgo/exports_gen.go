@@ -6819,6 +6819,20 @@ func urnet_bittensor_local_key_flow_cancel_confirmation(self C.uint64_t) {
 	self_.CancelConfirmation()
 }
 
+//export urnet_bittensor_local_key_flow_check_words
+func urnet_bittensor_local_key_flow_check_words(self C.uint64_t, firstWord *C.char, secondWord *C.char) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_check_words")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_check_words")
+	if !ok {
+		return nil
+	}
+	r0 := self_.CheckWords(goString(firstWord), goString(secondWord))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_bittensor_local_key_flow_check_words")
+}
+
 //export urnet_bittensor_local_key_flow_close
 func urnet_bittensor_local_key_flow_close(self C.uint64_t) {
 	defer cgoGuard("urnet_bittensor_local_key_flow_close")
@@ -6840,23 +6854,23 @@ func urnet_bittensor_local_key_flow_close_screen(self C.uint64_t) {
 }
 
 //export urnet_bittensor_local_key_flow_confirm_delete
-func urnet_bittensor_local_key_flow_confirm_delete(self C.uint64_t, authenticated C.bool) {
+func urnet_bittensor_local_key_flow_confirm_delete(self C.uint64_t) {
 	defer cgoGuard("urnet_bittensor_local_key_flow_confirm_delete")
 	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_confirm_delete")
 	if !ok {
 		return
 	}
-	self_.ConfirmDelete(bool(authenticated))
+	self_.ConfirmDelete()
 }
 
 //export urnet_bittensor_local_key_flow_confirm_keep
-func urnet_bittensor_local_key_flow_confirm_keep(self C.uint64_t, authenticated C.bool) {
+func urnet_bittensor_local_key_flow_confirm_keep(self C.uint64_t) {
 	defer cgoGuard("urnet_bittensor_local_key_flow_confirm_keep")
 	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_confirm_keep")
 	if !ok {
 		return
 	}
-	self_.ConfirmKeep(bool(authenticated))
+	self_.ConfirmKeep()
 }
 
 //export urnet_bittensor_local_key_flow_finish_setup
@@ -7142,13 +7156,13 @@ func urnet_bittensor_local_key_flow_string(self C.uint64_t) *C.char {
 }
 
 //export urnet_bittensor_local_key_flow_submit_words
-func urnet_bittensor_local_key_flow_submit_words(self C.uint64_t, firstWord *C.char, secondWord *C.char) {
+func urnet_bittensor_local_key_flow_submit_words(self C.uint64_t, firstWord *C.char, secondWord *C.char, authenticated C.bool) {
 	defer cgoGuard("urnet_bittensor_local_key_flow_submit_words")
 	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_submit_words")
 	if !ok {
 		return
 	}
-	self_.SubmitWords(goString(firstWord), goString(secondWord))
+	self_.SubmitWords(goString(firstWord), goString(secondWord), bool(authenticated))
 }
 
 //export urnet_bittensor_local_key_generate
