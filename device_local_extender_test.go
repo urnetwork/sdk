@@ -1555,35 +1555,54 @@ func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) 
 	}
 }
 
-// The operator's refusal is the refused case, not a failed request (N2, N3):
+// The operator's refusal is a refused case, not a failed request (N2, N3):
 // after a first activation the operator refuses the daily one, no family stays
-// active, and the status carries the operator's text with the refusal flag.
+// active, and the status carries the operator's text with the refusal flag. A
+// refusal of the required tcp test has a case of its own, which says the device
+// can't be reached from the internet; any other refusal is refused. The texts are
+// the operator's (server extenderProbeStepRun.refusal).
 func TestDeviceLocalProviderExtenderReportsARefusal(t *testing.T) {
-	fixture := newTestProvideExtenderFixture(t, nil)
-	fixture.waitPass()
-	fixture.waitPost()
-	fixture.waitPost()
-	fixture.waitStatus("activated", func(status *ExtenderProvideStatus) bool {
-		return status.ActivatedV4 && status.ActivatedV6
-	})
+	for _, c := range []struct {
+		refusal   string
+		errorCase string
+	}{
+		{
+			refusal:   "the forward failed after 1 s: status 502",
+			errorCase: ExtenderProvideErrorActivationRefused,
+		},
+		{
+			refusal:   "the tcp carrier did not answer within the 10 s probe budget: i/o timeout",
+			errorCase: ExtenderProvideErrorActivationUnreachable,
+		},
+	} {
+		t.Run(c.errorCase, func(t *testing.T) {
+			fixture := newTestProvideExtenderFixture(t, nil)
+			fixture.waitPass()
+			fixture.waitPost()
+			fixture.waitPost()
+			fixture.waitStatus("activated", func(status *ExtenderProvideStatus) bool {
+				return status.ActivatedV4 && status.ActivatedV6
+			})
 
-	fixture.operator.setRefusal("the tcp carrier did not answer")
-	// the daily activation (G3)
-	fixture.step(25 * time.Hour)
-	fixture.waitPost()
+			fixture.operator.setRefusal(c.refusal)
+			// the daily activation (G3)
+			fixture.step(25 * time.Hour)
+			fixture.waitPost()
 
-	status := fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
-		return status.ErrorCase == ExtenderProvideErrorActivationRefused
-	})
-	if status.State != ExtenderProvideStateError || status.ActivatedV4 || status.ActivatedV6 {
-		t.Fatalf("status = %+v, expected an inactive refused extender", status)
-	}
-	if !status.LastActivationRefused {
-		t.Fatalf("status = %+v, expected the refusal flag", status)
-	}
-	if !strings.Contains(status.Reason, "the tcp carrier did not answer") ||
-		status.Reason != status.LastActivationError {
-		t.Fatalf("reason = %q, expected the operator's refusal", status.Reason)
+			status := fixture.waitStatus(c.errorCase, func(status *ExtenderProvideStatus) bool {
+				return status.ErrorCase == c.errorCase
+			})
+			if status.State != ExtenderProvideStateError || status.ActivatedV4 || status.ActivatedV6 {
+				t.Fatalf("status = %+v, expected an inactive refused extender", status)
+			}
+			if !status.LastActivationRefused {
+				t.Fatalf("status = %+v, expected the refusal flag", status)
+			}
+			if !strings.Contains(status.Reason, c.refusal) ||
+				status.Reason != status.LastActivationError {
+				t.Fatalf("reason = %q, expected the operator's refusal", status.Reason)
+			}
+		})
 	}
 }
 
