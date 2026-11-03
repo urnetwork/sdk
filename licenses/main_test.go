@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,5 +75,31 @@ func TestCheckPolicy(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), bad.Name) {
 			t.Errorf("%s: want a policy failure, got %v", bad.Name, err)
 		}
+	}
+}
+
+// The catalog's own compressed copy is named license_data.json.gz, which the license file pattern
+// takes for a license. Reading it put 81 KB of gzip into the sdk's own entry as its license text,
+// on the first regeneration after the file was added.
+func TestReadLicenseFilesSkipsTheCatalogItself(t *testing.T) {
+	directory := t.TempDir()
+	const licenseText = "the license text"
+	for name, content := range map[string]string{
+		"LICENSE":              licenseText,
+		"license.go":           "package code",
+		"license.yml":          "entries: []",
+		"license_data.json":    "{}",
+		"license_data.json.gz": "\x1f\x8b\x08 compressed",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text, err := readLicenseFiles(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != licenseText {
+		t.Fatalf("read %q, want only %q", text, licenseText)
 	}
 }
