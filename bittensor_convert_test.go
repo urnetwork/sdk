@@ -328,22 +328,31 @@ func (self *convertTestSigner) Sign(payload []byte) ([64]byte, error) {
 	return [64]byte(bytes.Repeat([]byte{0x5a}, 64)), nil
 }
 
+// A sheet's run: submit, then wait if it was sent.
 type convertTestCallback struct {
 	sent      []string
 	confirmed []*BittensorConvertReceipt
 	failed    [][2]string
 }
 
-func (self *convertTestCallback) Sent(txHash string) {
-	self.sent = append(self.sent, txHash)
-}
-
-func (self *convertTestCallback) Confirmed(receipt *BittensorConvertReceipt) {
+func (self *convertTestCallback) run(ctx context.Context, engine *bittensorChainEngine, signer subtensor.Signer, estimate *BittensorConvertEstimateResult) {
+	submission := engine.convertSubmit(ctx, signer, estimate)
+	if submission.Error != nil && submission.TxHash == "" {
+		self.failed = append(self.failed, [2]string{submission.Error.Code, submission.Error.Message})
+		return
+	}
+	if submission.Error != nil {
+		self.failed = append(self.failed, [2]string{submission.Error.Code, submission.Error.Message})
+	}
+	self.sent = append(self.sent, submission.TxHash)
+	receipt := engine.convertWait(ctx, submission)
+	if receipt.Error != nil {
+		if submission.Error == nil {
+			self.failed = append(self.failed, [2]string{receipt.Error.Code, receipt.Error.Message})
+		}
+		return
+	}
 	self.confirmed = append(self.confirmed, receipt)
-}
-
-func (self *convertTestCallback) Failed(code string, message string) {
-	self.failed = append(self.failed, [2]string{code, message})
 }
 
 var convertTestColdkey = [32]byte{0xd4, 0x35, 0x93}
@@ -766,7 +775,7 @@ func convertRun(t *testing.T, chain *convertFakeChain, estimate *BittensorConver
 	t.Helper()
 	signer := &convertTestSigner{public: convertTestColdkey}
 	callback := &convertTestCallback{}
-	convertEngine(chain).convertSubmit(context.Background(), signer, estimate, callback)
+	callback.run(context.Background(), convertEngine(chain), signer, estimate)
 	if len(callback.confirmed)+len(callback.failed) != 1 {
 		t.Fatalf("a run ended %d confirmed and %d failed", len(callback.confirmed), len(callback.failed))
 	}
@@ -902,6 +911,19 @@ func TestConvertPriceLimitHolds(t *testing.T) {
 	t.Run("the price fell past the limit", func(t *testing.T) {
 		moved := newConvertFakeChain(t)
 		moved.price = uint64(estimate.LimitPriceRao) - 1
+		signer, callback := convertRun(t, moved, estimate)
+		if len(signer.payloads) != 0 || len(moved.submitted) != 0 {
+			t.Fatal("signed or sent past the limit")
+		}
+		if callback.failed[0][0] != BittensorConvertErrorPriceMoved {
+			t.Fatalf("failed %v", callback.failed)
+		}
+	})
+	t.Run("the price fell past the limit and the sale would still pay enough", func(t *testing.T) {
+		// the chain refuses by the price, whatever the sale would pay, and keeps the fee
+		moved := newConvertFakeChain(t)
+		moved.price = uint64(estimate.LimitPriceRao) - 1
+		moved.poolFeeParts = 0
 		signer, callback := convertRun(t, moved, estimate)
 		if len(signer.payloads) != 0 || len(moved.submitted) != 0 {
 			t.Fatal("signed or sent past the limit")
@@ -1170,9 +1192,83 @@ func TestConvertTransportFailureAfterSendingIsUnknown(t *testing.T) {
 		cancel()
 		return ctx.Err()
 	}
-	engine.convertSubmit(ctx, signer, estimate, callback)
+	callback.run(ctx, engine, signer, estimate)
 	if len(callback.sent) != 1 || len(callback.failed) != 1 || callback.failed[0][0] != BittensorConvertErrorOutcomeUnknown {
 		t.Fatalf("sent %v, failed %v", callback.sent, callback.failed)
+	}
+}
+
+// An answer lost on the way back from the node does not say it was not sent.
+func TestConvertSubmitWhoseAnswerWasLost(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	convertLandSuccess(chain)
+	estimate := convertEstimateOf(t, chain, 1_000_000_000)
+	lost := &convertLostAnswerRpc{convertFakeChain: chain}
+	engine := newBittensorChainEngineWithRpc(lost, bittensorMainnetPins)
+	engine.sleep = convertEngine(chain).sleep
+	ctx := context.Background()
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error == nil || submission.Error.Code != BittensorConvertErrorOutcomeUnknown || submission.TxHash == "" {
+		t.Fatalf("submission %+v", submission)
+	}
+	// the node had taken it, and waiting finds it
+	receipt := engine.convertWait(ctx, submission)
+	if receipt.Error != nil || receipt.BlockNumber == 0 {
+		t.Fatalf("receipt %+v %+v", receipt, receipt.Error)
+	}
+}
+
+type convertLostAnswerRpc struct {
+	*convertFakeChain
+}
+
+func (self *convertLostAnswerRpc) Call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+	answer, err := self.convertFakeChain.Call(ctx, method, params...)
+	if err == nil && method == "author_submitExtrinsic" {
+		return nil, fmt.Errorf("%w: the connection dropped", evm.ErrUnreachable)
+	}
+	return answer, err
+}
+
+// A submission is all an app has to keep to find out later what happened, and what
+// is not one refuses.
+func TestConvertWaitAfterTheAppWasAway(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	convertLandSuccess(chain)
+	engine := convertEngine(chain)
+	ctx := context.Background()
+	estimate := engine.convertEstimate(ctx, convertTestColdkey, 1_000_000_000)
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error != nil {
+		t.Fatal(submission.Error)
+	}
+	encoded, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := &BittensorConvertSubmission{}
+	if err := json.Unmarshal(encoded, kept); err != nil {
+		t.Fatal(err)
+	}
+	fresh := convertEngine(chain)
+	for range 2 {
+		if receipt := fresh.convertWait(ctx, kept); receipt.Error != nil || receipt.TaoReceivedRao == 0 {
+			t.Fatalf("receipt %+v %+v", receipt, receipt.Error)
+		}
+	}
+	for name, bad := range map[string]*BittensorConvertSubmission{
+		"nil":             nil,
+		"not sent":        {Error: newSnError(BittensorConvertErrorPriceMoved, "no")},
+		"a bad hash":      {TxHash: "0x12", ColdkeySs58: kept.ColdkeySs58, FirstBlock: 1, LastBlock: 2},
+		"a bad key":       {TxHash: kept.TxHash, ColdkeySs58: "no", FirstBlock: 1, LastBlock: 2},
+		"no blocks":       {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58},
+		"backwards":       {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58, FirstBlock: 5, LastBlock: 4},
+		"longer than era": {TxHash: kept.TxHash, ColdkeySs58: kept.ColdkeySs58, FirstBlock: 5, LastBlock: 5 + 65},
+	} {
+		receipt := fresh.convertWait(ctx, bad)
+		if receipt.Error == nil || receipt.Error.Code != BittensorConvertErrorRefused {
+			t.Errorf("%s: %+v", name, receipt)
+		}
 	}
 }
 
@@ -1233,7 +1329,7 @@ func TestConvertReadsAreKeptForATypedAmountOnly(t *testing.T) {
 	estimate := engine.convertEstimate(ctx, convertTestColdkey, 1_000_000_000)
 	before := chain.reads["state_getMetadata"]
 	callback := &convertTestCallback{}
-	engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate, callback)
+	callback.run(ctx, engine, &convertTestSigner{public: convertTestColdkey}, estimate)
 	if len(callback.confirmed) != 1 {
 		t.Fatalf("failed %v", callback.failed)
 	}
@@ -1324,6 +1420,7 @@ func TestConvertExportsOnlyTypedCalls(t *testing.T) {
 		"BittensorConvertEstimate":        "settings,coldkeySs58,amountRao,callback",
 		"BittensorConvertEstimateForBurn": "settings,coldkeySs58,callback",
 		"BittensorConvertSubmit":          "settings,mnemonic,estimate,callback",
+		"BittensorConvertWait":            "settings,submission,callback",
 		"FormatTao":                       "rao",
 		"FormatTaoAmount":                 "rao",
 	}

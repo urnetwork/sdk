@@ -21,10 +21,9 @@ pub type urnet_auth_password_reset_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_auth_verify_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_verify_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_auth_wallet_challenge_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
-pub type urnet_bittensor_convert_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
-pub type urnet_bittensor_convert_failed_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
-pub type urnet_bittensor_convert_sent_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_bittensor_convert_estimate_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_receipt_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_bittensor_convert_submit_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_block_action_overrides_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_block_action_stats_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_block_action_window_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -1379,7 +1378,8 @@ pub struct Raw {
     pub urnet_alpha_from_rao: unsafe extern "C" fn(i64) -> f64,
     pub urnet_bittensor_convert_estimate: unsafe extern "C" fn(*const c_char, *const c_char, i64, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
     pub urnet_bittensor_convert_estimate_for_burn: unsafe extern "C" fn(*const c_char, *const c_char, urnet_bittensor_convert_estimate_cb, *mut c_void) -> (),
-    pub urnet_bittensor_convert_submit: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, urnet_bittensor_convert_confirmed_cb, urnet_bittensor_convert_failed_cb, urnet_bittensor_convert_sent_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_submit: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, urnet_bittensor_convert_submit_cb, *mut c_void) -> (),
+    pub urnet_bittensor_convert_wait: unsafe extern "C" fn(*const c_char, *const c_char, urnet_bittensor_convert_receipt_cb, *mut c_void) -> (),
     pub urnet_bittensor_local_key_address: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_generate: unsafe extern "C" fn(*mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_local_key_sign: unsafe extern "C" fn(*const c_char, *const c_char, *mut *mut c_char) -> *mut c_char,
@@ -2751,6 +2751,7 @@ impl Raw {
             urnet_bittensor_convert_estimate: unsafe { *library.get(b"urnet_bittensor_convert_estimate\0")? },
             urnet_bittensor_convert_estimate_for_burn: unsafe { *library.get(b"urnet_bittensor_convert_estimate_for_burn\0")? },
             urnet_bittensor_convert_submit: unsafe { *library.get(b"urnet_bittensor_convert_submit\0")? },
+            urnet_bittensor_convert_wait: unsafe { *library.get(b"urnet_bittensor_convert_wait\0")? },
             urnet_bittensor_local_key_address: unsafe { *library.get(b"urnet_bittensor_local_key_address\0")? },
             urnet_bittensor_local_key_generate: unsafe { *library.get(b"urnet_bittensor_local_key_generate\0")? },
             urnet_bittensor_local_key_sign: unsafe { *library.get(b"urnet_bittensor_local_key_sign\0")? },

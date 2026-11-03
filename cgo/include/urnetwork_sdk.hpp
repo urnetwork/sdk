@@ -735,6 +735,7 @@ struct AuthWalletChallengeResult;
 struct BittensorChallengeMessage;
 struct BittensorConvertEstimateResult;
 struct BittensorConvertReceipt;
+struct BittensorConvertSubmission;
 struct BittensorLocalKey;
 struct BittensorSignRequest;
 struct BittensorWalletProof;
@@ -1552,13 +1553,22 @@ struct BittensorConvertEstimateResult {
 };
 
 struct BittensorConvertReceipt {
-	std::string tx_hash{};
-	int64_t block_number{};
-	int64_t extrinsic_index{};
+	std::optional<std::string> tx_hash;
+	std::optional<int64_t> block_number;
+	std::optional<int64_t> extrinsic_index;
 	int64_t alpha_sold_rao{};
 	int64_t tao_received_rao{};
 	int64_t fee_alpha_rao{};
 	int64_t fee_tao_rao{};
+	std::optional<SnError> error;
+};
+
+struct BittensorConvertSubmission {
+	std::optional<std::string> tx_hash;
+	std::optional<std::string> coldkey_ss58;
+	std::optional<int64_t> first_block;
+	std::optional<int64_t> last_block;
+	std::optional<SnError> error;
 };
 
 struct BittensorLocalKey {
@@ -4427,6 +4437,8 @@ inline void to_json(nlohmann::json& j, const BittensorConvertEstimateResult& v);
 inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v);
 inline void to_json(nlohmann::json& j, const BittensorConvertReceipt& v);
 inline void from_json(const nlohmann::json& j, BittensorConvertReceipt& v);
+inline void to_json(nlohmann::json& j, const BittensorConvertSubmission& v);
+inline void from_json(const nlohmann::json& j, BittensorConvertSubmission& v);
 inline void to_json(nlohmann::json& j, const BittensorLocalKey& v);
 inline void from_json(const nlohmann::json& j, BittensorLocalKey& v);
 inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
@@ -7206,26 +7218,41 @@ inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v
 
 inline void to_json(nlohmann::json& j, const BittensorConvertReceipt& v) {
 	j = nlohmann::json::object();
-	j["tx_hash"] = v.tx_hash;
-	j["block_number"] = v.block_number;
-	j["extrinsic_index"] = v.extrinsic_index;
+	if (v.tx_hash) {
+		j["tx_hash"] = *v.tx_hash;
+	}
+	if (v.block_number) {
+		j["block_number"] = *v.block_number;
+	}
+	if (v.extrinsic_index) {
+		j["extrinsic_index"] = *v.extrinsic_index;
+	}
 	j["alpha_sold_rao"] = v.alpha_sold_rao;
 	j["tao_received_rao"] = v.tao_received_rao;
 	j["fee_alpha_rao"] = v.fee_alpha_rao;
 	j["fee_tao_rao"] = v.fee_tao_rao;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, BittensorConvertReceipt& v) {
 	if (!j.is_object()) {
 		return;
 	}
 	if (auto it = j.find("tx_hash"); it != j.end() && !it->is_null()) {
-		it->get_to(v.tx_hash);
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tx_hash = std::move(tmp);
 	}
 	if (auto it = j.find("block_number"); it != j.end() && !it->is_null()) {
-		it->get_to(v.block_number);
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.block_number = std::move(tmp);
 	}
 	if (auto it = j.find("extrinsic_index"); it != j.end() && !it->is_null()) {
-		it->get_to(v.extrinsic_index);
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.extrinsic_index = std::move(tmp);
 	}
 	if (auto it = j.find("alpha_sold_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.alpha_sold_rao);
@@ -7238,6 +7265,60 @@ inline void from_json(const nlohmann::json& j, BittensorConvertReceipt& v) {
 	}
 	if (auto it = j.find("fee_tao_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.fee_tao_rao);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorConvertSubmission& v) {
+	j = nlohmann::json::object();
+	if (v.tx_hash) {
+		j["tx_hash"] = *v.tx_hash;
+	}
+	if (v.coldkey_ss58) {
+		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+	if (v.first_block) {
+		j["first_block"] = *v.first_block;
+	}
+	if (v.last_block) {
+		j["last_block"] = *v.last_block;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, BittensorConvertSubmission& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("tx_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tx_hash = std::move(tmp);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coldkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("first_block"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.first_block = std::move(tmp);
+	}
+	if (auto it = j.find("last_block"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.last_block = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -19763,12 +19844,9 @@ using AuthPasswordResetCallback = std::function<void(std::optional<AuthPasswordR
 using AuthVerifyCallback = std::function<void(std::optional<AuthVerifyResult> result, std::optional<std::string> err_param)>;
 using AuthVerifySendCallback = std::function<void(std::optional<AuthVerifySendResult> result, std::optional<std::string> err_param)>;
 using AuthWalletChallengeCallback = std::function<void(std::optional<AuthWalletChallengeResult> result, std::optional<std::string> err_param)>;
-struct BittensorConvertCallback {
-	std::function<void(std::optional<BittensorConvertReceipt> receipt)> confirmed;
-	std::function<void(std::string code, std::string message)> failed;
-	std::function<void(std::string tx_hash)> sent;
-};
 using BittensorConvertEstimateCallback = std::function<void(std::optional<BittensorConvertEstimateResult> result, std::optional<std::string> err_param)>;
+using BittensorConvertReceiptCallback = std::function<void(std::optional<BittensorConvertReceipt> result, std::optional<std::string> err_param)>;
+using BittensorConvertSubmitCallback = std::function<void(std::optional<BittensorConvertSubmission> result, std::optional<std::string> err_param)>;
 using BlockActionOverridesChangeListener = std::function<void(std::optional<BlockActionOverrideList> block_action_overrides)>;
 using BlockActionStatsListener = std::function<void()>;
 using BlockActionWindowChangeListener = std::function<void(std::optional<BlockActionWindow> block_action_window)>;
@@ -22125,44 +22203,6 @@ inline void oneshot_auth_wallet_challenge(void* user_data, const char* result_js
 	delete f;
 }
 
-inline void retained_bittensor_convert_confirmed(void* user_data, const char* receipt_json) {
-	auto* f = static_cast<BittensorConvertCallback*>(user_data);
-	try {
-		std::optional<BittensorConvertReceipt> receipt_v;
-		if (receipt_json) {
-			receipt_v = parseJson<BittensorConvertReceipt>(receipt_json);
-		}
-		if (f->confirmed) {
-			f->confirmed(std::move(receipt_v));
-		}
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-}
-inline void retained_bittensor_convert_failed(void* user_data, const char* code, const char* message) {
-	auto* f = static_cast<BittensorConvertCallback*>(user_data);
-	try {
-		if (f->failed) {
-			f->failed(std::string(code ? code : ""), std::string(message ? message : ""));
-		}
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-}
-inline void retained_bittensor_convert_sent(void* user_data, const char* tx_hash) {
-	auto* f = static_cast<BittensorConvertCallback*>(user_data);
-	try {
-		if (f->sent) {
-			f->sent(std::string(tx_hash ? tx_hash : ""));
-		}
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-}
-
 inline void retained_bittensor_convert_estimate(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<BittensorConvertEstimateCallback*>(user_data);
 	try {
@@ -22186,6 +22226,78 @@ inline void oneshot_bittensor_convert_estimate(void* user_data, const char* resu
 		std::optional<BittensorConvertEstimateResult> result_v;
 		if (result_json) {
 			result_v = parseJson<BittensorConvertEstimateResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_bittensor_convert_receipt(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertReceiptCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertReceipt> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertReceipt>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_bittensor_convert_receipt(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertReceiptCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertReceipt> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertReceipt>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_bittensor_convert_submit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertSubmitCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertSubmission> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertSubmission>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_bittensor_convert_submit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertSubmitCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertSubmission> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertSubmission>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -34928,7 +35040,7 @@ inline void bittensorConvertEstimateForBurn(const std::optional<SnChainSettings>
 	auto* callback_fn = callback ? new BittensorConvertEstimateCallback(std::move(callback)) : nullptr;
 	urnet_bittensor_convert_estimate_for_burn(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_bittensor_convert_estimate : nullptr, callback_fn);
 }
-inline void bittensorConvertSubmit(const std::optional<SnChainSettings>& settings, const std::string& mnemonic, const std::optional<BittensorConvertEstimateResult>& estimate, BittensorConvertCallback callback) {
+inline void bittensorConvertSubmit(const std::optional<SnChainSettings>& settings, const std::string& mnemonic, const std::optional<BittensorConvertEstimateResult>& estimate, BittensorConvertSubmitCallback callback) {
 	std::string settings_json;
 	const char* settings_c = nullptr;
 	if (settings) {
@@ -34941,14 +35053,24 @@ inline void bittensorConvertSubmit(const std::optional<SnChainSettings>& setting
 		estimate_json = nlohmann::json(*estimate).dump();
 		estimate_c = estimate_json.c_str();
 	}
-	std::shared_ptr<BittensorConvertCallback> callback_fn;
-	if ((static_cast<bool>(callback.confirmed) || static_cast<bool>(callback.failed) || static_cast<bool>(callback.sent))) {
-		callback_fn = std::make_shared<BittensorConvertCallback>(std::move(callback));
+	auto* callback_fn = callback ? new BittensorConvertSubmitCallback(std::move(callback)) : nullptr;
+	urnet_bittensor_convert_submit(settings_c, mnemonic.c_str(), estimate_c, callback_fn ? &detail::oneshot_bittensor_convert_submit : nullptr, callback_fn);
+}
+inline void bittensorConvertWait(const std::optional<SnChainSettings>& settings, const std::optional<BittensorConvertSubmission>& submission, BittensorConvertReceiptCallback callback) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
 	}
-	if (callback_fn) {
-		retain(callback_fn);
+	std::string submission_json;
+	const char* submission_c = nullptr;
+	if (submission) {
+		submission_json = nlohmann::json(*submission).dump();
+		submission_c = submission_json.c_str();
 	}
-	urnet_bittensor_convert_submit(settings_c, mnemonic.c_str(), estimate_c, callback_fn ? &detail::retained_bittensor_convert_confirmed : nullptr, callback_fn ? &detail::retained_bittensor_convert_failed : nullptr, callback_fn ? &detail::retained_bittensor_convert_sent : nullptr, callback_fn.get());
+	auto* callback_fn = callback ? new BittensorConvertReceiptCallback(std::move(callback)) : nullptr;
+	urnet_bittensor_convert_wait(settings_c, submission_c, callback_fn ? &detail::oneshot_bittensor_convert_receipt : nullptr, callback_fn);
 }
 inline std::string bittensorLocalKeyAddress(const std::string& mnemonic) {
 	char* err_c = nullptr;

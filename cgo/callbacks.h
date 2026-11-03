@@ -45,14 +45,12 @@ typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_js
 void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param);
-typedef void (*urnet_bittensor_convert_confirmed_cb)(void* user_data, const char* receipt_json);
-void urnet_invoke_bittensor_convert_confirmed(urnet_bittensor_convert_confirmed_cb cb, void* user_data, const char* receipt_json);
-typedef void (*urnet_bittensor_convert_failed_cb)(void* user_data, const char* code, const char* message);
-void urnet_invoke_bittensor_convert_failed(urnet_bittensor_convert_failed_cb cb, void* user_data, const char* code, const char* message);
-typedef void (*urnet_bittensor_convert_sent_cb)(void* user_data, const char* tx_hash);
-void urnet_invoke_bittensor_convert_sent(urnet_bittensor_convert_sent_cb cb, void* user_data, const char* tx_hash);
 typedef void (*urnet_bittensor_convert_estimate_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_bittensor_convert_estimate(urnet_bittensor_convert_estimate_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_bittensor_convert_receipt_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_bittensor_convert_receipt(urnet_bittensor_convert_receipt_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_bittensor_convert_submit_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_bittensor_convert_submit(urnet_bittensor_convert_submit_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json);
 typedef void (*urnet_block_action_stats_cb)(void* user_data);

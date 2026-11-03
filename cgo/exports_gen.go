@@ -366,38 +366,6 @@ func (self *cAdapterAuthWalletChallengeCallback) Result(result *sdk.AuthWalletCh
 	}
 }
 
-type cAdapterBittensorConvertCallback struct {
-	cbConfirmed C.urnet_bittensor_convert_confirmed_cb
-	cbFailed    C.urnet_bittensor_convert_failed_cb
-	cbSent      C.urnet_bittensor_convert_sent_cb
-	userData    unsafe.Pointer
-}
-
-func (self *cAdapterBittensorConvertCallback) Confirmed(receipt *sdk.BittensorConvertReceipt) {
-	defer cgoGuard("urnet_bittensor_convert_confirmed_cb")
-	receipt_ := cJson(receipt, "urnet_bittensor_convert_confirmed_cb")
-	C.urnet_invoke_bittensor_convert_confirmed(self.cbConfirmed, self.userData, receipt_)
-	if receipt_ != nil {
-		cStringFree(receipt_)
-	}
-}
-
-func (self *cAdapterBittensorConvertCallback) Failed(code string, message string) {
-	defer cgoGuard("urnet_bittensor_convert_failed_cb")
-	code_ := cString(string(code))
-	message_ := cString(string(message))
-	C.urnet_invoke_bittensor_convert_failed(self.cbFailed, self.userData, code_, message_)
-	cStringFree(code_)
-	cStringFree(message_)
-}
-
-func (self *cAdapterBittensorConvertCallback) Sent(txHash string) {
-	defer cgoGuard("urnet_bittensor_convert_sent_cb")
-	txHash_ := cString(string(txHash))
-	C.urnet_invoke_bittensor_convert_sent(self.cbSent, self.userData, txHash_)
-	cStringFree(txHash_)
-}
-
 type cAdapterBittensorConvertEstimateCallback struct {
 	cbResult C.urnet_bittensor_convert_estimate_cb
 	userData unsafe.Pointer
@@ -411,6 +379,48 @@ func (self *cAdapterBittensorConvertEstimateCallback) Result(result *sdk.Bittens
 		errParam_ = cString(errParam.Error())
 	}
 	C.urnet_invoke_bittensor_convert_estimate(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorConvertReceiptCallback struct {
+	cbResult C.urnet_bittensor_convert_receipt_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertReceiptCallback) Result(result *sdk.BittensorConvertReceipt, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_receipt_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_receipt_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_receipt(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorConvertSubmitCallback struct {
+	cbResult C.urnet_bittensor_convert_submit_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertSubmitCallback) Result(result *sdk.BittensorConvertSubmission, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_submit_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_submit_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_submit(self.cbResult, self.userData, result_, errParam_)
 	if result_ != nil {
 		cStringFree(result_)
 	}
@@ -6376,7 +6386,7 @@ func urnet_bittensor_convert_estimate_for_burn(settings *C.char, coldkeySs58 *C.
 }
 
 //export urnet_bittensor_convert_submit
-func urnet_bittensor_convert_submit(settings *C.char, mnemonic *C.char, estimate *C.char, callback_confirmed C.urnet_bittensor_convert_confirmed_cb, callback_failed C.urnet_bittensor_convert_failed_cb, callback_sent C.urnet_bittensor_convert_sent_cb, callback_user_data unsafe.Pointer) {
+func urnet_bittensor_convert_submit(settings *C.char, mnemonic *C.char, estimate *C.char, callback_result C.urnet_bittensor_convert_submit_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_bittensor_convert_submit")
 	var settings_ *sdk.SnChainSettings
 	if settings != nil {
@@ -6392,11 +6402,35 @@ func urnet_bittensor_convert_submit(settings *C.char, mnemonic *C.char, estimate
 			return
 		}
 	}
-	var callback_ sdk.BittensorConvertCallback
-	if callback_confirmed != nil {
-		callback_ = &cAdapterBittensorConvertCallback{cbConfirmed: callback_confirmed, cbFailed: callback_failed, cbSent: callback_sent, userData: callback_user_data}
+	var callback_ sdk.BittensorConvertSubmitCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertSubmitCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	sdk.BittensorConvertSubmit(settings_, goString(mnemonic), estimate_, callback_)
+}
+
+//export urnet_bittensor_convert_wait
+func urnet_bittensor_convert_wait(settings *C.char, submission *C.char, callback_result C.urnet_bittensor_convert_receipt_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_wait")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var submission_ *sdk.BittensorConvertSubmission
+	if submission != nil {
+		submission_ = &sdk.BittensorConvertSubmission{}
+		if !goJson(submission, submission_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertReceiptCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertReceiptCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertWait(settings_, submission_, callback_)
 }
 
 //export urnet_bittensor_local_key_address

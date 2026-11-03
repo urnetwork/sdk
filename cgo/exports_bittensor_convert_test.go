@@ -1,6 +1,7 @@
 // Convert through the real c abi: a desktop app draws an estimate from json with the sdk's names,
-// hands that json back to submit, and the amounts format the same. The callbacks cross as c function
-// pointers, which cgo tests cannot make, so `make smoke` is what would run them through a host.
+// hands that json back to submit, keeps the submission's json to wait on, and the amounts format the
+// same. The callbacks cross as c function pointers, which cgo tests cannot make, so `make smoke` is
+// what would run them through a host.
 package main
 
 import (
@@ -76,5 +77,25 @@ func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(estimate, back) {
 		t.Fatalf("round trip\n got %+v\nwant %+v", back, estimate)
+	}
+}
+
+func TestBittensorConvertSubmissionJsonRoundTrip(t *testing.T) {
+	submission := &sdk.BittensorConvertSubmission{
+		TxHash:      "0xcf1e4cafeab3397b",
+		ColdkeySs58: "5EA26Bbav2U1caKuw6aWUZo3QpjqX2LZUGd9F1uhQ2Siodr4",
+		FirstBlock:  9_422_017,
+		LastBlock:   9_422_080,
+	}
+	encoded, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := &sdk.BittensorConvertSubmission{}
+	if err := json.Unmarshal(encoded, back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(submission, back) {
+		t.Fatalf("round trip\n got %+v\nwant %+v", back, submission)
 	}
 }

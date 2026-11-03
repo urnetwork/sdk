@@ -31,6 +31,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +40,7 @@ import (
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk/internal/subtensor"
+	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/ss58"
 )
 
@@ -57,6 +59,7 @@ const (
 	bittensorConvertLimitSanityBps uint64 = 3_000
 
 	bittensorConvertEstimateTimeout = 60 * time.Second
+	bittensorConvertSubmitTimeout   = 2 * time.Minute
 	// reads a typed amount does not repeat
 	bittensorConvertStateTtl = 12 * time.Second
 
@@ -65,8 +68,8 @@ const (
 	bittensorConvertBurnMarginBps uint64 = 1_000
 )
 
-// Stable codes in SnError.Code and in BittensorConvertCallback.Failed, so the
-// apps can localize them. Each comes with a message fit to show as it is.
+// Stable codes in SnError.Code, so the apps can localize them. Each comes with a
+// message fit to show as it is.
 const (
 	// the runtime's call or transaction format is not the one this sdk knows:
 	// nothing was signed, and an app update is what fixes it
@@ -161,30 +164,40 @@ type BittensorConvertEstimateResult struct {
 // BittensorConvertEstimateCallback receives one estimate.
 type BittensorConvertEstimateCallback connect.ApiCallback[*BittensorConvertEstimateResult]
 
-// BittensorConvertReceipt is what a finalized conversion did, in rao.
+// BittensorConvertSubmission says a conversion was sent and where to look for
+// what it did. It holds nothing secret, so an app can keep it and call
+// BittensorConvertWait again after it was away. When Error is set nothing was sent,
+// unless TxHash is set too: then it may have been, and only waiting can tell.
+type BittensorConvertSubmission struct {
+	TxHash      string `json:"tx_hash,omitempty"`
+	ColdkeySs58 string `json:"coldkey_ss58,omitempty"`
+	// the first and last blocks it can land in; after the last it never can
+	FirstBlock int64    `json:"first_block,omitempty"`
+	LastBlock  int64    `json:"last_block,omitempty"`
+	Error      *SnError `json:"error,omitempty"`
+}
+
+// BittensorConvertSubmitCallback receives one submission.
+type BittensorConvertSubmitCallback connect.ApiCallback[*BittensorConvertSubmission]
+
+// BittensorConvertReceipt is what a finalized conversion did, in rao. When Error
+// is set the sale did not happen; a block number says the fee was still charged.
 type BittensorConvertReceipt struct {
-	TxHash         string `json:"tx_hash"`
-	BlockNumber    int64  `json:"block_number"`
-	ExtrinsicIndex int64  `json:"extrinsic_index"`
+	TxHash         string `json:"tx_hash,omitempty"`
+	BlockNumber    int64  `json:"block_number,omitempty"`
+	ExtrinsicIndex int64  `json:"extrinsic_index,omitempty"`
 	// the SN25α sold, with a remainder swept along and the pool's fee
 	AlphaSoldRao int64 `json:"alpha_sold_rao"`
 	// the TAO that reached the key, before a fee paid in TAO
 	TaoReceivedRao int64 `json:"tao_received_rao"`
 	// the network fee, in SN25α or in TAO, whichever paid it
-	FeeAlphaRao int64 `json:"fee_alpha_rao"`
-	FeeTaoRao   int64 `json:"fee_tao_rao"`
+	FeeAlphaRao int64    `json:"fee_alpha_rao"`
+	FeeTaoRao   int64    `json:"fee_tao_rao"`
+	Error       *SnError `json:"error,omitempty"`
 }
 
-// BittensorConvertCallback receives the progress of BittensorConvertSubmit. A
-// run ends in exactly one of Confirmed and Failed. Sent comes at most once,
-// before them: from then on the transaction may land even if the app goes away.
-// Failed's code is a BittensorConvertError* or SnErrorCode* value, and its
-// message is fit to show as it is.
-type BittensorConvertCallback interface {
-	Sent(txHash string)
-	Confirmed(receipt *BittensorConvertReceipt)
-	Failed(code string, message string)
-}
+// BittensorConvertReceiptCallback receives one receipt.
+type BittensorConvertReceiptCallback connect.ApiCallback[*BittensorConvertReceipt]
 
 // BittensorConvertEstimate says what converting the amount of SN25α would do
 // for the key at the address. An amount of 0 gives the limits alone. It holds no
@@ -723,84 +736,123 @@ func (self *bittensorChainEngine) convertEstimateForBurn(ctx context.Context, co
 
 // convertSubmit checks the estimate still holds, then signs and sends. A refusal
 // here signs nothing.
-func (self *bittensorChainEngine) convertSubmit(ctx context.Context, signer subtensor.Signer, estimate *BittensorConvertEstimateResult, callback BittensorConvertCallback) {
+func (self *bittensorChainEngine) convertSubmit(ctx context.Context, signer subtensor.Signer, estimate *BittensorConvertEstimateResult) *BittensorConvertSubmission {
+	refuse := func(failure *SnError) *BittensorConvertSubmission {
+		return &BittensorConvertSubmission{Error: failure}
+	}
 	if estimate == nil || !estimate.CanConvert || estimate.AmountRao <= 0 || estimate.LimitPriceRao <= 0 || estimate.MinTaoRao <= 0 {
-		callback.Failed(BittensorConvertErrorPriceMoved, "Estimate the amount again first.")
-		return
+		return refuse(newSnError(BittensorConvertErrorPriceMoved, "Estimate the amount again first."))
 	}
 	coldkey := signer.PublicKey()
 	estimated, err := snColdkeyBytes(estimate.ColdkeySs58)
 	if err != nil || estimated != coldkey {
-		callback.Failed(BittensorConvertErrorKeyMismatch, "This recovery phrase doesn't open the key this was estimated for.")
-		return
+		return refuse(newSnError(BittensorConvertErrorKeyMismatch, "This recovery phrase doesn't open the key this was estimated for."))
 	}
 	amount, limit, minTao := uint64(estimate.AmountRao), uint64(estimate.LimitPriceRao), uint64(estimate.MinTaoRao)
 	fresh := self.convertEstimateWith(ctx, coldkey, estimate.AmountRao, false)
 	if fresh.Error != nil {
-		callback.Failed(fresh.Error.Code, fresh.Error.Message)
-		return
+		return refuse(fresh.Error)
 	}
+	priceMoved := newSnError(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
 	price := uint64(fresh.PriceRao)
 	// the chain would refuse it and keep the fee
 	if price < limit {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	// no estimate of this sdk asks for a limit this far under the price
 	floor, ok := bittensorMulDiv(price, bittensorBasisPoints-bittensorConvertLimitSanityBps, bittensorBasisPoints)
 	if !ok || limit < floor {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	simulation, err := self.chain.SimulateSell(ctx, self.pins.netuid, amount)
 	if err != nil {
-		failure := bittensorConvertErrorFromErr(err)
-		callback.Failed(failure.Code, failure.Message)
-		return
+		return refuse(bittensorConvertErrorFromErr(err))
 	}
 	if simulation.TaoRao < minTao {
-		callback.Failed(BittensorConvertErrorPriceMoved, "The price has moved since this estimate. Check the new estimate and try again.")
-		return
+		return refuse(priceMoved)
 	}
 	call, err := subtensor.NewRemoveStakeLimit(self.pins.escrowHotkey, self.pins.netuid, amount, limit)
 	if err != nil {
-		failure := bittensorConvertErrorFromErr(err)
-		callback.Failed(failure.Code, failure.Message)
-		return
+		return refuse(bittensorConvertErrorFromErr(err))
 	}
-	txHash := ""
+	signed, err := self.signCall(ctx, signer, call)
+	if err != nil {
+		return refuse(bittensorConvertErrorFromErr(err))
+	}
+	first, last := signed.landingBlocks()
+	submission := &BittensorConvertSubmission{
+		TxHash:      "0x" + hex.EncodeToString(signed.signed.Hash[:]),
+		ColdkeySs58: estimate.ColdkeySs58,
+		FirstBlock:  int64(first),
+		LastBlock:   int64(last),
+	}
 	// whatever comes of it, what a sheet draws next reads the chain again
 	defer forgetConvertState()
-	outcome, err := self.submitCall(ctx, signer, call, func(hash string) {
-		txHash = hash
-		callback.Sent(hash)
-	})
-	if err != nil {
-		code, message := bittensorConvertSendFailure(err, txHash != "")
-		callback.Failed(code, message)
-		return
+	if err := self.chain.Submit(ctx, signed.signed); err != nil {
+		var refusal *subtensor.SubmitRefusal
+		if errors.As(err, &refusal) {
+			code, message := bittensorConvertPoolRefusal(refusal)
+			return refuse(newSnError(code, message))
+		}
+		// the node may have taken it before the answer was lost
+		code, message := bittensorConvertWaitFailure(err)
+		submission.Error = newSnError(code, message)
 	}
-	if !outcome.Success {
-		code, message := bittensorConvertDispatchFailure(outcome.Failure)
-		callback.Failed(code, message)
-		return
-	}
-	callback.Confirmed(bittensorConvertReceiptFrom(outcome, txHash, coldkey, self.pins.escrowHotkey))
+	return submission
 }
 
-// bittensorConvertSendFailure says what a failed send or wait means.
-func bittensorConvertSendFailure(err error, sent bool) (string, string) {
-	var refusal *subtensor.SubmitRefusal
-	switch {
-	case errors.Is(err, subtensor.ErrExpired):
-		return BittensorConvertErrorExpired, "This conversion didn't land in time and now can't. Nothing was charged. You can try again."
-	case errors.As(err, &refusal):
-		return bittensorConvertPoolRefusal(refusal)
-	case sent:
-		return BittensorConvertErrorOutcomeUnknown, "This conversion was sent, and its result couldn't be read. Check your balances in a few minutes before trying again."
+// convertWait waits for a submission's finalized outcome. An endpoint that fails
+// on the way is tried again until the context ends.
+func (self *bittensorChainEngine) convertWait(ctx context.Context, submission *BittensorConvertSubmission) *BittensorConvertReceipt {
+	fail := func(code string, message string) *BittensorConvertReceipt {
+		return &BittensorConvertReceipt{Error: newSnError(code, message)}
 	}
-	failure := bittensorConvertErrorFromErr(err)
-	return failure.Code, failure.Message
+	if submission == nil || submission.TxHash == "" {
+		return fail(BittensorConvertErrorRefused, "Nothing was sent to wait for.")
+	}
+	hash, hashErr := evm.ParseHexBytes(submission.TxHash)
+	coldkey, coldkeyErr := snColdkeyBytes(submission.ColdkeySs58)
+	first, last := uint64(max(submission.FirstBlock, 0)), uint64(max(submission.LastBlock, 0))
+	if hashErr != nil || len(hash) != 32 || coldkeyErr != nil || first == 0 || last < first || subtensor.EraPeriodBlocks < last-first {
+		return fail(BittensorConvertErrorRefused, "Nothing was sent to wait for.")
+	}
+	defer forgetConvertState()
+	var meta *subtensor.Metadata
+	for meta == nil {
+		view, _, err := self.quoteView(ctx)
+		switch {
+		case err == nil:
+			meta = view.meta
+		case errors.Is(err, errBittensorChainWrongChain):
+			failure := bittensorConvertErrorFromErr(err)
+			return fail(failure.Code, failure.Message)
+		default:
+			if err := self.sleep(ctx, self.poll); err != nil {
+				code, message := bittensorConvertWaitFailure(err)
+				return fail(code, message)
+			}
+		}
+	}
+	outcome, err := self.waitCall(ctx, meta, [32]byte(hash), first, last)
+	if err != nil {
+		code, message := bittensorConvertWaitFailure(err)
+		return fail(code, message)
+	}
+	receipt := bittensorConvertReceiptFrom(outcome, submission.TxHash, coldkey, self.pins.escrowHotkey)
+	if !outcome.Success {
+		code, message := bittensorConvertDispatchFailure(outcome.Failure)
+		receipt.Error = newSnError(code, message)
+	}
+	return receipt
+}
+
+// bittensorConvertWaitFailure says what it means when a sent transaction's result
+// cannot be told.
+func bittensorConvertWaitFailure(err error) (string, string) {
+	if errors.Is(err, subtensor.ErrExpired) {
+		return BittensorConvertErrorExpired, "This conversion didn't land in time and now can't. Nothing was charged. You can try again."
+	}
+	return BittensorConvertErrorOutcomeUnknown, "This conversion may have been sent, and its result couldn't be read. Check your balances in a few minutes before trying again."
 }
 
 // bittensorConvertPoolRefusal reads the chain's refusal of a transaction it did

@@ -310,9 +310,20 @@ func (self *bittensorChainEngine) sendCall(ctx context.Context, call *bittensorS
 	if sent != nil {
 		sent("0x" + hex.EncodeToString(call.signed.Hash[:]))
 	}
-	return self.chain.WaitOutcome(ctx, call.view.meta, call.signed.Hash, subtensor.WaitOptions{
-		FirstBlock: call.view.head.Number + 1,
-		LastBlock:  call.view.head.Number + subtensor.EraPeriodBlocks,
+	first, last := call.landingBlocks()
+	return self.waitCall(ctx, call.view.meta, call.signed.Hash, first, last)
+}
+
+// landingBlocks are the first and last blocks the transaction can land in.
+func (self *bittensorSignedCall) landingBlocks() (uint64, uint64) {
+	return self.view.head.Number + 1, self.view.head.Number + subtensor.EraPeriodBlocks
+}
+
+// waitCall waits for a sent transaction's finalized outcome.
+func (self *bittensorChainEngine) waitCall(ctx context.Context, meta *subtensor.Metadata, hash [32]byte, first uint64, last uint64) (*subtensor.Outcome, error) {
+	return self.chain.WaitOutcome(ctx, meta, hash, subtensor.WaitOptions{
+		FirstBlock: first,
+		LastBlock:  last,
 		Poll:       self.poll,
 		Sleep:      self.sleep,
 	})

@@ -602,12 +602,12 @@ typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, c
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthWalletChallengeCallback */
 typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
-/* BittensorConvertCallback */
-typedef void (*urnet_bittensor_convert_confirmed_cb)(void* user_data, const char* receipt_json);
-typedef void (*urnet_bittensor_convert_failed_cb)(void* user_data, const char* code, const char* message);
-typedef void (*urnet_bittensor_convert_sent_cb)(void* user_data, const char* tx_hash);
 /* BittensorConvertEstimateCallback */
 typedef void (*urnet_bittensor_convert_estimate_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorConvertReceiptCallback */
+typedef void (*urnet_bittensor_convert_receipt_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorConvertSubmitCallback */
+typedef void (*urnet_bittensor_convert_submit_cb)(void* user_data, const char* result_json, const char* err_param);
 /* BlockActionOverridesChangeListener */
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 /* BlockActionStatsListener */
@@ -2309,7 +2309,8 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 double urnet_alpha_from_rao(int64_t rao);
 void urnet_bittensor_convert_estimate(const char* settings_json, const char* coldkey_ss58, int64_t amount_rao, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
 void urnet_bittensor_convert_estimate_for_burn(const char* settings_json, const char* coldkey_ss58, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
-void urnet_bittensor_convert_submit(const char* settings_json, const char* mnemonic, const char* estimate_json, urnet_bittensor_convert_confirmed_cb callback_confirmed, urnet_bittensor_convert_failed_cb callback_failed, urnet_bittensor_convert_sent_cb callback_sent, void* callback_user_data);
+void urnet_bittensor_convert_submit(const char* settings_json, const char* mnemonic, const char* estimate_json, urnet_bittensor_convert_submit_cb callback_result, void* callback_user_data);
+void urnet_bittensor_convert_wait(const char* settings_json, const char* submission_json, urnet_bittensor_convert_receipt_cb callback_result, void* callback_user_data);
 char* urnet_bittensor_local_key_address(const char* mnemonic, char** out_error);
 char* urnet_bittensor_local_key_generate(char** out_error);
 char* urnet_bittensor_local_key_sign(const char* mnemonic, const char* message, char** out_error);
@@ -2846,13 +2847,22 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* BittensorConvertReceipt (json):
- *   tx_hash: string
- *   block_number: number
- *   extrinsic_index: number
+ *   tx_hash?: string
+ *   block_number?: number
+ *   extrinsic_index?: number
  *   alpha_sold_rao: number
  *   tao_received_rao: number
  *   fee_alpha_rao: number
  *   fee_tao_rao: number
+ *   error?: SnError | null
+ */
+
+/* BittensorConvertSubmission (json):
+ *   tx_hash?: string
+ *   coldkey_ss58?: string
+ *   first_block?: number
+ *   last_block?: number
+ *   error?: SnError | null
  */
 
 /* BittensorLocalKey (json):

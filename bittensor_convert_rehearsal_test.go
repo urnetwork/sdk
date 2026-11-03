@@ -139,10 +139,14 @@ func TestConvertTestnetRehearsal(t *testing.T) {
 		if !estimate.CanConvert {
 			t.Fatalf("the sdk refuses this amount: %+v", estimate.Error)
 		}
-		callback := &convertTestCallback{}
-		engine.convertSubmit(ctx, signer, estimate, callback)
-		encoded, _ := json.MarshalIndent(callback.confirmed, "", "  ")
-		fmt.Printf("sent %v\nconfirmed %s\nfailed %v\n", callback.sent, encoded, callback.failed)
+		submission := engine.convertSubmit(ctx, signer, estimate)
+		encoded, _ := json.MarshalIndent(submission, "", "  ")
+		fmt.Println("submission", string(encoded))
+		if submission.TxHash != "" {
+			receipt := engine.convertWait(ctx, submission)
+			encoded, _ := json.MarshalIndent(receipt, "", "  ")
+			fmt.Println("receipt", string(encoded))
+		}
 	case "raw":
 		// the chain's own refusals: the sdk would not sign these, and they keep the fee
 		limit := convertRehearsalEnv(t, "BT_CONVERT_TESTNET_LIMIT_RAO")

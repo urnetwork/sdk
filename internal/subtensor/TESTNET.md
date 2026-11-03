@@ -79,7 +79,7 @@ BT_CONVERT_TESTNET_ACTION=convert BT_CONVERT_TESTNET_AMOUNT_RAO=MIN go test -cou
 
 Expected:
 
-- `confirmed` shows `tao_received_rao` at least `min_tao_rao`, and `fee_alpha_rao` above 0.
+- `receipt` shows no `error`, `tao_received_rao` at least `min_tao_rao`, and `fee_alpha_rao` above 0.
 - The `after` line shows `free` above 0, `nonce 1`, `providers 1`, `sufficients 1`.
 - The stake fell by about the amount plus `fee_alpha_rao`.
 

@@ -151,16 +151,21 @@ func TestConvertSubmitHoldsNoPhraseInItsErrors(t *testing.T) {
 		strings.ToUpper(convertTestDevPhrase),
 		" " + convertTestDevPhrase,
 	} {
-		result := make(chan [2]string, 1)
-		BittensorConvertSubmit(DefaultSnChainSettings(), phrase, estimate, convertFailedCallback(result))
-		failure := <-result
-		if failure[0] != BittensorLocalKeyErrorInvalidPhrase {
-			t.Fatalf("%q: code %s", phrase, failure[0])
+		result := make(chan *BittensorConvertSubmission, 1)
+		BittensorConvertSubmit(DefaultSnChainSettings(), phrase, estimate, convertSubmitCallbackFunc(func(submission *BittensorConvertSubmission) {
+			result <- submission
+		}))
+		submission := <-result
+		if submission.Error == nil || submission.Error.Code != BittensorLocalKeyErrorInvalidPhrase || submission.TxHash != "" {
+			t.Fatalf("%q: %+v", phrase, submission)
 		}
-		for _, text := range failure {
-			if strings.Contains(strings.ToLower(text), word) || strings.Contains(strings.ToLower(text), "bottom") || strings.Contains(strings.ToLower(text), "notaword") {
-				t.Fatalf("%q reached %q", phrase, text)
-			}
+		encoded, err := json.Marshal(submission)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lower := strings.ToLower(string(encoded))
+		if strings.Contains(lower, word) || strings.Contains(lower, "bottom") || strings.Contains(lower, "notaword") {
+			t.Fatalf("%q reached %s", phrase, encoded)
 		}
 	}
 	// the right phrase for the wrong key refuses without saying anything of either
@@ -168,23 +173,16 @@ func TestConvertSubmitHoldsNoPhraseInItsErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callback := &convertTestCallback{}
-	convertEngine(chain).convertSubmit(context.Background(), signer, estimate, callback)
-	if len(callback.failed) != 1 || callback.failed[0][0] != BittensorConvertErrorKeyMismatch || strings.Contains(callback.failed[0][1], "bottom") {
-		t.Fatalf("%v", callback.failed)
+	submission := convertEngine(chain).convertSubmit(context.Background(), signer, estimate)
+	if submission.Error == nil || submission.Error.Code != BittensorConvertErrorKeyMismatch || strings.Contains(submission.Error.Message, "bottom") {
+		t.Fatalf("%+v", submission)
 	}
 }
 
-type convertFailedCallback chan [2]string
+type convertSubmitCallbackFunc func(submission *BittensorConvertSubmission)
 
-func (self convertFailedCallback) Sent(txHash string) {}
-
-func (self convertFailedCallback) Confirmed(receipt *BittensorConvertReceipt) {
-	self <- [2]string{"confirmed", ""}
-}
-
-func (self convertFailedCallback) Failed(code string, message string) {
-	self <- [2]string{code, message}
+func (self convertSubmitCallbackFunc) Result(submission *BittensorConvertSubmission, err error) {
+	self(submission)
 }
 
 // The real path end to end with the real key on the fake chain: what is sent
@@ -206,7 +204,7 @@ func TestConvertSubmitWithTheRealKey(t *testing.T) {
 	birth := chain.head
 	callback := &convertTestCallback{}
 	recording := &convertRecordingSigner{Signer: signer}
-	engine.convertSubmit(ctx, recording, estimate, callback)
+	callback.run(ctx, engine, recording, estimate)
 	if len(callback.sent) != 1 || len(chain.submitted) != 1 {
 		t.Fatalf("sent %v, failed %v", callback.sent, callback.failed)
 	}
