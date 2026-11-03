@@ -1476,6 +1476,43 @@ func (self *deviceLocalProvider) restartExtender(role *deviceLocalExtender) {
 	}
 }
 
+// Replaces a role whose key the operator refused as another network's (C2c)
+// with one on a key of this network's own, when the space makes one
+// (NetworkSpace.renewExtenderKeyForNetwork); otherwise the refusal stands in the
+// status and the role goes on as it was. The new role starts as a new process
+// does: what the old one's activation held is another identity's, and the new
+// key has no record to wait on. A role that is no longer the one running was
+// stopped or replaced since it asked, and a setting that turned the role off
+// meanwhile stands.
+func (self *deviceLocalProvider) renewExtenderKey(role *deviceLocalExtender) {
+	self.extenderLock.Lock()
+	defer self.extenderLock.Unlock()
+
+	current, closed := func() (*deviceLocalExtender, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.extender, self.closed
+	}()
+	if closed || current != role || self.networkSpace == nil {
+		return
+	}
+	networkId := extenderKeyNetworkIdOfJwt(self.byJwt())
+	if self.networkSpace.renewExtenderKeyForNetwork(networkId, role.identityPublicKey(), role.now()) == nil {
+		self.networkSpace.logger().Infof(
+			"[extender]provide the operator refused this extender's key as another network's, and the space makes no other key for it now\n")
+		return
+	}
+	self.networkSpace.logger().Infof(
+		"[extender]provide the operator refused this extender's key as another network's: the role starts again on a key of this network's own\n")
+	self.setExtenderEnabledWithLock(false)
+	self.extenderActivatorState = nil
+	self.setExtenderEnabledWithLock(true)
+	// the watch of the status holds the old role's channel (F3)
+	if self.extenderRoleChanged != nil {
+		self.extenderRoleChanged()
+	}
+}
+
 func (self *deviceLocalProvider) setExtenderEnabledWithLock(enabled bool) {
 	current, closed := func() (*deviceLocalExtender, bool) {
 		self.stateLock.Lock()
@@ -1550,6 +1587,10 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	if networkSpace == nil {
 		return nil, errors.New("the device has no network space")
 	}
+	// the key of the network this device activates for, which is a key the
+	// space made for it when the operator refused `.extender_key` as another
+	// network's (C2c)
+	networkSpace.setExtenderKeyNetwork(extenderKeyNetworkIdOfJwt(self.byJwt()))
 	identityKeySeed := networkSpace.extenderIdentityKeySeed()
 	if len(identityKeySeed) == 0 {
 		return nil, errors.New("the network space has no extender identity")
@@ -1586,6 +1627,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ClientStrategySettings: self.clientStrategySettings,
 		DialContext:            connectSettings.DialContext,
 		Restart:                self.restartExtender,
+		RenewKey:               self.renewExtenderKey,
 		RestartJitter:          self.extenderRestartJitter,
 		ActivatorState:         self.extenderActivatorState,
 	}

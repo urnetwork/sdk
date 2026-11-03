@@ -423,6 +423,11 @@ type deviceLocalExtenderSettings struct {
 	// whose server ended, or whose tcp carrier stayed lost, comes back (G2). The
 	// provider fills it. Nil leaves the role reporting what happened.
 	Restart func(role *deviceLocalExtender)
+	// Asks the provider to replace this role with one on a key of the network's
+	// own, which is what a role whose key the operator refused as another
+	// network's asks for (C2c). The provider fills it. Nil leaves the refusal in
+	// the status.
+	RenewKey func(role *deviceLocalExtender)
 	// The spread of the wait before this role asks to be replaced, doubling
 	// with each replacement that did not last (deviceLocalProvider.restartExtender).
 	// Zero takes extenderProvideRestartMinJitter.
