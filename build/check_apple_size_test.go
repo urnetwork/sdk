@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ type appleSizeFixture struct {
 	flag      string
 	bytes     int64
 	bundle    bool
+	contents  string
 	metadata  string
 	goFails   bool
 	overrides map[string]string
@@ -41,6 +43,10 @@ func runAppleSizeFixture(t *testing.T, fixture appleSizeFixture) (string, error)
 	}
 	file, err := os.Create(executable)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(fixture.contents); err != nil {
+		_ = file.Close()
 		t.Fatal(err)
 	}
 	if err := file.Truncate(fixture.bytes); err != nil {
@@ -171,6 +177,60 @@ func TestAppleSizeRetainsFIPSMetadataGuard(t *testing.T) {
 			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 ||
 				!strings.Contains(output, test.reason) || strings.Contains(output, "fips140 build default=off") {
 				t.Fatalf("metadata guard did not fail safely: err=%v\n%s", err, output)
+			}
+		})
+	}
+}
+
+// The gate reads for this method by name, so a toolchain that renames it would turn
+// the gate off in silence.
+func TestAppleSizeReadsForAMethodTheToolchainHas(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile(filepath.Join(runtime.GOROOT(), "src", "reflect", "type.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "func (t *rtype) Methods() iter.Seq[Method] {") {
+		t.Fatal("reflect no longer has (*rtype).Methods: check_apple_size.sh needs another exported method that nothing calls")
+	}
+}
+
+// A binary that keeps every exported method names reflect.(*rtype).Methods in its
+// function table, however it was stripped. It fails before the ceiling does, with
+// where to look, since this is what the ceiling would otherwise report as growth.
+func TestAppleSizeRejectsABinaryThatLostMethodPruning(t *testing.T) {
+	t.Parallel()
+	const functionName = "runtime.main\x00reflect.(*rtype).Methods\x00reflect.(*rtype).Methods.func1\x00"
+	for _, test := range []struct {
+		name   string
+		flag   string
+		bundle bool
+	}{
+		{name: "sdk", flag: "--sdk"},
+		{name: "extension_sdk", flag: "--extension-sdk"},
+		{name: "extension", flag: "--extension", bundle: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := runAppleSizeFixture(t, appleSizeFixture{
+				flag: test.flag, bytes: 1 << 20, bundle: test.bundle, contents: functionName, metadata: syntheticIOSBuildMetadata,
+			})
+			var exitError *exec.ExitError
+			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 ||
+				!strings.Contains(output, "keeps every exported method") ||
+				!strings.Contains(output, "<ReflectMethod>") {
+				t.Fatalf("a binary without method pruning was not refused: err=%v\n%s", err, output)
+			}
+			if strings.Contains(output, "fips140 build default=off") {
+				t.Fatalf("the extension's later checks ran after the refusal:\n%s", output)
+			}
+		})
+		t.Run(test.name+"_pruned", func(t *testing.T) {
+			// a nearby name isn't the method
+			output, err := runAppleSizeFixture(t, appleSizeFixture{
+				flag: test.flag, bytes: 1 << 20, bundle: test.bundle, contents: "runtime.main\x00reflect.(*rtype).Method\x00reflect.Value.Method\x00", metadata: syntheticIOSBuildMetadata,
+			})
+			if err != nil || !strings.Contains(output, "linker method pruning=on") {
+				t.Fatalf("a pruned binary was refused: err=%v\n%s", err, output)
 			}
 		})
 	}

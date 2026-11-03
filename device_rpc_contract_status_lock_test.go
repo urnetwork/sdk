@@ -61,7 +61,7 @@ func newPickerStatusRpc(t *testing.T) (*DeviceRemote, *pickerBlockedStatusRpc, f
 	}
 	go server.ServeConn(serverConn)
 	service := &rpcClientWithTimeout{ctx: ctx, log: connect.NewNoopLogger(), timeout: time.Minute,
-		closeClient: clientConn.Close, client: rpc.NewClient(clientConn)}
+		closeClient: clientConn.Close, client: newDeviceRpcClient(clientConn)}
 	settings := defaultDeviceRpcSettings()
 	settings.RequireRemoteApi = true
 	remote := &DeviceRemote{ctx: ctx, settings: settings, service: service, remoteConnected: true,

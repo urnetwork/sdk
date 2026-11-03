@@ -12,7 +12,6 @@ import (
 	"errors"
 	"net"
 	"net/netip"
-	"net/rpc"
 	"reflect"
 	"slices"
 	"strconv"
@@ -384,7 +383,7 @@ func TestHostedDeviceRefusesDnsResolverSettings(t *testing.T) {
 	rpcSettings.DisableLogging = true
 	rpcSettings.DisableHostedIncompatible = true
 	server := newDeviceLocalRpc(ctx, serverConn, serverReverseConn, rpcDevice, rpcSettings)
-	client := rpc.NewClient(clientConn)
+	client := newDeviceRpcClient(clientConn)
 	t.Cleanup(func() {
 		client.Close()
 		clientReverseConn.Close()

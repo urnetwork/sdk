@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/rpc"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,14 +16,14 @@ import (
 )
 
 // Serves production RPC over owned in-memory streams and joins its workers.
-func testingPreferenceRpc(t *testing.T, device *DeviceLocal) (*DeviceLocalRpc, *rpc.Client) {
+func testingPreferenceRpc(t *testing.T, device *DeviceLocal) (*DeviceLocalRpc, *deviceRpcClient) {
 	t.Helper()
 	serverConn, clientConn := net.Pipe()
 	serverReverseConn, clientReverseConn := net.Pipe()
 	settings := defaultDeviceRpcSettings()
 	settings.DisableLogging = true
 	server := newDeviceLocalRpc(context.Background(), serverConn, serverReverseConn, device, settings)
-	client := rpc.NewClient(clientConn)
+	client := newDeviceRpcClient(clientConn)
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = clientReverseConn.Close()
@@ -38,9 +37,9 @@ func testingPreferenceRpc(t *testing.T, device *DeviceLocal) (*DeviceLocalRpc, *
 }
 
 // The timeout diagnoses a stuck owner; synchronization comes from RPC completion.
-func testingPreferenceRpcCall(t *testing.T, client *rpc.Client, method string, request, response any) error {
+func testingPreferenceRpcCall(t *testing.T, client *deviceRpcClient, method string, request, response any) error {
 	t.Helper()
-	call := client.Go(method, request, response, make(chan *rpc.Call, 1))
+	call := client.Go(method, request, response, make(chan *deviceRpcCall, 1))
 	select {
 	case completed := <-call.Done:
 		return completed.Error
@@ -83,7 +82,7 @@ func TestDeviceLocalPreferenceRpcFirstSyncWaitsForDurableDestination(t *testing.
 		return nil
 	}
 	response := &DeviceRemoteSyncResponse{}
-	call := client.Go("DeviceLocalRpc.Sync", request, response, make(chan *rpc.Call, 1))
+	call := client.Go("DeviceLocalRpc.Sync", request, response, make(chan *deviceRpcCall, 1))
 	select {
 	case <-entered:
 	case completed := <-call.Done:
@@ -144,7 +143,7 @@ func TestDeviceLocalPreferenceRpcSyncReturnsSaveFailure(t *testing.T) {
 	request.State.Location.Set(newDeviceRemoteConnectLocation(testingSpecificPreferenceLocation()))
 	response := &DeviceRemoteSyncResponse{}
 	err := testingPreferenceRpcCall(t, client, "DeviceLocalRpc.Sync", request, response)
-	var rpcErr rpc.ServerError
+	var rpcErr deviceRpcServerError
 	if !errors.As(err, &rpcErr) || err.Error() != "save connect-location" {
 		t.Fatal("actual Sync did not return its sanitized persistence failure over RPC")
 	}

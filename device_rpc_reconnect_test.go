@@ -187,7 +187,7 @@ func TestRpcClientCallParentCancellationClosesTransport(t *testing.T) {
 		log:         connect.NewNoopLogger(),
 		timeout:     time.Hour,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	callResult := make(chan error, 1)
 	go func() {

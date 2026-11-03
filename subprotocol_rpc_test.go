@@ -5,7 +5,6 @@ package sdk
 import (
 	"context"
 	"net"
-	"net/rpc"
 	"slices"
 	"strings"
 	"testing"
@@ -22,10 +21,7 @@ func subprotocolTestRemote(t *testing.T, pair *subprotocolTestPair) (*DeviceRemo
 	device := &DeviceLocal{ctx: ctx, clientId: pair.a.ClientId(), instanceId: connect.NewId(), settings: DefaultDeviceLocalSettings(), subprotocols: registry}
 	local := &DeviceLocalRpc{ctx: ctx, cancel: cancel, deviceLocal: device}
 	a, b := net.Pipe()
-	server := rpc.NewServer()
-	if err := server.RegisterName("DeviceLocalRpc", local); err != nil {
-		t.Fatal(err)
-	}
+	server := newDeviceRpcServer("DeviceLocalRpc", local, deviceLocalRpcMethods())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -33,7 +29,7 @@ func subprotocolTestRemote(t *testing.T, pair *subprotocolTestPair) (*DeviceRemo
 		for server.ServeRequest(codec) == nil {
 		}
 	}()
-	remote := &DeviceRemote{ctx: ctx, clientId: device.clientId, instanceId: device.instanceId, service: &rpcClient{ctx: ctx, client: rpc.NewClient(a), timeout: time.Second, closeClient: a.Close}}
+	remote := &DeviceRemote{ctx: ctx, clientId: device.clientId, instanceId: device.instanceId, service: &rpcClient{ctx: ctx, client: newDeviceRpcClient(a), timeout: time.Second, closeClient: a.Close}}
 	t.Cleanup(func() { cancel(); local.subprotocols.close(); a.Close(); b.Close(); <-done })
 	return remote, local
 }

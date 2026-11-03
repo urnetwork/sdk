@@ -242,8 +242,8 @@ func TestDeviceRpcH1PlusRealForwardReverseRpc(t *testing.T) {
 	served := make(chan struct{}, 2)
 	go func() { forwardServer.ServeConn(serverMux.conns[0]); served <- struct{}{} }()
 	go func() { reverseServer.ServeConn(clientMux.conns[1]); served <- struct{}{} }()
-	forwardClient := rpc.NewClient(clientMux.conns[0])
-	reverseClient := rpc.NewClient(serverMux.conns[1])
+	forwardClient := newDeviceRpcClient(clientMux.conns[0])
+	reverseClient := newDeviceRpcClient(serverMux.conns[1])
 	defer func() {
 		forwardClient.Close()
 		reverseClient.Close()
@@ -260,7 +260,7 @@ func TestDeviceRpcH1PlusRealForwardReverseRpc(t *testing.T) {
 	for _, size := range []int{96 * 1024, int(defaultDeviceRpcSettings().MuxMaxFrameBytes) - 4096} {
 		payload := h1PlusRpcPayload(size)
 		errs := make(chan error, 2)
-		for _, c := range []*rpc.Client{forwardClient, reverseClient} {
+		for _, c := range []*deviceRpcClient{forwardClient, reverseClient} {
 			go func() {
 				var reply []byte
 				if err := c.Call("Echo.Echo", H1PlusRpcEchoArgs{payload}, &reply); err != nil {

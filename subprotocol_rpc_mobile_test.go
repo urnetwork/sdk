@@ -5,13 +5,12 @@ package sdk
 import (
 	"context"
 	"net"
-	"net/rpc"
 	"strings"
 	"testing"
 )
 
 // The binding tag hides the Go/JavaScript client types, not the companion RPC
-// service embedded in a mobile DeviceLocal. Exercise the real net/rpc lookup so
+// service embedded in a mobile DeviceLocal. Exercise the real server lookup so
 // an unexported named wire type or an excluded server method fails here.
 func TestMobileSubprotocolRpcServerRemainsRegistered(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
@@ -24,17 +23,14 @@ func TestMobileSubprotocolRpcServerRemainsRegistered(t *testing.T) {
 			settings: settings,
 		},
 	}
-	server := rpc.NewServer()
-	if err := server.RegisterName("DeviceLocalRpc", local); err != nil {
-		t.Fatal(err)
-	}
+	server := newDeviceRpcServer("DeviceLocalRpc", local, deviceLocalRpcMethods())
 	clientConnection, serverConnection := net.Pipe()
 	done := make(chan struct{})
 	go func() {
 		server.ServeConn(serverConnection)
 		close(done)
 	}()
-	client := rpc.NewClient(clientConnection)
+	client := newDeviceRpcClient(clientConnection)
 	response := new(subprotocolRpcResponse)
 	if err := client.Call("DeviceLocalRpc.Subprotocol", new(subprotocolRpcRequest), response); err != nil {
 		t.Fatalf("mobile companion subprotocol method is unavailable: %v", err)

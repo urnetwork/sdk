@@ -55,7 +55,7 @@ func testingCheckedLocationService(t *testing.T, ctx context.Context, server *te
 		log:         connect.DefaultLogger(),
 		timeout:     10 * time.Second,
 		closeClient: clientConn.Close,
-		client:      rpc.NewClient(clientConn),
+		client:      newDeviceRpcClient(clientConn),
 	}
 	done := make(chan struct{})
 	go func() {
