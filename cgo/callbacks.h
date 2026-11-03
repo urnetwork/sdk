@@ -45,6 +45,12 @@ typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_js
 void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_bittensor_convert_estimate_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_bittensor_convert_estimate(urnet_bittensor_convert_estimate_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_bittensor_convert_receipt_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_bittensor_convert_receipt(urnet_bittensor_convert_receipt_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_bittensor_convert_submit_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_bittensor_convert_submit(urnet_bittensor_convert_submit_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_bittensor_local_key_flow_cb)(void* user_data);
 void urnet_invoke_bittensor_local_key_flow(urnet_bittensor_local_key_flow_cb cb, void* user_data);
 typedef bool (*urnet_bittensor_local_key_store_add_key_cb)(void* user_data, const char* network_id, const char* mnemonic, const char* address);
@@ -349,6 +355,14 @@ typedef void (*urnet_sn_claim_failed_cb)(void* user_data, int64_t epoch, const c
 void urnet_invoke_sn_claim_failed(urnet_sn_claim_failed_cb cb, void* user_data, int64_t epoch, const char* message);
 typedef void (*urnet_sn_claim_sent_cb)(void* user_data, int64_t epoch, const char* tx_hash);
 void urnet_invoke_sn_claim_sent(urnet_sn_claim_sent_cb cb, void* user_data, int64_t epoch, const char* tx_hash);
+typedef void (*urnet_sn_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_now(urnet_sn_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_relay_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_relay(urnet_sn_claim_relay_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_relay_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_relay_claim_now(urnet_sn_claim_relay_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_status_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_status(urnet_sn_claim_status_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_claims_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_connect_wallet_cb)(void* user_data, const char* result_json, const char* err_param);

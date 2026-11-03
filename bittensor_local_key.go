@@ -4,8 +4,9 @@ package sdk
 
 // A Bittensor coldkey made on this device, for a casual miner with no wallet and no TAO (apple
 // BTEASY.md). The app holds the phrase and asks here for what it needs. URnetwork is not a wallet:
-// the one thing this signs is a text message, for URnetwork's own payout flow, and the server only
-// ever sees the address and the signature.
+// what this signs is a text message, for URnetwork's own payout flow, and the server only ever sees
+// the address and the signature. The one transaction a phrase signs is a convert, which the sdk builds
+// itself (bittensor_convert.go, bittensor_chain_signer.go) and sends straight to the chain.
 //
 // The phrase has to open the same account in btcli, Talisman and Nova, so the format is theirs: a
 // 12 word BIP39 phrase, the substrate-bip39 derivation (the mini secret comes from the phrase's

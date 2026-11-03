@@ -366,6 +366,69 @@ func (self *cAdapterAuthWalletChallengeCallback) Result(result *sdk.AuthWalletCh
 	}
 }
 
+type cAdapterBittensorConvertEstimateCallback struct {
+	cbResult C.urnet_bittensor_convert_estimate_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertEstimateCallback) Result(result *sdk.BittensorConvertEstimateResult, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_estimate_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_estimate_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_estimate(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorConvertReceiptCallback struct {
+	cbResult C.urnet_bittensor_convert_receipt_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertReceiptCallback) Result(result *sdk.BittensorConvertReceipt, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_receipt_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_receipt_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_receipt(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterBittensorConvertSubmitCallback struct {
+	cbResult C.urnet_bittensor_convert_submit_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertSubmitCallback) Result(result *sdk.BittensorConvertSubmission, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_submit_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_submit_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_submit(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterBittensorLocalKeyFlowListener struct {
 	cbBittensorLocalKeyFlowChanged C.urnet_bittensor_local_key_flow_cb
 	userData                       unsafe.Pointer
@@ -2652,6 +2715,90 @@ func (self *cAdapterSnClaimCallback) Sent(epoch int64, txHash string) {
 	txHash_ := cString(string(txHash))
 	C.urnet_invoke_sn_claim_sent(self.cbSent, self.userData, C.int64_t(int64(epoch)), txHash_)
 	cStringFree(txHash_)
+}
+
+type cAdapterSnClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimNowCallback) Result(result *sdk.SnClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayCallback struct {
+	cbResult C.urnet_sn_claim_relay_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayCallback) Result(result *sdk.SnClaimRelayResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimRelayClaimNowCallback struct {
+	cbResult C.urnet_sn_claim_relay_claim_now_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimRelayClaimNowCallback) Result(result *sdk.SnClaimRelayClaimNowResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_relay_claim_now_cb")
+	result_ := cJson(result, "urnet_sn_claim_relay_claim_now_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_relay_claim_now(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnClaimStatusCallback struct {
+	cbResult C.urnet_sn_claim_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnClaimStatusCallback) Result(result *sdk.SnClaimStatusResult, errParam error) {
+	defer cgoGuard("urnet_sn_claim_status_cb")
+	result_ := cJson(result, "urnet_sn_claim_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_claim_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
 }
 
 type cAdapterSnClaimsCallback struct {
@@ -5517,6 +5664,41 @@ func urnet_api_sign_out(self C.uint64_t, callback_result C.urnet_session_sign_ou
 	self_.SignOut(callback_)
 }
 
+//export urnet_api_sn_claim_relay
+func urnet_api_sn_claim_relay(self C.uint64_t, callback_result C.urnet_sn_claim_relay_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimRelayCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelay(callback_)
+}
+
+//export urnet_api_sn_claim_relay_claim_now
+func urnet_api_sn_claim_relay_claim_now(self C.uint64_t, args *C.char, callback_result C.urnet_sn_claim_relay_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_claim_relay_claim_now")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_claim_relay_claim_now")
+	if !ok {
+		return
+	}
+	var args_ *sdk.SnClaimRelayClaimNowArgs
+	if args != nil {
+		args_ = &sdk.SnClaimRelayClaimNowArgs{}
+		if !goJson(args, args_, "urnet_api_sn_claim_relay_claim_now") {
+			return
+		}
+	}
+	var callback_ sdk.SnClaimRelayClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimRelayClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimRelayClaimNow(args_, callback_)
+}
+
 //export urnet_api_sn_epoch
 func urnet_api_sn_epoch(self C.uint64_t, callback_result C.urnet_sn_epoch_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_sn_epoch")
@@ -6375,6 +6557,88 @@ func urnet_async_local_state_set_by_jwt(self C.uint64_t, byJwt *C.char, callback
 		callback_ = &cAdapterCommitCallback{cbComplete: callback_complete, userData: callback_user_data}
 	}
 	self_.SetByJwt(goString(byJwt), callback_)
+}
+
+//export urnet_bittensor_convert_estimate
+func urnet_bittensor_convert_estimate(settings *C.char, coldkeySs58 *C.char, amountRao C.int64_t, callback_result C.urnet_bittensor_convert_estimate_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_estimate")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_estimate") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertEstimateCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertEstimateCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertEstimate(settings_, goString(coldkeySs58), int64(amountRao), callback_)
+}
+
+//export urnet_bittensor_convert_estimate_for_burn
+func urnet_bittensor_convert_estimate_for_burn(settings *C.char, coldkeySs58 *C.char, callback_result C.urnet_bittensor_convert_estimate_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_estimate_for_burn")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_estimate_for_burn") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertEstimateCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertEstimateCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertEstimateForBurn(settings_, goString(coldkeySs58), callback_)
+}
+
+//export urnet_bittensor_convert_submit
+func urnet_bittensor_convert_submit(settings *C.char, mnemonic *C.char, estimate *C.char, callback_result C.urnet_bittensor_convert_submit_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_submit")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_submit") {
+			return
+		}
+	}
+	var estimate_ *sdk.BittensorConvertEstimateResult
+	if estimate != nil {
+		estimate_ = &sdk.BittensorConvertEstimateResult{}
+		if !goJson(estimate, estimate_, "urnet_bittensor_convert_submit") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertSubmitCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertSubmitCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertSubmit(settings_, goString(mnemonic), estimate_, callback_)
+}
+
+//export urnet_bittensor_convert_wait
+func urnet_bittensor_convert_wait(settings *C.char, submission *C.char, callback_result C.urnet_bittensor_convert_receipt_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_wait")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var submission_ *sdk.BittensorConvertSubmission
+	if submission != nil {
+		submission_ = &sdk.BittensorConvertSubmission{}
+		if !goJson(submission, submission_, "urnet_bittensor_convert_wait") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertReceiptCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertReceiptCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertWait(settings_, submission_, callback_)
 }
 
 //export urnet_bittensor_local_key_address
@@ -12525,6 +12789,34 @@ func urnet_device_local_sn_claim(self C.uint64_t, epochs *C.char, callback_confi
 	self_.SnClaim(epochs_, callback_)
 }
 
+//export urnet_device_local_sn_claim_now
+func urnet_device_local_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_local_sn_claim_status
+func urnet_device_local_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
+}
+
 //export urnet_device_local_sn_claim_transactions
 func urnet_device_local_sn_claim_transactions(self C.uint64_t, epochs *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_device_local_sn_claim_transactions")
@@ -14070,6 +14362,34 @@ func urnet_device_remote_sn_claim(self C.uint64_t, epochs *C.char, callback_conf
 	self_.SnClaim(epochs_, callback_)
 }
 
+//export urnet_device_remote_sn_claim_now
+func urnet_device_remote_sn_claim_now(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_claim_now_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_now")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_now")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimNowCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimNowCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimNow(goString(coldkeySs58), callback_)
+}
+
+//export urnet_device_remote_sn_claim_status
+func urnet_device_remote_sn_claim_status(self C.uint64_t, callback_result C.urnet_sn_claim_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_claim_status")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_claim_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnClaimStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnClaimStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnClaimStatus(callback_)
+}
+
 //export urnet_device_remote_sn_claim_transactions
 func urnet_device_remote_sn_claim_transactions(self C.uint64_t, epochs *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_device_remote_sn_claim_transactions")
@@ -14901,6 +15221,20 @@ func urnet_format_rank(rank C.int64_t) *C.char {
 func urnet_format_share_bps(shareBps C.int64_t) *C.char {
 	defer cgoGuard("urnet_format_share_bps")
 	r0 := sdk.FormatShareBps(int64(shareBps))
+	return cString(string(r0))
+}
+
+//export urnet_format_tao
+func urnet_format_tao(rao C.int64_t) *C.char {
+	defer cgoGuard("urnet_format_tao")
+	r0 := sdk.FormatTao(int64(rao))
+	return cString(string(r0))
+}
+
+//export urnet_format_tao_amount
+func urnet_format_tao_amount(rao C.int64_t) *C.char {
+	defer cgoGuard("urnet_format_tao_amount")
+	r0 := sdk.FormatTaoAmount(int64(rao))
 	return cString(string(r0))
 }
 

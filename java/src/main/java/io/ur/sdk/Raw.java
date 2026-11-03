@@ -23,6 +23,9 @@ public interface Raw extends Library {
   interface urnet_auth_verify_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_verify_send_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_wallet_challenge_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_estimate_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_receipt_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_submit_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_bittensor_local_key_flow_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_bittensor_local_key_store_add_key_cb extends Callback { byte invoke(Pointer a0, String a1, String a2, String a3); }
   interface urnet_bittensor_local_key_store_delete_key_cb extends Callback { byte invoke(Pointer a0, String a1); }
@@ -174,6 +177,10 @@ public interface Raw extends Library {
   interface urnet_sn_claim_done_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_sn_claim_failed_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
   interface urnet_sn_claim_sent_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
+  interface urnet_sn_claim_now_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_claim_relay_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_claim_relay_claim_now_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_claim_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_claims_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_connect_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_epoch_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -373,6 +380,8 @@ public interface Raw extends Library {
   void urnet_api_set_payout_wallet(long a0, String a1, urnet_set_payout_wallet_cb a2, Pointer a3);
   void urnet_api_set_points_leaderboard_public(long a0, String a1, urnet_set_points_leaderboard_public_cb a2, Pointer a3);
   void urnet_api_sign_out(long a0, urnet_session_sign_out_cb a1, Pointer a2);
+  void urnet_api_sn_claim_relay(long a0, urnet_sn_claim_relay_cb a1, Pointer a2);
+  void urnet_api_sn_claim_relay_claim_now(long a0, String a1, urnet_sn_claim_relay_claim_now_cb a2, Pointer a3);
   void urnet_api_sn_epoch(long a0, urnet_sn_epoch_cb a1, Pointer a2);
   Pointer urnet_api_sn_epoch_sync(long a0, PointerByReference a1);
   void urnet_api_sn_get_wallet(long a0, urnet_sn_get_wallet_cb a1, Pointer a2);
@@ -860,6 +869,8 @@ public interface Raw extends Library {
   Pointer urnet_device_local_sign_sn_fleet_binding(long a0, String a1, PointerByReference a2);
   void urnet_device_local_simulate_network_change(long a0);
   void urnet_device_local_sn_claim(long a0, String a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, Pointer a6);
+  void urnet_device_local_sn_claim_now(long a0, String a1, urnet_sn_claim_now_cb a2, Pointer a3);
+  void urnet_device_local_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_local_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_local_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
   void urnet_device_local_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
@@ -971,6 +982,8 @@ public interface Raw extends Library {
   Pointer urnet_device_remote_sign_sn_fleet_binding(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_simulate_network_change(long a0);
   void urnet_device_remote_sn_claim(long a0, String a1, urnet_sn_claim_confirmed_cb a2, urnet_sn_claim_done_cb a3, urnet_sn_claim_failed_cb a4, urnet_sn_claim_sent_cb a5, Pointer a6);
+  void urnet_device_remote_sn_claim_now(long a0, String a1, urnet_sn_claim_now_cb a2, Pointer a3);
+  void urnet_device_remote_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_remote_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
   void urnet_device_remote_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
@@ -1413,6 +1426,10 @@ public interface Raw extends Library {
   void urnet_wallet_view_controller_validate_address(long a0, String a1, String a2, urnet_validate_address_cb a3, Pointer a4);
   byte urnet_websocket_device_rpc_listener_close(long a0, PointerByReference a1);
   double urnet_alpha_from_rao(long a0);
+  void urnet_bittensor_convert_estimate(String a0, String a1, long a2, urnet_bittensor_convert_estimate_cb a3, Pointer a4);
+  void urnet_bittensor_convert_estimate_for_burn(String a0, String a1, urnet_bittensor_convert_estimate_cb a2, Pointer a3);
+  void urnet_bittensor_convert_submit(String a0, String a1, String a2, urnet_bittensor_convert_submit_cb a3, Pointer a4);
+  void urnet_bittensor_convert_wait(String a0, String a1, urnet_bittensor_convert_receipt_cb a2, Pointer a3);
   Pointer urnet_bittensor_local_key_address(String a0, PointerByReference a1);
   Pointer urnet_bittensor_local_key_generate(PointerByReference a0);
   Pointer urnet_bittensor_local_key_sign(String a0, String a1, PointerByReference a2);
@@ -1463,6 +1480,8 @@ public interface Raw extends Library {
   Pointer urnet_format_points(double a0);
   Pointer urnet_format_rank(long a0);
   Pointer urnet_format_share_bps(long a0);
+  Pointer urnet_format_tao(long a0);
+  Pointer urnet_format_tao_amount(long a0);
   void urnet_free_memory();
   long urnet_generate_device_rpc_key_material(PointerByReference a0);
   Pointer urnet_generate_nonce();

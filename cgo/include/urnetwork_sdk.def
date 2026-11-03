@@ -114,6 +114,8 @@ EXPORTS
 	urnet_api_set_payout_wallet
 	urnet_api_set_points_leaderboard_public
 	urnet_api_sign_out
+	urnet_api_sn_claim_relay
+	urnet_api_sn_claim_relay_claim_now
 	urnet_api_sn_epoch
 	urnet_api_sn_epoch_sync
 	urnet_api_sn_get_wallet
@@ -163,6 +165,10 @@ EXPORTS
 	urnet_async_local_state_parse_by_jwt
 	urnet_async_local_state_set_by_client_jwt
 	urnet_async_local_state_set_by_jwt
+	urnet_bittensor_convert_estimate
+	urnet_bittensor_convert_estimate_for_burn
+	urnet_bittensor_convert_submit
+	urnet_bittensor_convert_wait
 	urnet_bittensor_local_key_address
 	urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener
 	urnet_bittensor_local_key_flow_cancel_confirmation
@@ -643,6 +649,8 @@ EXPORTS
 	urnet_device_local_sign_sn_fleet_binding
 	urnet_device_local_simulate_network_change
 	urnet_device_local_sn_claim
+	urnet_device_local_sn_claim_now
+	urnet_device_local_sn_claim_status
 	urnet_device_local_sn_claim_transactions
 	urnet_device_local_sn_claims
 	urnet_device_local_sn_gas_balance
@@ -742,6 +750,8 @@ EXPORTS
 	urnet_device_remote_sign_sn_fleet_binding
 	urnet_device_remote_simulate_network_change
 	urnet_device_remote_sn_claim
+	urnet_device_remote_sn_claim_now
+	urnet_device_remote_sn_claim_status
 	urnet_device_remote_sn_claim_transactions
 	urnet_device_remote_sn_claims
 	urnet_device_remote_sn_gas_balance
@@ -840,6 +850,8 @@ EXPORTS
 	urnet_format_points
 	urnet_format_rank
 	urnet_format_share_bps
+	urnet_format_tao
+	urnet_format_tao_amount
 	urnet_free_memory
 	urnet_free_string
 	urnet_generate_device_rpc_key_material
