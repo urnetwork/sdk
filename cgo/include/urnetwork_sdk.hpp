@@ -1725,6 +1725,7 @@ struct BittensorLocalKeyCard {
 	std::string failure_message{};
 	std::string funds_disclaimer{};
 	std::string claim_funds_disclaimer{};
+	bool pays_key_on_this_device{};
 };
 
 struct BittensorLocalKeyReminder {
@@ -3717,8 +3718,11 @@ struct SnClaimRelayAccount {
 	bool claim_now_available{};
 	std::optional<std::string> claim_now_reason;
 	std::optional<int64_t> claim_now_next_at_millis;
+	std::optional<std::string> claim_tx_hash;
+	std::optional<int64_t> claim_amount_rao;
 	std::optional<bool> connected;
 	std::optional<std::string> action;
+	std::optional<std::string> claim_tx_url;
 };
 
 struct SnClaimRelayClaimNowArgs {
@@ -3765,6 +3769,11 @@ struct SnClaimStatusResult {
 	int64_t automatic_threshold_tao_rao{};
 	int64_t transfer_floor_tao_rao{};
 	int64_t claim_now_period_days{};
+	bool shows_tile{};
+	bool shows_claimed{};
+	std::optional<std::string> claim_tx_hash;
+	std::optional<std::string> claim_tx_url;
+	std::optional<int64_t> claim_amount_rao;
 	std::optional<SnClaimRelayAccountList> accounts;
 	std::optional<SnError> error;
 };
@@ -7696,6 +7705,7 @@ inline void to_json(nlohmann::json& j, const BittensorLocalKeyCard& v) {
 	j["failure_message"] = v.failure_message;
 	j["funds_disclaimer"] = v.funds_disclaimer;
 	j["claim_funds_disclaimer"] = v.claim_funds_disclaimer;
+	j["pays_key_on_this_device"] = v.pays_key_on_this_device;
 }
 inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v) {
 	if (!j.is_object()) {
@@ -7760,6 +7770,9 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v) {
 	}
 	if (auto it = j.find("claim_funds_disclaimer"); it != j.end() && !it->is_null()) {
 		it->get_to(v.claim_funds_disclaimer);
+	}
+	if (auto it = j.find("pays_key_on_this_device"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pays_key_on_this_device);
 	}
 }
 
@@ -16714,11 +16727,20 @@ inline void to_json(nlohmann::json& j, const SnClaimRelayAccount& v) {
 	if (v.claim_now_next_at_millis) {
 		j["claim_now_next_at_millis"] = *v.claim_now_next_at_millis;
 	}
+	if (v.claim_tx_hash) {
+		j["claim_tx_hash"] = *v.claim_tx_hash;
+	}
+	if (v.claim_amount_rao) {
+		j["claim_amount_rao"] = *v.claim_amount_rao;
+	}
 	if (v.connected) {
 		j["connected"] = *v.connected;
 	}
 	if (v.action) {
 		j["action"] = *v.action;
+	}
+	if (v.claim_tx_url) {
+		j["claim_tx_url"] = *v.claim_tx_url;
 	}
 }
 inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v) {
@@ -16759,6 +16781,16 @@ inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v) {
 		it->get_to(tmp);
 		v.claim_now_next_at_millis = std::move(tmp);
 	}
+	if (auto it = j.find("claim_tx_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_tx_hash = std::move(tmp);
+	}
+	if (auto it = j.find("claim_amount_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.claim_amount_rao = std::move(tmp);
+	}
 	if (auto it = j.find("connected"); it != j.end() && !it->is_null()) {
 		bool tmp{};
 		it->get_to(tmp);
@@ -16768,6 +16800,11 @@ inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.action = std::move(tmp);
+	}
+	if (auto it = j.find("claim_tx_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_tx_url = std::move(tmp);
 	}
 }
 
@@ -16908,6 +16945,17 @@ inline void to_json(nlohmann::json& j, const SnClaimStatusResult& v) {
 	j["automatic_threshold_tao_rao"] = v.automatic_threshold_tao_rao;
 	j["transfer_floor_tao_rao"] = v.transfer_floor_tao_rao;
 	j["claim_now_period_days"] = v.claim_now_period_days;
+	j["shows_tile"] = v.shows_tile;
+	j["shows_claimed"] = v.shows_claimed;
+	if (v.claim_tx_hash) {
+		j["claim_tx_hash"] = *v.claim_tx_hash;
+	}
+	if (v.claim_tx_url) {
+		j["claim_tx_url"] = *v.claim_tx_url;
+	}
+	if (v.claim_amount_rao) {
+		j["claim_amount_rao"] = *v.claim_amount_rao;
+	}
 	if (v.accounts) {
 		j["accounts"] = *v.accounts;
 	}
@@ -16975,6 +17023,27 @@ inline void from_json(const nlohmann::json& j, SnClaimStatusResult& v) {
 	}
 	if (auto it = j.find("claim_now_period_days"); it != j.end() && !it->is_null()) {
 		it->get_to(v.claim_now_period_days);
+	}
+	if (auto it = j.find("shows_tile"); it != j.end() && !it->is_null()) {
+		it->get_to(v.shows_tile);
+	}
+	if (auto it = j.find("shows_claimed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.shows_claimed);
+	}
+	if (auto it = j.find("claim_tx_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_tx_hash = std::move(tmp);
+	}
+	if (auto it = j.find("claim_tx_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.claim_tx_url = std::move(tmp);
+	}
+	if (auto it = j.find("claim_amount_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.claim_amount_rao = std::move(tmp);
 	}
 	if (auto it = j.find("accounts"); it != j.end() && !it->is_null()) {
 		SnClaimRelayAccountList tmp{};

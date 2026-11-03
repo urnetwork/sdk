@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -456,13 +457,156 @@ func TestSnClaimStatusCallback(t *testing.T) {
 func TestSnClaimStatusJsonIsStable(t *testing.T) {
 	result := snClaimStatusBuild(testClaimRelayAnswer("running", &SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonQueued, ClaimNowAvailable: true}), "a", true, false)
 	raw := testClaimRelayJson(t, result)
-	for _, part := range []string{`"relay_state":"running"`, `"action":"claim_now"`, `"reason":"queued"`, `"claimable_rao":5`, `"claim_now_available":true`, `"self_claim_available":false`, `"accounts":[{`, `"connected":true`} {
+	for _, part := range []string{`"relay_state":"running"`, `"action":"claim_now"`, `"reason":"queued"`, `"claimable_rao":5`, `"claim_now_available":true`, `"self_claim_available":false`, `"accounts":[{`, `"connected":true`, `"shows_tile":true`, `"shows_claimed":false`} {
 		if !strings.Contains(raw, part) {
 			t.Errorf("%s lacks %s", raw, part)
 		}
 	}
 	empty := testClaimRelayJson(t, snClaimStatusBuild(nil, "", false, false))
-	if !strings.Contains(empty, `"accounts":[]`) {
-		t.Errorf("an empty list must marshal as []: %s", empty)
+	if !strings.Contains(empty, `"accounts":[]`) || !strings.Contains(empty, `"shows_tile":false`) {
+		t.Errorf("an empty list must marshal as [], and no tile shows: %s", empty)
+	}
+	claimed := snClaimStatusBuild(testClaimRelayAnswer("running", &SnClaimRelayAccount{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000}), "", true, false)
+	snClaimStatusLinkTransactions(claimed, SnTestnetChainSettings())
+	raw = testClaimRelayJson(t, claimed)
+	for _, part := range []string{`"shows_claimed":true`, `"claim_tx_hash":"` + testClaimTxHash + `"`, `"claim_tx_url":"https://evm-testnet.taostats.io/tx/` + testClaimTxHash + `"`, `"claim_amount_rao":842000000`} {
+		if !strings.Contains(raw, part) {
+			t.Errorf("%s lacks %s", raw, part)
+		}
+	}
+}
+
+const testClaimTxHash = "0x8a5f0c9e1d2b3a4f5e6d7c8b9a0f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7"
+
+// When a network with no wallet on this device shows the Settlement v2 tile, as
+// Apple's Earnings drew it (ledgerTileWithRelay): the status was read and its
+// primary account has a claimable or pending balance. A device with its own
+// wallet's ledger tile shows that one, so the sdk says nothing about it.
+func TestSnClaimStatusShowsTileAsAppleDrewIt(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		connected string
+		accounts  []*SnClaimRelayAccount
+		want      bool
+	}{
+		{"claimable", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonUnderThreshold}}, true},
+		{"pending only", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", PendingRao: 5, Reason: SnClaimReasonNothingPending}}, true},
+		{"claimable and pending", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", ClaimableRao: 5, PendingRao: 5, Reason: SnClaimReasonQueued}}, true},
+		{"nothing", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending}}, false},
+		{"no accounts", "", nil, false},
+		// the relay down: the balance is still the network's, and URnetwork waits
+		{"relay down", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonRelayNotRunning}}, true},
+		// the top level decides, as it does on Apple: the connected wallet's account
+		// first, and another of the network's with a balance does not
+		{"the connected wallet's has nothing", "a", []*SnClaimRelayAccount{{ColdkeySs58: "b", ClaimableRao: 5, Reason: SnClaimReasonQueued}, {ColdkeySs58: "a", Reason: SnClaimReasonNothingPending}}, false},
+		{"another of the network's", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending}, {ColdkeySs58: "b", ClaimableRao: 5, Reason: SnClaimReasonQueued}}, true},
+		// claimed, with nothing left or pending: Apple's rule shows no tile
+		{"claimed, nothing left", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 9}}, false},
+		// past int64 a sum would wrap; a balance is still a balance
+		{"huge", "", []*SnClaimRelayAccount{{ColdkeySs58: "a", ClaimableRao: math.MaxInt64, PendingRao: math.MaxInt64, Reason: SnClaimReasonQueued}}, true},
+	} {
+		result := snClaimStatusBuild(testClaimRelayAnswer("running", c.accounts...), c.connected, true, false)
+		if result.ShowsTile != c.want {
+			t.Errorf("%s: shows the tile %t, want %t (%+v)", c.name, result.ShowsTile, c.want, result)
+		}
+	}
+	// a status that could not be read is unavailable, never zero, and no tile
+	if result := snClaimStatusBuild(nil, "", true, false); result.ShowsTile || result.ShowsClaimed {
+		t.Fatalf("unread %+v", result)
+	}
+}
+
+// The claimed state: URnetwork's claim is the primary account's latest and nothing
+// is claimable now, drawn with the transaction and what it paid. A balance since
+// is the pending state again, with the transaction still named. A transaction the
+// sdk cannot name is none.
+func TestSnClaimStatusShowsClaimedWithTheTransaction(t *testing.T) {
+	build := func(accounts ...*SnClaimRelayAccount) *SnClaimStatusResult {
+		result := snClaimStatusBuild(testClaimRelayAnswer("running", accounts...), "", true, false)
+		snClaimStatusLinkTransactions(result, SnTestnetChainSettings())
+		return result
+	}
+	result := build(&SnClaimRelayAccount{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending, ClaimNowReason: SnClaimReasonNothingPending, ClaimNowNextAtMillis: 1_800_000_000_000, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000})
+	if !result.ShowsClaimed || result.ClaimTxHash != testClaimTxHash || result.ClaimAmountRao != 842_000_000 || result.ClaimTxUrl != "https://evm-testnet.taostats.io/tx/"+testClaimTxHash {
+		t.Fatalf("claimed %+v", result)
+	}
+	// "Claim now is available again" goes by the limit, as before
+	if result.ClaimNowNextAtMillis != 1_800_000_000_000 || result.ClaimNowAvailable || result.Action != SnClaimActionNone {
+		t.Fatalf("claimed %+v", result)
+	}
+	if account := result.Accounts.getAll()[0]; account.ClaimTxUrl != result.ClaimTxUrl || account.ClaimTxHash != testClaimTxHash {
+		t.Fatalf("account %+v", account)
+	}
+
+	// a new root since: pending again, and the claim is still the latest
+	result = build(&SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonUnderThreshold, ClaimNowAvailable: true, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000})
+	if result.ShowsClaimed || result.ClaimTxHash != testClaimTxHash || result.Action != SnClaimActionClaimNow || !result.ShowsTile {
+		t.Fatalf("after a new root %+v", result)
+	}
+
+	// nothing claimed by URnetwork
+	if result = build(&SnClaimRelayAccount{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending}); result.ShowsClaimed || result.ClaimTxHash != "" || result.ClaimTxUrl != "" || result.ClaimAmountRao != 0 {
+		t.Fatalf("nothing claimed %+v", result)
+	}
+
+	// what is not a transaction hash is none
+	for _, hash := range []string{"0x1234", testClaimTxHash + "00", "8a5f" + testClaimTxHash[2:] + "ab", "0x" + strings.Repeat("g", 64), "javascript:alert(1)", "0x" + strings.Repeat("a", 63) + "/"} {
+		result = build(&SnClaimRelayAccount{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending, ClaimTxHash: hash, ClaimAmountRao: 7})
+		account := result.Accounts.getAll()[0]
+		if result.ShowsClaimed || result.ClaimTxHash != "" || result.ClaimTxUrl != "" || result.ClaimAmountRao != 0 || account.ClaimTxHash != "" || account.ClaimTxUrl != "" || account.ClaimAmountRao != 0 {
+			t.Fatalf("hash %q: %+v %+v", hash, result, account)
+		}
+	}
+	// a negative amount is none
+	if result = build(&SnClaimRelayAccount{ColdkeySs58: "a", Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: -1}); !result.ShowsClaimed || result.ClaimAmountRao != 0 {
+		t.Fatalf("negative amount %+v", result)
+	}
+
+	// the primary is the one drawn: another account's claim is listed, not drawn
+	result = build(
+		&SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonQueued},
+		&SnClaimRelayAccount{ColdkeySs58: "b", Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 9},
+	)
+	if result.ShowsClaimed || result.ClaimTxHash != "" || result.Accounts.getAll()[1].ClaimTxUrl != "https://evm-testnet.taostats.io/tx/"+testClaimTxHash {
+		t.Fatalf("another account's claim %+v", result)
+	}
+
+	// no explorer in the chain settings: no link, the transaction still named
+	result = snClaimStatusBuild(testClaimRelayAnswer("running", &SnClaimRelayAccount{ColdkeySs58: "a", ClaimTxHash: testClaimTxHash}), "", true, false)
+	snClaimStatusLinkTransactions(result, &SnChainSettings{})
+	if result.ClaimTxUrl != "" || result.ClaimTxHash != testClaimTxHash || !result.ShowsClaimed {
+		t.Fatalf("no explorer %+v", result)
+	}
+	snClaimStatusLinkTransactions(result, nil)
+	if result.ClaimTxUrl != "" {
+		t.Fatalf("no settings %+v", result)
+	}
+}
+
+// On a device: the server's answer names the transaction, and the device's own
+// chain settings link it.
+func TestSnClaimStatusOnADeviceLinksTheTransaction(t *testing.T) {
+	_, aliceSs58 := testAliceSs58(t)
+	service := &testClaimRelayService{relayStatus: http.StatusOK, ledgerStatus: http.StatusInternalServerError, ledgerBody: "ledger down",
+		relayBody: fmt.Sprintf(`{"state":"running","automatic_threshold_tao_rao":12500000,"transfer_floor_tao_rao":100000,"automatic_threshold_rao":3000000000,"transfer_floor_rao":24000000,"claim_now_period_days":30,
+			"accounts":[{"coldkey_ss58":%q,"no_id":1,"index":7,"claimable_rao":0,"value_tao_rao":0,"pending_rao":0,"reason":"nothing_pending","claim_now_available":false,"claim_now_reason":"nothing_pending","claim_now_next_at_millis":1800000000000,"claim_tx_hash":%q,"claim_amount_rao":842000000}]}`, aliceSs58, testClaimTxHash)}
+	chain := &fakeChain{t: t, block: 1000, claimed: map[string]bool{}, receipts: map[string]bool{}}
+	device := testClaimRelayDevice(t, service, chain, "")
+	result := device.snClaimStatus(context.Background())
+	if result.Error != nil || !result.ShowsClaimed || result.ShowsTile || result.ColdkeySs58 != aliceSs58 {
+		t.Fatalf("result %+v (%+v)", result, result.Error)
+	}
+	want := "https://evm-testnet.taostats.io/tx/" + testClaimTxHash
+	if result.ClaimTxHash != testClaimTxHash || result.ClaimTxUrl != want || result.ClaimAmountRao != 842_000_000 || result.ClaimNowNextAtMillis != 1_800_000_000_000 {
+		t.Fatalf("result %+v", result)
+	}
+	if account := result.Accounts.getAll()[0]; account.ClaimTxUrl != want || account.ClaimTxHash != testClaimTxHash || account.ClaimAmountRao != 842_000_000 {
+		t.Fatalf("account %+v", account)
+	}
+
+	// a status that could not be read names nothing and shows no tile
+	service.relayStatus, service.relayBody = http.StatusBadGateway, "down"
+	if result = device.snClaimStatus(context.Background()); result.Error == nil || result.ShowsTile || result.ShowsClaimed || result.ClaimTxHash != "" || result.ClaimTxUrl != "" {
+		t.Fatalf("unread %+v", result)
 	}
 }

@@ -11,13 +11,17 @@ package sdk
 // SnClaimStatus reads what is pending and why, and chooses between the two, so an
 // app only draws the answer: Action is what its main control does, and Reason says
 // why a balance is still pending. Reasons and actions are stable values the apps
-// localize. A server that cannot answer leaves the fallback working: the balances
-// come from the public ledger, and the action is the device's own claim.
+// localize. ShowsTile says whether a network with no wallet on this device shows
+// the Settlement v2 tile at all, and ShowsClaimed whether the claim is drawn as
+// claimed by URnetwork, with its transaction. A server that cannot answer leaves
+// the fallback working: the balances come from the public ledger, and the action
+// is the device's own claim.
 
 import (
 	"context"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strings"
 	"time"
 
@@ -95,11 +99,18 @@ type SnClaimRelayAccount struct {
 	ClaimNowReason string `json:"claim_now_reason,omitempty"`
 	// when this coldkey's Claim now limit ends, unix milliseconds; 0 when none holds
 	ClaimNowNextAtMillis int64 `json:"claim_now_next_at_millis,omitempty"`
+	// the transaction of this account's latest claim when URnetwork sent it, and
+	// what it paid: "" and 0 for a claim anyone else sent, or none
+	ClaimTxHash    string `json:"claim_tx_hash,omitempty"`
+	ClaimAmountRao int64  `json:"claim_amount_rao,omitempty"`
 	// Set by the sdk, not the server:
 	// the account of the connected wallet, the one SnLedgerClaim claims
 	Connected bool `json:"connected,omitempty"`
 	// SnClaimAction*
 	Action string `json:"action,omitempty"`
+	// the explorer's page of ClaimTxHash, from the device's chain settings; ""
+	// without one
+	ClaimTxUrl string `json:"claim_tx_url,omitempty"`
 }
 
 type SnClaimRelayAccountList struct {
@@ -239,9 +250,22 @@ type SnClaimStatusResult struct {
 	AutomaticThresholdTaoRao int64 `json:"automatic_threshold_tao_rao"`
 	TransferFloorTaoRao      int64 `json:"transfer_floor_tao_rao"`
 	// days between two Claim now of one coldkey
-	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
-	Accounts           *SnClaimRelayAccountList `json:"accounts"`
-	Error              *SnError                 `json:"error,omitempty"`
+	ClaimNowPeriodDays int64 `json:"claim_now_period_days"`
+	// the Settlement v2 tile shows for this status: it was read, and the primary
+	// account has a claimable or pending balance. A device whose own wallet's ledger
+	// has a tile shows that one, as before the relay; otherwise the tile shows
+	// exactly while this is true
+	ShowsTile bool `json:"shows_tile"`
+	// the claimed state, "Claimed by URnetwork" with the transaction: URnetwork's
+	// claim is the primary account's latest, and nothing is claimable now
+	ShowsClaimed bool `json:"shows_claimed"`
+	// the primary account's latest claim when URnetwork sent it, as its account's:
+	// the transaction, the explorer's page of it ("" without one) and what it paid
+	ClaimTxHash    string                   `json:"claim_tx_hash,omitempty"`
+	ClaimTxUrl     string                   `json:"claim_tx_url,omitempty"`
+	ClaimAmountRao int64                    `json:"claim_amount_rao,omitempty"`
+	Accounts       *SnClaimRelayAccountList `json:"accounts"`
+	Error          *SnError                 `json:"error,omitempty"`
 }
 
 type SnClaimStatusCallback connect.ApiCallback[*SnClaimStatusResult]
@@ -336,6 +360,13 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 	for _, account := range accounts {
 		account.Connected = connectedSs58 != "" && account.ColdkeySs58 == connectedSs58
 		account.Action = snClaimAction(account, snClaimSelfClaimAvailable(relay, account, selfClaimConfigured), selfClaimNeedsGas)
+		// a transaction the sdk cannot name is none
+		if !snClaimTxHashPattern.MatchString(account.ClaimTxHash) {
+			account.ClaimTxHash = ""
+		}
+		if account.ClaimTxHash == "" || account.ClaimAmountRao < 0 {
+			account.ClaimAmountRao = 0
+		}
 		result.Accounts.Add(account)
 	}
 	primary := snClaimStatusPrimary(accounts)
@@ -354,7 +385,32 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 	result.ClaimNowNextAtMillis = primary.ClaimNowNextAtMillis
 	result.SelfClaimAvailable = snClaimSelfClaimAvailable(relay, primary, selfClaimConfigured)
 	result.SelfClaimNeedsGas = result.SelfClaimAvailable && selfClaimNeedsGas
+	result.ShowsTile = snClaimStatusShowsTile(primary)
+	result.ClaimTxHash = primary.ClaimTxHash
+	result.ClaimAmountRao = primary.ClaimAmountRao
+	result.ShowsClaimed = primary.ClaimTxHash != "" && primary.ClaimableRao <= 0
 	return result
+}
+
+// A transaction hash as the relay names it.
+var snClaimTxHashPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{64}$`)
+
+// snClaimStatusShowsTile is when a network with no wallet on this device shows the
+// Settlement v2 tile, as Apple's Earnings first drew it: while the primary account
+// has a claimable or pending balance.
+func snClaimStatusShowsTile(primary *SnClaimRelayAccount) bool {
+	return primary != nil && (0 < primary.ClaimableRao || 0 < primary.PendingRao)
+}
+
+// snClaimStatusLinkTransactions names the explorer's page of each claim's
+// transaction, from the device's chain settings. Pure.
+func snClaimStatusLinkTransactions(result *SnClaimStatusResult, settings *SnChainSettings) {
+	if result.Accounts != nil {
+		for _, account := range result.Accounts.getAll() {
+			account.ClaimTxUrl = settings.ExplorerUrlForTx(account.ClaimTxHash)
+		}
+	}
+	result.ClaimTxUrl = settings.ExplorerUrlForTx(result.ClaimTxHash)
 }
 
 // The device's own claim can only be of the connected wallet's account, on a
@@ -448,6 +504,7 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 		}
 	}
 	if relayError != nil {
+		// unavailable, never zero: no balance, so no tile and nothing claimed
 		result := snClaimStatusBuild(nil, connectedSs58, selfClaimConfigured, false)
 		if relay != nil {
 			result.RelayState = relay.State
@@ -459,7 +516,9 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 	if connectedSs58 != "" && selfClaimConfigured && snClaimAnyClaimable(relay, connectedSs58) {
 		needsGas = self.snClaimSelfClaimNeedsGas(ctx)
 	}
-	return snClaimStatusBuild(relay, connectedSs58, selfClaimConfigured, needsGas)
+	result := snClaimStatusBuild(relay, connectedSs58, selfClaimConfigured, needsGas)
+	snClaimStatusLinkTransactions(result, settings)
+	return result
 }
 
 func snClaimAnyClaimable(relay *SnClaimRelayResult, coldkeySs58 string) bool {

@@ -3098,6 +3098,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   failure_message: string
  *   funds_disclaimer: string
  *   claim_funds_disclaimer: string
+ *   pays_key_on_this_device: boolean
  */
 
 /* BittensorLocalKeyReminder (json):
@@ -5334,8 +5335,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   claim_now_available: boolean
  *   claim_now_reason?: string
  *   claim_now_next_at_millis?: number
+ *   claim_tx_hash?: string
+ *   claim_amount_rao?: number
  *   connected?: boolean
  *   action?: string
+ *   claim_tx_url?: string
  */
 
 /* SnClaimRelayAccountList (json):
@@ -5386,6 +5390,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   automatic_threshold_tao_rao: number
  *   transfer_floor_tao_rao: number
  *   claim_now_period_days: number
+ *   shows_tile: boolean
+ *   shows_claimed: boolean
+ *   claim_tx_hash?: string
+ *   claim_tx_url?: string
+ *   claim_amount_rao?: number
  *   accounts: SnClaimRelayAccountList | null
  *   error?: SnError | null
  */

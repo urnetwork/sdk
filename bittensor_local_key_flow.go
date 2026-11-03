@@ -257,6 +257,10 @@ type BittensorLocalKeyCard struct {
 	// the disclaimer the claim card shows, a BittensorFundsDisclaimer*. The two cards share Earnings and the
 	// disclaimer shows once a screen, so this is none while the payout card has one
 	ClaimFundsDisclaimer string `json:"claim_funds_disclaimer"`
+	// the consent pays the key in this app's store (State is BittensorLocalKeyStateSaveLaterLinked): the
+	// network has a coldkey even before the wallet read lists one, so no card asks for a coldkey, as the
+	// points card's "set a coldkey to get paid" does
+	PaysKeyOnThisDevice bool `json:"pays_key_on_this_device"`
 }
 
 // What the Key screen shows. Holds no secret: the words are RevealedWords.
@@ -654,6 +658,7 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 		card.OffersSaveFirst = mayMakeKey
 	}
 	card.ShowsKeyPath = card.State == BittensorLocalKeyStateSaveLaterNotLinked || card.State == BittensorLocalKeyStateNone && card.OffersSetUp
+	card.PaysKeyOnThisDevice = card.State == BittensorLocalKeyStateSaveLaterLinked
 	switch {
 	case hasStoredKey:
 		// the key is in the app's secure storage

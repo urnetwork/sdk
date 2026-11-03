@@ -1738,9 +1738,11 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 		}},
 		{"save later, linked", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
+			PaysKeyOnThisDevice: true,
 		}},
 		{"save later, linked, saved and kept", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key, savedAddress: key}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, KeySaved: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
+			PaysKeyOnThisDevice: true,
 		}},
 		{"saved and deleted", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, deletedAddress: key}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSavedAndDeleted, Address: key, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
@@ -1762,6 +1764,7 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 		}},
 		{"not the owner, linked here", bittensorLocalKeyCardInputs{networkId: network, consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key}, BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OwnerOnly: true, OffersKeyScreen: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
+			PaysKeyOnThisDevice: true,
 		}},
 		{"the store cannot answer", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storeUnavailable: true}), BittensorLocalKeyCard{
 			State: BittensorLocalKeyStateStoreUnavailable, ShowsKeyPath: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
@@ -1787,6 +1790,73 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 				t.Errorf("\n got %+v\nwant %+v", got, row.want)
 			}
 		})
+	}
+}
+
+// The points card asks for no coldkey while the consent pays the key on this device, which is the
+// network's coldkey before the wallet read lists one: Apple's rule, the card's State is SaveLaterLinked.
+// From every combination of what decides the card, and through the flow, set up and then deleted.
+func TestBittensorLocalKeyCardPaysKeyOnThisDevice(t *testing.T) {
+	const (
+		key     = "5KeyOnThisDevice"
+		deleted = "5AKeyThisDeviceDeleted"
+		other   = "5AnotherColdkey"
+	)
+	seen := map[bool]int{}
+	for _, consentRead := range []bittensorLocalKeyConsentRead{bittensorLocalKeyConsentUnread, bittensorLocalKeyConsentUnavailable, bittensorLocalKeyConsentNone, bittensorLocalKeyConsentActive} {
+		for _, consentAddress := range []string{"", key, deleted, other} {
+			if consentRead != bittensorLocalKeyConsentActive && consentAddress != "" {
+				continue
+			}
+			for _, storedAddress := range []string{"", key} {
+				for _, deletedAddress := range []string{"", deleted, key} {
+					for _, saveNowAddress := range []string{"", other} {
+						for flags := range 32 {
+							in := bittensorLocalKeyCardInputs{
+								networkId:            bittensorLocalKeyFlowTestNetwork,
+								consentRead:          consentRead,
+								consentAddress:       consentAddress,
+								storedAddress:        storedAddress,
+								savedAddress:         storedAddress,
+								deletedAddress:       deletedAddress,
+								saveNowAddress:       saveNowAddress,
+								saveNowFailed:        flags&1 != 0,
+								storeUnavailable:     flags&2 != 0,
+								hasNetworkCredential: flags&4 != 0,
+								guest:                flags&8 != 0,
+							}
+							if flags&16 != 0 {
+								in.networkId = ""
+							}
+							card := bittensorLocalKeyCardOf(in)
+							if card.PaysKeyOnThisDevice != (card.State == BittensorLocalKeyStateSaveLaterLinked) {
+								t.Fatalf("pays a key on this device %t in state %s: %+v from %+v", card.PaysKeyOnThisDevice, card.State, card, in)
+							}
+							seen[card.PaysKeyOnThisDevice] += 1
+						}
+					}
+				}
+			}
+		}
+	}
+	if seen[true] == 0 || seen[false] == 0 {
+		t.Fatalf("CONTROL FAILED: %v", seen)
+	}
+
+	run := newTestingLocalKeyRunWithNoConsent(t)
+	if card := run.requireState(BittensorLocalKeyStateNone); card.PaysKeyOnThisDevice {
+		t.Fatalf("before setup the card is %+v", card)
+	}
+	run.flow.setUpPayouts(false)
+	if card := run.requireState(BittensorLocalKeyStateSaveLaterLinked); !card.PaysKeyOnThisDevice {
+		t.Fatalf("linked, the card is %+v", card)
+	}
+	run.flow.OpenScreen()
+	run.flow.ConfirmDelete()
+	first, second := run.rightWords()
+	run.flow.submitWords(first, second, true)
+	if card := run.requireState(BittensorLocalKeyStateSavedAndDeleted); card.PaysKeyOnThisDevice {
+		t.Fatalf("deleted, the card is %+v", card)
 	}
 }
 
