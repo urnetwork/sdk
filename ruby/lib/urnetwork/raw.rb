@@ -22,6 +22,9 @@ module URnetwork
       callback :urnet_auth_verify_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_verify_send_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_wallet_challenge_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_convert_estimate_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_convert_receipt_cb, [:pointer, :string, :string], :void
+      callback :urnet_bittensor_convert_submit_cb, [:pointer, :string, :string], :void
       callback :urnet_bittensor_local_key_flow_cb, [:pointer], :void
       callback :urnet_bittensor_local_key_store_add_key_cb, [:pointer, :string, :string, :string], :bool
       callback :urnet_bittensor_local_key_store_delete_key_cb, [:pointer, :string], :bool
@@ -1421,6 +1424,10 @@ module URnetwork
       attach_function :urnet_wallet_view_controller_validate_address, [:uint64, :string, :string, :urnet_validate_address_cb, :pointer], :void, blocking: true
       attach_function :urnet_websocket_device_rpc_listener_close, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_alpha_from_rao, [:int64], :double, blocking: true
+      attach_function :urnet_bittensor_convert_estimate, [:string, :string, :int64, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_convert_estimate_for_burn, [:string, :string, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_convert_submit, [:string, :string, :string, :urnet_bittensor_convert_submit_cb, :pointer], :void, blocking: true
+      attach_function :urnet_bittensor_convert_wait, [:string, :string, :urnet_bittensor_convert_receipt_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_local_key_address, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_generate, [:pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_local_key_sign, [:string, :string, :pointer], :pointer, blocking: true
@@ -1471,6 +1478,8 @@ module URnetwork
       attach_function :urnet_format_points, [:double], :pointer, blocking: true
       attach_function :urnet_format_rank, [:int64], :pointer, blocking: true
       attach_function :urnet_format_share_bps, [:int64], :pointer, blocking: true
+      attach_function :urnet_format_tao, [:int64], :pointer, blocking: true
+      attach_function :urnet_format_tao_amount, [:int64], :pointer, blocking: true
       attach_function :urnet_free_memory, [], :void, blocking: true
       attach_function :urnet_generate_device_rpc_key_material, [:pointer], :uint64, blocking: true
       attach_function :urnet_generate_nonce, [], :pointer, blocking: true

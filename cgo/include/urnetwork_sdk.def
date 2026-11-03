@@ -165,6 +165,10 @@ EXPORTS
 	urnet_async_local_state_parse_by_jwt
 	urnet_async_local_state_set_by_client_jwt
 	urnet_async_local_state_set_by_jwt
+	urnet_bittensor_convert_estimate
+	urnet_bittensor_convert_estimate_for_burn
+	urnet_bittensor_convert_submit
+	urnet_bittensor_convert_wait
 	urnet_bittensor_local_key_address
 	urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener
 	urnet_bittensor_local_key_flow_cancel_confirmation
@@ -845,6 +849,8 @@ EXPORTS
 	urnet_format_points
 	urnet_format_rank
 	urnet_format_share_bps
+	urnet_format_tao
+	urnet_format_tao_amount
 	urnet_free_memory
 	urnet_free_string
 	urnet_generate_device_rpc_key_material

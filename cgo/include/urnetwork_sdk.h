@@ -104,6 +104,20 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BITTENSOR_CHAIN_ERROR_WRONG_CHAIN "bittensor_wrong_chain"
+#define URNET_BITTENSOR_CONVERT_ERROR_AMOUNT_TOO_HIGH "convert_amount_too_high"
+#define URNET_BITTENSOR_CONVERT_ERROR_AMOUNT_TOO_LOW "convert_amount_too_low"
+#define URNET_BITTENSOR_CONVERT_ERROR_BALANCE_TOO_LOW "convert_balance_too_low"
+#define URNET_BITTENSOR_CONVERT_ERROR_EXPIRED "convert_expired"
+#define URNET_BITTENSOR_CONVERT_ERROR_FAILED "convert_failed"
+#define URNET_BITTENSOR_CONVERT_ERROR_KEY_MISMATCH "convert_key_mismatch"
+#define URNET_BITTENSOR_CONVERT_ERROR_NOTHING_TO_CONVERT "convert_nothing_to_convert"
+#define URNET_BITTENSOR_CONVERT_ERROR_OUTCOME_UNKNOWN "convert_outcome_unknown"
+#define URNET_BITTENSOR_CONVERT_ERROR_PENDING "convert_already_pending"
+#define URNET_BITTENSOR_CONVERT_ERROR_PRICE_IMPACT "convert_price_impact_too_high"
+#define URNET_BITTENSOR_CONVERT_ERROR_PRICE_MOVED "convert_price_moved"
+#define URNET_BITTENSOR_CONVERT_ERROR_REFUSED "convert_refused"
+#define URNET_BITTENSOR_CONVERT_ERROR_RUNTIME_CHANGED "convert_runtime_changed"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_DELETE "delete"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_KEEP "keep"
 #define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_NONE ""
@@ -632,6 +646,12 @@ typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, c
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthWalletChallengeCallback */
 typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorConvertEstimateCallback */
+typedef void (*urnet_bittensor_convert_estimate_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorConvertReceiptCallback */
+typedef void (*urnet_bittensor_convert_receipt_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorConvertSubmitCallback */
+typedef void (*urnet_bittensor_convert_submit_cb)(void* user_data, const char* result_json, const char* err_param);
 /* BittensorLocalKeyFlowListener */
 typedef void (*urnet_bittensor_local_key_flow_cb)(void* user_data);
 /* BittensorLocalKeyStore */
@@ -2389,6 +2409,10 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 /* ----- functions ----- */
 
 double urnet_alpha_from_rao(int64_t rao);
+void urnet_bittensor_convert_estimate(const char* settings_json, const char* coldkey_ss58, int64_t amount_rao, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
+void urnet_bittensor_convert_estimate_for_burn(const char* settings_json, const char* coldkey_ss58, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
+void urnet_bittensor_convert_submit(const char* settings_json, const char* mnemonic, const char* estimate_json, urnet_bittensor_convert_submit_cb callback_result, void* callback_user_data);
+void urnet_bittensor_convert_wait(const char* settings_json, const char* submission_json, urnet_bittensor_convert_receipt_cb callback_result, void* callback_user_data);
 char* urnet_bittensor_local_key_address(const char* mnemonic, char** out_error);
 char* urnet_bittensor_local_key_generate(char** out_error);
 char* urnet_bittensor_local_key_sign(const char* mnemonic, const char* message, char** out_error);
@@ -2439,6 +2463,8 @@ char* urnet_format_alpha_amount(int64_t rao);
 char* urnet_format_points(double points);
 char* urnet_format_rank(int64_t rank);
 char* urnet_format_share_bps(int64_t share_bps);
+char* urnet_format_tao(int64_t rao);
+char* urnet_format_tao_amount(int64_t rao);
 void urnet_free_memory(void);
 uint64_t urnet_generate_device_rpc_key_material(char** out_error);
 char* urnet_generate_nonce(void);
@@ -2891,6 +2917,58 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* BittensorChallengeMessage (json):
  *   Challenge: string
  *   Timestamp: number
+ */
+
+/* BittensorConvertEstimateResult (json):
+ *   coldkey_ss58: string
+ *   hotkey_ss58?: string
+ *   netuid: number
+ *   stake_rao: number
+ *   free_tao_rao: number
+ *   price_rao: number
+ *   min_amount_rao: number
+ *   max_amount_rao: number
+ *   amount_rao: number
+ *   expected_tao_rao: number
+ *   expected_net_tao_rao: number
+ *   min_tao_rao: number
+ *   limit_price_rao: number
+ *   pool_fee_alpha_rao: number
+ *   price_impact_bps: number
+ *   fee_tao_rao: number
+ *   fee_alpha_rao: number
+ *   fee_in_alpha: boolean
+ *   remainder_swept_alpha_rao: number
+ *   remainder_swept_tao_rao: number
+ *   burn_rao?: number
+ *   register_fee_rao?: number
+ *   burn_tao_needed_rao?: number
+ *   burn_already_covered?: boolean
+ *   can_convert: boolean
+ *   notice?: string
+ *   funds_disclaimer: string
+ *   error?: SnError | null
+ */
+
+/* BittensorConvertReceipt (json):
+ *   tx_hash?: string
+ *   block_number?: number
+ *   extrinsic_index?: number
+ *   alpha_sold_rao: number
+ *   tao_received_rao: number
+ *   fee_alpha_rao: number
+ *   fee_tao_rao: number
+ *   funds_disclaimer: string
+ *   error?: SnError | null
+ */
+
+/* BittensorConvertSubmission (json):
+ *   tx_hash?: string
+ *   coldkey_ss58?: string
+ *   first_block?: number
+ *   last_block?: number
+ *   funds_disclaimer: string
+ *   error?: SnError | null
  */
 
 /* BittensorLocalKey (json):

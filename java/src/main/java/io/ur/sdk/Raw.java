@@ -23,6 +23,9 @@ public interface Raw extends Library {
   interface urnet_auth_verify_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_verify_send_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_wallet_challenge_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_estimate_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_receipt_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_bittensor_convert_submit_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_bittensor_local_key_flow_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_bittensor_local_key_store_add_key_cb extends Callback { byte invoke(Pointer a0, String a1, String a2, String a3); }
   interface urnet_bittensor_local_key_store_delete_key_cb extends Callback { byte invoke(Pointer a0, String a1); }
@@ -1422,6 +1425,10 @@ public interface Raw extends Library {
   void urnet_wallet_view_controller_validate_address(long a0, String a1, String a2, urnet_validate_address_cb a3, Pointer a4);
   byte urnet_websocket_device_rpc_listener_close(long a0, PointerByReference a1);
   double urnet_alpha_from_rao(long a0);
+  void urnet_bittensor_convert_estimate(String a0, String a1, long a2, urnet_bittensor_convert_estimate_cb a3, Pointer a4);
+  void urnet_bittensor_convert_estimate_for_burn(String a0, String a1, urnet_bittensor_convert_estimate_cb a2, Pointer a3);
+  void urnet_bittensor_convert_submit(String a0, String a1, String a2, urnet_bittensor_convert_submit_cb a3, Pointer a4);
+  void urnet_bittensor_convert_wait(String a0, String a1, urnet_bittensor_convert_receipt_cb a2, Pointer a3);
   Pointer urnet_bittensor_local_key_address(String a0, PointerByReference a1);
   Pointer urnet_bittensor_local_key_generate(PointerByReference a0);
   Pointer urnet_bittensor_local_key_sign(String a0, String a1, PointerByReference a2);
@@ -1472,6 +1479,8 @@ public interface Raw extends Library {
   Pointer urnet_format_points(double a0);
   Pointer urnet_format_rank(long a0);
   Pointer urnet_format_share_bps(long a0);
+  Pointer urnet_format_tao(long a0);
+  Pointer urnet_format_tao_amount(long a0);
   void urnet_free_memory();
   long urnet_generate_device_rpc_key_material(PointerByReference a0);
   Pointer urnet_generate_nonce();

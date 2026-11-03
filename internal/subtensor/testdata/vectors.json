@@ -1,0 +1,79 @@
+{
+ "metadata_sha256": "142e2f2735d9585567fd71e080554a2a0ec10d4ad0bcedb4993e87e473ddd852",
+ "genesis": "2f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03",
+ "spec_version": 486,
+ "transaction_version": 1,
+ "phrase": "bottom drive obey lake curtain smoke basket hold race lonely fit walk",
+ "vectors": [
+  {
+   "name": "remove_stake_limit, the first transaction of a key with no TAO",
+   "call_module": "SubtensorModule",
+   "call_function": "remove_stake_limit",
+   "birth_block": 9422016,
+   "birth_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "nonce": 0,
+   "signer": "46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a",
+   "call": "0759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b190000ca9a3b00000000701a3e000000000000",
+   "payload": "0759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b190000ca9a3b00000000701a3e0000000000000500000000e6010000010000002f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00",
+   "extrinsic": "7502840046ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a010e4b7847a11aa2b4e951229c698a972e0bcf2dfbd0aea697ee5e9fc27559be52f4888bd937b255033061dba2461045caa27796de79225b0ccbbeb8d71e791d8405000000000759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b190000ca9a3b00000000701a3e000000000000",
+   "extrinsic_hash": "2aacbf2c49c4a6b03af4ba76db80f943df97264b4b96e07e6ef0c850e09e79b2",
+   "signature": "0e4b7847a11aa2b4e951229c698a972e0bcf2dfbd0aea697ee5e9fc27559be52f4888bd937b255033061dba2461045caa27796de79225b0ccbbeb8d71e791d84"
+  },
+  {
+   "name": "remove_stake_limit, a nonce in two bytes",
+   "call_module": "SubtensorModule",
+   "call_function": "remove_stake_limit",
+   "birth_block": 9422047,
+   "birth_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "nonce": 154,
+   "signer": "46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a",
+   "call": "0759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b1900141a99be1c000000e11000000000000000",
+   "payload": "0759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b1900141a99be1c000000e11000000000000000f50169020000e6010000010000002f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb00",
+   "extrinsic": "7902840046ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a01f8cc4852e95437b5ba088451642b25d0ec86c50c25365649fe2abdc178acdb7c7e5e8217ab03a251468d6608d2828b6397d0b4176fe5a0c372da2511ec283b8df501690200000759a838b2d93ad97cb0fcc91f3bda505ae2bc221b348e47eeb07fd9d0b2ad8dc24b1900141a99be1c000000e11000000000000000",
+   "extrinsic_hash": "b294b852b55bb6bcf2ad56ca41164dd66043163aea4a447a697608f128e22de7",
+   "signature": "f8cc4852e95437b5ba088451642b25d0ec86c50c25365649fe2abdc178acdb7c7e5e8217ab03a251468d6608d2828b6397d0b4176fe5a0c372da2511ec283b8d"
+  },
+  {
+   "name": "remove_stake_limit, a nonce in four bytes",
+   "call_module": "SubtensorModule",
+   "call_function": "remove_stake_limit",
+   "birth_block": 7,
+   "birth_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "nonce": 70000,
+   "signer": "46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a",
+   "call": "07598eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a481900000008c5a1d8ccf9000008c5a1d8ccf900",
+   "payload": "07598eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a481900000008c5a1d8ccf9000008c5a1d8ccf9007500c24504000000e6010000010000002f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc00",
+   "extrinsic": "8102840046ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a016a5aee6ccd97e3297329cdd52a9f9cd2467b1e20ecf95bd93a866abe51cf5b6cd8186916fb17bcc5c724cfcad8da8082987f54957340ad1d696759e632430a897500c2450400000007598eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a481900000008c5a1d8ccf9000008c5a1d8ccf900",
+   "extrinsic_hash": "815082d39753a387771289eeaded8e4ed1a3f3f6c6c9acc4116f8fc9720976d4",
+   "signature": "6a5aee6ccd97e3297329cdd52a9f9cd2467b1e20ecf95bd93a866abe51cf5b6cd8186916fb17bcc5c724cfcad8da8082987f54957340ad1d696759e632430a89"
+  },
+  {
+   "name": "register_limit",
+   "call_module": "SubtensorModule",
+   "call_function": "register_limit",
+   "birth_block": 9422063,
+   "birth_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "nonce": 1,
+   "signer": "46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a",
+   "call": "078619008eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a487064080000000000",
+   "payload": "078619008eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a487064080000000000f502040000e6010000010000002f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd00",
+   "extrinsic": "5102840046ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a018649ee65ca812f330cb8d23e5e8fe6a2f83ab7643e9f5140ffd01c8aebfe233eb1b0e2f60ba917d564aa67b7751ef2e34c6701763eded6c31123b691d949588ef502040000078619008eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a487064080000000000",
+   "extrinsic_hash": "eb103ee2da55c633b44f4e7d4a86c3997d08164f5da87b74fb7468a00aa89177",
+   "signature": "8649ee65ca812f330cb8d23e5e8fe6a2f83ab7643e9f5140ffd01c8aebfe233eb1b0e2f60ba917d564aa67b7751ef2e34c6701763eded6c31123b691d949588e"
+  },
+  {
+   "name": "set_commitment",
+   "call_module": "Commitments",
+   "call_function": "set_commitment",
+   "birth_block": 9422080,
+   "birth_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "nonce": 2,
+   "signer": "46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a",
+   "call": "1200190004297572666c65657431cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+   "payload": "1200190004297572666c65657431cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd0500080000e6010000010000002f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00",
+   "extrinsic": "5902840046ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a01865481836c8fd9fffa04444d54766efb9e1b491163130c7598d67e80b0417f349f0b60257d919bd937f19836fa92cb30bef55866c9231306c203ea7a28ddb18f05000800001200190004297572666c65657431cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+   "extrinsic_hash": "5a5e189d96368fb05ad463d5046c12a3834c933d917cac13306f1e39813a1ff8",
+   "signature": "865481836c8fd9fffa04444d54766efb9e1b491163130c7598d67e80b0417f349f0b60257d919bd937f19836fa92cb30bef55866c9231306c203ea7a28ddb18f"
+  }
+ ]
+}
