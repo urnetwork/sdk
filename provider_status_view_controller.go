@@ -19,6 +19,15 @@ import (
 // five minutes, so a faster poll shows nothing new.
 const defaultProviderStatusPollInterval = 60 * time.Second
 
+// The wait after a failed poll with no snapshot to show, times the failures so
+// far. The server's handler cache answers a poll it cannot serve yet with a 503
+// asking for a retry after 5 s, so the first retry is no sooner than that.
+const defaultProviderStatusFailedPollRetryInterval = 5 * time.Second
+
+// How many such retries a Start allows, so a failing server sees at most this
+// many extra requests per open screen. The next try is then at the poll interval.
+const defaultProviderStatusFailedPollRetryCount = 3
+
 // Fires whenever the published status changes: a poll succeeded or failed,
 // or the controller stopped. The app re-reads the getters.
 type ProviderStatusListener interface {
@@ -35,7 +44,9 @@ type ProviderStatusListener interface {
 // Stop pauses polling and keeps the last snapshot, so a screen that comes
 // back shows it at once while the next poll runs; Close ends the controller.
 // A failed poll keeps the last snapshot, records the error
-// (GetLastFetchError) and retries at the next interval.
+// (GetLastFetchError) and retries at the next interval, or sooner a bounded
+// number of times while there is no snapshot, because the screen then has nothing
+// to show until a poll succeeds.
 type ProviderStatusViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -48,7 +59,12 @@ type ProviderStatusViewController struct {
 	stateLock sync.Mutex
 
 	pollInterval time.Duration
-	started      bool
+	// see defaultProviderStatusFailedPollRetryInterval and ...RetryCount
+	failedPollRetryInterval time.Duration
+	failedPollRetryCount    int
+	// the retries this Start has made
+	failedPollRetries int
+	started           bool
 	// invalidates in-flight fetches across Stop/Start
 	generation    int
 	fetchInFlight bool
@@ -83,15 +99,17 @@ func newProviderStatusViewController(ctx context.Context, device Device) *Provid
 func newProviderStatusViewControllerWithoutRun(ctx context.Context, api *Api, clientId *Id) *ProviderStatusViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	vc := &ProviderStatusViewController{
-		ctx:          cancelCtx,
-		cancel:       cancel,
-		clientId:     clientId,
-		wake:         make(chan struct{}, 1),
-		pollInterval: defaultProviderStatusPollInterval,
-		statuses:     NewProviderStatusList(),
-		listeners:    connect.NewCallbackList[ProviderStatusListener](),
-		nowFunc:      time.Now,
-		afterFunc:    time.After,
+		ctx:                     cancelCtx,
+		cancel:                  cancel,
+		clientId:                clientId,
+		wake:                    make(chan struct{}, 1),
+		pollInterval:            defaultProviderStatusPollInterval,
+		failedPollRetryInterval: defaultProviderStatusFailedPollRetryInterval,
+		failedPollRetryCount:    defaultProviderStatusFailedPollRetryCount,
+		statuses:                NewProviderStatusList(),
+		listeners:               connect.NewCallbackList[ProviderStatusListener](),
+		nowFunc:                 time.Now,
+		afterFunc:               time.After,
 	}
 	vc.fetchFunc = func(callback GetProviderStatusCallback) {
 		api.GetProviderStatus(callback)
@@ -110,6 +128,7 @@ func (self *ProviderStatusViewController) Start() {
 		self.started = true
 		self.forcePoll = true
 		self.nextPollAt = time.Time{}
+		self.failedPollRetries = 0
 	}()
 	self.scheduleWake()
 }
@@ -222,8 +241,10 @@ func (self *ProviderStatusViewController) fetchDone(generation int, result *GetP
 		switch {
 		case err != nil:
 			self.lastFetchError = err.Error()
+			self.scheduleFailedPollRetryWithLock()
 		case result == nil:
 			self.lastFetchError = "no provider status"
+			self.scheduleFailedPollRetryWithLock()
 		default:
 			self.lastFetchError = ""
 			self.loaded = true
@@ -246,6 +267,19 @@ func (self *ProviderStatusViewController) fetchDone(generation int, result *GetP
 	if applied {
 		self.statusChanged()
 		self.scheduleWake()
+	}
+}
+
+// Brings the next poll forward after a failed one while there is no snapshot to
+// show and the budget lasts.
+func (self *ProviderStatusViewController) scheduleFailedPollRetryWithLock() {
+	if self.loaded || self.failedPollRetryCount <= self.failedPollRetries {
+		return
+	}
+	self.failedPollRetries += 1
+	retryAt := self.nowFunc().Add(time.Duration(self.failedPollRetries) * self.failedPollRetryInterval)
+	if retryAt.Before(self.nextPollAt) {
+		self.nextPollAt = retryAt
 	}
 }
 
