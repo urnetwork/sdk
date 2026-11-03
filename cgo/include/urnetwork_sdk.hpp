@@ -21906,6 +21906,7 @@ public:
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeProviderStatusViewController(const ProviderStatusViewController& vc) const;
+	void closeRpcServer() const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	void disableSubprotocol(int64_t subprotocol_id) const;
@@ -33070,6 +33071,9 @@ inline void DeviceLocal::closeProviderLocationsViewController(const ProviderLoca
 }
 inline void DeviceLocal::closeProviderStatusViewController(const ProviderStatusViewController& vc) const {
 	urnet_device_local_close_provider_status_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeRpcServer() const {
+	urnet_device_local_close_rpc_server(handle());
 }
 inline void DeviceLocal::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;

@@ -1712,6 +1712,7 @@ void urnet_device_local_close_points_leaderboard_view_controller(uint64_t self, 
 void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_provider_status_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_rpc_server(uint64_t self);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 void urnet_device_local_connect_sn_wallet(uint64_t self, const char* coldkey_ss58, const char* signature, const char* message, urnet_sn_connect_wallet_cb callback_result, void* callback_user_data);
 void urnet_device_local_disable_subprotocol(uint64_t self, int64_t subprotocol_id);

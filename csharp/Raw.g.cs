@@ -790,6 +790,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_close_post_quantum_identity_view_controller(ulong a0, ulong a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_close_provider_locations_view_controller(ulong a0, ulong a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_close_provider_status_view_controller(ulong a0, ulong a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_close_rpc_server(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_close_view_controller(ulong a0, urnet_view_controller_close_cb a1, urnet_view_controller_start_cb a2, urnet_view_controller_stop_cb a3, IntPtr a4);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_connect_sn_wallet(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3, urnet_sn_connect_wallet_cb a4, IntPtr a5);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_device_local_disable_subprotocol(ulong a0, long a1);

@@ -1335,6 +1335,8 @@ def bind(lib):
     lib.urnet_device_local_close_provider_locations_view_controller.restype = None
     lib.urnet_device_local_close_provider_status_view_controller.argtypes = [c_uint64, c_uint64]
     lib.urnet_device_local_close_provider_status_view_controller.restype = None
+    lib.urnet_device_local_close_rpc_server.argtypes = [c_uint64]
+    lib.urnet_device_local_close_rpc_server.restype = None
     lib.urnet_device_local_close_view_controller.argtypes = [c_uint64, urnet_view_controller_close_cb, urnet_view_controller_start_cb, urnet_view_controller_stop_cb, c_void_p]
     lib.urnet_device_local_close_view_controller.restype = None
     lib.urnet_device_local_connect_sn_wallet.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p, urnet_sn_connect_wallet_cb, c_void_p]
