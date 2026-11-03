@@ -104,8 +104,35 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_DELETE "delete"
+#define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_KEEP "keep"
+#define URNET_BITTENSOR_LOCAL_KEY_CONFIRM_NONE ""
+#define URNET_BITTENSOR_LOCAL_KEY_COPY_SECONDS 60
 #define URNET_BITTENSOR_LOCAL_KEY_ERROR_FAILED "local_key_failed"
 #define URNET_BITTENSOR_LOCAL_KEY_ERROR_INVALID_PHRASE "invalid_recovery_phrase"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_CONSENT "consent_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_DELETE "delete_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_GENERATE "generate_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_NOT_ALLOWED "not_allowed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_REPLACEMENT_NOT_CONFIRMED "replacement_not_confirmed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_STORE "store_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_FAILURE_STORE_UNAVAILABLE "store_unavailable"
+#define URNET_BITTENSOR_LOCAL_KEY_REMINDER_CANCEL "cancel"
+#define URNET_BITTENSOR_LOCAL_KEY_REMINDER_DELIVER_NOW "deliver_now"
+#define URNET_BITTENSOR_LOCAL_KEY_REMINDER_NONE "none"
+#define URNET_BITTENSOR_LOCAL_KEY_REMINDER_SCHEDULE "schedule"
+#define URNET_BITTENSOR_LOCAL_KEY_REVEAL_SECONDS 60
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_CONSENT_UNAVAILABLE "consent_unavailable"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_ELSEWHERE "elsewhere"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_LOADING "loading"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_NONE "none"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVED_AND_DELETED "saved_and_deleted"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_LATER_LINKED "save_later_linked"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_LATER_NOT_LINKED "save_later_not_linked"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_NOW_CONSENT_FAILED "save_now_consent_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_SAVE_NOW_SHOWING "save_now_showing"
+#define URNET_BITTENSOR_LOCAL_KEY_STATE_STORE_UNAVAILABLE "store_unavailable"
+#define URNET_BITTENSOR_LOCAL_KEY_STORE_UNAVAILABLE "store_unavailable"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
 #define URNET_BITTENSOR_TAO_COM_INJECTED_NAME "@opentensor/bittensor-extension"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
@@ -261,6 +288,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_FAILED "activation_failed"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_REFUSED "activation_refused"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_UNREACHABLE "activation_unreachable"
 #define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
 #define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
 #define URNET_EXTENDER_PROVIDE_ERROR_START "start"
@@ -588,6 +616,15 @@ typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, c
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthWalletChallengeCallback */
 typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
+/* BittensorLocalKeyFlowListener */
+typedef void (*urnet_bittensor_local_key_flow_cb)(void* user_data);
+/* BittensorLocalKeyStore */
+typedef bool (*urnet_bittensor_local_key_store_add_key_cb)(void* user_data, const char* network_id, const char* mnemonic, const char* address);
+typedef bool (*urnet_bittensor_local_key_store_delete_key_cb)(void* user_data, const char* network_id);
+typedef char* (*urnet_bittensor_local_key_store_key_address_cb)(void* user_data, const char* network_id);
+typedef char* (*urnet_bittensor_local_key_store_key_phrase_cb)(void* user_data, const char* network_id);
+typedef char* (*urnet_bittensor_local_key_store_read_note_cb)(void* user_data, const char* network_id, const char* name);
+typedef void (*urnet_bittensor_local_key_store_write_note_cb)(void* user_data, const char* network_id, const char* name, const char* value);
 /* BlockActionOverridesChangeListener */
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 /* BlockActionStatsListener */
@@ -1150,6 +1187,41 @@ void urnet_async_local_state_logout(uint64_t self, urnet_commit_cb callback_comp
 void urnet_async_local_state_parse_by_jwt(uint64_t self, urnet_parse_by_jwt_cb callback_result, void* callback_user_data);
 void urnet_async_local_state_set_by_client_jwt(uint64_t self, const char* by_client_jwt, urnet_commit_cb callback_complete, void* callback_user_data);
 void urnet_async_local_state_set_by_jwt(uint64_t self, const char* by_jwt, urnet_commit_cb callback_complete, void* callback_user_data);
+
+/* ----- BittensorLocalKeyFlow ----- */
+
+uint64_t urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener(uint64_t self, urnet_bittensor_local_key_flow_cb listener_bittensor_local_key_flow_changed, void* listener_user_data);
+void urnet_bittensor_local_key_flow_cancel_confirmation(uint64_t self);
+void urnet_bittensor_local_key_flow_close(uint64_t self);
+void urnet_bittensor_local_key_flow_close_screen(uint64_t self);
+void urnet_bittensor_local_key_flow_confirm_delete(uint64_t self, bool authenticated);
+void urnet_bittensor_local_key_flow_confirm_keep(uint64_t self, bool authenticated);
+void urnet_bittensor_local_key_flow_finish_setup(uint64_t self, bool replace_confirmed);
+bool urnet_bittensor_local_key_flow_forget_network(uint64_t self);
+char* urnet_bittensor_local_key_flow_get_card(uint64_t self);
+char* urnet_bittensor_local_key_flow_get_screen(uint64_t self);
+char* urnet_bittensor_local_key_flow_go_string(uint64_t self);
+void urnet_bittensor_local_key_flow_hide(uint64_t self);
+bool urnet_bittensor_local_key_flow_needs_backup(uint64_t self);
+void urnet_bittensor_local_key_flow_open_screen(uint64_t self);
+char* urnet_bittensor_local_key_flow_phrase_to_copy(uint64_t self);
+void urnet_bittensor_local_key_flow_reload(uint64_t self);
+char* urnet_bittensor_local_key_flow_reminder(uint64_t self, int64_t current_epoch, int64_t claim_open_millis, int64_t epoch_blocks, bool claimable);
+void urnet_bittensor_local_key_flow_reminder_delivered(uint64_t self);
+void urnet_bittensor_local_key_flow_reminder_scheduled(uint64_t self, int64_t at_millis);
+void urnet_bittensor_local_key_flow_retry_save_now(uint64_t self);
+void urnet_bittensor_local_key_flow_reveal(uint64_t self, bool authenticated);
+char* urnet_bittensor_local_key_flow_revealed_words(uint64_t self);
+void urnet_bittensor_local_key_flow_save_first(uint64_t self, bool replace_confirmed);
+void urnet_bittensor_local_key_flow_set_capture_active(uint64_t self, bool active);
+void urnet_bittensor_local_key_flow_set_consent(uint64_t self, bool active, const char* coldkey_ss58, int64_t from_epoch);
+void urnet_bittensor_local_key_flow_set_consent_unavailable(uint64_t self);
+void urnet_bittensor_local_key_flow_set_current_epoch(uint64_t self, int64_t current_epoch);
+void urnet_bittensor_local_key_flow_set_guest(uint64_t self, bool guest);
+void urnet_bittensor_local_key_flow_set_top200_registered(uint64_t self, bool registered);
+void urnet_bittensor_local_key_flow_set_up_payouts(uint64_t self, bool replace_confirmed);
+char* urnet_bittensor_local_key_flow_string(uint64_t self);
+void urnet_bittensor_local_key_flow_submit_words(uint64_t self, const char* first_word, const char* second_word);
 
 /* ----- BittensorWalletSession ----- */
 
@@ -2381,6 +2453,7 @@ double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
 void urnet_network_changed(void);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
+uint64_t urnet_new_bittensor_local_key_flow(uint64_t api, const char* network_id, urnet_bittensor_local_key_store_add_key_cb store_add_key, urnet_bittensor_local_key_store_delete_key_cb store_delete_key, urnet_bittensor_local_key_store_key_address_cb store_key_address, urnet_bittensor_local_key_store_key_phrase_cb store_key_phrase, urnet_bittensor_local_key_store_read_note_cb store_read_note, urnet_bittensor_local_key_store_write_note_cb store_write_note, void* store_user_data);
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_client_info(const char* device_type, const char* app_version);
@@ -2793,6 +2866,52 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* BittensorLocalKey (json):
  *   mnemonic: string
  *   address: string
+ */
+
+/* BittensorLocalKeyCard (json):
+ *   state: string
+ *   address: string
+ *   stored_address: string
+ *   shows_key_path: boolean
+ *   offers_set_up: boolean
+ *   offers_save_first: boolean
+ *   offers_wallet: boolean
+ *   offers_finish_setup: boolean
+ *   offers_key_screen: boolean
+ *   replaces_payout_wallet: boolean
+ *   owner_only: boolean
+ *   payouts_start_next_epoch: boolean
+ *   backup_reminder: boolean
+ *   key_saved: boolean
+ *   busy: boolean
+ *   link_generation: number
+ *   failure_code: string
+ *   failure_message: string
+ */
+
+/* BittensorLocalKeyReminder (json):
+ *   action: string
+ *   at_millis: number
+ */
+
+/* BittensorLocalKeyScreen (json):
+ *   open: boolean
+ *   save_now: boolean
+ *   address: string
+ *   revealed: boolean
+ *   needs_authentication: boolean
+ *   hidden_by_capture: boolean
+ *   confirming: string
+ *   first_word_position: number
+ *   second_word_position: number
+ *   words_rejected: boolean
+ *   warns_top200: boolean
+ *   offers_keep: boolean
+ *   offers_retry: boolean
+ *   busy: boolean
+ *   done: boolean
+ *   failure_code: string
+ *   failure_message: string
  */
 
 /* BittensorSignRequest (json):
