@@ -26,11 +26,9 @@ import (
 // none: its embedder keeps the identity (the sn miner's `.provider.extender.key`)
 // and replacing it is the embedder's, as before.
 
-// The least time between two keys made for one network. A key the space made is
-// refused as another network's only when another network activated it first,
-// which takes a post of it through this extender before this extender's own
-// post lands. Bounding the keys to one a day bounds what that can make an
-// installation churn through, and leaves the refusal in the status meanwhile.
+// The least time between two keys made for one network, so that no run of the
+// operator's answers can make an installation churn through keys; a refusal of
+// the network's key within that time stands in the status.
 const extenderNetworkKeyRenewTimeout = 24 * time.Hour
 
 // The network a client jwt belongs to, read without verification -- it is this
