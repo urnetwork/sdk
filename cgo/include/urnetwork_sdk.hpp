@@ -169,8 +169,35 @@ inline constexpr const char* BittensorConvertErrorPriceImpact = "convert_price_i
 inline constexpr const char* BittensorConvertErrorPriceMoved = "convert_price_moved";
 inline constexpr const char* BittensorConvertErrorRefused = "convert_refused";
 inline constexpr const char* BittensorConvertErrorRuntimeChanged = "convert_runtime_changed";
+inline constexpr const char* BittensorLocalKeyConfirmDelete = "delete";
+inline constexpr const char* BittensorLocalKeyConfirmKeep = "keep";
+inline constexpr const char* BittensorLocalKeyConfirmNone = "";
+inline constexpr int64_t BittensorLocalKeyCopySeconds = 60;
 inline constexpr const char* BittensorLocalKeyErrorFailed = "local_key_failed";
 inline constexpr const char* BittensorLocalKeyErrorInvalidPhrase = "invalid_recovery_phrase";
+inline constexpr const char* BittensorLocalKeyFailureConsent = "consent_failed";
+inline constexpr const char* BittensorLocalKeyFailureDelete = "delete_failed";
+inline constexpr const char* BittensorLocalKeyFailureGenerate = "generate_failed";
+inline constexpr const char* BittensorLocalKeyFailureNotAllowed = "not_allowed";
+inline constexpr const char* BittensorLocalKeyFailureReplacementNotConfirmed = "replacement_not_confirmed";
+inline constexpr const char* BittensorLocalKeyFailureStore = "store_failed";
+inline constexpr const char* BittensorLocalKeyFailureStoreUnavailable = "store_unavailable";
+inline constexpr const char* BittensorLocalKeyReminderCancel = "cancel";
+inline constexpr const char* BittensorLocalKeyReminderDeliverNow = "deliver_now";
+inline constexpr const char* BittensorLocalKeyReminderNone = "none";
+inline constexpr const char* BittensorLocalKeyReminderSchedule = "schedule";
+inline constexpr int64_t BittensorLocalKeyRevealSeconds = 60;
+inline constexpr const char* BittensorLocalKeyStateConsentUnavailable = "consent_unavailable";
+inline constexpr const char* BittensorLocalKeyStateElsewhere = "elsewhere";
+inline constexpr const char* BittensorLocalKeyStateLoading = "loading";
+inline constexpr const char* BittensorLocalKeyStateNone = "none";
+inline constexpr const char* BittensorLocalKeyStateSaveLaterLinked = "save_later_linked";
+inline constexpr const char* BittensorLocalKeyStateSaveLaterNotLinked = "save_later_not_linked";
+inline constexpr const char* BittensorLocalKeyStateSaveNowConsentFailed = "save_now_consent_failed";
+inline constexpr const char* BittensorLocalKeyStateSaveNowShowing = "save_now_showing";
+inline constexpr const char* BittensorLocalKeyStateSavedAndDeleted = "saved_and_deleted";
+inline constexpr const char* BittensorLocalKeyStateStoreUnavailable = "store_unavailable";
+inline constexpr const char* BittensorLocalKeyStoreUnavailable = "store_unavailable";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
 inline constexpr const char* BittensorTaoComInjectedName = "@opentensor/bittensor-extension";
 inline constexpr const char* BittensorWalletBridgeErrorAddressMismatch = "address_mismatch";
@@ -620,6 +647,7 @@ class AccountPreferencesViewController;
 class AccountViewController;
 class Api;
 class AsyncLocalState;
+class BittensorLocalKeyFlow;
 class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
@@ -738,6 +766,9 @@ struct BittensorConvertEstimateResult;
 struct BittensorConvertReceipt;
 struct BittensorConvertSubmission;
 struct BittensorLocalKey;
+struct BittensorLocalKeyCard;
+struct BittensorLocalKeyReminder;
+struct BittensorLocalKeyScreen;
 struct BittensorSignRequest;
 struct BittensorWalletProof;
 struct BittensorWalletResult;
@@ -1575,6 +1606,52 @@ struct BittensorConvertSubmission {
 struct BittensorLocalKey {
 	std::string mnemonic{};
 	std::string address{};
+};
+
+struct BittensorLocalKeyCard {
+	std::string state{};
+	std::string address{};
+	std::string stored_address{};
+	bool shows_key_path{};
+	bool offers_set_up{};
+	bool offers_save_first{};
+	bool offers_wallet{};
+	bool offers_finish_setup{};
+	bool offers_key_screen{};
+	bool replaces_payout_wallet{};
+	bool owner_only{};
+	bool payouts_start_next_epoch{};
+	bool backup_reminder{};
+	bool key_saved{};
+	bool busy{};
+	int64_t link_generation{};
+	std::string failure_code{};
+	std::string failure_message{};
+};
+
+struct BittensorLocalKeyReminder {
+	std::string action{};
+	int64_t at_millis{};
+};
+
+struct BittensorLocalKeyScreen {
+	bool open{};
+	bool save_now{};
+	std::string address{};
+	bool revealed{};
+	bool needs_authentication{};
+	bool hidden_by_capture{};
+	std::string confirming{};
+	int64_t first_word_position{};
+	int64_t second_word_position{};
+	bool words_rejected{};
+	bool warns_top200{};
+	bool offers_keep{};
+	bool offers_retry{};
+	bool busy{};
+	bool done{};
+	std::string failure_code{};
+	std::string failure_message{};
 };
 
 struct BittensorSignRequest {
@@ -4442,6 +4519,12 @@ inline void to_json(nlohmann::json& j, const BittensorConvertSubmission& v);
 inline void from_json(const nlohmann::json& j, BittensorConvertSubmission& v);
 inline void to_json(nlohmann::json& j, const BittensorLocalKey& v);
 inline void from_json(const nlohmann::json& j, BittensorLocalKey& v);
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyCard& v);
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v);
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyReminder& v);
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyReminder& v);
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyScreen& v);
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v);
 inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
 inline void from_json(const nlohmann::json& j, BittensorSignRequest& v);
 inline void to_json(nlohmann::json& j, const BittensorWalletProof& v);
@@ -7337,6 +7420,181 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKey& v) {
 	}
 	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.address);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyCard& v) {
+	j = nlohmann::json::object();
+	j["state"] = v.state;
+	j["address"] = v.address;
+	j["stored_address"] = v.stored_address;
+	j["shows_key_path"] = v.shows_key_path;
+	j["offers_set_up"] = v.offers_set_up;
+	j["offers_save_first"] = v.offers_save_first;
+	j["offers_wallet"] = v.offers_wallet;
+	j["offers_finish_setup"] = v.offers_finish_setup;
+	j["offers_key_screen"] = v.offers_key_screen;
+	j["replaces_payout_wallet"] = v.replaces_payout_wallet;
+	j["owner_only"] = v.owner_only;
+	j["payouts_start_next_epoch"] = v.payouts_start_next_epoch;
+	j["backup_reminder"] = v.backup_reminder;
+	j["key_saved"] = v.key_saved;
+	j["busy"] = v.busy;
+	j["link_generation"] = v.link_generation;
+	j["failure_code"] = v.failure_code;
+	j["failure_message"] = v.failure_message;
+}
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.address);
+	}
+	if (auto it = j.find("stored_address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.stored_address);
+	}
+	if (auto it = j.find("shows_key_path"); it != j.end() && !it->is_null()) {
+		it->get_to(v.shows_key_path);
+	}
+	if (auto it = j.find("offers_set_up"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_set_up);
+	}
+	if (auto it = j.find("offers_save_first"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_save_first);
+	}
+	if (auto it = j.find("offers_wallet"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_wallet);
+	}
+	if (auto it = j.find("offers_finish_setup"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_finish_setup);
+	}
+	if (auto it = j.find("offers_key_screen"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_key_screen);
+	}
+	if (auto it = j.find("replaces_payout_wallet"); it != j.end() && !it->is_null()) {
+		it->get_to(v.replaces_payout_wallet);
+	}
+	if (auto it = j.find("owner_only"); it != j.end() && !it->is_null()) {
+		it->get_to(v.owner_only);
+	}
+	if (auto it = j.find("payouts_start_next_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.payouts_start_next_epoch);
+	}
+	if (auto it = j.find("backup_reminder"); it != j.end() && !it->is_null()) {
+		it->get_to(v.backup_reminder);
+	}
+	if (auto it = j.find("key_saved"); it != j.end() && !it->is_null()) {
+		it->get_to(v.key_saved);
+	}
+	if (auto it = j.find("busy"); it != j.end() && !it->is_null()) {
+		it->get_to(v.busy);
+	}
+	if (auto it = j.find("link_generation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.link_generation);
+	}
+	if (auto it = j.find("failure_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.failure_code);
+	}
+	if (auto it = j.find("failure_message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.failure_message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyReminder& v) {
+	j = nlohmann::json::object();
+	j["action"] = v.action;
+	j["at_millis"] = v.at_millis;
+}
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyReminder& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("action"); it != j.end() && !it->is_null()) {
+		it->get_to(v.action);
+	}
+	if (auto it = j.find("at_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.at_millis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyScreen& v) {
+	j = nlohmann::json::object();
+	j["open"] = v.open;
+	j["save_now"] = v.save_now;
+	j["address"] = v.address;
+	j["revealed"] = v.revealed;
+	j["needs_authentication"] = v.needs_authentication;
+	j["hidden_by_capture"] = v.hidden_by_capture;
+	j["confirming"] = v.confirming;
+	j["first_word_position"] = v.first_word_position;
+	j["second_word_position"] = v.second_word_position;
+	j["words_rejected"] = v.words_rejected;
+	j["warns_top200"] = v.warns_top200;
+	j["offers_keep"] = v.offers_keep;
+	j["offers_retry"] = v.offers_retry;
+	j["busy"] = v.busy;
+	j["done"] = v.done;
+	j["failure_code"] = v.failure_code;
+	j["failure_message"] = v.failure_message;
+}
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("open"); it != j.end() && !it->is_null()) {
+		it->get_to(v.open);
+	}
+	if (auto it = j.find("save_now"); it != j.end() && !it->is_null()) {
+		it->get_to(v.save_now);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.address);
+	}
+	if (auto it = j.find("revealed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.revealed);
+	}
+	if (auto it = j.find("needs_authentication"); it != j.end() && !it->is_null()) {
+		it->get_to(v.needs_authentication);
+	}
+	if (auto it = j.find("hidden_by_capture"); it != j.end() && !it->is_null()) {
+		it->get_to(v.hidden_by_capture);
+	}
+	if (auto it = j.find("confirming"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirming);
+	}
+	if (auto it = j.find("first_word_position"); it != j.end() && !it->is_null()) {
+		it->get_to(v.first_word_position);
+	}
+	if (auto it = j.find("second_word_position"); it != j.end() && !it->is_null()) {
+		it->get_to(v.second_word_position);
+	}
+	if (auto it = j.find("words_rejected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.words_rejected);
+	}
+	if (auto it = j.find("warns_top200"); it != j.end() && !it->is_null()) {
+		it->get_to(v.warns_top200);
+	}
+	if (auto it = j.find("offers_keep"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_keep);
+	}
+	if (auto it = j.find("offers_retry"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offers_retry);
+	}
+	if (auto it = j.find("busy"); it != j.end() && !it->is_null()) {
+		it->get_to(v.busy);
+	}
+	if (auto it = j.find("done"); it != j.end() && !it->is_null()) {
+		it->get_to(v.done);
+	}
+	if (auto it = j.find("failure_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.failure_code);
+	}
+	if (auto it = j.find("failure_message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.failure_message);
 	}
 }
 
@@ -19848,6 +20106,15 @@ using AuthWalletChallengeCallback = std::function<void(std::optional<AuthWalletC
 using BittensorConvertEstimateCallback = std::function<void(std::optional<BittensorConvertEstimateResult> result, std::optional<std::string> err_param)>;
 using BittensorConvertReceiptCallback = std::function<void(std::optional<BittensorConvertReceipt> result, std::optional<std::string> err_param)>;
 using BittensorConvertSubmitCallback = std::function<void(std::optional<BittensorConvertSubmission> result, std::optional<std::string> err_param)>;
+using BittensorLocalKeyFlowListener = std::function<void()>;
+struct BittensorLocalKeyStore {
+	std::function<bool(std::string network_id, std::string mnemonic, std::string address)> add_key;
+	std::function<bool(std::string network_id)> delete_key;
+	std::function<std::string(std::string network_id)> key_address;
+	std::function<std::string(std::string network_id)> key_phrase;
+	std::function<std::string(std::string network_id, std::string name)> read_note;
+	std::function<void(std::string network_id, std::string name, std::string value)> write_note;
+};
 using BlockActionOverridesChangeListener = std::function<void(std::optional<BlockActionOverrideList> block_action_overrides)>;
 using BlockActionStatsListener = std::function<void()>;
 using BlockActionWindowChangeListener = std::function<void(std::optional<BlockActionWindow> block_action_window)>;
@@ -20419,6 +20686,44 @@ public:
 	void parseByJwt(ParseByJwtCallback callback) const;
 	void setByClientJwt(const std::string& by_client_jwt, CommitCallback callback) const;
 	void setByJwt(const std::string& by_jwt, CommitCallback callback) const;
+};
+
+class BittensorLocalKeyFlow final : public detail::Handle {
+public:
+	BittensorLocalKeyFlow() = default;
+	explicit BittensorLocalKeyFlow(uint64_t h) : detail::Handle(h) {}
+	Sub addBittensorLocalKeyFlowListener(BittensorLocalKeyFlowListener listener) const;
+	void cancelConfirmation() const;
+	void close() const;
+	void closeScreen() const;
+	void confirmDelete(bool authenticated) const;
+	void confirmKeep(bool authenticated) const;
+	void finishSetup(bool replace_confirmed) const;
+	bool forgetNetwork() const;
+	std::optional<BittensorLocalKeyCard> getCard() const;
+	std::optional<BittensorLocalKeyScreen> getScreen() const;
+	std::string goString() const;
+	void hide() const;
+	bool needsBackup() const;
+	void openScreen() const;
+	std::string phraseToCopy() const;
+	void reload() const;
+	std::optional<BittensorLocalKeyReminder> reminder(int64_t current_epoch, int64_t claim_open_millis, int64_t epoch_blocks, bool claimable) const;
+	void reminderDelivered() const;
+	void reminderScheduled(int64_t at_millis) const;
+	void retrySaveNow() const;
+	void reveal(bool authenticated) const;
+	std::optional<StringList> revealedWords() const;
+	void saveFirst(bool replace_confirmed) const;
+	void setCaptureActive(bool active) const;
+	void setConsent(bool active, const std::string& coldkey_ss58, int64_t from_epoch) const;
+	void setConsentUnavailable() const;
+	void setCurrentEpoch(int64_t current_epoch) const;
+	void setGuest(bool guest) const;
+	void setTop200Registered(bool registered) const;
+	void setUpPayouts(bool replace_confirmed) const;
+	std::string string() const;
+	void submitWords(const std::string& first_word, const std::string& second_word) const;
 };
 
 class BittensorWalletSession final : public detail::Handle {
@@ -22310,6 +22615,103 @@ inline void oneshot_bittensor_convert_submit(void* user_data, const char* result
 	} catch (...) {
 	}
 	delete f;
+}
+
+inline void retained_bittensor_local_key_flow(void* user_data) {
+	auto* f = static_cast<BittensorLocalKeyFlowListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_bittensor_local_key_flow(void* user_data) {
+	auto* f = static_cast<BittensorLocalKeyFlowListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline bool retained_bittensor_local_key_store_add_key(void* user_data, const char* network_id, const char* mnemonic, const char* address) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	bool r{};
+	try {
+		if (f->add_key) {
+			r = f->add_key(std::string(network_id ? network_id : ""), std::string(mnemonic ? mnemonic : ""), std::string(address ? address : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline bool retained_bittensor_local_key_store_delete_key(void* user_data, const char* network_id) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	bool r{};
+	try {
+		if (f->delete_key) {
+			r = f->delete_key(std::string(network_id ? network_id : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline char* retained_bittensor_local_key_store_key_address(void* user_data, const char* network_id) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->key_address) {
+			r = f->key_address(std::string(network_id ? network_id : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline char* retained_bittensor_local_key_store_key_phrase(void* user_data, const char* network_id) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->key_phrase) {
+			r = f->key_phrase(std::string(network_id ? network_id : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline char* retained_bittensor_local_key_store_read_note(void* user_data, const char* network_id, const char* name) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	std::string r{};
+	try {
+		if (f->read_note) {
+			r = f->read_note(std::string(network_id ? network_id : ""), std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline void retained_bittensor_local_key_store_write_note(void* user_data, const char* network_id, const char* name, const char* value) {
+	auto* f = static_cast<BittensorLocalKeyStore*>(user_data);
+	try {
+		if (f->write_note) {
+			f->write_note(std::string(network_id ? network_id : ""), std::string(name ? name : ""), std::string(value ? value : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
 }
 
 inline void retained_block_action_overrides_change(void* user_data, const char* block_action_overrides_json) {
@@ -30321,6 +30723,135 @@ inline void AsyncLocalState::setByJwt(const std::string& by_jwt, CommitCallback 
 	auto* callback_fn = callback ? new CommitCallback(std::move(callback)) : nullptr;
 	urnet_async_local_state_set_by_jwt(handle(), by_jwt.c_str(), callback_fn ? &detail::oneshot_commit : nullptr, callback_fn);
 }
+inline Sub BittensorLocalKeyFlow::addBittensorLocalKeyFlowListener(BittensorLocalKeyFlowListener listener) const {
+	std::shared_ptr<BittensorLocalKeyFlowListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<BittensorLocalKeyFlowListener>(std::move(listener));
+	}
+	Sub r(urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener(handle(), listener_fn ? &detail::retained_bittensor_local_key_flow : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void BittensorLocalKeyFlow::cancelConfirmation() const {
+	urnet_bittensor_local_key_flow_cancel_confirmation(handle());
+}
+inline void BittensorLocalKeyFlow::close() const {
+	urnet_bittensor_local_key_flow_close(handle());
+}
+inline void BittensorLocalKeyFlow::closeScreen() const {
+	urnet_bittensor_local_key_flow_close_screen(handle());
+}
+inline void BittensorLocalKeyFlow::confirmDelete(bool authenticated) const {
+	urnet_bittensor_local_key_flow_confirm_delete(handle(), authenticated);
+}
+inline void BittensorLocalKeyFlow::confirmKeep(bool authenticated) const {
+	urnet_bittensor_local_key_flow_confirm_keep(handle(), authenticated);
+}
+inline void BittensorLocalKeyFlow::finishSetup(bool replace_confirmed) const {
+	urnet_bittensor_local_key_flow_finish_setup(handle(), replace_confirmed);
+}
+inline bool BittensorLocalKeyFlow::forgetNetwork() const {
+	bool r = urnet_bittensor_local_key_flow_forget_network(handle());
+	return r;
+}
+inline std::optional<BittensorLocalKeyCard> BittensorLocalKeyFlow::getCard() const {
+	char* r_c = urnet_bittensor_local_key_flow_get_card(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorLocalKeyCard>(r_s->c_str());
+}
+inline std::optional<BittensorLocalKeyScreen> BittensorLocalKeyFlow::getScreen() const {
+	char* r_c = urnet_bittensor_local_key_flow_get_screen(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorLocalKeyScreen>(r_s->c_str());
+}
+inline std::string BittensorLocalKeyFlow::goString() const {
+	char* r_c = urnet_bittensor_local_key_flow_go_string(handle());
+	return detail::takeString(r_c);
+}
+inline void BittensorLocalKeyFlow::hide() const {
+	urnet_bittensor_local_key_flow_hide(handle());
+}
+inline bool BittensorLocalKeyFlow::needsBackup() const {
+	bool r = urnet_bittensor_local_key_flow_needs_backup(handle());
+	return r;
+}
+inline void BittensorLocalKeyFlow::openScreen() const {
+	urnet_bittensor_local_key_flow_open_screen(handle());
+}
+inline std::string BittensorLocalKeyFlow::phraseToCopy() const {
+	char* r_c = urnet_bittensor_local_key_flow_phrase_to_copy(handle());
+	return detail::takeString(r_c);
+}
+inline void BittensorLocalKeyFlow::reload() const {
+	urnet_bittensor_local_key_flow_reload(handle());
+}
+inline std::optional<BittensorLocalKeyReminder> BittensorLocalKeyFlow::reminder(int64_t current_epoch, int64_t claim_open_millis, int64_t epoch_blocks, bool claimable) const {
+	char* r_c = urnet_bittensor_local_key_flow_reminder(handle(), current_epoch, claim_open_millis, epoch_blocks, claimable);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorLocalKeyReminder>(r_s->c_str());
+}
+inline void BittensorLocalKeyFlow::reminderDelivered() const {
+	urnet_bittensor_local_key_flow_reminder_delivered(handle());
+}
+inline void BittensorLocalKeyFlow::reminderScheduled(int64_t at_millis) const {
+	urnet_bittensor_local_key_flow_reminder_scheduled(handle(), at_millis);
+}
+inline void BittensorLocalKeyFlow::retrySaveNow() const {
+	urnet_bittensor_local_key_flow_retry_save_now(handle());
+}
+inline void BittensorLocalKeyFlow::reveal(bool authenticated) const {
+	urnet_bittensor_local_key_flow_reveal(handle(), authenticated);
+}
+inline std::optional<StringList> BittensorLocalKeyFlow::revealedWords() const {
+	char* r_c = urnet_bittensor_local_key_flow_revealed_words(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline void BittensorLocalKeyFlow::saveFirst(bool replace_confirmed) const {
+	urnet_bittensor_local_key_flow_save_first(handle(), replace_confirmed);
+}
+inline void BittensorLocalKeyFlow::setCaptureActive(bool active) const {
+	urnet_bittensor_local_key_flow_set_capture_active(handle(), active);
+}
+inline void BittensorLocalKeyFlow::setConsent(bool active, const std::string& coldkey_ss58, int64_t from_epoch) const {
+	urnet_bittensor_local_key_flow_set_consent(handle(), active, coldkey_ss58.c_str(), from_epoch);
+}
+inline void BittensorLocalKeyFlow::setConsentUnavailable() const {
+	urnet_bittensor_local_key_flow_set_consent_unavailable(handle());
+}
+inline void BittensorLocalKeyFlow::setCurrentEpoch(int64_t current_epoch) const {
+	urnet_bittensor_local_key_flow_set_current_epoch(handle(), current_epoch);
+}
+inline void BittensorLocalKeyFlow::setGuest(bool guest) const {
+	urnet_bittensor_local_key_flow_set_guest(handle(), guest);
+}
+inline void BittensorLocalKeyFlow::setTop200Registered(bool registered) const {
+	urnet_bittensor_local_key_flow_set_top200_registered(handle(), registered);
+}
+inline void BittensorLocalKeyFlow::setUpPayouts(bool replace_confirmed) const {
+	urnet_bittensor_local_key_flow_set_up_payouts(handle(), replace_confirmed);
+}
+inline std::string BittensorLocalKeyFlow::string() const {
+	char* r_c = urnet_bittensor_local_key_flow_string(handle());
+	return detail::takeString(r_c);
+}
+inline void BittensorLocalKeyFlow::submitWords(const std::string& first_word, const std::string& second_word) const {
+	urnet_bittensor_local_key_flow_submit_words(handle(), first_word.c_str(), second_word.c_str());
+}
 inline std::string BittensorWalletSession::bridgeUrl() const {
 	char* err_c = nullptr;
 	char* r_c = urnet_bittensor_wallet_session_bridge_url(handle(), &err_c);
@@ -35746,6 +36277,17 @@ inline void networkChanged() {
 }
 inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home) {
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
+	return r;
+}
+inline BittensorLocalKeyFlow newBittensorLocalKeyFlow(const Api& api, const std::string& network_id, BittensorLocalKeyStore store) {
+	std::shared_ptr<BittensorLocalKeyStore> store_fn;
+	if ((static_cast<bool>(store.add_key) || static_cast<bool>(store.delete_key) || static_cast<bool>(store.key_address) || static_cast<bool>(store.key_phrase) || static_cast<bool>(store.read_note) || static_cast<bool>(store.write_note))) {
+		store_fn = std::make_shared<BittensorLocalKeyStore>(std::move(store));
+	}
+	BittensorLocalKeyFlow r(urnet_new_bittensor_local_key_flow(api.handle(), network_id.c_str(), store_fn ? &detail::retained_bittensor_local_key_store_add_key : nullptr, store_fn ? &detail::retained_bittensor_local_key_store_delete_key : nullptr, store_fn ? &detail::retained_bittensor_local_key_store_key_address : nullptr, store_fn ? &detail::retained_bittensor_local_key_store_key_phrase : nullptr, store_fn ? &detail::retained_bittensor_local_key_store_read_note : nullptr, store_fn ? &detail::retained_bittensor_local_key_store_write_note : nullptr, store_fn.get()));
+	if (store_fn) {
+		r.retain(store_fn);
+	}
 	return r;
 }
 inline BittensorWalletSession newBittensorWalletSession(const std::string& wallet_id, const std::string& platform, const std::string& purpose, const std::string& redirect_link) {

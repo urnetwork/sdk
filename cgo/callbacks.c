@@ -93,6 +93,34 @@ void urnet_invoke_bittensor_convert_submit(urnet_bittensor_convert_submit_cb cb,
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_bittensor_local_key_flow(urnet_bittensor_local_key_flow_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+bool urnet_invoke_bittensor_local_key_store_add_key(urnet_bittensor_local_key_store_add_key_cb cb, void* user_data, const char* network_id, const char* mnemonic, const char* address) {
+	return cb(user_data, network_id, mnemonic, address);
+}
+
+bool urnet_invoke_bittensor_local_key_store_delete_key(urnet_bittensor_local_key_store_delete_key_cb cb, void* user_data, const char* network_id) {
+	return cb(user_data, network_id);
+}
+
+char* urnet_invoke_bittensor_local_key_store_key_address(urnet_bittensor_local_key_store_key_address_cb cb, void* user_data, const char* network_id) {
+	return cb(user_data, network_id);
+}
+
+char* urnet_invoke_bittensor_local_key_store_key_phrase(urnet_bittensor_local_key_store_key_phrase_cb cb, void* user_data, const char* network_id) {
+	return cb(user_data, network_id);
+}
+
+char* urnet_invoke_bittensor_local_key_store_read_note(urnet_bittensor_local_key_store_read_note_cb cb, void* user_data, const char* network_id, const char* name) {
+	return cb(user_data, network_id, name);
+}
+
+void urnet_invoke_bittensor_local_key_store_write_note(urnet_bittensor_local_key_store_write_note_cb cb, void* user_data, const char* network_id, const char* name, const char* value) {
+	cb(user_data, network_id, name, value);
+}
+
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json) {
 	cb(user_data, block_action_overrides_json);
 }
