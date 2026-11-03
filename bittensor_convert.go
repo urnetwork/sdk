@@ -291,6 +291,11 @@ type bittensorConvertState struct {
 	maxAmountRao  uint64
 }
 
+// floorRao is the least a sale may pay unless it empties the position.
+func (self *bittensorConvertState) floorRao() uint64 {
+	return max(self.minStakeRao, self.depositRao)
+}
+
 // One state, so typing an amount does not read it all again.
 var bittensorConvertStateCache struct {
 	sync.Mutex
@@ -405,12 +410,8 @@ func (self *bittensorChainEngine) convertLimits(ctx context.Context, state *bitt
 	// The runtime's floor: a sale paying at least the minimum stake, and at
 	// least the deposit for a key that has none yet. It runs when the sale lands,
 	// after the price has moved, and a refusal then keeps the fee, so the floor
-	// has to hold at the price limit. A sale this small barely moves the price.
-	worstPrice, ok := bittensorConvertLimit(sale.PriceRao, 1)
-	if !ok {
-		return errBittensorConvertNoPrice
-	}
-	minimum, err := self.convertAmountPaying(ctx, state, max(state.minStakeRao, state.depositRao), worstPrice)
+	// has to hold at the sale's price limit.
+	minimum, err := self.convertAmountPaying(ctx, state.floorRao(), sale.PriceRao)
 	if err != nil {
 		return err
 	}
@@ -431,19 +432,54 @@ func (self *bittensorChainEngine) convertLimits(ctx context.Context, state *bitt
 // price by the impact, in basis points. The price may also move by
 // bittensorConvertSlippageBps before the sale lands.
 func bittensorConvertLimit(priceRao uint64, impactBps uint64) (uint64, bool) {
-	limit, ok := bittensorMulDiv(priceRao, bittensorBasisPoints-bittensorConvertSlippageBps-bittensorConvertImpactLimitFactor*impactBps, bittensorBasisPoints)
+	allowance := bittensorConvertSlippageBps + bittensorConvertImpactLimitFactor*impactBps
+	if bittensorConvertMaxImpactBps < impactBps || bittensorBasisPoints <= allowance {
+		return 0, false
+	}
+	limit, ok := bittensorMulDiv(priceRao, bittensorBasisPoints-allowance, bittensorBasisPoints)
 	return limit, ok && limit != 0
 }
 
-// convertAmountPaying is the least alpha whose sale pays at least the TAO when
-// it is priced at or above the price.
-func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, state *bittensorConvertState, taoRao uint64, priceRao uint64) (uint64, error) {
+// bittensorConvertSaleImpact is how far a sale moves its own average price, in
+// basis points, from the runtime's simulation of it.
+func bittensorConvertSaleImpact(simulation subtensor.SwapSimulation) (uint64, bool) {
+	return bittensorMulDivCeil(simulation.TaoSlippageRao, bittensorBasisPoints, simulation.TaoRao+simulation.TaoSlippageRao)
+}
+
+// bittensorConvertPromise is the least TAO a sale pays if it runs at all: every
+// alpha that goes into the pool sells at or above the sale's own limit. The
+// runtime's floors are checked against what the sale pays when it runs, so the
+// amounts here are sized by this.
+func bittensorConvertPromise(priceRao uint64, simulation subtensor.SwapSimulation) (promise uint64, limit uint64, impactBps uint64, err error) {
+	impactBps, ok := bittensorConvertSaleImpact(simulation)
+	if !ok {
+		return 0, 0, 0, errBittensorConvertNoPrice
+	}
+	if bittensorConvertMaxImpactBps < impactBps {
+		return 0, 0, impactBps, errBittensorConvertPoolTooShallow
+	}
+	limit, ok = bittensorConvertLimit(priceRao, impactBps)
+	if !ok {
+		return 0, 0, impactBps, errBittensorConvertNoPrice
+	}
+	promise, ok = bittensorMulDiv(simulation.AlphaRao, limit, uint64(SnRaoPerAlpha))
+	if !ok {
+		return 0, 0, impactBps, errBittensorConvertNoPrice
+	}
+	return promise, limit, impactBps, nil
+}
+
+var errBittensorConvertPoolTooShallow = errors.New("the pool moves too far for this sale")
+
+// convertAmountPaying is the least alpha whose sale promises at least the TAO at
+// today's price. A sale pays close to in proportion to its amount, so each try
+// scales the amount by how far the last one fell short.
+func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, taoRao uint64, priceRao uint64) (uint64, error) {
 	amount, ok := bittensorMulDivCeil(taoRao, uint64(SnRaoPerAlpha), priceRao)
 	if !ok {
 		return 0, errBittensorConvertNoPrice
 	}
-	// the first try is short by the pool's fee, the second by rounding
-	for range 4 {
+	for range 8 {
 		simulation, err := self.chain.SimulateSell(ctx, self.pins.netuid, amount)
 		if err != nil {
 			return 0, err
@@ -452,19 +488,21 @@ func (self *bittensorChainEngine) convertAmountPaying(ctx context.Context, state
 		if simulation.TaoRao == 0 {
 			return 0, errBittensorConvertNoPrice
 		}
-		paid, ok := bittensorMulDiv(simulation.AlphaRao, priceRao, uint64(SnRaoPerAlpha))
-		if !ok {
-			return 0, errBittensorConvertNoPrice
+		paid, _, _, err := bittensorConvertPromise(priceRao, simulation)
+		if err != nil {
+			return 0, err
 		}
-		paid = min(paid, simulation.TaoRao)
 		if taoRao <= paid {
 			return amount, nil
 		}
-		more, ok := bittensorMulDivCeil(taoRao-paid, uint64(SnRaoPerAlpha), priceRao)
+		if paid == 0 {
+			return 0, errBittensorConvertNoPrice
+		}
+		next, ok := bittensorMulDivCeil(amount, taoRao, paid)
 		if !ok {
 			return 0, errBittensorConvertNoPrice
 		}
-		amount += more + 1
+		amount = max(next, amount) + 1
 	}
 	return 0, errBittensorConvertNoPrice
 }
@@ -501,6 +539,8 @@ func bittensorConvertErrorFromErr(err error) *SnError {
 		return newSnError(BittensorChainErrorWrongChain, "The Bittensor network endpoint in this app's settings is for another chain.")
 	case errors.Is(err, errBittensorConvertNoPrice):
 		return newSnError(BittensorConvertErrorPriceMoved, "The subnet has no price to convert at right now. Try again later.")
+	case errors.Is(err, errBittensorConvertPoolTooShallow):
+		return newSnError(BittensorConvertErrorPriceImpact, "The subnet's pool is too small to convert this right now. Try again later.")
 	}
 	snErr := snErrorFromErr(err)
 	switch snErr.Code {
@@ -550,25 +590,24 @@ func (self *bittensorChainEngine) convertEstimateFrom(ctx context.Context, state
 		result.Error = newSnError(BittensorConvertErrorPriceImpact, "The subnet's pool can't take this much at once. Try a smaller amount.")
 		return result
 	}
-	withoutImpact := simulation.TaoRao + simulation.TaoSlippageRao
-	impactBps, ok := bittensorMulDivCeil(simulation.TaoSlippageRao, bittensorBasisPoints, withoutImpact)
-	if !ok {
-		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
-		return result
-	}
+	minTao, limit, impactBps, err := bittensorConvertPromise(state.sale.PriceRao, simulation)
 	result.PriceImpactBps = int64(impactBps)
-	if bittensorConvertMaxImpactBps < impactBps {
+	switch {
+	case errors.Is(err, errBittensorConvertPoolTooShallow):
 		result.Error = newSnError(BittensorConvertErrorPriceImpact, "Converting this much at once would move the price too far. Convert less at a time.")
 		return result
-	}
-	limit, ok := bittensorConvertLimit(state.sale.PriceRao, impactBps)
-	if !ok {
+	case err != nil || minTao == 0:
 		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
 		return result
 	}
-	minTao, ok := bittensorMulDiv(simulation.AlphaRao, limit, uint64(SnRaoPerAlpha))
-	if !ok || minTao == 0 {
-		result.Error = bittensorConvertErrorFromErr(errBittensorConvertNoPrice)
+	// the runtime refuses a sale under its floor, and keeps the fee, unless the
+	// sale empties the position, which only a key paying in TAO can aim for
+	emptiesPosition := !state.feeInAlpha && amount == state.sale.StakeRao
+	if minTao < state.floorRao() && !emptiesPosition {
+		result.Error = newSnError(BittensorConvertErrorAmountTooLow, fmt.Sprintf(
+			"The network's smallest conversion is about %s.",
+			FormatAlpha(int64(max(state.minAmountRao, amount+1))),
+		))
 		return result
 	}
 	expected := simulation.TaoRao
@@ -710,12 +749,8 @@ func (self *bittensorChainEngine) convertEstimateForBurn(ctx context.Context, co
 		target += state.feeRao
 	}
 	// the sale has to pay enough even at its limit, and at least the runtime's floor
-	target = max(target, state.minStakeRao, state.depositRao)
-	limit, ok := bittensorConvertLimit(state.sale.PriceRao, 1)
-	if !ok {
-		return fail(errBittensorConvertNoPrice)
-	}
-	amount, err := self.convertAmountPaying(ctx, state, target, limit)
+	target = max(target, state.floorRao())
+	amount, err := self.convertAmountPaying(ctx, target, state.sale.PriceRao)
 	if err != nil {
 		return fail(err)
 	}

@@ -624,6 +624,64 @@ func TestConvertEstimateRefusals(t *testing.T) {
 		}
 		convertWantCode(t, convertEstimateOf(t, chain, 2_000_000_000), BittensorConvertErrorPriceImpact)
 	})
+	t.Run("another chain", func(t *testing.T) {
+		chain := newConvertFakeChain(t)
+		chain.genesis = [32]byte{1}
+		convertWantCode(t, convertEstimateOf(t, chain, 1_000_000_000), BittensorChainErrorWrongChain)
+	})
+	t.Run("the vault names another hotkey", func(t *testing.T) {
+		chain := newConvertFakeChain(t)
+		chain.escrow = [32]byte{1}
+		convertWantCode(t, convertEstimateOf(t, chain, 1_000_000_000), BittensorChainErrorWrongChain)
+	})
+}
+
+// The smallest amount is found whatever the pool's fee and depth: the chain's
+// promise for it, every alpha into the pool sold at or above the sale's own
+// limit, meets the floor, and a thousand rao less does not.
+func TestConvertMinimumUnderAnyPool(t *testing.T) {
+	// the promise for an amount, from the fake pool, worked out here
+	promise := func(chain *convertFakeChain, amount uint64) uint64 {
+		t.Helper()
+		sale := chain.simulate(amount)
+		tao := binary.LittleEndian.Uint64(sale[0:8])
+		into := binary.LittleEndian.Uint64(sale[8:16])
+		slippage := binary.LittleEndian.Uint64(sale[32:40])
+		impact := (slippage*10_000 + tao + slippage - 1) / (tao + slippage)
+		limit := chain.price * (10_000 - 200 - 3*impact) / 10_000
+		return into * limit / 1_000_000_000
+	}
+	for _, row := range []struct {
+		name         string
+		poolFeeParts uint64
+		poolDepth    uint64
+	}{
+		{"today's pool", 33, 2_500_000_000_000_000},
+		{"a pool fee of 9%", 6_000, 2_500_000_000_000_000},
+		{"a pool fee of 30%", 20_000, 2_500_000_000_000_000},
+		{"a shallow pool", 33, 20_000_000_000},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			chain := newConvertFakeChain(t)
+			chain.stake = 50_000_000_000
+			chain.poolFeeParts, chain.poolDepth = row.poolFeeParts, row.poolDepth
+			limits := convertEstimateOf(t, chain, 0)
+			if limits.Error != nil || limits.MinAmountRao == 0 {
+				t.Fatalf("%+v", limits.Error)
+			}
+			if paid := promise(chain, uint64(limits.MinAmountRao)); paid < 2_000_000 {
+				t.Fatalf("the minimum %d promises %d, under the floor", limits.MinAmountRao, paid)
+			}
+			if paid := promise(chain, uint64(limits.MinAmountRao)-1_000); 2_000_000 <= paid {
+				t.Fatalf("the minimum %d is not the least: a thousand rao less promises %d", limits.MinAmountRao, paid)
+			}
+			minimum := convertEstimateOf(t, chain, limits.MinAmountRao)
+			if !minimum.CanConvert || minimum.MinTaoRao < 2_000_000 {
+				t.Fatalf("the minimum: %+v %+v", minimum, minimum.Error)
+			}
+			convertWantCode(t, convertEstimateOf(t, chain, limits.MinAmountRao-1), BittensorConvertErrorAmountTooLow)
+		})
+	}
 }
 
 // A sale that lands after the price falls still pays the floor: refused there,
@@ -941,8 +999,12 @@ func TestConvertPriceLimitHolds(t *testing.T) {
 		if len(signer.payloads) != 0 {
 			t.Fatal("signed under the promised minimum")
 		}
-		if callback.failed[0][0] != BittensorConvertErrorPriceMoved {
+		// refused by the promise, not by anything before it
+		if callback.failed[0][0] != BittensorConvertErrorPriceMoved || !strings.Contains(callback.failed[0][1], "has moved since this estimate") {
 			t.Fatalf("failed %v", callback.failed)
+		}
+		if fresh := convertEstimateOf(t, moved, estimate.AmountRao); !fresh.CanConvert {
+			t.Fatalf("CONTROL FAILED: the new estimate refuses, so the promise was never checked: %+v", fresh.Error)
 		}
 	})
 	t.Run("the price rose and the limit stays what was shown", func(t *testing.T) {
@@ -1328,18 +1390,25 @@ func TestConvertReadsAreKeptForATypedAmountOnly(t *testing.T) {
 	// signing reads the metadata itself, cached or not
 	estimate := engine.convertEstimate(ctx, convertTestColdkey, 1_000_000_000)
 	before := chain.reads["state_getMetadata"]
-	callback := &convertTestCallback{}
-	callback.run(ctx, engine, &convertTestSigner{public: convertTestColdkey}, estimate)
-	if len(callback.confirmed) != 1 {
-		t.Fatalf("failed %v", callback.failed)
+	submission := engine.convertSubmit(ctx, &convertTestSigner{public: convertTestColdkey}, estimate)
+	if submission.Error != nil {
+		t.Fatal(submission.Error)
 	}
 	if chain.reads["state_getMetadata"] <= before {
 		t.Fatal("signed under kept metadata")
 	}
-	// and what comes next reads what the conversion changed, right away
+	// what a sheet draws while it waits reads what the conversion is changing
+	chain.stake = 2
+	if result := engine.convertEstimate(ctx, convertTestColdkey, 0); result.StakeRao != 2 {
+		t.Fatalf("a sent conversion left the old stake in place: %d", result.StakeRao)
+	}
+	if receipt := engine.convertWait(ctx, submission); receipt.Error != nil {
+		t.Fatal(receipt.Error)
+	}
+	// and what comes after it, what it changed
 	chain.stake = 1
 	if result := engine.convertEstimate(ctx, convertTestColdkey, 0); result.StakeRao != 1 {
-		t.Fatalf("a conversion left the old stake in place: %d", result.StakeRao)
+		t.Fatalf("a finished conversion left the old stake in place: %d", result.StakeRao)
 	}
 }
 
