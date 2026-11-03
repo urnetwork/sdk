@@ -500,6 +500,12 @@ func TestApiAdminRoutesMatchTheServer(t *testing.T) {
 	}
 	for route := range apiAdminRouteAccess {
 		if _, ok := serverRoutes[route]; !ok {
+			// a route the sdk calls ahead of the server leads it by one deploy, as
+			// its url does (sdkApiUrlsPlannedOnServer)
+			if _, path, found := strings.Cut(route, " "); found && sdkApiUrlsPlannedOnServer[path] {
+				t.Logf("apiAdminRouteAccess has %q ahead of the server, which plans it", route)
+				continue
+			}
 			t.Errorf("apiAdminRouteAccess has %q, which is not an admin route on the server", route)
 		}
 	}
