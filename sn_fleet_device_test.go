@@ -565,6 +565,8 @@ func TestSnFleetDeviceLeave(t *testing.T) {
 	if !result.Left || result.EffectiveEpoch != 8 {
 		t.Fatalf("%+v", result)
 	}
+	// Leave signs with the client key: the disclaimer's last sentence
+	testingFleetExpectDisclaimer(t, "leave", result.FundsDisclaimerKey, result.FundsDisclaimer, false)
 	if len(server.leaves) != 1 || signer.revokes != 1 {
 		t.Fatalf("leaves %+v", server.leaves)
 	}
@@ -627,6 +629,7 @@ func TestSnFleetDeviceLeaveAcrossAnEpochBoundary(t *testing.T) {
 	if result.EffectiveEpoch != 9 || len(server.leaves) != 2 {
 		t.Fatalf("%+v %+v", result, server.leaves)
 	}
+	testingFleetExpectDisclaimer(t, "leave after the epoch turned", result.FundsDisclaimerKey, result.FundsDisclaimer, false)
 }
 
 // A device with nothing on chain, or a binding already in its last epoch, has nothing

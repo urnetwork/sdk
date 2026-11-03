@@ -119,6 +119,10 @@ type SnFleetDeviceLeaveOutcome struct {
 	Left bool `json:"left"`
 	// the first epoch this device is back in the pool; 0 when it was never bound
 	EffectiveEpoch int64 `json:"effective_epoch"`
+	// shown on the Leave screen (sn_fleet_disclaimer.go): the app's text for the key,
+	// or this one
+	FundsDisclaimerKey string `json:"funds_disclaimer_key"`
+	FundsDisclaimer    string `json:"funds_disclaimer"`
 }
 
 type SnFleetDeviceCheckCallback connect.ApiCallback[*SnFleetDeviceCheckResult]
@@ -653,7 +657,10 @@ func (self *SnFleetDevice) LeaveSync(ctx context.Context) (*SnFleetDeviceLeaveOu
 			return nil, errors.New(result.Error.Message)
 		}
 		if result.Left {
-			return &SnFleetDeviceLeaveOutcome{Left: true, EffectiveEpoch: result.EffectiveEpoch}, nil
+			// Leave signs with the client key, not a key of the user's funds
+			outcome := &SnFleetDeviceLeaveOutcome{Left: true, EffectiveEpoch: result.EffectiveEpoch}
+			outcome.FundsDisclaimerKey, outcome.FundsDisclaimer = snFleetFundsDisclaimer(false)
+			return outcome, nil
 		}
 		if result.CurrentEpoch == binding.CurrentEpoch {
 			break
