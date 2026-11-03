@@ -94,11 +94,20 @@ func newMakeFixture(t *testing.T) (dir, logPath string) {
 	return dir, logPath
 }
 
+// Use fixture scheduling and variables rather than an enclosing Make build's
+// jobserver, dry-run, keep-going, or command-line override state.
 func runMake(t *testing.T, dir, target string, extraEnv ...string) ([]byte, error) {
 	t.Helper()
-	cmd := exec.Command("make", "-f", cgoMakefile(t), target)
+	cmd := exec.Command("make", "-j1", "-f", cgoMakefile(t), target)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), extraEnv...)
+	for _, entry := range append(os.Environ(), extraEnv...) {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKELEVEL", "MAKEOVERRIDES":
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
 	return cmd.CombinedOutput()
 }
 
@@ -226,5 +235,28 @@ func TestHostBuildFailureRejectsStaleLibrary(t *testing.T) {
 	}
 	if _, err := os.Stat(stalePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed host build retained stale output: %v", err)
+	}
+}
+
+// The fixture owns command order even when its caller is another Make build.
+// Dry-run and keep-going provide deterministic controls for the same flag leak.
+func TestMakeFixtureIsolatesInheritedMakeFlags(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		flags string
+	}{
+		{name: "parallel", flags: "-j2"},
+		{name: "dry_run", flags: "-n"},
+		{name: "keep_going", flags: "-k"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("MAKEFLAGS", test.flags)
+			dir, logPath := newMakeFixture(t)
+			output, err := runMake(t, dir, "build_linux", "FAIL_GOOS=linux", "FAIL_GOARCH=amd64")
+			requireExitCode(t, err, 2, output)
+			if got := readCommandLog(t, logPath); got != "go linux/amd64\n" {
+				t.Fatalf("inherited Make flags changed fixture execution: commands = %q", got)
+			}
+		})
 	}
 }
