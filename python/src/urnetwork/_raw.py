@@ -630,13 +630,15 @@ def bind(lib):
     lib.urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener.restype = c_uint64
     lib.urnet_bittensor_local_key_flow_cancel_confirmation.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_cancel_confirmation.restype = None
+    lib.urnet_bittensor_local_key_flow_check_words.argtypes = [c_uint64, c_char_p, c_char_p]
+    lib.urnet_bittensor_local_key_flow_check_words.restype = c_void_p
     lib.urnet_bittensor_local_key_flow_close.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_close.restype = None
     lib.urnet_bittensor_local_key_flow_close_screen.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_close_screen.restype = None
-    lib.urnet_bittensor_local_key_flow_confirm_delete.argtypes = [c_uint64, c_bool]
+    lib.urnet_bittensor_local_key_flow_confirm_delete.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_confirm_delete.restype = None
-    lib.urnet_bittensor_local_key_flow_confirm_keep.argtypes = [c_uint64, c_bool]
+    lib.urnet_bittensor_local_key_flow_confirm_keep.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_confirm_keep.restype = None
     lib.urnet_bittensor_local_key_flow_finish_setup.argtypes = [c_uint64, c_bool]
     lib.urnet_bittensor_local_key_flow_finish_setup.restype = None
@@ -690,7 +692,7 @@ def bind(lib):
     lib.urnet_bittensor_local_key_flow_set_up_payouts.restype = None
     lib.urnet_bittensor_local_key_flow_string.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_string.restype = c_void_p
-    lib.urnet_bittensor_local_key_flow_submit_words.argtypes = [c_uint64, c_char_p, c_char_p]
+    lib.urnet_bittensor_local_key_flow_submit_words.argtypes = [c_uint64, c_char_p, c_char_p, c_bool]
     lib.urnet_bittensor_local_key_flow_submit_words.restype = None
     lib.urnet_bittensor_wallet_session_bridge_url.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_bittensor_wallet_session_bridge_url.restype = c_void_p

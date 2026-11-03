@@ -14,11 +14,14 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	bip39 "github.com/cosmos/go-bip39"
 )
 
 const (
@@ -328,7 +331,7 @@ func newTestingLocalKeyRunOn(t *testing.T, log *testingLocalKeyLog, store *testi
 	flow.now = run.clock.now
 	flow.afterFunc = run.timers.afterFunc
 	// words 3 and 9
-	flow.pickPositions = func(wordCount int) (int, int) {
+	flow.pickPositions = func(address string, wordCount int) (int, int) {
 		return 2, 8
 	}
 	return run
@@ -483,7 +486,7 @@ func TestBittensorLocalKeyFlowSaveNowNeverSignsBeforeTheWordsAndNeverStores(t *t
 	}
 
 	run.flow.Reveal(false)
-	run.flow.ConfirmDelete(false)
+	run.flow.ConfirmDelete()
 	screen = run.flow.GetScreen()
 	if screen.Confirming != BittensorLocalKeyConfirmDelete || screen.Revealed || screen.FirstWordPosition != 3 || screen.SecondWordPosition != 9 {
 		t.Fatalf("the confirmation is %+v", screen)
@@ -497,7 +500,7 @@ func TestBittensorLocalKeyFlowSaveNowNeverSignsBeforeTheWordsAndNeverStores(t *t
 		{"wrong", second},
 		{second, first},
 	} {
-		run.flow.submitWords(attempt[0], attempt[1])
+		run.flow.submitWords(attempt[0], attempt[1], true)
 		screen = run.flow.GetScreen()
 		if !screen.WordsRejected || screen.Confirming != BittensorLocalKeyConfirmDelete {
 			t.Fatalf("%v: the screen is %+v", attempt, screen)
@@ -507,8 +510,8 @@ func TestBittensorLocalKeyFlowSaveNowNeverSignsBeforeTheWordsAndNeverStores(t *t
 		}
 	}
 
-	// how a person types them still counts
-	run.flow.submitWords(" "+strings.ToUpper(first)+" ", second+"\n")
+	// how a person types them still counts, and Save now asks for no device authentication
+	run.flow.submitWords(" "+strings.ToUpper(first)+" ", second+"\n", false)
 	run.log.requireOrder(t, "generate", "api.challenge", "sign", "api.submit")
 	if run.log.has("store.add") || run.log.has("store.phrase") || run.log.has("store.delete") {
 		t.Fatalf("Save now touched the secret store: %v", run.log.all())
@@ -688,9 +691,9 @@ func TestBittensorLocalKeyFlowSaveNowConsentFailedRetriesWithTheSameKey(t *testi
 	run := newTestingLocalKeyRunWithNoConsent(t)
 	run.api.challengeErr = errors.New("server_error: 502")
 	run.flow.SaveFirst(false)
-	run.flow.ConfirmDelete(false)
+	run.flow.ConfirmDelete()
 	first, second := run.rightWords()
-	run.flow.submitWords(first, second)
+	run.flow.submitWords(first, second, true)
 
 	card := run.requireState(BittensorLocalKeyStateSaveNowConsentFailed)
 	screen := run.flow.GetScreen()
@@ -702,7 +705,7 @@ func TestBittensorLocalKeyFlowSaveNowConsentFailedRetriesWithTheSameKey(t *testi
 	if run.flow.PhraseToCopy() != run.key.Mnemonic {
 		t.Fatal("the phrase left memory after a failed consent")
 	}
-	run.flow.ConfirmDelete(false)
+	run.flow.ConfirmDelete()
 	if run.flow.GetScreen().Confirming != BittensorLocalKeyConfirmNone {
 		t.Fatal("Retry asks for the words again")
 	}
@@ -724,12 +727,12 @@ func TestBittensorLocalKeyFlowLeavingSaveNowDiscardsTheKey(t *testing.T) {
 	}{
 		{"showing", func(run *testingLocalKeyRun) {}},
 		{"revealed", func(run *testingLocalKeyRun) { run.flow.Reveal(false) }},
-		{"in the check", func(run *testingLocalKeyRun) { run.flow.ConfirmDelete(false) }},
+		{"in the check", func(run *testingLocalKeyRun) { run.flow.ConfirmDelete() }},
 		{"after a failed consent", func(run *testingLocalKeyRun) {
 			run.api.challengeErr = errors.New("server_error: 502")
-			run.flow.ConfirmDelete(false)
+			run.flow.ConfirmDelete()
 			first, second := run.rightWords()
-			run.flow.submitWords(first, second)
+			run.flow.submitWords(first, second, true)
 			run.requireState(BittensorLocalKeyStateSaveNowConsentFailed)
 		}},
 	} {
@@ -797,7 +800,7 @@ func TestBittensorLocalKeyFlowCopyIsImpossibleWhileHidden(t *testing.T) {
 			requireHidden("after capture: it does not come back by itself")
 
 			run.flow.Reveal(true)
-			run.flow.ConfirmDelete(true)
+			run.flow.ConfirmDelete()
 			requireHidden("in the two-word check")
 			run.flow.CancelConfirmation()
 
@@ -814,15 +817,16 @@ func TestBittensorLocalKeyFlowCopyIsImpossibleWhileHidden(t *testing.T) {
 	if run.flow.PhraseToCopy() != "" || slices.Contains(run.log.all()[events:], "store.phrase") {
 		t.Fatal("a stored key showed, or was read, with no device authentication")
 	}
-	run.flow.ConfirmDelete(false)
-	run.flow.ConfirmKeep(false)
-	if run.flow.GetScreen().Confirming != BittensorLocalKeyConfirmNone || slices.Contains(run.log.all()[events:], "store.phrase") {
-		t.Fatal("the check on a stored key started with no device authentication")
+	// the check starts without it, since it shows nothing, and it never gives the words
+	run.flow.ConfirmDelete()
+	if run.flow.GetScreen().Confirming != BittensorLocalKeyConfirmDelete || run.flow.PhraseToCopy() != "" || run.flow.RevealedWords().Len() != 0 {
+		t.Fatalf("the check is %+v", run.flow.GetScreen())
 	}
 }
 
 // Keep and Delete hide the words before anything else, so none can be read behind the two-word check or
-// the device's authentication, and they stay hidden when the authentication fails or the step is refused.
+// the device's authentication at its button, and they stay hidden whatever comes of it. A confirmation
+// that isn't offered hides them too.
 func TestBittensorLocalKeyFlowWordsHideBeforeTheConfirmation(t *testing.T) {
 	requireHidden := func(t *testing.T, run *testingLocalKeyRun, when string) {
 		t.Helper()
@@ -837,44 +841,56 @@ func TestBittensorLocalKeyFlowWordsHideBeforeTheConfirmation(t *testing.T) {
 			t.Fatal("CONTROL FAILED: the words don't show")
 		}
 	}
+	confirm := func(run *testingLocalKeyRun, purpose string) {
+		if purpose == BittensorLocalKeyConfirmDelete {
+			run.flow.ConfirmDelete()
+		} else {
+			run.flow.ConfirmKeep()
+		}
+	}
 
 	stored := newTestingLocalKeyRunLinked(t)
 	stored.flow.OpenScreen()
-	var published atomic.Int64
-	sub := stored.flow.AddBittensorLocalKeyFlowListener(testingLocalKeyListener(func() { published.Add(1) }))
-	defer sub.Close()
-	reveal(t, stored, true)
-	before := published.Load()
-	stored.flow.ConfirmDelete(false)
-	requireHidden(t, stored, "delete, authentication failed")
-	if published.Load() == before {
-		t.Fatal("the words hid with no change published")
-	}
-	if stored.flow.GetScreen().Confirming != BittensorLocalKeyConfirmNone {
-		t.Fatal("the check started with no device authentication")
-	}
-	reveal(t, stored, true)
-	stored.flow.ConfirmKeep(false)
-	requireHidden(t, stored, "keep, authentication failed")
-	reveal(t, stored, true)
-	stored.flow.ConfirmDelete(true)
-	requireHidden(t, stored, "delete")
-	stored.flow.CancelConfirmation()
-	requireHidden(t, stored, "back from the delete")
-	reveal(t, stored, true)
-	stored.flow.ConfirmKeep(true)
-	requireHidden(t, stored, "keep")
-
 	saveNow := newTestingLocalKeyRunWithNoConsent(t)
 	saveNow.flow.SaveFirst(false)
-	reveal(t, saveNow, false)
-	saveNow.flow.ConfirmKeep(false)
-	requireHidden(t, saveNow, "save now, keep refused")
-	reveal(t, saveNow, false)
-	saveNow.flow.ConfirmDelete(false)
-	requireHidden(t, saveNow, "save now, set up payouts and delete")
-	if saveNow.flow.GetScreen().Confirming != BittensorLocalKeyConfirmDelete {
-		t.Fatalf("the check is %+v", saveNow.flow.GetScreen())
+	for name, run := range map[string]*testingLocalKeyRun{"stored": stored, "save now": saveNow} {
+		for _, purpose := range []string{BittensorLocalKeyConfirmDelete, BittensorLocalKeyConfirmKeep} {
+			reveal(t, run, name == "stored")
+			confirm(run, purpose)
+			requireHidden(t, run, name+", "+purpose)
+			if got := run.flow.GetScreen().Confirming; got != purpose {
+				t.Fatalf("%s: confirming %q, want %q", name, got, purpose)
+			}
+			if name == "stored" && purpose == BittensorLocalKeyConfirmDelete {
+				// refused for want of the device's authentication: still nothing shows
+				first, second := run.rightWords()
+				run.flow.submitWords(first, second, false)
+				requireHidden(t, run, "a delete with no authentication")
+			}
+			run.flow.CancelConfirmation()
+			requireHidden(t, run, name+", back from "+purpose)
+		}
+	}
+
+	// a saved key is offered no Keep: asking for it anyway hides the words, and says so
+	kept := newTestingLocalKeyRunLinked(t)
+	kept.flow.OpenScreen()
+	kept.flow.ConfirmKeep()
+	first, second := kept.rightWords()
+	kept.flow.submitWords(first, second, false)
+	kept.flow.OpenScreen()
+	if kept.flow.GetScreen().OffersKeep {
+		t.Fatal("CONTROL FAILED: a saved key is offered Keep")
+	}
+	var published atomic.Int64
+	sub := kept.flow.AddBittensorLocalKeyFlowListener(testingLocalKeyListener(func() { published.Add(1) }))
+	defer sub.Close()
+	reveal(t, kept, true)
+	before := published.Load()
+	kept.flow.ConfirmKeep()
+	requireHidden(t, kept, "a Keep not offered")
+	if published.Load() == before || kept.flow.GetScreen().Confirming != BittensorLocalKeyConfirmNone {
+		t.Fatalf("a Keep not offered: published %d, %+v", published.Load()-before, kept.flow.GetScreen())
 	}
 }
 
@@ -913,7 +929,7 @@ func TestBittensorLocalKeyFlowRevealOfAnUnreadableStore(t *testing.T) {
 	if screen.Revealed || screen.FailureCode != BittensorLocalKeyFailureStoreUnavailable {
 		t.Fatalf("the screen is %+v", screen)
 	}
-	run.flow.ConfirmDelete(true)
+	run.flow.ConfirmDelete()
 	screen = run.flow.GetScreen()
 	if screen.Confirming != BittensorLocalKeyConfirmNone || screen.FailureCode != BittensorLocalKeyFailureStoreUnavailable {
 		t.Fatalf("the screen is %+v", screen)
@@ -925,17 +941,17 @@ func TestBittensorLocalKeyFlowRevealOfAnUnreadableStore(t *testing.T) {
 func TestBittensorLocalKeyFlowDeleteNeedsTheWordsAndIsVerified(t *testing.T) {
 	run := newTestingLocalKeyRunLinked(t)
 	run.flow.OpenScreen()
-	run.flow.ConfirmDelete(true)
+	run.flow.ConfirmDelete()
 	screen := run.flow.GetScreen()
 	if screen.Confirming != BittensorLocalKeyConfirmDelete || screen.FirstWordPosition != 3 || screen.SecondWordPosition != 9 || !screen.WarnsTop200 {
 		t.Fatalf("the check is %+v", screen)
 	}
-	run.flow.submitWords("wrong", "words")
+	run.flow.submitWords("wrong", "words", true)
 	if run.log.has("store.delete") || !run.flow.GetScreen().WordsRejected {
 		t.Fatal("wrong words deleted the key")
 	}
 	first, second := run.rightWords()
-	run.flow.submitWords(first, second)
+	run.flow.submitWords(first, second, true)
 
 	if len(run.store.items) != 0 {
 		t.Fatal("the key is still in the store")
@@ -963,9 +979,9 @@ func TestBittensorLocalKeyFlowDeleteThatDidNotHappenKeepsTheKey(t *testing.T) {
 			run := newTestingLocalKeyRunLinked(t)
 			row.set(run.store)
 			run.flow.OpenScreen()
-			run.flow.ConfirmDelete(true)
+			run.flow.ConfirmDelete()
 			first, second := run.rightWords()
-			run.flow.submitWords(first, second)
+			run.flow.submitWords(first, second, true)
 
 			card := run.requireState(BittensorLocalKeyStateSaveLaterLinked)
 			if card.FailureCode != BittensorLocalKeyFailureDelete || !card.BackupReminder || !card.OffersKeyScreen {
@@ -988,9 +1004,9 @@ func TestBittensorLocalKeyFlowDeletingAnUnlinkedKeyGoesBackToNone(t *testing.T) 
 	run.flow.setUpPayouts(false)
 	run.requireState(BittensorLocalKeyStateSaveLaterNotLinked)
 	run.flow.OpenScreen()
-	run.flow.ConfirmDelete(true)
+	run.flow.ConfirmDelete()
 	first, second := run.rightWords()
-	run.flow.submitWords(first, second)
+	run.flow.submitWords(first, second, true)
 	card := run.requireState(BittensorLocalKeyStateNone)
 	if !card.OffersSetUp {
 		t.Fatalf("the card is %+v", card)
@@ -1007,17 +1023,18 @@ func TestBittensorLocalKeyFlowKeepEndsTheReminderAndKeepsTheKey(t *testing.T) {
 	if !run.flow.GetScreen().OffersKeep {
 		t.Fatalf("the screen is %+v", run.flow.GetScreen())
 	}
-	run.flow.ConfirmKeep(true)
+	run.flow.ConfirmKeep()
 	screen := run.flow.GetScreen()
-	if screen.Confirming != BittensorLocalKeyConfirmKeep {
+	if screen.Confirming != BittensorLocalKeyConfirmKeep || screen.ConfirmNeedsAuthentication {
 		t.Fatalf("the check is %+v", screen)
 	}
-	run.flow.submitWords("wrong", "words")
+	run.flow.submitWords("wrong", "words", false)
 	if !run.flow.GetCard().BackupReminder {
 		t.Fatal("wrong words ended the reminder")
 	}
+	// it shows and deletes nothing, so it asks for no device authentication
 	first, second := run.rightWords()
-	run.flow.submitWords(first, second)
+	run.flow.submitWords(first, second, false)
 
 	card := run.requireState(BittensorLocalKeyStateSaveLaterLinked)
 	if card.BackupReminder || !card.KeySaved || !card.OffersKeyScreen {
@@ -1032,6 +1049,261 @@ func TestBittensorLocalKeyFlowKeepEndsTheReminderAndKeepsTheKey(t *testing.T) {
 	run.flow.OpenScreen()
 	if run.flow.GetScreen().OffersKeep {
 		t.Fatal("a saved key is offered Keep again")
+	}
+}
+
+// Deleting a stored key asks for the device's authentication at its button, after the words: without
+// it the right words delete nothing and the check stays up. Save now and Keep never ask.
+func TestBittensorLocalKeyFlowDeletingAStoredKeyNeedsAuthenticationAtItsButton(t *testing.T) {
+	run := newTestingLocalKeyRunLinked(t)
+	run.flow.OpenScreen()
+	run.flow.ConfirmDelete()
+	screen := run.flow.GetScreen()
+	if screen.Confirming != BittensorLocalKeyConfirmDelete || !screen.ConfirmNeedsAuthentication {
+		t.Fatalf("the check is %+v", screen)
+	}
+	first, second := run.rightWords()
+	run.flow.submitWords(first, second, false)
+	if run.log.has("store.delete") || len(run.store.items) != 1 || run.flow.GetScreen().Confirming != BittensorLocalKeyConfirmDelete {
+		t.Fatalf("the key went with no device authentication: %v, %+v", run.log.all(), run.flow.GetScreen())
+	}
+	run.flow.submitWords(first, second, true)
+	if len(run.store.items) != 0 {
+		t.Fatal("the authenticated delete left the key")
+	}
+	run.requireState(BittensorLocalKeyStateSavedAndDeleted)
+
+	saveNow := newTestingLocalKeyRunWithNoConsent(t)
+	saveNow.flow.SaveFirst(false)
+	for _, purpose := range []string{BittensorLocalKeyConfirmDelete, BittensorLocalKeyConfirmKeep} {
+		if purpose == BittensorLocalKeyConfirmDelete {
+			saveNow.flow.ConfirmDelete()
+		} else {
+			saveNow.flow.ConfirmKeep()
+		}
+		if screen := saveNow.flow.GetScreen(); screen.Confirming != purpose || screen.ConfirmNeedsAuthentication {
+			t.Fatalf("Save now's %s is %+v", purpose, screen)
+		}
+		saveNow.flow.CancelConfirmation()
+	}
+}
+
+// Keep on Save now: the two words, then the key is written to the store and read back, noted saved, and
+// only then signs. The banner never shows, since the phrase is proven saved, and the key stays for
+// convert and Top 200.
+func TestBittensorLocalKeyFlowSaveNowKeepStoresReadsBackThenSigns(t *testing.T) {
+	run := newTestingLocalKeyRunWithNoConsent(t)
+	run.flow.SaveFirst(false)
+	if !run.flow.GetScreen().OffersKeep {
+		t.Fatalf("Save now offers no Keep: %+v", run.flow.GetScreen())
+	}
+	run.flow.ConfirmKeep()
+	run.flow.submitWords("wrong", "words", false)
+	if run.log.has("store.add") || run.log.has("sign") || !run.flow.GetScreen().WordsRejected {
+		t.Fatalf("wrong words stored or signed: %v", run.log.all())
+	}
+	first, second := run.rightWords()
+	mark := len(run.log.all())
+	run.flow.submitWords(first, second, false)
+	// written, then read back, and only then signed
+	after := &testingLocalKeyLog{}
+	for _, event := range run.log.all()[mark:] {
+		after.add(event)
+	}
+	after.requireOrder(t, "store.add", "store.phrase", "store.address", "api.challenge", "sign", "api.submit")
+	if run.store.items[bittensorLocalKeyFlowTestNetwork].mnemonic != run.key.Mnemonic {
+		t.Fatal("Keep left nothing in the store")
+	}
+	card := run.requireState(BittensorLocalKeyStateSaveLaterLinked)
+	if !card.KeySaved || card.BackupReminder || !card.OffersKeyScreen || card.FailureCode != "" || card.StoredAddress != run.key.Address {
+		t.Fatalf("the card is %+v", card)
+	}
+	if screen := run.flow.GetScreen(); !screen.Done || screen.SaveNow {
+		t.Fatalf("the screen is %+v", screen)
+	}
+	if run.flow.NeedsBackup() {
+		t.Fatal("a key kept after its words were proven warns at logout")
+	}
+}
+
+// A store that refuses Keep's write, or reads back something else, signs nothing: Save now stays as it
+// was, the phrase in memory, and nothing it wrote stays.
+func TestBittensorLocalKeyFlowSaveNowKeepNeverSignsWhenTheStoreFails(t *testing.T) {
+	other := testingLocalKeyFromSeed(t, 2)
+	for _, row := range []struct {
+		name string
+		set  func(*testingLocalKeyStore)
+	}{
+		{"the add is refused", func(store *testingLocalKeyStore) { store.refuseAdd = true }},
+		{"the phrase reads back different", func(store *testingLocalKeyStore) { store.readBackMnemonic = other.Mnemonic }},
+		{"the address reads back different", func(store *testingLocalKeyStore) { store.readBackAddress = other.Address }},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			run := newTestingLocalKeyRunWithNoConsent(t)
+			run.flow.SaveFirst(false)
+			row.set(run.store)
+			run.flow.ConfirmKeep()
+			first, second := run.rightWords()
+			run.flow.submitWords(first, second, false)
+			for _, event := range []string{"api.challenge", "sign", "api.submit"} {
+				if run.log.has(event) {
+					t.Fatalf("%s happened: %v", event, run.log.all())
+				}
+			}
+			if _, stored := run.store.items[bittensorLocalKeyFlowTestNetwork]; stored {
+				t.Fatal("a key that failed its read back stayed in the store")
+			}
+			card := run.requireState(BittensorLocalKeyStateSaveNowShowing)
+			if card.FailureCode != BittensorLocalKeyFailureStore || card.Busy {
+				t.Fatalf("the card is %+v", card)
+			}
+			run.flow.Reveal(false)
+			if run.flow.PhraseToCopy() != run.key.Mnemonic {
+				t.Fatal("the phrase left memory")
+			}
+		})
+	}
+}
+
+// Keep on Save now with a refused consent: the key is stored and saved by then, so it stays, with
+// Finish setup on the card and no banner.
+func TestBittensorLocalKeyFlowSaveNowKeepWithARefusedConsentLeavesFinishSetup(t *testing.T) {
+	run := newTestingLocalKeyRunWithNoConsent(t)
+	run.api.challengeErr = errors.New("server_error: 502")
+	run.flow.SaveFirst(false)
+	run.flow.ConfirmKeep()
+	first, second := run.rightWords()
+	run.flow.submitWords(first, second, false)
+	card := run.requireState(BittensorLocalKeyStateSaveLaterNotLinked)
+	if !card.OffersFinishSetup || !card.KeySaved || card.BackupReminder || card.FailureCode != BittensorLocalKeyFailureConsent {
+		t.Fatalf("the card is %+v", card)
+	}
+	if !run.flow.GetScreen().Done {
+		t.Fatalf("the screen is %+v", run.flow.GetScreen())
+	}
+	run.api.challengeErr = nil
+	run.flow.finishSetup(false)
+	if card := run.requireState(BittensorLocalKeyStateSaveLaterLinked); !card.KeySaved {
+		t.Fatalf("the card is %+v", card)
+	}
+}
+
+// The words as they are typed: empty, the start of some listed word, wrong, or right, and the button
+// only with both right. It answers only during a check, and changes and publishes nothing.
+func TestBittensorLocalKeyFlowCheckWords(t *testing.T) {
+	run := newTestingLocalKeyRunLinked(t)
+	run.flow.OpenScreen()
+	if check := run.flow.CheckWords("anything", "else"); check.First != "" || check.Second != "" || check.Ready {
+		t.Fatalf("with no check open: %+v", check)
+	}
+	run.flow.ConfirmKeep()
+	first, second := run.rightWords()
+	var published atomic.Int64
+	sub := run.flow.AddBittensorLocalKeyFlowListener(testingLocalKeyListener(func() { published.Add(1) }))
+	defer sub.Close()
+	// a word of the list that is no start of a longer one, and is not the word asked for
+	wrongWord := ""
+	for _, word := range bip39.WordList {
+		if word != first && word != second && !bittensorLocalKeyWordStartsLonger(word) {
+			wrongWord = word
+			break
+		}
+	}
+	for _, row := range []struct {
+		first, second string
+		want          BittensorLocalKeyWordCheck
+	}{
+		{"", "", BittensorLocalKeyWordCheck{}},
+		{first, "", BittensorLocalKeyWordCheck{First: BittensorLocalKeyWordRight}},
+		{" " + strings.ToUpper(first) + " ", second, BittensorLocalKeyWordCheck{First: BittensorLocalKeyWordRight, Second: BittensorLocalKeyWordRight, Ready: true}},
+		{first[:1], second[:2], BittensorLocalKeyWordCheck{First: BittensorLocalKeyWordTyping, Second: BittensorLocalKeyWordTyping}},
+		{wrongWord, second, BittensorLocalKeyWordCheck{First: BittensorLocalKeyWordWrong, Second: BittensorLocalKeyWordRight}},
+		{first, "qqq", BittensorLocalKeyWordCheck{First: BittensorLocalKeyWordRight, Second: BittensorLocalKeyWordWrong}},
+		{second, first, BittensorLocalKeyWordCheck{First: bittensorLocalKeyWordState(second, first), Second: bittensorLocalKeyWordState(first, second)}},
+	} {
+		if check := run.flow.CheckWords(row.first, row.second); *check != row.want {
+			t.Errorf("%q, %q: %+v, want %+v", row.first, row.second, *check, row.want)
+		}
+	}
+	if published.Load() != 0 || run.flow.GetScreen().WordsRejected || len(run.store.items) != 1 {
+		t.Fatal("checking the words changed something")
+	}
+	// a typing state says nothing of the word asked for: the start of any listed word reads the same,
+	// whether or not the word asked for starts that way
+	starts := 0
+	for _, word := range bip39.WordList {
+		prefix := word[:2]
+		if prefix == first[:2] {
+			continue
+		}
+		starts += 1
+		if got := bittensorLocalKeyWordState(prefix, first); got != BittensorLocalKeyWordTyping {
+			t.Fatalf("%q, the start of %q, reads %q while %q is asked for", prefix, word, got, first)
+		}
+	}
+	if starts < 1000 {
+		t.Fatalf("CONTROL FAILED: %d starts", starts)
+	}
+	run.flow.CancelConfirmation()
+	if check := run.flow.CheckWords(first, second); check.Ready {
+		t.Fatal("the check answered after it closed")
+	}
+}
+
+// The same two words are asked of a key every time, through any number of tries and on a new flow, so
+// what the check says while typing can never tell more than those two words of the phrase.
+func TestBittensorLocalKeyFlowAsksTheSameTwoWordsEveryTime(t *testing.T) {
+	run := newTestingLocalKeyRunLinked(t)
+	run.flow.pickPositions = bittensorLocalKeyPickPositions
+	run.flow.OpenScreen()
+	run.flow.ConfirmKeep()
+	first, second := run.flow.GetScreen().FirstWordPosition, run.flow.GetScreen().SecondWordPosition
+	if first < 1 || second <= first || bittensorLocalKeyWordCount < second {
+		t.Fatalf("asked %d and %d", first, second)
+	}
+	for i := range 50 {
+		run.flow.CancelConfirmation()
+		if i%2 == 0 {
+			run.flow.ConfirmDelete()
+		} else {
+			run.flow.ConfirmKeep()
+		}
+		if screen := run.flow.GetScreen(); screen.FirstWordPosition != first || screen.SecondWordPosition != second {
+			t.Fatalf("try %d asked %d and %d, the first asked %d and %d", i, screen.FirstWordPosition, screen.SecondWordPosition, first, second)
+		}
+	}
+	again := newTestingLocalKeyRunOn(t, run.log, run.store, bittensorLocalKeyFlowTestNetwork)
+	again.flow.pickPositions = bittensorLocalKeyPickPositions
+	again.flow.SetConsent(true, run.key.Address, 40)
+	again.flow.OpenScreen()
+	again.flow.ConfirmDelete()
+	if screen := again.flow.GetScreen(); screen.FirstWordPosition != first || screen.SecondWordPosition != second {
+		t.Fatalf("a new flow asked %d and %d", screen.FirstWordPosition, screen.SecondWordPosition)
+	}
+	// the Save now phrase of the same key is asked the same two
+	saveNow := newTestingLocalKeyRunWithNoConsent(t)
+	saveNow.flow.pickPositions = bittensorLocalKeyPickPositions
+	saveNow.flow.SaveFirst(false)
+	saveNow.flow.ConfirmKeep()
+	if screen := saveNow.flow.GetScreen(); screen.FirstWordPosition != first || screen.SecondWordPosition != second {
+		t.Fatalf("Save now asked %d and %d", screen.FirstWordPosition, screen.SecondWordPosition)
+	}
+}
+
+// While the words show, the screen knows when they hide by themselves.
+func TestBittensorLocalKeyFlowRevealSaysWhenItHides(t *testing.T) {
+	run := newTestingLocalKeyRunLinked(t)
+	run.flow.OpenScreen()
+	if run.flow.GetScreen().RevealedUntilMillis != 0 {
+		t.Fatal("hidden words have a deadline")
+	}
+	run.flow.Reveal(true)
+	if got := run.flow.GetScreen().RevealedUntilMillis; got != bittensorLocalKeyFlowTestNowMillis+BittensorLocalKeyRevealSeconds*1000 {
+		t.Fatalf("revealed until %d", got)
+	}
+	run.flow.Hide()
+	if run.flow.GetScreen().RevealedUntilMillis != 0 {
+		t.Fatal("the deadline stayed after Hide")
 	}
 }
 
@@ -1166,9 +1438,9 @@ func TestBittensorLocalKeyFlowSurvivesLogoutByNetworkId(t *testing.T) {
 func TestBittensorLocalKeyFlowForgetNetwork(t *testing.T) {
 	run := newTestingLocalKeyRunLinked(t)
 	run.flow.OpenScreen()
-	run.flow.ConfirmKeep(true)
+	run.flow.ConfirmKeep()
 	first, second := run.rightWords()
-	run.flow.submitWords(first, second)
+	run.flow.submitWords(first, second, true)
 	run.flow.ReminderScheduled(bittensorLocalKeyFlowTestNowMillis + 1)
 	run.flow.ReminderDelivered()
 	if len(run.store.notes) == 0 {
@@ -1539,17 +1811,20 @@ func TestBittensorLocalKeyFlowEveryKeyScreenCarriesTheFundsDisclaimer(t *testing
 		run.api.challengeErr = errors.New("server_error: 502")
 		run.flow.SaveFirst(false)
 		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "showing")
+		run.flow.ConfirmKeep()
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "confirming the keep")
+		run.flow.CancelConfirmation()
 		run.flow.Reveal(false)
 		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "revealed")
-		run.flow.ConfirmDelete(false)
+		run.flow.ConfirmDelete()
 		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "confirming")
-		run.flow.submitWords("wrong", "words")
+		run.flow.submitWords("wrong", "words", true)
 		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "words rejected")
 		first, second := run.rightWords()
-		run.flow.submitWords(first, second)
+		run.flow.submitWords(first, second, true)
 		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "consent failed")
-		if got := run.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceKeepConfirmation); got != BittensorFundsDisclaimerNone {
-			t.Fatalf("Save now offers no keep, and its keep confirmation says %q", got)
+		if got := run.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceKeepConfirmation); got != BittensorFundsDisclaimerFundsOnly {
+			t.Fatalf("Save now's keep confirmation says %q", got)
 		}
 		run.flow.CloseScreen()
 		if screen := run.flow.GetScreen(); screen.FundsDisclaimer != BittensorFundsDisclaimerNone {
@@ -1563,17 +1838,17 @@ func TestBittensorLocalKeyFlowEveryKeyScreenCarriesTheFundsDisclaimer(t *testing
 		requireScreen(t, run, BittensorFundsDisclaimerFull, "hidden")
 		run.flow.Reveal(true)
 		requireScreen(t, run, BittensorFundsDisclaimerFull, "revealed")
-		run.flow.ConfirmDelete(true)
+		run.flow.ConfirmDelete()
 		requireScreen(t, run, BittensorFundsDisclaimerFull, "confirming the delete")
-		run.flow.submitWords("wrong", "words")
+		run.flow.submitWords("wrong", "words", true)
 		requireScreen(t, run, BittensorFundsDisclaimerFull, "words rejected")
 		run.flow.CancelConfirmation()
-		run.flow.ConfirmKeep(true)
+		run.flow.ConfirmKeep()
 		requireScreen(t, run, BittensorFundsDisclaimerFull, "confirming the keep")
 		run.flow.CancelConfirmation()
 		first, second := run.rightWords()
-		run.flow.ConfirmDelete(true)
-		run.flow.submitWords(first, second)
+		run.flow.ConfirmDelete()
+		run.flow.submitWords(first, second, true)
 		// the key is gone: the screen is done, and with no key there is nothing to show
 		if screen := run.flow.GetScreen(); !screen.Done || screen.FundsDisclaimer != BittensorFundsDisclaimerNone {
 			t.Fatalf("after the delete the screen is %+v", screen)
@@ -1596,13 +1871,19 @@ func TestBittensorLocalKeyFlowFundsDisclaimerAtEveryPlace(t *testing.T) {
 		BittensorFundsDisclaimerPlaceClaimCard,
 		BittensorFundsDisclaimerPlaceConvert,
 		BittensorFundsDisclaimerPlaceTop200,
+		BittensorFundsDisclaimerPlaceChangeWallet,
+		BittensorFundsDisclaimerPlaceClaimSheet,
 	}
 
 	linked := newTestingLocalKeyRunLinked(t)
 	for _, place := range places {
 		want := BittensorFundsDisclaimerFull
-		if place == BittensorFundsDisclaimerPlaceClaimCard {
+		switch place {
+		case BittensorFundsDisclaimerPlaceClaimCard, BittensorFundsDisclaimerPlaceChangeWallet:
+			// Earnings shows it on the payout card; Change wallet offers no key while this one is paid
 			want = BittensorFundsDisclaimerNone
+		case BittensorFundsDisclaimerPlaceClaimSheet:
+			want = BittensorFundsDisclaimerFundsOnly
 		}
 		if got := linked.flow.FundsDisclaimerAt(place); got != want {
 			t.Errorf("a linked key in the app's storage: %s says %q, want %q", place, got, want)
@@ -1628,6 +1909,9 @@ func TestBittensorLocalKeyFlowFundsDisclaimerAtEveryPlace(t *testing.T) {
 		BittensorFundsDisclaimerPlaceKeyScreen:          BittensorFundsDisclaimerNone,
 		BittensorFundsDisclaimerPlaceDeleteConfirmation: BittensorFundsDisclaimerNone,
 		BittensorFundsDisclaimerPlaceKeepConfirmation:   BittensorFundsDisclaimerNone,
+		// Change wallet offers a key here, which there isn't yet
+		BittensorFundsDisclaimerPlaceChangeWallet: BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceClaimSheet:   BittensorFundsDisclaimerFundsOnly,
 	} {
 		if got := wallet.flow.FundsDisclaimerAt(place); got != want {
 			t.Errorf("a wallet network: %s says %q, want %q", place, got, want)
@@ -1753,9 +2037,9 @@ func TestBittensorLocalKeyFlowReminder(t *testing.T) {
 		run := newTestingLocalKeyRunLinked(t)
 		run.flow.ReminderScheduled(firstClaimOpen)
 		run.flow.OpenScreen()
-		run.flow.ConfirmKeep(true)
+		run.flow.ConfirmKeep()
 		first, second := run.rightWords()
-		run.flow.submitWords(first, second)
+		run.flow.submitWords(first, second, true)
 		require(t, action(run, false), BittensorLocalKeyReminderCancel, 0)
 		require(t, action(run, false), BittensorLocalKeyReminderNone, 0)
 	})
@@ -1764,9 +2048,9 @@ func TestBittensorLocalKeyFlowReminder(t *testing.T) {
 		run := newTestingLocalKeyRunLinked(t)
 		run.flow.ReminderScheduled(firstClaimOpen)
 		run.flow.OpenScreen()
-		run.flow.ConfirmDelete(true)
+		run.flow.ConfirmDelete()
 		first, second := run.rightWords()
-		run.flow.submitWords(first, second)
+		run.flow.submitWords(first, second, true)
 		require(t, action(run, false), BittensorLocalKeyReminderCancel, 0)
 	})
 
@@ -1836,10 +2120,10 @@ func TestBittensorLocalKeyFlowNeverShowsThePhrase(t *testing.T) {
 		run.flow.SaveFirst(false)
 		run.flow.Reveal(false)
 		run.flow.Hide()
-		run.flow.ConfirmDelete(false)
-		run.flow.submitWords("wrong", "words")
+		run.flow.ConfirmDelete()
+		run.flow.submitWords("wrong", "words", true)
 		first, second := run.rightWords()
-		run.flow.submitWords(first, second)
+		run.flow.submitWords(first, second, true)
 		run.api.challengeErr = nil
 		run.api.submitErr = errors.New("server_error: 500")
 		run.flow.retrySaveNow()
@@ -1853,10 +2137,10 @@ func TestBittensorLocalKeyFlowNeverShowsThePhrase(t *testing.T) {
 		run.flow.OpenScreen()
 		run.flow.Reveal(true)
 		run.flow.Hide()
-		run.flow.ConfirmKeep(true)
+		run.flow.ConfirmKeep()
 		run.flow.CancelConfirmation()
-		run.flow.ConfirmDelete(true)
-		run.flow.submitWords(first, second)
+		run.flow.ConfirmDelete()
+		run.flow.submitWords(first, second, true)
 		record()
 	}
 	run := newTestingLocalKeyRun(t)
@@ -1950,9 +2234,9 @@ func TestBittensorLocalKeyFlowPublicCallsReportThroughTheListener(t *testing.T) 
 	})
 
 	run.flow.OpenScreen()
-	run.flow.ConfirmKeep(true)
+	run.flow.ConfirmKeep()
 	first, second := run.rightWords()
-	run.flow.SubmitWords(first, second)
+	run.flow.SubmitWords(first, second, true)
 	waitFor(func(card *BittensorLocalKeyCard, screen *BittensorLocalKeyScreen) bool {
 		return card.KeySaved && screen.Done
 	})
@@ -2015,9 +2299,9 @@ func TestBittensorLocalKeyFlowPanicEndsTheBusyState(t *testing.T) {
 		panic("broken")
 	}
 	run.flow.SaveFirst(false)
-	run.flow.ConfirmDelete(false)
+	run.flow.ConfirmDelete()
 	first, second := run.rightWords()
-	run.flow.SubmitWords(first, second)
+	run.flow.SubmitWords(first, second, true)
 	card = waitIdle(run)
 	if card.State != BittensorLocalKeyStateSaveNowConsentFailed || !run.flow.GetScreen().OffersRetry {
 		t.Fatalf("the card is %+v", card)
@@ -2131,18 +2415,30 @@ func TestBittensorLocalKeyFlowCloseLetsThePhraseGo(t *testing.T) {
 	}
 }
 
-// Two different words, in order, for any phrase length, from the system's randomness.
+// Two different words, in order, for any phrase length: the same two for an address every time, and
+// over many addresses every position gets asked.
 func TestBittensorLocalKeyPickPositions(t *testing.T) {
-	for range 1000 {
-		first, second := bittensorLocalKeyPickPositions(bittensorLocalKeyWordCount)
+	asked := map[int]bool{}
+	pairs := map[[2]int]bool{}
+	for i := range 2000 {
+		address := testingLocalKeyFromSeed(t, byte(i%250)).Address + strconv.Itoa(i)
+		first, second := bittensorLocalKeyPickPositions(address, bittensorLocalKeyWordCount)
 		if first < 0 || bittensorLocalKeyWordCount <= second || second <= first {
 			t.Fatalf("%d, %d", first, second)
 		}
+		if againFirst, againSecond := bittensorLocalKeyPickPositions(address, bittensorLocalKeyWordCount); againFirst != first || againSecond != second {
+			t.Fatalf("%s: %d, %d then %d, %d", address, first, second, againFirst, againSecond)
+		}
+		asked[first], asked[second] = true, true
+		pairs[[2]int{first, second}] = true
 	}
-	if first, second := bittensorLocalKeyPickPositions(1); first != 0 || second != 0 {
+	if len(asked) != bittensorLocalKeyWordCount || len(pairs) < 60 {
+		t.Fatalf("over 2000 addresses %d positions and %d pairs were asked", len(asked), len(pairs))
+	}
+	if first, second := bittensorLocalKeyPickPositions("5Any", 1); first != 0 || second != 0 {
 		t.Fatalf("%d, %d", first, second)
 	}
-	if first, second := bittensorLocalKeyPickPositions(2); first != 0 || second != 1 {
+	if first, second := bittensorLocalKeyPickPositions("5Any", 2); first != 0 || second != 1 {
 		t.Fatalf("%d, %d", first, second)
 	}
 }

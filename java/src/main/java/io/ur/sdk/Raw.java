@@ -433,10 +433,11 @@ public interface Raw extends Library {
   void urnet_async_local_state_set_by_jwt(long a0, String a1, urnet_commit_cb a2, Pointer a3);
   long urnet_bittensor_local_key_flow_add_bittensor_local_key_flow_listener(long a0, urnet_bittensor_local_key_flow_cb a1, Pointer a2);
   void urnet_bittensor_local_key_flow_cancel_confirmation(long a0);
+  Pointer urnet_bittensor_local_key_flow_check_words(long a0, String a1, String a2);
   void urnet_bittensor_local_key_flow_close(long a0);
   void urnet_bittensor_local_key_flow_close_screen(long a0);
-  void urnet_bittensor_local_key_flow_confirm_delete(long a0, byte a1);
-  void urnet_bittensor_local_key_flow_confirm_keep(long a0, byte a1);
+  void urnet_bittensor_local_key_flow_confirm_delete(long a0);
+  void urnet_bittensor_local_key_flow_confirm_keep(long a0);
   void urnet_bittensor_local_key_flow_finish_setup(long a0, byte a1);
   byte urnet_bittensor_local_key_flow_forget_network(long a0);
   Pointer urnet_bittensor_local_key_flow_funds_disclaimer_at(long a0, String a1);
@@ -463,7 +464,7 @@ public interface Raw extends Library {
   void urnet_bittensor_local_key_flow_set_top200_registered(long a0, byte a1);
   void urnet_bittensor_local_key_flow_set_up_payouts(long a0, byte a1);
   Pointer urnet_bittensor_local_key_flow_string(long a0);
-  void urnet_bittensor_local_key_flow_submit_words(long a0, String a1, String a2);
+  void urnet_bittensor_local_key_flow_submit_words(long a0, String a1, String a2, byte a3);
   Pointer urnet_bittensor_wallet_session_bridge_url(long a0, PointerByReference a1);
   void urnet_bittensor_wallet_session_cancel(long a0);
   Pointer urnet_bittensor_wallet_session_challenge_args(long a0, String a1);

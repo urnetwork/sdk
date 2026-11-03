@@ -235,6 +235,9 @@ type SnClaimStatusResult struct {
 	// what the policy says, in rao of α at the relay's last price, 0 without one
 	AutomaticThresholdRao int64 `json:"automatic_threshold_rao"`
 	TransferFloorRao      int64 `json:"transfer_floor_rao"`
+	// the same in rao of TAO, which is what the policy sets: "once it's worth about 0.0125 TAO"
+	AutomaticThresholdTaoRao int64 `json:"automatic_threshold_tao_rao"`
+	TransferFloorTaoRao      int64 `json:"transfer_floor_tao_rao"`
 	// days between two Claim now of one coldkey
 	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
 	Accounts           *SnClaimRelayAccountList `json:"accounts"`
@@ -323,6 +326,8 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 		result.RelayState = relay.State
 		result.AutomaticThresholdRao = relay.AutomaticThresholdRao
 		result.TransferFloorRao = relay.TransferFloorRao
+		result.AutomaticThresholdTaoRao = relay.AutomaticThresholdTaoRao
+		result.TransferFloorTaoRao = relay.TransferFloorTaoRao
 		result.ClaimNowPeriodDays = relay.ClaimNowPeriodDays
 		if relay.Accounts != nil {
 			accounts = relay.Accounts.getAll()

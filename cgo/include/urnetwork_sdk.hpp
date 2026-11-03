@@ -172,7 +172,9 @@ inline constexpr const char* BittensorConvertErrorRuntimeChanged = "convert_runt
 inline constexpr const char* BittensorFundsDisclaimerFull = "bittensor_funds_disclaimer";
 inline constexpr const char* BittensorFundsDisclaimerFundsOnly = "bittensor_funds_disclaimer_funds_only";
 inline constexpr const char* BittensorFundsDisclaimerNone = "";
+inline constexpr const char* BittensorFundsDisclaimerPlaceChangeWallet = "change_wallet";
 inline constexpr const char* BittensorFundsDisclaimerPlaceClaimCard = "claim_card";
+inline constexpr const char* BittensorFundsDisclaimerPlaceClaimSheet = "claim_sheet";
 inline constexpr const char* BittensorFundsDisclaimerPlaceConvert = "convert";
 inline constexpr const char* BittensorFundsDisclaimerPlaceDeleteConfirmation = "delete_confirmation";
 inline constexpr const char* BittensorFundsDisclaimerPlaceKeepConfirmation = "keep_confirmation";
@@ -208,6 +210,10 @@ inline constexpr const char* BittensorLocalKeyStateSaveNowShowing = "save_now_sh
 inline constexpr const char* BittensorLocalKeyStateSavedAndDeleted = "saved_and_deleted";
 inline constexpr const char* BittensorLocalKeyStateStoreUnavailable = "store_unavailable";
 inline constexpr const char* BittensorLocalKeyStoreUnavailable = "store_unavailable";
+inline constexpr const char* BittensorLocalKeyWordEmpty = "";
+inline constexpr const char* BittensorLocalKeyWordRight = "right";
+inline constexpr const char* BittensorLocalKeyWordTyping = "typing";
+inline constexpr const char* BittensorLocalKeyWordWrong = "wrong";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
 inline constexpr const char* BittensorTaoComInjectedName = "@opentensor/bittensor-extension";
 inline constexpr const char* BittensorWalletBridgeErrorAddressMismatch = "address_mismatch";
@@ -795,6 +801,7 @@ struct BittensorLocalKey;
 struct BittensorLocalKeyCard;
 struct BittensorLocalKeyReminder;
 struct BittensorLocalKeyScreen;
+struct BittensorLocalKeyWordCheck;
 struct BittensorSignRequest;
 struct BittensorWalletProof;
 struct BittensorWalletResult;
@@ -1678,9 +1685,11 @@ struct BittensorLocalKeyScreen {
 	bool save_now{};
 	std::string address{};
 	bool revealed{};
+	int64_t revealed_until_millis{};
 	bool needs_authentication{};
 	bool hidden_by_capture{};
 	std::string confirming{};
+	bool confirm_needs_authentication{};
 	int64_t first_word_position{};
 	int64_t second_word_position{};
 	bool words_rejected{};
@@ -1692,6 +1701,12 @@ struct BittensorLocalKeyScreen {
 	std::string failure_code{};
 	std::string failure_message{};
 	std::string funds_disclaimer{};
+};
+
+struct BittensorLocalKeyWordCheck {
+	std::string first{};
+	std::string second{};
+	bool ready{};
 };
 
 struct BittensorSignRequest {
@@ -3695,6 +3710,8 @@ struct SnClaimStatusResult {
 	bool self_claim_needs_gas{};
 	int64_t automatic_threshold_rao{};
 	int64_t transfer_floor_rao{};
+	int64_t automatic_threshold_tao_rao{};
+	int64_t transfer_floor_tao_rao{};
 	int64_t claim_now_period_days{};
 	std::optional<SnClaimRelayAccountList> accounts;
 	std::optional<SnError> error;
@@ -4633,6 +4650,8 @@ inline void to_json(nlohmann::json& j, const BittensorLocalKeyReminder& v);
 inline void from_json(const nlohmann::json& j, BittensorLocalKeyReminder& v);
 inline void to_json(nlohmann::json& j, const BittensorLocalKeyScreen& v);
 inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v);
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyWordCheck& v);
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyWordCheck& v);
 inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
 inline void from_json(const nlohmann::json& j, BittensorSignRequest& v);
 inline void to_json(nlohmann::json& j, const BittensorWalletProof& v);
@@ -7669,9 +7688,11 @@ inline void to_json(nlohmann::json& j, const BittensorLocalKeyScreen& v) {
 	j["save_now"] = v.save_now;
 	j["address"] = v.address;
 	j["revealed"] = v.revealed;
+	j["revealed_until_millis"] = v.revealed_until_millis;
 	j["needs_authentication"] = v.needs_authentication;
 	j["hidden_by_capture"] = v.hidden_by_capture;
 	j["confirming"] = v.confirming;
+	j["confirm_needs_authentication"] = v.confirm_needs_authentication;
 	j["first_word_position"] = v.first_word_position;
 	j["second_word_position"] = v.second_word_position;
 	j["words_rejected"] = v.words_rejected;
@@ -7700,6 +7721,9 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
 	if (auto it = j.find("revealed"); it != j.end() && !it->is_null()) {
 		it->get_to(v.revealed);
 	}
+	if (auto it = j.find("revealed_until_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.revealed_until_millis);
+	}
 	if (auto it = j.find("needs_authentication"); it != j.end() && !it->is_null()) {
 		it->get_to(v.needs_authentication);
 	}
@@ -7708,6 +7732,9 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
 	}
 	if (auto it = j.find("confirming"); it != j.end() && !it->is_null()) {
 		it->get_to(v.confirming);
+	}
+	if (auto it = j.find("confirm_needs_authentication"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirm_needs_authentication);
 	}
 	if (auto it = j.find("first_word_position"); it != j.end() && !it->is_null()) {
 		it->get_to(v.first_word_position);
@@ -7741,6 +7768,27 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
 	}
 	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
 		it->get_to(v.funds_disclaimer);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorLocalKeyWordCheck& v) {
+	j = nlohmann::json::object();
+	j["first"] = v.first;
+	j["second"] = v.second;
+	j["ready"] = v.ready;
+}
+inline void from_json(const nlohmann::json& j, BittensorLocalKeyWordCheck& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("first"); it != j.end() && !it->is_null()) {
+		it->get_to(v.first);
+	}
+	if (auto it = j.find("second"); it != j.end() && !it->is_null()) {
+		it->get_to(v.second);
+	}
+	if (auto it = j.find("ready"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ready);
 	}
 }
 
@@ -16759,6 +16807,8 @@ inline void to_json(nlohmann::json& j, const SnClaimStatusResult& v) {
 	j["self_claim_needs_gas"] = v.self_claim_needs_gas;
 	j["automatic_threshold_rao"] = v.automatic_threshold_rao;
 	j["transfer_floor_rao"] = v.transfer_floor_rao;
+	j["automatic_threshold_tao_rao"] = v.automatic_threshold_tao_rao;
+	j["transfer_floor_tao_rao"] = v.transfer_floor_tao_rao;
 	j["claim_now_period_days"] = v.claim_now_period_days;
 	if (v.accounts) {
 		j["accounts"] = *v.accounts;
@@ -16818,6 +16868,12 @@ inline void from_json(const nlohmann::json& j, SnClaimStatusResult& v) {
 	}
 	if (auto it = j.find("transfer_floor_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.transfer_floor_rao);
+	}
+	if (auto it = j.find("automatic_threshold_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.automatic_threshold_tao_rao);
+	}
+	if (auto it = j.find("transfer_floor_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.transfer_floor_tao_rao);
 	}
 	if (auto it = j.find("claim_now_period_days"); it != j.end() && !it->is_null()) {
 		it->get_to(v.claim_now_period_days);
@@ -21165,10 +21221,11 @@ public:
 	explicit BittensorLocalKeyFlow(uint64_t h) : detail::Handle(h) {}
 	Sub addBittensorLocalKeyFlowListener(BittensorLocalKeyFlowListener listener) const;
 	void cancelConfirmation() const;
+	std::optional<BittensorLocalKeyWordCheck> checkWords(const std::string& first_word, const std::string& second_word) const;
 	void close() const;
 	void closeScreen() const;
-	void confirmDelete(bool authenticated) const;
-	void confirmKeep(bool authenticated) const;
+	void confirmDelete() const;
+	void confirmKeep() const;
 	void finishSetup(bool replace_confirmed) const;
 	bool forgetNetwork() const;
 	std::string fundsDisclaimerAt(const std::string& place) const;
@@ -21195,7 +21252,7 @@ public:
 	void setTop200Registered(bool registered) const;
 	void setUpPayouts(bool replace_confirmed) const;
 	std::string string() const;
-	void submitWords(const std::string& first_word, const std::string& second_word) const;
+	void submitWords(const std::string& first_word, const std::string& second_word, bool authenticated) const;
 };
 
 class BittensorWalletSession final : public detail::Handle {
@@ -31371,17 +31428,25 @@ inline Sub BittensorLocalKeyFlow::addBittensorLocalKeyFlowListener(BittensorLoca
 inline void BittensorLocalKeyFlow::cancelConfirmation() const {
 	urnet_bittensor_local_key_flow_cancel_confirmation(handle());
 }
+inline std::optional<BittensorLocalKeyWordCheck> BittensorLocalKeyFlow::checkWords(const std::string& first_word, const std::string& second_word) const {
+	char* r_c = urnet_bittensor_local_key_flow_check_words(handle(), first_word.c_str(), second_word.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorLocalKeyWordCheck>(r_s->c_str());
+}
 inline void BittensorLocalKeyFlow::close() const {
 	urnet_bittensor_local_key_flow_close(handle());
 }
 inline void BittensorLocalKeyFlow::closeScreen() const {
 	urnet_bittensor_local_key_flow_close_screen(handle());
 }
-inline void BittensorLocalKeyFlow::confirmDelete(bool authenticated) const {
-	urnet_bittensor_local_key_flow_confirm_delete(handle(), authenticated);
+inline void BittensorLocalKeyFlow::confirmDelete() const {
+	urnet_bittensor_local_key_flow_confirm_delete(handle());
 }
-inline void BittensorLocalKeyFlow::confirmKeep(bool authenticated) const {
-	urnet_bittensor_local_key_flow_confirm_keep(handle(), authenticated);
+inline void BittensorLocalKeyFlow::confirmKeep() const {
+	urnet_bittensor_local_key_flow_confirm_keep(handle());
 }
 inline void BittensorLocalKeyFlow::finishSetup(bool replace_confirmed) const {
 	urnet_bittensor_local_key_flow_finish_setup(handle(), replace_confirmed);
@@ -31487,8 +31552,8 @@ inline std::string BittensorLocalKeyFlow::string() const {
 	char* r_c = urnet_bittensor_local_key_flow_string(handle());
 	return detail::takeString(r_c);
 }
-inline void BittensorLocalKeyFlow::submitWords(const std::string& first_word, const std::string& second_word) const {
-	urnet_bittensor_local_key_flow_submit_words(handle(), first_word.c_str(), second_word.c_str());
+inline void BittensorLocalKeyFlow::submitWords(const std::string& first_word, const std::string& second_word, bool authenticated) const {
+	urnet_bittensor_local_key_flow_submit_words(handle(), first_word.c_str(), second_word.c_str(), authenticated);
 }
 inline std::string BittensorWalletSession::bridgeUrl() const {
 	char* err_c = nullptr;
