@@ -366,6 +366,27 @@ func (self *cAdapterAuthWalletChallengeCallback) Result(result *sdk.AuthWalletCh
 	}
 }
 
+type cAdapterBittensorConvertEstimateCallback struct {
+	cbResult C.urnet_bittensor_convert_estimate_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterBittensorConvertEstimateCallback) Result(result *sdk.BittensorConvertEstimateResult, errParam error) {
+	defer cgoGuard("urnet_bittensor_convert_estimate_cb")
+	result_ := cJson(result, "urnet_bittensor_convert_estimate_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_bittensor_convert_estimate(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterBlockActionOverridesChangeListener struct {
 	cbBlockActionOverridesChanged C.urnet_block_action_overrides_change_cb
 	userData                      unsafe.Pointer
@@ -6428,6 +6449,40 @@ func urnet_async_local_state_set_by_jwt(self C.uint64_t, byJwt *C.char, callback
 		callback_ = &cAdapterCommitCallback{cbComplete: callback_complete, userData: callback_user_data}
 	}
 	self_.SetByJwt(goString(byJwt), callback_)
+}
+
+//export urnet_bittensor_convert_estimate
+func urnet_bittensor_convert_estimate(settings *C.char, coldkeySs58 *C.char, amountRao C.int64_t, callback_result C.urnet_bittensor_convert_estimate_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_estimate")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_estimate") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertEstimateCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertEstimateCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertEstimate(settings_, goString(coldkeySs58), int64(amountRao), callback_)
+}
+
+//export urnet_bittensor_convert_estimate_for_burn
+func urnet_bittensor_convert_estimate_for_burn(settings *C.char, coldkeySs58 *C.char, callback_result C.urnet_bittensor_convert_estimate_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_bittensor_convert_estimate_for_burn")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_bittensor_convert_estimate_for_burn") {
+			return
+		}
+	}
+	var callback_ sdk.BittensorConvertEstimateCallback
+	if callback_result != nil {
+		callback_ = &cAdapterBittensorConvertEstimateCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.BittensorConvertEstimateForBurn(settings_, goString(coldkeySs58), callback_)
 }
 
 //export urnet_bittensor_local_key_address
@@ -14627,6 +14682,20 @@ func urnet_format_rank(rank C.int64_t) *C.char {
 func urnet_format_share_bps(shareBps C.int64_t) *C.char {
 	defer cgoGuard("urnet_format_share_bps")
 	r0 := sdk.FormatShareBps(int64(shareBps))
+	return cString(string(r0))
+}
+
+//export urnet_format_tao
+func urnet_format_tao(rao C.int64_t) *C.char {
+	defer cgoGuard("urnet_format_tao")
+	r0 := sdk.FormatTao(int64(rao))
+	return cString(string(r0))
+}
+
+//export urnet_format_tao_amount
+func urnet_format_tao_amount(rao C.int64_t) *C.char {
+	defer cgoGuard("urnet_format_tao_amount")
+	r0 := sdk.FormatTaoAmount(int64(rao))
 	return cString(string(r0))
 }
 

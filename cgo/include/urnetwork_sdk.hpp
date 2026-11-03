@@ -155,6 +155,20 @@ inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
+inline constexpr const char* BittensorChainErrorWrongChain = "bittensor_wrong_chain";
+inline constexpr const char* BittensorConvertErrorAmountTooHigh = "convert_amount_too_high";
+inline constexpr const char* BittensorConvertErrorAmountTooLow = "convert_amount_too_low";
+inline constexpr const char* BittensorConvertErrorBalanceTooLow = "convert_balance_too_low";
+inline constexpr const char* BittensorConvertErrorExpired = "convert_expired";
+inline constexpr const char* BittensorConvertErrorFailed = "convert_failed";
+inline constexpr const char* BittensorConvertErrorKeyMismatch = "convert_key_mismatch";
+inline constexpr const char* BittensorConvertErrorNothingToConvert = "convert_nothing_to_convert";
+inline constexpr const char* BittensorConvertErrorOutcomeUnknown = "convert_outcome_unknown";
+inline constexpr const char* BittensorConvertErrorPending = "convert_already_pending";
+inline constexpr const char* BittensorConvertErrorPriceImpact = "convert_price_impact_too_high";
+inline constexpr const char* BittensorConvertErrorPriceMoved = "convert_price_moved";
+inline constexpr const char* BittensorConvertErrorRefused = "convert_refused";
+inline constexpr const char* BittensorConvertErrorRuntimeChanged = "convert_runtime_changed";
 inline constexpr const char* BittensorLocalKeyErrorFailed = "local_key_failed";
 inline constexpr const char* BittensorLocalKeyErrorInvalidPhrase = "invalid_recovery_phrase";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
@@ -765,6 +779,7 @@ struct AuthVerifySendResult;
 struct AuthWalletChallengeArgs;
 struct AuthWalletChallengeResult;
 struct BittensorChallengeMessage;
+struct BittensorConvertEstimateResult;
 struct BittensorLocalKey;
 struct BittensorSignRequest;
 struct BittensorWalletProof;
@@ -1552,6 +1567,35 @@ struct AuthWalletChallengeResult {
 struct BittensorChallengeMessage {
 	std::string Challenge{};
 	int64_t Timestamp{};
+};
+
+struct BittensorConvertEstimateResult {
+	std::string coldkey_ss58{};
+	std::optional<std::string> hotkey_ss58;
+	int64_t netuid{};
+	int64_t stake_rao{};
+	int64_t free_tao_rao{};
+	int64_t price_rao{};
+	int64_t min_amount_rao{};
+	int64_t max_amount_rao{};
+	int64_t amount_rao{};
+	int64_t expected_tao_rao{};
+	int64_t expected_net_tao_rao{};
+	int64_t min_tao_rao{};
+	int64_t limit_price_rao{};
+	int64_t pool_fee_alpha_rao{};
+	int64_t price_impact_bps{};
+	int64_t fee_tao_rao{};
+	int64_t fee_alpha_rao{};
+	bool fee_in_alpha{};
+	int64_t remainder_swept_alpha_rao{};
+	int64_t remainder_swept_tao_rao{};
+	std::optional<int64_t> burn_rao;
+	std::optional<int64_t> register_fee_rao;
+	std::optional<int64_t> burn_tao_needed_rao;
+	std::optional<bool> burn_already_covered;
+	bool can_convert{};
+	std::optional<SnError> error;
 };
 
 struct BittensorLocalKey {
@@ -4454,6 +4498,8 @@ inline void to_json(nlohmann::json& j, const AuthWalletChallengeResult& v);
 inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v);
 inline void to_json(nlohmann::json& j, const BittensorChallengeMessage& v);
 inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v);
+inline void to_json(nlohmann::json& j, const BittensorConvertEstimateResult& v);
+inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v);
 inline void to_json(nlohmann::json& j, const BittensorLocalKey& v);
 inline void from_json(const nlohmann::json& j, BittensorLocalKey& v);
 inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
@@ -7089,6 +7135,143 @@ inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v) {
 	}
 	if (auto it = j.find("Timestamp"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Timestamp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorConvertEstimateResult& v) {
+	j = nlohmann::json::object();
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	if (v.hotkey_ss58) {
+		j["hotkey_ss58"] = *v.hotkey_ss58;
+	}
+	j["netuid"] = v.netuid;
+	j["stake_rao"] = v.stake_rao;
+	j["free_tao_rao"] = v.free_tao_rao;
+	j["price_rao"] = v.price_rao;
+	j["min_amount_rao"] = v.min_amount_rao;
+	j["max_amount_rao"] = v.max_amount_rao;
+	j["amount_rao"] = v.amount_rao;
+	j["expected_tao_rao"] = v.expected_tao_rao;
+	j["expected_net_tao_rao"] = v.expected_net_tao_rao;
+	j["min_tao_rao"] = v.min_tao_rao;
+	j["limit_price_rao"] = v.limit_price_rao;
+	j["pool_fee_alpha_rao"] = v.pool_fee_alpha_rao;
+	j["price_impact_bps"] = v.price_impact_bps;
+	j["fee_tao_rao"] = v.fee_tao_rao;
+	j["fee_alpha_rao"] = v.fee_alpha_rao;
+	j["fee_in_alpha"] = v.fee_in_alpha;
+	j["remainder_swept_alpha_rao"] = v.remainder_swept_alpha_rao;
+	j["remainder_swept_tao_rao"] = v.remainder_swept_tao_rao;
+	if (v.burn_rao) {
+		j["burn_rao"] = *v.burn_rao;
+	}
+	if (v.register_fee_rao) {
+		j["register_fee_rao"] = *v.register_fee_rao;
+	}
+	if (v.burn_tao_needed_rao) {
+		j["burn_tao_needed_rao"] = *v.burn_tao_needed_rao;
+	}
+	if (v.burn_already_covered) {
+		j["burn_already_covered"] = *v.burn_already_covered;
+	}
+	j["can_convert"] = v.can_convert;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("hotkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.hotkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("netuid"); it != j.end() && !it->is_null()) {
+		it->get_to(v.netuid);
+	}
+	if (auto it = j.find("stake_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.stake_rao);
+	}
+	if (auto it = j.find("free_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.free_tao_rao);
+	}
+	if (auto it = j.find("price_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.price_rao);
+	}
+	if (auto it = j.find("min_amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.min_amount_rao);
+	}
+	if (auto it = j.find("max_amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.max_amount_rao);
+	}
+	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("expected_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expected_tao_rao);
+	}
+	if (auto it = j.find("expected_net_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expected_net_tao_rao);
+	}
+	if (auto it = j.find("min_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.min_tao_rao);
+	}
+	if (auto it = j.find("limit_price_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.limit_price_rao);
+	}
+	if (auto it = j.find("pool_fee_alpha_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pool_fee_alpha_rao);
+	}
+	if (auto it = j.find("price_impact_bps"); it != j.end() && !it->is_null()) {
+		it->get_to(v.price_impact_bps);
+	}
+	if (auto it = j.find("fee_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fee_tao_rao);
+	}
+	if (auto it = j.find("fee_alpha_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fee_alpha_rao);
+	}
+	if (auto it = j.find("fee_in_alpha"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fee_in_alpha);
+	}
+	if (auto it = j.find("remainder_swept_alpha_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.remainder_swept_alpha_rao);
+	}
+	if (auto it = j.find("remainder_swept_tao_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.remainder_swept_tao_rao);
+	}
+	if (auto it = j.find("burn_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.burn_rao = std::move(tmp);
+	}
+	if (auto it = j.find("register_fee_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.register_fee_rao = std::move(tmp);
+	}
+	if (auto it = j.find("burn_tao_needed_rao"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.burn_tao_needed_rao = std::move(tmp);
+	}
+	if (auto it = j.find("burn_already_covered"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.burn_already_covered = std::move(tmp);
+	}
+	if (auto it = j.find("can_convert"); it != j.end() && !it->is_null()) {
+		it->get_to(v.can_convert);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -19817,6 +20000,7 @@ using AuthPasswordResetCallback = std::function<void(std::optional<AuthPasswordR
 using AuthVerifyCallback = std::function<void(std::optional<AuthVerifyResult> result, std::optional<std::string> err_param)>;
 using AuthVerifySendCallback = std::function<void(std::optional<AuthVerifySendResult> result, std::optional<std::string> err_param)>;
 using AuthWalletChallengeCallback = std::function<void(std::optional<AuthWalletChallengeResult> result, std::optional<std::string> err_param)>;
+using BittensorConvertEstimateCallback = std::function<void(std::optional<BittensorConvertEstimateResult> result, std::optional<std::string> err_param)>;
 using BlockActionOverridesChangeListener = std::function<void(std::optional<BlockActionOverrideList> block_action_overrides)>;
 using BlockActionStatsListener = std::function<void()>;
 using BlockActionWindowChangeListener = std::function<void(std::optional<BlockActionWindow> block_action_window)>;
@@ -22196,6 +22380,42 @@ inline void oneshot_auth_wallet_challenge(void* user_data, const char* result_js
 		std::optional<AuthWalletChallengeResult> result_v;
 		if (result_json) {
 			result_v = parseJson<AuthWalletChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_bittensor_convert_estimate(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertEstimateCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertEstimateResult> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertEstimateResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_bittensor_convert_estimate(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<BittensorConvertEstimateCallback*>(user_data);
+	try {
+		std::optional<BittensorConvertEstimateResult> result_v;
+		if (result_json) {
+			result_v = parseJson<BittensorConvertEstimateResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -35184,6 +35404,26 @@ inline double alphaFromRao(int64_t rao) {
 	double r = urnet_alpha_from_rao(rao);
 	return r;
 }
+inline void bittensorConvertEstimate(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, int64_t amount_rao, BittensorConvertEstimateCallback callback) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	auto* callback_fn = callback ? new BittensorConvertEstimateCallback(std::move(callback)) : nullptr;
+	urnet_bittensor_convert_estimate(settings_c, coldkey_ss58.c_str(), amount_rao, callback_fn ? &detail::oneshot_bittensor_convert_estimate : nullptr, callback_fn);
+}
+inline void bittensorConvertEstimateForBurn(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, BittensorConvertEstimateCallback callback) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	auto* callback_fn = callback ? new BittensorConvertEstimateCallback(std::move(callback)) : nullptr;
+	urnet_bittensor_convert_estimate_for_burn(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_bittensor_convert_estimate : nullptr, callback_fn);
+}
 inline std::string bittensorLocalKeyAddress(const std::string& mnemonic) {
 	char* err_c = nullptr;
 	char* r_c = urnet_bittensor_local_key_address(mnemonic.c_str(), &err_c);
@@ -35598,6 +35838,14 @@ inline std::string formatRank(int64_t rank) {
 }
 inline std::string formatShareBps(int64_t share_bps) {
 	char* r_c = urnet_format_share_bps(share_bps);
+	return detail::takeString(r_c);
+}
+inline std::string formatTao(int64_t rao) {
+	char* r_c = urnet_format_tao(rao);
+	return detail::takeString(r_c);
+}
+inline std::string formatTaoAmount(int64_t rao) {
+	char* r_c = urnet_format_tao_amount(rao);
 	return detail::takeString(r_c);
 }
 inline void freeMemory() {

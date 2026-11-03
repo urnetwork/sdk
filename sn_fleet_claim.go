@@ -116,7 +116,8 @@ const (
 	// amount.
 	SnFleetClaimMaxBurnRao int64 = protocol.FleetClaimMaxBurnRao
 
-	snFleetClaimStepTimeout = 5 * time.Minute
+	// a transaction can wait its whole era to land, and then for finality
+	snFleetClaimStepTimeout = 20 * time.Minute
 
 	snFleetClaimRetryShort = 2 * 60
 	snFleetClaimRetryLong  = 30 * 60
@@ -173,21 +174,27 @@ type SnFleetClaimState struct {
 
 type SnFleetClaimCallback connect.ApiCallback[*SnFleetClaimState]
 
+// What paying for a registration takes right now, read together.
+type snFleetBurnPlan struct {
+	BurnRao uint64
+	FeeRao  uint64
+	// the key holds the burn and fee and would keep its deposit
+	Covered bool
+	// a sale of SN25α that pays for it, nil when none can. A sale has to pay the
+	// runtime's minimum, so a key with little alpha can't convert just the burn.
+	Convert *BittensorConvertEstimateResult
+}
+
 // snFleetClaimChain is what the flow needs from the chain. Each write builds one
 // fixed call from typed values: nothing here can sign a call the server chose.
 type snFleetClaimChain interface {
 	Block(ctx context.Context) (uint64, error)
 	HotkeyUid(ctx context.Context, netuid uint16, hotkey [32]byte) (uid int64, registered bool, err error)
-	RegistrationBurnRao(ctx context.Context, netuid uint16) (uint64, error)
-	// the native fee of the registration, quoted by the chain
-	RegistrationFeeRao(ctx context.Context, netuid uint16, coldkey [32]byte, hotkey [32]byte, limitRao uint64) (uint64, error)
-	FreeBalanceRao(ctx context.Context, coldkey [32]byte) (uint64, error)
-	// what the coldkey's alpha would convert to, after the conversion's own fee
-	ConvertibleRao(ctx context.Context, netuid uint16, coldkey [32]byte) (uint64, error)
+	BurnPlan(ctx context.Context, coldkey [32]byte) (*snFleetBurnPlan, error)
 	// the hotkey's published fleet commitment
 	FleetCommitment(ctx context.Context, netuid uint16, hotkey [32]byte) (hash [32]byte, found bool, err error)
-	// converts just enough alpha to hold taoRao more TAO, with a price limit
-	ConvertAlpha(ctx context.Context, coldkeyPhrase string, netuid uint16, taoRao uint64) error
+	// the plan's sale, with its price limit, to the key that signs
+	ConvertForBurn(ctx context.Context, coldkeyPhrase string, plan *snFleetBurnPlan) error
 	// register_limit, signed by the coldkey
 	RegisterLimit(ctx context.Context, coldkeyPhrase string, netuid uint16, hotkey [32]byte, limitRao uint64) error
 	// set_commitment of the tagged fleet format, signed by the hotkey
@@ -212,9 +219,10 @@ type SnFleetClaim struct {
 	stateLock sync.Mutex
 }
 
-// NewSnFleetClaim is the flow on this device, using its api and the app's store.
-func NewSnFleetClaim(api *Api, store SnFleetClaimStore) *SnFleetClaim {
-	return newSnFleetClaim(api, store, newSnFleetClaimDefaultChain(api), snFleetClaimLocalColdkey{})
+// NewSnFleetClaim is the flow on this device, using its api, the chain settings and
+// the app's store.
+func NewSnFleetClaim(api *Api, settings *SnChainSettings, store SnFleetClaimStore) *SnFleetClaim {
+	return newSnFleetClaim(api, store, newSnFleetClaimEngineChain(settings), snFleetClaimLocalColdkey{})
 }
 
 func newSnFleetClaim(server snFleetServer, store SnFleetClaimStore, chain snFleetClaimChain, coldkey snFleetClaimColdkey) *SnFleetClaim {
@@ -513,8 +521,10 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 		}
 	}
 
-	// the registration
-	if !hasRegisteredHotkey(ctx, self.chain, netuid, hotkey, state) {
+	// the registration. The server's census saying yes is enough to go on, since what
+	// follows is free and the chain refuses it otherwise. Its no is never enough to
+	// spend: the chain has to say so too
+	if !status.Registered && !hasRegisteredHotkey(ctx, self.chain, netuid, hotkey, state) {
 		if state.Stage != "" {
 			return state
 		}
@@ -620,45 +630,39 @@ func (self *SnFleetClaim) register(ctx context.Context, status *snFleetClaimStat
 		state.RetryAfterSeconds = snFleetClaimRetryLong
 		return state
 	}
-	burn, err := self.chain.RegistrationBurnRao(ctx, netuid)
+	plan, err := self.chain.BurnPlan(ctx, coldkey)
 	if err != nil {
 		return chainFail()
 	}
-	if uint64(SnFleetClaimMaxBurnRao) < burn {
+	if uint64(SnFleetClaimMaxBurnRao) < plan.BurnRao {
 		state.Stage = SnFleetClaimStageWaitingBurn
 		state.RetryAfterSeconds = snFleetClaimRetryLong
 		return state
 	}
-	fee, err := self.chain.RegistrationFeeRao(ctx, netuid, coldkey, hotkey, burn)
-	if err != nil {
-		return chainFail()
-	}
-	free, err := self.chain.FreeBalanceRao(ctx, coldkey)
-	if err != nil {
-		return chainFail()
-	}
+	burn := plan.BurnRao
 	state.BurnLimitRao = int64(burn)
-	need := burn + fee
-	if free < need {
-		short := need - free
-		if phrase != "" {
-			convertible, err := self.chain.ConvertibleRao(ctx, netuid, coldkey)
-			if err != nil {
-				return chainFail()
+	if !plan.Covered {
+		// converting first. A sale has to pay the runtime's minimum (0.002 TAO), which
+		// is several times the burn, so a key with a little alpha can't: it gets the
+		// one top-up rather than a failure
+		if phrase != "" && plan.Convert != nil {
+			if err := self.chain.ConvertForBurn(ctx, phrase, plan); err != nil {
+				return snFleetClaimFail(state, SnFleetClaimErrorChain, "The conversion couldn't be sent. Try again.")
 			}
-			if short <= convertible {
-				if err := self.chain.ConvertAlpha(ctx, phrase, netuid, short); err != nil {
-					return snFleetClaimFail(state, SnFleetClaimErrorChain, "The conversion couldn't be sent. Try again.")
-				}
-				state.Stage = SnFleetClaimStageConverting
-				state.RetryAfterSeconds = snFleetClaimRetryShort
-				return state
-			}
+			state.Stage = SnFleetClaimStageConverting
+			state.RetryAfterSeconds = snFleetClaimRetryShort
+			return state
 		}
 		switch {
 		case status.TopUp.Used && !status.TopUp.Landed:
 			state.Stage = SnFleetClaimStageWaitingTopUp
 			state.RetryAfterSeconds = snFleetClaimRetryShort
+			return state
+		case status.TopUp.Used:
+			// it paid the burn of its moment, and the burn has gone up since. It falls
+			// back about every 72 minutes
+			state.Stage = SnFleetClaimStageWaitingBurn
+			state.RetryAfterSeconds = snFleetClaimRetryLong
 			return state
 		case status.TopUp.Available:
 			result, err := self.server.snFleetTopUp(ctx)

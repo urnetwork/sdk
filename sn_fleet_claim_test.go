@@ -73,22 +73,24 @@ func (self *testingFleetClaimColdkey) SignMessage(phrase string, message string)
 
 // The chain, as far as the flow can tell, with every write recorded.
 type testingFleetClaimChain struct {
-	block       uint64
-	uid         int64
-	registered  bool
-	burn        uint64
-	fee         uint64
-	free        uint64
-	convertible uint64
-	published   *[32]byte
-	readErr     error
+	block      uint64
+	uid        int64
+	registered bool
+	burn       uint64
+	fee        uint64
+	free       uint64
+	// a sale that pays for it, when the key can make one
+	canConvert bool
+	published  *[32]byte
+	readErr    error
 
-	converts    []uint64
+	converts    int
 	registers   []uint64
 	commitments [][32]byte
 	writeErr    error
 	seeds       [][32]byte
 	phrases     []string
+	uidReads    int
 }
 
 func (self *testingFleetClaimChain) Block(context.Context) (uint64, error) {
@@ -96,23 +98,19 @@ func (self *testingFleetClaimChain) Block(context.Context) (uint64, error) {
 }
 
 func (self *testingFleetClaimChain) HotkeyUid(context.Context, uint16, [32]byte) (int64, bool, error) {
+	self.uidReads += 1
 	return self.uid, self.registered, self.readErr
 }
 
-func (self *testingFleetClaimChain) RegistrationBurnRao(context.Context, uint16) (uint64, error) {
-	return self.burn, self.readErr
-}
-
-func (self *testingFleetClaimChain) RegistrationFeeRao(context.Context, uint16, [32]byte, [32]byte, uint64) (uint64, error) {
-	return self.fee, self.readErr
-}
-
-func (self *testingFleetClaimChain) FreeBalanceRao(context.Context, [32]byte) (uint64, error) {
-	return self.free, self.readErr
-}
-
-func (self *testingFleetClaimChain) ConvertibleRao(context.Context, uint16, [32]byte) (uint64, error) {
-	return self.convertible, self.readErr
+func (self *testingFleetClaimChain) BurnPlan(context.Context, [32]byte) (*snFleetBurnPlan, error) {
+	if self.readErr != nil {
+		return nil, self.readErr
+	}
+	plan := &snFleetBurnPlan{BurnRao: self.burn, FeeRao: self.fee, Covered: self.burn+self.fee+500 <= self.free}
+	if self.canConvert && !plan.Covered {
+		plan.Convert = &BittensorConvertEstimateResult{CanConvert: true}
+	}
+	return plan, nil
 }
 
 func (self *testingFleetClaimChain) FleetCommitment(context.Context, uint16, [32]byte) ([32]byte, bool, error) {
@@ -122,9 +120,12 @@ func (self *testingFleetClaimChain) FleetCommitment(context.Context, uint16, [32
 	return *self.published, true, self.readErr
 }
 
-func (self *testingFleetClaimChain) ConvertAlpha(_ context.Context, phrase string, _ uint16, taoRao uint64) error {
+func (self *testingFleetClaimChain) ConvertForBurn(_ context.Context, phrase string, plan *snFleetBurnPlan) error {
+	if plan == nil || plan.Convert == nil {
+		panic("converted without a plan")
+	}
 	self.phrases = append(self.phrases, phrase)
-	self.converts = append(self.converts, taoRao)
+	self.converts += 1
 	return self.writeErr
 }
 
@@ -141,7 +142,7 @@ func (self *testingFleetClaimChain) SetFleetCommitment(_ context.Context, seed [
 }
 
 func (self *testingFleetClaimChain) wrote() bool {
-	return 0 < len(self.converts)+len(self.registers)+len(self.commitments)
+	return 0 < self.converts+len(self.registers)+len(self.commitments)
 }
 
 type testingFleetClaim struct {
@@ -191,6 +192,8 @@ func (self *testingFleetClaim) authorized(t *testing.T) {
 	self.server.status.AuthorizationMessage = testingFleetAuthorizationMessage(t, testingFleetColdkeySeed, testingFleetPublic(t, testingFleetHotkeySeed), testingFleetNetworkId)
 	self.chain.registered = true
 	self.chain.uid = 42
+	self.server.status.Registered = true
+	self.server.status.Uid = 42
 }
 
 func (self *testingFleetClaim) manifested(t *testing.T, generation uint64, mirrored bool, members ...protocol.FleetMember) *protocol.FleetManifest {
@@ -266,7 +269,7 @@ func TestSnFleetClaimTapWithALocalKey(t *testing.T) {
 	if len(fixture.chain.registers) != 1 || fixture.chain.registers[0] != 500_000 {
 		t.Fatalf("registers %v, want the live burn as the limit", fixture.chain.registers)
 	}
-	if len(fixture.chain.converts) != 0 || fixture.server.topUps != 0 {
+	if fixture.chain.converts != 0 || fixture.server.topUps != 0 {
 		t.Fatal("it paid for what the balance covered")
 	}
 	if state.HotkeyAddress == "" || state.ColdkeyAddress == "" {
@@ -375,6 +378,7 @@ func TestSnFleetClaimRegisterWaits(t *testing.T) {
 	spike := newTestingFleetClaim(t)
 	spike.chain.burn = uint64(SnFleetClaimMaxBurnRao) + 1
 	spike.server.status.TopUp.Available = true
+	spike.chain.canConvert = true
 	spike.chain.free = 0
 	testingFleetExpectStage(t, spike.claim.TapSync(context.Background()), SnFleetClaimStageWaitingBurn)
 	if spike.chain.wrote() || spike.server.topUps != 0 {
@@ -382,24 +386,26 @@ func TestSnFleetClaimRegisterWaits(t *testing.T) {
 	}
 }
 
-// Converting just what's short comes first, then the one top-up, and without either
-// the flow says so. Each stops and resumes on the next pass.
+// Converting comes first, when a sale can pay. A sale has to pay the runtime's minimum,
+// so a key with a little alpha can't make one, and gets the one top-up instead of a
+// failure. Each stops and resumes on the next pass.
 func TestSnFleetClaimFundsTheBurn(t *testing.T) {
 	converts := newTestingFleetClaim(t)
 	converts.chain.free = 500_000
-	converts.chain.convertible = 5_000_000
+	converts.chain.canConvert = true
 	converts.server.status.TopUp.Available = true
 	testingFleetExpectStage(t, converts.claim.TapSync(context.Background()), SnFleetClaimStageConverting)
-	if len(converts.chain.converts) != 1 || converts.chain.converts[0] != 2_000_000 || converts.server.topUps != 0 || len(converts.chain.registers) != 0 {
-		t.Fatalf("converts %v, top-ups %d", converts.chain.converts, converts.server.topUps)
+	if converts.chain.converts != 1 || converts.server.topUps != 0 || len(converts.chain.registers) != 0 {
+		t.Fatalf("converts %d, top-ups %d", converts.chain.converts, converts.server.topUps)
 	}
 	if converts.chain.phrases[0] != testingFleetClaimPhrase {
 		t.Fatal("phrase")
 	}
 
+	// below what a sale has to pay: the top-up
 	tops := newTestingFleetClaim(t)
 	tops.chain.free = 0
-	tops.chain.convertible = 100
+	tops.chain.canConvert = false
 	tops.server.status.TopUp.Available = true
 	state := tops.claim.TapSync(context.Background())
 	testingFleetExpectStage(t, state, SnFleetClaimStageWaitingTopUp)
@@ -416,8 +422,19 @@ func TestSnFleetClaimFundsTheBurn(t *testing.T) {
 
 	// landed and the balance covers it now
 	tops.server.status.TopUp = snFleetTopUp{Used: true, Landed: true}
-	tops.chain.free = 2_500_000
+	tops.chain.free = 2_500_500
 	testingFleetExpectStage(t, tops.claim.TapSync(context.Background()), SnFleetClaimStageRegistering)
+
+	// landed, and the burn went up since: it waits for the burn to fall, and doesn't ask
+	// for a second one
+	risen := newTestingFleetClaim(t)
+	risen.chain.free = 2_500_500
+	risen.chain.burn = 630_000
+	risen.server.status.TopUp = snFleetTopUp{Used: true, Landed: true}
+	testingFleetExpectStage(t, risen.claim.TapSync(context.Background()), SnFleetClaimStageWaitingBurn)
+	if risen.server.topUps != 0 || risen.chain.wrote() {
+		t.Fatal("it spent")
+	}
 
 	none := newTestingFleetClaim(t)
 	none.chain.free = 0
@@ -435,17 +452,29 @@ func TestSnFleetClaimFundsTheBurn(t *testing.T) {
 		t.Fatalf("%+v", state)
 	}
 
-	// a wallet network can have a top-up too
+	// a wallet network can have a top-up too, and can't convert from here
 	wallet := newTestingFleetClaim(t)
 	wallet.authorized(t)
 	wallet.chain.registered = false
+	wallet.server.status.Registered = false
 	wallet.store.phrase = ""
 	wallet.chain.free = 0
-	wallet.chain.convertible = 5_000_000
+	wallet.chain.canConvert = true
 	wallet.server.status.TopUp.Available = true
 	testingFleetExpectStage(t, wallet.claim.TapSync(context.Background()), SnFleetClaimStageWaitingTopUp)
-	if len(wallet.chain.converts) != 0 {
+	if wallet.chain.converts != 0 {
 		t.Fatal("a device with no phrase converted")
+	}
+
+	// a failed conversion doesn't fall through to spending anything else
+	failed := newTestingFleetClaim(t)
+	failed.chain.free = 0
+	failed.chain.canConvert = true
+	failed.chain.writeErr = errors.New("refused")
+	failed.server.status.TopUp.Available = true
+	state = failed.claim.TapSync(context.Background())
+	if state.ErrorCode != SnFleetClaimErrorChain || failed.server.topUps != 0 {
+		t.Fatalf("%+v", state)
 	}
 }
 
@@ -454,6 +483,7 @@ func TestSnFleetClaimDoesNotSpendAfterAFailedRead(t *testing.T) {
 	fixture := newTestingFleetClaim(t)
 	fixture.authorized(t)
 	fixture.chain.registered = false
+	fixture.server.status.Registered = false
 	fixture.chain.readErr = errors.New("the rpc is down")
 	state := fixture.claim.TapSync(context.Background())
 	if state.ErrorCode != SnFleetClaimErrorChain || fixture.chain.wrote() {
@@ -475,6 +505,7 @@ func TestSnFleetClaimSpendingTakesATap(t *testing.T) {
 	tapped := newTestingFleetClaim(t)
 	tapped.authorized(t)
 	tapped.chain.registered = false
+	tapped.server.status.Registered = false
 	testingFleetExpectStage(t, tapped.claim.RefreshSync(context.Background()), SnFleetClaimStageNeedsTap)
 	if tapped.chain.wrote() {
 		t.Fatal("refresh wrote")
@@ -488,6 +519,7 @@ func TestSnFleetClaimSpendingTakesATap(t *testing.T) {
 	lost := newTestingFleetClaim(t)
 	lost.authorized(t)
 	lost.chain.registered = false
+	lost.server.status.Registered = false
 	lost.manifested(t, 3, true)
 	state := lost.claim.AdvanceSync(context.Background())
 	testingFleetExpectStage(t, state, SnFleetClaimStageNeedsTap)
@@ -536,7 +568,7 @@ func TestSnFleetClaimAdvancePublishesAndSigns(t *testing.T) {
 	if len(fixture.chain.commitments) != 1 || fixture.chain.commitments[0] != hash || fixture.chain.seeds[0] != testingFleetHotkeySeed {
 		t.Fatalf("commitments %x", fixture.chain.commitments)
 	}
-	if len(fixture.chain.registers)+len(fixture.chain.converts) != 0 || fixture.coldkey.signed != 0 || fixture.server.topUps != 0 {
+	if len(fixture.chain.registers)+fixture.chain.converts != 0 || fixture.coldkey.signed != 0 || fixture.server.topUps != 0 {
 		t.Fatal("renewing used the coldkey or spent something")
 	}
 	if len(fixture.server.hotkeySigned) != 1 || len(fixture.server.hotkeySigned[0].Signatures) != 1 {
