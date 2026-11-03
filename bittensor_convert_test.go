@@ -402,6 +402,8 @@ func TestConvertEstimateForAKeyWithNoTao(t *testing.T) {
 		t.Fatalf("hotkey %s", result.HotkeySs58)
 	}
 
+	// enough stake that what the sale leaves is over the nominator minimum
+	chain.stake = 10_000_000_000
 	amount := convertEstimateOf(t, chain, 1_000_000_000)
 	if !amount.CanConvert || amount.Error != nil {
 		t.Fatalf("amount: %+v", amount.Error)
@@ -421,7 +423,7 @@ func TestConvertEstimateForAKeyWithNoTao(t *testing.T) {
 		t.Fatalf("min tao %d", amount.MinTaoRao)
 	}
 	if amount.RemainderSweptAlphaRao != 0 {
-		t.Fatalf("swept %d with 3.8 SN25α left, worth more than the nominator minimum", amount.RemainderSweptAlphaRao)
+		t.Fatalf("swept %d with 8.8 SN25α left, worth more than the nominator minimum", amount.RemainderSweptAlphaRao)
 	}
 }
 
@@ -477,7 +479,7 @@ func TestConvertFeeIsPaidInAlphaUnlessTheKeyKeepsItsDeposit(t *testing.T) {
 func TestConvertEstimateSaysWhatIsSweptAlong(t *testing.T) {
 	chain := newConvertFakeChain(t)
 	chain.stake = 3_000_000_000
-	// 0.01 TAO of value is 2.4075 SN25α
+	// the nominator minimum, 0.02 TAO of value, is 4.8150 SN25α at this price
 	result := convertEstimateOf(t, chain, 1_000_000_000)
 	if result.RemainderSweptAlphaRao != 3_000_000_000-1_000_000_000-151_519_172 {
 		t.Fatalf("swept %d", result.RemainderSweptAlphaRao)
@@ -497,10 +499,15 @@ func TestConvertEstimateSaysWhatIsSweptAlong(t *testing.T) {
 
 	// exactly at the minimum nothing is swept
 	chain = newConvertFakeChain(t)
-	minimumLeft, _ := bittensorMulDiv(chain.nominatorMin, 1_000_000_000, chain.price)
+	// 20,000,000 rao at the price, worked out apart from the code
+	const minimumLeft = 4_815_008_574
 	chain.stake = 1_000_000_000 + 151_519_172 + minimumLeft
 	if result := convertEstimateOf(t, chain, 1_000_000_000); result.RemainderSweptAlphaRao != 0 {
 		t.Fatalf("swept %d at the minimum", result.RemainderSweptAlphaRao)
+	}
+	chain.stake -= 1
+	if result := convertEstimateOf(t, chain, 1_000_000_000); result.RemainderSweptAlphaRao != minimumLeft-1 {
+		t.Fatalf("swept %d just under the minimum", result.RemainderSweptAlphaRao)
 	}
 }
 

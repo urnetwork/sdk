@@ -23,7 +23,7 @@ package sdk
 //   - A sale worth less than the runtime's minimum stake (0.002 TAO) is refused,
 //     unless it empties the position, which only a key that pays its fee in TAO
 //     can aim for exactly. MinAmountRao is that floor.
-//   - Stake left under the nominator minimum (0.01 TAO of value) is sold with the
+//   - Stake left under the nominator minimum (0.02 TAO of value) is sold with the
 //     sale that left it, at the market price. RemainderSweptAlphaRao says so.
 //   - A call that fails after its fee was charged keeps the fee.
 //
@@ -783,7 +783,7 @@ func bittensorConvertPoolRefusal(refusal *subtensor.SubmitRefusal) (string, stri
 		return BittensorConvertErrorPending, pending
 	case strings.Contains(data, "pay some fees"):
 		return BittensorConvertErrorBalanceTooLow, "This key holds too little to pay the network fee."
-	case strings.Contains(data, "bad signature"), strings.Contains(data, "future"):
+	case strings.Contains(data, "bad signature"):
 		return BittensorConvertErrorRuntimeChanged, "The Bittensor network has changed how this works. Update the app to convert."
 	}
 	return BittensorConvertErrorRefused, "The Bittensor network refused this conversion. Nothing was charged."

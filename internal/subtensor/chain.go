@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/bits"
 	"strconv"
 	"strings"
 	"time"
@@ -401,6 +402,8 @@ const (
 
 	hasherBlake2_128Concat = 2
 	hasherIdentity         = 6
+
+	nominatorMinimumFactorBase = 1_000_000
 )
 
 func storageKey(prefix string, suffix []byte) string {
@@ -484,11 +487,13 @@ func accountStorageKey(account [32]byte) string {
 	return storageKey(storageSystemAccount, append(hash.Sum(nil), account[:]...))
 }
 
-// AccountBalance is an account's TAO.
+// AccountBalance is an account's TAO, and what keeps the account in existence.
 type AccountBalance struct {
 	FreeRao     uint64
 	ReservedRao uint64
 	FrozenRao   uint64
+	Providers   uint64
+	Sufficients uint64
 }
 
 func (self *Metadata) accountRead(account [32]byte) (*storageRead, error) {
@@ -507,10 +512,12 @@ func parseAccountBalance(value any) (AccountBalance, error) {
 	free, freeOk := valueUint64(data.get("free"))
 	reserved, reservedOk := valueUint64(data.get("reserved"))
 	frozen, frozenOk := valueUint64(data.get("frozen"))
-	if !freeOk || !reservedOk || !frozenOk {
+	providers, providersOk := valueUint64(fields.get("providers"))
+	sufficients, sufficientsOk := valueUint64(fields.get("sufficients"))
+	if !freeOk || !reservedOk || !frozenOk || !providersOk || !sufficientsOk {
 		return AccountBalance{}, runtimeChanged("System.Account's balances are not u64")
 	}
-	return AccountBalance{FreeRao: free, ReservedRao: reserved, FrozenRao: frozen}, nil
+	return AccountBalance{FreeRao: free, ReservedRao: reserved, FrozenRao: frozen, Providers: providers, Sufficients: sufficients}, nil
 }
 
 // ReadAccountBalance reads an account's TAO in rao. An account that does not
@@ -556,8 +563,9 @@ type SaleState struct {
 	Balance  AccountBalance
 	// rao of TAO per alpha
 	PriceRao uint64
-	// the least TAO value a nomination keeps, in rao. Stake left below it on a
-	// hotkey the coldkey does not own is unstaked with the sale that left it.
+	// the least TAO value a nomination keeps, in rao: the runtime's minimum stake
+	// times NominatorMinRequiredStake in millionths. Stake left below it on a hotkey
+	// the coldkey does not own is unstaked with the sale that left it.
 	NominatorMinimumRao uint64
 }
 
@@ -619,11 +627,19 @@ func (self *Chain) ReadSaleState(ctx context.Context, meta *Metadata, hotkey [32
 	if err != nil {
 		return SaleState{}, err
 	}
-	minimum, ok := valueUint64(minimumValue)
+	factor, ok := valueUint64(minimumValue)
 	if !ok {
 		return SaleState{}, runtimeChanged("SubtensorModule.NominatorMinRequiredStake is not an integer")
 	}
-	state.NominatorMinimumRao = minimum
+	minStake, err := meta.MinStakeRao()
+	if err != nil {
+		return SaleState{}, err
+	}
+	high, low := bits.Mul64(minStake, factor)
+	if nominatorMinimumFactorBase <= high {
+		return SaleState{}, runtimeChanged("SubtensorModule.NominatorMinRequiredStake is out of range")
+	}
+	state.NominatorMinimumRao, _ = bits.Div64(high, low, nominatorMinimumFactorBase)
 	return state, nil
 }
 

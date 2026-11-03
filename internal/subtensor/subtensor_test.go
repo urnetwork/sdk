@@ -1164,7 +1164,8 @@ func TestReadSaleState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.StakeRao != 5_000_000_000 || state.Balance != (AccountBalance{}) || state.PriceRao != 4_153_679 || state.NominatorMinimumRao != 10_000_000 {
+	// 2,000,000 rao of minimum stake times 10,000,000 millionths, as the runtime works it out
+	if state.StakeRao != 5_000_000_000 || state.Balance != (AccountBalance{}) || state.PriceRao != 4_153_679 || state.NominatorMinimumRao != 20_000_000 {
 		t.Fatalf("state %+v", state)
 	}
 }
@@ -1193,7 +1194,7 @@ func TestAccountBalanceDecodesTheRuntimesLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if balance != (AccountBalance{FreeRao: 123_456, ReservedRao: 7, FrozenRao: 9}) {
+	if balance != (AccountBalance{FreeRao: 123_456, ReservedRao: 7, FrozenRao: 9, Providers: 1, Sufficients: 1}) {
 		t.Fatalf("balance %+v", balance)
 	}
 	rpc.answers["state_getStorage"] = func(params []any) (any, error) {
