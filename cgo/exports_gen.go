@@ -6880,6 +6880,17 @@ func urnet_bittensor_local_key_flow_forget_network(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_bittensor_local_key_flow_funds_disclaimer_at
+func urnet_bittensor_local_key_flow_funds_disclaimer_at(self C.uint64_t, place *C.char) *C.char {
+	defer cgoGuard("urnet_bittensor_local_key_flow_funds_disclaimer_at")
+	self_, ok := resolveHandle[*sdk.BittensorLocalKeyFlow](uint64(self), "urnet_bittensor_local_key_flow_funds_disclaimer_at")
+	if !ok {
+		return nil
+	}
+	r0 := self_.FundsDisclaimerAt(goString(place))
+	return cString(string(r0))
+}
+
 //export urnet_bittensor_local_key_flow_get_card
 func urnet_bittensor_local_key_flow_get_card(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_bittensor_local_key_flow_get_card")

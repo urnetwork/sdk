@@ -108,6 +108,37 @@ const (
 	BittensorLocalKeyReminderCancel = "cancel"
 )
 
+// The owner's disclaimer for the easy flows (2026-11-03), as the id of the localizations key the screen
+// shows, so each app shows it in the user's language from its own catalog: the sdk has none. The whole
+// text says the key is in this app's secure storage, that it is never shared with URnetwork, and that
+// URnetwork does not touch and is not responsible for any user funds. Where no key is stored here, as
+// before setup, for a network paid to an outside wallet, a key this app deleted, or a phrase saved before
+// anything is stored, the first two sentences would be false, so only the last one shows. A screen shows
+// it once.
+const (
+	// no disclaimer: the screen shows none of the easy flows
+	BittensorFundsDisclaimerNone = ""
+	// the whole text, the key bittensor_funds_disclaimer
+	BittensorFundsDisclaimerFull = "bittensor_funds_disclaimer"
+	// its last sentence alone, the key bittensor_funds_disclaimer_funds_only
+	BittensorFundsDisclaimerFundsOnly = "bittensor_funds_disclaimer_funds_only"
+)
+
+// The screens of the easy flows, for FundsDisclaimerAt. A screen added later asks with its own place:
+// convert and Top 200 have theirs already.
+const (
+	BittensorFundsDisclaimerPlacePayoutCard         = "payout_card"
+	BittensorFundsDisclaimerPlaceKeyScreen          = "key_screen"
+	BittensorFundsDisclaimerPlaceDeleteConfirmation = "delete_confirmation"
+	BittensorFundsDisclaimerPlaceKeepConfirmation   = "keep_confirmation"
+	// what is claimable, and the claim
+	BittensorFundsDisclaimerPlaceClaimCard = "claim_card"
+	// converting SN25α to TAO with the key
+	BittensorFundsDisclaimerPlaceConvert = "convert"
+	// claiming a Top 200 spot
+	BittensorFundsDisclaimerPlaceTop200 = "top200"
+)
+
 const (
 	// the words hide themselves this long after they show
 	BittensorLocalKeyRevealSeconds = 60
@@ -195,6 +226,11 @@ type BittensorLocalKeyCard struct {
 	// a BittensorLocalKeyFailure* or a consent refusal's code, "" if the last action did not stop
 	FailureCode    string `json:"failure_code"`
 	FailureMessage string `json:"failure_message"`
+	// the disclaimer the card shows, a BittensorFundsDisclaimer*
+	FundsDisclaimer string `json:"funds_disclaimer"`
+	// the disclaimer the claim card shows, a BittensorFundsDisclaimer*. The two cards share Earnings and the
+	// disclaimer shows once a screen, so this is none while the payout card has one
+	ClaimFundsDisclaimer string `json:"claim_funds_disclaimer"`
 }
 
 // What the Key screen shows. Holds no secret: the words are RevealedWords.
@@ -229,6 +265,9 @@ type BittensorLocalKeyScreen struct {
 	// as on the card
 	FailureCode    string `json:"failure_code"`
 	FailureMessage string `json:"failure_message"`
+	// the disclaimer the screen shows, its delete and keep confirmations included, a
+	// BittensorFundsDisclaimer*
+	FundsDisclaimer string `json:"funds_disclaimer"`
 }
 
 // What to do about the one reminder of an unsaved key. Holds no secret.
@@ -511,11 +550,17 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 		} else {
 			card.State = BittensorLocalKeyStateSaveNowShowing
 		}
+		// the phrase is in memory only: nothing is in the app's secure storage
+		card.FundsDisclaimer = BittensorFundsDisclaimerFundsOnly
+		card.ClaimFundsDisclaimer = bittensorLocalKeyClaimFundsDisclaimer(card.FundsDisclaimer)
 		return card
 	}
 	if in.storeUnavailable {
 		card.State = BittensorLocalKeyStateStoreUnavailable
 		card.ShowsKeyPath = true
+		// the store can't say where the key is
+		card.FundsDisclaimer = BittensorFundsDisclaimerFundsOnly
+		card.ClaimFundsDisclaimer = bittensorLocalKeyClaimFundsDisclaimer(card.FundsDisclaimer)
 		return card
 	}
 	hasStoredKey := in.storedAddress != ""
@@ -565,6 +610,19 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 		card.OffersSaveFirst = mayMakeKey
 	}
 	card.ShowsKeyPath = card.State == BittensorLocalKeyStateSaveLaterNotLinked || card.State == BittensorLocalKeyStateNone && card.OffersSetUp
+	switch {
+	case hasStoredKey:
+		// the key is in the app's secure storage
+		card.FundsDisclaimer = BittensorFundsDisclaimerFull
+	case card.State == BittensorLocalKeyStateSavedAndDeleted, card.State == BittensorLocalKeyStateElsewhere,
+		card.State == BittensorLocalKeyStateNone && card.OffersSetUp:
+		// the consent pays a key that is not stored here, or there is no key yet
+		card.FundsDisclaimer = BittensorFundsDisclaimerFundsOnly
+	default:
+		// the wallet card, for a guest or a session that isn't the owner's, or a consent not read yet
+		card.FundsDisclaimer = BittensorFundsDisclaimerNone
+	}
+	card.ClaimFundsDisclaimer = bittensorLocalKeyClaimFundsDisclaimer(card.FundsDisclaimer)
 	switch card.State {
 	case BittensorLocalKeyStateSaveLaterLinked, BittensorLocalKeyStateSavedAndDeleted:
 		if in.currentEpoch == 0 {
@@ -575,6 +633,63 @@ func bittensorLocalKeyCardOf(in bittensorLocalKeyCardInputs) *BittensorLocalKeyC
 		}
 	}
 	return card
+}
+
+// The claim card's disclaimer. The claim card and the payout card share Earnings, and the disclaimer
+// shows once a screen: on the payout card when it has one, else on the claim card, as its last sentence,
+// which is true wherever claims land.
+func bittensorLocalKeyClaimFundsDisclaimer(cardFundsDisclaimer string) string {
+	if cardFundsDisclaimer != BittensorFundsDisclaimerNone {
+		return BittensorFundsDisclaimerNone
+	}
+	return BittensorFundsDisclaimerFundsOnly
+}
+
+// The disclaimer a screen of the easy flows shows, a BittensorFundsDisclaimer*, for a
+// BittensorFundsDisclaimerPlace*. The card and screen snapshots carry the same values. An unknown place
+// shows none.
+func (self *BittensorLocalKeyFlow) FundsDisclaimerAt(place string) string {
+	switch place {
+	case BittensorFundsDisclaimerPlacePayoutCard:
+		return self.GetCard().FundsDisclaimer
+	case BittensorFundsDisclaimerPlaceClaimCard:
+		return self.GetCard().ClaimFundsDisclaimer
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	keyStored := self.storedAddress != "" && !self.storeUnavailable
+	switch place {
+	case BittensorFundsDisclaimerPlaceKeyScreen, BittensorFundsDisclaimerPlaceDeleteConfirmation:
+		return self.keyScreenFundsDisclaimerWithLock()
+	case BittensorFundsDisclaimerPlaceKeepConfirmation:
+		// keeping is only for a key in the app's secure storage
+		if self.saveNowKey == nil && keyStored {
+			return BittensorFundsDisclaimerFull
+		}
+		return BittensorFundsDisclaimerNone
+	case BittensorFundsDisclaimerPlaceConvert, BittensorFundsDisclaimerPlaceTop200:
+		// convert signs with the key, and a Top 200 claim registers with it: the whole text while it is in
+		// this app's secure storage, the last sentence for a key in a wallet or on another device
+		if keyStored {
+			return BittensorFundsDisclaimerFull
+		}
+		return BittensorFundsDisclaimerFundsOnly
+	default:
+		return BittensorFundsDisclaimerNone
+	}
+}
+
+// The Key screen's disclaimer, open or not: the last sentence for a phrase in memory only, the whole
+// text for a key in the app's secure storage, none with no key to show.
+func (self *BittensorLocalKeyFlow) keyScreenFundsDisclaimerWithLock() string {
+	switch {
+	case self.saveNowKey != nil:
+		return BittensorFundsDisclaimerFundsOnly
+	case self.storedAddress != "" && !self.storeUnavailable:
+		return BittensorFundsDisclaimerFull
+	default:
+		return BittensorFundsDisclaimerNone
+	}
 }
 
 func (self *BittensorLocalKeyFlow) GetScreen() *BittensorLocalKeyScreen {
@@ -607,6 +722,9 @@ func (self *BittensorLocalKeyFlow) screenWithLock() *BittensorLocalKeyScreen {
 		screen.Address = self.saveNowKey.Address
 	} else {
 		screen.Address = self.storedAddress
+	}
+	if self.screenOpen {
+		screen.FundsDisclaimer = self.keyScreenFundsDisclaimerWithLock()
 	}
 	return screen
 }
@@ -986,18 +1104,27 @@ func (self *BittensorLocalKeyFlow) beginConfirmation(purpose string, authenticat
 		self.stateLock.Unlock()
 		return
 	}
+	// the words hide before anything is asked, so none can be read behind the check, and they stay
+	// hidden when the device's authentication fails
+	wasRevealed := self.revealed
+	self.hideWithLock()
 	var phrase string
 	if self.saveNowKey != nil {
 		if purpose != BittensorLocalKeyConfirmDelete {
 			self.stateLock.Unlock()
+			if wasRevealed {
+				self.publish()
+			}
 			return
 		}
 		phrase = self.saveNowKey.Mnemonic
 	} else if !authenticated {
 		self.stateLock.Unlock()
+		if wasRevealed {
+			self.publish()
+		}
 		return
 	}
-	self.hideWithLock()
 	self.stateLock.Unlock()
 
 	if phrase == "" {

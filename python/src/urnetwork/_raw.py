@@ -651,6 +651,8 @@ def bind(lib):
     lib.urnet_bittensor_local_key_flow_finish_setup.restype = None
     lib.urnet_bittensor_local_key_flow_forget_network.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_forget_network.restype = c_bool
+    lib.urnet_bittensor_local_key_flow_funds_disclaimer_at.argtypes = [c_uint64, c_char_p]
+    lib.urnet_bittensor_local_key_flow_funds_disclaimer_at.restype = c_void_p
     lib.urnet_bittensor_local_key_flow_get_card.argtypes = [c_uint64]
     lib.urnet_bittensor_local_key_flow_get_card.restype = c_void_p
     lib.urnet_bittensor_local_key_flow_get_screen.argtypes = [c_uint64]

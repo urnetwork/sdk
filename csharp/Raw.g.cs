@@ -448,6 +448,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_bittensor_local_key_flow_confirm_keep(ulong a0, byte a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_bittensor_local_key_flow_finish_setup(ulong a0, byte a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_bittensor_local_key_flow_forget_network(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_local_key_flow_funds_disclaimer_at(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_local_key_flow_get_card(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_local_key_flow_get_screen(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_local_key_flow_go_string(ulong a0);

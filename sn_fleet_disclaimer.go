@@ -10,30 +10,19 @@ import (
 
 // The funds disclaimer of the easy flows (owner, 2026-11-03). The Top 200 claim, its
 // progress, its finished state and Leave are easy flows, so every SnFleetClaimState and
-// SnFleetDeviceLeaveOutcome carries FundsDisclaimer: the id of the string the screen
-// shows. The Bittensor flows own the strings:
-//
-//   - "bittensor_funds_disclaimer", the owner's three sentences, when a key of the
-//     claim is on this device: the fleet hotkey, which on the existing-wallet path too
-//     is this device's, or the network's coldkey made here;
-//   - "bittensor_funds_disclaimer_funds_only", the last sentence, when only an outside
-//     wallet's coldkey is involved.
-//
-// The seam: those ids are BittensorFundsDisclaimerFull and
-// BittensorFundsDisclaimerFundsOnly of feat/bittensor-funds-disclaimer, and the flows
-// will choose them with FundsDisclaimerAt(place). Until that's on main these are copies
-// of the ids, and snFleetFundsDisclaimer is the one place that changes.
-const (
-	snFleetFundsDisclaimerFull      = "bittensor_funds_disclaimer"
-	snFleetFundsDisclaimerFundsOnly = "bittensor_funds_disclaimer_funds_only"
-)
+// SnFleetDeviceLeaveOutcome carries FundsDisclaimer, a BittensorFundsDisclaimer*: the id
+// of the string the screen shows, once. The whole text when a key of the claim is on
+// this device: the network's coldkey made here, as
+// BittensorLocalKeyFlow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceTop200) says,
+// and also the fleet hotkey, which on the existing-wallet path is this device's. The
+// last sentence alone when only an outside wallet's coldkey is involved.
 
 // The one place a Top 200 screen's disclaimer is chosen.
 func snFleetFundsDisclaimer(keyOnDevice bool) string {
 	if keyOnDevice {
-		return snFleetFundsDisclaimerFull
+		return BittensorFundsDisclaimerFull
 	}
-	return snFleetFundsDisclaimerFundsOnly
+	return BittensorFundsDisclaimerFundsOnly
 }
 
 // Every state the flow returns carries the disclaimer for what's on this device. A

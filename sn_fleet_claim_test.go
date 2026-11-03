@@ -222,16 +222,16 @@ func testingFleetExpectStage(t *testing.T, state *SnFleetClaimState, stage strin
 		t.Fatalf("stage %s (%s: %s), want %s", state.Stage, state.ErrorCode, state.ErrorMessage, stage)
 	}
 	// every state of every test carries one of the two disclaimers
-	if state.FundsDisclaimer != snFleetFundsDisclaimerFull && state.FundsDisclaimer != snFleetFundsDisclaimerFundsOnly {
+	if state.FundsDisclaimer != BittensorFundsDisclaimerFull && state.FundsDisclaimer != BittensorFundsDisclaimerFundsOnly {
 		t.Fatalf("stage %s carries the disclaimer %q", state.Stage, state.FundsDisclaimer)
 	}
 }
 
 func testingFleetExpectDisclaimer(t *testing.T, name string, disclaimer string, full bool) {
 	t.Helper()
-	want := snFleetFundsDisclaimerFundsOnly
+	want := BittensorFundsDisclaimerFundsOnly
 	if full {
-		want = snFleetFundsDisclaimerFull
+		want = BittensorFundsDisclaimerFull
 	}
 	if disclaimer != want {
 		t.Fatalf("%s: disclaimer %q, want %q", name, disclaimer, want)
@@ -240,8 +240,8 @@ func testingFleetExpectDisclaimer(t *testing.T, name string, disclaimer string, 
 
 // The ids of the Bittensor flows' strings, exactly.
 func TestSnFleetFundsDisclaimerIds(t *testing.T) {
-	if snFleetFundsDisclaimerFull != "bittensor_funds_disclaimer" || snFleetFundsDisclaimerFundsOnly != "bittensor_funds_disclaimer_funds_only" {
-		t.Fatalf("%q %q", snFleetFundsDisclaimerFull, snFleetFundsDisclaimerFundsOnly)
+	if snFleetFundsDisclaimer(true) != "bittensor_funds_disclaimer" || snFleetFundsDisclaimer(false) != "bittensor_funds_disclaimer_funds_only" {
+		t.Fatalf("%q %q", snFleetFundsDisclaimer(true), snFleetFundsDisclaimer(false))
 	}
 }
 
