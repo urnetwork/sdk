@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -424,6 +425,29 @@ func TestConvertEstimateForAKeyWithNoTao(t *testing.T) {
 	}
 	if amount.RemainderSweptAlphaRao != 0 {
 		t.Fatalf("swept %d with 8.8 SN25α left, worth more than the nominator minimum", amount.RemainderSweptAlphaRao)
+	}
+}
+
+// A sheet shows these as they are.
+func TestConvertEstimateNotices(t *testing.T) {
+	chain := newConvertFakeChain(t)
+	chain.stake = 10_000_000_000
+	result := convertEstimateOf(t, chain, 1_000_000_000)
+	if result.Notice != "This key has no TAO, so the network fee of about 0.1515 SN25α comes out of its SN25α." {
+		t.Fatalf("notice %q", result.Notice)
+	}
+	chain.stake = 3_000_000_000
+	result = convertEstimateOf(t, chain, 1_000_000_000)
+	if !strings.Contains(result.Notice, "The other 1.8485 SN25α converts too, because the network doesn't keep stake worth less than 0.020000 TAO.") {
+		t.Fatalf("notice %q", result.Notice)
+	}
+	chain.free = 10_000_000
+	chain.stake = 10_000_000_000
+	if result := convertEstimateOf(t, chain, 1_000_000_000); result.Notice != "" {
+		t.Fatalf("notice %q with nothing to say", result.Notice)
+	}
+	if result := convertEstimateOf(t, chain, 0); result.Notice != "" {
+		t.Fatalf("notice %q for the limits alone", result.Notice)
 	}
 }
 
@@ -1216,10 +1240,85 @@ func TestConvertReadsAreKeptForATypedAmountOnly(t *testing.T) {
 	if chain.reads["state_getMetadata"] <= before {
 		t.Fatal("signed under kept metadata")
 	}
+	// and what comes next reads what the conversion changed, right away
+	chain.stake = 1
+	if result := engine.convertEstimate(ctx, convertTestColdkey, 0); result.StakeRao != 1 {
+		t.Fatalf("a conversion left the old stake in place: %d", result.StakeRao)
+	}
 }
 
-// One thing can be converted, one way: no exported function takes a call, a
-// pallet, a hotkey, a chain or bytes, and the list of them is here on purpose.
+// Every sdk file that can reach the encoder, now and later: no exported function
+// or method there takes bytes, a call or a pallet, so nothing outside the sdk can
+// choose what gets signed.
+func TestNothingExportedChoosesACall(t *testing.T) {
+	const encoder = `"github.com/urnetwork/sdk/internal/subtensor"`
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileSet := token.NewFileSet()
+	scanned := []string{}
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		importsEncoder := false
+		for _, spec := range file.Imports {
+			if spec.Path.Value == encoder {
+				importsEncoder = true
+			}
+		}
+		if !importsEncoder {
+			continue
+		}
+		scanned = append(scanned, path)
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || !function.Name.IsExported() || function.Type.Params == nil {
+				continue
+			}
+			// a signer's own methods, on an unexported type
+			if function.Recv != nil {
+				if star, ok := function.Recv.List[0].Type.(*ast.StarExpr); ok {
+					if name, ok := star.X.(*ast.Ident); ok && !ast.IsExported(name.Name) {
+						continue
+					}
+				}
+			}
+			for _, param := range function.Type.Params.List {
+				if _, isSlice := param.Type.(*ast.ArrayType); isSlice {
+					t.Errorf("%s: %s takes a slice", path, function.Name.Name)
+				}
+				ast.Inspect(param.Type, func(node ast.Node) bool {
+					if selector, ok := node.(*ast.SelectorExpr); ok {
+						if name, ok := selector.X.(*ast.Ident); ok && name.Name == "subtensor" {
+							t.Errorf("%s: %s takes a subtensor.%s", path, function.Name.Name, selector.Sel.Name)
+						}
+					}
+					return true
+				})
+				for _, name := range param.Names {
+					lower := strings.ToLower(name.Name)
+					if strings.Contains(lower, "call") && !strings.Contains(lower, "callback") || strings.Contains(lower, "pallet") || strings.Contains(lower, "payload") {
+						t.Errorf("%s: %s takes %s", path, function.Name.Name, name.Name)
+					}
+				}
+			}
+		}
+	}
+	for _, want := range []string{"bittensor_chain.go", "bittensor_chain_signer.go", "bittensor_convert.go"} {
+		if !slices.Contains(scanned, want) {
+			t.Errorf("CONTROL FAILED: %s is not among the files scanned, %v", want, scanned)
+		}
+	}
+}
+
+// One thing can be converted, one way, and the list of what is exported for it is
+// here on purpose.
 func TestConvertExportsOnlyTypedCalls(t *testing.T) {
 	want := map[string]string{
 		"BittensorConvertEstimate":        "settings,coldkeySs58,amountRao,callback",

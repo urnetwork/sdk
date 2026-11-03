@@ -123,8 +123,8 @@ which leaves less than the nominator minimum (0.02 TAO of value):
 BT_CONVERT_TESTNET_ACTION=convert BT_CONVERT_TESTNET_AMOUNT_RAO=MIN go test -count=1 -run TestConvertTestnetRehearsal -v .
 ```
 
-The estimate must show `remainder_swept_alpha_rao`. The `after` line must show stake 0, and the
-receipt's `tao_received_rao` must be close to `expected_tao_rao`.
+The estimate must show `remainder_swept_alpha_rao` and say so in its `notice`. The `after` line must
+show stake 0, and the receipt's `tao_received_rao` must be close to `expected_tao_rao`.
 
 ## 7. A key that holds TAO
 

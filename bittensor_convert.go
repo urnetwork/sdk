@@ -152,8 +152,10 @@ type BittensorConvertEstimateResult struct {
 	BurnAlreadyCovered bool `json:"burn_already_covered,omitempty"`
 
 	// BittensorConvertSubmit can run with this estimate
-	CanConvert bool     `json:"can_convert"`
-	Error      *SnError `json:"error,omitempty"`
+	CanConvert bool `json:"can_convert"`
+	// what the user should know before going ahead, fit to show as it is; "" for nothing
+	Notice string   `json:"notice,omitempty"`
+	Error  *SnError `json:"error,omitempty"`
 }
 
 // BittensorConvertEstimateCallback receives one estimate.
@@ -344,6 +346,14 @@ func (self *bittensorChainEngine) convertState(ctx context.Context, coldkey [32]
 		bittensorConvertStateCache.Unlock()
 	}
 	return state, nil
+}
+
+// forgetConvertState drops the kept reads: a conversion changed them.
+func forgetConvertState() {
+	bittensorConvertStateCache.Lock()
+	defer bittensorConvertStateCache.Unlock()
+	bittensorConvertStateCache.state = nil
+	bittensorConvertStateCache.key = ""
 }
 
 var errBittensorConvertNoPrice = errors.New("the subnet has no price")
@@ -578,7 +588,29 @@ func (self *bittensorChainEngine) convertEstimateFrom(ctx context.Context, state
 	result.LimitPriceRao = int64(limit)
 	result.PoolFeeAlphaRao = int64(simulation.AlphaFeeRao)
 	result.CanConvert = true
+	result.Notice = state.notice(result)
 	return result
+}
+
+// notice says what a sheet's numbers do not: where the fee comes from, and that
+// the rest of the stake goes too.
+func (self *bittensorConvertState) notice(result *BittensorConvertEstimateResult) string {
+	notices := []string{}
+	if result.FeeInAlpha {
+		notices = append(notices, fmt.Sprintf(
+			"This key has no TAO, so the network fee of about %s comes out of its %s.",
+			FormatAlpha(result.FeeAlphaRao),
+			SnAlphaSymbol,
+		))
+	}
+	if 0 < result.RemainderSweptAlphaRao {
+		notices = append(notices, fmt.Sprintf(
+			"The other %s converts too, because the network doesn't keep stake worth less than %s.",
+			FormatAlpha(result.RemainderSweptAlphaRao),
+			FormatTao(int64(self.sale.NominatorMinimumRao)),
+		))
+	}
+	return strings.Join(notices, " ")
 }
 
 // refuseStake says why this key can convert nothing, whatever the amount.
@@ -737,6 +769,8 @@ func (self *bittensorChainEngine) convertSubmit(ctx context.Context, signer subt
 		return
 	}
 	txHash := ""
+	// whatever comes of it, what a sheet draws next reads the chain again
+	defer forgetConvertState()
 	outcome, err := self.submitCall(ctx, signer, call, func(hash string) {
 		txHash = hash
 		callback.Sent(hash)

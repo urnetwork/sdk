@@ -1547,6 +1547,7 @@ struct BittensorConvertEstimateResult {
 	std::optional<int64_t> burn_tao_needed_rao;
 	std::optional<bool> burn_already_covered;
 	bool can_convert{};
+	std::optional<std::string> notice;
 	std::optional<SnError> error;
 };
 
@@ -7095,6 +7096,9 @@ inline void to_json(nlohmann::json& j, const BittensorConvertEstimateResult& v) 
 		j["burn_already_covered"] = *v.burn_already_covered;
 	}
 	j["can_convert"] = v.can_convert;
+	if (v.notice) {
+		j["notice"] = *v.notice;
+	}
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -7187,6 +7191,11 @@ inline void from_json(const nlohmann::json& j, BittensorConvertEstimateResult& v
 	}
 	if (auto it = j.find("can_convert"); it != j.end() && !it->is_null()) {
 		it->get_to(v.can_convert);
+	}
+	if (auto it = j.find("notice"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.notice = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
