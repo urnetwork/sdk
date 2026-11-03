@@ -1132,9 +1132,9 @@ func readLicenseFiles(dir string) (string, error) {
 			continue
 		}
 		switch strings.ToLower(filepath.Ext(de.Name())) {
-		case ".yml", ".yaml", ".json", ".go", ".js", ".mjs", ".ts", ".html", ".xml", ".toml", ".sh", ".py":
+		case ".yml", ".yaml", ".json", ".gz", ".go", ".js", ".mjs", ".ts", ".html", ".xml", ".toml", ".sh", ".py":
 			// code and data that happen to be named license*, e.g. the
-			// sdk's own license.yml and license.go
+			// sdk's own license.yml, license_data.json.gz and license.go
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(dir, de.Name()))
