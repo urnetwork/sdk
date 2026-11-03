@@ -20,11 +20,10 @@ const (
 	routeLocalDefaultRtoFloor = 200 * time.Millisecond
 	// The floor on the client's retransmission timeout in the overload round, above
 	// every flow deadline (runEchoFlow), so that no timer fires during the test.
-	// With one in play the retransmit count moves with nothing lost. The NAT ends a
-	// flow on the client's FIN without acknowledging it, so at the default floor
-	// each closed flow retransmits its FIN (the NAT's reset then ends it), and a
-	// stalled ACK retransmits data the NAT already holds. Under load the count then
-	// said whether the round outlasted the floor, not whether a segment was lost.
+	// With one in play the retransmit count moves with nothing lost: an
+	// acknowledgement that stalls, of data or of a FIN, retransmits what the NAT
+	// already holds. Under load the count then said whether the round outlasted the
+	// floor, not whether a segment was lost.
 	// A lost segment cannot pass unseen: a flow cannot finish its echo without
 	// repairing it, and the one repair left, a fast retransmit on duplicate ACKs, is
 	// counted. Without enough duplicate ACKs the flow misses its deadline instead
