@@ -104,6 +104,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BITTENSOR_LOCAL_KEY_ERROR_FAILED "local_key_failed"
+#define URNET_BITTENSOR_LOCAL_KEY_ERROR_INVALID_PHRASE "invalid_recovery_phrase"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
 #define URNET_BITTENSOR_TAO_COM_INJECTED_NAME "@opentensor/bittensor-extension"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
@@ -259,6 +261,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_FAILED "activation_failed"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_REFUSED "activation_refused"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_UNREACHABLE "activation_unreachable"
 #define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
 #define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
 #define URNET_EXTENDER_PROVIDE_ERROR_START "start"
@@ -2315,6 +2318,9 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 /* ----- functions ----- */
 
 double urnet_alpha_from_rao(int64_t rao);
+char* urnet_bittensor_local_key_address(const char* mnemonic, char** out_error);
+char* urnet_bittensor_local_key_generate(char** out_error);
+char* urnet_bittensor_local_key_sign(const char* mnemonic, const char* message, char** out_error);
 char* urnet_bittensor_sign_raw_data(const char* message);
 char* urnet_bittensor_wallet_display_name(const char* wallet_id);
 char* urnet_bittensor_wallet_id_list(void);
@@ -2813,6 +2819,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* BittensorChallengeMessage (json):
  *   Challenge: string
  *   Timestamp: number
+ */
+
+/* BittensorLocalKey (json):
+ *   mnemonic: string
+ *   address: string
  */
 
 /* BittensorSignRequest (json):

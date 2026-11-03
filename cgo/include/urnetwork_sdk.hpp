@@ -155,6 +155,8 @@ inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
+inline constexpr const char* BittensorLocalKeyErrorFailed = "local_key_failed";
+inline constexpr const char* BittensorLocalKeyErrorInvalidPhrase = "invalid_recovery_phrase";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
 inline constexpr const char* BittensorTaoComInjectedName = "@opentensor/bittensor-extension";
 inline constexpr const char* BittensorWalletBridgeErrorAddressMismatch = "address_mismatch";
@@ -310,6 +312,7 @@ inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_
 inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
 inline constexpr const char* ExtenderProvideErrorActivationFailed = "activation_failed";
 inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation_refused";
+inline constexpr const char* ExtenderProvideErrorActivationUnreachable = "activation_unreachable";
 inline constexpr const char* ExtenderProvideErrorListen = "listen";
 inline constexpr const char* ExtenderProvideErrorRevoked = "revoked";
 inline constexpr const char* ExtenderProvideErrorStart = "start";
@@ -733,6 +736,7 @@ struct AuthVerifySendResult;
 struct AuthWalletChallengeArgs;
 struct AuthWalletChallengeResult;
 struct BittensorChallengeMessage;
+struct BittensorLocalKey;
 struct BittensorSignRequest;
 struct BittensorWalletProof;
 struct BittensorWalletResult;
@@ -1524,6 +1528,11 @@ struct AuthWalletChallengeResult {
 struct BittensorChallengeMessage {
 	std::string Challenge{};
 	int64_t Timestamp{};
+};
+
+struct BittensorLocalKey {
+	std::string mnemonic{};
+	std::string address{};
 };
 
 struct BittensorSignRequest {
@@ -4451,6 +4460,8 @@ inline void to_json(nlohmann::json& j, const AuthWalletChallengeResult& v);
 inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v);
 inline void to_json(nlohmann::json& j, const BittensorChallengeMessage& v);
 inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v);
+inline void to_json(nlohmann::json& j, const BittensorLocalKey& v);
+inline void from_json(const nlohmann::json& j, BittensorLocalKey& v);
 inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
 inline void from_json(const nlohmann::json& j, BittensorSignRequest& v);
 inline void to_json(nlohmann::json& j, const BittensorWalletProof& v);
@@ -7092,6 +7103,23 @@ inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v) {
 	}
 	if (auto it = j.find("Timestamp"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Timestamp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorLocalKey& v) {
+	j = nlohmann::json::object();
+	j["mnemonic"] = v.mnemonic;
+	j["address"] = v.address;
+}
+inline void from_json(const nlohmann::json& j, BittensorLocalKey& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("mnemonic"); it != j.end() && !it->is_null()) {
+		it->get_to(v.mnemonic);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.address);
 	}
 }
 
@@ -35167,6 +35195,34 @@ inline int64_t liveHandleCount() { return urnet_live_handle_count(); }
 inline double alphaFromRao(int64_t rao) {
 	double r = urnet_alpha_from_rao(rao);
 	return r;
+}
+inline std::string bittensorLocalKeyAddress(const std::string& mnemonic) {
+	char* err_c = nullptr;
+	char* r_c = urnet_bittensor_local_key_address(mnemonic.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::optional<BittensorLocalKey> bittensorLocalKeyGenerate() {
+	char* err_c = nullptr;
+	char* r_c = urnet_bittensor_local_key_generate(&err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorLocalKey>(r_s->c_str());
+}
+inline std::string bittensorLocalKeySign(const std::string& mnemonic, const std::string& message) {
+	char* err_c = nullptr;
+	char* r_c = urnet_bittensor_local_key_sign(mnemonic.c_str(), message.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline std::string bittensorSignRawData(const std::string& message) {
 	char* r_c = urnet_bittensor_sign_raw_data(message.c_str());

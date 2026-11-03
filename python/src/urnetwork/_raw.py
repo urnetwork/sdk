@@ -2540,6 +2540,12 @@ def bind(lib):
     lib.urnet_websocket_device_rpc_listener_close.restype = c_bool
     lib.urnet_alpha_from_rao.argtypes = [c_int64]
     lib.urnet_alpha_from_rao.restype = c_double
+    lib.urnet_bittensor_local_key_address.argtypes = [c_char_p, POINTER(c_void_p)]
+    lib.urnet_bittensor_local_key_address.restype = c_void_p
+    lib.urnet_bittensor_local_key_generate.argtypes = [POINTER(c_void_p)]
+    lib.urnet_bittensor_local_key_generate.restype = c_void_p
+    lib.urnet_bittensor_local_key_sign.argtypes = [c_char_p, c_char_p, POINTER(c_void_p)]
+    lib.urnet_bittensor_local_key_sign.restype = c_void_p
     lib.urnet_bittensor_sign_raw_data.argtypes = [c_char_p]
     lib.urnet_bittensor_sign_raw_data.restype = c_void_p
     lib.urnet_bittensor_wallet_display_name.argtypes = [c_char_p]

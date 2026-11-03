@@ -945,3 +945,32 @@ func TestExtenderProvideStatusListenerCoalesces(t *testing.T) {
 		)
 	}
 }
+
+// A refusal of the required tcp test says this device can't be reached from the
+// internet, which the apps say in plain words with what to do about it, instead
+// of the operator's raw reason alone. Every other refusal and every failed request
+// keeps its case. The texts are the operator's (server extenderProbeStepRun.refusal).
+func TestExtenderProvideActivationErrorCaseNamesAnUnreachableDevice(t *testing.T) {
+	cases := []struct {
+		refused bool
+		reason  string
+		want    string
+	}{
+		{true, "the tcp carrier failed after 0.05 s: dial tcp 192.0.2.1:443: connect: no route to host", ExtenderProvideErrorActivationUnreachable},
+		{true, "the tcp carrier did not answer within the 10 s probe budget: i/o timeout", ExtenderProvideErrorActivationUnreachable},
+		{true, "the tcp carrier did not answer: dial tcp 192.0.2.1:443: connect: no route to host", ExtenderProvideErrorActivationUnreachable},
+		{true, "the forward failed after 1 s: status 502", ExtenderProvideErrorActivationRefused},
+		{true, "This extender key is registered to another network.", ExtenderProvideErrorActivationRefused},
+		{false, "the tcp carrier did not answer", ExtenderProvideErrorActivationFailed},
+		{false, "http request attempts exhausted", ExtenderProvideErrorActivationFailed},
+	}
+	for _, c := range cases {
+		got := extenderProvideActivationErrorCase(&ExtenderProvideStatus{
+			LastActivationRefused: c.refused,
+			LastActivationError:   c.reason,
+		})
+		if got != c.want {
+			t.Errorf("refused=%t %q: case %q, want %q", c.refused, c.reason, got, c.want)
+		}
+	}
+}
