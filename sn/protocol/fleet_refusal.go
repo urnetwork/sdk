@@ -44,3 +44,18 @@ func FleetRefusalKnown(code string) bool {
 	}
 	return false
 }
+
+// What a one-tap fleet is held to, the same on the server and on the key holder's
+// device.
+const (
+	// The most devices a one-tap fleet binds, each its own relayed transaction: the
+	// per-fleet priority share of the verify cohort at a cohort of 1,500, and the
+	// relay's limit (BTEASY.md question 15).
+	FleetRelayDeviceLimit = 7
+	// The longest binding the coordinator accepts on mainnet.
+	FleetBindingMaxEpochs = uint64(12)
+	// A registration burn above this waits, and a top-up never pays one: 10 times the
+	// floor of 0.0005 TAO. It halves about every 72 minutes, and a spike can reach
+	// many TAO.
+	FleetClaimMaxBurnRao int64 = 5_000_000
+)

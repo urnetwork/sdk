@@ -605,6 +605,7 @@ EXPORTS
 	urnet_device_local_set_tunnel_dns_setting
 	urnet_device_local_shuffle_exits
 	urnet_device_local_sign_sn_fleet_binding
+	urnet_device_local_sign_sn_fleet_revoke
 	urnet_device_local_simulate_network_change
 	urnet_device_local_sn_claim
 	urnet_device_local_sn_claim_transactions
@@ -704,6 +705,7 @@ EXPORTS
 	urnet_device_remote_set_sn_chain_settings
 	urnet_device_remote_shuffle_exits
 	urnet_device_remote_sign_sn_fleet_binding
+	urnet_device_remote_sign_sn_fleet_revoke
 	urnet_device_remote_simulate_network_change
 	urnet_device_remote_sn_claim
 	urnet_device_remote_sn_claim_transactions
@@ -1094,6 +1096,9 @@ EXPORTS
 	urnet_new_purchase_started_event
 	urnet_new_signup_optout_changed_event
 	urnet_new_sn_chain_settings
+	urnet_new_sn_fleet_claim
+	urnet_new_sn_fleet_device_for_local
+	urnet_new_sn_fleet_device_for_remote
 	urnet_new_subscription_balance_view_controller
 	urnet_new_time_unix_milli
 	urnet_new_transfer_path
@@ -1252,6 +1257,15 @@ EXPORTS
 	urnet_sn_claim_transactions_for
 	urnet_sn_claims_for
 	urnet_sn_fleet_binding_digest
+	urnet_sn_fleet_claim_advance
+	urnet_sn_fleet_claim_refresh
+	urnet_sn_fleet_claim_submit_wallet_authorization
+	urnet_sn_fleet_claim_tap
+	urnet_sn_fleet_device_check
+	urnet_sn_fleet_device_close
+	urnet_sn_fleet_device_leave
+	urnet_sn_fleet_device_reset
+	urnet_sn_fleet_device_start
 	urnet_sn_gas_balance_for
 	urnet_sn_ledger_accounts_for
 	urnet_sn_ledger_claim_transactions_for

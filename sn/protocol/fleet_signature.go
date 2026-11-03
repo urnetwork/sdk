@@ -82,3 +82,49 @@ func (b FleetBinding) VerifyHotkey(signature []byte) bool {
 	copy(fixed[:], signature)
 	return sr25519Verify(b.Hotkey, digest[:], fixed)
 }
+
+// FleetHotkeyPublicKey is the account of a fleet hotkey's 32-byte seed, derived the
+// way subkey, btcli and wallets derive it. The seed is the key holder's, on one
+// device. It is never a recovery phrase.
+func FleetHotkeyPublicKey(seed [32]byte) ([32]byte, error) {
+	secret, err := fleetHotkeySecret(seed)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	public, err := secret.Public()
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return public.Encode(), nil
+}
+
+// SignFleetBindingWithHotkey is the hotkey's signature over a binding's digest, the
+// only thing a fleet hotkey signs besides its own commitment extrinsic.
+func SignFleetBindingWithHotkey(seed [32]byte, binding FleetBinding) ([]byte, error) {
+	secret, err := fleetHotkeySecret(seed)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := binding.Digest()
+	if err != nil {
+		return nil, err
+	}
+	signature, err := secret.Sign(schnorrkel.NewSigningContext([]byte("substrate"), digest[:]))
+	if err != nil {
+		return nil, errors.New("the hotkey could not sign")
+	}
+	encoded := signature.Encode()
+	return encoded[:], nil
+}
+
+// The library's errors stop here: none reaches a log with a seed in it.
+func fleetHotkeySecret(seed [32]byte) (*schnorrkel.SecretKey, error) {
+	if seed == ([32]byte{}) {
+		return nil, errors.New("the fleet hotkey seed is empty")
+	}
+	mini, err := schnorrkel.NewMiniSecretKeyFromRaw(seed)
+	if err != nil {
+		return nil, errors.New("the fleet hotkey seed can't be used")
+	}
+	return mini.ExpandEd25519(), nil
+}

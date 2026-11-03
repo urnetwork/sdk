@@ -130,7 +130,18 @@ func unroutedSdkApiUrls(urls []*sdkApiUrl, routes map[string]*regexp.Regexp) []*
 // routes them. While the server does not route one it is logged, not failed,
 // so the sdk can lead the server by one deploy, as the spec does. Remove an
 // entry, with the spec's marker, once the server routes it.
-var sdkApiUrlsPlannedOnServer = map[string]bool{}
+var sdkApiUrlsPlannedOnServer = map[string]bool{
+	// the Top 200 claim's routes, which the server gains after the sdk and the
+	// provider that call them
+	"/sn/fleet/authorization":     true,
+	"/sn/fleet/claim":             true,
+	"/sn/fleet/device":            true,
+	"/sn/fleet/device/binding":    true,
+	"/sn/fleet/device/leave":      true,
+	"/sn/fleet/device/signature":  true,
+	"/sn/fleet/hotkey-signatures": true,
+	"/sn/fleet/top-up":            true,
+}
 
 // splitPlannedSdkApiUrls separates the unrouted urls that are planned on the
 // server from the ones to report.
