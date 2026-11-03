@@ -105,8 +105,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
+#define URNET_BITTENSOR_TAO_COM_INJECTED_NAME "@opentensor/bittensor-extension"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_NOT_IN_WALLET "address_not_in_wallet"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_EXTENSION_NOT_AUTHORIZED "extension_not_authorized"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_NO_ACCOUNT "no_account"
@@ -132,6 +134,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_WALLET_ERROR_UNSUPPORTED_WALLET "unsupported_wallet"
 #define URNET_BITTENSOR_WALLET_ERROR_WALLET "wallet_error"
 #define URNET_BITTENSOR_WALLET_ERROR_WRONG_TRANSPORT "wrong_transport"
+#define URNET_BITTENSOR_WALLET_MANUAL "manual"
 #define URNET_BITTENSOR_WALLET_PLATFORM_ANDROID "android"
 #define URNET_BITTENSOR_WALLET_PLATFORM_IOS "ios"
 #define URNET_BITTENSOR_WALLET_PLATFORM_LINUX "linux"
@@ -432,6 +435,22 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_ALPHA_SYMBOL "SN25α"
 #define URNET_SN_CHAIN_ID_MAINNET 964
 #define URNET_SN_CHAIN_ID_TESTNET 945
+#define URNET_SN_CLAIM_ACTION_CLAIM_NOW "claim_now"
+#define URNET_SN_CLAIM_ACTION_NONE "none"
+#define URNET_SN_CLAIM_ACTION_SELF_CLAIM "self_claim"
+#define URNET_SN_CLAIM_ACTION_TOP_UP_GAS "top_up_gas"
+#define URNET_SN_CLAIM_ACTION_WAIT "wait"
+#define URNET_SN_CLAIM_NOW_REASON_LIMIT "limit"
+#define URNET_SN_CLAIM_NOW_REASON_REQUESTED "requested"
+#define URNET_SN_CLAIM_NOW_REASON_UNDER_FLOOR "under_floor"
+#define URNET_SN_CLAIM_REASON_CAP_REACHED "cap_reached"
+#define URNET_SN_CLAIM_REASON_NOTHING_PENDING "nothing_pending"
+#define URNET_SN_CLAIM_REASON_QUEUED "queued"
+#define URNET_SN_CLAIM_REASON_REFUSED "refused"
+#define URNET_SN_CLAIM_REASON_RELAY_NOT_RUNNING "relay_not_running"
+#define URNET_SN_CLAIM_REASON_RELAY_PAUSED "relay_paused"
+#define URNET_SN_CLAIM_REASON_UNDER_THRESHOLD "under_threshold"
+#define URNET_SN_CLAIM_RELAY_STATE_UNAVAILABLE "unavailable"
 #define URNET_SN_CLAIM_STATUS_CLAIMABLE "claimable"
 #define URNET_SN_CLAIM_STATUS_CLAIMED "claimed"
 #define URNET_SN_CLAIM_STATUS_EXPIRED "expired"
@@ -868,6 +887,14 @@ typedef void (*urnet_sn_claim_confirmed_cb)(void* user_data, int64_t epoch, cons
 typedef void (*urnet_sn_claim_done_cb)(void* user_data);
 typedef void (*urnet_sn_claim_failed_cb)(void* user_data, int64_t epoch, const char* message);
 typedef void (*urnet_sn_claim_sent_cb)(void* user_data, int64_t epoch, const char* tx_hash);
+/* SnClaimNowCallback */
+typedef void (*urnet_sn_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnClaimRelayCallback */
+typedef void (*urnet_sn_claim_relay_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnClaimRelayClaimNowCallback */
+typedef void (*urnet_sn_claim_relay_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnClaimStatusCallback */
+typedef void (*urnet_sn_claim_status_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnClaimsCallback */
 typedef void (*urnet_sn_claims_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnConnectWalletCallback */
@@ -1093,6 +1120,8 @@ void urnet_api_set_network_referral(uint64_t self, const char* args_json, urnet_
 void urnet_api_set_payout_wallet(uint64_t self, const char* payout_wallet_json, urnet_set_payout_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_set_points_leaderboard_public(uint64_t self, const char* args_json, urnet_set_points_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_sign_out(uint64_t self, urnet_session_sign_out_cb callback_result, void* callback_user_data);
+void urnet_api_sn_claim_relay(uint64_t self, urnet_sn_claim_relay_cb callback_result, void* callback_user_data);
+void urnet_api_sn_claim_relay_claim_now(uint64_t self, const char* args_json, urnet_sn_claim_relay_claim_now_cb callback_result, void* callback_user_data);
 void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
@@ -1598,6 +1627,8 @@ void urnet_device_local_shuffle_exits(uint64_t self);
 char* urnet_device_local_sign_sn_fleet_binding(uint64_t self, const char* binding_json, char** out_error);
 void urnet_device_local_simulate_network_change(uint64_t self);
 void urnet_device_local_sn_claim(uint64_t self, const char* epochs_json, urnet_sn_claim_confirmed_cb callback_confirmed, urnet_sn_claim_done_cb callback_done, urnet_sn_claim_failed_cb callback_failed, urnet_sn_claim_sent_cb callback_sent, void* callback_user_data);
+void urnet_device_local_sn_claim_now(uint64_t self, const char* coldkey_ss58, urnet_sn_claim_now_cb callback_result, void* callback_user_data);
+void urnet_device_local_sn_claim_status(uint64_t self, urnet_sn_claim_status_cb callback_result, void* callback_user_data);
 char* urnet_device_local_sn_claim_transactions(uint64_t self, const char* epochs_json, char** out_error);
 void urnet_device_local_sn_claims(uint64_t self, urnet_sn_claims_cb callback_result, void* callback_user_data);
 void urnet_device_local_sn_gas_balance(uint64_t self, urnet_sn_gas_balance_cb callback_result, void* callback_user_data);
@@ -1721,6 +1752,8 @@ void urnet_device_remote_shuffle_exits(uint64_t self);
 char* urnet_device_remote_sign_sn_fleet_binding(uint64_t self, const char* binding_json, char** out_error);
 void urnet_device_remote_simulate_network_change(uint64_t self);
 void urnet_device_remote_sn_claim(uint64_t self, const char* epochs_json, urnet_sn_claim_confirmed_cb callback_confirmed, urnet_sn_claim_done_cb callback_done, urnet_sn_claim_failed_cb callback_failed, urnet_sn_claim_sent_cb callback_sent, void* callback_user_data);
+void urnet_device_remote_sn_claim_now(uint64_t self, const char* coldkey_ss58, urnet_sn_claim_now_cb callback_result, void* callback_user_data);
+void urnet_device_remote_sn_claim_status(uint64_t self, urnet_sn_claim_status_cb callback_result, void* callback_user_data);
 char* urnet_device_remote_sn_claim_transactions(uint64_t self, const char* epochs_json, char** out_error);
 void urnet_device_remote_sn_claims(uint64_t self, urnet_sn_claims_cb callback_result, void* callback_user_data);
 void urnet_device_remote_sn_gas_balance(uint64_t self, urnet_sn_gas_balance_cb callback_result, void* callback_user_data);
@@ -4962,6 +4995,78 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   artifact_base_url: string
  *   tx_type: string
  *   lookback_epochs: number
+ */
+
+/* SnClaimNowResult (json):
+ *   requested: boolean
+ *   reason?: string
+ *   next_at_millis?: number
+ *   error?: SnError | null
+ */
+
+/* SnClaimRelayAccount (json):
+ *   coldkey_ss58: string
+ *   no_id: number
+ *   index: number
+ *   claimable_rao: number
+ *   value_tao_rao: number
+ *   pending_rao: number
+ *   reason: string
+ *   claim_now_available: boolean
+ *   claim_now_reason?: string
+ *   claim_now_next_at_millis?: number
+ *   connected?: boolean
+ *   action?: string
+ */
+
+/* SnClaimRelayAccountList (json):
+ *   = SnClaimRelayAccount | null[]
+ */
+
+/* SnClaimRelayClaimNowArgs (json):
+ *   coldkey_ss58: string
+ */
+
+/* SnClaimRelayClaimNowResult (json):
+ *   requested: boolean
+ *   reason?: string
+ *   next_at_millis?: number
+ *   error?: SnClaimRelayError | null
+ */
+
+/* SnClaimRelayError (json):
+ *   message: string
+ */
+
+/* SnClaimRelayResult (json):
+ *   state: string
+ *   automatic_threshold_tao_rao: number
+ *   transfer_floor_tao_rao: number
+ *   automatic_threshold_rao: number
+ *   transfer_floor_rao: number
+ *   claim_now_period_days: number
+ *   accounts: SnClaimRelayAccountList | null
+ *   error?: SnClaimRelayError | null
+ */
+
+/* SnClaimStatusResult (json):
+ *   relay_state: string
+ *   coldkey_ss58?: string
+ *   action: string
+ *   reason: string
+ *   claimable_rao: number
+ *   value_tao_rao: number
+ *   pending_rao: number
+ *   claim_now_available: boolean
+ *   claim_now_reason?: string
+ *   claim_now_next_at_millis?: number
+ *   self_claim_available: boolean
+ *   self_claim_needs_gas: boolean
+ *   automatic_threshold_rao: number
+ *   transfer_floor_rao: number
+ *   claim_now_period_days: number
+ *   accounts: SnClaimRelayAccountList | null
+ *   error?: SnError | null
  */
 
 /* SnClaimsResult (json):

@@ -1,0 +1,541 @@
+package sdk
+
+// sn_claim_relay.go — everything the apps draw about a network's settlement v2
+// claims. URnetwork claims for every consented coldkey and pays the gas (server
+// controller/sn_claim_relay.go): automatically once a balance is worth 0.0125 TAO,
+// and on a "Claim now" tap once it clears the transfer floor, at most once per
+// coldkey per 30 days. The device's own claim with its gas key (sn_ledger_claim.go)
+// stays as the fallback.
+//
+// SnClaimStatus reads what is pending and why, and chooses between the two, so an
+// app only draws the answer: Action is what its main control does, and Reason says
+// why a balance is still pending. Reasons and actions are stable values the apps
+// localize. A server that cannot answer leaves the fallback working: the balances
+// come from the public ledger, and the action is the device's own claim.
+
+import (
+	"context"
+	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
+	"github.com/urnetwork/connect"
+	"github.com/urnetwork/sdk/sn/evm"
+)
+
+// Why a balance is still pending.
+const (
+	// nothing to claim now; a root that is not final may hold more (PendingRao)
+	SnClaimReasonNothingPending = "nothing_pending"
+	// URnetwork claims it once it is worth the automatic threshold
+	SnClaimReasonUnderThreshold = "under_threshold"
+	// URnetwork claims it soon
+	SnClaimReasonQueued = "queued"
+	// today's budget for claims is spent; it waits for the next UTC day, which
+	// costs nothing, since v2 credit never expires
+	SnClaimReasonCapReached = "cap_reached"
+	// its last claim was refused; URnetwork tries again later
+	SnClaimReasonRefused = "refused"
+	// URnetwork is not claiming: the device's own claim is the way for now
+	SnClaimReasonRelayNotRunning = "relay_not_running"
+	// URnetwork has paused claims for everyone for now: the device's own claim
+	// is the way meanwhile
+	SnClaimReasonRelayPaused = "relay_paused"
+)
+
+// Why Claim now cannot be tapped, beside the reasons above.
+const (
+	// the balance does not clear the transfer floor, under which a claim reverts
+	SnClaimNowReasonUnderFloor = "under_floor"
+	// already asked for, and URnetwork will send it
+	SnClaimNowReasonRequested = "requested"
+	// used for this coldkey in the last 30 days: see ClaimNowNextAtMillis
+	SnClaimNowReasonLimit = "limit"
+)
+
+// What an app's main control does.
+const (
+	// nothing to claim
+	SnClaimActionNone = "none"
+	// URnetwork claims this; nothing to tap
+	SnClaimActionWait = "wait"
+	// SnClaimNow asks URnetwork to claim it now
+	SnClaimActionClaimNow = "claim_now"
+	// SnLedgerClaim claims it with the device's gas key
+	SnClaimActionSelfClaim = "self_claim"
+	// the device's own claim needs gas first: GetSnGasKey is where to send it
+	SnClaimActionTopUpGas = "top_up_gas"
+)
+
+// SnClaimRelayStateUnavailable is the relay's state when the server did not
+// answer. The server's own states are its status field's.
+const SnClaimRelayStateUnavailable = "unavailable"
+
+const snClaimStatusTimeout = 60 * time.Second
+
+// SnClaimRelayAccount is one coldkey's account in the operator's pool, as the
+// server's relay sees it. Amounts are rao of α unless they say otherwise.
+type SnClaimRelayAccount struct {
+	ColdkeySs58 string `json:"coldkey_ss58"`
+	NoId        int64  `json:"no_id"`
+	Index       int64  `json:"index"`
+	// what a claim would pay now
+	ClaimableRao int64 `json:"claimable_rao"`
+	// its TAO value, in rao of TAO, at the relay's last price; 0 without one
+	ValueTaoRao int64 `json:"value_tao_rao"`
+	// held by a root that is not final yet, on top of the claimable
+	PendingRao int64 `json:"pending_rao"`
+	// SnClaimReason*
+	Reason            string `json:"reason"`
+	ClaimNowAvailable bool   `json:"claim_now_available"`
+	// why not, when not: SnClaimNowReason* or an SnClaimReason*
+	ClaimNowReason string `json:"claim_now_reason,omitempty"`
+	// when this coldkey's Claim now limit ends, unix milliseconds; 0 when none holds
+	ClaimNowNextAtMillis int64 `json:"claim_now_next_at_millis,omitempty"`
+	// Set by the sdk, not the server:
+	// the account of the connected wallet, the one SnLedgerClaim claims
+	Connected bool `json:"connected,omitempty"`
+	// SnClaimAction*
+	Action string `json:"action,omitempty"`
+}
+
+type SnClaimRelayAccountList struct {
+	exportedList[*SnClaimRelayAccount]
+}
+
+func NewSnClaimRelayAccountList() *SnClaimRelayAccountList {
+	return &SnClaimRelayAccountList{
+		exportedList: *newExportedList[*SnClaimRelayAccount](),
+	}
+}
+
+type SnClaimRelayError struct {
+	Message string `json:"message"`
+}
+
+// SnClaimRelayResult is GET /sn/claim-relay. With an Error the balances could not
+// be read: they are unavailable, never zero.
+type SnClaimRelayResult struct {
+	// no_key means no relayer key is configured yet; not_running that the relay
+	// has no recent pass
+	State string `json:"state"`
+	// in rao of TAO
+	AutomaticThresholdTaoRao int64 `json:"automatic_threshold_tao_rao"`
+	TransferFloorTaoRao      int64 `json:"transfer_floor_tao_rao"`
+	// the same in rao of α at the relay's last price, 0 without one
+	AutomaticThresholdRao int64 `json:"automatic_threshold_rao"`
+	TransferFloorRao      int64 `json:"transfer_floor_rao"`
+	// days between two Claim now of one coldkey
+	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
+	Accounts           *SnClaimRelayAccountList `json:"accounts"`
+	Error              *SnClaimRelayError       `json:"error,omitempty"`
+}
+
+type SnClaimRelayCallback connect.ApiCallback[*SnClaimRelayResult]
+
+// Reads the relay's answer for the session's network.
+func (self *Api) SnClaimRelay(callback SnClaimRelayCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/sn/claim-relay", self.apiUrl),
+			self.GetByJwt(),
+			&SnClaimRelayResult{},
+			callback,
+		)
+	})
+}
+
+//gomobile:noexport
+func (self *Api) SnClaimRelaySyncWithContext(ctx context.Context) (*SnClaimRelayResult, error) {
+	return connect.HttpGetWithRawFunction(
+		ctx,
+		self.getHttpGetRaw(),
+		fmt.Sprintf("%s/sn/claim-relay", self.apiUrl),
+		self.GetByJwt(),
+		&SnClaimRelayResult{},
+		connect.NewNoopApiCallback[*SnClaimRelayResult](),
+	)
+}
+
+// SnClaimRelayClaimNowArgs names one of the session's network's coldkeys.
+type SnClaimRelayClaimNowArgs struct {
+	ColdkeySs58 string `json:"coldkey_ss58"`
+}
+
+// SnClaimRelayClaimNowResult says whether the tap was taken. Not requested, Reason
+// says why not, as SnClaimRelayAccount.ClaimNowReason does.
+type SnClaimRelayClaimNowResult struct {
+	Requested bool   `json:"requested"`
+	Reason    string `json:"reason,omitempty"`
+	// when this coldkey's limit ends, unix milliseconds
+	NextAtMillis int64              `json:"next_at_millis,omitempty"`
+	Error        *SnClaimRelayError `json:"error,omitempty"`
+}
+
+type SnClaimRelayClaimNowCallback connect.ApiCallback[*SnClaimRelayClaimNowResult]
+
+// Asks the relay to claim one of the session's network's coldkeys now.
+func (self *Api) SnClaimRelayClaimNow(args *SnClaimRelayClaimNowArgs, callback SnClaimRelayClaimNowCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/sn/claim-relay/claim-now", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SnClaimRelayClaimNowResult{},
+			callback,
+		)
+	})
+}
+
+//gomobile:noexport
+func (self *Api) SnClaimRelayClaimNowSyncWithContext(ctx context.Context, args *SnClaimRelayClaimNowArgs) (*SnClaimRelayClaimNowResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/sn/claim-relay/claim-now", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&SnClaimRelayClaimNowResult{},
+		connect.NewNoopApiCallback[*SnClaimRelayClaimNowResult](),
+	)
+}
+
+// SnClaimStatusResult is everything an app draws. The top level is the primary
+// account: the connected wallet's when it has one, else the first with something
+// to claim. Accounts lists each of the network's, including a wallet's it replaced,
+// whose balance URnetwork keeps claiming. With an Error the balances are
+// unavailable, never zero.
+type SnClaimStatusResult struct {
+	// the relay's state, SnClaimRelayStateUnavailable when the server did not answer
+	RelayState  string `json:"relay_state"`
+	ColdkeySs58 string `json:"coldkey_ss58,omitempty"`
+	// SnClaimAction*: what the main control does
+	Action string `json:"action"`
+	// SnClaimReason*: why a balance is pending
+	Reason       string `json:"reason"`
+	ClaimableRao int64  `json:"claimable_rao"`
+	ValueTaoRao  int64  `json:"value_tao_rao"`
+	PendingRao   int64  `json:"pending_rao"`
+	// whether SnClaimNow can be tapped, why not, and when its limit ends
+	ClaimNowAvailable    bool   `json:"claim_now_available"`
+	ClaimNowReason       string `json:"claim_now_reason,omitempty"`
+	ClaimNowNextAtMillis int64  `json:"claim_now_next_at_millis,omitempty"`
+	// the fallback: SnLedgerClaim can claim this now with the gas key, whatever
+	// Action says, and whether the gas key is short of the gas that takes
+	SelfClaimAvailable bool `json:"self_claim_available"`
+	SelfClaimNeedsGas  bool `json:"self_claim_needs_gas"`
+	// what the policy says, in rao of α at the relay's last price, 0 without one
+	AutomaticThresholdRao int64 `json:"automatic_threshold_rao"`
+	TransferFloorRao      int64 `json:"transfer_floor_rao"`
+	// days between two Claim now of one coldkey
+	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
+	Accounts           *SnClaimRelayAccountList `json:"accounts"`
+	Error              *SnError                 `json:"error,omitempty"`
+}
+
+type SnClaimStatusCallback connect.ApiCallback[*SnClaimStatusResult]
+
+// SnClaimNowResult is the answer to a Claim now tap.
+type SnClaimNowResult struct {
+	// taken: URnetwork sends it first, under the same daily budget
+	Requested bool `json:"requested"`
+	// why not, as SnClaimStatusResult.ClaimNowReason
+	Reason string `json:"reason,omitempty"`
+	// when this coldkey's limit ends, unix milliseconds
+	NextAtMillis int64    `json:"next_at_millis,omitempty"`
+	Error        *SnError `json:"error,omitempty"`
+}
+
+type SnClaimNowCallback connect.ApiCallback[*SnClaimNowResult]
+
+// snClaimRelayUsable reports a reason under which URnetwork is still the one to
+// claim: it is claiming, or it will once a balance or a new day allows.
+func snClaimRelayUsable(reason string) bool {
+	switch reason {
+	case SnClaimReasonRelayNotRunning, SnClaimReasonRelayPaused:
+		return false
+	}
+	return true
+}
+
+// snClaimAction chooses what the main control does for one account: the relay
+// whenever it is claiming, and the device's own claim only when it is not, since
+// that spends TAO the user has to hold. Pure, so every app gets the same choice.
+func snClaimAction(account *SnClaimRelayAccount, selfClaimAvailable bool, selfClaimNeedsGas bool) string {
+	switch {
+	case account == nil || account.ClaimableRao <= 0:
+		return SnClaimActionNone
+	case snClaimRelayUsable(account.Reason):
+		if account.ClaimNowAvailable {
+			return SnClaimActionClaimNow
+		}
+		return SnClaimActionWait
+	case !selfClaimAvailable:
+		return SnClaimActionWait
+	case selfClaimNeedsGas:
+		return SnClaimActionTopUpGas
+	}
+	return SnClaimActionSelfClaim
+}
+
+// snClaimStatusPrimary picks the account the top level describes.
+func snClaimStatusPrimary(accounts []*SnClaimRelayAccount) *SnClaimRelayAccount {
+	var first *SnClaimRelayAccount
+	for _, account := range accounts {
+		if account.Connected {
+			return account
+		}
+		if first == nil || first.ClaimableRao <= 0 && 0 < account.ClaimableRao {
+			first = account
+		}
+	}
+	return first
+}
+
+// snClaimStatusBuild turns the server's answer and the device's gas key into what
+// an app draws. relay is nil when the server did not answer. Pure.
+func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfClaimConfigured bool, selfClaimNeedsGas bool) *SnClaimStatusResult {
+	result := &SnClaimStatusResult{
+		RelayState: SnClaimRelayStateUnavailable,
+		Action:     SnClaimActionNone,
+		Reason:     SnClaimReasonNothingPending,
+		Accounts:   NewSnClaimRelayAccountList(),
+	}
+	accounts := []*SnClaimRelayAccount{}
+	if relay != nil {
+		result.RelayState = relay.State
+		result.AutomaticThresholdRao = relay.AutomaticThresholdRao
+		result.TransferFloorRao = relay.TransferFloorRao
+		result.ClaimNowPeriodDays = relay.ClaimNowPeriodDays
+		if relay.Accounts != nil {
+			accounts = relay.Accounts.getAll()
+		}
+	}
+	for _, account := range accounts {
+		account.Connected = connectedSs58 != "" && account.ColdkeySs58 == connectedSs58
+		account.Action = snClaimAction(account, snClaimSelfClaimAvailable(relay, account, selfClaimConfigured), selfClaimNeedsGas)
+		result.Accounts.Add(account)
+	}
+	primary := snClaimStatusPrimary(accounts)
+	if primary == nil {
+		result.ColdkeySs58 = connectedSs58
+		return result
+	}
+	result.ColdkeySs58 = primary.ColdkeySs58
+	result.Action = primary.Action
+	result.Reason = primary.Reason
+	result.ClaimableRao = primary.ClaimableRao
+	result.ValueTaoRao = primary.ValueTaoRao
+	result.PendingRao = primary.PendingRao
+	result.ClaimNowAvailable = primary.ClaimNowAvailable
+	result.ClaimNowReason = primary.ClaimNowReason
+	result.ClaimNowNextAtMillis = primary.ClaimNowNextAtMillis
+	result.SelfClaimAvailable = snClaimSelfClaimAvailable(relay, primary, selfClaimConfigured)
+	result.SelfClaimNeedsGas = result.SelfClaimAvailable && selfClaimNeedsGas
+	return result
+}
+
+// The device's own claim can only be of the connected wallet's account, on a
+// device whose chain settings can send one, for a balance the relay's last price
+// does not put under the floor. Without a price the claim's own preflight decides.
+func snClaimSelfClaimAvailable(relay *SnClaimRelayResult, account *SnClaimRelayAccount, configured bool) bool {
+	if !configured || !account.Connected || account.ClaimableRao <= 0 {
+		return false
+	}
+	if relay != nil && 0 < relay.TransferFloorRao && account.ClaimableRao < relay.TransferFloorRao {
+		return false
+	}
+	return true
+}
+
+// The most a claim signed now pays per gas, as snSignClaim prices it.
+func snClaimMaxFeePerGas(ctx context.Context, client *evm.Client, txType string) (*big.Int, error) {
+	if txType == SnTxTypeEip1559 {
+		if baseFee, err := client.LatestBaseFee(ctx); err == nil && baseFee != nil && baseFee.Sign() > 0 {
+			tip, err := client.MaxPriorityFeePerGas(ctx)
+			if err != nil || tip == nil {
+				tip = big.NewInt(1_000_000_000)
+			}
+			feeCap := new(big.Int).Mul(baseFee, big.NewInt(2))
+			return feeCap.Add(feeCap, tip), nil
+		}
+	}
+	gasPrice, err := client.GasPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gasPrice = new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
+	if gasPrice.Sign() == 0 {
+		gasPrice = big.NewInt(1)
+	}
+	return gasPrice, nil
+}
+
+// Whether the gas key holds what a self-claim's gas limit takes at the chain's
+// price. False when it cannot be read: the claim itself then says needs_gas.
+func (self *snDevice) snClaimSelfClaimNeedsGas(ctx context.Context) bool {
+	settings := self.GetSnChainSettings()
+	key, err := self.snGasPrivateKey()
+	if err != nil || settings == nil || settings.validateLedgerClaims() != nil {
+		return false
+	}
+	client := settings.chainClient()
+	feePerGas, err := snClaimMaxFeePerGas(ctx, client, settings.TxType)
+	if err != nil {
+		return false
+	}
+	balance, err := client.Balance(ctx, evm.AddressOf(key))
+	if err != nil {
+		return false
+	}
+	return balance.Cmp(new(big.Int).Mul(feePerGas, new(big.Int).SetUint64(snLedgerClaimGasFloor))) < 0
+}
+
+// snClaimStatus reads and builds the status. fallback reads the public ledger when
+// the relay's answer is not available.
+func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
+	connectedSs58 := ""
+	if wallet := self.GetSnWallet(); wallet != nil {
+		connectedSs58 = strings.TrimSpace(wallet.ColdkeySs58)
+	}
+	settings := self.GetSnChainSettings()
+	selfClaimConfigured := settings != nil && settings.validateLedgerClaims() == nil && self.GetSnGasKey() != nil
+
+	relay, err := self.api().SnClaimRelaySyncWithContext(ctx)
+	var relayError *SnError
+	switch {
+	case err != nil:
+		relay = nil
+		relayError = newSnError(SnErrorCodeLedgerUnavailable, err.Error())
+	case relay.Error != nil:
+		relayError = newSnError(SnErrorCodeLedgerUnavailable, relay.Error.Message)
+	}
+	if relayError != nil && connectedSs58 != "" {
+		// The relay's answer has no balances. The public ledger still has the
+		// connected wallet's, and the device's own claim still works.
+		state := SnClaimRelayStateUnavailable
+		if relay != nil {
+			state = relay.State
+		}
+		accounts, snErr := self.snClaimLedgerAccounts(ctx, settings, connectedSs58)
+		if snErr == nil {
+			relay = &SnClaimRelayResult{State: state, Accounts: accounts}
+			relayError = nil
+		} else {
+			relayError = snErr
+		}
+	}
+	if relayError != nil {
+		result := snClaimStatusBuild(nil, connectedSs58, selfClaimConfigured, false)
+		if relay != nil {
+			result.RelayState = relay.State
+		}
+		result.Error = relayError
+		return result
+	}
+	needsGas := false
+	if connectedSs58 != "" && selfClaimConfigured && snClaimAnyClaimable(relay, connectedSs58) {
+		needsGas = self.snClaimSelfClaimNeedsGas(ctx)
+	}
+	return snClaimStatusBuild(relay, connectedSs58, selfClaimConfigured, needsGas)
+}
+
+func snClaimAnyClaimable(relay *SnClaimRelayResult, coldkeySs58 string) bool {
+	if relay == nil || relay.Accounts == nil {
+		return false
+	}
+	for _, account := range relay.Accounts.getAll() {
+		if account.ColdkeySs58 == coldkeySs58 && 0 < account.ClaimableRao {
+			return true
+		}
+	}
+	return false
+}
+
+// The connected wallet's accounts from the public ledger, with no relay behind
+// them: the reason says so, and the app falls back to the device's own claim.
+func (self *snDevice) snClaimLedgerAccounts(ctx context.Context, settings *SnChainSettings, coldkeySs58 string) (*SnClaimRelayAccountList, *SnError) {
+	api := self.api()
+	fetch := func(ctx context.Context, requestUrl string) ([]byte, error) {
+		return api.getHttpGetRaw()(ctx, requestUrl, "")
+	}
+	ledger := snLedgerAccounts(ctx, fetch, self.snArtifactBaseUrl(settings), coldkeySs58)
+	if ledger.Error != nil {
+		return nil, ledger.Error
+	}
+	accounts := NewSnClaimRelayAccountList()
+	for _, account := range ledger.Accounts.getAll() {
+		reason := SnClaimReasonRelayNotRunning
+		if account.ClaimableRao <= 0 {
+			reason = SnClaimReasonNothingPending
+		}
+		pending := int64(0)
+		if account.Pending && account.FinalizedRao < account.PendingRao {
+			pending = account.PendingRao - account.FinalizedRao
+		}
+		accounts.Add(&SnClaimRelayAccount{
+			ColdkeySs58:    coldkeySs58,
+			NoId:           account.NoId,
+			Index:          account.Index,
+			ClaimableRao:   account.ClaimableRao,
+			PendingRao:     pending,
+			Reason:         reason,
+			ClaimNowReason: reason,
+		})
+	}
+	return accounts, nil
+}
+
+// SnClaimStatus reads what is pending and why, and what the main control does.
+func (self *snDevice) SnClaimStatus(callback SnClaimStatusCallback) {
+	go connect.HandleError(func() {
+		ctx, cancel := context.WithTimeout(self.ctx, snClaimStatusTimeout)
+		defer cancel()
+		result := self.snClaimStatus(ctx)
+		if callback != nil {
+			callback.Result(result, nil)
+		}
+	})
+}
+
+// snClaimNow asks the relay to claim one coldkey's balance now, the connected
+// wallet's when none is named.
+func (self *snDevice) snClaimNow(ctx context.Context, coldkeySs58 string) *SnClaimNowResult {
+	coldkeySs58 = strings.TrimSpace(coldkeySs58)
+	if coldkeySs58 == "" {
+		wallet := self.GetSnWallet()
+		if wallet == nil {
+			return &SnClaimNowResult{Error: newSnError(SnErrorCodeConnectWalletFirst, "connect a Bittensor wallet first")}
+		}
+		coldkeySs58 = strings.TrimSpace(wallet.ColdkeySs58)
+	}
+	if _, err := snColdkeyBytes(coldkeySs58); err != nil {
+		return &SnClaimNowResult{Error: newSnError(SnErrorCodeInvalidAddress, err.Error())}
+	}
+	answer, err := self.api().SnClaimRelayClaimNowSyncWithContext(ctx, &SnClaimRelayClaimNowArgs{ColdkeySs58: coldkeySs58})
+	if err != nil {
+		return &SnClaimNowResult{Error: newSnError(SnErrorCodeServer, err.Error())}
+	}
+	if answer.Error != nil {
+		return &SnClaimNowResult{Error: newSnError(SnErrorCodeLedgerUnavailable, answer.Error.Message)}
+	}
+	return &SnClaimNowResult{Requested: answer.Requested, Reason: answer.Reason, NextAtMillis: answer.NextAtMillis}
+}
+
+// SnClaimNow asks URnetwork to claim a coldkey's balance now, the connected
+// wallet's when coldkeySs58 is empty, as SnClaimStatus says it can.
+func (self *snDevice) SnClaimNow(coldkeySs58 string, callback SnClaimNowCallback) {
+	go connect.HandleError(func() {
+		ctx, cancel := context.WithTimeout(self.ctx, snClaimStatusTimeout)
+		defer cancel()
+		result := self.snClaimNow(ctx, coldkeySs58)
+		if callback != nil {
+			callback.Result(result, nil)
+		}
+	})
+}

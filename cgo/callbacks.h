@@ -335,6 +335,14 @@ typedef void (*urnet_sn_claim_failed_cb)(void* user_data, int64_t epoch, const c
 void urnet_invoke_sn_claim_failed(urnet_sn_claim_failed_cb cb, void* user_data, int64_t epoch, const char* message);
 typedef void (*urnet_sn_claim_sent_cb)(void* user_data, int64_t epoch, const char* tx_hash);
 void urnet_invoke_sn_claim_sent(urnet_sn_claim_sent_cb cb, void* user_data, int64_t epoch, const char* tx_hash);
+typedef void (*urnet_sn_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_now(urnet_sn_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_relay_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_relay(urnet_sn_claim_relay_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_relay_claim_now_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_relay_claim_now(urnet_sn_claim_relay_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_claim_status_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claim_status(urnet_sn_claim_status_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_claims_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_connect_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
