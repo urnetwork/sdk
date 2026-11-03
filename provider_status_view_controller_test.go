@@ -438,3 +438,91 @@ func TestCloseConcreteProviderStatusViewControllerReleasesOwnership(t *testing.T
 
 	requireNoOwnedViewControllers(t, device)
 }
+
+// A first poll that failed leaves the demand chart and its Why? with nothing to
+// show, and the next try was a full minute away. It asks again sooner, a bounded
+// number of times and never before the 5 s the server's 503 asks for, then falls
+// back to the interval, so a failing server sees at most three extra requests
+// from an open screen.
+func TestProviderStatusViewControllerRetriesFailedFirstPoll(t *testing.T) {
+	vc, fetches, _, advance := newProviderStatusTestController(t)
+	vc.Start()
+	vc.step()
+	failed := errors.New("503 Cached response is temporarily unavailable.")
+	for i, wait := range []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second} {
+		fetches.callback(i).Result(nil, failed)
+		delay, arm := vc.step()
+		if !arm || delay != wait {
+			t.Fatalf("after failure %d the next poll is in %s (armed %t), want %s", i+1, delay, arm, wait)
+		}
+		advance(wait - time.Millisecond)
+		if vc.step(); fetches.count() != i+1 {
+			t.Fatalf("polled before the %s wait ended", wait)
+		}
+		advance(time.Millisecond)
+		if vc.step(); fetches.count() != i+2 {
+			t.Fatalf("no poll %s after failure %d", wait, i+1)
+		}
+	}
+	// spent: the next try is the regular interval from the last poll
+	fetches.callback(3).Result(nil, failed)
+	if delay, arm := vc.step(); !arm || delay != defaultProviderStatusPollInterval {
+		t.Fatalf("after the retries the next poll is in %s (armed %t), want the interval", delay, arm)
+	}
+	advance(defaultProviderStatusPollInterval)
+	if vc.step(); fetches.count() != 5 {
+		t.Fatal("no poll at the interval after the retries")
+	}
+	fetches.callback(4).Result(newProviderStatusTestResult(t, ProviderStatusReasonNone, 2), nil)
+	if !vc.GetIsLoaded() {
+		t.Fatal("a success after the retries did not load")
+	}
+}
+
+// With a snapshot on screen a failed poll has nothing to hurry for: the last
+// snapshot stays and the next poll is at the interval.
+func TestProviderStatusViewControllerFailedPollWithSnapshotWaitsForInterval(t *testing.T) {
+	vc, fetches, _, advance := newProviderStatusTestController(t)
+	vc.Start()
+	vc.step()
+	fetches.callback(0).Result(newProviderStatusTestResult(t, ProviderStatusReasonNone, 2), nil)
+	advance(defaultProviderStatusPollInterval)
+	vc.step()
+	fetches.callback(1).Result(nil, errors.New("timeout"))
+	if delay, arm := vc.step(); !arm || delay != defaultProviderStatusPollInterval {
+		t.Fatalf("the next poll is in %s (armed %t), want the interval", delay, arm)
+	}
+}
+
+// The screen coming back starts a new budget, and Refresh neither spends it nor
+// waits for it.
+func TestProviderStatusViewControllerRetryBudgetPerStart(t *testing.T) {
+	vc, fetches, _, advance := newProviderStatusTestController(t)
+	vc.Start()
+	vc.step()
+	failed := errors.New("503 Cached response is temporarily unavailable.")
+	for i, wait := range []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second} {
+		fetches.callback(i).Result(nil, failed)
+		advance(wait)
+		vc.step()
+	}
+	fetches.callback(3).Result(nil, failed)
+	vc.Stop()
+	vc.Start()
+	vc.step()
+	if fetches.count() != 5 {
+		t.Fatalf("%d polls after a restart, want 5", fetches.count())
+	}
+	fetches.callback(4).Result(nil, failed)
+	if delay, arm := vc.step(); !arm || delay != 5*time.Second {
+		t.Fatalf("after a restart the next poll is in %s (armed %t), want the first retry", delay, arm)
+	}
+	vc.Refresh()
+	if vc.step(); fetches.count() != 6 {
+		t.Fatal("Refresh waited for the retry")
+	}
+	fetches.callback(5).Result(nil, failed)
+	if delay, arm := vc.step(); !arm || delay != 10*time.Second {
+		t.Fatalf("the next poll is in %s (armed %t), want the second retry", delay, arm)
+	}
+}
