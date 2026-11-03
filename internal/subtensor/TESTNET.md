@@ -104,15 +104,16 @@ Set `LIMIT` to a value a little under `price_rao`, such as 90% of it.
 | Under the floor | half of `min_amount_rao` | `LIMIT` | `SubtensorModule.AmountTooLow` |
 | The whole stake: the fee came first | `stake_rao` | `LIMIT` | `SubtensorModule.NotEnoughStakeToWithdraw` |
 | A limit over the price | `max_amount_rao` | twice `price_rao` | `Swap.PriceLimitExceeded` |
-| More than the limit allows | `max_amount_rao` | `price_rao`, read just before | `SubtensorModule.SlippageTooHigh` |
+| More than the limit allows | `max_amount_rao` | `price_rao`, read just before | `SubtensorModule.SlippageTooHigh`, or `Swap.PriceLimitExceeded` if the price fell before it landed |
 
 ```sh
 BT_CONVERT_TESTNET_ACTION=raw BT_CONVERT_TESTNET_AMOUNT_RAO=AMOUNT BT_CONVERT_TESTNET_LIMIT_RAO=LIMIT go test -count=1 -run TestConvertTestnetRehearsal -v .
 ```
 
-After these C still holds no TAO, since nothing was sold, and each run's `alpha fee` is on its line.
-A refund too small to open an account stays with the chain, so `free` stays 0. `stake_rao` falls
-by the fee each time: read it again before each run, and top C up from A if it runs low.
+Nothing is sold in these runs, and each keeps its fee, in alpha, on its line. Read C again before
+each run: its stake falls by the fee each time, and its `free` may rise by a refund of part of a fee,
+which the runtime pays only when it is at least the existential deposit. Top C up from A if it runs
+low.
 
 ## 6. The remainder
 

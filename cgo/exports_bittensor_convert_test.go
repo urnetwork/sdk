@@ -31,7 +31,7 @@ func TestBittensorConvertFormatsThroughTheAbi(t *testing.T) {
 // trip by name, or a submit would refuse or, worse, read other values.
 func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 	estimate := &sdk.BittensorConvertEstimateResult{
-		ColdkeySs58:            "5EA26Bbav2U1caKuw6aWUZo3QpjqX2LZUGd9F1uhQ2Siodr4",
+		ColdkeySs58:            "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV",
 		HotkeySs58:             "5FsGk9mJLFyvRNxYkZ5BZZzW3CYLCD7qwmWPFfRrFjbnZfbn",
 		Netuid:                 25,
 		StakeRao:               5_000_000_000,
@@ -83,7 +83,7 @@ func TestBittensorConvertEstimateJsonRoundTrip(t *testing.T) {
 func TestBittensorConvertSubmissionJsonRoundTrip(t *testing.T) {
 	submission := &sdk.BittensorConvertSubmission{
 		TxHash:      "0xcf1e4cafeab3397b",
-		ColdkeySs58: "5EA26Bbav2U1caKuw6aWUZo3QpjqX2LZUGd9F1uhQ2Siodr4",
+		ColdkeySs58: "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV",
 		FirstBlock:  9_422_017,
 		LastBlock:   9_422_080,
 	}
