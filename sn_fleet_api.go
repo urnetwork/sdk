@@ -261,50 +261,38 @@ func (self *Api) snFleetClaimStatus(ctx context.Context) (*snFleetClaimStatus, e
 }
 
 // The authorization, hotkey signatures and top-up act for the whole network, so
-// they take the network credential, as the consent does.
+// they take the network credential, as the consent does (apiAdminRouteAccess).
 func (self *Api) snFleetAuthorize(ctx context.Context, args *snFleetAuthorizationArgs) (*snFleetAuthorizationResult, error) {
-	byJwt := self.networkCredential()
-	if byJwt == "" {
-		return nil, ErrNetworkCredentialRequired
-	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),
 		fmt.Sprintf("%s/sn/fleet/authorization", self.apiUrl),
 		args,
-		byJwt,
+		self.GetByJwt(),
 		&snFleetAuthorizationResult{},
 		connect.NewNoopApiCallback[*snFleetAuthorizationResult](),
 	)
 }
 
 func (self *Api) snFleetHotkeySignatures(ctx context.Context, args *snFleetHotkeySignaturesArgs) (*snFleetHotkeySignaturesResult, error) {
-	byJwt := self.networkCredential()
-	if byJwt == "" {
-		return nil, ErrNetworkCredentialRequired
-	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),
 		fmt.Sprintf("%s/sn/fleet/hotkey-signatures", self.apiUrl),
 		args,
-		byJwt,
+		self.GetByJwt(),
 		&snFleetHotkeySignaturesResult{},
 		connect.NewNoopApiCallback[*snFleetHotkeySignaturesResult](),
 	)
 }
 
 func (self *Api) snFleetTopUp(ctx context.Context) (*snFleetTopUpResult, error) {
-	byJwt := self.networkCredential()
-	if byJwt == "" {
-		return nil, ErrNetworkCredentialRequired
-	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),
 		fmt.Sprintf("%s/sn/fleet/top-up", self.apiUrl),
 		nil,
-		byJwt,
+		self.GetByJwt(),
 		&snFleetTopUpResult{},
 		connect.NewNoopApiCallback[*snFleetTopUpResult](),
 	)
