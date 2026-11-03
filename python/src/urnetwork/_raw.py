@@ -2390,6 +2390,8 @@ def bind(lib):
     lib.urnet_session_sign_out_result_get_revocation_confirmed.restype = c_bool
     lib.urnet_sn_fleet_claim_advance.argtypes = [c_uint64, urnet_sn_fleet_claim_cb, c_void_p]
     lib.urnet_sn_fleet_claim_advance.restype = None
+    lib.urnet_sn_fleet_claim_leave.argtypes = [c_uint64, c_uint64, urnet_sn_fleet_device_leave_cb, c_void_p]
+    lib.urnet_sn_fleet_claim_leave.restype = None
     lib.urnet_sn_fleet_claim_refresh.argtypes = [c_uint64, urnet_sn_fleet_claim_cb, c_void_p]
     lib.urnet_sn_fleet_claim_refresh.restype = None
     lib.urnet_sn_fleet_claim_submit_wallet_authorization.argtypes = [c_uint64, c_char_p, urnet_sn_fleet_claim_cb, c_void_p]

@@ -1265,6 +1265,7 @@ EXPORTS
 	urnet_sn_claims_for
 	urnet_sn_fleet_binding_digest
 	urnet_sn_fleet_claim_advance
+	urnet_sn_fleet_claim_leave
 	urnet_sn_fleet_claim_refresh
 	urnet_sn_fleet_claim_submit_wallet_authorization
 	urnet_sn_fleet_claim_tap

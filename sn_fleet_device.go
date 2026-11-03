@@ -80,7 +80,10 @@ const (
 	snFleetDeviceCheckDefault = 24 * time.Hour
 	// no server answer moves a check outside these
 	snFleetDeviceCheckMin = 10 * time.Minute
-	snFleetDeviceCheckMax = 48 * time.Hour
+	// a week and a day: while binding is closed the server asks for a week
+	snFleetDeviceCheckMax = 8 * 24 * time.Hour
+	// a run that finds its saved check overdue makes it within this, spread out
+	snFleetDeviceCheckOverdue = time.Hour
 
 	snFleetDeviceCheckTimeout = 2 * time.Minute
 )
@@ -119,10 +122,9 @@ type SnFleetDeviceLeaveOutcome struct {
 	Left bool `json:"left"`
 	// the first epoch this device is back in the pool; 0 when it was never bound
 	EffectiveEpoch int64 `json:"effective_epoch"`
-	// shown on the Leave screen (sn_fleet_disclaimer.go): the app's text for the key,
-	// or this one
-	FundsDisclaimerKey string `json:"funds_disclaimer_key"`
-	FundsDisclaimer    string `json:"funds_disclaimer"`
+	// the id of the string the Leave screen shows (sn_fleet_disclaimer.go). A device
+	// leaving on its own holds no key of the claim; SnFleetClaim.Leave says if it does
+	FundsDisclaimer string `json:"funds_disclaimer"`
 }
 
 type SnFleetDeviceCheckCallback connect.ApiCallback[*SnFleetDeviceCheckResult]
@@ -159,6 +161,8 @@ type snFleetDeviceState struct {
 	Signed []*snFleetSignedBinding `json:"signed,omitempty"`
 	// this device left; it signs nothing until someone resets it
 	Left bool `json:"left,omitempty"`
+	// when the next check is due, so a restart doesn't ask sooner than the server said
+	NextCheckMillis int64 `json:"next_check_millis,omitempty"`
 }
 
 func snFleetHex(b []byte) string {
@@ -558,7 +562,7 @@ func (self *SnFleetDevice) Check(callback SnFleetDeviceCheckCallback) {
 //
 //gomobile:noexport
 func (self *SnFleetDevice) RunWithContext(ctx context.Context, listener SnFleetDeviceListener) {
-	delay := time.Duration(self.random(int64(snFleetDeviceCheckDefault)))
+	delay := self.firstCheck()
 	for {
 		if !self.sleep(ctx, delay) {
 			return
@@ -571,13 +575,53 @@ func (self *SnFleetDevice) RunWithContext(ctx context.Context, listener SnFleetD
 		}
 		if err != nil {
 			delay = self.nextCheck(0)
-			continue
+		} else {
+			delay = time.Duration(result.NextCheckSeconds) * time.Second
+			if listener != nil {
+				listener.SnFleetDeviceChecked(result)
+			}
 		}
-		delay = time.Duration(result.NextCheckSeconds) * time.Second
-		if listener != nil {
-			listener.SnFleetDeviceChecked(result)
+		self.saveNextCheck(delay)
+	}
+}
+
+// When a run's first check is due: when an earlier run's server said, so a restart
+// doesn't ask sooner, or a random point within the slow interval, so a fleet that
+// restarts together doesn't ask together. An overdue check comes within the hour,
+// spread out. A schedule further off than any answer gives is a clock that moved.
+func (self *SnFleetDevice) firstCheck() time.Duration {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if networkId, err := self.networkId(); err == nil {
+		state, err := snFleetLoadDeviceState(self.store.LoadSnFleetDeviceState(), networkId, self.clientId)
+		if err == nil && 0 < state.NextCheckMillis {
+			due := time.UnixMilli(state.NextCheckMillis).Sub(self.now())
+			switch {
+			case due <= 0:
+				return time.Duration(self.random(int64(snFleetDeviceCheckOverdue)))
+			case due <= snFleetDeviceCheckMax+snFleetDeviceCheckMax/4:
+				return due
+			}
 		}
 	}
+	return time.Duration(self.random(int64(snFleetDeviceCheckDefault)))
+}
+
+// Saves when the next check is due. A state that can't be read isn't replaced, and
+// a save that fails only means the next run picks its own time.
+func (self *SnFleetDevice) saveNextCheck(delay time.Duration) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	networkId, err := self.networkId()
+	if err != nil {
+		return
+	}
+	state, err := snFleetLoadDeviceState(self.store.LoadSnFleetDeviceState(), networkId, self.clientId)
+	if err != nil {
+		return
+	}
+	state.NextCheckMillis = self.now().Add(delay).UnixMilli()
+	self.saveState(state)
 }
 
 // Start runs the checks in the background until Close.
@@ -658,9 +702,7 @@ func (self *SnFleetDevice) LeaveSync(ctx context.Context) (*SnFleetDeviceLeaveOu
 		}
 		if result.Left {
 			// Leave signs with the client key, not a key of the user's funds
-			outcome := &SnFleetDeviceLeaveOutcome{Left: true, EffectiveEpoch: result.EffectiveEpoch}
-			outcome.FundsDisclaimerKey, outcome.FundsDisclaimer = snFleetFundsDisclaimer(false)
-			return outcome, nil
+			return &SnFleetDeviceLeaveOutcome{Left: true, EffectiveEpoch: result.EffectiveEpoch, FundsDisclaimer: snFleetFundsDisclaimer(false)}, nil
 		}
 		if result.CurrentEpoch == binding.CurrentEpoch {
 			break

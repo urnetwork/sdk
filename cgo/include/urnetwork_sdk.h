@@ -507,10 +507,6 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_FLEET_DEVICE_ACTION_REFUSED "refused"
 #define URNET_SN_FLEET_DEVICE_ACTION_RESENT "resent"
 #define URNET_SN_FLEET_DEVICE_ACTION_SIGNED "signed"
-#define URNET_SN_FLEET_FUNDS_DISCLAIMER_KEY_FULL "sn_fleet_funds_disclaimer_full"
-#define URNET_SN_FLEET_FUNDS_DISCLAIMER_KEY_FUNDS "sn_fleet_funds_disclaimer_funds"
-#define URNET_SN_FLEET_FUNDS_DISCLAIMER_TEXT_FULL "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds."
-#define URNET_SN_FLEET_FUNDS_DISCLAIMER_TEXT_FUNDS "URnetwork does not touch and is not responsible for any user funds."
 #define URNET_SN_FLEET_REFUSAL_BAD_AUTHORIZATION "bad_authorization"
 #define URNET_SN_FLEET_REFUSAL_BAD_BINDING "bad_binding"
 #define URNET_SN_FLEET_REFUSAL_BAD_CONSENT "bad_consent"
@@ -2277,6 +2273,7 @@ bool urnet_session_sign_out_result_get_revocation_confirmed(uint64_t self);
 /* ----- SnFleetClaim ----- */
 
 void urnet_sn_fleet_claim_advance(uint64_t self, urnet_sn_fleet_claim_cb callback_result, void* callback_user_data);
+void urnet_sn_fleet_claim_leave(uint64_t self, uint64_t device, urnet_sn_fleet_device_leave_cb callback_result, void* callback_user_data);
 void urnet_sn_fleet_claim_refresh(uint64_t self, urnet_sn_fleet_claim_cb callback_result, void* callback_user_data);
 void urnet_sn_fleet_claim_submit_wallet_authorization(uint64_t self, const char* signature, urnet_sn_fleet_claim_cb callback_result, void* callback_user_data);
 void urnet_sn_fleet_claim_tap(uint64_t self, urnet_sn_fleet_claim_cb callback_result, void* callback_user_data);
@@ -5202,7 +5199,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   refused: number
  *   still_to_update: number
  *   top_up_used: boolean
- *   funds_disclaimer_key: string
  *   funds_disclaimer: string
  */
 
@@ -5219,7 +5215,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* SnFleetDeviceLeaveOutcome (json):
  *   left: boolean
  *   effective_epoch: number
- *   funds_disclaimer_key: string
  *   funds_disclaimer: string
  */
 

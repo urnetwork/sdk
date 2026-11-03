@@ -1310,6 +1310,7 @@ module URnetwork
       attach_function :urnet_session_sign_out_result_get_operation_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_sign_out_result_get_revocation_confirmed, [:uint64], :bool, blocking: true
       attach_function :urnet_sn_fleet_claim_advance, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sn_fleet_claim_leave, [:uint64, :uint64, :urnet_sn_fleet_device_leave_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_refresh, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_submit_wallet_authorization, [:uint64, :string, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_tap, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true

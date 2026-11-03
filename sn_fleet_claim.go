@@ -170,13 +170,12 @@ type SnFleetClaimState struct {
 	StillToUpdate int64 `json:"still_to_update"`
 	// the network has had its one top-up
 	TopUpUsed bool `json:"top_up_used"`
-	// shown on every Top 200 screen (sn_fleet_disclaimer.go): the app's text for the
-	// key, or this one
-	FundsDisclaimerKey string `json:"funds_disclaimer_key"`
-	FundsDisclaimer    string `json:"funds_disclaimer"`
+	// the id of the string every Top 200 screen shows (sn_fleet_disclaimer.go)
+	FundsDisclaimer string `json:"funds_disclaimer"`
 
-	// a key of this claim is on this device: the fleet hotkey, from here on
+	// a key of this claim is on this device, for the disclaimer, once the step looked
 	keyOnDevice bool
+	keyKnown    bool
 }
 
 type SnFleetClaimCallback connect.ApiCallback[*SnFleetClaimState]
@@ -295,21 +294,21 @@ func (self *SnFleetClaim) run(callback SnFleetClaimCallback, step func(ctx conte
 func (self *SnFleetClaim) TapSync(ctx context.Context) *SnFleetClaimState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return snFleetClaimDisclosed(self.step(ctx, snFleetClaimModeTap, ""))
+	return self.disclosed(self.step(ctx, snFleetClaimModeTap, ""))
 }
 
 //gomobile:noexport
 func (self *SnFleetClaim) AdvanceSync(ctx context.Context) *SnFleetClaimState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return snFleetClaimDisclosed(self.step(ctx, snFleetClaimModeAdvance, ""))
+	return self.disclosed(self.step(ctx, snFleetClaimModeAdvance, ""))
 }
 
 //gomobile:noexport
 func (self *SnFleetClaim) RefreshSync(ctx context.Context) *SnFleetClaimState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return snFleetClaimDisclosed(self.step(ctx, snFleetClaimModeRefresh, ""))
+	return self.disclosed(self.step(ctx, snFleetClaimModeRefresh, ""))
 }
 
 //gomobile:noexport
@@ -317,27 +316,9 @@ func (self *SnFleetClaim) SubmitWalletAuthorizationSync(ctx context.Context, sig
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if strings.TrimSpace(signature) == "" {
-		state := &SnFleetClaimState{keyOnDevice: self.hotkeyOnDevice()}
-		return snFleetClaimDisclosed(snFleetClaimFail(state, SnFleetClaimErrorWalletSignature, "The wallet returned no signature."))
+		return self.disclosed(snFleetClaimFail(&SnFleetClaimState{}, SnFleetClaimErrorWalletSignature, "The wallet returned no signature."))
 	}
-	return snFleetClaimDisclosed(self.step(ctx, snFleetClaimModeTap, signature))
-}
-
-// Every state the flow returns carries the disclaimer for what's on this device.
-func snFleetClaimDisclosed(state *SnFleetClaimState) *SnFleetClaimState {
-	state.FundsDisclaimerKey, state.FundsDisclaimer = snFleetFundsDisclaimer(state.keyOnDevice)
-	return state
-}
-
-// Whether this device holds the session network's fleet hotkey. A store that can't
-// be read holds none, for the disclaimer.
-func (self *SnFleetClaim) hotkeyOnDevice() bool {
-	networkId, ok := credentialNetworkId(self.server.snFleetByJwt())
-	if !ok {
-		return false
-	}
-	_, _, found, err := self.loadHotkey(networkId)
-	return err == nil && found
+	return self.disclosed(self.step(ctx, snFleetClaimModeTap, signature))
 }
 
 type snFleetClaimMode int
@@ -467,6 +448,21 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 		state.HotkeyAddress, _ = ss58.Encode(authorized.Hotkey, SnSs58Prefix)
 	}
 
+	// the network's coldkey, when it was made on this device. Read before the hotkey
+	// for the disclaimer; a phrase that can't be read stops the flow where it did
+	phrase := self.store.LoadSnFleetColdkeyPhrase(networkId.String())
+	var phraseErr error
+	if phrase != "" {
+		address, err := self.coldkey.Address(phrase)
+		if err != nil {
+			phraseErr = err
+		} else if address != status.ConsentColdkey {
+			// the payout wallet was replaced: this phrase no longer speaks for it
+			phrase = ""
+		}
+	}
+	state.keyOnDevice, state.keyKnown = phrase != "" && phraseErr == nil, true
+
 	// the hotkey
 	seed, hotkey, hasHotkey, err := self.loadHotkey(networkId)
 	if err != nil {
@@ -497,16 +493,8 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 	// from here on the claim's hotkey is this device's, on a wallet's coldkey too
 	state.keyOnDevice = true
 
-	phrase := self.store.LoadSnFleetColdkeyPhrase(networkId.String())
-	if phrase != "" {
-		address, err := self.coldkey.Address(phrase)
-		if err != nil {
-			return snFleetClaimFail(state, SnFleetClaimErrorSecretStore, "The recovery phrase on this device can't be read.")
-		}
-		if address != status.ConsentColdkey {
-			// the payout wallet was replaced: this phrase no longer speaks for it
-			phrase = ""
-		}
+	if phraseErr != nil {
+		return snFleetClaimFail(state, SnFleetClaimErrorSecretStore, "The recovery phrase on this device can't be read.")
 	}
 
 	// the authorization

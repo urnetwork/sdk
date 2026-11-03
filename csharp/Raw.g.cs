@@ -1311,6 +1311,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_session_sign_out_result_get_operation_id(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_session_sign_out_result_get_revocation_confirmed(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_advance(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_leave(ulong a0, ulong a1, urnet_sn_fleet_device_leave_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_refresh(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_submit_wallet_authorization(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_fleet_claim_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_tap(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);

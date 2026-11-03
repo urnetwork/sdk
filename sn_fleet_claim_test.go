@@ -212,89 +212,115 @@ func testingFleetExpectStage(t *testing.T, state *SnFleetClaimState, stage strin
 	if state.Stage != stage {
 		t.Fatalf("stage %s (%s: %s), want %s", state.Stage, state.ErrorCode, state.ErrorMessage, stage)
 	}
-	// every state of every test carries one of the two disclaimers, whole
-	full := state.FundsDisclaimerKey == SnFleetFundsDisclaimerKeyFull && state.FundsDisclaimer == SnFleetFundsDisclaimerTextFull
-	funds := state.FundsDisclaimerKey == SnFleetFundsDisclaimerKeyFunds && state.FundsDisclaimer == SnFleetFundsDisclaimerTextFunds
-	if !full && !funds {
-		t.Fatalf("stage %s carries the disclaimer %q %q", state.Stage, state.FundsDisclaimerKey, state.FundsDisclaimer)
+	// every state of every test carries one of the two disclaimers
+	if state.FundsDisclaimer != snFleetFundsDisclaimerFull && state.FundsDisclaimer != snFleetFundsDisclaimerFundsOnly {
+		t.Fatalf("stage %s carries the disclaimer %q", state.Stage, state.FundsDisclaimer)
 	}
 }
 
-func testingFleetExpectDisclaimer(t *testing.T, name string, key string, text string, full bool) {
+func testingFleetExpectDisclaimer(t *testing.T, name string, disclaimer string, full bool) {
 	t.Helper()
-	wantKey, wantText := SnFleetFundsDisclaimerKeyFunds, SnFleetFundsDisclaimerTextFunds
+	want := snFleetFundsDisclaimerFundsOnly
 	if full {
-		wantKey, wantText = SnFleetFundsDisclaimerKeyFull, SnFleetFundsDisclaimerTextFull
+		want = snFleetFundsDisclaimerFull
 	}
-	if key != wantKey || text != wantText {
-		t.Fatalf("%s: disclaimer %q %q, want %q %q", name, key, text, wantKey, wantText)
-	}
-}
-
-// The owner's text, exactly, and its last sentence alone.
-func TestSnFleetFundsDisclaimerText(t *testing.T) {
-	if SnFleetFundsDisclaimerTextFull != "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds." {
-		t.Fatalf("%q", SnFleetFundsDisclaimerTextFull)
-	}
-	if SnFleetFundsDisclaimerTextFunds != "URnetwork does not touch and is not responsible for any user funds." || !strings.HasSuffix(SnFleetFundsDisclaimerTextFull, " "+SnFleetFundsDisclaimerTextFunds) {
-		t.Fatalf("%q", SnFleetFundsDisclaimerTextFunds)
+	if disclaimer != want {
+		t.Fatalf("%s: disclaimer %q, want %q", name, disclaimer, want)
 	}
 }
 
-// Every Top 200 screen says URnetwork doesn't touch the user's funds: the whole text
-// once the claim's hotkey is on this device, the existing-wallet path included, and
-// only the last sentence while no key of the claim is.
+// The ids of the Bittensor flows' strings, exactly.
+func TestSnFleetFundsDisclaimerIds(t *testing.T) {
+	if snFleetFundsDisclaimerFull != "bittensor_funds_disclaimer" || snFleetFundsDisclaimerFundsOnly != "bittensor_funds_disclaimer_funds_only" {
+		t.Fatalf("%q %q", snFleetFundsDisclaimerFull, snFleetFundsDisclaimerFundsOnly)
+	}
+}
+
+// Every Top 200 screen says URnetwork doesn't touch the user's funds: all three
+// sentences when a key of the claim is on this device, the hotkey this device made
+// on the existing-wallet path included, and the last sentence alone when only an
+// outside wallet's coldkey is involved.
 func TestSnFleetClaimStatesCarryTheFundsDisclaimer(t *testing.T) {
 	ctx := context.Background()
 	check := func(name string, state *SnFleetClaimState, stage string, full bool) {
 		t.Helper()
 		testingFleetExpectStage(t, state, stage)
-		testingFleetExpectDisclaimer(t, name, state.FundsDisclaimerKey, state.FundsDisclaimer, full)
+		testingFleetExpectDisclaimer(t, name, state.FundsDisclaimer, full)
+	}
+	wallet := func() *testingFleetClaim {
+		fixture := newTestingFleetClaim(t)
+		fixture.store.phrase = ""
+		return fixture
 	}
 
+	// a key made on this device holds the coldkey here
 	fixture := newTestingFleetClaim(t)
 	fixture.server.status.BindingOpen = false
-	check("closed", fixture.claim.RefreshSync(ctx), SnFleetClaimStageClosed, false)
-
+	check("closed, a key here", fixture.claim.RefreshSync(ctx), SnFleetClaimStageClosed, true)
 	fixture = newTestingFleetClaim(t)
+	check("before the tap, a key here", fixture.claim.RefreshSync(ctx), SnFleetClaimStageNeedsTap, true)
+	check("the tap, a key here", fixture.claim.TapSync(ctx), SnFleetClaimStageRegistering, true)
+
+	// an outside wallet, before this device made the hotkey
+	fixture = wallet()
+	fixture.server.status.BindingOpen = false
+	check("closed, a wallet", fixture.claim.RefreshSync(ctx), SnFleetClaimStageClosed, false)
+	fixture = wallet()
 	fixture.server.status.ConsentColdkey = ""
 	check("no consent", fixture.claim.TapSync(ctx), SnFleetClaimStageNoConsent, false)
+	fixture = wallet()
+	check("before the tap, a wallet", fixture.claim.RefreshSync(ctx), SnFleetClaimStageNeedsTap, false)
+	check("an empty signature, no key here", fixture.claim.SubmitWalletAuthorizationSync(ctx, ""), SnFleetClaimStageFailed, false)
+	fixture.server.statusErr = errors.New("down")
+	check("no status, a wallet", fixture.claim.RefreshSync(ctx), SnFleetClaimStageFailed, false)
 
-	fixture = newTestingFleetClaim(t)
-	check("before the tap", fixture.claim.RefreshSync(ctx), SnFleetClaimStageNeedsTap, false)
-	check("the tap, a key on this device", fixture.claim.TapSync(ctx), SnFleetClaimStageRegistering, true)
-
-	// the existing-wallet path: the hotkey this device made is the key the text means
-	fixture = newTestingFleetClaim(t)
-	fixture.store.phrase = ""
-	check("a wallet's coldkey", fixture.claim.TapSync(ctx), SnFleetClaimStageNeedsWalletAuthorization, true)
+	// the existing-wallet path: the hotkey this device made is a key here
+	fixture = wallet()
+	check("a wallet's tap", fixture.claim.TapSync(ctx), SnFleetClaimStageNeedsWalletAuthorization, true)
 	check("a wallet's empty signature", fixture.claim.SubmitWalletAuthorizationSync(ctx, " "), SnFleetClaimStageFailed, true)
 	check("a wallet's bad signature", fixture.claim.SubmitWalletAuthorizationSync(ctx, "0x"+strings.Repeat("11", 64)), SnFleetClaimStageFailed, true)
+	fixture.server.statusErr = errors.New("down")
+	check("no status, the hotkey here", fixture.claim.RefreshSync(ctx), SnFleetClaimStageFailed, true)
 
-	// a wallet's empty signature before any key was made here
+	// the hotkey on another device of the network
+	elsewhere := testingFleetAuthorizationMessage(t, testingFleetColdkeySeed, testingFleetPublic(t, [32]byte{0x77}), testingFleetNetworkId)
+	fixture = wallet()
+	fixture.server.status.AuthorizationMessage = elsewhere
+	check("the hotkey elsewhere, a wallet", fixture.claim.AdvanceSync(ctx), SnFleetClaimStageHotkeyElsewhere, false)
 	fixture = newTestingFleetClaim(t)
-	fixture.store.phrase = ""
-	check("an empty signature, no key here", fixture.claim.SubmitWalletAuthorizationSync(ctx, ""), SnFleetClaimStageFailed, false)
+	fixture.server.status.AuthorizationMessage = elsewhere
+	check("the hotkey elsewhere, a key here", fixture.claim.AdvanceSync(ctx), SnFleetClaimStageHotkeyElsewhere, true)
 
-	// the hotkey is on another device of the network
-	fixture = newTestingFleetClaim(t)
-	fixture.server.status.AuthorizationMessage = testingFleetAuthorizationMessage(t, testingFleetColdkeySeed, testingFleetPublic(t, [32]byte{0x77}), testingFleetNetworkId)
-	check("the hotkey elsewhere", fixture.claim.AdvanceSync(ctx), SnFleetClaimStageHotkeyElsewhere, false)
-
-	// a failure once the hotkey is here, and the finished claim
-	fixture = newTestingFleetClaim(t)
+	// progress and the finished claim, on a wallet's coldkey
+	fixture = wallet()
 	fixture.authorized(t)
-	fixture.server.statusErr = nil
-	fixture.chain.readErr = nil
 	check("choosing", fixture.claim.AdvanceSync(ctx), SnFleetClaimStageChoosingDevices, true)
 	fixture.manifested(t, 1, true)
 	fixture.server.status.Counts = snFleetDeviceCounts{Chosen: 2, Ready: 2, Bound: 2}
 	check("bound", fixture.claim.AdvanceSync(ctx), SnFleetClaimStageBound, true)
+}
 
-	// a server that can't be read: no key known yet
+// Leave through the claim says what's on this device; a device leaving on its own,
+// as a provider does, holds no key of the claim.
+func TestSnFleetClaimLeaveCarriesTheFundsDisclaimer(t *testing.T) {
+	ctx := context.Background()
+	leave := func(fixture *testingFleetClaim) *SnFleetDeviceLeaveOutcome {
+		t.Helper()
+		binding := &snFleetDeviceBinding{Bound: true, ChainId: 964, Netuid: 25, Coordinator: testingFleetCoordinatorHex(), Generation: 3, ValidFromEpoch: 5, ValidToEpoch: 16, CurrentEpoch: 7}
+		device := newTestingFleetDevice(t, &testingFleetServer{binding: binding}, newTestingFleetSigner(t), &testingFleetMemoryStore{})
+		outcome, err := fixture.claim.LeaveSync(ctx, device)
+		if err != nil || !outcome.Left || outcome.EffectiveEpoch != 8 {
+			t.Fatalf("%+v %v", outcome, err)
+		}
+		return outcome
+	}
+	fixture := newTestingFleetClaim(t)
+	testingFleetExpectDisclaimer(t, "a key made here", leave(fixture).FundsDisclaimer, true)
 	fixture = newTestingFleetClaim(t)
-	fixture.server.statusErr = errors.New("down")
-	check("no status", fixture.claim.RefreshSync(ctx), SnFleetClaimStageFailed, false)
+	fixture.store.phrase = ""
+	testingFleetExpectDisclaimer(t, "a wallet, no hotkey here", leave(fixture).FundsDisclaimer, false)
+	fixture.store.seed = hex.EncodeToString(testingFleetHotkeySeed[:])
+	testingFleetExpectDisclaimer(t, "a wallet, the hotkey here", leave(fixture).FundsDisclaimer, true)
 }
 
 // While binding is closed the flow does nothing at all: no key, no signature, no read.

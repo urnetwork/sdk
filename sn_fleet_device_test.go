@@ -543,6 +543,58 @@ func TestSnFleetDeviceRunIsSlowAndJittered(t *testing.T) {
 	}
 }
 
+// A restart keeps the schedule the server gave: a week while binding is closed is a
+// week however often the host restarts. An overdue check comes soon, spread over an
+// hour; a schedule no answer could give is a clock that moved, and isn't believed.
+func TestSnFleetDeviceRestartKeepsTheServersSchedule(t *testing.T) {
+	start := time.UnixMilli(1_700_000_000_000)
+	store := &testingFleetMemoryStore{}
+	server := &testingFleetServer{work: &snFleetDeviceWork{NextCheckSeconds: 7 * 24 * 3600}}
+	first := newTestingFleetDevice(t, server, newTestingFleetSigner(t), store)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sleeps := 0
+	first.sleep = func(ctx context.Context, delay time.Duration) bool {
+		sleeps += 1
+		if sleeps == 2 {
+			cancel()
+			return false
+		}
+		return true
+	}
+	first.RunWithContext(ctx, nil)
+	if len(server.workAsked) != 1 {
+		t.Fatalf("asked %d", len(server.workAsked))
+	}
+
+	restarted := func(after time.Duration) time.Duration {
+		t.Helper()
+		device := newTestingFleetDevice(t, server, newTestingFleetSigner(t), store)
+		device.now = func() time.Time { return start.Add(after) }
+		return device.firstCheck()
+	}
+	if due := restarted(24 * time.Hour); due != 6*24*time.Hour {
+		t.Fatalf("a restart a day later checks in %v, want the rest of the week", due)
+	}
+	if due := restarted(30 * 24 * time.Hour); due != snFleetDeviceCheckOverdue/2 {
+		t.Fatalf("an overdue check in %v", due)
+	}
+	if due := restarted(-30 * 24 * time.Hour); due != snFleetDeviceCheckDefault/2 {
+		t.Fatalf("a schedule from a clock that moved: %v", due)
+	}
+	fresh := newTestingFleetDevice(t, server, newTestingFleetSigner(t), &testingFleetMemoryStore{})
+	if due := fresh.firstCheck(); due != snFleetDeviceCheckDefault/2 {
+		t.Fatalf("a first run checks in %v", due)
+	}
+	// a state that can't be read isn't replaced by a schedule
+	unreadable := &testingFleetMemoryStore{unreadable: "unreadable"}
+	device := newTestingFleetDevice(t, server, newTestingFleetSigner(t), unreadable)
+	device.saveNextCheck(time.Hour)
+	if unreadable.saves != 0 {
+		t.Fatalf("saved %q over a state it couldn't read", unreadable.saved)
+	}
+}
+
 type testingFleetListener func(*SnFleetDeviceCheckResult)
 
 func (self testingFleetListener) SnFleetDeviceChecked(result *SnFleetDeviceCheckResult) {
@@ -566,7 +618,7 @@ func TestSnFleetDeviceLeave(t *testing.T) {
 		t.Fatalf("%+v", result)
 	}
 	// Leave signs with the client key: the disclaimer's last sentence
-	testingFleetExpectDisclaimer(t, "leave", result.FundsDisclaimerKey, result.FundsDisclaimer, false)
+	testingFleetExpectDisclaimer(t, "leave", result.FundsDisclaimer, false)
 	if len(server.leaves) != 1 || signer.revokes != 1 {
 		t.Fatalf("leaves %+v", server.leaves)
 	}
@@ -629,7 +681,7 @@ func TestSnFleetDeviceLeaveAcrossAnEpochBoundary(t *testing.T) {
 	if result.EffectiveEpoch != 9 || len(server.leaves) != 2 {
 		t.Fatalf("%+v %+v", result, server.leaves)
 	}
-	testingFleetExpectDisclaimer(t, "leave after the epoch turned", result.FundsDisclaimerKey, result.FundsDisclaimer, false)
+	testingFleetExpectDisclaimer(t, "leave after the epoch turned", result.FundsDisclaimer, false)
 }
 
 // A device with nothing on chain, or a binding already in its last epoch, has nothing

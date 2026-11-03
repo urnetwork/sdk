@@ -559,10 +559,6 @@ inline constexpr const char* SnFleetDeviceActionPinned = "pinned";
 inline constexpr const char* SnFleetDeviceActionRefused = "refused";
 inline constexpr const char* SnFleetDeviceActionResent = "resent";
 inline constexpr const char* SnFleetDeviceActionSigned = "signed";
-inline constexpr const char* SnFleetFundsDisclaimerKeyFull = "sn_fleet_funds_disclaimer_full";
-inline constexpr const char* SnFleetFundsDisclaimerKeyFunds = "sn_fleet_funds_disclaimer_funds";
-inline constexpr const char* SnFleetFundsDisclaimerTextFull = "This key is stored locally in the app secure storage. It is never shared with URnetwork. URnetwork does not touch and is not responsible for any user funds.";
-inline constexpr const char* SnFleetFundsDisclaimerTextFunds = "URnetwork does not touch and is not responsible for any user funds.";
 inline constexpr const char* SnFleetRefusalBadAuthorization = "bad_authorization";
 inline constexpr const char* SnFleetRefusalBadBinding = "bad_binding";
 inline constexpr const char* SnFleetRefusalBadConsent = "bad_consent";
@@ -3643,7 +3639,6 @@ struct SnFleetClaimState {
 	int64_t refused{};
 	int64_t still_to_update{};
 	bool top_up_used{};
-	std::string funds_disclaimer_key{};
 	std::string funds_disclaimer{};
 };
 
@@ -3660,7 +3655,6 @@ struct SnFleetDeviceCheckResult {
 struct SnFleetDeviceLeaveOutcome {
 	bool left{};
 	int64_t effective_epoch{};
-	std::string funds_disclaimer_key{};
 	std::string funds_disclaimer{};
 };
 
@@ -16502,7 +16496,6 @@ inline void to_json(nlohmann::json& j, const SnFleetClaimState& v) {
 	j["refused"] = v.refused;
 	j["still_to_update"] = v.still_to_update;
 	j["top_up_used"] = v.top_up_used;
-	j["funds_disclaimer_key"] = v.funds_disclaimer_key;
 	j["funds_disclaimer"] = v.funds_disclaimer;
 }
 inline void from_json(const nlohmann::json& j, SnFleetClaimState& v) {
@@ -16591,9 +16584,6 @@ inline void from_json(const nlohmann::json& j, SnFleetClaimState& v) {
 	if (auto it = j.find("top_up_used"); it != j.end() && !it->is_null()) {
 		it->get_to(v.top_up_used);
 	}
-	if (auto it = j.find("funds_disclaimer_key"); it != j.end() && !it->is_null()) {
-		it->get_to(v.funds_disclaimer_key);
-	}
 	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
 		it->get_to(v.funds_disclaimer);
 	}
@@ -16656,7 +16646,6 @@ inline void to_json(nlohmann::json& j, const SnFleetDeviceLeaveOutcome& v) {
 	j = nlohmann::json::object();
 	j["left"] = v.left;
 	j["effective_epoch"] = v.effective_epoch;
-	j["funds_disclaimer_key"] = v.funds_disclaimer_key;
 	j["funds_disclaimer"] = v.funds_disclaimer;
 }
 inline void from_json(const nlohmann::json& j, SnFleetDeviceLeaveOutcome& v) {
@@ -16668,9 +16657,6 @@ inline void from_json(const nlohmann::json& j, SnFleetDeviceLeaveOutcome& v) {
 	}
 	if (auto it = j.find("effective_epoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.effective_epoch);
-	}
-	if (auto it = j.find("funds_disclaimer_key"); it != j.end() && !it->is_null()) {
-		it->get_to(v.funds_disclaimer_key);
 	}
 	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
 		it->get_to(v.funds_disclaimer);
@@ -21681,6 +21667,7 @@ public:
 	SnFleetClaim() = default;
 	explicit SnFleetClaim(uint64_t h) : detail::Handle(h) {}
 	void advance(SnFleetClaimCallback callback) const;
+	void leave(const SnFleetDevice& device, SnFleetDeviceLeaveCallback callback) const;
 	void refresh(SnFleetClaimCallback callback) const;
 	void submitWalletAuthorization(const std::string& signature, SnFleetClaimCallback callback) const;
 	void tap(SnFleetClaimCallback callback) const;
@@ -34947,6 +34934,10 @@ inline bool SessionSignOutResult::getRevocationConfirmed() const {
 inline void SnFleetClaim::advance(SnFleetClaimCallback callback) const {
 	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
 	urnet_sn_fleet_claim_advance(handle(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
+}
+inline void SnFleetClaim::leave(const SnFleetDevice& device, SnFleetDeviceLeaveCallback callback) const {
+	auto* callback_fn = callback ? new SnFleetDeviceLeaveCallback(std::move(callback)) : nullptr;
+	urnet_sn_fleet_claim_leave(handle(), device.handle(), callback_fn ? &detail::oneshot_sn_fleet_device_leave : nullptr, callback_fn);
 }
 inline void SnFleetClaim::refresh(SnFleetClaimCallback callback) const {
 	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;

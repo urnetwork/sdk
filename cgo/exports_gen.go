@@ -20310,6 +20310,28 @@ func urnet_sn_fleet_claim_advance(self C.uint64_t, callback_result C.urnet_sn_fl
 	self_.Advance(callback_)
 }
 
+//export urnet_sn_fleet_claim_leave
+func urnet_sn_fleet_claim_leave(self C.uint64_t, device C.uint64_t, callback_result C.urnet_sn_fleet_device_leave_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sn_fleet_claim_leave")
+	self_, ok := resolveHandle[*sdk.SnFleetClaim](uint64(self), "urnet_sn_fleet_claim_leave")
+	if !ok {
+		return
+	}
+	var device_ *sdk.SnFleetDevice
+	if device != 0 {
+		var ok bool
+		device_, ok = resolveHandle[*sdk.SnFleetDevice](uint64(device), "urnet_sn_fleet_claim_leave")
+		if !ok {
+			return
+		}
+	}
+	var callback_ sdk.SnFleetDeviceLeaveCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnFleetDeviceLeaveCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Leave(device_, callback_)
+}
+
 //export urnet_sn_fleet_claim_refresh
 func urnet_sn_fleet_claim_refresh(self C.uint64_t, callback_result C.urnet_sn_fleet_claim_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sn_fleet_claim_refresh")

@@ -1311,6 +1311,7 @@ public interface Raw extends Library {
   Pointer urnet_session_sign_out_result_get_operation_id(long a0);
   byte urnet_session_sign_out_result_get_revocation_confirmed(long a0);
   void urnet_sn_fleet_claim_advance(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
+  void urnet_sn_fleet_claim_leave(long a0, long a1, urnet_sn_fleet_device_leave_cb a2, Pointer a3);
   void urnet_sn_fleet_claim_refresh(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
   void urnet_sn_fleet_claim_submit_wallet_authorization(long a0, String a1, urnet_sn_fleet_claim_cb a2, Pointer a3);
   void urnet_sn_fleet_claim_tap(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
