@@ -16,7 +16,9 @@ import (
 // DeviceLocal: it reads a coldkey's entitlements straight from the chain
 // with explicit settings and signs claims with the reader's injected EVM
 // wallet, so only the settings, the claims scan, the v2 accounts, the v1 and
-// v2 unsigned transactions and the local address check are exposed.
+// v2 unsigned transactions and the local address check are exposed, with the
+// claim relay's status and Claim now over what the page reads
+// (sn_claim_relay.go).
 
 func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
 	handler := js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -459,4 +461,7 @@ func registerSnExports() {
 	js.Global().Set("URnetworkSnLedgerClaimTransactionsFor", js.FuncOf(SnLedgerClaimTransactionsFor))
 	js.Global().Set("URnetworkSnGasBalanceFor", js.FuncOf(SnGasBalanceFor))
 	js.Global().Set("URnetworkFormatAlpha", js.FuncOf(FormatAlpha))
+	// the claim relay over what the page reads (sn_claim_relay.go)
+	js.Global().Set("URnetworkSnClaimStatusOf", js.FuncOf(SnClaimStatusOf))
+	js.Global().Set("URnetworkSnClaimNow", js.FuncOf(SnClaimNow))
 }
