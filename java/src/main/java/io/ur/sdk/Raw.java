@@ -439,6 +439,7 @@ public interface Raw extends Library {
   void urnet_bittensor_local_key_flow_confirm_keep(long a0, byte a1);
   void urnet_bittensor_local_key_flow_finish_setup(long a0, byte a1);
   byte urnet_bittensor_local_key_flow_forget_network(long a0);
+  Pointer urnet_bittensor_local_key_flow_funds_disclaimer_at(long a0, String a1);
   Pointer urnet_bittensor_local_key_flow_get_card(long a0);
   Pointer urnet_bittensor_local_key_flow_get_screen(long a0);
   Pointer urnet_bittensor_local_key_flow_go_string(long a0);

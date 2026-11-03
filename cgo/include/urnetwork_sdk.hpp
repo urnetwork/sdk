@@ -169,6 +169,16 @@ inline constexpr const char* BittensorConvertErrorPriceImpact = "convert_price_i
 inline constexpr const char* BittensorConvertErrorPriceMoved = "convert_price_moved";
 inline constexpr const char* BittensorConvertErrorRefused = "convert_refused";
 inline constexpr const char* BittensorConvertErrorRuntimeChanged = "convert_runtime_changed";
+inline constexpr const char* BittensorFundsDisclaimerFull = "bittensor_funds_disclaimer";
+inline constexpr const char* BittensorFundsDisclaimerFundsOnly = "bittensor_funds_disclaimer_funds_only";
+inline constexpr const char* BittensorFundsDisclaimerNone = "";
+inline constexpr const char* BittensorFundsDisclaimerPlaceClaimCard = "claim_card";
+inline constexpr const char* BittensorFundsDisclaimerPlaceConvert = "convert";
+inline constexpr const char* BittensorFundsDisclaimerPlaceDeleteConfirmation = "delete_confirmation";
+inline constexpr const char* BittensorFundsDisclaimerPlaceKeepConfirmation = "keep_confirmation";
+inline constexpr const char* BittensorFundsDisclaimerPlaceKeyScreen = "key_screen";
+inline constexpr const char* BittensorFundsDisclaimerPlacePayoutCard = "payout_card";
+inline constexpr const char* BittensorFundsDisclaimerPlaceTop200 = "top200";
 inline constexpr const char* BittensorLocalKeyConfirmDelete = "delete";
 inline constexpr const char* BittensorLocalKeyConfirmKeep = "keep";
 inline constexpr const char* BittensorLocalKeyConfirmNone = "";
@@ -1654,6 +1664,8 @@ struct BittensorLocalKeyCard {
 	int64_t link_generation{};
 	std::string failure_code{};
 	std::string failure_message{};
+	std::string funds_disclaimer{};
+	std::string claim_funds_disclaimer{};
 };
 
 struct BittensorLocalKeyReminder {
@@ -1679,6 +1691,7 @@ struct BittensorLocalKeyScreen {
 	bool done{};
 	std::string failure_code{};
 	std::string failure_message{};
+	std::string funds_disclaimer{};
 };
 
 struct BittensorSignRequest {
@@ -7564,6 +7577,8 @@ inline void to_json(nlohmann::json& j, const BittensorLocalKeyCard& v) {
 	j["link_generation"] = v.link_generation;
 	j["failure_code"] = v.failure_code;
 	j["failure_message"] = v.failure_message;
+	j["funds_disclaimer"] = v.funds_disclaimer;
+	j["claim_funds_disclaimer"] = v.claim_funds_disclaimer;
 }
 inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v) {
 	if (!j.is_object()) {
@@ -7623,6 +7638,12 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyCard& v) {
 	if (auto it = j.find("failure_message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.failure_message);
 	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
+	}
+	if (auto it = j.find("claim_funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_funds_disclaimer);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const BittensorLocalKeyReminder& v) {
@@ -7661,6 +7682,7 @@ inline void to_json(nlohmann::json& j, const BittensorLocalKeyScreen& v) {
 	j["done"] = v.done;
 	j["failure_code"] = v.failure_code;
 	j["failure_message"] = v.failure_message;
+	j["funds_disclaimer"] = v.funds_disclaimer;
 }
 inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
 	if (!j.is_object()) {
@@ -7716,6 +7738,9 @@ inline void from_json(const nlohmann::json& j, BittensorLocalKeyScreen& v) {
 	}
 	if (auto it = j.find("failure_message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.failure_message);
+	}
+	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
+		it->get_to(v.funds_disclaimer);
 	}
 }
 
@@ -21146,6 +21171,7 @@ public:
 	void confirmKeep(bool authenticated) const;
 	void finishSetup(bool replace_confirmed) const;
 	bool forgetNetwork() const;
+	std::string fundsDisclaimerAt(const std::string& place) const;
 	std::optional<BittensorLocalKeyCard> getCard() const;
 	std::optional<BittensorLocalKeyScreen> getScreen() const;
 	std::string goString() const;
@@ -31363,6 +31389,10 @@ inline void BittensorLocalKeyFlow::finishSetup(bool replace_confirmed) const {
 inline bool BittensorLocalKeyFlow::forgetNetwork() const {
 	bool r = urnet_bittensor_local_key_flow_forget_network(handle());
 	return r;
+}
+inline std::string BittensorLocalKeyFlow::fundsDisclaimerAt(const std::string& place) const {
+	char* r_c = urnet_bittensor_local_key_flow_funds_disclaimer_at(handle(), place.c_str());
+	return detail::takeString(r_c);
 }
 inline std::optional<BittensorLocalKeyCard> BittensorLocalKeyFlow::getCard() const {
 	char* r_c = urnet_bittensor_local_key_flow_get_card(handle());

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -820,6 +821,63 @@ func TestBittensorLocalKeyFlowCopyIsImpossibleWhileHidden(t *testing.T) {
 	}
 }
 
+// Keep and Delete hide the words before anything else, so none can be read behind the two-word check or
+// the device's authentication, and they stay hidden when the authentication fails or the step is refused.
+func TestBittensorLocalKeyFlowWordsHideBeforeTheConfirmation(t *testing.T) {
+	requireHidden := func(t *testing.T, run *testingLocalKeyRun, when string) {
+		t.Helper()
+		if screen := run.flow.GetScreen(); screen.Revealed || run.flow.RevealedWords().Len() != 0 || run.flow.PhraseToCopy() != "" || run.flow.revealedPhrase != "" {
+			t.Fatalf("%s: the words still show: %+v", when, screen)
+		}
+	}
+	reveal := func(t *testing.T, run *testingLocalKeyRun, authenticated bool) {
+		t.Helper()
+		run.flow.Reveal(authenticated)
+		if !run.flow.GetScreen().Revealed {
+			t.Fatal("CONTROL FAILED: the words don't show")
+		}
+	}
+
+	stored := newTestingLocalKeyRunLinked(t)
+	stored.flow.OpenScreen()
+	var published atomic.Int64
+	sub := stored.flow.AddBittensorLocalKeyFlowListener(testingLocalKeyListener(func() { published.Add(1) }))
+	defer sub.Close()
+	reveal(t, stored, true)
+	before := published.Load()
+	stored.flow.ConfirmDelete(false)
+	requireHidden(t, stored, "delete, authentication failed")
+	if published.Load() == before {
+		t.Fatal("the words hid with no change published")
+	}
+	if stored.flow.GetScreen().Confirming != BittensorLocalKeyConfirmNone {
+		t.Fatal("the check started with no device authentication")
+	}
+	reveal(t, stored, true)
+	stored.flow.ConfirmKeep(false)
+	requireHidden(t, stored, "keep, authentication failed")
+	reveal(t, stored, true)
+	stored.flow.ConfirmDelete(true)
+	requireHidden(t, stored, "delete")
+	stored.flow.CancelConfirmation()
+	requireHidden(t, stored, "back from the delete")
+	reveal(t, stored, true)
+	stored.flow.ConfirmKeep(true)
+	requireHidden(t, stored, "keep")
+
+	saveNow := newTestingLocalKeyRunWithNoConsent(t)
+	saveNow.flow.SaveFirst(false)
+	reveal(t, saveNow, false)
+	saveNow.flow.ConfirmKeep(false)
+	requireHidden(t, saveNow, "save now, keep refused")
+	reveal(t, saveNow, false)
+	saveNow.flow.ConfirmDelete(false)
+	requireHidden(t, saveNow, "save now, set up payouts and delete")
+	if saveNow.flow.GetScreen().Confirming != BittensorLocalKeyConfirmDelete {
+		t.Fatalf("the check is %+v", saveNow.flow.GetScreen())
+	}
+}
+
 // The words hide after 60 s, a stale timer hides nothing, and the phrase of a stored key leaves memory
 // when they do.
 func TestBittensorLocalKeyFlowHidesAfterSixtySeconds(t *testing.T) {
@@ -1285,57 +1343,57 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 		in   bittensorLocalKeyCardInputs
 		want BittensorLocalKeyCard
 	}{
-		{"nothing read", owner(bittensorLocalKeyCardInputs{}), BittensorLocalKeyCard{State: BittensorLocalKeyStateLoading}},
+		{"nothing read", owner(bittensorLocalKeyCardInputs{}), BittensorLocalKeyCard{State: BittensorLocalKeyStateLoading, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly}},
 		{"none", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateNone, ShowsKeyPath: true, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true,
+			State: BittensorLocalKeyStateNone, ShowsKeyPath: true, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save now, showing", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, saveNowAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveNowShowing, Address: key,
+			State: BittensorLocalKeyStateSaveNowShowing, Address: key, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save now, consent failed", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, saveNowAddress: key, saveNowFailed: true, failureCode: BittensorLocalKeyFailureConsent, failureMessage: "x"}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveNowConsentFailed, Address: key, FailureCode: BittensorLocalKeyFailureConsent, FailureMessage: "x",
+			State: BittensorLocalKeyStateSaveNowConsentFailed, Address: key, FailureCode: BittensorLocalKeyFailureConsent, FailureMessage: "x", FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save later, not linked", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentNone, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: key, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true,
+			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: key, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save later, not linked, another consent", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: other, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: other, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, ReplacesPayoutWallet: true,
+			State: BittensorLocalKeyStateSaveLaterNotLinked, ShowsKeyPath: true, Address: other, StoredAddress: key, OffersFinishSetup: true, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, ReplacesPayoutWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save later, linked", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true,
+			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"save later, linked, saved and kept", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key, savedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, KeySaved: true,
+			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OffersKeyScreen: true, OffersWallet: true, KeySaved: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"saved and deleted", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, deletedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSavedAndDeleted, Address: key, OffersWallet: true,
+			State: BittensorLocalKeyStateSavedAndDeleted, Address: key, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"a key made here, paid to another since", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: other, deletedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateElsewhere, Address: other, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true, ReplacesPayoutWallet: true,
+			State: BittensorLocalKeyStateElsewhere, Address: other, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true, ReplacesPayoutWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"another device or a wallet", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: other}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateElsewhere, Address: other, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true, ReplacesPayoutWallet: true,
+			State: BittensorLocalKeyStateElsewhere, Address: other, OffersSetUp: true, OffersSaveFirst: true, OffersWallet: true, ReplacesPayoutWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"a guest, no consent", bittensorLocalKeyCardInputs{networkId: network, hasNetworkCredential: true, guest: true, consentRead: bittensorLocalKeyConsentNone}, BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateNone, OffersWallet: true,
+			State: BittensorLocalKeyStateNone, OffersWallet: true, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly,
 		}},
 		{"not the owner, no consent", bittensorLocalKeyCardInputs{networkId: network, consentRead: bittensorLocalKeyConsentNone}, BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateNone, OwnerOnly: true,
+			State: BittensorLocalKeyStateNone, OwnerOnly: true, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly,
 		}},
 		{"not the owner, another consent", bittensorLocalKeyCardInputs{networkId: network, consentRead: bittensorLocalKeyConsentActive, consentAddress: other}, BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateElsewhere, Address: other, OwnerOnly: true, ReplacesPayoutWallet: true,
+			State: BittensorLocalKeyStateElsewhere, Address: other, OwnerOnly: true, ReplacesPayoutWallet: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"not the owner, linked here", bittensorLocalKeyCardInputs{networkId: network, consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storedAddress: key}, BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OwnerOnly: true, OffersKeyScreen: true, BackupReminder: true,
+			State: BittensorLocalKeyStateSaveLaterLinked, Address: key, StoredAddress: key, OwnerOnly: true, OffersKeyScreen: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"the store cannot answer", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentActive, consentAddress: key, storeUnavailable: true}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateStoreUnavailable, ShowsKeyPath: true,
+			State: BittensorLocalKeyStateStoreUnavailable, ShowsKeyPath: true, FundsDisclaimer: BittensorFundsDisclaimerFundsOnly, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 		{"the consent cannot be read", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentUnavailable}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateConsentUnavailable,
+			State: BittensorLocalKeyStateConsentUnavailable, FundsDisclaimer: BittensorFundsDisclaimerNone, ClaimFundsDisclaimer: BittensorFundsDisclaimerFundsOnly,
 		}},
 		{"the consent cannot be read, a key here", owner(bittensorLocalKeyCardInputs{consentRead: bittensorLocalKeyConsentUnavailable, storedAddress: key}), BittensorLocalKeyCard{
-			State: BittensorLocalKeyStateConsentUnavailable, Address: key, StoredAddress: key, OffersKeyScreen: true, BackupReminder: true,
+			State: BittensorLocalKeyStateConsentUnavailable, Address: key, StoredAddress: key, OffersKeyScreen: true, BackupReminder: true, FundsDisclaimer: BittensorFundsDisclaimerFull, ClaimFundsDisclaimer: BittensorFundsDisclaimerNone,
 		}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -1343,6 +1401,288 @@ func TestBittensorLocalKeyCardStates(t *testing.T) {
 				t.Errorf("\n got %+v\nwant %+v", got, row.want)
 			}
 		})
+	}
+}
+
+// MARK: the funds disclaimer
+
+// Every state of the card, from every combination of what decides it: wherever the card shows any part of
+// the easy flows it carries the disclaimer, the whole text exactly when a key is in the app's secure
+// storage, and the claim card, which shares Earnings with it, carries the last sentence exactly when the
+// payout card carries none, so Earnings shows it once.
+func TestBittensorLocalKeyFlowEveryEasyFlowCardCarriesTheFundsDisclaimer(t *testing.T) {
+	const (
+		key     = "5KeyOnThisDevice"
+		deleted = "5AKeyThisDeviceDeleted"
+		other   = "5AnotherColdkey"
+	)
+	easyFlowStates := map[string]bool{
+		BittensorLocalKeyStateSaveNowShowing:       true,
+		BittensorLocalKeyStateSaveNowConsentFailed: true,
+		BittensorLocalKeyStateSaveLaterNotLinked:   true,
+		BittensorLocalKeyStateSaveLaterLinked:      true,
+		BittensorLocalKeyStateSavedAndDeleted:      true,
+		BittensorLocalKeyStateElsewhere:            true,
+		BittensorLocalKeyStateStoreUnavailable:     true,
+	}
+	checked := 0
+	seen := map[string]bool{}
+	for _, consentRead := range []bittensorLocalKeyConsentRead{bittensorLocalKeyConsentUnread, bittensorLocalKeyConsentUnavailable, bittensorLocalKeyConsentNone, bittensorLocalKeyConsentActive} {
+		for _, consentAddress := range []string{"", key, deleted, other} {
+			for _, storedAddress := range []string{"", key} {
+				for _, savedAddress := range []string{"", key} {
+					for _, deletedAddress := range []string{"", deleted, key} {
+						for _, saveNowAddress := range []string{"", other} {
+							for _, flags := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31} {
+								if consentRead != bittensorLocalKeyConsentActive && consentAddress != "" {
+									continue
+								}
+								in := bittensorLocalKeyCardInputs{
+									networkId:            bittensorLocalKeyFlowTestNetwork,
+									consentRead:          consentRead,
+									consentAddress:       consentAddress,
+									storedAddress:        storedAddress,
+									savedAddress:         savedAddress,
+									deletedAddress:       deletedAddress,
+									saveNowAddress:       saveNowAddress,
+									saveNowFailed:        flags&1 != 0,
+									storeUnavailable:     flags&2 != 0,
+									hasNetworkCredential: flags&4 != 0,
+									guest:                flags&8 != 0,
+								}
+								if flags&16 != 0 {
+									in.networkId = ""
+								}
+								card := bittensorLocalKeyCardOf(in)
+								checked += 1
+								seen[card.State+"/"+card.FundsDisclaimer] = true
+								showsEasyFlow := easyFlowStates[card.State] || card.ShowsKeyPath || card.OffersSetUp || card.OffersSaveFirst ||
+									card.OffersFinishSetup || card.OffersKeyScreen || card.StoredAddress != ""
+								// a store that can't answer can't say where a key is, and a phrase being saved first is
+								// in memory only
+								keyReadable := card.StoredAddress != "" && card.State != BittensorLocalKeyStateStoreUnavailable &&
+									card.State != BittensorLocalKeyStateSaveNowShowing && card.State != BittensorLocalKeyStateSaveNowConsentFailed
+								wantFull := keyReadable
+								switch {
+								case !showsEasyFlow && card.FundsDisclaimer != BittensorFundsDisclaimerNone:
+									t.Fatalf("the wallet card carries %q: %+v from %+v", card.FundsDisclaimer, card, in)
+								case showsEasyFlow && wantFull && card.FundsDisclaimer != BittensorFundsDisclaimerFull:
+									t.Fatalf("a key in the app's storage shows %q: %+v from %+v", card.FundsDisclaimer, card, in)
+								case showsEasyFlow && !wantFull && card.FundsDisclaimer != BittensorFundsDisclaimerFundsOnly:
+									t.Fatalf("a key not stored here shows %q: %+v from %+v", card.FundsDisclaimer, card, in)
+								}
+								// once on Earnings: on the payout card when it has one, else on the claim card
+								claimWant := BittensorFundsDisclaimerFundsOnly
+								if card.FundsDisclaimer != BittensorFundsDisclaimerNone {
+									claimWant = BittensorFundsDisclaimerNone
+								}
+								if card.ClaimFundsDisclaimer != claimWant {
+									t.Fatalf("the claim card shows %q: %+v from %+v", card.ClaimFundsDisclaimer, card, in)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	// every state the card can be in came up, with each kind of disclaimer
+	for _, want := range []string{
+		BittensorLocalKeyStateLoading + "/" + BittensorFundsDisclaimerNone,
+		BittensorLocalKeyStateLoading + "/" + BittensorFundsDisclaimerFull,
+		BittensorLocalKeyStateConsentUnavailable + "/" + BittensorFundsDisclaimerFull,
+		BittensorLocalKeyStateNone + "/" + BittensorFundsDisclaimerFundsOnly,
+		BittensorLocalKeyStateNone + "/" + BittensorFundsDisclaimerNone,
+		BittensorLocalKeyStateSaveNowShowing + "/" + BittensorFundsDisclaimerFundsOnly,
+		BittensorLocalKeyStateSaveNowConsentFailed + "/" + BittensorFundsDisclaimerFundsOnly,
+		BittensorLocalKeyStateSaveLaterNotLinked + "/" + BittensorFundsDisclaimerFull,
+		BittensorLocalKeyStateSaveLaterLinked + "/" + BittensorFundsDisclaimerFull,
+		BittensorLocalKeyStateSavedAndDeleted + "/" + BittensorFundsDisclaimerFundsOnly,
+		BittensorLocalKeyStateElsewhere + "/" + BittensorFundsDisclaimerFundsOnly,
+		BittensorLocalKeyStateStoreUnavailable + "/" + BittensorFundsDisclaimerFundsOnly,
+	} {
+		if !seen[want] {
+			t.Errorf("CONTROL FAILED: no combination gave %s", want)
+		}
+	}
+	if checked < 1000 {
+		t.Fatalf("CONTROL FAILED: %d combinations", checked)
+	}
+}
+
+// The Key screen and both confirmations carry the disclaimer at every step of both flows: the last
+// sentence while the phrase is in memory only, the whole text for a key in the app's secure storage.
+func TestBittensorLocalKeyFlowEveryKeyScreenCarriesTheFundsDisclaimer(t *testing.T) {
+	requireScreen := func(t *testing.T, run *testingLocalKeyRun, want string, when string) {
+		t.Helper()
+		screen := run.flow.GetScreen()
+		if !screen.Open || screen.FundsDisclaimer != want {
+			t.Fatalf("%s: the screen is %+v, want %q", when, screen, want)
+		}
+		place := BittensorFundsDisclaimerPlaceKeyScreen
+		switch screen.Confirming {
+		case BittensorLocalKeyConfirmDelete:
+			place = BittensorFundsDisclaimerPlaceDeleteConfirmation
+		case BittensorLocalKeyConfirmKeep:
+			place = BittensorFundsDisclaimerPlaceKeepConfirmation
+		}
+		if got := run.flow.FundsDisclaimerAt(place); got != want {
+			t.Fatalf("%s: %s says %q, want %q", when, place, got, want)
+		}
+	}
+
+	t.Run("save now", func(t *testing.T) {
+		run := newTestingLocalKeyRunWithNoConsent(t)
+		if screen := run.flow.GetScreen(); screen.FundsDisclaimer != BittensorFundsDisclaimerNone {
+			t.Fatalf("a closed screen carries %q", screen.FundsDisclaimer)
+		}
+		run.api.challengeErr = errors.New("server_error: 502")
+		run.flow.SaveFirst(false)
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "showing")
+		run.flow.Reveal(false)
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "revealed")
+		run.flow.ConfirmDelete(false)
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "confirming")
+		run.flow.submitWords("wrong", "words")
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "words rejected")
+		first, second := run.rightWords()
+		run.flow.submitWords(first, second)
+		requireScreen(t, run, BittensorFundsDisclaimerFundsOnly, "consent failed")
+		if got := run.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceKeepConfirmation); got != BittensorFundsDisclaimerNone {
+			t.Fatalf("Save now offers no keep, and its keep confirmation says %q", got)
+		}
+		run.flow.CloseScreen()
+		if screen := run.flow.GetScreen(); screen.FundsDisclaimer != BittensorFundsDisclaimerNone {
+			t.Fatalf("a closed screen carries %q", screen.FundsDisclaimer)
+		}
+	})
+
+	t.Run("a stored key", func(t *testing.T) {
+		run := newTestingLocalKeyRunLinked(t)
+		run.flow.OpenScreen()
+		requireScreen(t, run, BittensorFundsDisclaimerFull, "hidden")
+		run.flow.Reveal(true)
+		requireScreen(t, run, BittensorFundsDisclaimerFull, "revealed")
+		run.flow.ConfirmDelete(true)
+		requireScreen(t, run, BittensorFundsDisclaimerFull, "confirming the delete")
+		run.flow.submitWords("wrong", "words")
+		requireScreen(t, run, BittensorFundsDisclaimerFull, "words rejected")
+		run.flow.CancelConfirmation()
+		run.flow.ConfirmKeep(true)
+		requireScreen(t, run, BittensorFundsDisclaimerFull, "confirming the keep")
+		run.flow.CancelConfirmation()
+		first, second := run.rightWords()
+		run.flow.ConfirmDelete(true)
+		run.flow.submitWords(first, second)
+		// the key is gone: the screen is done, and with no key there is nothing to show
+		if screen := run.flow.GetScreen(); !screen.Done || screen.FundsDisclaimer != BittensorFundsDisclaimerNone {
+			t.Fatalf("after the delete the screen is %+v", screen)
+		}
+		if card := run.flow.GetCard(); card.FundsDisclaimer != BittensorFundsDisclaimerFundsOnly {
+			t.Fatalf("after the delete the card is %+v", card)
+		}
+	})
+}
+
+// Every place of the easy flows has its disclaimer, the convert and Top 200 seams included, and an unknown
+// place has none. The claim card shares Earnings with the payout card, so it has one only while the payout
+// card has none. The places a snapshot covers say what the snapshot says.
+func TestBittensorLocalKeyFlowFundsDisclaimerAtEveryPlace(t *testing.T) {
+	places := []string{
+		BittensorFundsDisclaimerPlacePayoutCard,
+		BittensorFundsDisclaimerPlaceKeyScreen,
+		BittensorFundsDisclaimerPlaceDeleteConfirmation,
+		BittensorFundsDisclaimerPlaceKeepConfirmation,
+		BittensorFundsDisclaimerPlaceClaimCard,
+		BittensorFundsDisclaimerPlaceConvert,
+		BittensorFundsDisclaimerPlaceTop200,
+	}
+
+	linked := newTestingLocalKeyRunLinked(t)
+	for _, place := range places {
+		want := BittensorFundsDisclaimerFull
+		if place == BittensorFundsDisclaimerPlaceClaimCard {
+			want = BittensorFundsDisclaimerNone
+		}
+		if got := linked.flow.FundsDisclaimerAt(place); got != want {
+			t.Errorf("a linked key in the app's storage: %s says %q, want %q", place, got, want)
+		}
+	}
+	if got := linked.flow.FundsDisclaimerAt("somewhere_else"); got != BittensorFundsDisclaimerNone {
+		t.Errorf("an unknown place says %q", got)
+	}
+	card := linked.flow.GetCard()
+	if card.FundsDisclaimer != linked.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlacePayoutCard) ||
+		card.ClaimFundsDisclaimer != linked.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceClaimCard) {
+		t.Errorf("the card %+v and FundsDisclaimerAt disagree", card)
+	}
+
+	// a network paid to an outside wallet, with no key here: only the last sentence, wherever it shows
+	wallet := newTestingLocalKeyRun(t)
+	wallet.flow.SetConsent(true, testingLocalKeyFromSeed(t, 2).Address, 40)
+	for place, want := range map[string]string{
+		BittensorFundsDisclaimerPlacePayoutCard:         BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceClaimCard:          BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceConvert:            BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceTop200:             BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceKeyScreen:          BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceDeleteConfirmation: BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceKeepConfirmation:   BittensorFundsDisclaimerNone,
+	} {
+		if got := wallet.flow.FundsDisclaimerAt(place); got != want {
+			t.Errorf("a wallet network: %s says %q, want %q", place, got, want)
+		}
+	}
+
+	// a key here that the consent no longer pays: the card and the key's screens say where it is
+	moved := newTestingLocalKeyRunLinked(t)
+	moved.flow.SetConsent(true, testingLocalKeyFromSeed(t, 2).Address, 50)
+	for place, want := range map[string]string{
+		BittensorFundsDisclaimerPlacePayoutCard: BittensorFundsDisclaimerFull,
+		BittensorFundsDisclaimerPlaceKeyScreen:  BittensorFundsDisclaimerFull,
+		BittensorFundsDisclaimerPlaceClaimCard:  BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceConvert:    BittensorFundsDisclaimerFull,
+	} {
+		if got := moved.flow.FundsDisclaimerAt(place); got != want {
+			t.Errorf("a key paid no more: %s says %q, want %q", place, got, want)
+		}
+	}
+
+	// a store that can't answer can't say where a key is
+	locked := newTestingLocalKeyRunLinked(t)
+	locked.store.unavailable = true
+	locked.flow.Reload()
+	for place, want := range map[string]string{
+		BittensorFundsDisclaimerPlacePayoutCard: BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceClaimCard:  BittensorFundsDisclaimerNone,
+		BittensorFundsDisclaimerPlaceConvert:    BittensorFundsDisclaimerFundsOnly,
+		BittensorFundsDisclaimerPlaceTop200:     BittensorFundsDisclaimerFundsOnly,
+	} {
+		if got := locked.flow.FundsDisclaimerAt(place); got != want {
+			t.Errorf("a locked store: %s says %q, want %q", place, got, want)
+		}
+	}
+
+	// before setup there is no key yet, and a session that can't make one sees the wallet card: the claim
+	// card then carries the last sentence, once
+	none := newTestingLocalKeyRunWithNoConsent(t)
+	if got := none.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlacePayoutCard); got != BittensorFundsDisclaimerFundsOnly {
+		t.Errorf("before setup the payout card says %q", got)
+	}
+	guest := newTestingLocalKeyRunWithNoConsent(t)
+	guest.flow.SetGuest(true)
+	if got := guest.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlacePayoutCard); got != BittensorFundsDisclaimerNone {
+		t.Errorf("the wallet card says %q", got)
+	}
+	if got := guest.flow.FundsDisclaimerAt(BittensorFundsDisclaimerPlaceClaimCard); got != BittensorFundsDisclaimerFundsOnly {
+		t.Errorf("beside the wallet card the claim card says %q", got)
+	}
+}
+
+// The values are the ids of the localizations keys the apps look up, so they never change without the store.
+func TestBittensorFundsDisclaimerIdsAreTheStoreKeys(t *testing.T) {
+	if BittensorFundsDisclaimerFull != "bittensor_funds_disclaimer" || BittensorFundsDisclaimerFundsOnly != "bittensor_funds_disclaimer_funds_only" || BittensorFundsDisclaimerNone != "" {
+		t.Fatal("the disclaimer ids no longer name the localizations keys")
 	}
 }
 
@@ -1725,8 +2065,13 @@ func TestBittensorLocalKeyFlowThroughTheRealApi(t *testing.T) {
 	if err != nil || !valid || args.ColdkeySs58 != stored.address {
 		t.Fatalf("the server's check refused the consent: %v, %v, %s", valid, err, args.ColdkeySs58)
 	}
+	// the key is new each run, and its words are English: the check is for pieces of the phrase, which
+	// the request's own words never make by chance
 	for _, request := range requests {
-		testingRequireNoPhraseText(t, request.route, request.body, stored.mnemonic)
+		testingRequireNoPhrasePiece(t, request.route, request.route+" "+request.body, stored.mnemonic)
+	}
+	if testingPhrasePieceIn(submitted.body+" "+stored.mnemonic, stored.mnemonic) == "" {
+		t.Fatal("CONTROL FAILED: the check misses this phrase in this request")
 	}
 
 	again := NewBittensorLocalKeyFlow(api, bittensorLocalKeyFlowTestNetwork, store)
