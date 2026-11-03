@@ -65,6 +65,33 @@ if [ -d "$extension_path" ]; then
     extension_path="$extension_path/URnetworkVPN"
 fi
 
+# Go's linker drops the exported methods that nothing can reach, about 7 MiB of the
+# extension, until a reachable function calls reflect's Method or MethodByName with
+# a name it can't read. Then it keeps all of them, and with them
+# reflect.(*rtype).Methods, which nothing here calls and which makes such a call
+# itself. So that name is in a binary exactly when pruning is off, and it stays in
+# the function table whatever -s and strip do to the symbols.
+check_method_pruning() {
+    label="$1"
+    path="$2"
+    status=0
+    LC_ALL=C grep -a -q -F 'reflect.(*rtype).Methods' "$path" || status=$?
+    case "$status" in
+        0)
+            echo "[apple-size] $label keeps every exported method of every type, because a reachable function calls reflect's Method or MethodByName with a computed name or names a method Methods" >&2
+            echo "[apple-size] to find it, add -dumpdep to the bind's -ldflags and read the <ReflectMethod> lines (build/APPLE_EXTENSION_MEMORY_BUDGET.md)" >&2
+            exit 1
+            ;;
+        1)
+            echo "[apple-size] $label linker method pruning=on"
+            ;;
+        *)
+            echo "[apple-size] could not read $label: $path" >&2
+            exit 1
+            ;;
+    esac
+}
+
 check_size() {
     label="$1"
     path="$2"
@@ -84,6 +111,7 @@ check_size() {
     mib="$(awk -v bytes="$bytes" 'BEGIN { printf "%.3f", bytes / 1048576 }')"
     max_mib="$(awk -v bytes="$max_bytes" 'BEGIN { printf "%.3f", bytes / 1048576 }')"
     echo "[apple-size] $label=$bytes bytes (${mib} MiB), ceiling=$max_bytes bytes (${max_mib} MiB)"
+    check_method_pruning "$label" "$path"
     if [ "$bytes" -gt "$max_bytes" ]; then
         echo "[apple-size] $label exceeds its compiled-size budget" >&2
         exit 1
