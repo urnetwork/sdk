@@ -35,6 +35,9 @@ type LocalState struct {
 
 	localStorageDir string
 	authStateLock   sync.Mutex
+	// Serializes this process's reads and writes of `.extender_network_keys`
+	// (local_state_extender.go), whose write replaces the whole document.
+	extenderNetworkKeysLock sync.Mutex
 	// In-process publication ownership, guarded by authStateLock. Different
 	// LocalState objects still require their external manager to join teardown.
 	deviceAuthOwner *deviceAuthPublicationGate
@@ -1228,7 +1231,10 @@ const extenderMeasurementKeyFileName = "extender-measurement-key.pem"
 // directory (.extenders: the operator's signed records and revocations, each
 // address's holds and failure history, imported share codes, the operator's
 // last country), the gossip role (.extender_gossip_mode), the extender
-// identity (.extender_key), the provider extender setting (.provide_extender),
+// identity (.extender_key) and the keys made for the networks it is not
+// registered to (.extender_network_keys, EXTENDER.md C2c), so a device that
+// goes back to an account presents that account's key again, with its
+// history, the provider extender setting (.provide_extender),
 // whose in-memory copy therefore stays true, the lag.dev measurements setting
 // (.measurements_enabled), likewise, and the lag.dev measurement key
 // (extender-measurement-key.pem). The measurement certificate is named by the
@@ -1243,6 +1249,7 @@ func keptAcrossSignOut(name string) bool {
 		extenderSeedStoreFileName,
 		extenderGossipModeFileName,
 		extenderKeyFileName,
+		extenderNetworkKeysFileName,
 		provideExtenderFileName,
 		measurementsEnabledFileName,
 		extenderMeasurementKeyFileName:

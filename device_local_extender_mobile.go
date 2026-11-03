@@ -5,6 +5,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -55,4 +56,13 @@ func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorStat
 
 // No role, so no measurement API to turn off or on (lag.dev/PLAN.md C4).
 func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
+}
+
+// No role, so no key to replace (C2c).
+func (self *deviceLocalExtender) identityPublicKey() []byte {
+	return nil
+}
+
+func (self *deviceLocalExtender) now() time.Time {
+	return time.Now()
 }

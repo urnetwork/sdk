@@ -327,6 +327,11 @@ type NetworkSpace struct {
 	// at first use. A space with local state keeps `.extender_key` instead,
 	// which always wins, and leaves this empty.
 	extenderKeySeed []byte
+	// The network the provider extender role last ran for (EXTENDER.md C2c),
+	// zero before one has. A space with local state presents the key it made
+	// for that network when it made one (`.extender_network_keys`), and
+	// `.extender_key` otherwise.
+	extenderKeyNetworkId connect.Id
 	// The file the extender measurement key is kept in for a space with no
 	// local state (lag.dev/PLAN.md C4), as an embedder supplied it through the
 	// device's key material. Empty for a space with local state, which keeps
@@ -533,12 +538,21 @@ func (self *NetworkSpace) valuesCopy() NetworkSpaceValues {
 // records for it -- so both take it from here.
 //
 // A space with local state keeps the identity in `.extender_key` and that
-// always wins. A space without keeps it in memory, seeded by whatever an
-// embedder supplied through the device's key material, so a headless host that
-// saves the seed back keeps one identity across restarts.
+// always wins, but for a network it made a key of its own for (C2c,
+// extender_network_key.go): while the provider extender role runs for that
+// network, the space presents that key. A space without keeps it in memory,
+// seeded by whatever an embedder supplied through the device's key material,
+// so a headless host that saves the seed back keeps one identity across
+// restarts.
 func (self *NetworkSpace) getOrCreateExtenderKeySeed() ([]byte, error) {
 	if self.asyncLocalState != nil {
-		return self.asyncLocalState.GetLocalState().GetOrCreateExtenderKeySeed()
+		localState := self.asyncLocalState.GetLocalState()
+		if networkId := self.currentExtenderKeyNetworkId(); networkId != (connect.Id{}) {
+			if seed, _, ok := localState.getExtenderNetworkKeySeed(networkId); ok {
+				return seed, nil
+			}
+		}
+		return localState.GetOrCreateExtenderKeySeed()
 	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

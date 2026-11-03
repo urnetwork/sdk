@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -202,6 +203,10 @@ type deviceLocalExtender struct {
 	// it, restored when the role closes, and whether it was replaced (D26)
 	previousMaxActiveRecordCount int
 	maxActiveRecordCountReplaced bool
+
+	// whether this role has asked for a key of the network's own (C2c), which
+	// it does at most once
+	keyRenewalRequested atomic.Bool
 }
 
 // The role has started when this returns. When tcp 443 is free the server is
@@ -1039,6 +1044,32 @@ func (self *deviceLocalExtender) requestRestart() {
 	})
 }
 
+// Asks the provider, once for the life of this role, for a role on a key of the
+// network's own: the operator refused this one as another network's (C2c).
+// Not joined, and not on the activation loop's goroutine, which this runs on,
+// because replacing the role closes it, which joins that loop.
+func (self *deviceLocalExtender) requestKeyRenewal() {
+	if self.settings.RenewKey == nil || !self.keyRenewalRequested.CompareAndSwap(false, true) {
+		return
+	}
+	go connect.HandleError(func() {
+		self.settings.RenewKey(self)
+	})
+}
+
+// The public key this role is activated under (B1).
+func (self *deviceLocalExtender) identityPublicKey() []byte {
+	return slices.Clone(self.publicKey)
+}
+
+// The clock of this role, which tests replace.
+func (self *deviceLocalExtender) now() time.Time {
+	if self.settings.Now != nil {
+		return self.settings.Now()
+	}
+	return time.Now()
+}
+
 // Builds the activation loop over the carriers that bound (G3).
 func (self *deviceLocalExtender) startActivator() {
 	settings := connect.DefaultExtenderActivatorSettings()
@@ -1088,6 +1119,13 @@ func (self *deviceLocalExtender) startActivator() {
 			self.camouflage.ObserveActivation(result, self.directory().RootKeys())
 		}
 		self.wakeMonitor.NotifyAll()
+	}
+	// a key another network holds is refused at every post of this network
+	// (C2c), so the role asks for a key of the network's own
+	settings.OnRefused = func(ipVersion int, result *connect.ExtenderActivateResult) {
+		if result.KeyHeldByAnotherNetwork() {
+			self.requestKeyRenewal()
+		}
 	}
 	if 0 < self.settings.ActivateTimeout {
 		settings.ActivateTimeout = self.settings.ActivateTimeout
