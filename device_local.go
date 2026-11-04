@@ -860,6 +860,15 @@ type DeviceLocalSettings struct {
 	// out of the settings json. Only the proxy service sets it; gobind binds it
 	// like any bool, and apps leave it off.
 	KeepWindowClientKeysLocal bool `json:"-"`
+	// Holds a discovery window's refill while the payer's balance refuses its
+	// contracts (`connect.MultiClientSettings.OutOfBalanceRefillProbe`): after
+	// a refusal with InsufficientBalance, each expansion step sends one
+	// contract probe under the device's own credential instead of building
+	// window clients, and a granted contract resumes the refill at once. Off
+	// by default and out of the settings json. Only the proxy service sets it
+	// (server CPUOPT4.md, Part B #1); gobind binds it like any bool, and apps
+	// leave it off.
+	OutOfBalanceRefillProbe bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2574,11 +2583,13 @@ func applyPlatformTransportMemoryUsage(
 }
 
 // The window policy the host chose for every multi client of the device: the
-// process counters its windows count into, and whether its strict windows
-// hand drained slots over.
+// process counters its windows count into, whether its strict windows hand
+// drained slots over, and whether its windows hold their refill while the
+// payer is out of balance.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
 	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
+	settings.OutOfBalanceRefillProbe = deviceLocalSettings.OutOfBalanceRefillProbe
 }
 
 // Keeps an absent/reset window unknown instead of manufacturing readiness.
