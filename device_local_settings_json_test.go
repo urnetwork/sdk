@@ -36,6 +36,7 @@ func TestDeviceLocalSettingsJsonRoundTrip(t *testing.T) {
 		"SchedulerPauseDetector",
 		"WindowClientStats",
 		"KeepWindowClientKeysLocal",
+		"OutOfBalanceRefillProbe",
 		"ProviderDialContextSettings",
 		"KeyMaterial",
 		"ClientSettings",

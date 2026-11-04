@@ -120,3 +120,34 @@ func TestDeviceLocalWindowClientSettingsTurnTheHandoverOnUnlessTheHostTurnsItOff
 		}
 	}
 }
+
+// The balance probe is the proxy service's opt-in: every platform default
+// leaves it off, so app windows refill as before, and a host that sets it hands
+// it to every multi client of the device.
+func TestDeviceLocalWindowClientSettingsCarryTheBalanceProbeOnlyWhenTheHostSetsIt(t *testing.T) {
+	for name, deviceLocalSettings := range map[string]*DeviceLocalSettings{
+		"default":    DefaultDeviceLocalSettings(),
+		"low memory": DefaultLowMemoryDeviceLocalSettings(),
+		"android":    defaultDeviceLocalSettingsForPlatform("android"),
+		"ios":        defaultDeviceLocalSettingsForPlatform("ios"),
+		"windows":    defaultDeviceLocalSettingsForPlatform("windows"),
+		"linux":      defaultDeviceLocalSettingsForPlatform("linux"),
+		"darwin":     defaultDeviceLocalSettingsForPlatform("darwin"),
+	} {
+		if deviceLocalSettings.OutOfBalanceRefillProbe {
+			t.Errorf("%s: the default settings turn the balance probe on", name)
+		}
+		settings := connect.DefaultMultiClientSettings()
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if settings.OutOfBalanceRefillProbe {
+			t.Errorf("%s: the device's multi clients probe the balance without the host", name)
+		}
+
+		deviceLocalSettings.OutOfBalanceRefillProbe = true
+		settings = connect.DefaultMultiClientSettings()
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if !settings.OutOfBalanceRefillProbe {
+			t.Errorf("%s: the host set the balance probe and its multi clients do not probe", name)
+		}
+	}
+}
