@@ -73,6 +73,8 @@ func TestMobileSnFleetClaimIsBound(t *testing.T) {
 		{javaPath("SnFleetClaimState.java"), []string{
 			"public final native String getStage();",
 			"public final native String getFundsDisclaimer();",
+			// the one Top 200 notification's moment, which every app schedules
+			"public final native long getRemindAtMillis();",
 		}},
 		{javaPath("SnFleetDeviceLeaveOutcome.java"), []string{
 			"public final native String getFundsDisclaimer();",
@@ -98,6 +100,7 @@ func TestMobileSnFleetClaimIsBound(t *testing.T) {
 			"- (void)start:(id<SdkSnFleetDeviceListener> _Nullable)listener;",
 			"- (void)leave:(id<SdkSnFleetDeviceLeaveCallback> _Nullable)callback;",
 			"- (BOOL)reset:(NSError* _Nullable* _Nullable)error;",
+			"@property (nonatomic) int64_t remindAtMillis;",
 		}},
 	}
 	for _, file := range files {

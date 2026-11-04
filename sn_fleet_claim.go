@@ -12,6 +12,11 @@ package sdk
 // that claim can wait days for its window to register in, and one tap means one tap.
 // A UID lost after that takes a new tap, as it spends again.
 //
+// The hotkey lives on this device, so what only it can do waits for the app to run. The
+// states Tap and Advance return name when the claim can next go on with this device
+// (RemindAtMillis), and the app keeps one local notification for that moment, so a miner
+// who tapped and closed the app comes back in time (owner, 2026-11-04).
+//
 // Nothing here keeps state of its own between calls. It reads the server and the
 // chain and does the next thing, so a crash, a lost phone connection or a second
 // call all resume in the same place.
@@ -127,6 +132,19 @@ const (
 	snFleetClaimRetryLong  = 30 * 60
 )
 
+// When the one Top 200 notification comes (SnFleetClaimState.RemindAtMillis). A wait on
+// the chain, a top-up or a conversion landing or a burn spike passing, takes minutes to
+// about an hour. The server chooses a network's devices once they have had 12 hours to
+// ask after the authorization (server controller/sn_fleet_auto.go, snFleetAutoSettle).
+// Either way the notification comes no later than the lead before the step's deadline
+// while that is still ahead: the register window's end before registering, and the next
+// epoch's start after it, since bindings signed later start an epoch late.
+const (
+	snFleetClaimRemindSoon        = time.Hour
+	snFleetClaimRemindAfterServer = 12 * time.Hour
+	snFleetClaimRemindLead        = 6 * time.Hour
+)
+
 // SnFleetClaimStore is the app's secret store. It holds what must never reach the
 // server, a log, a file or the tunnel extension, keyed by network id, and survives
 // logout the way the recovery phrase does.
@@ -176,10 +194,39 @@ type SnFleetClaimState struct {
 	TopUpUsed bool `json:"top_up_used"`
 	// the id of the string every Top 200 screen shows (sn_fleet_disclaimer.go)
 	FundsDisclaimer string `json:"funds_disclaimer"`
+	// The one Top 200 notification (owner, 2026-11-04). The hotkey is on this device, so
+	// registering, publishing the commitment and signing bindings wait for the app. When
+	// this isn't 0, the app keeps one local notification for this moment, unix
+	// milliseconds, in place of any it posted, so a miner who tapped and closed the app
+	// comes back when the claim can go on with this device. At 0 it takes back the one
+	// posted. Tap, Advance and SubmitWalletAuthorization say; Refresh only reads, can't
+	// tell a tapped claim waiting to register from one never tapped, and leaves it 0, so
+	// an app takes the notification from the other three.
+	RemindAtMillis int64 `json:"remind_at_millis,omitempty"`
 
 	// a key of this claim is on this device, for the disclaimer, once the step looked
 	keyOnDevice bool
 	keyKnown    bool
+	// where the chain's blocks stand, for RemindAtMillis
+	schedule snFleetClaimSchedule
+}
+
+// The blocks the server named, and the chain's own head where the pass read it, for
+// RemindAtMillis.
+type snFleetClaimSchedule struct {
+	CurrentBlock        int64
+	RegisterAfterBlock  int64
+	RegisterBeforeBlock int64
+	NextEpochStartBlock int64
+}
+
+// When block comes, unix milliseconds, at the chain's 12 seconds a block; 0 when either
+// block isn't known.
+func (self snFleetClaimSchedule) blockMillis(block int64, nowMillis int64) int64 {
+	if self.CurrentBlock <= 0 || block <= 0 {
+		return 0
+	}
+	return nowMillis + (block-self.CurrentBlock)*snBlockSeconds*1000
 }
 
 type SnFleetClaimCallback connect.ApiCallback[*SnFleetClaimState]
@@ -225,6 +272,7 @@ type SnFleetClaim struct {
 	chain   snFleetClaimChain
 	coldkey snFleetClaimColdkey
 	random  func(out []byte) error
+	now     func() time.Time
 
 	stateLock sync.Mutex
 }
@@ -245,6 +293,7 @@ func newSnFleetClaim(server snFleetServer, store SnFleetClaimStore, chain snFlee
 			_, err := rand.Read(out)
 			return err
 		},
+		now: time.Now,
 	}
 }
 
@@ -298,14 +347,14 @@ func (self *SnFleetClaim) run(callback SnFleetClaimCallback, step func(ctx conte
 func (self *SnFleetClaim) TapSync(ctx context.Context) *SnFleetClaimState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.disclosed(self.step(ctx, snFleetClaimModeTap, ""))
+	return self.disclosed(self.reminded(self.step(ctx, snFleetClaimModeTap, "")))
 }
 
 //gomobile:noexport
 func (self *SnFleetClaim) AdvanceSync(ctx context.Context) *SnFleetClaimState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.disclosed(self.step(ctx, snFleetClaimModeAdvance, ""))
+	return self.disclosed(self.reminded(self.step(ctx, snFleetClaimModeAdvance, "")))
 }
 
 //gomobile:noexport
@@ -322,7 +371,56 @@ func (self *SnFleetClaim) SubmitWalletAuthorizationSync(ctx context.Context, sig
 	if strings.TrimSpace(signature) == "" {
 		return self.disclosed(snFleetClaimFail(&SnFleetClaimState{}, SnFleetClaimErrorWalletSignature, "The wallet returned no signature."))
 	}
-	return self.disclosed(self.step(ctx, snFleetClaimModeTap, signature))
+	return self.disclosed(self.reminded(self.step(ctx, snFleetClaimModeTap, signature)))
+}
+
+// A pass that can move the claim says when it next can with this device: the moment for
+// the one notification. A claim whose hotkey isn't here has none.
+func (self *SnFleetClaim) reminded(state *SnFleetClaimState) *SnFleetClaimState {
+	if state.keyOnDevice {
+		state.RemindAtMillis = snFleetClaimRemindAt(state.Stage, state.schedule, self.now().UnixMilli())
+	}
+	return state
+}
+
+// snFleetClaimRemindAt is when the claim can next go on with this device, where a pass on
+// the device holding the claim's hotkey stopped at stage: 0 when nothing this device does
+// moves it. Pure.
+func snFleetClaimRemindAt(stage string, schedule snFleetClaimSchedule, nowMillis int64) int64 {
+	switch stage {
+	case SnFleetClaimStageWaitingRegisterWindow:
+		// the window can be days away
+		if opens := schedule.blockMillis(schedule.RegisterAfterBlock, nowMillis); nowMillis < opens {
+			return opens
+		}
+		return nowMillis + snFleetClaimRemindSoon.Milliseconds()
+	case SnFleetClaimStageWaitingBurn,
+		SnFleetClaimStageWaitingTopUp,
+		SnFleetClaimStageConverting,
+		SnFleetClaimStageNeedsWalletRegistration:
+		// registering comes next, inside the window
+		return snFleetClaimRemindBy(nowMillis, snFleetClaimRemindSoon, schedule.blockMillis(schedule.RegisterBeforeBlock, nowMillis))
+	case SnFleetClaimStageRegistering, SnFleetClaimStageChoosingDevices:
+		// the server chooses the devices, then this device publishes and signs
+		return snFleetClaimRemindBy(nowMillis, snFleetClaimRemindAfterServer, schedule.blockMillis(schedule.NextEpochStartBlock, nowMillis))
+	}
+	// Nothing this device does moves the rest: a tap or a wallet's approval to come, funds
+	// to add, the oracle's mirror of what it published and signed, the other devices'
+	// signatures, a claim done, or one stopped on a failure, which the app retries while it
+	// runs.
+	return 0
+}
+
+// A delay from now, or the lead before the deadline when that comes sooner and is still
+// ahead. A deadline of 0 isn't known. Pure.
+func snFleetClaimRemindBy(nowMillis int64, delay time.Duration, deadlineMillis int64) int64 {
+	at := nowMillis + delay.Milliseconds()
+	if 0 < deadlineMillis {
+		if last := deadlineMillis - snFleetClaimRemindLead.Milliseconds(); nowMillis < last && last < at {
+			at = last
+		}
+	}
+	return at
 }
 
 type snFleetClaimMode int
@@ -421,6 +519,12 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 	state.Refused, state.StillToUpdate = status.Counts.Refused, status.Counts.StillToUpdate
 	state.Registered, state.Uid = status.Registered, status.Uid
 	state.TopUpUsed = status.TopUp.Used
+	state.schedule = snFleetClaimSchedule{
+		CurrentBlock:        status.CurrentBlock,
+		RegisterAfterBlock:  status.RegisterAfterBlock,
+		RegisterBeforeBlock: status.RegisterBeforeBlock,
+		NextEpochStartBlock: status.NextEpochStartBlock,
+	}
 	if !status.BindingOpen {
 		state.Stage = SnFleetClaimStageClosed
 		return state
@@ -641,6 +745,8 @@ func (self *SnFleetClaim) register(ctx context.Context, status *snFleetClaimStat
 	if err != nil {
 		return chainFail()
 	}
+	// the chain's own head, which the server's read may trail
+	state.schedule.CurrentBlock = int64(block)
 	// a new UID is immune for 3 days and can then be replaced, and its binding can
 	// be up to 7 days away, so the server names when registering is safe
 	if int64(block) < status.RegisterAfterBlock || status.RegisterBeforeBlock < int64(block) {

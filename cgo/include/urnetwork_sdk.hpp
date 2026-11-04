@@ -3876,6 +3876,7 @@ struct SnFleetClaimState {
 	int64_t still_to_update{};
 	bool top_up_used{};
 	std::string funds_disclaimer{};
+	std::optional<int64_t> remind_at_millis;
 };
 
 struct SnFleetDeviceCheckResult {
@@ -17488,6 +17489,9 @@ inline void to_json(nlohmann::json& j, const SnFleetClaimState& v) {
 	j["still_to_update"] = v.still_to_update;
 	j["top_up_used"] = v.top_up_used;
 	j["funds_disclaimer"] = v.funds_disclaimer;
+	if (v.remind_at_millis) {
+		j["remind_at_millis"] = *v.remind_at_millis;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnFleetClaimState& v) {
 	if (!j.is_object()) {
@@ -17577,6 +17581,11 @@ inline void from_json(const nlohmann::json& j, SnFleetClaimState& v) {
 	}
 	if (auto it = j.find("funds_disclaimer"); it != j.end() && !it->is_null()) {
 		it->get_to(v.funds_disclaimer);
+	}
+	if (auto it = j.find("remind_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.remind_at_millis = std::move(tmp);
 	}
 }
 
