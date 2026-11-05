@@ -45,7 +45,9 @@ export function useRemoveNetworkClient() {
         setLoading(false);
       }
     },
-    [api],
+    // the token too: a callback made before sign-in finished kept a null
+    // token and refused every remove, so a caller's clients were never released
+    [api, token],
   );
 
   return {
