@@ -194,6 +194,7 @@ var skipMethods = map[string]string{
 	"DeviceLocal.SendPacketNoCopy":                   "pool ownership does not cross the abi; use urnet_device_local_send_packet",
 	"DeviceLocal.SendPacketsNoCopy":                  "pool ownership does not cross the abi; use urnet_device_local_send_packet_batch",
 	"DeviceLocal.SendNativePacketsNoCopy":            "pool ownership does not cross the abi; use urnet_device_local_send_packet_batch",
+	"DeviceLocal.NoteUserActivity":                   "Go-only host activity signal (the proxy service's hosted devices)",
 	"PacketBatch.Get":                                "manual export urnet_packet_batch_get",
 	"WebsocketDeviceRpcDialer.Dial":                  "net.Conn internal; used by DeviceRemote internally",
 	"WebsocketDeviceRpcListener.Accept":              "net.Conn internal; used by DeviceLocal internally",

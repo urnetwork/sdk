@@ -151,3 +151,51 @@ func TestDeviceLocalWindowClientSettingsCarryTheBalanceProbeOnlyWhenTheHostSetsI
 		}
 	}
 }
+
+// The idle refill hold and the host's record of user activity are the proxy
+// service's opt-in: every platform default leaves them unset, so app windows
+// refill whether or not the user is sending and read their own packets, and a
+// host that sets them hands them to every multi client of the device.
+func TestDeviceLocalWindowClientSettingsCarryTheIdleRefillHoldOnlyWhenTheHostSetsIt(t *testing.T) {
+	for name, deviceLocalSettings := range map[string]*DeviceLocalSettings{
+		"default":    DefaultDeviceLocalSettings(),
+		"low memory": DefaultLowMemoryDeviceLocalSettings(),
+		"android":    defaultDeviceLocalSettingsForPlatform("android"),
+		"ios":        defaultDeviceLocalSettingsForPlatform("ios"),
+		"windows":    defaultDeviceLocalSettingsForPlatform("windows"),
+		"linux":      defaultDeviceLocalSettingsForPlatform("linux"),
+		"darwin":     defaultDeviceLocalSettingsForPlatform("darwin"),
+	} {
+		if deviceLocalSettings.IdleRefillHold != 0 || deviceLocalSettings.UserActivitySince != nil {
+			t.Errorf("%s: the default settings hold idle refills or read a host's activity", name)
+		}
+		settings := connect.DefaultMultiClientSettings()
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if settings.IdleRefillHold != 0 || settings.UserActivitySince != nil {
+			t.Errorf("%s: the device's multi clients hold idle refills without the host", name)
+		}
+
+		hostActive := false
+		deviceLocalSettings.IdleRefillHold = 10 * time.Minute
+		deviceLocalSettings.UserActivitySince = func(since time.Time) bool {
+			return hostActive
+		}
+		settings = connect.DefaultMultiClientSettings()
+		applyDeviceLocalWindowClientSettings(settings, deviceLocalSettings)
+		if settings.IdleRefillHold != 10*time.Minute {
+			t.Errorf("%s: the host set the idle refill hold and its multi clients hold %s", name, settings.IdleRefillHold)
+		}
+		if settings.UserActivitySince == nil {
+			t.Fatalf("%s: the host's record of user activity did not reach the multi clients", name)
+		}
+		hostActive = true
+		if !settings.UserActivitySince(time.Now()) {
+			t.Errorf("%s: the multi clients read something other than the host's record", name)
+		}
+	}
+}
+
+// A device with no multi client ignores the host's activity signal.
+func TestDeviceLocalNoteUserActivityWithoutAMultiClient(t *testing.T) {
+	(&DeviceLocal{}).NoteUserActivity()
+}

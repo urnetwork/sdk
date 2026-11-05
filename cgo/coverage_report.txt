@@ -1391,7 +1391,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1309) ==
+== skipped (1310) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1754,6 +1754,7 @@ DeviceLocal.GetVpnInterfaceWhileOffline: device interface method: use urnet_devi
 DeviceLocal.GetWindowStatus: device interface method: use urnet_device_get_window_status
 DeviceLocal.InitProvideSecretKeys: device interface method: use urnet_device_init_provide_secret_keys
 DeviceLocal.LoadProvideSecretKeys: device interface method: use urnet_device_load_provide_secret_keys
+DeviceLocal.NoteUserActivity: skipped: Go-only host activity signal (the proxy service's hosted devices)
 DeviceLocal.OpenSocket: device interface method: use urnet_device_open_socket
 DeviceLocal.Reconnect: device interface method: use urnet_device_reconnect
 DeviceLocal.RefreshToken: device interface method: use urnet_device_refresh_token
