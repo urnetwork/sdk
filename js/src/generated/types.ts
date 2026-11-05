@@ -94,8 +94,18 @@ export interface ProxyConfigResult {
   api_port?: number;
   auth_token?: string;
   wg_config?: WgConfig | null;
+  exit?: ProxyExit | null;
   http_proxy_auth: ProxyAuthResult | null;
   socks_proxy_auth: ProxyAuthResult | null;
+}
+
+export interface ProxyExit {
+  exit_id?: string;
+  country_code?: string;
+  region?: string;
+  city?: string;
+  exit_since?: string | null;
+  state?: string;
 }
 
 export interface WgConfig {
@@ -624,6 +634,8 @@ export interface ProxyConfig {
   http_require_auth: boolean;
   https_require_auth: boolean;
   enable_wg: boolean;
+  unique_exit?: boolean;
+  unique_exit_replace?: string;
   initial_device_state: ProxyDeviceState | null;
 }
 

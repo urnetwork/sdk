@@ -1110,6 +1110,9 @@ type ProxyClient struct {
 	ApiPort        int    `json:"api_port"`
 
 	WgConfig *WgConfig `json:"wg_config"`
+	// Exit is the proxy's current exit when it was created with
+	// ProxyConfig.UniqueExit, nil otherwise
+	Exit *ProxyExit `json:"exit,omitempty"`
 }
 
 // `model.WgConfig`: the WireGuard leg of a hosted proxy, nil when the plan
@@ -3995,6 +3998,56 @@ func (self *Api) RemoveNetworkClientSyncWithContextAndJwt(ctx context.Context, a
 //gomobile:noexport
 func (self *Api) RemoveNetworkClientSync(args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
 	return self.RemoveNetworkClientSyncWithContext(self.ctx, args)
+}
+
+/**
+ * Rotate a unique-exit proxy's exit
+ */
+
+type RotateProxyExitArgs struct {
+	// ClientId is the unique-exit proxy's client
+	ClientId *Id `json:"client_id"`
+}
+
+type RotateProxyExitResult struct {
+	// Exit is the proxy's new exit
+	Exit  *ProxyExit `json:"exit,omitempty"`
+	Error *ApiError  `json:"error,omitempty"`
+}
+
+type RotateProxyExitCallback connect.ApiCallback[*RotateProxyExitResult]
+
+// Assigns a unique-exit proxy (ProxyConfig.UniqueExit) a new exit whose
+// egress IP no other active unique-exit proxy of the network uses. The server
+// rate-limits rotation per proxy. It administers the network's proxies, so it
+// is sent with the network credential (apiAdminRouteAccess).
+func (self *Api) RotateProxyExit(args *RotateProxyExitArgs, callback RotateProxyExitCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RotateProxyExitResult{},
+			callback,
+		)
+	})
+}
+
+// Uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) RotateProxyExitSync(args *RotateProxyExitArgs) (*RotateProxyExitResult, error) {
+	return connect.HttpPostWithRawFunction(
+		self.ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&RotateProxyExitResult{},
+		connect.NewNoopApiCallback[*RotateProxyExitResult](),
+	)
 }
 
 /**

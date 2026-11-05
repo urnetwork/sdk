@@ -473,6 +473,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDE_MODE_STREAM 4
 #define URNET_PROVIDE_NETWORK_MODE_ALL "all"
 #define URNET_PROVIDE_NETWORK_MODE_WI_FI "wifi"
+#define URNET_PROXY_EXIT_STATE_ASSIGNED "assigned"
+#define URNET_PROXY_EXIT_STATE_NO_SUPPLY "no_supply"
+#define URNET_PROXY_EXIT_STATE_REPLACING "replacing"
+#define URNET_PROXY_UNIQUE_EXIT_REPLACE_AUTO "auto"
+#define URNET_PROXY_UNIQUE_EXIT_REPLACE_MANUAL "manual"
 #define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_NOT_REFLECTED "not_reflected"
 #define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_UNREACHABLE "unreachable"
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMATION_GAVE_UP "confirmation_gave_up"
@@ -980,6 +985,8 @@ typedef void (*urnet_remove_auth_cb)(void* user_data, const char* result_json, c
 typedef void (*urnet_remove_network_client_cb)(void* user_data, const char* result_json, const char* err_param);
 /* RemoveWalletCallback */
 typedef void (*urnet_remove_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+/* RotateProxyExitCallback */
+typedef void (*urnet_rotate_proxy_exit_cb)(void* user_data, const char* result_json, const char* err_param);
 /* RouteLocalChangeListener */
 typedef void (*urnet_route_local_change_cb)(void* user_data, bool route_local);
 /* SelectedLocationListener */
@@ -1247,6 +1254,8 @@ void urnet_api_request_jwt_refresh(uint64_t self);
 void urnet_api_requote_crypto_payment(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_revoke_network_session(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
 void urnet_api_revoke_other_network_sessions(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
+void urnet_api_rotate_proxy_exit(uint64_t self, const char* args_json, urnet_rotate_proxy_exit_cb callback_result, void* callback_user_data);
+char* urnet_api_rotate_proxy_exit_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urnet_send_feedback_cb callback_result, void* callback_user_data);
 void urnet_api_set_by_jwt(uint64_t self, const char* by_jwt);
 void urnet_api_set_client_info(uint64_t self, const char* info_json);
@@ -4971,6 +4980,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   socks_proxy_port: number
  *   api_port: number
  *   wg_config: WgConfig | null
+ *   exit?: ProxyExit | null
  */
 
 /* ProxyConfig (json):
@@ -4981,6 +4991,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   http_require_auth: boolean
  *   https_require_auth: boolean
  *   enable_wg: boolean
+ *   unique_exit?: boolean
+ *   unique_exit_replace?: string
  *   initial_device_state: ProxyDeviceState | null
  */
 
@@ -5004,6 +5016,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   api_port?: number
  *   auth_token?: string
  *   wg_config?: WgConfig | null
+ *   exit?: ProxyExit | null
  *   http_proxy_auth: ProxyAuthResult | null
  *   socks_proxy_auth: ProxyAuthResult | null
  */
@@ -5017,6 +5030,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   location: ConnectLocation | null
  *   performance_profile: PerformanceProfile | null
  *   country_code?: string
+ */
+
+/* ProxyExit (json):
+ *   exit_id?: string
+ *   country_code?: string
+ *   region?: string
+ *   city?: string
+ *   exit_since?: string (rfc3339) | null
+ *   state?: string
  */
 
 /* PublicAccountApiKey (json):
@@ -5241,6 +5263,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* RevokeOtherNetworkSessionsArgs (json):
  *   operation_id: string (uuid) | null
+ */
+
+/* RotateProxyExitArgs (json):
+ *   client_id: string (uuid) | null
+ */
+
+/* RotateProxyExitResult (json):
+ *   exit?: ProxyExit | null
+ *   error?: ApiError | null
  */
 
 /* RouteOverride (json):

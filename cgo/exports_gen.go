@@ -2471,6 +2471,27 @@ func (self *cAdapterRemoveWalletCallback) Result(result *sdk.RemoveWalletResult,
 	}
 }
 
+type cAdapterRotateProxyExitCallback struct {
+	cbResult C.urnet_rotate_proxy_exit_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterRotateProxyExitCallback) Result(result *sdk.RotateProxyExitResult, errParam error) {
+	defer cgoGuard("urnet_rotate_proxy_exit_cb")
+	result_ := cJson(result, "urnet_rotate_proxy_exit_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_rotate_proxy_exit(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterRouteLocalChangeListener struct {
 	cbRouteLocalChanged C.urnet_route_local_change_cb
 	userData            unsafe.Pointer
@@ -5619,6 +5640,52 @@ func urnet_api_revoke_other_network_sessions(self C.uint64_t, args *C.char, call
 		callback_ = &cAdapterSessionOperationCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.RevokeOtherNetworkSessions(args_, callback_)
+}
+
+//export urnet_api_rotate_proxy_exit
+func urnet_api_rotate_proxy_exit(self C.uint64_t, args *C.char, callback_result C.urnet_rotate_proxy_exit_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_rotate_proxy_exit")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_rotate_proxy_exit")
+	if !ok {
+		return
+	}
+	var args_ *sdk.RotateProxyExitArgs
+	if args != nil {
+		args_ = &sdk.RotateProxyExitArgs{}
+		if !goJson(args, args_, "urnet_api_rotate_proxy_exit") {
+			return
+		}
+	}
+	var callback_ sdk.RotateProxyExitCallback
+	if callback_result != nil {
+		callback_ = &cAdapterRotateProxyExitCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RotateProxyExit(args_, callback_)
+}
+
+//export urnet_api_rotate_proxy_exit_sync
+func urnet_api_rotate_proxy_exit_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_rotate_proxy_exit_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_rotate_proxy_exit_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.RotateProxyExitArgs
+	if args != nil {
+		args_ = &sdk.RotateProxyExitArgs{}
+		if !goJson(args, args_, "urnet_api_rotate_proxy_exit_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.RotateProxyExitSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_rotate_proxy_exit_sync")
 }
 
 //export urnet_api_send_feedback

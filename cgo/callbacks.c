@@ -637,6 +637,10 @@ void urnet_invoke_remove_wallet(urnet_remove_wallet_cb cb, void* user_data, cons
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_rotate_proxy_exit(urnet_rotate_proxy_exit_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_route_local_change(urnet_route_local_change_cb cb, void* user_data, bool route_local) {
 	cb(user_data, route_local);
 }

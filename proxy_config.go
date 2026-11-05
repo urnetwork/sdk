@@ -28,7 +28,45 @@ type ProxyConfig struct {
 	// EnableWg asks for a WireGuard leg (issued only when the plan allows it)
 	EnableWg bool `json:"enable_wg"`
 
+	// UniqueExit pins the proxy to one exit whose egress IP no other active
+	// unique-exit proxy of the network uses (server
+	// HOSTED-PROXY-UNIQUE-EXIT.md §2). Pro only; the create counts against the
+	// network's hosted proxy cap and creation rate like any proxy. The
+	// initial device state's location, if any, limits where the exit is drawn.
+	UniqueExit bool `json:"unique_exit,omitempty"`
+	// UniqueExitReplace is what happens when a unique exit fails: "auto" (the
+	// server's default when empty) assigns a new unique exit; "manual" keeps
+	// the proxy on its exit until the customer rotates it.
+	UniqueExitReplace string `json:"unique_exit_replace,omitempty"`
+
 	InitialDeviceState *ProxyDeviceState `json:"initial_device_state"`
+}
+
+// The values of ProxyConfig.UniqueExitReplace.
+const (
+	ProxyUniqueExitReplaceAuto   = "auto"
+	ProxyUniqueExitReplaceManual = "manual"
+)
+
+// The values of ProxyExit.State.
+const (
+	ProxyExitStateAssigned  = "assigned"
+	ProxyExitStateReplacing = "replacing"
+	ProxyExitStateNoSupply  = "no_supply"
+)
+
+// `model.ProxyExit`: the current exit of a unique-exit proxy, reported in
+// `proxy_config_result.exit` and in the /network/proxies listing. The exit's
+// IP is never sent; ExitId is an opaque id that stays the same while the
+// proxy keeps one exit and changes when it is replaced or rotated.
+type ProxyExit struct {
+	ExitId      string `json:"exit_id,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+	Region      string `json:"region,omitempty"`
+	City        string `json:"city,omitempty"`
+	ExitSince   *Time  `json:"exit_since,omitempty"`
+	// State is "assigned", "replacing" or "no_supply" (ProxyExitState*)
+	State string `json:"state,omitempty"`
 }
 
 // `model.ExtendedProxyDeviceState`. The server's
@@ -69,6 +107,9 @@ type ProxyConfigResult struct {
 	AuthToken      string `json:"auth_token,omitempty"`
 	// WgConfig is the WireGuard leg, nil when the plan does not include it
 	WgConfig *WgConfig `json:"wg_config,omitempty"`
+	// Exit is the proxy's current exit when it was created with
+	// ProxyConfig.UniqueExit, nil otherwise
+	Exit *ProxyExit `json:"exit,omitempty"`
 
 	HttpProxyAuth  *ProxyAuthResult `json:"http_proxy_auth"`
 	SocksProxyAuth *ProxyAuthResult `json:"socks_proxy_auth"`
