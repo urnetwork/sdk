@@ -789,6 +789,7 @@ module URnetwork
       attach_function :urnet_device_local_close_post_quantum_identity_view_controller, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_device_local_close_provider_locations_view_controller, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_device_local_close_provider_status_view_controller, [:uint64, :uint64], :void, blocking: true
+      attach_function :urnet_device_local_close_rpc_server, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_close_view_controller, [:uint64, :urnet_view_controller_close_cb, :urnet_view_controller_start_cb, :urnet_view_controller_stop_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_connect_sn_wallet, [:uint64, :string, :string, :string, :urnet_sn_connect_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_disable_subprotocol, [:uint64, :int64], :void, blocking: true

@@ -790,6 +790,7 @@ public interface Raw extends Library {
   void urnet_device_local_close_post_quantum_identity_view_controller(long a0, long a1);
   void urnet_device_local_close_provider_locations_view_controller(long a0, long a1);
   void urnet_device_local_close_provider_status_view_controller(long a0, long a1);
+  void urnet_device_local_close_rpc_server(long a0);
   void urnet_device_local_close_view_controller(long a0, urnet_view_controller_close_cb a1, urnet_view_controller_start_cb a2, urnet_view_controller_stop_cb a3, Pointer a4);
   void urnet_device_local_connect_sn_wallet(long a0, String a1, String a2, String a3, urnet_sn_connect_wallet_cb a4, Pointer a5);
   void urnet_device_local_disable_subprotocol(long a0, long a1);

@@ -11745,6 +11745,16 @@ func urnet_device_local_close_provider_status_view_controller(self C.uint64_t, v
 	self_.CloseProviderStatusViewController(vc_)
 }
 
+//export urnet_device_local_close_rpc_server
+func urnet_device_local_close_rpc_server(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_rpc_server")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_rpc_server")
+	if !ok {
+		return
+	}
+	self_.CloseRpcServer()
+}
+
 //export urnet_device_local_close_view_controller
 func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_close_view_controller")

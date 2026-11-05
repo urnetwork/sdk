@@ -6183,6 +6183,32 @@ func (self *DeviceLocal) SetRpcServer(serverPem string, clientCertPem string, ho
 	return nil
 }
 
+// CloseRpcServer stops the rpc server SetRpcServer started and leaves the
+// device running. The listener's port is released before this returns, so no
+// remote can reach the device until a later SetRpcServer starts a new server.
+// For a host that keeps one device across sessions and serves the rpc only
+// while a session runs. A no-op without a server and after Close.
+func (self *DeviceLocal) CloseRpcServer() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.deviceLocalRpcManager == nil {
+		return
+	}
+
+	self.log.Infof("[dlrpc]close rpc server %s", self.rpcHostPort)
+
+	deviceLocalRpcManager := self.deviceLocalRpcManager
+	// closing synchronously releases the listener's port
+	deviceLocalRpcManager.Close()
+	self.deviceLocalRpcManager = nil
+	self.startLifecycleWorkerWithLock(func() {
+		_ = deviceLocalRpcManager.CloseAndWait(context.Background())
+	})
+	self.rpcHostPort = ""
+	self.rpcServerPem = ""
+	self.rpcClientCertPem = ""
+}
+
 // StartHostedRpc runs the rpc over a custom listener (rather than binding a
 // localhost websocket server) and marks every rpc session as
 // hosted-incompatible, so the remote cannot change route local or provide
