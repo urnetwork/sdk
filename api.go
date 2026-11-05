@@ -1003,8 +1003,12 @@ type AuthNetworkClientError struct {
 	// than a hard cap. The client should prompt the user to upgrade (or, for an
 	// agent, pay inline over x402 -- the same request answers 402 with payment
 	// terms). Distinct from ClientLimitExceeded, which no upgrade can lift.
-	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
-	Message         string `json:"message"`
+	UpgradeRequired bool `json:"upgrade_required,omitempty"`
+	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
+	// does not already hold in the location; nothing was created and neither
+	// the cap nor the creation rate was spent
+	NoUniqueSupply bool   `json:"no_unique_supply,omitempty"`
+	Message        string `json:"message"`
 }
 
 // Registers with the invoking sign-in, retaining its credential generation
@@ -1086,7 +1090,10 @@ type NetworkClientInfo struct {
 	ProvideMode int `json:"provide_mode"`
 	// ProxyClient carries the hosted proxy device's credentials; only the
 	// /network/proxies listing fills it, /network/clients never does
-	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
+	ProxyClient *ProxyClient `json:"proxy_client,omitempty"`
+	// Exit is a unique-exit proxy's current exit (ProxyConfig.UniqueExit),
+	// beside ProxyClient in the /network/proxies listing; nil otherwise
+	Exit        *ProxyExit                   `json:"exit,omitempty"`
 	Connections *NetworkClientConnectionList `json:"connections"`
 }
 
@@ -1110,9 +1117,6 @@ type ProxyClient struct {
 	ApiPort        int    `json:"api_port"`
 
 	WgConfig *WgConfig `json:"wg_config"`
-	// Exit is the proxy's current exit when it was created with
-	// ProxyConfig.UniqueExit, nil otherwise
-	Exit *ProxyExit `json:"exit,omitempty"`
 }
 
 // `model.WgConfig`: the WireGuard leg of a hosted proxy, nil when the plan
@@ -4011,8 +4015,17 @@ type RotateProxyExitArgs struct {
 
 type RotateProxyExitResult struct {
 	// Exit is the proxy's new exit
-	Exit  *ProxyExit `json:"exit,omitempty"`
-	Error *ApiError  `json:"error,omitempty"`
+	Exit  *ProxyExit            `json:"exit,omitempty"`
+	Error *RotateProxyExitError `json:"error,omitempty"`
+}
+
+// A refused rotate: the proxy keeps its current exit
+type RotateProxyExitError struct {
+	// no other unique exit is available in the proxy's location
+	NoUniqueSupply bool `json:"no_unique_supply,omitempty"`
+	// the proxy rotated in the last minute, or 60 times today
+	RateLimited bool   `json:"rate_limited,omitempty"`
+	Message     string `json:"message"`
 }
 
 type RotateProxyExitCallback connect.ApiCallback[*RotateProxyExitResult]

@@ -55,18 +55,36 @@ const (
 	ProxyExitStateNoSupply  = "no_supply"
 )
 
+// The values of ProxyExit.StateReason, set with "replacing" or "no_supply".
+const (
+	ProxyExitStateReasonOffline     = "offline"
+	ProxyExitStateReasonUnreachable = "unreachable"
+	ProxyExitStateReasonVerdict     = "verdict"
+	ProxyExitStateReasonCollision   = "collision"
+	ProxyExitStateReasonCap         = "cap"
+	ProxyExitStateReasonManual      = "manual"
+	ProxyExitStateReasonNoSupply    = "no_supply"
+)
+
 // `model.ProxyExit`: the current exit of a unique-exit proxy, reported in
-// `proxy_config_result.exit` and in the /network/proxies listing. The exit's
-// IP is never sent; ExitId is an opaque id that stays the same while the
-// proxy keeps one exit and changes when it is replaced or rotated.
+// `proxy_config_result.exit` and beside `proxy_client` in the /network/proxies
+// listing. The exit's IP is never sent; ExitId is an opaque id that stays the
+// same while the proxy keeps one exit and changes when it is replaced or
+// rotated, and is absent while the proxy has no exit.
 type ProxyExit struct {
-	ExitId      string `json:"exit_id,omitempty"`
+	ExitId      *Id    `json:"exit_id,omitempty"`
 	CountryCode string `json:"country_code,omitempty"`
 	Region      string `json:"region,omitempty"`
 	City        string `json:"city,omitempty"`
 	ExitSince   *Time  `json:"exit_since,omitempty"`
 	// State is "assigned", "replacing" or "no_supply" (ProxyExitState*)
-	State string `json:"state,omitempty"`
+	State string `json:"state"`
+	// StateReason says why, with "replacing" or "no_supply"
+	// (ProxyExitStateReason*)
+	StateReason string `json:"state_reason,omitempty"`
+	// ReplaceMode is the proxy's ProxyConfig.UniqueExitReplace, "auto" or
+	// "manual"
+	ReplaceMode string `json:"replace_mode"`
 }
 
 // `model.ExtendedProxyDeviceState`. The server's
