@@ -526,6 +526,13 @@ inline constexpr const char* ProviderStatusReasonSlow = "slow";
 inline constexpr const char* ProviderStatusReasonSpeedTestMissing = "speed_test_missing";
 inline constexpr const char* ProxyExitStateAssigned = "assigned";
 inline constexpr const char* ProxyExitStateNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonCap = "cap";
+inline constexpr const char* ProxyExitStateReasonCollision = "collision";
+inline constexpr const char* ProxyExitStateReasonManual = "manual";
+inline constexpr const char* ProxyExitStateReasonNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonOffline = "offline";
+inline constexpr const char* ProxyExitStateReasonUnreachable = "unreachable";
+inline constexpr const char* ProxyExitStateReasonVerdict = "verdict";
 inline constexpr const char* ProxyExitStateReplacing = "replacing";
 inline constexpr const char* ProxyUniqueExitReplaceAuto = "auto";
 inline constexpr const char* ProxyUniqueExitReplaceManual = "manual";
@@ -1075,6 +1082,7 @@ struct RemoveWalletResult;
 struct RevokeNetworkSessionArgs;
 struct RevokeOtherNetworkSessionsArgs;
 struct RotateProxyExitArgs;
+struct RotateProxyExitError;
 struct RotateProxyExitResult;
 struct SetEmojiTagArgs;
 struct SetEmojiTagError;
@@ -1555,6 +1563,7 @@ struct AuthNetworkClientArgs {
 struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
 	std::optional<bool> upgrade_required;
+	std::optional<bool> no_unique_supply;
 	std::string message{};
 };
 
@@ -1569,7 +1578,9 @@ struct ProxyExit {
 	std::optional<std::string> region;
 	std::optional<std::string> city;
 	std::optional<std::string> exit_since;
-	std::optional<std::string> state;
+	std::string state{};
+	std::optional<std::string> state_reason;
+	std::string replace_mode{};
 };
 
 struct WgConfig {
@@ -3020,7 +3031,6 @@ struct ProxyClient {
 	int64_t socks_proxy_port{};
 	int64_t api_port{};
 	std::optional<WgConfig> wg_config;
-	std::optional<ProxyExit> exit;
 };
 
 struct NetworkClientInfo {
@@ -3037,6 +3047,7 @@ struct NetworkClientInfo {
 	std::optional<std::string> principal;
 	int64_t provide_mode{};
 	std::optional<ProxyClient> proxy_client;
+	std::optional<ProxyExit> exit;
 	std::optional<NetworkClientConnectionList> connections;
 };
 
@@ -3668,9 +3679,15 @@ struct RotateProxyExitArgs {
 	std::optional<std::string> client_id;
 };
 
+struct RotateProxyExitError {
+	std::optional<bool> no_unique_supply;
+	std::optional<bool> rate_limited;
+	std::string message{};
+};
+
 struct RotateProxyExitResult {
 	std::optional<ProxyExit> exit;
-	std::optional<ApiError> error;
+	std::optional<RotateProxyExitError> error;
 };
 
 struct SetEmojiTagArgs {
@@ -5222,6 +5239,8 @@ inline void to_json(nlohmann::json& j, const RevokeOtherNetworkSessionsArgs& v);
 inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v);
 inline void to_json(nlohmann::json& j, const RotateProxyExitArgs& v);
 inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v);
 inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v);
 inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v);
@@ -6931,6 +6950,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	if (v.upgrade_required) {
 		j["upgrade_required"] = *v.upgrade_required;
 	}
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
@@ -6944,6 +6966,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.upgrade_required = std::move(tmp);
+	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -6984,9 +7011,11 @@ inline void to_json(nlohmann::json& j, const ProxyExit& v) {
 	if (v.exit_since) {
 		j["exit_since"] = *v.exit_since;
 	}
-	if (v.state) {
-		j["state"] = *v.state;
+	j["state"] = v.state;
+	if (v.state_reason) {
+		j["state_reason"] = *v.state_reason;
 	}
+	j["replace_mode"] = v.replace_mode;
 }
 inline void from_json(const nlohmann::json& j, ProxyExit& v) {
 	if (!j.is_object()) {
@@ -7018,9 +7047,15 @@ inline void from_json(const nlohmann::json& j, ProxyExit& v) {
 		v.exit_since = std::move(tmp);
 	}
 	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("state_reason"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
 		it->get_to(tmp);
-		v.state = std::move(tmp);
+		v.state_reason = std::move(tmp);
+	}
+	if (auto it = j.find("replace_mode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.replace_mode);
 	}
 }
 
@@ -13400,9 +13435,6 @@ inline void to_json(nlohmann::json& j, const ProxyClient& v) {
 	if (v.wg_config) {
 		j["wg_config"] = *v.wg_config;
 	}
-	if (v.exit) {
-		j["exit"] = *v.exit;
-	}
 }
 inline void from_json(const nlohmann::json& j, ProxyClient& v) {
 	if (!j.is_object()) {
@@ -13471,11 +13503,6 @@ inline void from_json(const nlohmann::json& j, ProxyClient& v) {
 		it->get_to(tmp);
 		v.wg_config = std::move(tmp);
 	}
-	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
-		ProxyExit tmp{};
-		it->get_to(tmp);
-		v.exit = std::move(tmp);
-	}
 }
 
 inline void to_json(nlohmann::json& j, const NetworkClientInfo& v) {
@@ -13510,6 +13537,9 @@ inline void to_json(nlohmann::json& j, const NetworkClientInfo& v) {
 	j["provide_mode"] = v.provide_mode;
 	if (v.proxy_client) {
 		j["proxy_client"] = *v.proxy_client;
+	}
+	if (v.exit) {
+		j["exit"] = *v.exit;
 	}
 	if (v.connections) {
 		j["connections"] = *v.connections;
@@ -13575,6 +13605,11 @@ inline void from_json(const nlohmann::json& j, NetworkClientInfo& v) {
 		ProxyClient tmp{};
 		it->get_to(tmp);
 		v.proxy_client = std::move(tmp);
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("connections"); it != j.end() && !it->is_null()) {
 		NetworkClientConnectionList tmp{};
@@ -16607,6 +16642,35 @@ inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v) {
+	j = nlohmann::json::object();
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
+	if (v.rate_limited) {
+		j["rate_limited"] = *v.rate_limited;
+	}
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
+	}
+	if (auto it = j.find("rate_limited"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.rate_limited = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v) {
 	j = nlohmann::json::object();
 	if (v.exit) {
@@ -16626,7 +16690,7 @@ inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v) {
 		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
-		ApiError tmp{};
+		RotateProxyExitError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
 	}

@@ -475,6 +475,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDE_NETWORK_MODE_WI_FI "wifi"
 #define URNET_PROXY_EXIT_STATE_ASSIGNED "assigned"
 #define URNET_PROXY_EXIT_STATE_NO_SUPPLY "no_supply"
+#define URNET_PROXY_EXIT_STATE_REASON_CAP "cap"
+#define URNET_PROXY_EXIT_STATE_REASON_COLLISION "collision"
+#define URNET_PROXY_EXIT_STATE_REASON_MANUAL "manual"
+#define URNET_PROXY_EXIT_STATE_REASON_NO_SUPPLY "no_supply"
+#define URNET_PROXY_EXIT_STATE_REASON_OFFLINE "offline"
+#define URNET_PROXY_EXIT_STATE_REASON_UNREACHABLE "unreachable"
+#define URNET_PROXY_EXIT_STATE_REASON_VERDICT "verdict"
 #define URNET_PROXY_EXIT_STATE_REPLACING "replacing"
 #define URNET_PROXY_UNIQUE_EXIT_REPLACE_AUTO "auto"
 #define URNET_PROXY_UNIQUE_EXIT_REPLACE_MANUAL "manual"
@@ -2960,6 +2967,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthNetworkClientError (json):
  *   client_limit_exceeded: boolean
  *   upgrade_required?: boolean
+ *   no_unique_supply?: boolean
  *   message: string
  */
 
@@ -4463,6 +4471,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   principal?: string
  *   provide_mode: number
  *   proxy_client?: ProxyClient | null
+ *   exit?: ProxyExit | null
  *   connections: NetworkClientConnectionList | null
  */
 
@@ -4980,7 +4989,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   socks_proxy_port: number
  *   api_port: number
  *   wg_config: WgConfig | null
- *   exit?: ProxyExit | null
  */
 
 /* ProxyConfig (json):
@@ -5033,12 +5041,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* ProxyExit (json):
- *   exit_id?: string
+ *   exit_id?: string (uuid) | null
  *   country_code?: string
  *   region?: string
  *   city?: string
  *   exit_since?: string (rfc3339) | null
- *   state?: string
+ *   state: string
+ *   state_reason?: string
+ *   replace_mode: string
  */
 
 /* PublicAccountApiKey (json):
@@ -5269,9 +5279,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   client_id: string (uuid) | null
  */
 
+/* RotateProxyExitError (json):
+ *   no_unique_supply?: boolean
+ *   rate_limited?: boolean
+ *   message: string
+ */
+
 /* RotateProxyExitResult (json):
  *   exit?: ProxyExit | null
- *   error?: ApiError | null
+ *   error?: RotateProxyExitError | null
  */
 
 /* RouteOverride (json):

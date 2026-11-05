@@ -100,12 +100,14 @@ export interface ProxyConfigResult {
 }
 
 export interface ProxyExit {
-  exit_id?: string;
+  exit_id?: string | null;
   country_code?: string;
   region?: string;
   city?: string;
   exit_since?: string | null;
-  state?: string;
+  state: string;
+  state_reason?: string;
+  replace_mode: string;
 }
 
 export interface WgConfig {
@@ -610,6 +612,7 @@ export interface ProviderSpec {
 export interface AuthNetworkClientError {
   client_limit_exceeded: boolean;
   upgrade_required?: boolean;
+  no_unique_supply?: boolean;
   message: string;
 }
 

@@ -1393,7 +1393,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1314) ==
+== skipped (1315) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2445,6 +2445,7 @@ RevokeNetworkSessionArgs: data: crosses as json
 RevokeOtherNetworkSessionsArgs: data: crosses as json
 RotateProxyExitArgs: data: crosses as json
 RotateProxyExitCallback: callback interface: crosses as c function pointer
+RotateProxyExitError: data: crosses as json
 RotateProxyExitResult: data: crosses as json
 RouteLocalChangeListener: callback interface: crosses as c function pointer
 RouteOverride: data: crosses as json
