@@ -869,6 +869,23 @@ type DeviceLocalSettings struct {
 	// (server CPUOPT4.md, Part B #1); gobind binds it like any bool, and apps
 	// leave it off.
 	OutOfBalanceRefillProbe bool `json:"-"`
+	// Holds the refill of a discovery window whose device has had no user
+	// activity for this long (`connect.MultiClientSettings.IdleRefillHold`):
+	// its expansion builds nothing until the next user activity, which
+	// expands it at once. Zero (the default, and what apps keep) refills
+	// whether or not the user is active. Out of the settings json; only the
+	// proxy service sets it.
+	//gomobile:noexport Go-only hosted-device refill policy.
+	IdleRefillHold time.Duration `json:"-"`
+	// The host's own record of user activity on the device
+	// (`connect.MultiClientSettings.UserActivitySince`), which the windows
+	// read instead of the device's packets; the host calls
+	// DeviceLocal.NoteUserActivity when it records activity. Nil reads the
+	// device's packets. Only the proxy service sets it, because its hosted
+	// devices' tuns send their own upkeep (DoH keepalive pings) through the
+	// device.
+	//gomobile:noexport Go-only host activity reader.
+	UserActivitySince func(since time.Time) bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -1104,6 +1121,10 @@ type DeviceLocal struct {
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
+	// The current multi client, for NoteUserActivity, which the host calls on
+	// its traffic path without the state lock. Set and cleared with
+	// remoteUserNatClient.
+	activityMultiClient atomic.Pointer[connect.RemoteUserNatMultiClient]
 	contractStatusSub   func()
 	windowMonitorSub    func()
 	// the delay stats of the current multi client generation
@@ -2584,12 +2605,15 @@ func applyPlatformTransportMemoryUsage(
 
 // The window policy the host chose for every multi client of the device: the
 // process counters its windows count into, whether its strict windows hand
-// drained slots over, and whether its windows hold their refill while the
-// payer is out of balance.
+// drained slots over, whether its windows hold their refill while the payer is
+// out of balance or while no user is active, and whose record of user activity
+// they read.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
 	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
 	settings.OutOfBalanceRefillProbe = deviceLocalSettings.OutOfBalanceRefillProbe
+	settings.IdleRefillHold = deviceLocalSettings.IdleRefillHold
+	settings.UserActivitySince = deviceLocalSettings.UserActivitySince
 }
 
 // Keeps an absent/reset window unknown instead of manufacturing readiness.
@@ -2724,6 +2748,18 @@ func (self *DeviceLocal) GetPublicIdentityKeyHash() string {
 		return ""
 	}
 	return PublicIdentityKeyHash(publicKey)
+}
+
+// NoteUserActivity tells the device's windows that the host recorded user
+// activity (DeviceLocalSettings.UserActivitySince): a window whose refill
+// waits for a user wakes and expands. Lock-free, so the host may call it on
+// its traffic path; a device with no multi client ignores it.
+//
+//gomobile:noexport
+func (self *DeviceLocal) NoteUserActivity() {
+	if multi := self.activityMultiClient.Load(); multi != nil {
+		multi.NoteUserActivity()
+	}
 }
 
 // GetProviderIdentities returns the providers with an established,
@@ -5318,6 +5354,7 @@ func (self *DeviceLocal) applyDestination(
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
 			self.peerIdentitySub = multi.AddPeerIdentityChangeCallback(self.providerIdentitiesChanged)
 			self.remoteUserNatClient = multi
+			self.activityMultiClient.Store(multi)
 			if upgradeMux != nil {
 				upgradeMux.SetUpstreamBatchClient(multi)
 				// the mux's DNS reverse index drives ServerName path affinity (point 4)
@@ -6631,6 +6668,7 @@ func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
 	}
 	remoteUserNatClient := self.remoteUserNatClient
 	self.remoteUserNatClient = nil
+	self.activityMultiClient.Store(nil)
 	if remoteUserNatClient != nil {
 		if multi, ok := remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
 			addConnectPacketStats(&self.packetStatsBase, multi.PacketStats())
