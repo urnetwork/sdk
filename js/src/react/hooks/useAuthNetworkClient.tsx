@@ -4,26 +4,26 @@ import {
   AuthNetworkClientArgs,
   AuthNetworkClientResult,
 } from "../../generated";
+import { AuthNetworkClientCalls } from "../../auth_network_client_calls";
 import { tokenRequiredError } from "./constants";
 
+// A newer call supersedes an older one still in flight, and unmounting
+// orphans the calls in flight; neither aborts the request, because the server
+// creates the client either way. A superseded or orphaned call's client is
+// removed when it answers, and the call answers "Request was cancelled", as it
+// did (auth_network_client_calls.ts).
 export function useAuthNetworkClient() {
   const api = useAPI();
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const callsRef = useRef<AuthNetworkClientCalls | null>(null);
+  if (callsRef.current === null) {
+    callsRef.current = new AuthNetworkClientCalls();
+  }
 
   const authNetworkClient = useCallback(
     async (params: AuthNetworkClientArgs): Promise<AuthNetworkClientResult> => {
-      // Cancel previous request if it exists
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      // Create new abort controller for this request
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
-
       if (!token) {
         const err = new Error(tokenRequiredError);
         setError(err);
@@ -40,62 +40,35 @@ export function useAuthNetworkClient() {
       setError(null);
 
       try {
-        const result = await api.authNetworkClient(
-          params,
-          token,
-          abortController.signal,
+        const outcome = await callsRef.current!.run(
+          () => api.authNetworkClient(params, token),
+          (clientId) => api.removeNetworkClient({ client_id: clientId }, token),
         );
-
-        // Check if this request was aborted
-        if (abortController.signal.aborted) {
-          return {
-            proxy_config_result: null,
-            error: {
-              message: "Request was cancelled",
-              client_limit_exceeded: false,
-            },
-          };
+        if (outcome.current) {
+          setLoading(false);
         }
-
-        return result;
+        return outcome.result;
       } catch (err) {
-        // Ignore abort errors
-        if (err instanceof Error && err.name === "AbortError") {
-          return {
-            proxy_config_result: null,
-            error: {
-              message: "Request was cancelled",
-              client_limit_exceeded: false,
-            },
-          };
-        }
-
+        setLoading(false);
         setError(err as Error);
         return {
           proxy_config_result: null,
           error: {
             message:
-              err instanceof Error ? err.message : "Auth code login failed",
+              err instanceof Error ? err.message : "Auth network client failed",
             client_limit_exceeded: false,
           },
         };
-      } finally {
-        // Only set loading to false if this controller wasn't aborted
-        if (!abortController.signal.aborted) {
-          setLoading(false);
-        }
       }
     },
     [api, token],
   );
 
-  // Cleanup on unmount
+  // the owner is present while mounted; a remount (StrictMode) reopens it
   useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
+    const calls = callsRef.current!;
+    calls.reopen();
+    return () => calls.close();
   }, []);
 
   return {

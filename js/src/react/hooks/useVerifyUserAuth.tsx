@@ -47,7 +47,8 @@ export function useVerifyUserAuth() {
         setLoading(false);
       }
     },
-    [api],
+    // the token too, or a callback made before sign-in kept a stale token
+    [api, token],
   );
 
   return {

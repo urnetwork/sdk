@@ -6,6 +6,7 @@ import type {
   AuthLoginWithPasswordArgs,
   AuthLoginWithPasswordResult,
   AuthNetworkClientArgs,
+  AuthNetworkClientError,
   AuthNetworkClientResult,
   AuthVerifyArgs,
   AuthVerifyResult,
@@ -48,6 +49,32 @@ const legacyMessage = (error: unknown, fallback: string): string =>
   isURNetworkApiError(error) && error.kind === "http"
     ? `HTTP error! status: ${error.status}`
     : errorMessage(error, fallback);
+
+// A plan limit refusing POST /network/auth-client while x402 is on: HTTP 402
+// whose body carries the server's message in `error` beside the payment
+// terms. It is the refusal a 200 answers with `error.upgrade_required`, so it
+// reads as that one; the legacy message ("HTTP error! status: 402") dropped
+// why the client was refused (the plan's active-proxy cap, the per-minute
+// rate, or the concurrent client limit). Anything else is not a limit.
+const authNetworkClientLimitRefusal = (
+  error: unknown,
+): AuthNetworkClientError | null => {
+  if (!isURNetworkApiError(error) || error.kind !== "http" || error.status !== 402) {
+    return null;
+  }
+  const body = error.body as { error?: unknown } | null | undefined;
+  const bodyError = body?.error;
+  let message = `HTTP error! status: ${error.status}`;
+  if (typeof bodyError === "string" && bodyError !== "") {
+    message = bodyError;
+  } else if (
+    typeof (bodyError as { message?: unknown } | undefined)?.message === "string" &&
+    (bodyError as { message: string }).message !== ""
+  ) {
+    message = (bodyError as { message: string }).message;
+  }
+  return { message, client_limit_exceeded: true, upgrade_required: true };
+};
 
 const logFailure = (label: string, error: unknown) => {
   if (isURNetworkApiError(error) && error.kind === "http") {
@@ -296,6 +323,10 @@ export class URNetworkAPI {
       ) {
         console.log("Auth network client request was cancelled");
         throw error;
+      }
+      const limitRefusal = authNetworkClientLimitRefusal(error);
+      if (limitRefusal) {
+        return { proxy_config_result: null, error: limitRefusal };
       }
       logFailure("Auth network client", error);
       return {
