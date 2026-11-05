@@ -162,6 +162,7 @@ export interface SessionSignOutResult {
   operation_id: string | null;
   revocation_confirmed: boolean;
   credential_cleared: boolean;
+  client_removed: boolean;
 }
 
 export interface ClientSessionError {
