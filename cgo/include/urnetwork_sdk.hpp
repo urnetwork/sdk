@@ -2291,6 +2291,7 @@ struct DeviceLocalMemoryUsage {
 struct DeviceLocalSettings {
 	int64_t MemoryTargetByteCount{};
 	bool LowMemoryProfile{};
+	int64_t ProviderSendBorrowByteCount{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
 	int64_t NetContractStatusDuration{};
@@ -10254,6 +10255,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
 	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
 	j["LowMemoryProfile"] = v.LowMemoryProfile;
+	j["ProviderSendBorrowByteCount"] = v.ProviderSendBorrowByteCount;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
 	j["NetContractStatusDuration"] = v.NetContractStatusDuration;
@@ -10308,6 +10310,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("LowMemoryProfile"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LowMemoryProfile);
+	}
+	if (auto it = j.find("ProviderSendBorrowByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderSendBorrowByteCount);
 	}
 	if (auto it = j.find("SendTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SendTimeout);
