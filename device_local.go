@@ -403,8 +403,9 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShareByteCount)
 	}
 	return &DeviceLocalSettings{
-		MemoryTargetByteCount: memoryTargetByteCount,
-		LowMemoryProfile:      lowMemoryProfile,
+		MemoryTargetByteCount:       memoryTargetByteCount,
+		LowMemoryProfile:            lowMemoryProfile,
+		ProviderSendBorrowByteCount: 0,
 		// a strict window hands a drained slot to its replacement instead of
 		// building candidates its hard max refuses (see the field)
 		StrictWindowHandover: true,
@@ -652,6 +653,14 @@ type DeviceLocalSettings struct {
 	// or changes the process Go limit/message pools. Zero target still opts
 	// out of per-device sizing; actual mobile hosts retain their policy.
 	LowMemoryProfile bool
+
+	// Extra retained-send permission, in bytes, while providing under a device
+	// transfer root. Non-positive disables; positive requests are capped at the
+	// provider's ordinary send ceiling, so at most one additional ceiling can
+	// borrow unused root capacity. The default preserves the existing profile.
+	// Client, NAT and receive limits stay unchanged; this is overlapping
+	// permission, not reserved memory or a guarantee of fair zero-wait access.
+	ProviderSendBorrowByteCount int64
 
 	// time to give up (drop) sending a packet to a destination
 	//
@@ -4677,6 +4686,19 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 			// working while its pool is reallocated
 			resendQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 3, 7), 256*1024))
 			receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
+			if provideActive && self.transferMemory != nil &&
+				0 < self.transferMemory.providerShare &&
+				0 < self.settings.ProviderSendBorrowByteCount &&
+				resendQueueBudget.Parent() == self.transferMemory.provider {
+				// The ordinary ceilings were restored above, so repeated role
+				// application never compounds a previous loan. The same root
+				// charges every borrower and preserves already-admitted owners.
+				borrowByteCount := min(self.settings.ProviderSendBorrowByteCount,
+					resendQueueBudget.TotalByteCount())
+				self.transferMemory.provider.SetTotalByteCount(
+					self.transferMemory.provider.TotalByteCount() + borrowByteCount)
+				resendQueueBudget.SetTotalByteCount(resendQueueBudget.TotalByteCount() + borrowByteCount)
+			}
 		}
 	}
 }
