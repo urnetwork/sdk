@@ -61,15 +61,14 @@ func TestIoLoopCopyPacketUsesExactPacketRootClass(t *testing.T) {
 		wantRootBytes connect.ByteCount
 	}{
 		{name: "tcp ack", packetBytes: 60, wantRootBytes: 256},
-		{name: "full payload", packetBytes: 1100, wantRootBytes: 2048},
+		{name: "full payload", packetBytes: connect.DefaultTunnelMtu, wantRootBytes: 2048},
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			packet := ioLoopCopyPacket(readBuffer[:], testCase.packetBytes)
-			defer connect.MessagePoolReturn(packet)
-			if got := connect.MessagePoolPacketRootByteCount(packet); got != testCase.wantRootBytes {
-				t.Fatalf("packet root bytes = %d, want %d", got, testCase.wantRootBytes)
-			}
-		})
+		packet := ioLoopCopyPacket(readBuffer[:], testCase.packetBytes)
+		got := connect.MessagePoolPacketRootByteCount(packet)
+		connect.MessagePoolReturn(packet)
+		if got != testCase.wantRootBytes {
+			t.Fatalf("%s packet root bytes = %d, want %d", testCase.name, got, testCase.wantRootBytes)
+		}
 	}
 }
 
@@ -79,7 +78,7 @@ func TestIoLoopCopyPacketUsesExactPacketRootClass(t *testing.T) {
 // new copy into either the 256-byte or 2-KiB class. The syscall itself is
 // deliberately outside this microbenchmark and is identical in both designs.
 func BenchmarkIoLoopPacketOwnership(b *testing.B) {
-	for _, size := range []int{60, 1100} {
+	for _, size := range []int{60, connect.DefaultTunnelMtu} {
 		b.Run(fmt.Sprintf("direct-full-root/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {

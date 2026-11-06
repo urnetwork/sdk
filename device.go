@@ -529,10 +529,9 @@ func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	return settings
 }
 
-// GetDefaultTunnelMtu exposes the tunnel interface mtu every native tunnel
-// configures (connect.DefaultTunnelMtu, 1280 so the interface can carry IPv6).
-// Packets written into the tunnel are at most connect.DefaultMtu, which is
-// below this by design (connect/IPV6.md C1).
+// The native tunnel interface and provider packetizer share the 1280-byte
+// inner mtu. Carrier framing accounts for its outer overhead separately.
+// The interface remains wide enough for ipv6 (connect/IPV6.md C1).
 func GetDefaultTunnelMtu() int32 {
 	return int32(connect.DefaultTunnelMtu)
 }

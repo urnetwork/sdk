@@ -6,10 +6,8 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// The tunnel mtu the apps configure is connect's interface mtu (1280, so the
-// interface can carry IPv6), and the packetizer contract stays strictly
-// inside it so a full packet written into the tunnel always fits
-// (connect/IPV6.md C1).
+// Native interfaces and the provider packetizer use the same inner mtu;
+// carrier framing must not lower either side of the SDK contract.
 func TestDefaultTunnelMtuIsTheInterfaceMtu(t *testing.T) {
 	got := GetDefaultTunnelMtu()
 	if got != int32(connect.DefaultTunnelMtu) {
@@ -20,9 +18,9 @@ func TestDefaultTunnelMtuIsTheInterfaceMtu(t *testing.T) {
 		)
 	}
 	if got != 1280 {
-		t.Fatalf("SDK tunnel MTU=%d want=1280 (the IPv6 minimum link mtu)", got)
+		t.Fatalf("SDK_TUNNEL_MTU_NOT_1280: got=%d", got)
 	}
-	if int32(connect.DefaultMtu) > got {
-		t.Fatalf("packetizer MTU=%d exceeds the interface MTU=%d", connect.DefaultMtu, got)
+	if int32(connect.DefaultMtu) != got {
+		t.Fatalf("SDK_PACKET_MTU_NOT_1280: packetizer=%d interface=%d", connect.DefaultMtu, got)
 	}
 }
