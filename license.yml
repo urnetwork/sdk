@@ -3561,7 +3561,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/crypto
-    version: v0.54.0
+    version: v0.58.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3606,7 +3606,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/net
-    version: v0.57.0
+    version: v0.62.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3615,7 +3615,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/sync
-    version: v0.22.0
+    version: v0.24.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3624,7 +3624,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/sys
-    version: v0.47.0
+    version: v0.49.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3633,7 +3633,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/text
-    version: v0.40.0
+    version: v0.43.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
