@@ -2849,7 +2849,7 @@ entries:
     copyright: Copyright 2018 Stefan Penner
     text: 902dbb415467
   - name: github.com/andybalholm/brotli
-    version: v1.0.6
+    version: v1.2.7
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3046,7 +3046,7 @@ entries:
     copyright: Copyright (c) 2014 Juan Batiz-Benet
     text: 2537fe852143
   - name: github.com/klauspost/compress
-    version: v1.19.1
+    version: v1.20.2
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
