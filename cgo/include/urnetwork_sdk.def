@@ -104,6 +104,8 @@ EXPORTS
 	urnet_api_requote_crypto_payment
 	urnet_api_revoke_network_session
 	urnet_api_revoke_other_network_sessions
+	urnet_api_rotate_proxy_exit
+	urnet_api_rotate_proxy_exit_sync
 	urnet_api_send_feedback
 	urnet_api_set_by_jwt
 	urnet_api_set_client_info

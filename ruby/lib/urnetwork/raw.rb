@@ -160,6 +160,7 @@ module URnetwork
       callback :urnet_remove_auth_cb, [:pointer, :string, :string], :void
       callback :urnet_remove_network_client_cb, [:pointer, :string, :string], :void
       callback :urnet_remove_wallet_cb, [:pointer, :string, :string], :void
+      callback :urnet_rotate_proxy_exit_cb, [:pointer, :string, :string], :void
       callback :urnet_route_local_change_cb, [:pointer, :bool], :void
       callback :urnet_selected_location_cb, [:pointer, :string], :void
       callback :urnet_selected_provider_location_change_cb, [:pointer], :void
@@ -378,6 +379,8 @@ module URnetwork
       attach_function :urnet_api_requote_crypto_payment, [:uint64, :string, :urnet_crypto_payment_intent_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_revoke_network_session, [:uint64, :string, :urnet_session_operation_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_revoke_other_network_sessions, [:uint64, :string, :urnet_session_operation_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_rotate_proxy_exit, [:uint64, :string, :urnet_rotate_proxy_exit_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_rotate_proxy_exit_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_send_feedback, [:uint64, :string, :urnet_send_feedback_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_set_by_jwt, [:uint64, :string], :void, blocking: true
       attach_function :urnet_api_set_client_info, [:uint64, :string], :void, blocking: true

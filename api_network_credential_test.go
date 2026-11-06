@@ -388,6 +388,17 @@ func apiCredentialCases() []apiCredentialCase {
 			_, err := api.RemoveNetworkClientSyncWithContextAndJwt(ctx, &RemoveNetworkClientArgs{}, credentialTestExplicitByJwt)
 			return err
 		}},
+		// rotating a unique-exit proxy administers the network's proxies, like
+		// GET /network/proxies
+		{"RotateProxyExit", "POST /network/proxy/rotate-exit", "/network/proxy/rotate-exit", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*RotateProxyExitResult]) {
+				api.RotateProxyExit(&RotateProxyExitArgs{}, cb)
+			})
+		}},
+		{"RotateProxyExitSync", "POST /network/proxy/rotate-exit", "/network/proxy/rotate-exit", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.RotateProxyExitSync(&RotateProxyExitArgs{})
+			return err
+		}},
 
 		// own-client payout routes: a provider client's subnet wallet. The
 		// server refuses a client token here only for an Embed network, whose

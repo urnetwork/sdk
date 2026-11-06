@@ -524,6 +524,18 @@ inline constexpr const char* ProviderStatusReasonReliabilityLow = "reliability_l
 inline constexpr const char* ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up";
 inline constexpr const char* ProviderStatusReasonSlow = "slow";
 inline constexpr const char* ProviderStatusReasonSpeedTestMissing = "speed_test_missing";
+inline constexpr const char* ProxyExitStateAssigned = "assigned";
+inline constexpr const char* ProxyExitStateNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonCap = "cap";
+inline constexpr const char* ProxyExitStateReasonCollision = "collision";
+inline constexpr const char* ProxyExitStateReasonManual = "manual";
+inline constexpr const char* ProxyExitStateReasonNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonOffline = "offline";
+inline constexpr const char* ProxyExitStateReasonUnreachable = "unreachable";
+inline constexpr const char* ProxyExitStateReasonVerdict = "verdict";
+inline constexpr const char* ProxyExitStateReplacing = "replacing";
+inline constexpr const char* ProxyUniqueExitReplaceAuto = "auto";
+inline constexpr const char* ProxyUniqueExitReplaceManual = "manual";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
@@ -830,6 +842,7 @@ struct ProxyConfig;
 struct AuthNetworkClientArgs;
 struct AuthNetworkClientError;
 struct ProxyAuthResult;
+struct ProxyExit;
 struct WgConfig;
 struct ProxyConfigResult;
 struct AuthNetworkClientResult;
@@ -1068,6 +1081,9 @@ struct RemoveWalletError;
 struct RemoveWalletResult;
 struct RevokeNetworkSessionArgs;
 struct RevokeOtherNetworkSessionsArgs;
+struct RotateProxyExitArgs;
+struct RotateProxyExitError;
+struct RotateProxyExitResult;
 struct SetEmojiTagArgs;
 struct SetEmojiTagError;
 struct SetEmojiTagResult;
@@ -1526,6 +1542,8 @@ struct ProxyConfig {
 	bool http_require_auth{};
 	bool https_require_auth{};
 	bool enable_wg{};
+	std::optional<bool> unique_exit;
+	std::optional<std::string> unique_exit_replace;
 	std::optional<ProxyDeviceState> initial_device_state;
 };
 
@@ -1545,12 +1563,24 @@ struct AuthNetworkClientArgs {
 struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
 	std::optional<bool> upgrade_required;
+	std::optional<bool> no_unique_supply;
 	std::string message{};
 };
 
 struct ProxyAuthResult {
 	std::string username{};
 	std::string password{};
+};
+
+struct ProxyExit {
+	std::optional<std::string> exit_id;
+	std::optional<std::string> country_code;
+	std::optional<std::string> region;
+	std::optional<std::string> city;
+	std::optional<std::string> exit_since;
+	std::string state{};
+	std::optional<std::string> state_reason;
+	std::string replace_mode{};
 };
 
 struct WgConfig {
@@ -1582,6 +1612,7 @@ struct ProxyConfigResult {
 	std::optional<int64_t> api_port;
 	std::optional<std::string> auth_token;
 	std::optional<WgConfig> wg_config;
+	std::optional<ProxyExit> exit;
 	std::optional<ProxyAuthResult> http_proxy_auth;
 	std::optional<ProxyAuthResult> socks_proxy_auth;
 };
@@ -3016,6 +3047,7 @@ struct NetworkClientInfo {
 	std::optional<std::string> principal;
 	int64_t provide_mode{};
 	std::optional<ProxyClient> proxy_client;
+	std::optional<ProxyExit> exit;
 	std::optional<NetworkClientConnectionList> connections;
 };
 
@@ -3641,6 +3673,21 @@ struct RevokeNetworkSessionArgs {
 
 struct RevokeOtherNetworkSessionsArgs {
 	std::optional<std::string> operation_id;
+};
+
+struct RotateProxyExitArgs {
+	std::optional<std::string> client_id;
+};
+
+struct RotateProxyExitError {
+	std::optional<bool> no_unique_supply;
+	std::optional<bool> rate_limited;
+	std::string message{};
+};
+
+struct RotateProxyExitResult {
+	std::optional<ProxyExit> exit;
+	std::optional<RotateProxyExitError> error;
 };
 
 struct SetEmojiTagArgs {
@@ -4712,6 +4759,8 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v);
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v);
 inline void to_json(nlohmann::json& j, const ProxyAuthResult& v);
 inline void from_json(const nlohmann::json& j, ProxyAuthResult& v);
+inline void to_json(nlohmann::json& j, const ProxyExit& v);
+inline void from_json(const nlohmann::json& j, ProxyExit& v);
 inline void to_json(nlohmann::json& j, const WgConfig& v);
 inline void from_json(const nlohmann::json& j, WgConfig& v);
 inline void to_json(nlohmann::json& j, const ProxyConfigResult& v);
@@ -5188,6 +5237,12 @@ inline void to_json(nlohmann::json& j, const RevokeNetworkSessionArgs& v);
 inline void from_json(const nlohmann::json& j, RevokeNetworkSessionArgs& v);
 inline void to_json(nlohmann::json& j, const RevokeOtherNetworkSessionsArgs& v);
 inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitArgs& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v);
 inline void from_json(const nlohmann::json& j, SetEmojiTagArgs& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagError& v);
@@ -6756,6 +6811,12 @@ inline void to_json(nlohmann::json& j, const ProxyConfig& v) {
 	j["http_require_auth"] = v.http_require_auth;
 	j["https_require_auth"] = v.https_require_auth;
 	j["enable_wg"] = v.enable_wg;
+	if (v.unique_exit) {
+		j["unique_exit"] = *v.unique_exit;
+	}
+	if (v.unique_exit_replace) {
+		j["unique_exit_replace"] = *v.unique_exit_replace;
+	}
 	if (v.initial_device_state) {
 		j["initial_device_state"] = *v.initial_device_state;
 	}
@@ -6784,6 +6845,16 @@ inline void from_json(const nlohmann::json& j, ProxyConfig& v) {
 	}
 	if (auto it = j.find("enable_wg"); it != j.end() && !it->is_null()) {
 		it->get_to(v.enable_wg);
+	}
+	if (auto it = j.find("unique_exit"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.unique_exit = std::move(tmp);
+	}
+	if (auto it = j.find("unique_exit_replace"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.unique_exit_replace = std::move(tmp);
 	}
 	if (auto it = j.find("initial_device_state"); it != j.end() && !it->is_null()) {
 		ProxyDeviceState tmp{};
@@ -6879,6 +6950,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	if (v.upgrade_required) {
 		j["upgrade_required"] = *v.upgrade_required;
 	}
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
@@ -6892,6 +6966,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.upgrade_required = std::move(tmp);
+	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -6912,6 +6991,71 @@ inline void from_json(const nlohmann::json& j, ProxyAuthResult& v) {
 	}
 	if (auto it = j.find("password"); it != j.end() && !it->is_null()) {
 		it->get_to(v.password);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProxyExit& v) {
+	j = nlohmann::json::object();
+	if (v.exit_id) {
+		j["exit_id"] = *v.exit_id;
+	}
+	if (v.country_code) {
+		j["country_code"] = *v.country_code;
+	}
+	if (v.region) {
+		j["region"] = *v.region;
+	}
+	if (v.city) {
+		j["city"] = *v.city;
+	}
+	if (v.exit_since) {
+		j["exit_since"] = *v.exit_since;
+	}
+	j["state"] = v.state;
+	if (v.state_reason) {
+		j["state_reason"] = *v.state_reason;
+	}
+	j["replace_mode"] = v.replace_mode;
+}
+inline void from_json(const nlohmann::json& j, ProxyExit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("exit_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.exit_id = std::move(tmp);
+	}
+	if (auto it = j.find("country_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.country_code = std::move(tmp);
+	}
+	if (auto it = j.find("region"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.region = std::move(tmp);
+	}
+	if (auto it = j.find("city"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.city = std::move(tmp);
+	}
+	if (auto it = j.find("exit_since"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.exit_since = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("state_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state_reason = std::move(tmp);
+	}
+	if (auto it = j.find("replace_mode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.replace_mode);
 	}
 }
 
@@ -7002,6 +7146,9 @@ inline void to_json(nlohmann::json& j, const ProxyConfigResult& v) {
 	}
 	if (v.wg_config) {
 		j["wg_config"] = *v.wg_config;
+	}
+	if (v.exit) {
+		j["exit"] = *v.exit;
 	}
 	if (v.http_proxy_auth) {
 		j["http_proxy_auth"] = *v.http_proxy_auth;
@@ -7104,6 +7251,11 @@ inline void from_json(const nlohmann::json& j, ProxyConfigResult& v) {
 		WgConfig tmp{};
 		it->get_to(tmp);
 		v.wg_config = std::move(tmp);
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("http_proxy_auth"); it != j.end() && !it->is_null()) {
 		ProxyAuthResult tmp{};
@@ -13386,6 +13538,9 @@ inline void to_json(nlohmann::json& j, const NetworkClientInfo& v) {
 	if (v.proxy_client) {
 		j["proxy_client"] = *v.proxy_client;
 	}
+	if (v.exit) {
+		j["exit"] = *v.exit;
+	}
 	if (v.connections) {
 		j["connections"] = *v.connections;
 	}
@@ -13450,6 +13605,11 @@ inline void from_json(const nlohmann::json& j, NetworkClientInfo& v) {
 		ProxyClient tmp{};
 		it->get_to(tmp);
 		v.proxy_client = std::move(tmp);
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("connections"); it != j.end() && !it->is_null()) {
 		NetworkClientConnectionList tmp{};
@@ -16462,6 +16622,77 @@ inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v
 		std::string tmp{};
 		it->get_to(tmp);
 		v.operation_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitArgs& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v) {
+	j = nlohmann::json::object();
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
+	if (v.rate_limited) {
+		j["rate_limited"] = *v.rate_limited;
+	}
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
+	}
+	if (auto it = j.find("rate_limited"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.rate_limited = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v) {
+	j = nlohmann::json::object();
+	if (v.exit) {
+		j["exit"] = *v.exit;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		RotateProxyExitError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -21151,6 +21382,7 @@ using RemoteChangeListener = std::function<void(bool remote_connected)>;
 using RemoveAuthCallback = std::function<void(std::optional<RemoveAuthResult> result, std::optional<std::string> err_param)>;
 using RemoveNetworkClientCallback = std::function<void(std::optional<RemoveNetworkClientResult> result, std::optional<std::string> err_param)>;
 using RemoveWalletCallback = std::function<void(std::optional<RemoveWalletResult> result, std::optional<std::string> err_param)>;
+using RotateProxyExitCallback = std::function<void(std::optional<RotateProxyExitResult> result, std::optional<std::string> err_param)>;
 using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
 using SelectedProviderLocationChangeListener = std::function<void()>;
@@ -21546,6 +21778,8 @@ public:
 	void requoteCryptoPayment(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentIntentCallback callback) const;
 	void revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const;
 	void revokeOtherNetworkSessions(const std::optional<RevokeOtherNetworkSessionsArgs>& args, SessionOperationCallback callback) const;
+	void rotateProxyExit(const std::optional<RotateProxyExitArgs>& args, RotateProxyExitCallback callback) const;
+	std::optional<RotateProxyExitResult> rotateProxyExitSync(const std::optional<RotateProxyExitArgs>& args) const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setClientInfo(const std::optional<ClientInfo>& info) const;
@@ -27222,6 +27456,42 @@ inline void oneshot_remove_wallet(void* user_data, const char* result_json, cons
 	delete f;
 }
 
+inline void retained_rotate_proxy_exit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RotateProxyExitCallback*>(user_data);
+	try {
+		std::optional<RotateProxyExitResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RotateProxyExitResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_rotate_proxy_exit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RotateProxyExitCallback*>(user_data);
+	try {
+		std::optional<RotateProxyExitResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RotateProxyExitResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_route_local_change(void* user_data, bool route_local) {
 	auto* f = static_cast<RouteLocalChangeListener*>(user_data);
 	try {
@@ -31545,6 +31815,34 @@ inline void Api::revokeOtherNetworkSessions(const std::optional<RevokeOtherNetwo
 	}
 	auto* callback_fn = callback ? new SessionOperationCallback(std::move(callback)) : nullptr;
 	urnet_api_revoke_other_network_sessions(handle(), args_c, callback_fn ? &detail::oneshot_session_operation : nullptr, callback_fn);
+}
+inline void Api::rotateProxyExit(const std::optional<RotateProxyExitArgs>& args, RotateProxyExitCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new RotateProxyExitCallback(std::move(callback)) : nullptr;
+	urnet_api_rotate_proxy_exit(handle(), args_c, callback_fn ? &detail::oneshot_rotate_proxy_exit : nullptr, callback_fn);
+}
+inline std::optional<RotateProxyExitResult> Api::rotateProxyExitSync(const std::optional<RotateProxyExitArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_rotate_proxy_exit_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<RotateProxyExitResult>(r_s->c_str());
 }
 inline void Api::sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const {
 	std::string send_feedback_json;

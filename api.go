@@ -1003,8 +1003,12 @@ type AuthNetworkClientError struct {
 	// than a hard cap. The client should prompt the user to upgrade (or, for an
 	// agent, pay inline over x402 -- the same request answers 402 with payment
 	// terms). Distinct from ClientLimitExceeded, which no upgrade can lift.
-	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
-	Message         string `json:"message"`
+	UpgradeRequired bool `json:"upgrade_required,omitempty"`
+	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
+	// does not already hold in the location; nothing was created and neither
+	// the cap nor the creation rate was spent
+	NoUniqueSupply bool   `json:"no_unique_supply,omitempty"`
+	Message        string `json:"message"`
 }
 
 // Registers with the invoking sign-in, retaining its credential generation
@@ -1086,7 +1090,10 @@ type NetworkClientInfo struct {
 	ProvideMode int `json:"provide_mode"`
 	// ProxyClient carries the hosted proxy device's credentials; only the
 	// /network/proxies listing fills it, /network/clients never does
-	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
+	ProxyClient *ProxyClient `json:"proxy_client,omitempty"`
+	// Exit is a unique-exit proxy's current exit (ProxyConfig.UniqueExit),
+	// beside ProxyClient in the /network/proxies listing; nil otherwise
+	Exit        *ProxyExit                   `json:"exit,omitempty"`
 	Connections *NetworkClientConnectionList `json:"connections"`
 }
 
@@ -3995,6 +4002,65 @@ func (self *Api) RemoveNetworkClientSyncWithContextAndJwt(ctx context.Context, a
 //gomobile:noexport
 func (self *Api) RemoveNetworkClientSync(args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
 	return self.RemoveNetworkClientSyncWithContext(self.ctx, args)
+}
+
+/**
+ * Rotate a unique-exit proxy's exit
+ */
+
+type RotateProxyExitArgs struct {
+	// ClientId is the unique-exit proxy's client
+	ClientId *Id `json:"client_id"`
+}
+
+type RotateProxyExitResult struct {
+	// Exit is the proxy's new exit
+	Exit  *ProxyExit            `json:"exit,omitempty"`
+	Error *RotateProxyExitError `json:"error,omitempty"`
+}
+
+// A refused rotate: the proxy keeps its current exit
+type RotateProxyExitError struct {
+	// no other unique exit is available in the proxy's location
+	NoUniqueSupply bool `json:"no_unique_supply,omitempty"`
+	// the proxy rotated in the last minute, or 60 times today
+	RateLimited bool   `json:"rate_limited,omitempty"`
+	Message     string `json:"message"`
+}
+
+type RotateProxyExitCallback connect.ApiCallback[*RotateProxyExitResult]
+
+// Assigns a unique-exit proxy (ProxyConfig.UniqueExit) a new exit whose
+// egress IP no other active unique-exit proxy of the network uses. The server
+// rate-limits rotation per proxy. It administers the network's proxies, so it
+// is sent with the network credential (apiAdminRouteAccess).
+func (self *Api) RotateProxyExit(args *RotateProxyExitArgs, callback RotateProxyExitCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RotateProxyExitResult{},
+			callback,
+		)
+	})
+}
+
+// Uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) RotateProxyExitSync(args *RotateProxyExitArgs) (*RotateProxyExitResult, error) {
+	return connect.HttpPostWithRawFunction(
+		self.ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&RotateProxyExitResult{},
+		connect.NewNoopApiCallback[*RotateProxyExitResult](),
+	)
 }
 
 /**

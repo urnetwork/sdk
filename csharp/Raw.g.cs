@@ -161,6 +161,7 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_remove_auth_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_remove_network_client_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_remove_wallet_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_rotate_proxy_exit_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_route_local_change_cb(IntPtr a0, byte a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_selected_location_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_selected_provider_location_change_cb(IntPtr a0);
@@ -379,6 +380,8 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_requote_crypto_payment(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_crypto_payment_intent_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_revoke_network_session(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_session_operation_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_revoke_other_network_sessions(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_session_operation_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_rotate_proxy_exit(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_rotate_proxy_exit_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_rotate_proxy_exit_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_send_feedback(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_send_feedback_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_set_by_jwt(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_set_client_info(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);

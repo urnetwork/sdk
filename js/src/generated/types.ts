@@ -94,8 +94,20 @@ export interface ProxyConfigResult {
   api_port?: number;
   auth_token?: string;
   wg_config?: WgConfig | null;
+  exit?: ProxyExit | null;
   http_proxy_auth: ProxyAuthResult | null;
   socks_proxy_auth: ProxyAuthResult | null;
+}
+
+export interface ProxyExit {
+  exit_id?: string | null;
+  country_code?: string;
+  region?: string;
+  city?: string;
+  exit_since?: string | null;
+  state: string;
+  state_reason?: string;
+  replace_mode: string;
 }
 
 export interface WgConfig {
@@ -600,6 +612,7 @@ export interface ProviderSpec {
 export interface AuthNetworkClientError {
   client_limit_exceeded: boolean;
   upgrade_required?: boolean;
+  no_unique_supply?: boolean;
   message: string;
 }
 
@@ -624,6 +637,8 @@ export interface ProxyConfig {
   http_require_auth: boolean;
   https_require_auth: boolean;
   enable_wg: boolean;
+  unique_exit?: boolean;
+  unique_exit_replace?: string;
   initial_device_state: ProxyDeviceState | null;
 }
 

@@ -161,6 +161,7 @@ public interface Raw extends Library {
   interface urnet_remove_auth_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_remove_network_client_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_remove_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_rotate_proxy_exit_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_route_local_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_selected_location_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_selected_provider_location_change_cb extends Callback { void invoke(Pointer a0); }
@@ -379,6 +380,8 @@ public interface Raw extends Library {
   void urnet_api_requote_crypto_payment(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
   void urnet_api_revoke_network_session(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
   void urnet_api_revoke_other_network_sessions(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
+  void urnet_api_rotate_proxy_exit(long a0, String a1, urnet_rotate_proxy_exit_cb a2, Pointer a3);
+  Pointer urnet_api_rotate_proxy_exit_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_send_feedback(long a0, String a1, urnet_send_feedback_cb a2, Pointer a3);
   void urnet_api_set_by_jwt(long a0, String a1);
   void urnet_api_set_client_info(long a0, String a1);

@@ -159,6 +159,7 @@ pub type urnet_remote_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool)
 pub type urnet_remove_auth_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_remove_network_client_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_remove_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_rotate_proxy_exit_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_route_local_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_selected_location_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_selected_provider_location_change_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
@@ -379,6 +380,8 @@ pub struct Raw {
     pub urnet_api_requote_crypto_payment: unsafe extern "C" fn(u64, *const c_char, urnet_crypto_payment_intent_cb, *mut c_void) -> (),
     pub urnet_api_revoke_network_session: unsafe extern "C" fn(u64, *const c_char, urnet_session_operation_cb, *mut c_void) -> (),
     pub urnet_api_revoke_other_network_sessions: unsafe extern "C" fn(u64, *const c_char, urnet_session_operation_cb, *mut c_void) -> (),
+    pub urnet_api_rotate_proxy_exit: unsafe extern "C" fn(u64, *const c_char, urnet_rotate_proxy_exit_cb, *mut c_void) -> (),
+    pub urnet_api_rotate_proxy_exit_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_send_feedback: unsafe extern "C" fn(u64, *const c_char, urnet_send_feedback_cb, *mut c_void) -> (),
     pub urnet_api_set_by_jwt: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_api_set_client_info: unsafe extern "C" fn(u64, *const c_char) -> (),
@@ -1808,6 +1811,8 @@ impl Raw {
             urnet_api_requote_crypto_payment: unsafe { *library.get(b"urnet_api_requote_crypto_payment\0")? },
             urnet_api_revoke_network_session: unsafe { *library.get(b"urnet_api_revoke_network_session\0")? },
             urnet_api_revoke_other_network_sessions: unsafe { *library.get(b"urnet_api_revoke_other_network_sessions\0")? },
+            urnet_api_rotate_proxy_exit: unsafe { *library.get(b"urnet_api_rotate_proxy_exit\0")? },
+            urnet_api_rotate_proxy_exit_sync: unsafe { *library.get(b"urnet_api_rotate_proxy_exit_sync\0")? },
             urnet_api_send_feedback: unsafe { *library.get(b"urnet_api_send_feedback\0")? },
             urnet_api_set_by_jwt: unsafe { *library.get(b"urnet_api_set_by_jwt\0")? },
             urnet_api_set_client_info: unsafe { *library.get(b"urnet_api_set_client_info\0")? },
