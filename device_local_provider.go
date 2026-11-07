@@ -589,6 +589,8 @@ func configureDeviceLocalProviderMemory(
 	receiveQueueBudget = deviceLocalTransferBudgetWithParent(max(byteCountFraction(pairTarget, 4, 7), 384*1024), parents...)
 	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	// A provider's distinct RX parent cannot inherit the consumer-only child.
+	clientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget = nil
 
 	// Public P2P connections admit against a dedicated phone-sized pool, not
 	// the active transfer receive queue (which is legitimately full precisely

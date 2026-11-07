@@ -2470,6 +2470,11 @@ type DeviceLocalMemoryUsage struct {
 	DnsByteCount                  int64
 	ClientSendByteCount           int64
 	ClientReceiveByteCount        int64
+	// Shared consumer-head recovery is included once in ClientReceiveByteCount.
+	ClientReceiveHeadRecoveryBudgetByteCount   int64
+	ClientReceiveHeadRecoveryUsedByteCount     int64
+	ClientReceiveHeadRecoveryReservedByteCount int64
+	ClientReceiveHeadRecoveryReleasedByteCount int64
 	// PackQueue* isolates the device-wide aggregate decoded-pack handoff
 	// budget already included in ClientReceiveByteCount. It is shared by the
 	// control client, window clients, and provider so diagnostics can distinguish
@@ -2548,6 +2553,14 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 	if receiveBufferSettings := self.settings.ClientSettings.ReceiveBufferSettings; receiveBufferSettings != nil {
 		if receiveBufferSettings.ReceiveQueueBudget != nil {
 			usage.ClientReceiveByteCount = receiveBufferSettings.ReceiveQueueBudget.UsedByteCount()
+		}
+		if recovery := receiveBufferSettings.ReceiveHeadRecoveryBudget; recovery != nil {
+			stats := recovery.Stats()
+			usage.ClientReceiveHeadRecoveryBudgetByteCount = stats.TotalByteCount
+			usage.ClientReceiveHeadRecoveryUsedByteCount = stats.UsedByteCount
+			usage.ClientReceiveHeadRecoveryReservedByteCount = stats.ReservedByteCount
+			usage.ClientReceiveHeadRecoveryReleasedByteCount = stats.ReleasedByteCount
+			usage.ClientReceiveByteCount += stats.UsedByteCount
 		}
 		if receiveBufferSettings.PackQueueBudget != nil {
 			packQueueBudget = receiveBufferSettings.PackQueueBudget
@@ -4674,6 +4687,9 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 				mobileRuntime() || self.transferMemory != nil,
 			),
 		)
+		if recovery := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget; recovery != nil {
+			recovery.SetTotalByteCount(receiveQueueBudget.TotalByteCount())
+		}
 	}
 	if packQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget; packQueueBudget != nil {
 		packQueueBudget.SetTotalByteCount(
@@ -5229,6 +5245,7 @@ func (self *DeviceLocal) applyDestination(
 						// mobileReceiveQueueMaxByteCountForPool)
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
 						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
+						clientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget = self.settings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget
 						clientSettings.ReceiveBufferSettings.PackQueueBudget = self.settings.ReceiveBufferSettings.PackQueueBudget
 						applyMobileLowMemoryClientSettingsForPlatform(
 							clientSettings,

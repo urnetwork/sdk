@@ -240,25 +240,49 @@ func TestDeviceH3WindowPolicyReservesConfiguredControlGraphs(t *testing.T) {
 	}
 }
 
-// The matched v1 control adds only this nil-by-default observation seam at
-// its old query boundary. TryLock witnesses the held lock without deadlocking
-// the test; no query or callback is replaced with a model of the policy.
+// A public getter must finish before composition resumes. Unlike TryLock,
+// completion tolerates unrelated state owners and still detects a publisher
+// retaining stateLock across the real external-query boundary.
 func TestDeviceH3WindowCompositionReleasesDeviceStateLock(t *testing.T) {
 	device := newH3PolicyDevice(t, 32*1024*1024)
+	watchdog, stop := context.WithTimeout(t.Context(), 45*time.Second)
+	defer stop()
+	var getterDones []chan *TransportSettings
+	t.Cleanup(func() {
+		for _, done := range getterDones {
+			for range done {
+			}
+		}
+		device.stateLock.Lock()
+		device.testingBeforeH3WindowComposition = nil
+		device.stateLock.Unlock()
+	})
 	observations := 0
+	device.stateLock.Lock()
 	device.testingBeforeH3WindowComposition = func() {
 		observations++
-		if device.stateLock.TryLock() {
-			device.stateLock.Unlock()
-		} else {
-			t.Error("H3 graph composition still holds DeviceLocal.stateLock")
+		done := make(chan *TransportSettings, 1)
+		getterDones = append(getterDones, done)
+		go func() {
+			defer close(done)
+			done <- device.GetTransportSettings()
+		}()
+		select {
+		case settings := <-done:
+			if settings.Mode != TransportModeH3 {
+				t.Error("composition getter did not observe the current H3 policy")
+			}
+			for range done {
+			}
+		case <-watchdog.Done():
+			t.Error("H3 composition prevented a public device-state getter from completing")
 		}
 		if device.preferenceMutationLock.TryLock() {
 			device.preferenceMutationLock.Unlock()
 			t.Error("H3 graph composition lost preference publication ownership")
 		}
 	}
-	defer func() { device.testingBeforeH3WindowComposition = nil }()
+	device.stateLock.Unlock()
 	device.SetTransportSettings(&TransportSettings{Mode: TransportModeH3})
 	if err := device.SetConnectLocationChecked(&ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{BestAvailable: true},
@@ -274,7 +298,8 @@ func TestDeviceH3WindowCompositionReleasesDeviceStateLock(t *testing.T) {
 
 // Public setters and initial destination construction share the existing
 // preference lock through the real multi-client cap and carrier publication.
-// Holding the first composition forces a later setter to publish last.
+// A foreign state owner makes TryLock fail at the first held composition;
+// getter completion still proves that composition released its own state lock.
 func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 	for _, kind := range []string{"client", "provider", "destination"} {
 		device := newH3PolicyDevice(t, 32*1024*1024)
@@ -303,16 +328,48 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 			preferenceHeld bool
 		}
 		entered := make(chan boundary, 1)
+		compositionStarted := make(chan struct{})
+		probeState := make(chan struct{})
+		releaseState := make(chan struct{})
 		release := make(chan struct{})
-		var releaseOnce sync.Once
+		var probeOnce, stateOnce, releaseOnce sync.Once
+		probeFirst := func() { probeOnce.Do(func() { close(probeState) }) }
+		releaseOtherState := func() { stateOnce.Do(func() { close(releaseState) }) }
 		releaseFirst := func() { releaseOnce.Do(func() { close(release) }) }
-		t.Cleanup(releaseFirst)
+		firstDone := make(chan error, 1)
+		var secondDone chan error
+		var stateDone chan struct{}
+		var getterDone chan *TransportSettings
+		t.Cleanup(func() {
+			probeFirst()
+			releaseOtherState()
+			releaseFirst()
+			for range firstDone {
+			}
+			if secondDone != nil {
+				for range secondDone {
+				}
+			}
+			if stateDone != nil {
+				<-stateDone
+			}
+			if getterDone != nil {
+				for range getterDone {
+				}
+			}
+			device.stateLock.Lock()
+			device.testingBeforeH3WindowComposition = nil
+			device.stateLock.Unlock()
+		})
 		observations := 0
+		device.stateLock.Lock()
 		device.testingBeforeH3WindowComposition = func() {
 			observations++
 			if observations != 1 {
 				return
 			}
+			close(compositionStarted)
+			<-probeState
 			stateAvailable := device.stateLock.TryLock()
 			if stateAvailable {
 				device.stateLock.Unlock()
@@ -324,8 +381,9 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 			entered <- boundary{stateAvailable: stateAvailable, preferenceHeld: !preferenceAvailable}
 			<-release
 		}
-		firstDone := make(chan error, 1)
+		device.stateLock.Unlock()
 		go func() {
+			defer close(firstDone)
 			switch kind {
 			case "client":
 				device.SetTransportSettings(&TransportSettings{Mode: TransportModeH3})
@@ -338,6 +396,29 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 			firstDone <- nil
 		}()
 		watchdog, stop := context.WithTimeout(t.Context(), 45*time.Second)
+		defer stop()
+		select {
+		case <-compositionStarted:
+		case <-watchdog.Done():
+			t.Fatalf("%s never started the actual composition boundary", kind)
+		}
+		stateHeld := make(chan struct{})
+		stateDone = make(chan struct{})
+		go func() {
+			defer close(stateDone)
+			device.stateLock.Lock()
+			close(stateHeld)
+			<-releaseState
+			device.stateLock.Unlock()
+		}()
+		select {
+		case <-stateHeld:
+		case <-watchdog.Done():
+			t.Fatalf("%s composition prevented the competing state owner from entering", kind)
+		}
+		// The old one-shot observation now sees a known foreign owner. Its
+		// false result cannot identify which goroutine holds the state lock.
+		probeFirst()
 		var observation boundary
 		select {
 		case observation = <-entered:
@@ -346,9 +427,31 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 			stop()
 			t.Fatalf("%s never reached the actual composition boundary", kind)
 		}
-		secondStarted := make(chan struct{})
-		secondDone := make(chan error, 1)
+		releaseOtherState()
+		select {
+		case <-stateDone:
+		case <-watchdog.Done():
+			t.Fatalf("%s competing state owner did not join", kind)
+		}
+		getterDone = make(chan *TransportSettings, 1)
 		go func() {
+			defer close(getterDone)
+			getterDone <- device.GetTransportSettings()
+		}()
+		select {
+		case settings := <-getterDone:
+			if settings.Mode != TransportModeH3 {
+				t.Fatalf("%s getter did not observe the held H3 publication", kind)
+			}
+			for range getterDone {
+			}
+		case <-watchdog.Done():
+			t.Fatalf("%s state getter did not finish while composition remained held", kind)
+		}
+		secondStarted := make(chan struct{})
+		secondDone = make(chan error, 1)
+		go func() {
+			defer close(secondDone)
 			close(secondStarted)
 			device.SetTransportSettings(&TransportSettings{Mode: TransportModeH1})
 			secondDone <- nil
@@ -363,16 +466,17 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 				if err != nil {
 					t.Error(err)
 				}
+				for range done {
+				}
 			case <-watchdog.Done():
 				stop()
 				t.Fatalf("%s setter did not join", kind)
 			}
 		}
 		stop()
+		device.stateLock.Lock()
 		device.testingBeforeH3WindowComposition = nil
-		if !observation.stateAvailable || !observation.preferenceHeld || observations != 2 {
-			t.Fatalf("%s boundary=%+v observations=%d want=2", kind, observation, observations)
-		}
+		device.stateLock.Unlock()
 		baseline := mobileTargetScaledCount(mobileQualityWindowSize, 32*1024*1024) +
 			mobileTargetScaledCount(mobileSpeedWindowSize, 32*1024*1024)
 		multi := requireH3PolicyTarget(t, device, baseline)
@@ -388,6 +492,10 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 		}
 		if err := device.CloseAndWait(t.Context()); err != nil {
 			t.Fatal(err)
+		}
+		t.Logf("h3_composition kind=%s stateAvailable=%t preferenceHeld=%t getterCompletedWhilePublicationHeld=true observations=%d deviceAndTestWorkersJoined=true", kind, observation.stateAvailable, observation.preferenceHeld, observations)
+		if observation.stateAvailable || !observation.preferenceHeld || observations != 2 {
+			t.Fatalf("H3_COMPOSITION_STATE_WITNESS: %s boundary=%+v observations=%d want=2 with a competing state owner", kind, observation, observations)
 		}
 	}
 }

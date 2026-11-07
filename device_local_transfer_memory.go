@@ -7,11 +7,12 @@ import "github.com/urnetwork/connect"
 // reservations: idle provider capacity can be borrowed without forgetting
 // owners still draining after a role change.
 type deviceLocalTransferMemory struct {
-	root        *connect.TransferMemoryBudget
-	client      *connect.TransferMemoryBudget
-	provider    *connect.TransferMemoryBudget
-	nat         *connect.TransferMemoryBudget
-	peerKeyPins *connect.TransferMemoryBudget
+	root         *connect.TransferMemoryBudget
+	client       *connect.TransferMemoryBudget
+	provider     *connect.TransferMemoryBudget
+	nat          *connect.TransferMemoryBudget
+	peerKeyPins  *connect.TransferMemoryBudget
+	headRecovery *connect.TransferMemoryBudget
 
 	clientShare   ByteCount
 	providerShare ByteCount
@@ -32,6 +33,9 @@ func newDeviceLocalTransferMemoryForPlatform(settings *DeviceLocalSettings, mobi
 		providerShare: providerShare,
 	}
 	memory.peerKeyPins = connect.NewTransferMemoryBudgetWithParent(peerPinStoreMemoryByteCount, memory.client)
+	// Construction exposes a stable empty child before clients receive their
+	// effective RX ceiling. Configuration grants permission without reserving.
+	memory.headRecovery = connect.NewTransferMemoryBudgetWithParent(0, memory.client)
 	return memory
 }
 
@@ -52,6 +56,19 @@ func configureDeviceLocalClientMemoryForPlatform(settings *DeviceLocalSettings, 
 		mobilePackQueueBudgetForPlatform(settings.MemoryTargetByteCount, clientShare, mobile), parent,
 	)
 	applyMobileLowMemoryClientSettingsForPlatform(client, settings.MemoryTargetByteCount, mobile)
+	if memory != nil {
+		receive := client.ReceiveBufferSettings
+		if rx := receive.ReceiveQueueBudget; rx != nil && rx.Parent() == memory.client {
+			// One shared partition survives client generations and role changes.
+			// Its ceiling is permission; only an admitted head charges the root.
+			if memory.headRecovery == nil {
+				memory.headRecovery = connect.NewTransferMemoryBudgetWithParent(rx.TotalByteCount(), memory.client)
+			} else {
+				memory.headRecovery.SetTotalByteCount(rx.TotalByteCount())
+			}
+			receive.ReceiveHeadRecoveryBudget = memory.headRecovery
+		}
+	}
 	if clientShare > 0 {
 		client.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
 		client.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShare, parent)
@@ -105,9 +122,10 @@ func applyDeviceLocalTransferMemoryUsage(usage *DeviceLocalMemoryUsage, memory *
 	// can outlive its actual charge during a concurrent drain, falsely placing
 	// it above the later root usage. Sample it and the pin child under the root's lock;
 	// StatsWithDescendants also verifies that Pack belongs to that tree.
-	stats := memory.root.StatsWithDescendants(memory.client, memory.provider, memory.nat, packQueue, memory.peerKeyPins)
+	stats := memory.root.StatsWithDescendants(memory.client, memory.provider, memory.nat, packQueue, memory.peerKeyPins, memory.headRecovery)
 	root, client, provider, nat, pack := stats[0], stats[1], stats[2], stats[3], stats[4]
 	pins := stats[5]
+	head := stats[6]
 	usage.PeerKeyPinBudgetByteCount = pins.TotalByteCount
 	usage.PeerKeyPinUsedByteCount = pins.UsedByteCount
 	usage.PeerKeyPinReservedByteCount = pins.ReservedByteCount
@@ -125,6 +143,11 @@ func applyDeviceLocalTransferMemoryUsage(usage *DeviceLocalMemoryUsage, memory *
 	usage.NatReservedByteCount = nat.ReservedByteCount
 	usage.NatReleasedByteCount = nat.ReleasedByteCount
 	usage.ClientReceiveByteCount += pack.UsedByteCount - usage.PackQueueUsedByteCount
+	usage.ClientReceiveByteCount += head.UsedByteCount - usage.ClientReceiveHeadRecoveryUsedByteCount
+	usage.ClientReceiveHeadRecoveryBudgetByteCount = head.TotalByteCount
+	usage.ClientReceiveHeadRecoveryUsedByteCount = head.UsedByteCount
+	usage.ClientReceiveHeadRecoveryReservedByteCount = head.ReservedByteCount
+	usage.ClientReceiveHeadRecoveryReleasedByteCount = head.ReleasedByteCount
 	usage.PackQueueCapacityByteCount = pack.TotalByteCount
 	usage.PackQueueUsedByteCount = pack.UsedByteCount
 }
