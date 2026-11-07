@@ -41,6 +41,9 @@ func testTransportDelaySettings() *DeviceLocalSettings {
 		TransportDelayBadDownQueueDelay:     defaultTransportDelayBadDownQueueDelay,
 		TransportDelayQualityStep:           defaultTransportDelayQualityStep,
 		TransportDelayQualityHysteresis:     defaultTransportDelayQualityHysteresis,
+		TransportDelayGoodConnectStall:      defaultTransportDelayGoodConnectStall,
+		TransportDelayBadConnectStall:       defaultTransportDelayBadConnectStall,
+		TransportDelayPromptConnectTimeout:  defaultTransportDelayPromptConnectTimeout,
 	}
 }
 
