@@ -3682,6 +3682,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DnsByteCount: number
  *   ClientSendByteCount: number
  *   ClientReceiveByteCount: number
+ *   ClientReceiveHeadRecoveryBudgetByteCount: number
+ *   ClientReceiveHeadRecoveryUsedByteCount: number
+ *   ClientReceiveHeadRecoveryReservedByteCount: number
+ *   ClientReceiveHeadRecoveryReleasedByteCount: number
  *   PackQueueUsedByteCount: number
  *   PackQueueCapacityByteCount: number
  *   ProviderSendByteCount: number
@@ -3762,6 +3766,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TransportDelayBadDownQueueDelay: number (ns)
  *   TransportDelayQualityStep: number
  *   TransportDelayQualityHysteresis: number
+ *   TransportDelayGoodConnectStall: number (ns)
+ *   TransportDelayBadConnectStall: number (ns)
+ *   TransportDelayPromptConnectTimeout: number (ns)
  *   StrictWindowHandover: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean
