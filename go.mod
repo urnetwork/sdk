@@ -16,6 +16,7 @@ require (
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/goidenticons v0.0.0
+	github.com/urnetwork/sidecar v0.0.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
@@ -111,6 +112,8 @@ replace github.com/pion/sctp => ../connect/sctp
 replace github.com/urnetwork/glog => ../glog
 
 replace github.com/urnetwork/goidenticons => ../goidenticons
+
+replace github.com/urnetwork/sidecar => ../sidecar
 
 replace gvisor.dev/gvisor => ../gvisor
 

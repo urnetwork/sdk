@@ -84,6 +84,7 @@ require (
 	github.com/urnetwork/connect v0.0.0 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/sidecar v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
@@ -110,6 +111,8 @@ replace github.com/pion/sctp => ../../connect/sctp
 replace github.com/urnetwork/glog => ../../glog
 
 replace github.com/urnetwork/goidenticons => ../../goidenticons
+
+replace github.com/urnetwork/sidecar => ../../sidecar
 
 replace gvisor.dev/gvisor => ../../gvisor
 
