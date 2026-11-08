@@ -187,6 +187,7 @@ var deviceLocalRpcMethods = sync.OnceValue(func() map[string]*deviceRpcMethod {
 		"ResetReliabilityMetrics":                            (*DeviceLocalRpc).ResetReliabilityMetrics,
 		"ResetReliabilitySettings":                           (*DeviceLocalRpc).ResetReliabilitySettings,
 		"RetryClientLimit":                                   (*DeviceLocalRpc).RetryClientLimit,
+		"RetryClientLimitAfterChange":                        (*DeviceLocalRpc).RetryClientLimitAfterChange,
 		"SetAllowForeground":                                 (*DeviceLocalRpc).SetAllowForeground,
 		"SetBlockActionOverrides":                            (*DeviceLocalRpc).SetBlockActionOverrides,
 		"SetBlockerEnabled":                                  (*DeviceLocalRpc).SetBlockerEnabled,

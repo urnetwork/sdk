@@ -1256,6 +1256,8 @@ def bind(lib):
     lib.urnet_device_reset_extenders.restype = None
     lib.urnet_device_retry_client_limit.argtypes = [c_uint64]
     lib.urnet_device_retry_client_limit.restype = c_bool
+    lib.urnet_device_retry_client_limit_after_change.argtypes = [c_uint64]
+    lib.urnet_device_retry_client_limit_after_change.restype = c_bool
     lib.urnet_device_set_allow_foreground.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_allow_foreground.restype = None
     lib.urnet_device_set_block_action_overrides.argtypes = [c_uint64, c_char_p]

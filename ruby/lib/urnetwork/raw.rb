@@ -751,6 +751,7 @@ module URnetwork
       attach_function :urnet_device_remove_destination, [:uint64], :void, blocking: true
       attach_function :urnet_device_reset_extenders, [:uint64], :void, blocking: true
       attach_function :urnet_device_retry_client_limit, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_retry_client_limit_after_change, [:uint64], :bool, blocking: true
       attach_function :urnet_device_set_allow_foreground, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_block_action_overrides, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_blocker_enabled, [:uint64, :bool], :void, blocking: true

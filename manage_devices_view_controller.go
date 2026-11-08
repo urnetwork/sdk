@@ -137,20 +137,18 @@ type manageDevicesDevice interface {
 	GetClientId() *Id
 	GetApi() *Api
 	GetClientLimitStatus() *ClientLimitStatus
-	RetryClientLimit() bool
+	RetryClientLimitAfterChange() bool
 }
 
 // manageDevicesSettings tunes the controller.
 type manageDevicesSettings struct {
-	// how long after a removal whose retry the device's floor refused the
-	// controller retries again, and between those retries: just past the
-	// device's ClientLimitRetryMinInterval (30 s by default), so a user who
-	// removes devices in a row is not left in the hold. Zero or less does not
-	// retry again.
+	// how long after a removal whose retry the device refused the controller
+	// retries again, and between those retries: just past the device's
+	// ClientLimitRetryMinInterval (30 s by default), the least time between
+	// two change retries, so a user who removes devices in a row is not left
+	// in the hold. Zero or less does not retry again.
 	RetryAddDelay time.Duration
-	// how many times it retries again, while the hold lasts. The device's
-	// floor doubles with each retry in a row (DeviceLocal.RetryClientLimit),
-	// and these reach past the floor after a few removals in a row.
+	// how many times it retries again, while the hold lasts
 	RetryAddAttempts int
 	// bounds each request
 	RequestTimeout time.Duration
@@ -527,7 +525,10 @@ func (self *ManageDevicesViewController) RemoveDevice(clientId *Id) {
 }
 
 // retryAdd adds this device again after a removal freed a slot: the device's
-// hold ends at once, or the sign-in runs its auth-client again.
+// hold ends at once, or the sign-in runs its auth-client again. The device's
+// retry is the change retry (Device.RetryClientLimitAfterChange): the removal
+// is a change the server confirmed, so the backoff of the retries refused
+// before it does not hold this one back.
 func (self *ManageDevicesViewController) retryAdd() {
 	switch {
 	case self.device != nil:
@@ -537,7 +538,7 @@ func (self *ManageDevicesViewController) retryAdd() {
 				// not held: nothing to retry
 				return false, false
 			}
-			return true, self.device.RetryClientLimit()
+			return true, self.device.RetryClientLimitAfterChange()
 		}
 		held, retried := retry()
 		if !held {
@@ -545,10 +546,10 @@ func (self *ManageDevicesViewController) retryAdd() {
 		}
 		self.countAddRetry()
 		if !retried && 0 < self.settings.RetryAddDelay {
-			// inside the device's retry floor, from an earlier retry: again
-			// each RetryAddDelay while the hold lasts, so removals in a row
-			// are not left waiting out the hold. The device decides when a
-			// retry dials; one it refuses costs nothing.
+			// inside the change retries' interval, from a removal just
+			// before: again each RetryAddDelay while the hold lasts, so
+			// removals in a row are not left waiting out the hold. The device
+			// decides when a retry dials; one it refuses costs nothing.
 			go connect.HandleError(func() {
 				for range self.settings.RetryAddAttempts {
 					select {

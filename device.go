@@ -768,6 +768,18 @@ type Device interface {
 	// too old to answer ends none.
 	RetryClientLimit() bool
 
+	// RetryClientLimitAfterChange ends the device's client limit hold at once
+	// after a change the server confirmed that frees a slot or raises the
+	// limit: a device removed from the network's device list, or the plan
+	// turning Pro after a purchase. Unlike RetryClientLimit it starts the
+	// retry floor over, since the earlier refused retries were before the
+	// change, so the retry dials now however many came before. At most one per
+	// ClientLimitRetryMinInterval among these, and none when no hold is in
+	// force (DeviceLocal.RetryClientLimitAfterChange). Returns whether a hold
+	// was ended. A remote device asks the device process; one too old to
+	// answer gets its RetryClientLimit.
+	RetryClientLimitAfterChange() bool
+
 	// GetTransportDelay is the transport quality of the device's connection
 	// (transport_delay.go, connect/DELAY.md §10): per direction a quality from
 	// 0 (normal) to 1 (worst) in steps, the link throughput and standing queue

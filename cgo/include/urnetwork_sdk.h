@@ -1702,6 +1702,7 @@ void urnet_device_remove_connected_provider(uint64_t self, const char* client_id
 void urnet_device_remove_destination(uint64_t self);
 void urnet_device_reset_extenders(uint64_t self);
 bool urnet_device_retry_client_limit(uint64_t self);
+bool urnet_device_retry_client_limit_after_change(uint64_t self);
 void urnet_device_set_allow_foreground(uint64_t self, bool allow_foreground);
 void urnet_device_set_block_action_overrides(uint64_t self, const char* overrides_json);
 void urnet_device_set_blocker_enabled(uint64_t self, bool blocker_enabled);

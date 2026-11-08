@@ -118,7 +118,9 @@ func (self *testingManageDevicesServer) getCount() int {
 }
 
 // testingManageDevicesDevice stands in for the device a controller is opened
-// from: its client, its api, and its client limit hold.
+// from: its client, its api, and its client limit hold. Its change retry is
+// the only retry the controller may make: a removal is a change the server
+// confirmed (Device.RetryClientLimitAfterChange).
 type testingManageDevicesDevice struct {
 	api      *Api
 	clientId *Id
@@ -139,7 +141,7 @@ func (self *testingManageDevicesDevice) GetClientLimitStatus() *ClientLimitStatu
 	return cloneClientLimitStatus(self.status)
 }
 
-func (self *testingManageDevicesDevice) RetryClientLimit() bool {
+func (self *testingManageDevicesDevice) RetryClientLimitAfterChange() bool {
 	answer := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -424,10 +426,10 @@ func TestManageDevicesRemoveRetriesAgainAfterTheInterval(t *testing.T) {
 	}
 }
 
-// The device's floor doubles with each retry in a row, so after a few
-// removals in a row one retry interval is not enough: the controller retries
-// again each interval while the hold lasts, and stops once one ends the hold,
-// or the hold ends by itself.
+// A refused retry after a removal (another change retry just before, inside
+// the device's interval) is not the last: the controller retries again each
+// interval while the hold lasts, and stops once one ends the hold, or the hold
+// ends by itself.
 func TestManageDevicesRemoveRetriesUntilTheFloorPasses(t *testing.T) {
 	this, laptop := NewId(), NewId()
 	server := &testingManageDevicesServer{

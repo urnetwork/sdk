@@ -21817,6 +21817,7 @@ public:
 	void removeDestination() const;
 	void resetExtenders() const;
 	bool retryClientLimit() const;
+	bool retryClientLimitAfterChange() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
@@ -31145,6 +31146,10 @@ inline void Device::resetExtenders() const {
 }
 inline bool Device::retryClientLimit() const {
 	bool r = urnet_device_retry_client_limit(handle());
+	return r;
+}
+inline bool Device::retryClientLimitAfterChange() const {
+	bool r = urnet_device_retry_client_limit_after_change(handle());
 	return r;
 }
 inline void Device::setAllowForeground(bool allow_foreground) const {

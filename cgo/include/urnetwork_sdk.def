@@ -783,6 +783,7 @@ EXPORTS
 	urnet_device_remove_destination
 	urnet_device_reset_extenders
 	urnet_device_retry_client_limit
+	urnet_device_retry_client_limit_after_change
 	urnet_device_rpc_key_material_get_client_cert_pem
 	urnet_device_rpc_key_material_get_client_pem
 	urnet_device_rpc_key_material_get_server_cert_pem

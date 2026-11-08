@@ -112,6 +112,9 @@ type deviceLocalProvider struct {
 	// before (clientLimitRetryAdmit). Guarded by stateLock.
 	clientLimitRetryTime  time.Time
 	clientLimitRetryCount int
+	// when retryClientLimitAfterChange last ended a hold; zero before the
+	// first. Guarded by stateLock.
+	clientLimitChangeRetryTime time.Time
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -536,6 +539,40 @@ func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval tim
 	// dial again, and a refusal starts a new hold
 	self.clientLimitBackoff.Reset()
 	return true
+}
+
+// retryClientLimitAfterChange ends the client limit hold in force at `now`
+// after a change that frees a slot or raises the limit, and returns whether it
+// did (DeviceLocal.RetryClientLimitAfterChange). The change starts a new row of
+// retries, whose first this is, so the backoff of the refused retries before it
+// does not hold it back. It ends none when no hold is in force, and none within
+// `minInterval` of the last change retry it admitted. A provider built without a
+// hold ends none.
+func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minInterval time.Duration) bool {
+	if self.clientLimitBackoff == nil {
+		return false
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || !self.clientLimitBackoff.Status().Exceeded {
+		return false
+	}
+	if !clientLimitChangeRetryAdmit(self.clientLimitChangeRetryTime, now, minInterval) {
+		return false
+	}
+	self.clientLimitChangeRetryTime = now
+	// the change's retry is the first of a new row
+	self.clientLimitRetryTime = now
+	self.clientLimitRetryCount = 1
+	self.clientLimitBackoff.Reset()
+	return true
+}
+
+// clientLimitChangeRetryAdmit decides a change retry at `now`, the last one at
+// `last` (zero before the first): at most one per minInterval, whatever the
+// backoff of the ordinary retries. A non-positive minInterval does not limit.
+func clientLimitChangeRetryAdmit(last time.Time, now time.Time, minInterval time.Duration) bool {
+	return last.IsZero() || minInterval <= 0 || minInterval <= now.Sub(last)
 }
 
 // clientLimitRetryAdmit decides a retry at `now`, after `count` retries in a

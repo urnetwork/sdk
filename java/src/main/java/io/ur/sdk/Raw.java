@@ -752,6 +752,7 @@ public interface Raw extends Library {
   void urnet_device_remove_destination(long a0);
   void urnet_device_reset_extenders(long a0);
   byte urnet_device_retry_client_limit(long a0);
+  byte urnet_device_retry_client_limit_after_change(long a0);
   void urnet_device_set_allow_foreground(long a0, byte a1);
   void urnet_device_set_block_action_overrides(long a0, String a1);
   void urnet_device_set_blocker_enabled(long a0, byte a1);

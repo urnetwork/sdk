@@ -11211,6 +11211,17 @@ func urnet_device_retry_client_limit(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_retry_client_limit_after_change
+func urnet_device_retry_client_limit_after_change(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_retry_client_limit_after_change")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_retry_client_limit_after_change")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.RetryClientLimitAfterChange()
+	return C.bool(r0)
+}
+
 //export urnet_device_set_allow_foreground
 func urnet_device_set_allow_foreground(self C.uint64_t, allowForeground C.bool) {
 	defer cgoGuard("urnet_device_set_allow_foreground")

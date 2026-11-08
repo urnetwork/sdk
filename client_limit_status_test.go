@@ -662,15 +662,34 @@ func TestDeviceRemoteRetryClientLimit(t *testing.T) {
 		status = listener.next(t, "the retry reached no remote listener")
 	}
 	connect.AssertEqual(t, deviceLocal.GetClientLimitStatus(), noneClientLimitStatus())
-	platform.nextConnectionDeclaring(t, "")
+	second := platform.nextConnectionDeclaring(t, "")
 	if deviceRemote.RetryClientLimit() {
 		t.Fatal("a remote retry with no hold in force ended one")
 	}
+
+	// refused again inside the floor: the ordinary retry ends nothing, and the
+	// retry after a change (a removal, a purchase) crosses the rpc and does
+	waitProviderSettled(t, deviceLocal)
+	second.closeForClientLimit()
+	for status.Status != ClientLimitStatusExceeded {
+		status = listener.next(t, "the second close reached no remote listener")
+	}
+	platform.drain()
+	if deviceRemote.RetryClientLimit() {
+		t.Fatal("a remote retry inside the floor ended the hold")
+	}
+	if !deviceRemote.RetryClientLimitAfterChange() {
+		t.Fatal("the remote's retry after a change did not end the hold")
+	}
+	platform.nextConnectionDeclaring(t, "")
 
 	deviceLocal.Close()
 	testWaitRemoteDisconnected(t, deviceRemote)
 	if deviceRemote.RetryClientLimit() {
 		t.Fatal("a remote retry with no device process ended a hold")
+	}
+	if deviceRemote.RetryClientLimitAfterChange() {
+		t.Fatal("a remote retry after a change with no device process ended a hold")
 	}
 }
 
@@ -812,4 +831,85 @@ func TestDeviceRemoteCachedClientLimitStatusDropsAnExpiredHold(t *testing.T) {
 		Prompt:    ClientLimitPromptRemoveClient,
 	}}
 	connect.AssertEqual(t, current.GetClientLimitStatus().Status, ClientLimitStatusExceeded)
+}
+
+// A removal from the device list, or the plan turning Pro after a purchase,
+// ends the hold at once however many retries the platform refused before:
+// the change retry starts the floor over. Before, both went through the
+// ordinary retry, whose floor after five refused retries in a row (8 minutes,
+// then 15) outlasted the device list's retries and the app's one retry on the
+// purchase, so the device waited out its hold with a slot free or a plan
+// paid. The change retries are still bounded on their own.
+func TestDeviceLocalRetryClientLimitAfterChangeStartsTheFloorOver(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	_, device := newTestingClientLimitDevice(t, platform, nil)
+	listener := newTestingClientLimitListener()
+	sub := device.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	if device.RetryClientLimitAfterChange() {
+		t.Fatal("a change retry with no hold in force ended one")
+	}
+
+	first := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+	first.closeForClientLimit()
+	if status := listener.next(t, "the client limit close reached no listener"); status.Status != ClientLimitStatusExceeded {
+		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
+	}
+
+	// five retries in a row were refused just now: the floor is 15 minutes
+	provider := func() *deviceLocalProvider {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		return device.provider
+	}()
+	func() {
+		provider.stateLock.Lock()
+		defer provider.stateLock.Unlock()
+		provider.clientLimitRetryTime = time.Now().Add(-10 * time.Second)
+		provider.clientLimitRetryCount = 6
+	}()
+	if device.RetryClientLimit() {
+		t.Fatal("the ordinary retry passed a 15 minute floor")
+	}
+
+	// the removal or the purchase: the hold ends at once, and the device
+	// dials now
+	platform.drain()
+	if !device.RetryClientLimitAfterChange() {
+		t.Fatal("the change retry did not end the hold")
+	}
+	if status := listener.next(t, "the change retry reached no listener"); status.Status != ClientLimitStatusNone {
+		t.Fatalf("listener status after the change retry = %+v, want none", status)
+	}
+	second := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+	// the change began a new row: the next ordinary floor is the least one
+	func() {
+		provider.stateLock.Lock()
+		defer provider.stateLock.Unlock()
+		connect.AssertEqual(t, provider.clientLimitRetryCount, 1)
+	}()
+
+	// refused again at once: a second change retry inside the interval, and
+	// an ordinary retry inside the least floor, end nothing
+	second.closeForClientLimit()
+	if status := listener.next(t, "the second close reached no listener"); status.Status != ClientLimitStatusExceeded {
+		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
+	}
+	if device.RetryClientLimitAfterChange() {
+		t.Fatal("a second change retry inside the interval ended the hold")
+	}
+	if device.RetryClientLimit() {
+		t.Fatal("an ordinary retry inside the least floor ended the hold")
+	}
+	connect.AssertEqual(t, device.GetClientLimitStatus().Status, ClientLimitStatusExceeded)
+
+	// the change interval on its own terms
+	start := time.Unix(1_800_000_000, 0)
+	connect.AssertEqual(t, clientLimitChangeRetryAdmit(time.Time{}, start, 30*time.Second), true)
+	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start.Add(29*time.Second), 30*time.Second), false)
+	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start.Add(30*time.Second), 30*time.Second), true)
+	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start, 0), true)
 }

@@ -317,6 +317,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["retryClientLimit"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.RetryClientLimit())
 	})
+	// ends the client limit hold at once after a change that frees a slot or
+	// raises the limit, a removal or a purchase
+	// (sdk.Device.RetryClientLimitAfterChange); true when a hold was ended
+	m["retryClientLimitAfterChange"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.RetryClientLimitAfterChange())
+	})
 	m["getProviderPacketStats"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsPacketStats(device.GetProviderPacketStats())
 	})
