@@ -441,6 +441,14 @@ void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data) {
 	cb(user_data);
 }
 
+void urnet_invoke_manage_devices(urnet_manage_devices_cb cb, void* user_data, const char* snapshot_json) {
+	cb(user_data, snapshot_json);
+}
+
+void urnet_invoke_manage_devices_sign_in_retry(urnet_manage_devices_sign_in_retry_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_network_block_location(urnet_network_block_location_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

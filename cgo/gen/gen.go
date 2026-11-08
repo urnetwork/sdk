@@ -111,6 +111,7 @@ var behavioralTypes = map[string]bool{
 	"ContractDetailsViewController":       true,
 	"ClientSessionViewController":         true,
 	"DevicesViewController":               true,
+	"ManageDevicesViewController":         true,
 	"ExtenderViewController":              true,
 	"FeedbackViewController":              true,
 	"LocationsViewController":             true,

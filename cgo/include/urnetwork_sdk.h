@@ -398,6 +398,12 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_LOW_MEMORY_DEVICE_TARGET_BYTE_COUNT 33554432
+#define URNET_MANAGED_DEVICE_KIND_DEVICE "device"
+#define URNET_MANAGED_DEVICE_KIND_PROXY "proxy"
+#define URNET_MANAGE_DEVICES_ERROR_LOAD_FAILED "load_failed"
+#define URNET_MANAGE_DEVICES_ERROR_NONE ""
+#define URNET_MANAGE_DEVICES_ERROR_REMOVE_FAILED "remove_failed"
+#define URNET_MANAGE_DEVICES_ERROR_SIGN_IN_REQUIRED "sign_in_required"
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
@@ -901,6 +907,10 @@ typedef void (*urnet_local_override_app_ids_cb)(void* user_data);
 typedef void (*urnet_local_state_save_cb)(void* user_data, uint64_t result);
 /* LocationMatchListener */
 typedef void (*urnet_location_match_cb)(void* user_data);
+/* ManageDevicesListener */
+typedef void (*urnet_manage_devices_cb)(void* user_data, const char* snapshot_json);
+/* ManageDevicesSignInRetry */
+typedef void (*urnet_manage_devices_sign_in_retry_cb)(void* user_data);
 /* NetworkBlockLocationCallback */
 typedef void (*urnet_network_block_location_cb)(void* user_data, const char* result_json, const char* err_param);
 /* NetworkCheckCallback */
@@ -1736,6 +1746,7 @@ void urnet_device_local_close_contract_view_controller(uint64_t self, uint64_t v
 void urnet_device_local_close_crypto_invoice_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_manage_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_points_leaderboard_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
@@ -1788,6 +1799,7 @@ uint64_t urnet_device_local_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_locations_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_manage_devices_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_points_leaderboard_view_controller(uint64_t self);
@@ -1899,6 +1911,7 @@ void urnet_device_remote_close_contract_view_controller(uint64_t self, uint64_t 
 void urnet_device_remote_close_crypto_invoice_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_manage_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_points_leaderboard_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
@@ -1935,6 +1948,7 @@ uint64_t urnet_device_remote_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_locations_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_manage_devices_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_points_leaderboard_view_controller(uint64_t self);
@@ -2150,6 +2164,17 @@ void urnet_locations_view_controller_stop(uint64_t self);
 void urnet_login_view_controller_close(uint64_t self);
 void urnet_login_view_controller_start(uint64_t self);
 void urnet_login_view_controller_stop(uint64_t self);
+
+/* ----- ManageDevicesViewController ----- */
+
+uint64_t urnet_manage_devices_view_controller_add_manage_devices_listener(uint64_t self, urnet_manage_devices_cb listener_manage_devices_changed, void* listener_user_data);
+void urnet_manage_devices_view_controller_close(uint64_t self);
+bool urnet_manage_devices_view_controller_get_can_manage(uint64_t self);
+char* urnet_manage_devices_view_controller_get_snapshot(uint64_t self);
+void urnet_manage_devices_view_controller_refresh(uint64_t self);
+void urnet_manage_devices_view_controller_remove_device(uint64_t self, const char* client_id);
+void urnet_manage_devices_view_controller_start(uint64_t self);
+void urnet_manage_devices_view_controller_stop(uint64_t self);
 
 /* ----- NetworkNameValidationViewController ----- */
 
@@ -2673,6 +2698,7 @@ char* urnet_new_purchase_cancelled_event(const char* store, const char* product,
 char* urnet_new_purchase_completed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
 char* urnet_new_purchase_failed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency, const char* error_class);
 char* urnet_new_purchase_started_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
+uint64_t urnet_new_sign_in_manage_devices_view_controller(uint64_t api, const char* network_by_jwt, urnet_manage_devices_sign_in_retry_cb retry_retry_sign_in, void* retry_user_data);
 char* urnet_new_signup_optout_changed_event(bool product_updates);
 char* urnet_new_sn_chain_settings(void);
 uint64_t urnet_new_sn_fleet_claim(uint64_t api, const char* settings_json, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb store_load_sn_fleet_coldkey_phrase, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb store_load_sn_fleet_hotkey_seed, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb store_save_sn_fleet_hotkey_seed, void* store_user_data);
@@ -4376,6 +4402,29 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* LogFileInfoList (json):
  *   = LogFileInfo | null[]
+ */
+
+/* ManageDevicesSnapshot (json):
+ *   Devices: ManagedDeviceList | null
+ *   Loaded: boolean
+ *   Loading: boolean
+ *   RemovingClientId: string (uuid) | null
+ *   ErrorId: string
+ *   AddRetryCount: number
+ */
+
+/* ManagedDevice (json):
+ *   ClientId: string (uuid) | null
+ *   Kind: string
+ *   Name: string
+ *   Spec: string
+ *   ThisDevice: boolean
+ *   Connected: boolean
+ *   LastSeenTime: number
+ */
+
+/* ManagedDeviceList (json):
+ *   = ManagedDevice | null[]
  */
 
 /* MemoryStats (json):
