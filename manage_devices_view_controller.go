@@ -217,12 +217,23 @@ func newManageDevicesViewControllerWithApi(ctx context.Context, api *Api, settin
 // sign-in the client limit refused (AuthNetworkClientError.ClientLimitPrompt):
 // there is no device yet, so no device is this one, and every request carries
 // networkByJwt, the sign-in's network token. After a removal frees a slot it
-// calls retry, which runs the sign-in's auth-client again. The caller closes it.
+// calls retry, which runs the sign-in's auth-client again; a nil retry only
+// reloads the list. The caller closes it.
 func NewSignInManageDevicesViewController(api *Api, networkByJwt string, retry ManageDevicesSignInRetry) *ManageDevicesViewController {
 	vc := newManageDevicesViewControllerWithApi(api.ctx, api, defaultManageDevicesSettings())
 	vc.signInByJwt = networkByJwt
 	vc.signInRetry = retry
 	return vc
+}
+
+// OpenManageDevicesViewController opens the network's devices on this api
+// alone, for a signed-in app that holds no device (a desktop app's settings
+// while it is disconnected): every request carries the network credential the
+// api keeps, no device is this one, and a removal adds nothing, since there is
+// no hold or sign-in to retry. Without a network credential it reports
+// ManageDevicesErrorSignInRequired. The caller closes it; it ends with the api.
+func (self *Api) OpenManageDevicesViewController() *ManageDevicesViewController {
+	return newManageDevicesViewControllerWithApi(self.ctx, self, defaultManageDevicesSettings())
 }
 
 // Start loads the list.

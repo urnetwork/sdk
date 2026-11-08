@@ -532,6 +532,71 @@ func TestManageDevicesSignInRemoveRetriesTheSignIn(t *testing.T) {
 	}
 }
 
+// A signed-in app with no device (a desktop app while disconnected) opens the
+// list on its api alone: the api's network credential on every request, no
+// device marked as this one, and a removal that only reloads the list. A
+// sign-in controller with a nil retry does the same with the token it is given.
+func TestManageDevicesOnTheApiAlone(t *testing.T) {
+	laptop, tablet := NewId(), NewId()
+	server := &testingManageDevicesServer{
+		devices: []*NetworkClientInfo{
+			testingManagedClient(laptop, "Laptop", "", 2_000, true),
+			testingManagedClient(tablet, "Tablet", "", 1_000, false),
+		},
+	}
+	api := newTestingManageDevicesApi(t, testingManageDevicesNetworkJwt)
+	server.install(t, api)
+
+	vc := api.OpenManageDevicesViewController()
+	defer vc.Close()
+	listener := newTestingManageDevicesListener()
+	defer vc.AddManageDevicesListener(listener).Close()
+	connect.AssertEqual(t, vc.GetCanManage(), true)
+	vc.Start()
+	snapshot := listener.until(t, "the list never loaded", func(s *ManageDevicesSnapshot) bool { return s.Loaded })
+	connect.AssertEqual(t, testingManagedClientIds(snapshot.Devices), []Id{*laptop, *tablet})
+	for i := 0; i < snapshot.Devices.Len(); i += 1 {
+		connect.AssertEqual(t, snapshot.Devices.Get(i).ThisDevice, false)
+	}
+
+	vc.RemoveDevice(laptop)
+	snapshot = listener.until(t, "the removal never reloaded", func(s *ManageDevicesSnapshot) bool {
+		return s.RemovingClientId == nil && !s.Loading && 4 <= server.getCount()
+	})
+	connect.AssertEqual(t, server.removedClientIds(), []Id{*laptop})
+	connect.AssertEqual(t, testingManagedClientIds(snapshot.Devices), []Id{*tablet})
+	// nothing to add again
+	connect.AssertEqual(t, snapshot.AddRetryCount, 0)
+	for _, credential := range server.sentCredentials() {
+		connect.AssertEqual(t, credential, testingManageDevicesNetworkJwt)
+	}
+
+	// the sign-in form with no retry
+	signIn := NewSignInManageDevicesViewController(api, "synthetic-stored-sign-in-token", nil)
+	defer signIn.Close()
+	signInListener := newTestingManageDevicesListener()
+	defer signIn.AddManageDevicesListener(signInListener).Close()
+	signIn.Start()
+	signInListener.until(t, "the sign-in list never loaded", func(s *ManageDevicesSnapshot) bool { return s.Loaded })
+	signIn.RemoveDevice(tablet)
+	snapshot = signInListener.until(t, "the sign-in removal never reloaded", func(s *ManageDevicesSnapshot) bool {
+		return s.RemovingClientId == nil && !s.Loading && s.Devices.Len() == 0
+	})
+	connect.AssertEqual(t, snapshot.AddRetryCount, 0)
+	connect.AssertEqual(t, server.removedClientIds(), []Id{*laptop, *tablet})
+
+	// an api without a network credential sends nothing
+	bare := newTestingManageDevicesApi(t, "")
+	bareServer := &testingManageDevicesServer{}
+	bareServer.install(t, bare)
+	bareVc := bare.OpenManageDevicesViewController()
+	defer bareVc.Close()
+	connect.AssertEqual(t, bareVc.GetCanManage(), false)
+	bareVc.Start()
+	connect.AssertEqual(t, bareVc.GetSnapshot().ErrorId, ManageDevicesErrorSignInRequired)
+	connect.AssertEqual(t, len(bareServer.sentCredentials()), 0)
+}
+
 // A refused credential asks for a new sign-in, any other failure is retryable,
 // and a removal of a client the server no longer has reads as removed.
 func TestManageDevicesErrors(t *testing.T) {

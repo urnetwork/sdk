@@ -21951,6 +21951,7 @@ public:
 	void onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const;
 	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
 	ClientSessionViewController openClientSessionViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -31960,6 +31961,10 @@ inline void Api::onboardingOfferIssue(const std::optional<OnboardingOfferIssueAr
 }
 inline ClientSessionViewController Api::openClientSessionViewController() const {
 	ClientSessionViewController r(urnet_api_open_client_session_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController Api::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_api_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {

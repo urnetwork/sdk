@@ -370,6 +370,7 @@ public interface Raw extends Library {
   void urnet_api_onboarding_feedback_token(long a0, String a1, long a2, String a3, urnet_onboarding_feedback_token_cb a4, Pointer a5);
   void urnet_api_onboarding_offer_issue(long a0, String a1, urnet_onboarding_offer_issue_cb a2, Pointer a3);
   long urnet_api_open_client_session_view_controller(long a0);
+  long urnet_api_open_manage_devices_view_controller(long a0);
   void urnet_api_redeem_balance_code(long a0, String a1, urnet_redeem_balance_code_cb a2, Pointer a3);
   void urnet_api_refresh_jwt(long a0, urnet_refresh_jwt_cb a1, Pointer a2);
   Pointer urnet_api_refresh_jwt_sync(long a0, PointerByReference a1);

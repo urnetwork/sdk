@@ -370,6 +370,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_onboarding_feedback_token(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3, urnet_onboarding_feedback_token_cb a4, IntPtr a5);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_onboarding_offer_issue(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_onboarding_offer_issue_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_api_open_client_session_view_controller(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_api_open_manage_devices_view_controller(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_redeem_balance_code(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_redeem_balance_code_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_refresh_jwt(ulong a0, urnet_refresh_jwt_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_refresh_jwt_sync(ulong a0, out IntPtr a1);

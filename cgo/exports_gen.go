@@ -5431,6 +5431,20 @@ func urnet_api_open_client_session_view_controller(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_api_open_manage_devices_view_controller
+func urnet_api_open_manage_devices_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_api_open_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_open_manage_devices_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenManageDevicesViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_api_redeem_balance_code
 func urnet_api_redeem_balance_code(self C.uint64_t, args *C.char, callback_result C.urnet_redeem_balance_code_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_redeem_balance_code")

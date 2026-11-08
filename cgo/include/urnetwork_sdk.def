@@ -92,6 +92,7 @@ EXPORTS
 	urnet_api_onboarding_feedback_token
 	urnet_api_onboarding_offer_issue
 	urnet_api_open_client_session_view_controller
+	urnet_api_open_manage_devices_view_controller
 	urnet_api_redeem_balance_code
 	urnet_api_refresh_jwt
 	urnet_api_refresh_jwt_sync

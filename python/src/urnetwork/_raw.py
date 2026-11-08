@@ -492,6 +492,8 @@ def bind(lib):
     lib.urnet_api_onboarding_offer_issue.restype = None
     lib.urnet_api_open_client_session_view_controller.argtypes = [c_uint64]
     lib.urnet_api_open_client_session_view_controller.restype = c_uint64
+    lib.urnet_api_open_manage_devices_view_controller.argtypes = [c_uint64]
+    lib.urnet_api_open_manage_devices_view_controller.restype = c_uint64
     lib.urnet_api_redeem_balance_code.argtypes = [c_uint64, c_char_p, urnet_redeem_balance_code_cb, c_void_p]
     lib.urnet_api_redeem_balance_code.restype = None
     lib.urnet_api_refresh_jwt.argtypes = [c_uint64, urnet_refresh_jwt_cb, c_void_p]
