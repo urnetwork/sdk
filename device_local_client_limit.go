@@ -90,14 +90,14 @@ func (self *DeviceLocal) RetryClientLimit() bool {
 // a device removed from the network's device list (ManageDevicesViewController
 // calls it), or the plan turning Pro after a purchase (an app calls it). The
 // retries refused before the change were refused for a reason it removed, so
-// RetryClientLimit's backoff does not hold it back, and the retry dials now.
-// These retries are bounded on their own: at most one per
-// ClientLimitRetryMinInterval. It leaves RetryClientLimit's backoff at the
-// level it reached and times its floor from this retry, so a host that calls
-// both in a loop ends at most one hold per ClientLimitRetryMinInterval, plus
-// the few ordinary retries before their floor outgrows it. It does nothing
-// with no hold in force. It also refreshes the client jwt, as RetryClientLimit
-// does. Returns whether a hold was ended.
+// RetryClientLimit's backoff does not hold it back, the retry dials now, and
+// it starts RetryClientLimit's backoff over. These retries are bounded on
+// their own: at most one per ClientLimitRetryMinInterval. The backoff starts
+// over at most once per twice its longest floor (30 minutes), so a host that
+// calls both in a loop gets this bound plus RetryClientLimit's own backoff:
+// in ten minutes of 30 s rounds, 21 change retries and 5 ordinary ones. It
+// does nothing with no hold in force. It also refreshes the client jwt, as
+// RetryClientLimit does. Returns whether a hold was ended.
 func (self *DeviceLocal) RetryClientLimitAfterChange() bool {
 	provider, closed := func() (*deviceLocalProvider, bool) {
 		self.stateLock.Lock()
@@ -107,7 +107,11 @@ func (self *DeviceLocal) RetryClientLimitAfterChange() bool {
 	if closed || provider == nil {
 		return false
 	}
-	if !provider.retryClientLimitAfterChange(time.Now(), self.settings.ClientLimitRetryMinInterval) {
+	if !provider.retryClientLimitAfterChange(
+		time.Now(),
+		self.settings.ClientLimitRetryMinInterval,
+		connect.ClientLimitBackoffTimeout,
+	) {
 		return false
 	}
 	self.GetApi().RequestJwtRefresh()

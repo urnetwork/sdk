@@ -112,9 +112,11 @@ type deviceLocalProvider struct {
 	// before (clientLimitRetryAdmit). Guarded by stateLock.
 	clientLimitRetryTime  time.Time
 	clientLimitRetryCount int
-	// when retryClientLimitAfterChange last ended a hold; zero before the
-	// first. Guarded by stateLock.
+	// when retryClientLimitAfterChange last ended a hold, and when it last
+	// started retryClientLimit's row over; zero before the first. Guarded by
+	// stateLock.
 	clientLimitChangeRetryTime time.Time
+	clientLimitChangeResetTime time.Time
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -548,11 +550,13 @@ func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval tim
 // on their own, none within `minInterval` of the last one admitted. It ends
 // none when no hold is in force. A provider built without a hold ends none.
 //
-// It leaves the ordinary retries' backoff at the level it reached and times
-// their floor from now, as if it were one of them, so a host that calls both
-// retries in a loop gets the change retries' rate, one per minInterval, not
-// that and the ordinary retries' least floor again after every change.
-func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minInterval time.Duration) bool {
+// The change also starts the ordinary retries' row over, since the retries
+// refused before it were refused for a reason it removed, but at most once per
+// twice the larger of `minInterval` and `maxInterval`, the quiet that starts a
+// row over on its own (clientLimitChangeResetAdmit). So a host that calls both
+// retries in a loop gets the change retries' bound plus the ordinary retries'
+// own backoff, not both at their least floor.
+func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
 	if self.clientLimitBackoff == nil {
 		return false
 	}
@@ -565,9 +569,12 @@ func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minI
 		return false
 	}
 	self.clientLimitChangeRetryTime = now
-	// the ordinary floor runs again from now, at the level it reached: a change
-	// never resets the ordinary backoff
-	self.clientLimitRetryTime = now
+	if clientLimitChangeResetAdmit(self.clientLimitChangeResetTime, now, minInterval, maxInterval) {
+		// the change's retry is the first of a new row
+		self.clientLimitChangeResetTime = now
+		self.clientLimitRetryTime = now
+		self.clientLimitRetryCount = 1
+	}
 	self.clientLimitBackoff.Reset()
 	return true
 }
@@ -577,6 +584,15 @@ func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minI
 // backoff of the ordinary retries. A non-positive minInterval does not limit.
 func clientLimitChangeRetryAdmit(last time.Time, now time.Time, minInterval time.Duration) bool {
 	return last.IsZero() || minInterval <= 0 || minInterval <= now.Sub(last)
+}
+
+// clientLimitChangeResetAdmit decides whether a change retry at `now` starts
+// the ordinary retries' row over, the last change retry that did at `last`
+// (zero before the first): the first does, and then one more than twice the
+// larger interval after the last that did, as a row starts over on its own
+// after that much quiet (clientLimitRetryAdmit).
+func clientLimitChangeResetAdmit(last time.Time, now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
+	return last.IsZero() || 2*max(minInterval, maxInterval) < now.Sub(last)
 }
 
 // clientLimitRetryAdmit decides a retry at `now`, after `count` retries in a

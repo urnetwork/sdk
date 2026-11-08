@@ -771,12 +771,12 @@ type Device interface {
 	// RetryClientLimitAfterChange ends the device's client limit hold at once
 	// after a change the server confirmed that frees a slot or raises the
 	// limit: a device removed from the network's device list, or the plan
-	// turning Pro after a purchase. Unlike RetryClientLimit, the backoff of the
-	// retries refused before the change does not hold it back, so the retry
-	// dials now however many came before. At most one per
+	// turning Pro after a purchase. Unlike RetryClientLimit it starts the
+	// retry floor over, since the earlier refused retries were before the
+	// change, so the retry dials now however many came before. At most one per
 	// ClientLimitRetryMinInterval among these, and none when no hold is in
-	// force; it leaves RetryClientLimit's backoff where it was, so both
-	// together end at most about one hold per ClientLimitRetryMinInterval
+	// force; the floor starts over at most once per 30 minutes, so both
+	// retries in a loop get this bound plus RetryClientLimit's own backoff
 	// (DeviceLocal.RetryClientLimitAfterChange). Returns whether a hold was
 	// ended. A remote device asks the device process; one too old to answer
 	// gets its RetryClientLimit.
