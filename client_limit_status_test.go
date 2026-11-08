@@ -835,12 +835,13 @@ func TestDeviceRemoteCachedClientLimitStatusDropsAnExpiredHold(t *testing.T) {
 
 // A removal from the device list, or the plan turning Pro after a purchase,
 // ends the hold at once however many retries the platform refused before:
-// the change retry starts the floor over. Before, both went through the
-// ordinary retry, whose floor after five refused retries in a row (8 minutes,
-// then 15) outlasted the device list's retries and the app's one retry on the
-// purchase, so the device waited out its hold with a slot free or a plan
-// paid. The change retries are still bounded on their own.
-func TestDeviceLocalRetryClientLimitAfterChangeStartsTheFloorOver(t *testing.T) {
+// the ordinary retries' backoff does not hold the change retry back. Before,
+// both went through the ordinary retry, whose floor after five refused retries
+// in a row (8 minutes, then 15) outlasted the device list's retries and the
+// app's one retry on the purchase, so the device waited out its hold with a
+// slot free or a plan paid. The change retries are still bounded on their
+// own, and the ordinary backoff keeps its level.
+func TestDeviceLocalRetryClientLimitAfterChangeEndsTheHoldPastTheBackoff(t *testing.T) {
 	platform := newTestingClientLimitPlatform(t)
 	_, device := newTestingClientLimitDevice(t, platform, nil)
 	listener := newTestingClientLimitListener()
@@ -885,15 +886,15 @@ func TestDeviceLocalRetryClientLimitAfterChangeStartsTheFloorOver(t *testing.T) 
 	}
 	second := platform.nextConnectionDeclaring(t, "")
 	waitProviderSettled(t, device)
-	// the change began a new row: the next ordinary floor is the least one
+	// the ordinary backoff keeps its level, its floor timed from the change
 	func() {
 		provider.stateLock.Lock()
 		defer provider.stateLock.Unlock()
-		connect.AssertEqual(t, provider.clientLimitRetryCount, 1)
+		connect.AssertEqual(t, provider.clientLimitRetryCount, 6)
 	}()
 
 	// refused again at once: a second change retry inside the interval, and
-	// an ordinary retry inside the least floor, end nothing
+	// an ordinary retry inside its floor, end nothing
 	second.closeForClientLimit()
 	if status := listener.next(t, "the second close reached no listener"); status.Status != ClientLimitStatusExceeded {
 		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
@@ -902,7 +903,7 @@ func TestDeviceLocalRetryClientLimitAfterChangeStartsTheFloorOver(t *testing.T) 
 		t.Fatal("a second change retry inside the interval ended the hold")
 	}
 	if device.RetryClientLimit() {
-		t.Fatal("an ordinary retry inside the least floor ended the hold")
+		t.Fatal("an ordinary retry inside its floor ended the hold")
 	}
 	connect.AssertEqual(t, device.GetClientLimitStatus().Status, ClientLimitStatusExceeded)
 
@@ -912,4 +913,68 @@ func TestDeviceLocalRetryClientLimitAfterChangeStartsTheFloorOver(t *testing.T) 
 	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start.Add(29*time.Second), 30*time.Second), false)
 	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start.Add(30*time.Second), 30*time.Second), true)
 	connect.AssertEqual(t, clientLimitChangeRetryAdmit(start, start, 0), true)
+}
+
+// A host that calls both retries in a loop gets the change retries' rate, one
+// per ClientLimitRetryMinInterval, not twice it: the change retry leaves the
+// ordinary backoff at its level and times its floor from the change. Before,
+// each change retry restarted the ordinary row at the least floor, so ten
+// minutes of rounds every 30 s, each calling both, ended 42 holds where the
+// change retry alone ends 21 and the ordinary retry alone 5 (delta review 2,
+// R-K2). Each round here calls both at a synthetic time, and a real refused
+// redial re-arms the hold after each retry that ended one.
+func TestClientLimitRetriesInALoopKeepTheBackoff(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	_, device := newTestingClientLimitDevice(t, platform, nil)
+	provider := func() *deviceLocalProvider {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		return device.provider
+	}()
+	held := func() bool {
+		status, _ := provider.clientLimitStatus()
+		return status.Exceeded
+	}
+	connection := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+	connection.closeForClientLimit()
+	rearm := func() {
+		t.Helper()
+		connection = platform.nextConnectionDeclaring(t, "")
+		waitProviderSettled(t, device)
+		connection.closeForClientLimit()
+		deadline := time.Now().Add(30 * time.Second)
+		for !held() {
+			if time.Now().After(deadline) {
+				t.Fatal("the refused redial did not hold the device")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	for !held() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	const minInterval = 30 * time.Second
+	start := time.Now()
+	ordinary, change := 0, 0
+	for round := 0; round <= 20; round += 1 {
+		now := start.Add(time.Duration(round) * minInterval)
+		platform.drain()
+		if provider.retryClientLimit(now, minInterval, connect.ClientLimitBackoffTimeout) {
+			ordinary += 1
+			rearm()
+		}
+		platform.drain()
+		if provider.retryClientLimitAfterChange(now, minInterval) {
+			change += 1
+			rearm()
+		}
+	}
+	// every change retry, and the ordinary retries before their floor outgrew
+	// the change interval
+	connect.AssertEqual(t, change, 21)
+	if 23 < ordinary+change {
+		t.Fatalf("ten minutes of both retries ended %d holds (%d ordinary, %d change), want at most 23", ordinary+change, ordinary, change)
+	}
 }

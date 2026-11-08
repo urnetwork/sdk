@@ -90,11 +90,14 @@ func (self *DeviceLocal) RetryClientLimit() bool {
 // a device removed from the network's device list (ManageDevicesViewController
 // calls it), or the plan turning Pro after a purchase (an app calls it). The
 // retries refused before the change were refused for a reason it removed, so
-// it starts the retry floor over (RetryClientLimit's backoff), and the retry
-// dials now. These retries are bounded on their own: at most one per
-// ClientLimitRetryMinInterval, so a host that calls it in a loop cannot storm
-// the limit either. It does nothing with no hold in force. It also refreshes
-// the client jwt, as RetryClientLimit does. Returns whether a hold was ended.
+// RetryClientLimit's backoff does not hold it back, and the retry dials now.
+// These retries are bounded on their own: at most one per
+// ClientLimitRetryMinInterval. It leaves RetryClientLimit's backoff at the
+// level it reached and times its floor from this retry, so a host that calls
+// both in a loop ends at most one hold per ClientLimitRetryMinInterval, plus
+// the few ordinary retries before their floor outgrows it. It does nothing
+// with no hold in force. It also refreshes the client jwt, as RetryClientLimit
+// does. Returns whether a hold was ended.
 func (self *DeviceLocal) RetryClientLimitAfterChange() bool {
 	provider, closed := func() (*deviceLocalProvider, bool) {
 		self.stateLock.Lock()

@@ -543,11 +543,15 @@ func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval tim
 
 // retryClientLimitAfterChange ends the client limit hold in force at `now`
 // after a change that frees a slot or raises the limit, and returns whether it
-// did (DeviceLocal.RetryClientLimitAfterChange). The change starts a new row of
-// retries, whose first this is, so the backoff of the refused retries before it
-// does not hold it back. It ends none when no hold is in force, and none within
-// `minInterval` of the last change retry it admitted. A provider built without a
-// hold ends none.
+// did (DeviceLocal.RetryClientLimitAfterChange). The backoff of the ordinary
+// retries refused before it does not hold it back: change retries are bounded
+// on their own, none within `minInterval` of the last one admitted. It ends
+// none when no hold is in force. A provider built without a hold ends none.
+//
+// It leaves the ordinary retries' backoff at the level it reached and times
+// their floor from now, as if it were one of them, so a host that calls both
+// retries in a loop gets the change retries' rate, one per minInterval, not
+// that and the ordinary retries' least floor again after every change.
 func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minInterval time.Duration) bool {
 	if self.clientLimitBackoff == nil {
 		return false
@@ -561,9 +565,9 @@ func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minI
 		return false
 	}
 	self.clientLimitChangeRetryTime = now
-	// the change's retry is the first of a new row
+	// the ordinary floor runs again from now, at the level it reached: a change
+	// never resets the ordinary backoff
 	self.clientLimitRetryTime = now
-	self.clientLimitRetryCount = 1
 	self.clientLimitBackoff.Reset()
 	return true
 }
