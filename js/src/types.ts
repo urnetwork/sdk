@@ -329,6 +329,11 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   /** ends the client limit hold once the user acted on its prompt, at most
    * once per retry interval; true when a hold was ended */
   retryClientLimit(): boolean;
+  /** ends the client limit hold at once after a change the server confirmed
+   * that frees a slot or raises the limit (a removal, a purchase), past the
+   * retry backoff, at most once per change retry interval; true when a hold
+   * was ended (sdk.Device.RetryClientLimitAfterChange) */
+  retryClientLimitAfterChange(): boolean;
 
   // provider traffic: what the device's provider relayed for clients. null
   // when the device has no provider. Contract rows arrive one per listener

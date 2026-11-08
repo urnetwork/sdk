@@ -86,6 +86,7 @@ test("provider status declarations match WASM runtime keys", () => {
     "getClientLimitStatus",
     "addClientLimitStatusChangeListener",
     "retryClientLimit",
+    "retryClientLimitAfterChange",
     "getProviderPacketStats",
     "addProviderPacketStatsChangeListener",
     "getProviderEgressContractDetails",
