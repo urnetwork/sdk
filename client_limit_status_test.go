@@ -780,3 +780,36 @@ func TestClientLimitRetryAdmitBacksOffRetriesInARow(t *testing.T) {
 	admit, _ := clientLimitRetryAdmit(start, 9, start, 0, maxInterval)
 	connect.AssertEqual(t, admit, true)
 }
+
+// With no device process a remote answers its last readout, but never a hold
+// whose retry time has passed: the device has ended that hold by itself since.
+// Before, the cached hold stayed exceeded after its retry time, and a caller
+// such as the apple health audit could keep off a tunnel that was no longer
+// held.
+func TestDeviceRemoteCachedClientLimitStatusDropsAnExpiredHold(t *testing.T) {
+	now := time.UnixMilli(1_800_000_000_000)
+	held := &ClientLimitStatus{
+		Status:    ClientLimitStatusExceeded,
+		RetryTime: now.Add(time.Minute).UnixMilli(),
+		Prompt:    ClientLimitPromptUpgrade,
+	}
+	connect.AssertEqual(t, cachedClientLimitStatus(nil, now), noneClientLimitStatus())
+	connect.AssertEqual(t, cachedClientLimitStatus(held, now), held)
+	connect.AssertEqual(t, cachedClientLimitStatus(held, now.Add(time.Minute)), noneClientLimitStatus())
+	connect.AssertEqual(t, cachedClientLimitStatus(held, now.Add(time.Hour)), noneClientLimitStatus())
+	connect.AssertEqual(t, cachedClientLimitStatus(noneClientLimitStatus(), now), noneClientLimitStatus())
+
+	// the remote itself, with no service
+	expired := &DeviceRemote{lastClientLimitStatus: &ClientLimitStatus{
+		Status:    ClientLimitStatusExceeded,
+		RetryTime: time.Now().Add(-time.Second).UnixMilli(),
+		Prompt:    ClientLimitPromptRemoveClient,
+	}}
+	connect.AssertEqual(t, expired.GetClientLimitStatus(), noneClientLimitStatus())
+	current := &DeviceRemote{lastClientLimitStatus: &ClientLimitStatus{
+		Status:    ClientLimitStatusExceeded,
+		RetryTime: time.Now().Add(time.Hour).UnixMilli(),
+		Prompt:    ClientLimitPromptRemoveClient,
+	}}
+	connect.AssertEqual(t, current.GetClientLimitStatus().Status, ClientLimitStatusExceeded)
+}

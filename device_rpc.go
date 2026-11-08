@@ -1439,8 +1439,9 @@ func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
 // GetClientLimitStatus reads through to the local device, whose provider holds
 // the platform connection (on ios that is the packet tunnel extension). With no
 // service it degrades to the last known readout, and to no hold when there has
-// never been one. A device process too old to answer keeps its rpc session and
-// reads no hold.
+// never been one or the last one's retry time has passed, since the device
+// ends a hold then by itself. A device process too old to answer keeps its
+// rpc session and reads no hold.
 func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1463,10 +1464,22 @@ func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
 	if success {
 		return status
 	}
-	if self.lastClientLimitStatus != nil {
-		return cloneClientLimitStatus(self.lastClientLimitStatus)
+	return cachedClientLimitStatus(self.lastClientLimitStatus, time.Now())
+}
+
+// cachedClientLimitStatus is a remote's last client limit readout as it reads
+// at `now` with no service: none when there is none, or when it is a hold whose
+// retry time has passed, which the device has ended by itself since, so a
+// caller never acts on a hold that is over (a health audit that keeps off a
+// held tunnel).
+func cachedClientLimitStatus(last *ClientLimitStatus, now time.Time) *ClientLimitStatus {
+	if last == nil {
+		return noneClientLimitStatus()
 	}
-	return noneClientLimitStatus()
+	if last.Status == ClientLimitStatusExceeded && last.RetryTime <= now.UnixMilli() {
+		return noneClientLimitStatus()
+	}
+	return cloneClientLimitStatus(last)
 }
 
 // RetryClientLimit asks the local device, whose provider holds the platform
