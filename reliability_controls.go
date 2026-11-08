@@ -127,6 +127,10 @@ type ReliabilitySettings struct {
 	// StickyFlowIdleTimeoutMillis is the minimum idle age for that retirement.
 	// 0 disables it even when MaxStickyFlowsPerExit is nonzero.
 	StickyFlowIdleTimeoutMillis int64
+	// ScoredAffinityDonor ranks the eligible affinity donors of a new flow by
+	// their placement score instead of taking the newest. false, the default,
+	// keeps the newest-donor scan.
+	ScoredAffinityDonor bool
 	// QuarantineGroupFollow is retained for settings compatibility. Fresh
 	// flows now always scatter from a quarantined donor; a sustained
 	// no-receive verdict must not attract another H1 handshake.
@@ -142,6 +146,11 @@ type ReliabilitySettings struct {
 	// nothing received anywhere. 0 disables the gate, which is the comparison
 	// point for measuring how many verdicts it holds.
 	UplinkStalenessGateMillis int64
+	// UplinkStalenessMaxHoldMillis bounds how long the uplink staleness gate
+	// holds the verdicts through continuous staleness, so a window that is
+	// really dead is still recycled. Connect's default is 60s. 0 permits
+	// verdicts at once, so the gate never holds.
+	UplinkStalenessMaxHoldMillis int64
 	// SoftVerdictDemote demotes the soft removal verdicts (no-receive-ack,
 	// no-receive-syn, stats-unhealthy) against an exit carrying live flows:
 	// the exit is warned out of selection and kept, its established flows
@@ -230,6 +239,17 @@ type ReliabilitySettings struct {
 	// the send-retry pace, the pre-change behavior -- unlike the other duration
 	// knobs here, 0 is not "off".
 	FormationPollTimeoutMillis int64
+	// WindowOutcomeDeadlineMillis is the window outcome watchdog: a window
+	// that has added no provider this long after it first tried to expand
+	// gets one silent rebuild, the programmatic form of a manual disconnect
+	// and reconnect. Connect's default is 45s. 0 disables the rebuild and the
+	// failed latch below.
+	WindowOutcomeDeadlineMillis int64
+	// WindowOutcomeRebuildDeadlineMillis is the watchdog's second half: no
+	// provider added this long after the rebuild latches the failed state,
+	// which a provider added later clears. Connect's default is 45s. 0
+	// disables the failed latch only.
+	WindowOutcomeRebuildDeadlineMillis int64
 	// BusyProbe interposes an active liveness probe on the send-stall bar:
 	// instead of convicting a stalled exit immediately, one control ping is
 	// fired through it with a snappy budget -- an ack acquits (the exit is
@@ -283,12 +303,21 @@ type ReliabilitySettings struct {
 	PlacementDemoteConsecutive int32
 	// RewardInstrumentation emits reward observability lines; false emits none.
 	RewardInstrumentation bool
+	// LightClassifier installs connect's light-tier flow classifier, which
+	// names a flow's class for scored placement. Connect's default is on.
+	// Unlike the other controls, a change takes effect on the next flow:
+	// SetReliabilitySettings installs or clears the classifier itself.
+	LightClassifier bool
 	// QuarantineDampening escalates a quarantine episode's hold time by prior
 	// reconvictions (60s -> 120s -> 240s) instead of the flat hold every
 	// episode gets by default. See the QUARANTINE-DAMPENING CAVEAT in
 	// routing_tier.go: the reconviction counter does not yet decay within a
 	// session.
 	QuarantineDampening bool
+	// QuarantineReentryRampMillis ramps a released exit back to full scored
+	// placement standing over this long after its quarantine lifts. 0, the
+	// default, restores full standing at once.
+	QuarantineReentryRampMillis int64
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -312,9 +341,11 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		PerformanceAwareAffinity:      reliabilitySettings.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:         int32(reliabilitySettings.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeoutMillis:   reliabilitySettings.StickyFlowIdleTimeout.Milliseconds(),
+		ScoredAffinityDonor:           reliabilitySettings.ScoredAffinityDonor,
 		QuarantineGroupFollow:         reliabilitySettings.QuarantineGroupFollow,
 		GroupFollowWindowMillis:       reliabilitySettings.GroupFollowWindow.Milliseconds(),
 		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
+		UplinkStalenessMaxHoldMillis:  reliabilitySettings.UplinkStalenessMaxHold.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
 		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
@@ -331,6 +362,8 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 
 		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
+		WindowOutcomeDeadlineMillis:              reliabilitySettings.WindowOutcomeDeadline.Milliseconds(),
+		WindowOutcomeRebuildDeadlineMillis:       reliabilitySettings.WindowOutcomeRebuildDeadline.Milliseconds(),
 		BusyProbe:                                reliabilitySettings.BusyProbe,
 		BusyProbeBudgetMillis:                    reliabilitySettings.BusyProbeBudget.Milliseconds(),
 		SchedulerPauseToleranceMillis:            reliabilitySettings.SchedulerPauseTolerance.Milliseconds(),
@@ -338,11 +371,13 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		BlackholeConnectComparativeTimeoutMillis: reliabilitySettings.BlackholeConnectComparativeTimeout.Milliseconds(),
 		HeartbeatIntervalMillis:                  reliabilitySettings.HeartbeatInterval.Milliseconds(),
 
-		ScoredPlacement:            reliabilitySettings.ScoredPlacement,
-		PlacementHysteresisPct:     reliabilitySettings.PlacementHysteresisPct,
-		PlacementDemoteConsecutive: int32(reliabilitySettings.PlacementDemoteConsecutive),
-		RewardInstrumentation:      reliabilitySettings.RewardInstrumentation,
-		QuarantineDampening:        reliabilitySettings.QuarantineDampening,
+		ScoredPlacement:             reliabilitySettings.ScoredPlacement,
+		PlacementHysteresisPct:      reliabilitySettings.PlacementHysteresisPct,
+		PlacementDemoteConsecutive:  int32(reliabilitySettings.PlacementDemoteConsecutive),
+		RewardInstrumentation:       reliabilitySettings.RewardInstrumentation,
+		LightClassifier:             reliabilitySettings.LightClassifier,
+		QuarantineDampening:         reliabilitySettings.QuarantineDampening,
+		QuarantineReentryRampMillis: reliabilitySettings.QuarantineReentryRamp.Milliseconds(),
 	}
 }
 
@@ -364,9 +399,11 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		PerformanceAwareAffinity:   self.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:      int(self.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeout:      millis(self.StickyFlowIdleTimeoutMillis),
+		ScoredAffinityDonor:        self.ScoredAffinityDonor,
 		QuarantineGroupFollow:      self.QuarantineGroupFollow,
 		GroupFollowWindow:          millis(self.GroupFollowWindowMillis),
 		UplinkStalenessGate:        millis(self.UplinkStalenessGateMillis),
+		UplinkStalenessMaxHold:     millis(self.UplinkStalenessMaxHoldMillis),
 		SoftVerdictDemote:          self.SoftVerdictDemote,
 		RemovalBudgetCount:         int(self.RemovalBudgetCount),
 		RemovalBudgetWindow:        millis(self.RemovalBudgetWindowMillis),
@@ -383,6 +420,8 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		EvaluationPoolMultiple:     int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
+		WindowOutcomeDeadline:              millis(self.WindowOutcomeDeadlineMillis),
+		WindowOutcomeRebuildDeadline:       millis(self.WindowOutcomeRebuildDeadlineMillis),
 		BusyProbe:                          self.BusyProbe,
 		BusyProbeBudget:                    millis(self.BusyProbeBudgetMillis),
 		SchedulerPauseTolerance:            millis(self.SchedulerPauseToleranceMillis),
@@ -394,7 +433,9 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		PlacementHysteresisPct:     self.PlacementHysteresisPct,
 		PlacementDemoteConsecutive: int(self.PlacementDemoteConsecutive),
 		RewardInstrumentation:      self.RewardInstrumentation,
+		LightClassifier:            self.LightClassifier,
 		QuarantineDampening:        self.QuarantineDampening,
+		QuarantineReentryRamp:      millis(self.QuarantineReentryRampMillis),
 	}
 }
 

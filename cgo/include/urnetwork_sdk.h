@@ -5199,9 +5199,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PerformanceAwareAffinity: boolean
  *   MaxStickyFlowsPerExit: number
  *   StickyFlowIdleTimeoutMillis: number
+ *   ScoredAffinityDonor: boolean
  *   QuarantineGroupFollow: boolean
  *   GroupFollowWindowMillis: number
  *   UplinkStalenessGateMillis: number
+ *   UplinkStalenessMaxHoldMillis: number
  *   SoftVerdictDemote: boolean
  *   RemovalBudgetCount: number
  *   RemovalBudgetWindowMillis: number
@@ -5217,6 +5219,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   SharedFateWindowMillis: number
  *   EvaluationPoolMultiple: number
  *   FormationPollTimeoutMillis: number
+ *   WindowOutcomeDeadlineMillis: number
+ *   WindowOutcomeRebuildDeadlineMillis: number
  *   BusyProbe: boolean
  *   BusyProbeBudgetMillis: number
  *   SchedulerPauseToleranceMillis: number
@@ -5227,7 +5231,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PlacementHysteresisPct: number
  *   PlacementDemoteConsecutive: number
  *   RewardInstrumentation: boolean
+ *   LightClassifier: boolean
  *   QuarantineDampening: boolean
+ *   QuarantineReentryRampMillis: number
  */
 
 /* ReliabilityWindow (json):
