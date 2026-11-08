@@ -312,6 +312,17 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		}
 		return jsSub(device.AddClientLimitStatusChangeListener(&jsClientLimitStatusChangeListener{cb: cb}))
 	})
+	// ends the client limit hold once the user acted on its prompt
+	// (sdk.Device.RetryClientLimit); true when a hold was ended
+	m["retryClientLimit"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.RetryClientLimit())
+	})
+	// ends the client limit hold at once after a change that frees a slot or
+	// raises the limit, a removal or a purchase
+	// (sdk.Device.RetryClientLimitAfterChange); true when a hold was ended
+	m["retryClientLimitAfterChange"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.RetryClientLimitAfterChange())
+	})
 	m["getProviderPacketStats"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsPacketStats(device.GetProviderPacketStats())
 	})
@@ -796,9 +807,10 @@ func (self *jsContractDetailsChangeListener) ContractDetailsChanged(contractDeta
 
 // ── provider status ──────────────────────────────────────────────────────────
 
-// Mirrors sdk.ClientLimitStatus ({status, retryTime}):
-// status is "" or "client_limit_exceeded", and retryTime the unix millisecond
-// time the device reconnects, 0 with no hold
+// Mirrors sdk.ClientLimitStatus ({status, retryTime, prompt}):
+// status is "" or "client_limit_exceeded", retryTime the unix millisecond
+// time the device reconnects, 0 with no hold, and prompt "upgrade" or
+// "remove_client" while held, "" with no hold
 func jsClientLimitStatus(status *sdk.ClientLimitStatus) js.Value {
 	if status == nil {
 		return js.Null()
@@ -806,6 +818,7 @@ func jsClientLimitStatus(status *sdk.ClientLimitStatus) js.Value {
 	return js.ValueOf(map[string]any{
 		"status":    status.Status,
 		"retryTime": status.RetryTime,
+		"prompt":    status.Prompt,
 	})
 }
 

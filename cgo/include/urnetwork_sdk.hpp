@@ -286,6 +286,13 @@ inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
 inline constexpr int64_t ClientEventMaxAttempts = 3;
+inline constexpr const char* ClientLimitNoticeNone = "";
+inline constexpr const char* ClientLimitNoticePost = "post";
+inline constexpr const char* ClientLimitNoticeRemove = "remove";
+inline constexpr const char* ClientLimitNoticeUpdate = "update";
+inline constexpr const char* ClientLimitPromptNone = "";
+inline constexpr const char* ClientLimitPromptRemoveClient = "remove_client";
+inline constexpr const char* ClientLimitPromptUpgrade = "upgrade";
 inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
 inline constexpr const char* ClientLimitStatusNone = "";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
@@ -443,6 +450,12 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr int64_t LowMemoryDeviceTargetByteCount = 33554432;
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr const char* ManageDevicesErrorLoadFailed = "load_failed";
+inline constexpr const char* ManageDevicesErrorNone = "";
+inline constexpr const char* ManageDevicesErrorRemoveFailed = "remove_failed";
+inline constexpr const char* ManageDevicesErrorSignInRequired = "sign_in_required";
+inline constexpr const char* ManagedDeviceKindDevice = "device";
+inline constexpr const char* ManagedDeviceKindProxy = "proxy";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
@@ -742,6 +755,7 @@ class BittensorLocalKeyFlow;
 class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
+class ClientLimitNoticeTracker;
 class ClientRefreshIntegrityNotice;
 class ClientSessionAction;
 class ClientSessionActionList;
@@ -770,6 +784,7 @@ class LocalStateLocationReadResult;
 class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
+class ManageDevicesViewController;
 class NetworkNameValidationViewController;
 class NetworkSessionInfo;
 class NetworkSessionInfoList;
@@ -995,6 +1010,8 @@ struct LocationGroupResult;
 struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
+struct ManageDevicesSnapshot;
+struct ManagedDevice;
 struct MemoryStats;
 struct MemoryTeardownObservation;
 struct NetExtender;
@@ -1249,6 +1266,7 @@ using LocationDeviceResultList = std::vector<LocationDeviceResult>;
 using LocationGroupResultList = std::vector<LocationGroupResult>;
 using LocationResultList = std::vector<LocationResult>;
 using LogFileInfoList = std::vector<LogFileInfo>;
+using ManagedDeviceList = std::vector<ManagedDevice>;
 using MultiHopIdList = std::vector<IdList>;
 using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
 using NetworkClientInfoList = std::vector<NetworkClientInfo>;
@@ -1565,6 +1583,7 @@ struct AuthNetworkClientError {
 	std::optional<bool> upgrade_required;
 	std::optional<bool> no_unique_supply;
 	std::string message{};
+	std::optional<std::string> client_limit_prompt;
 };
 
 struct ProxyAuthResult {
@@ -1989,6 +2008,7 @@ struct ClientInfo {
 struct ClientLimitStatus {
 	std::string Status{};
 	int64_t RetryTime{};
+	std::string Prompt{};
 };
 
 struct ConnectedProviderLocation {
@@ -2341,6 +2361,7 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayGoodConnectStall{};
 	int64_t TransportDelayBadConnectStall{};
 	int64_t TransportDelayPromptConnectTimeout{};
+	int64_t ClientLimitRetryMinInterval{};
 	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -2927,6 +2948,25 @@ struct LogFileInfo {
 	std::string Severity{};
 	int64_t ByteCount{};
 	int64_t ModifiedMillis{};
+};
+
+struct ManageDevicesSnapshot {
+	std::optional<ManagedDeviceList> Devices;
+	bool Loaded{};
+	bool Loading{};
+	std::optional<std::string> RemovingClientId;
+	std::string ErrorId{};
+	int64_t AddRetryCount{};
+};
+
+struct ManagedDevice {
+	std::optional<std::string> ClientId;
+	std::string Kind{};
+	std::string Name{};
+	std::string Spec{};
+	bool ThisDevice{};
+	bool Connected{};
+	int64_t LastSeenTime{};
 };
 
 struct MemoryStats {
@@ -5083,6 +5123,10 @@ inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
+inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v);
+inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v);
+inline void to_json(nlohmann::json& j, const ManagedDevice& v);
+inline void from_json(const nlohmann::json& j, ManagedDevice& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
@@ -6972,6 +7016,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 		j["no_unique_supply"] = *v.no_unique_supply;
 	}
 	j["message"] = v.message;
+	if (v.client_limit_prompt) {
+		j["client_limit_prompt"] = *v.client_limit_prompt;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	if (!j.is_object()) {
@@ -6992,6 +7039,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
+	}
+	if (auto it = j.find("client_limit_prompt"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_limit_prompt = std::move(tmp);
 	}
 }
 
@@ -8896,6 +8948,7 @@ inline void to_json(nlohmann::json& j, const ClientLimitStatus& v) {
 	j = nlohmann::json::object();
 	j["Status"] = v.Status;
 	j["RetryTime"] = v.RetryTime;
+	j["Prompt"] = v.Prompt;
 }
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	if (!j.is_object()) {
@@ -8906,6 +8959,9 @@ inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	}
 	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RetryTime);
+	}
+	if (auto it = j.find("Prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Prompt);
 	}
 }
 
@@ -10346,6 +10402,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayGoodConnectStall"] = v.TransportDelayGoodConnectStall;
 	j["TransportDelayBadConnectStall"] = v.TransportDelayBadConnectStall;
 	j["TransportDelayPromptConnectTimeout"] = v.TransportDelayPromptConnectTimeout;
+	j["ClientLimitRetryMinInterval"] = v.ClientLimitRetryMinInterval;
 	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -10488,6 +10545,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("TransportDelayPromptConnectTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportDelayPromptConnectTimeout);
+	}
+	if (auto it = j.find("ClientLimitRetryMinInterval"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientLimitRetryMinInterval);
 	}
 	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StrictWindowHandover);
@@ -13086,6 +13146,88 @@ inline void from_json(const nlohmann::json& j, LogFileInfo& v) {
 	}
 	if (auto it = j.find("ModifiedMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ModifiedMillis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v) {
+	j = nlohmann::json::object();
+	if (v.Devices) {
+		j["Devices"] = *v.Devices;
+	}
+	j["Loaded"] = v.Loaded;
+	j["Loading"] = v.Loading;
+	if (v.RemovingClientId) {
+		j["RemovingClientId"] = *v.RemovingClientId;
+	}
+	j["ErrorId"] = v.ErrorId;
+	j["AddRetryCount"] = v.AddRetryCount;
+}
+inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Devices"); it != j.end() && !it->is_null()) {
+		ManagedDeviceList tmp{};
+		it->get_to(tmp);
+		v.Devices = std::move(tmp);
+	}
+	if (auto it = j.find("Loaded"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loaded);
+	}
+	if (auto it = j.find("Loading"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loading);
+	}
+	if (auto it = j.find("RemovingClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.RemovingClientId = std::move(tmp);
+	}
+	if (auto it = j.find("ErrorId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorId);
+	}
+	if (auto it = j.find("AddRetryCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AddRetryCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ManagedDevice& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["Kind"] = v.Kind;
+	j["Name"] = v.Name;
+	j["Spec"] = v.Spec;
+	j["ThisDevice"] = v.ThisDevice;
+	j["Connected"] = v.Connected;
+	j["LastSeenTime"] = v.LastSeenTime;
+}
+inline void from_json(const nlohmann::json& j, ManagedDevice& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Spec"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Spec);
+	}
+	if (auto it = j.find("ThisDevice"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ThisDevice);
+	}
+	if (auto it = j.find("Connected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Connected);
+	}
+	if (auto it = j.find("LastSeenTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSeenTime);
 	}
 }
 
@@ -21423,6 +21565,8 @@ using ListApiKeysCallback = std::function<void(std::optional<ListApiKeysResult> 
 using LocalOverrideAppIdsListener = std::function<void()>;
 using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;
 using LocationMatchListener = std::function<void()>;
+using ManageDevicesListener = std::function<void(std::optional<ManageDevicesSnapshot> snapshot)>;
+using ManageDevicesSignInRetry = std::function<void()>;
 using NetworkBlockLocationCallback = std::function<void(std::optional<NetworkBlockLocationResult> result, std::optional<std::string> err_param)>;
 using NetworkCheckCallback = std::function<void(std::optional<NetworkCheckResult> result, std::optional<std::string> err_param)>;
 using NetworkClientsListener = std::function<void(std::optional<NetworkClientInfoList> network_clients)>;
@@ -21722,6 +21866,8 @@ public:
 	void removeConnectedProvider(const std::string& client_id) const;
 	void removeDestination() const;
 	void resetExtenders() const;
+	bool retryClientLimit() const;
+	bool retryClientLimitAfterChange() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
@@ -21856,6 +22002,7 @@ public:
 	void onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const;
 	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
 	ClientSessionViewController openClientSessionViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -22042,6 +22189,14 @@ public:
 	void setLocale(const std::string& locale) const;
 };
 
+class ClientLimitNoticeTracker final : public detail::Handle {
+public:
+	ClientLimitNoticeTracker() = default;
+	explicit ClientLimitNoticeTracker(uint64_t h) : detail::Handle(h) {}
+	std::string reset() const;
+	std::string update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const;
+};
+
 class ClientRefreshIntegrityNotice final : public detail::Handle {
 public:
 	ClientRefreshIntegrityNotice() = default;
@@ -22225,6 +22380,7 @@ public:
 	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closeManageDevicesViewController(const ManageDevicesViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
@@ -22277,6 +22433,7 @@ public:
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
@@ -22411,6 +22568,7 @@ public:
 	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closeManageDevicesViewController(const ManageDevicesViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
@@ -22447,6 +22605,7 @@ public:
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
@@ -22707,6 +22866,20 @@ public:
 	LoginViewController() = default;
 	explicit LoginViewController(uint64_t h) : detail::Handle(h) {}
 	void close() const;
+	void start() const;
+	void stop() const;
+};
+
+class ManageDevicesViewController final : public detail::Handle {
+public:
+	ManageDevicesViewController() = default;
+	explicit ManageDevicesViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addManageDevicesListener(ManageDevicesListener listener) const;
+	void close() const;
+	bool getCanManage() const;
+	std::optional<ManageDevicesSnapshot> getSnapshot() const;
+	void refresh() const;
+	void removeDevice(const std::string& client_id) const;
 	void start() const;
 	void stop() const;
 };
@@ -26233,6 +26406,54 @@ inline void retained_location_match(void* user_data) {
 }
 inline void oneshot_location_match(void* user_data) {
 	auto* f = static_cast<LocationMatchListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_manage_devices(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ManageDevicesListener*>(user_data);
+	try {
+		std::optional<ManageDevicesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ManageDevicesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_manage_devices(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ManageDevicesListener*>(user_data);
+	try {
+		std::optional<ManageDevicesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ManageDevicesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_manage_devices_sign_in_retry(void* user_data) {
+	auto* f = static_cast<ManageDevicesSignInRetry*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_manage_devices_sign_in_retry(void* user_data) {
+	auto* f = static_cast<ManageDevicesSignInRetry*>(user_data);
 	try {
 		(*f)();
 	} catch (const std::exception& e) {
@@ -30973,6 +31194,14 @@ inline void Device::removeDestination() const {
 inline void Device::resetExtenders() const {
 	urnet_device_reset_extenders(handle());
 }
+inline bool Device::retryClientLimit() const {
+	bool r = urnet_device_retry_client_limit(handle());
+	return r;
+}
+inline bool Device::retryClientLimitAfterChange() const {
+	bool r = urnet_device_retry_client_limit_after_change(handle());
+	return r;
+}
 inline void Device::setAllowForeground(bool allow_foreground) const {
 	urnet_device_set_allow_foreground(handle(), allow_foreground);
 }
@@ -31787,6 +32016,10 @@ inline void Api::onboardingOfferIssue(const std::optional<OnboardingOfferIssueAr
 }
 inline ClientSessionViewController Api::openClientSessionViewController() const {
 	ClientSessionViewController r(urnet_api_open_client_session_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController Api::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_api_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {
@@ -32848,6 +33081,20 @@ inline void ClientEventQueue::setAppVersion(const std::string& app_version) cons
 inline void ClientEventQueue::setLocale(const std::string& locale) const {
 	urnet_client_event_queue_set_locale(handle(), locale.c_str());
 }
+inline std::string ClientLimitNoticeTracker::reset() const {
+	char* r_c = urnet_client_limit_notice_tracker_reset(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientLimitNoticeTracker::update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_client_limit_notice_tracker_update(handle(), status_c, connect_requested);
+	return detail::takeString(r_c);
+}
 inline bool ClientRefreshIntegrityNotice::closeApiIfCurrent() const {
 	bool r = urnet_client_refresh_integrity_notice_close_api_if_current(handle());
 	return r;
@@ -33445,6 +33692,9 @@ inline void DeviceLocal::closeDevicesViewController(const DevicesViewController&
 inline void DeviceLocal::closeLocationsViewController(const LocationsViewController& vc) const {
 	urnet_device_local_close_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closeManageDevicesViewController(const ManageDevicesViewController& vc) const {
+	urnet_device_local_close_manage_devices_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_local_close_peer_view_controller(handle(), vc.handle());
 }
@@ -33714,6 +33964,10 @@ inline FeedbackViewController DeviceLocal::openFeedbackViewController() const {
 }
 inline LocationsViewController DeviceLocal::openLocationsViewController() const {
 	LocationsViewController r(urnet_device_local_open_locations_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController DeviceLocal::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_device_local_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline NetworkUserViewController DeviceLocal::openNetworkUserViewController() const {
@@ -34296,6 +34550,9 @@ inline void DeviceRemote::closeDevicesViewController(const DevicesViewController
 inline void DeviceRemote::closeLocationsViewController(const LocationsViewController& vc) const {
 	urnet_device_remote_close_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeManageDevicesViewController(const ManageDevicesViewController& vc) const {
+	urnet_device_remote_close_manage_devices_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_remote_close_peer_view_controller(handle(), vc.handle());
 }
@@ -34479,6 +34736,10 @@ inline FeedbackViewController DeviceRemote::openFeedbackViewController() const {
 }
 inline LocationsViewController DeviceRemote::openLocationsViewController() const {
 	LocationsViewController r(urnet_device_remote_open_locations_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController DeviceRemote::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_device_remote_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline NetworkUserViewController DeviceRemote::openNetworkUserViewController() const {
@@ -35766,6 +36027,44 @@ inline void LoginViewController::start() const {
 }
 inline void LoginViewController::stop() const {
 	urnet_login_view_controller_stop(handle());
+}
+inline Sub ManageDevicesViewController::addManageDevicesListener(ManageDevicesListener listener) const {
+	std::shared_ptr<ManageDevicesListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ManageDevicesListener>(std::move(listener));
+	}
+	Sub r(urnet_manage_devices_view_controller_add_manage_devices_listener(handle(), listener_fn ? &detail::retained_manage_devices : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ManageDevicesViewController::close() const {
+	urnet_manage_devices_view_controller_close(handle());
+}
+inline bool ManageDevicesViewController::getCanManage() const {
+	bool r = urnet_manage_devices_view_controller_get_can_manage(handle());
+	return r;
+}
+inline std::optional<ManageDevicesSnapshot> ManageDevicesViewController::getSnapshot() const {
+	char* r_c = urnet_manage_devices_view_controller_get_snapshot(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ManageDevicesSnapshot>(r_s->c_str());
+}
+inline void ManageDevicesViewController::refresh() const {
+	urnet_manage_devices_view_controller_refresh(handle());
+}
+inline void ManageDevicesViewController::removeDevice(const std::string& client_id) const {
+	urnet_manage_devices_view_controller_remove_device(handle(), client_id.c_str());
+}
+inline void ManageDevicesViewController::start() const {
+	urnet_manage_devices_view_controller_start(handle());
+}
+inline void ManageDevicesViewController::stop() const {
+	urnet_manage_devices_view_controller_stop(handle());
 }
 inline void NetworkNameValidationViewController::close() const {
 	urnet_network_name_validation_view_controller_close(handle());
@@ -38115,6 +38414,10 @@ inline std::optional<ClientInfo> newClientInfo(const std::string& device_type, c
 	}
 	return detail::parseJson<ClientInfo>(r_s->c_str());
 }
+inline ClientLimitNoticeTracker newClientLimitNoticeTracker() {
+	ClientLimitNoticeTracker r(urnet_new_client_limit_notice_tracker());
+	return r;
+}
 inline std::optional<ClientEvent> newConnectFirstEvent() {
 	char* r_c = urnet_new_connect_first_event();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -38358,6 +38661,17 @@ inline std::optional<ClientEvent> newPurchaseStartedEvent(const std::string& sto
 		return std::nullopt;
 	}
 	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline ManageDevicesViewController newSignInManageDevicesViewController(const Api& api, const std::string& network_by_jwt, ManageDevicesSignInRetry retry) {
+	std::shared_ptr<ManageDevicesSignInRetry> retry_fn;
+	if (retry) {
+		retry_fn = std::make_shared<ManageDevicesSignInRetry>(std::move(retry));
+	}
+	ManageDevicesViewController r(urnet_new_sign_in_manage_devices_view_controller(api.handle(), network_by_jwt.c_str(), retry_fn ? &detail::retained_manage_devices_sign_in_retry : nullptr, retry_fn.get()));
+	if (retry_fn) {
+		r.retain(retry_fn);
+	}
+	return r;
 }
 inline std::optional<ClientEvent> newSignupOptoutChangedEvent(bool product_updates) {
 	char* r_c = urnet_new_signup_optout_changed_event(product_updates);

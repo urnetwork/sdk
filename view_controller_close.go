@@ -57,6 +57,12 @@ func (self *viewControllerManager) CloseDevicesViewController(vc *DevicesViewCon
 	}
 }
 
+func (self *viewControllerManager) CloseManageDevicesViewController(vc *ManageDevicesViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}
+
 func (self *viewControllerManager) ClosePostQuantumIdentityViewController(
 	vc *PostQuantumIdentityViewController,
 ) {

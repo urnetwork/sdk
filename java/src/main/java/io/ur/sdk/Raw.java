@@ -112,6 +112,8 @@ public interface Raw extends Library {
   interface urnet_local_override_app_ids_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_local_state_save_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_location_match_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_manage_devices_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_manage_devices_sign_in_retry_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_network_block_location_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_network_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_network_clients_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -368,6 +370,7 @@ public interface Raw extends Library {
   void urnet_api_onboarding_feedback_token(long a0, String a1, long a2, String a3, urnet_onboarding_feedback_token_cb a4, Pointer a5);
   void urnet_api_onboarding_offer_issue(long a0, String a1, urnet_onboarding_offer_issue_cb a2, Pointer a3);
   long urnet_api_open_client_session_view_controller(long a0);
+  long urnet_api_open_manage_devices_view_controller(long a0);
   void urnet_api_redeem_balance_code(long a0, String a1, urnet_redeem_balance_code_cb a2, Pointer a3);
   void urnet_api_refresh_jwt(long a0, urnet_refresh_jwt_cb a1, Pointer a2);
   Pointer urnet_api_refresh_jwt_sync(long a0, PointerByReference a1);
@@ -522,6 +525,8 @@ public interface Raw extends Library {
   long urnet_client_event_queue_pending_count(long a0);
   void urnet_client_event_queue_set_app_version(long a0, String a1);
   void urnet_client_event_queue_set_locale(long a0, String a1);
+  Pointer urnet_client_limit_notice_tracker_reset(long a0);
+  Pointer urnet_client_limit_notice_tracker_update(long a0, String a1, byte a2);
   byte urnet_client_refresh_integrity_notice_close_api_if_current(long a0);
   long urnet_client_session_action_get_error(long a0);
   byte urnet_client_session_action_get_loading(long a0);
@@ -746,6 +751,8 @@ public interface Raw extends Library {
   void urnet_device_remove_connected_provider(long a0, String a1);
   void urnet_device_remove_destination(long a0);
   void urnet_device_reset_extenders(long a0);
+  byte urnet_device_retry_client_limit(long a0);
+  byte urnet_device_retry_client_limit_after_change(long a0);
   void urnet_device_set_allow_foreground(long a0, byte a1);
   void urnet_device_set_block_action_overrides(long a0, String a1);
   void urnet_device_set_blocker_enabled(long a0, byte a1);
@@ -788,6 +795,7 @@ public interface Raw extends Library {
   void urnet_device_local_close_crypto_invoice_view_controller(long a0, long a1);
   void urnet_device_local_close_devices_view_controller(long a0, long a1);
   void urnet_device_local_close_locations_view_controller(long a0, long a1);
+  void urnet_device_local_close_manage_devices_view_controller(long a0, long a1);
   void urnet_device_local_close_peer_view_controller(long a0, long a1);
   void urnet_device_local_close_points_leaderboard_view_controller(long a0, long a1);
   void urnet_device_local_close_post_quantum_identity_view_controller(long a0, long a1);
@@ -840,6 +848,7 @@ public interface Raw extends Library {
   long urnet_device_local_open_extender_view_controller(long a0);
   long urnet_device_local_open_feedback_view_controller(long a0);
   long urnet_device_local_open_locations_view_controller(long a0);
+  long urnet_device_local_open_manage_devices_view_controller(long a0);
   long urnet_device_local_open_network_user_view_controller(long a0);
   long urnet_device_local_open_peer_view_controller(long a0);
   long urnet_device_local_open_points_leaderboard_view_controller(long a0);
@@ -939,6 +948,7 @@ public interface Raw extends Library {
   void urnet_device_remote_close_crypto_invoice_view_controller(long a0, long a1);
   void urnet_device_remote_close_devices_view_controller(long a0, long a1);
   void urnet_device_remote_close_locations_view_controller(long a0, long a1);
+  void urnet_device_remote_close_manage_devices_view_controller(long a0, long a1);
   void urnet_device_remote_close_peer_view_controller(long a0, long a1);
   void urnet_device_remote_close_points_leaderboard_view_controller(long a0, long a1);
   void urnet_device_remote_close_post_quantum_identity_view_controller(long a0, long a1);
@@ -975,6 +985,7 @@ public interface Raw extends Library {
   long urnet_device_remote_open_extender_view_controller(long a0);
   long urnet_device_remote_open_feedback_view_controller(long a0);
   long urnet_device_remote_open_locations_view_controller(long a0);
+  long urnet_device_remote_open_manage_devices_view_controller(long a0);
   long urnet_device_remote_open_network_user_view_controller(long a0);
   long urnet_device_remote_open_peer_view_controller(long a0);
   long urnet_device_remote_open_points_leaderboard_view_controller(long a0);
@@ -1154,6 +1165,14 @@ public interface Raw extends Library {
   void urnet_login_view_controller_close(long a0);
   void urnet_login_view_controller_start(long a0);
   void urnet_login_view_controller_stop(long a0);
+  long urnet_manage_devices_view_controller_add_manage_devices_listener(long a0, urnet_manage_devices_cb a1, Pointer a2);
+  void urnet_manage_devices_view_controller_close(long a0);
+  byte urnet_manage_devices_view_controller_get_can_manage(long a0);
+  Pointer urnet_manage_devices_view_controller_get_snapshot(long a0);
+  void urnet_manage_devices_view_controller_refresh(long a0);
+  void urnet_manage_devices_view_controller_remove_device(long a0, String a1);
+  void urnet_manage_devices_view_controller_start(long a0);
+  void urnet_manage_devices_view_controller_stop(long a0);
   void urnet_network_name_validation_view_controller_close(long a0);
   void urnet_network_name_validation_view_controller_network_check(long a0, String a1, urnet_network_check_cb a2, Pointer a3);
   void urnet_network_name_validation_view_controller_start(long a0);
@@ -1556,6 +1575,7 @@ public interface Raw extends Library {
   long urnet_new_bittensor_wallet_session(String a0, String a1, String a2, String a3, PointerByReference a4);
   long urnet_new_client_event_queue(long a0, String a1, String a2, String a3);
   Pointer urnet_new_client_info(String a0, String a1);
+  long urnet_new_client_limit_notice_tracker();
   Pointer urnet_new_connect_first_event();
   long urnet_new_crypto_invoice_view_controller(long a0, String a1);
   long urnet_new_device_local(long a0, String a1, String a2, String a3, String a4, String a5, String a6, PointerByReference a7);
@@ -1587,6 +1607,7 @@ public interface Raw extends Library {
   Pointer urnet_new_purchase_completed_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_purchase_failed_event(String a0, String a1, String a2, byte a3, double a4, String a5, String a6);
   Pointer urnet_new_purchase_started_event(String a0, String a1, String a2, byte a3, double a4, String a5);
+  long urnet_new_sign_in_manage_devices_view_controller(long a0, String a1, urnet_manage_devices_sign_in_retry_cb a2, Pointer a3);
   Pointer urnet_new_signup_optout_changed_event(byte a0);
   Pointer urnet_new_sn_chain_settings();
   long urnet_new_sn_fleet_claim(long a0, String a1, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb a2, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb a3, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb a4, Pointer a5);

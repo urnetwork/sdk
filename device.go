@@ -748,15 +748,39 @@ type Device interface {
 
 	// GetClientLimitStatus is the client limit status of the device's platform
 	// connection (client_limit_status.go): ClientLimitStatusExceeded, with the
-	// unix millisecond time the device reconnects, while the platform has
-	// closed the device for its network's concurrent client limit and the
-	// device holds off reconnecting; ClientLimitStatusNone otherwise. Never
-	// nil. A remote device reads through to the device process, with the last
-	// value cached while it cannot be reached.
+	// unix millisecond time the device reconnects and the prompt the app
+	// shows, while the platform has closed the device for its network's
+	// concurrent client limit and the device holds off reconnecting;
+	// ClientLimitStatusNone otherwise. Never nil. A remote device reads
+	// through to the device process, with the last value cached while it
+	// cannot be reached.
 	GetClientLimitStatus() *ClientLimitStatus
 
 	// fires on every change of the client limit status
 	AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub
+
+	// RetryClientLimit ends the device's client limit hold so its platform
+	// connection dials again at once, for an app whose user acted on the
+	// status's prompt: a confirmed upgrade, or a slot freed on another
+	// device. At most one hold per ClientLimitRetryMinInterval, and none
+	// when no hold is in force (DeviceLocal.RetryClientLimit). Returns
+	// whether a hold was ended. A remote device asks the device process; one
+	// too old to answer ends none.
+	RetryClientLimit() bool
+
+	// RetryClientLimitAfterChange ends the device's client limit hold at once
+	// after a change the server confirmed that frees a slot or raises the
+	// limit: a device removed from the network's device list, or the plan
+	// turning Pro after a purchase. Unlike RetryClientLimit it starts the
+	// retry floor over, since the earlier refused retries were before the
+	// change, so the retry dials now however many came before. At most one per
+	// ClientLimitRetryMinInterval among these, and none when no hold is in
+	// force; the floor starts over at most once per 30 minutes, so both
+	// retries in a loop get this bound plus RetryClientLimit's own backoff
+	// (DeviceLocal.RetryClientLimitAfterChange). Returns whether a hold was
+	// ended. A remote device asks the device process; one too old to answer
+	// gets its RetryClientLimit.
+	RetryClientLimitAfterChange() bool
 
 	// GetTransportDelay is the transport quality of the device's connection
 	// (transport_delay.go, connect/DELAY.md §10): per direction a quality from

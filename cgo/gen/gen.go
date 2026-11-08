@@ -98,6 +98,8 @@ var behavioralTypes = map[string]bool{
 	// the Top 200 claim, both halves: lock-guarded, with their stores behind them
 	"SnFleetClaim":  true,
 	"SnFleetDevice": true,
+	// the client limit notice's episode state: private fields and methods
+	"ClientLimitNoticeTracker": true,
 
 	"AccountPreferencesViewController":    true,
 	"AccountViewController":               true,
@@ -109,6 +111,7 @@ var behavioralTypes = map[string]bool{
 	"ContractDetailsViewController":       true,
 	"ClientSessionViewController":         true,
 	"DevicesViewController":               true,
+	"ManageDevicesViewController":         true,
 	"ExtenderViewController":              true,
 	"FeedbackViewController":              true,
 	"LocationsViewController":             true,

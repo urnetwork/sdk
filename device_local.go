@@ -482,6 +482,10 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		TransportDelayBadConnectStall:      defaultTransportDelayBadConnectStall,
 		TransportDelayPromptConnectTimeout: defaultTransportDelayPromptConnectTimeout,
 
+		// a user's retry after acting on the client limit prompt dials at most
+		// this often (DeviceLocal.RetryClientLimit)
+		ClientLimitRetryMinInterval: 30 * time.Second,
+
 		ClientSettings: *clientSettings,
 	}
 }
@@ -617,6 +621,14 @@ func (self *DeviceLocalSettings) GetTransportDelayPromptConnectTimeoutMillis() i
 
 func (self *DeviceLocalSettings) SetTransportDelayPromptConnectTimeoutMillis(millis int64) {
 	self.TransportDelayPromptConnectTimeout = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetClientLimitRetryMinIntervalMillis() int64 {
+	return self.ClientLimitRetryMinInterval.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetClientLimitRetryMinIntervalMillis(millis int64) {
+	self.ClientLimitRetryMinInterval = time.Duration(millis) * time.Millisecond
 }
 
 // DeviceLocalSettings is BOUND and app-facing, despite what a
@@ -855,6 +867,15 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport time.Duration — bound as GetTransportDelayPromptConnectTimeoutMillis/SetTransportDelayPromptConnectTimeoutMillis
 	TransportDelayPromptConnectTimeout time.Duration
+	// the least time between two client limit holds RetryClientLimit ends.
+	// Each retry is one dial the platform judges again, and a refusal starts a
+	// new hold of at least 15 minutes, so this bounds the dials an app or a
+	// user's repeated taps can make against the limit. The floor doubles with
+	// each retry in a row, up to the platform's shortest hold. Zero or less
+	// does not limit.
+	//
+	//gomobile:noexport time.Duration — bound as GetClientLimitRetryMinIntervalMillis/SetClientLimitRetryMinIntervalMillis
+	ClientLimitRetryMinInterval time.Duration
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	//
@@ -1428,6 +1449,10 @@ type DeviceLocal struct {
 	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
 	// fed by watchClientLimitStatus from the provider's client limit hold
 	clientLimitStatusChangeListeners *connect.CallbackList[ClientLimitStatusChangeListener]
+	// the plan the client limit prompt follows: the pro and
+	// client_limit_upgrade claims of the client jwt, set at construction and on
+	// every applied refresh (device_local_client_limit.go)
+	clientLimitPlanValue *connect.MonitorValue[clientLimitPlan]
 	// fed by watchTransportDelay from the window transports' delay stats
 	transportDelayChangeListeners *connect.CallbackList[TransportDelayChangeListener]
 	// fed by watchProviderConnected from the provider's transport generations
@@ -2059,6 +2084,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
 		extenderProvideMonitor:                   connect.NewMonitor(),
 		clientLimitStatusChangeListeners:         connect.NewCallbackList[ClientLimitStatusChangeListener](),
+		clientLimitPlanValue:                     connect.NewMonitorValue(clientLimitPlanClaims(byJwt)),
 		transportDelayChangeListeners:            connect.NewCallbackList[TransportDelayChangeListener](),
 		transportDelay:                           newTransportDelayWindow(settings),
 		transportDelayNotify:                     make(chan struct{}, 1),
@@ -2198,13 +2224,14 @@ func newDeviceLocalWithOverridesForPlatform(
 			defer deviceLocal.lifecycleWorkers.Done()
 			deviceLocal.watchNetworkPeers(networkPeersNotify)
 		})
-		// the client limit hold of the provider's transports, armed here for
-		// the same reason
+		// the client limit hold of the provider's transports and the plan its
+		// prompt follows, armed here for the same reason
 		_, clientLimitUpdate := provider.clientLimitStatus()
+		_, clientLimitPlanUpdate := deviceLocal.clientLimitPlanValue.Get()
 		deviceLocal.lifecycleWorkers.Add(1)
 		go connect.HandleError(func() {
 			defer deviceLocal.lifecycleWorkers.Done()
-			deviceLocal.watchClientLimitStatus(provider, clientLimitUpdate)
+			deviceLocal.watchClientLimitStatus(provider, clientLimitUpdate, clientLimitPlanUpdate)
 		})
 		// the connected state of the provider's transports. The watch arms
 		// itself before its first read, so it needs nothing armed here
@@ -3232,6 +3259,8 @@ func (self *DeviceLocal) applyApiRefreshedByJwt(byJwt string) {
 	if apiGenerator != nil {
 		apiGenerator.SetByJwt(byJwt)
 	}
+	// the client limit prompt follows the refreshed plan
+	self.clientLimitPlanValue.Set(clientLimitPlanClaims(byJwt))
 	self.jwtRefreshed(byJwt)
 }
 

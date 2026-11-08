@@ -1750,6 +1750,30 @@ func (self *cAdapterLocationMatchListener) LocationMatchChanged() {
 	C.urnet_invoke_location_match(self.cbLocationMatchChanged, self.userData)
 }
 
+type cAdapterManageDevicesListener struct {
+	cbManageDevicesChanged C.urnet_manage_devices_cb
+	userData               unsafe.Pointer
+}
+
+func (self *cAdapterManageDevicesListener) ManageDevicesChanged(snapshot *sdk.ManageDevicesSnapshot) {
+	defer cgoGuard("urnet_manage_devices_cb")
+	snapshot_ := cJson(snapshot, "urnet_manage_devices_cb")
+	C.urnet_invoke_manage_devices(self.cbManageDevicesChanged, self.userData, snapshot_)
+	if snapshot_ != nil {
+		cStringFree(snapshot_)
+	}
+}
+
+type cAdapterManageDevicesSignInRetry struct {
+	cbRetrySignIn C.urnet_manage_devices_sign_in_retry_cb
+	userData      unsafe.Pointer
+}
+
+func (self *cAdapterManageDevicesSignInRetry) RetrySignIn() {
+	defer cgoGuard("urnet_manage_devices_sign_in_retry_cb")
+	C.urnet_invoke_manage_devices_sign_in_retry(self.cbRetrySignIn, self.userData)
+}
+
 type cAdapterNetworkBlockLocationCallback struct {
 	cbResult C.urnet_network_block_location_cb
 	userData unsafe.Pointer
@@ -5407,6 +5431,20 @@ func urnet_api_open_client_session_view_controller(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_api_open_manage_devices_view_controller
+func urnet_api_open_manage_devices_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_api_open_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_open_manage_devices_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenManageDevicesViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_api_redeem_balance_code
 func urnet_api_redeem_balance_code(self C.uint64_t, args *C.char, callback_result C.urnet_redeem_balance_code_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_redeem_balance_code")
@@ -7955,6 +7993,35 @@ func urnet_client_event_queue_set_locale(self C.uint64_t, locale *C.char) {
 		return
 	}
 	self_.SetLocale(goString(locale))
+}
+
+//export urnet_client_limit_notice_tracker_reset
+func urnet_client_limit_notice_tracker_reset(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_client_limit_notice_tracker_reset")
+	self_, ok := resolveHandle[*sdk.ClientLimitNoticeTracker](uint64(self), "urnet_client_limit_notice_tracker_reset")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Reset()
+	return cString(string(r0))
+}
+
+//export urnet_client_limit_notice_tracker_update
+func urnet_client_limit_notice_tracker_update(self C.uint64_t, status *C.char, connectRequested C.bool) *C.char {
+	defer cgoGuard("urnet_client_limit_notice_tracker_update")
+	self_, ok := resolveHandle[*sdk.ClientLimitNoticeTracker](uint64(self), "urnet_client_limit_notice_tracker_update")
+	if !ok {
+		return nil
+	}
+	var status_ *sdk.ClientLimitStatus
+	if status != nil {
+		status_ = &sdk.ClientLimitStatus{}
+		if !goJson(status, status_, "urnet_client_limit_notice_tracker_update") {
+			return nil
+		}
+	}
+	r0 := self_.Update(status_, bool(connectRequested))
+	return cString(string(r0))
 }
 
 //export urnet_client_refresh_integrity_notice_close_api_if_current
@@ -11133,6 +11200,28 @@ func urnet_device_reset_extenders(self C.uint64_t) {
 	self_.ResetExtenders()
 }
 
+//export urnet_device_retry_client_limit
+func urnet_device_retry_client_limit(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_retry_client_limit")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_retry_client_limit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.RetryClientLimit()
+	return C.bool(r0)
+}
+
+//export urnet_device_retry_client_limit_after_change
+func urnet_device_retry_client_limit_after_change(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_retry_client_limit_after_change")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_retry_client_limit_after_change")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.RetryClientLimitAfterChange()
+	return C.bool(r0)
+}
+
 //export urnet_device_set_allow_foreground
 func urnet_device_set_allow_foreground(self C.uint64_t, allowForeground C.bool) {
 	defer cgoGuard("urnet_device_set_allow_foreground")
@@ -11720,6 +11809,24 @@ func urnet_device_local_close_locations_view_controller(self C.uint64_t, vc C.ui
 		}
 	}
 	self_.CloseLocationsViewController(vc_)
+}
+
+//export urnet_device_local_close_manage_devices_view_controller
+func urnet_device_local_close_manage_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_manage_devices_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.ManageDevicesViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.ManageDevicesViewController](uint64(vc), "urnet_device_local_close_manage_devices_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseManageDevicesViewController(vc_)
 }
 
 //export urnet_device_local_close_peer_view_controller
@@ -12423,6 +12530,20 @@ func urnet_device_local_open_locations_view_controller(self C.uint64_t) C.uint64
 		return 0
 	}
 	r0 := self_.OpenLocationsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_open_manage_devices_view_controller
+func urnet_device_local_open_manage_devices_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_manage_devices_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenManageDevicesViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -13797,6 +13918,24 @@ func urnet_device_remote_close_locations_view_controller(self C.uint64_t, vc C.u
 	self_.CloseLocationsViewController(vc_)
 }
 
+//export urnet_device_remote_close_manage_devices_view_controller
+func urnet_device_remote_close_manage_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_manage_devices_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.ManageDevicesViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.ManageDevicesViewController](uint64(vc), "urnet_device_remote_close_manage_devices_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseManageDevicesViewController(vc_)
+}
+
 //export urnet_device_remote_close_peer_view_controller
 func urnet_device_remote_close_peer_view_controller(self C.uint64_t, vc C.uint64_t) {
 	defer cgoGuard("urnet_device_remote_close_peer_view_controller")
@@ -14298,6 +14437,20 @@ func urnet_device_remote_open_locations_view_controller(self C.uint64_t) C.uint6
 		return 0
 	}
 	r0 := self_.OpenLocationsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_manage_devices_view_controller
+func urnet_device_remote_open_manage_devices_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_manage_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_manage_devices_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenManageDevicesViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -17312,6 +17465,96 @@ func urnet_login_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_manage_devices_view_controller_add_manage_devices_listener
+func urnet_manage_devices_view_controller_add_manage_devices_listener(self C.uint64_t, listener_manage_devices_changed C.urnet_manage_devices_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_manage_devices_view_controller_add_manage_devices_listener")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_add_manage_devices_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ManageDevicesListener
+	if listener_manage_devices_changed != nil {
+		listener_ = &cAdapterManageDevicesListener{cbManageDevicesChanged: listener_manage_devices_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddManageDevicesListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_manage_devices_view_controller_close
+func urnet_manage_devices_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_manage_devices_view_controller_close")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_manage_devices_view_controller_get_can_manage
+func urnet_manage_devices_view_controller_get_can_manage(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_manage_devices_view_controller_get_can_manage")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_get_can_manage")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetCanManage()
+	return C.bool(r0)
+}
+
+//export urnet_manage_devices_view_controller_get_snapshot
+func urnet_manage_devices_view_controller_get_snapshot(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_manage_devices_view_controller_get_snapshot")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_get_snapshot")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSnapshot()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_manage_devices_view_controller_get_snapshot")
+}
+
+//export urnet_manage_devices_view_controller_refresh
+func urnet_manage_devices_view_controller_refresh(self C.uint64_t) {
+	defer cgoGuard("urnet_manage_devices_view_controller_refresh")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_refresh")
+	if !ok {
+		return
+	}
+	self_.Refresh()
+}
+
+//export urnet_manage_devices_view_controller_remove_device
+func urnet_manage_devices_view_controller_remove_device(self C.uint64_t, clientId *C.char) {
+	defer cgoGuard("urnet_manage_devices_view_controller_remove_device")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_remove_device")
+	if !ok {
+		return
+	}
+	self_.RemoveDevice(goId(clientId, "urnet_manage_devices_view_controller_remove_device"))
+}
+
+//export urnet_manage_devices_view_controller_start
+func urnet_manage_devices_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_manage_devices_view_controller_start")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_manage_devices_view_controller_stop
+func urnet_manage_devices_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_manage_devices_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.ManageDevicesViewController](uint64(self), "urnet_manage_devices_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
 //export urnet_memory_classes_json_for_diag
 func urnet_memory_classes_json_for_diag() *C.char {
 	defer cgoGuard("urnet_memory_classes_json_for_diag")
@@ -18837,6 +19080,16 @@ func urnet_new_client_info(deviceType *C.char, appVersion *C.char) *C.char {
 	return cJson(r0, "urnet_new_client_info")
 }
 
+//export urnet_new_client_limit_notice_tracker
+func urnet_new_client_limit_notice_tracker() C.uint64_t {
+	defer cgoGuard("urnet_new_client_limit_notice_tracker")
+	r0 := sdk.NewClientLimitNoticeTracker()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_connect_first_event
 func urnet_new_connect_first_event() *C.char {
 	defer cgoGuard("urnet_new_connect_first_event")
@@ -19289,6 +19542,28 @@ func urnet_new_purchase_started_event(store *C.char, product *C.char, plan *C.ch
 		return nil
 	}
 	return cJson(r0, "urnet_new_purchase_started_event")
+}
+
+//export urnet_new_sign_in_manage_devices_view_controller
+func urnet_new_sign_in_manage_devices_view_controller(api C.uint64_t, networkByJwt *C.char, retry_retry_sign_in C.urnet_manage_devices_sign_in_retry_cb, retry_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_new_sign_in_manage_devices_view_controller")
+	var api_ *sdk.Api
+	if api != 0 {
+		var ok bool
+		api_, ok = resolveHandle[*sdk.Api](uint64(api), "urnet_new_sign_in_manage_devices_view_controller")
+		if !ok {
+			return 0
+		}
+	}
+	var retry_ sdk.ManageDevicesSignInRetry
+	if retry_retry_sign_in != nil {
+		retry_ = &cAdapterManageDevicesSignInRetry{cbRetrySignIn: retry_retry_sign_in, userData: retry_user_data}
+	}
+	r0 := sdk.NewSignInManageDevicesViewController(api_, goString(networkByJwt), retry_)
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_new_signup_optout_changed_event
