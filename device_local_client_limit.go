@@ -11,14 +11,16 @@ package sdk
 // provider has no platform connection to hold and always reads
 // ClientLimitStatusNone.
 //
-// The prompt follows the plan of the device's client, the pro claim of its
-// client jwt (clientLimitPro). The claim is as old as the jwt, which renews
-// only at a fraction of its lifetime, so a new hold asks for a refresh, and a
-// refreshed claim that changes the prompt of the hold in force is emitted
-// again.
+// The prompt follows the plan of the device's client, the pro and
+// client_limit_upgrade claims of its client jwt (clientLimitPlanValue). The
+// claims are as old as the jwt, which renews only at a fraction of its
+// lifetime, so a new hold asks for a refresh, and refreshed claims that change
+// the prompt of the hold in force are emitted again.
 
 import (
 	"time"
+
+	gojwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/urnetwork/connect"
 )
@@ -35,7 +37,7 @@ func (self *DeviceLocal) GetClientLimitStatus() *ClientLimitStatus {
 		return noneClientLimitStatus()
 	}
 	status, _ := provider.clientLimitStatus()
-	return newClientLimitStatus(status, self.clientLimitPro.Value())
+	return newClientLimitStatus(status, self.clientLimitPlanValue.Value())
 }
 
 // AddClientLimitStatusChangeListener subscribes to every change of the client
@@ -94,13 +96,13 @@ func (self *DeviceLocal) clientLimitStatusChanged(status *ClientLimitStatus) {
 // watchClientLimitStatus emits each change of the client limit status: the
 // provider's hold, and the plan the prompt follows. Both notify only on an
 // actual change, and an unchanged readout is not emitted again, so a plan
-// change with no hold in force emits nothing. update and proUpdate are armed
+// change with no hold in force emits nothing. update and planUpdate are armed
 // by the constructor before this goroutine starts, so a hold that starts the
 // instant the constructor returns still wakes it.
 func (self *DeviceLocal) watchClientLimitStatus(
 	provider *deviceLocalProvider,
 	update chan struct{},
-	proUpdate chan struct{},
+	planUpdate chan struct{},
 ) {
 	emitted := noneClientLimitStatus()
 	for {
@@ -108,13 +110,13 @@ func (self *DeviceLocal) watchClientLimitStatus(
 		case <-self.ctx.Done():
 			return
 		case <-update:
-		case <-proUpdate:
+		case <-planUpdate:
 		}
 		var hold connect.ClientLimitStatus
 		hold, update = provider.clientLimitStatus()
-		var pro bool
-		pro, proUpdate = self.clientLimitPro.Get()
-		status := newClientLimitStatus(hold, pro)
+		var plan clientLimitPlan
+		plan, planUpdate = self.clientLimitPlanValue.Get()
+		status := newClientLimitStatus(hold, plan)
 		if *status == *emitted {
 			continue
 		}
@@ -133,6 +135,31 @@ func (self *DeviceLocal) watchClientLimitStatus(
 // clientLimitProClaim is the pro claim of a client jwt, false when it has none
 // or does not parse.
 func clientLimitProClaim(byJwt string) bool {
-	pro, _ := parseJwtProGuestClaims(byJwt)
-	return pro
+	return clientLimitPlanClaims(byJwt).pro
+}
+
+// clientLimitPlanClaims is the plan a client jwt's claims give the client
+// limit prompt: its pro claim, false when it has none, and its
+// client_limit_upgrade claim, unknown when it has none. A jwt that does not
+// parse has neither.
+func clientLimitPlanClaims(byJwt string) clientLimitPlan {
+	if byJwt == "" {
+		return clientLimitPlan{}
+	}
+	claims := gojwt.MapClaims{}
+	if _, _, err := gojwt.NewParser().ParseUnverified(byJwt, claims); err != nil {
+		return clientLimitPlan{}
+	}
+	plan := clientLimitPlan{}
+	if pro, ok := claims["pro"].(bool); ok {
+		plan.pro = pro
+	}
+	if upgrade, ok := claims["client_limit_upgrade"].(bool); ok {
+		if upgrade {
+			plan.upgrade = clientLimitUpgradeRaises
+		} else {
+			plan.upgrade = clientLimitUpgradeNone
+		}
+	}
+	return plan
 }

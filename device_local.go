@@ -1449,10 +1449,10 @@ type DeviceLocal struct {
 	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
 	// fed by watchClientLimitStatus from the provider's client limit hold
 	clientLimitStatusChangeListeners *connect.CallbackList[ClientLimitStatusChangeListener]
-	// the plan the client limit prompt follows: the pro claim of the client
-	// jwt, set at construction and on every applied refresh
-	// (device_local_client_limit.go)
-	clientLimitPro *connect.MonitorValue[bool]
+	// the plan the client limit prompt follows: the pro and
+	// client_limit_upgrade claims of the client jwt, set at construction and on
+	// every applied refresh (device_local_client_limit.go)
+	clientLimitPlanValue *connect.MonitorValue[clientLimitPlan]
 	// fed by watchTransportDelay from the window transports' delay stats
 	transportDelayChangeListeners *connect.CallbackList[TransportDelayChangeListener]
 	// fed by watchProviderConnected from the provider's transport generations
@@ -2085,7 +2085,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
 		extenderProvideMonitor:                   connect.NewMonitor(),
 		clientLimitStatusChangeListeners:         connect.NewCallbackList[ClientLimitStatusChangeListener](),
-		clientLimitPro:                           connect.NewMonitorValue(clientLimitProClaim(byJwt)),
+		clientLimitPlanValue:                     connect.NewMonitorValue(clientLimitPlanClaims(byJwt)),
 		transportDelayChangeListeners:            connect.NewCallbackList[TransportDelayChangeListener](),
 		transportDelay:                           newTransportDelayWindow(settings),
 		transportDelayNotify:                     make(chan struct{}, 1),
@@ -2228,11 +2228,11 @@ func newDeviceLocalWithOverridesForPlatform(
 		// the client limit hold of the provider's transports and the plan its
 		// prompt follows, armed here for the same reason
 		_, clientLimitUpdate := provider.clientLimitStatus()
-		_, clientLimitProUpdate := deviceLocal.clientLimitPro.Get()
+		_, clientLimitPlanUpdate := deviceLocal.clientLimitPlanValue.Get()
 		deviceLocal.lifecycleWorkers.Add(1)
 		go connect.HandleError(func() {
 			defer deviceLocal.lifecycleWorkers.Done()
-			deviceLocal.watchClientLimitStatus(provider, clientLimitUpdate, clientLimitProUpdate)
+			deviceLocal.watchClientLimitStatus(provider, clientLimitUpdate, clientLimitPlanUpdate)
 		})
 		// the connected state of the provider's transports. The watch arms
 		// itself before its first read, so it needs nothing armed here
@@ -3256,7 +3256,7 @@ func (self *DeviceLocal) applyApiRefreshedByJwt(byJwt string) {
 		apiGenerator.SetByJwt(byJwt)
 	}
 	// the client limit prompt follows the refreshed plan
-	self.clientLimitPro.Set(clientLimitProClaim(byJwt))
+	self.clientLimitPlanValue.Set(clientLimitPlanClaims(byJwt))
 	self.jwtRefreshed(byJwt)
 }
 

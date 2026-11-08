@@ -22,10 +22,18 @@ package sdk
 // (AuthNetworkClientError.ClientLimitPrompt):
 //   - ClientLimitPromptUpgrade: the network is on the free plan, and UR Pro lifts
 //     the limit. The app offers its upgrade flow.
-//   - ClientLimitPromptRemoveClient: the network already has its plan's most
-//     clients (a Pro network at the Pro limit). No upgrade lifts it; the app says
+//   - ClientLimitPromptRemoveClient: no upgrade lifts the limit: a Pro network at
+//     the Pro limit, or a network whose limit is an Embed allowance. The app says
 //     to free a slot by signing out of a device the user no longer uses, and
 //     offers no upgrade.
+//
+// The server decides which. At sign-in its refusal says so (upgrade_required).
+// A hold's close says nothing, so the prompt of a hold follows the claims of the
+// device's client jwt, which the device refreshes when a hold starts: the
+// upgrade only when the client_limit_upgrade claim says UR Pro raises the
+// network's limit. A jwt without the claim, from a server before it, is one the
+// client cannot tell by, and gets no upgrade prompt, since an upgrade may not
+// help (an Embed allowance).
 //
 // After the user acts on a hold's prompt, the app calls Device.RetryClientLimit
 // to dial again at once instead of waiting out the hold. While the app is not
@@ -66,9 +74,11 @@ type ClientLimitStatus struct {
 	// milliseconds. 0 while Status is ClientLimitStatusNone.
 	RetryTime int64
 	// What the app offers while Status is ClientLimitStatusExceeded:
-	// ClientLimitPromptUpgrade or ClientLimitPromptRemoveClient, from the plan
-	// of the device's client (the client jwt's pro claim, refreshed when a
-	// hold starts). ClientLimitPromptNone while Status is ClientLimitStatusNone.
+	// ClientLimitPromptUpgrade or ClientLimitPromptRemoveClient, from the
+	// server's claims in the device's client jwt (refreshed when a hold
+	// starts): the upgrade only when the server says UR Pro raises the
+	// network's limit, which it never does for a Pro network or an Embed
+	// allowance. ClientLimitPromptNone while Status is ClientLimitStatusNone.
 	Prompt string
 }
 
@@ -78,27 +88,51 @@ type ClientLimitStatusChangeListener interface {
 	ClientLimitStatusChanged(status *ClientLimitStatus)
 }
 
+// clientLimitUpgrade is the client_limit_upgrade claim of a client jwt.
+type clientLimitUpgrade int8
+
+const (
+	// the jwt has no claim: a server before it
+	clientLimitUpgradeUnknown clientLimitUpgrade = iota
+	// UR Pro raises the network's concurrent client limit: a free network
+	// without an Embed allowance
+	clientLimitUpgradeRaises
+	// no upgrade raises it: a Pro network, or an Embed allowance
+	clientLimitUpgradeNone
+)
+
+// clientLimitPlan is what the prompt of a hold follows: the plan claims of the
+// device's client jwt.
+type clientLimitPlan struct {
+	// the pro claim
+	pro bool
+	// the client_limit_upgrade claim
+	upgrade clientLimitUpgrade
+}
+
 // newClientLimitStatus maps a connect hold readout to the app form, with the
-// prompt of a network that is Pro or not.
-func newClientLimitStatus(status connect.ClientLimitStatus, pro bool) *ClientLimitStatus {
+// prompt of the network's plan.
+func newClientLimitStatus(status connect.ClientLimitStatus, plan clientLimitPlan) *ClientLimitStatus {
 	if !status.Exceeded {
 		return noneClientLimitStatus()
 	}
 	return &ClientLimitStatus{
 		Status:    ClientLimitStatusExceeded,
 		RetryTime: status.RetryTime.UnixMilli(),
-		Prompt:    clientLimitPromptForPlan(pro),
+		Prompt:    clientLimitPromptForPlan(plan),
 	}
 }
 
 // clientLimitPromptForPlan is the prompt of a network over its concurrent
-// client limit: a free network is offered UR Pro, whose limit is higher; a
-// Pro network is already on the highest plan and must free a slot.
-func clientLimitPromptForPlan(pro bool) string {
-	if pro {
-		return ClientLimitPromptRemoveClient
+// client limit: UR Pro when the server says it raises the limit (a free
+// network without an Embed allowance); otherwise a freed slot: a Pro network
+// is already on the highest plan, no plan lifts an Embed allowance, and a jwt
+// without the server's claim cannot tell which.
+func clientLimitPromptForPlan(plan clientLimitPlan) string {
+	if plan.upgrade == clientLimitUpgradeRaises && !plan.pro {
+		return ClientLimitPromptUpgrade
 	}
-	return ClientLimitPromptUpgrade
+	return ClientLimitPromptRemoveClient
 }
 
 // clientLimitPromptForRefusal is the prompt of a refused auth-client: an upgrade

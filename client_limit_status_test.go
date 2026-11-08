@@ -233,22 +233,31 @@ func waitProviderSettled(t *testing.T, device *DeviceLocal) {
 
 // The app form of the hold: none without a hold, whatever the plan; exceeded
 // with the retry time in unix milliseconds while one is in force, and the
-// prompt of the plan: the upgrade for a free network, a freed slot for a Pro
-// network, whose plan is already the highest.
+// prompt of the plan: the upgrade when the server says UR Pro raises the
+// network's limit, else a freed slot: a Pro network, whose plan is already the
+// highest, an Embed allowance, which no plan lifts, and a jwt without the
+// server's claim, which cannot tell.
 func TestNewClientLimitStatusMapsTheHold(t *testing.T) {
-	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, false), noneClientLimitStatus())
-	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, true), noneClientLimitStatus())
+	free := clientLimitPlan{upgrade: clientLimitUpgradeRaises}
+	pro := clientLimitPlan{pro: true, upgrade: clientLimitUpgradeNone}
+	embed := clientLimitPlan{upgrade: clientLimitUpgradeNone}
+	unknown := clientLimitPlan{}
+	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, free), noneClientLimitStatus())
+	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, pro), noneClientLimitStatus())
 	retryTime := time.Date(2026, 10, 6, 12, 15, 0, 0, time.UTC)
+	held := connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}
 	connect.AssertEqual(
 		t,
-		newClientLimitStatus(connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}, false),
+		newClientLimitStatus(held, free),
 		&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli(), Prompt: ClientLimitPromptUpgrade},
 	)
-	connect.AssertEqual(
-		t,
-		newClientLimitStatus(connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}, true),
-		&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli(), Prompt: ClientLimitPromptRemoveClient},
-	)
+	for _, plan := range []clientLimitPlan{pro, embed, unknown, {pro: true}, {pro: true, upgrade: clientLimitUpgradeRaises}} {
+		connect.AssertEqual(
+			t,
+			newClientLimitStatus(held, plan),
+			&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli(), Prompt: ClientLimitPromptRemoveClient},
+		)
+	}
 	connect.AssertEqual(t, noneClientLimitStatus().Status, ClientLimitStatusNone)
 	connect.AssertEqual(t, noneClientLimitStatus().RetryTime, int64(0))
 	connect.AssertEqual(t, noneClientLimitStatus().Prompt, ClientLimitPromptNone)
@@ -484,7 +493,7 @@ func TestDeviceLocalClientLimitPromptFollowsThePlan(t *testing.T) {
 
 	// a Pro client with no hold: nothing to emit, so the first status the
 	// listener receives is the hold below
-	device.clientLimitPro.Set(true)
+	device.clientLimitPlanValue.Set(clientLimitPlan{pro: true, upgrade: clientLimitUpgradeNone})
 	connect.AssertEqual(t, device.GetClientLimitStatus(), noneClientLimitStatus())
 
 	undeclared := platform.nextConnectionDeclaring(t, "")
@@ -497,7 +506,7 @@ func TestDeviceLocalClientLimitPromptFollowsThePlan(t *testing.T) {
 	connect.AssertEqual(t, device.GetClientLimitStatus(), held)
 
 	// the plan is free now: the same hold offers the upgrade
-	device.clientLimitPro.Set(false)
+	device.clientLimitPlanValue.Set(clientLimitPlan{upgrade: clientLimitUpgradeRaises})
 	free := listener.next(t, "the plan change reached no listener")
 	connect.AssertEqual(t, free, &ClientLimitStatus{
 		Status:    ClientLimitStatusExceeded,
@@ -505,6 +514,19 @@ func TestDeviceLocalClientLimitPromptFollowsThePlan(t *testing.T) {
 		Prompt:    ClientLimitPromptUpgrade,
 	})
 	connect.AssertEqual(t, device.GetClientLimitStatus(), free)
+
+	// a free network whose limit is an Embed allowance: no plan lifts it,
+	// and the server's claim says so. Before, the free pro claim alone
+	// offered the upgrade.
+	device.clientLimitPlanValue.Set(clientLimitPlan{upgrade: clientLimitUpgradeNone})
+	embed := listener.next(t, "the Embed claim reached no listener")
+	connect.AssertEqual(t, embed.Prompt, ClientLimitPromptRemoveClient)
+
+	// a jwt without the server's claim: the client cannot tell, so no upgrade
+	device.clientLimitPlanValue.Set(clientLimitPlan{upgrade: clientLimitUpgradeRaises})
+	connect.AssertEqual(t, listener.next(t, "the free claim reached no listener").Prompt, ClientLimitPromptUpgrade)
+	device.clientLimitPlanValue.Set(clientLimitPlan{})
+	connect.AssertEqual(t, listener.next(t, "the missing claim reached no listener").Prompt, ClientLimitPromptRemoveClient)
 }
 
 // The plan the prompt follows is the client jwt's pro claim; a jwt without
@@ -522,6 +544,24 @@ func TestClientLimitProClaim(t *testing.T) {
 	connect.AssertEqual(t, clientLimitProClaim(signed(gojwt.MapClaims{"network_id": "synthetic"})), false)
 	connect.AssertEqual(t, clientLimitProClaim(""), false)
 	connect.AssertEqual(t, clientLimitProClaim("not.a.jwt"), false)
+
+	// the server's client_limit_upgrade claim, unknown without one
+	connect.AssertEqual(
+		t,
+		clientLimitPlanClaims(signed(gojwt.MapClaims{"network_id": "synthetic", "client_limit_upgrade": true})),
+		clientLimitPlan{upgrade: clientLimitUpgradeRaises},
+	)
+	connect.AssertEqual(
+		t,
+		clientLimitPlanClaims(signed(gojwt.MapClaims{"network_id": "synthetic", "pro": true, "client_limit_upgrade": false})),
+		clientLimitPlan{pro: true, upgrade: clientLimitUpgradeNone},
+	)
+	connect.AssertEqual(
+		t,
+		clientLimitPlanClaims(signed(gojwt.MapClaims{"network_id": "synthetic", "pro": false})),
+		clientLimitPlan{},
+	)
+	connect.AssertEqual(t, clientLimitPlanClaims("not.a.jwt"), clientLimitPlan{})
 }
 
 // RetryClientLimit ends a hold at once and the device dials again, never with
@@ -600,6 +640,8 @@ func TestDeviceRemoteRetryClientLimit(t *testing.T) {
 	sub := deviceRemote.AddClientLimitStatusChangeListener(listener)
 	defer sub.Close()
 
+	// a free network the server says UR Pro lifts
+	deviceLocal.clientLimitPlanValue.Set(clientLimitPlan{upgrade: clientLimitUpgradeRaises})
 	undeclared := platform.nextConnectionDeclaring(t, "")
 	waitProviderSettled(t, deviceLocal)
 	undeclared.closeForClientLimit()
