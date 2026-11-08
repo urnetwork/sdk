@@ -129,6 +129,9 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /account/api-key":                 apiRouteAccessNetwork,
 	"POST /account/api-key/remove":          apiRouteAccessNetwork,
 	"GET /account/api-keys":                 apiRouteAccessNetwork,
+	"GET /network/auth-keys":                apiRouteAccessNetwork,
+	"POST /network/auth-keys":               apiRouteAccessNetwork,
+	"POST /network/auth-key-revoke":         apiRouteAccessNetwork,
 	"POST /oauth/authorize":                 apiRouteAccessNetwork,
 	"POST /oauth/consent":                   apiRouteAccessNetwork,
 }
