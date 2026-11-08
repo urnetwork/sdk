@@ -135,8 +135,8 @@ New, blocker-specific:
   via the BlockActionOverride path).
 - Resolver protection: subtract the well known public resolver IPs
   (`connect.WellKnownResolverAddrs`: the known operator pairs and the defaults, Google
-  Public DNS included though it is no longer a default) from the IP tables, and the
-  default endpoints' hostnames from the host set (mirror of `wellKnownResolverAddrs`).
+  Public DNS and OpenDNS included though they are no longer defaults) from the IP tables,
+  and the default endpoints' hostnames from the host set (mirror of `wellKnownResolverAddrs`).
 - Poison ceilings: abort if total unique hosts > 1.5M or any single feed > 3× its
   historical size; staleness warnings from list headers (anudeepND exception ~9 months).
 - Emit pepper + tables + header credits; print per-feed report like the security generator.
@@ -308,8 +308,8 @@ feeds served from fixtures/httptest; no network in tests)
   independent; duplicate hash records deduped (harmless collisions).
 - Allowlist subtraction: exact removal; assert the documented limitation (an allowlisted
   subdomain of a blocked parent stays blocked) so the behavior is pinned, not accidental.
-- Resolver protection: `DefaultDnsResolverSettings` IPs subtracted from ranges and
-  hostnames excluded from the host set.
+- Resolver protection: the well known resolver IPs (`connect.WellKnownResolverAddrs`)
+  subtracted from ranges and the default hostnames excluded from the host set.
 - Safety rails abort: per-feed `minCount` floor, total-entry ceiling, v4 prefixes broader
   than /8 and v6 broader than /16 rejected as poison (security-generator rules).
 - Pepper: 32 bytes; two runs differ in pepper and table bytes yet agree on membership;

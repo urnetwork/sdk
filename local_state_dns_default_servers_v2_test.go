@@ -1,0 +1,308 @@
+package sdk
+
+// DefaultServersVersion 2: OpenDNS left the default server lists and
+// Cloudflare's second address joined them. A record written at version 1 (or
+// older) that holds exactly a version 1 default list loads with the current
+// lists, keeping the saved order of the servers that remain; every list a user
+// chose loads as saved; a version 2 record never migrates; and an sdk that
+// knows only version 1 loads a version 2 record as saved. The tests drive the
+// real record files and the DeviceLocal load path, with no network.
+
+import (
+	"encoding/json"
+	"net/netip"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/urnetwork/connect"
+)
+
+// The default lists exactly as the sdk shipped them at version 1 (2026-11-08,
+// after Google Public DNS left them), and so as an editor saved them.
+var (
+	testingOpenDnsEraRemoteDohUrlsIpv4 = []string{
+		"https://1.1.1.1/dns-query",
+		"https://9.9.9.9/dns-query",
+		"https://208.67.222.222/dns-query",
+	}
+	testingOpenDnsEraRemoteDohUrlsIpv6 = []string{
+		"https://[2606:4700:4700::1111]/dns-query",
+		"https://[2620:fe::fe]/dns-query",
+		"https://[2620:119:35::35]/dns-query",
+	}
+	testingOpenDnsEraRemoteDnsIpv4 = []string{"1.1.1.1", "9.9.9.9", "208.67.222.222"}
+	testingOpenDnsEraRemoteDnsIpv6 = []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"}
+)
+
+// OpenDNS as a list names it: an address in its v4 /21 or v6 prefixes, a DoH
+// url on one, or one of its host names.
+func testingIsOpenDns(entry string) bool {
+	host := strings.TrimSpace(entry)
+	if u, err := url.Parse(host); err == nil && u.Host != "" {
+		host = u.Hostname()
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if addr, err := netip.ParseAddr(host); err == nil {
+		addr = addr.Unmap()
+		return netip.MustParsePrefix("208.67.216.0/21").Contains(addr) ||
+			netip.MustParsePrefix("2620:119::/32").Contains(addr)
+	}
+	return host == "opendns.com" || strings.HasSuffix(host, ".opendns.com")
+}
+
+// A record exactly as an sdk at version 1 wrote it: the whole settings
+// object, the fallback opt-in version and DefaultServersVersion 1.
+func testingWriteOpenDnsEraDnsResolverSettings(t *testing.T, localStorageDir string, dnsResolverSettings *DnsResolverSettings) {
+	t.Helper()
+	data, err := json.Marshal(&struct {
+		DnsResolverSettings
+		FallbackOptInVersion  int `json:",omitempty"`
+		DefaultServersVersion int `json:",omitempty"`
+	}{
+		DnsResolverSettings:   *dnsResolverSettings,
+		FallbackOptInVersion:  1,
+		DefaultServersVersion: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localStorageDir, ".dns_resolver_settings"), data, LocalStorageFilePermissions); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// What an editor at version 1 saved from the defaults, with the user's
+// fallback opt-in.
+func testingOpenDnsEraDefaultDnsResolverSettings() *DnsResolverSettings {
+	return &DnsResolverSettings{
+		EnableRemoteDoh:       true,
+		EnableFallback:        true,
+		DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
+		RemoteDohUrlsIpv4:     testing_stringList(testingOpenDnsEraRemoteDohUrlsIpv4...),
+		RemoteDohUrlsIpv6:     testing_stringList(testingOpenDnsEraRemoteDohUrlsIpv6...),
+		LocalDohUrlsIpv4:      testing_stringList(),
+		LocalDohUrlsIpv6:      testing_stringList(),
+		RemoteDnsIpv4:         testing_stringList(testingOpenDnsEraRemoteDnsIpv4...),
+		RemoteDnsIpv6:         testing_stringList(testingOpenDnsEraRemoteDnsIpv6...),
+		LocalDnsIpv4:          testing_stringList(),
+		LocalDnsIpv6:          testing_stringList(),
+	}
+}
+
+func testingErrorOpenDns(t *testing.T, what string, dnsResolverSettings *DnsResolverSettings) {
+	t.Helper()
+	for name, list := range testingDnsResolverSettingsLists(dnsResolverSettings) {
+		for _, entry := range list {
+			if testingIsOpenDns(entry) {
+				t.Errorf("%s %s names OpenDNS: %s", what, name, entry)
+			}
+		}
+	}
+}
+
+// The four remote lists equal the current defaults exactly, in their order.
+func testingErrorNotCurrentDefaults(t *testing.T, what string, dnsResolverSettings *DnsResolverSettings) {
+	t.Helper()
+	defaults := connect.DefaultDnsResolverSettings()
+	for name, pair := range map[string][2][]string{
+		"RemoteDohUrlsIpv4": {testingStringsOf(dnsResolverSettings.RemoteDohUrlsIpv4), defaults.RemoteDohUrlsIpv4},
+		"RemoteDohUrlsIpv6": {testingStringsOf(dnsResolverSettings.RemoteDohUrlsIpv6), defaults.RemoteDohUrlsIpv6},
+		"RemoteDnsIpv4":     {testingStringsOf(dnsResolverSettings.RemoteDnsIpv4), defaults.RemoteDnsIpv4},
+		"RemoteDnsIpv6":     {testingStringsOf(dnsResolverSettings.RemoteDnsIpv6), defaults.RemoteDnsIpv6},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			t.Errorf("%s %s loaded as %v, want the current default %v", what, name, pair[0], pair[1])
+		}
+	}
+}
+
+// v1 to v2: a version 1 record holding the version 1 default lists loads with
+// the current lists, Cloudflare's second address in and OpenDNS out, and the
+// rest of the record as saved.
+func TestOpenDnsEraDefaultDnsListsLoadAsCurrentDefaults(t *testing.T) {
+	localState := &LocalState{localStorageDir: t.TempDir()}
+	testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, testingOpenDnsEraDefaultDnsResolverSettings())
+	persisted := localState.GetDnsResolverSettings()
+	if persisted == nil {
+		t.Fatal("version 1 record did not load")
+	}
+	testingErrorOpenDns(t, "version 1 default record", persisted)
+	testingErrorNotCurrentDefaults(t, "version 1 default record", persisted)
+	if !persisted.EnableRemoteDoh || !persisted.EnableFallback {
+		t.Errorf("version 1 record toggles changed: %+v", persisted)
+	}
+}
+
+// v0 to v2: a record from before version 1 holding the Google-era default
+// lists migrates straight to the current lists, with neither Google nor
+// OpenDNS.
+func TestGoogleEraDefaultDnsListsLoadAsVersion2Defaults(t *testing.T) {
+	localState := &LocalState{localStorageDir: t.TempDir()}
+	testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, testingGoogleEraDefaultDnsResolverSettings())
+	persisted := localState.GetDnsResolverSettings()
+	if persisted == nil {
+		t.Fatal("version 0 record did not load")
+	}
+	testingErrorGoogleDns(t, "version 0 default record", persisted)
+	testingErrorOpenDns(t, "version 0 default record", persisted)
+	testingErrorNotCurrentDefaults(t, "version 0 default record", persisted)
+}
+
+// The composed path for v1 to v2: the device loads the version 1 record
+// through the preference catalog and installs its resolver; nothing the
+// tunnel or the host-side fallback queries names OpenDNS, and both of
+// Cloudflare's addresses are there.
+func TestOpenDnsEraDefaultDnsListsLoadWithoutOpenDnsOnDevice(t *testing.T) {
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	localState := fixture.networkSpace.GetAsyncLocalState().GetLocalState()
+	testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, testingOpenDnsEraDefaultDnsResolverSettings())
+
+	device := testing_loadedBlockDevice(t, fixture.networkSpace)
+	dnsResolverSettings := device.GetDnsResolverSettings()
+	if dnsResolverSettings == nil || !dnsResolverSettings.EnableRemoteDoh || !dnsResolverSettings.EnableFallback {
+		t.Fatalf("version 1 record did not load on the device: %+v", dnsResolverSettings)
+	}
+	testingErrorOpenDns(t, "device resolver", dnsResolverSettings)
+	var resolver *connect.DnsResolverSettings
+	var fallback *connect.DnsResolverSettings
+	func() {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		resolver = device.upgradeMuxSettings.Dns.Resolver
+		fallback = device.upgradeMuxSettings.Dns.Fallback
+	}()
+	if fallback == nil {
+		t.Fatal("the user's fallback opt-in was lost")
+	}
+	for what, settings := range map[string]*connect.DnsResolverSettings{"mux resolver": resolver, "mux fallback": fallback} {
+		entries := slices.Concat(
+			settings.RemoteDohUrlsIpv4, settings.RemoteDohUrlsIpv6,
+			settings.LocalDohUrlsIpv4, settings.LocalDohUrlsIpv6,
+			settings.RemoteDnsIpv4, settings.RemoteDnsIpv6,
+			settings.LocalDnsIpv4, settings.LocalDnsIpv6,
+		)
+		for _, entry := range entries {
+			if testingIsOpenDns(entry) {
+				t.Errorf("%s names OpenDNS: %s", what, entry)
+			}
+		}
+		for _, cloudflare := range []string{"https://1.0.0.1/dns-query", "https://[2606:4700:4700::1001]/dns-query"} {
+			if !slices.Contains(entries, cloudflare) {
+				t.Errorf("%s lacks Cloudflare's second address %s", what, cloudflare)
+			}
+		}
+	}
+}
+
+// A version 1 default list the user reordered keeps its order for the servers
+// that remain, and the current list's new servers follow.
+func TestOpenDnsEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
+	localState := &LocalState{localStorageDir: t.TempDir()}
+	testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, &DnsResolverSettings{
+		EnableRemoteDoh: true,
+		RemoteDnsIpv4:   testing_stringList("9.9.9.9", "208.67.222.222", "1.1.1.1"),
+	})
+	persisted := localState.GetDnsResolverSettings()
+	if got, want := testingStringsOf(persisted.RemoteDnsIpv4), []string{"9.9.9.9", "1.1.1.1", "1.0.0.1"}; !slices.Equal(got, want) {
+		t.Errorf("reordered version 1 default = %v, want %v", got, want)
+	}
+}
+
+// What a user chose loads as saved: OpenDNS alone, OpenDNS among other
+// servers, the version 1 defaults plus a server, a Google-era default list or
+// the old tm recommendation in a version 1 record (a version 1 sdk had already
+// migrated those, so they are choices), and the version 1 defaults in a
+// version 2 record.
+func TestChosenDnsListsLoadAsSavedAfterVersion2(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings *DnsResolverSettings
+		version  int
+	}{
+		{name: "opendns alone", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList("https://208.67.222.222/dns-query"),
+			RemoteDnsIpv4:     testing_stringList("208.67.222.222"),
+		}},
+		{name: "opendns among others", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList("https://192.0.2.53/dns-query", "https://208.67.220.220/dns-query"),
+		}},
+		{name: "version 1 defaults plus a server", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList(append(slices.Clone(testingOpenDnsEraRemoteDohUrlsIpv4), "https://192.0.2.53/dns-query")...),
+		}},
+		{name: "google-era defaults in a version 1 record", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList(testingGoogleEraRemoteDohUrlsIpv4...),
+			RemoteDnsIpv4:     testing_stringList(testingGoogleEraRemoteDnsIpv4...),
+		}},
+		{name: "old tm recommendation in a version 1 record", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("217.174.238.141", "8.8.4.4"),
+			RemoteDnsIpv6:   testing_stringList("2001:4860:4860::8844"),
+		}},
+		{name: "version 1 defaults in a version 2 record", version: 2, settings: testingOpenDnsEraDefaultDnsResolverSettings()},
+	}
+	for _, c := range cases {
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		switch c.version {
+		case 1:
+			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, c.settings)
+		case 2:
+			if err := localState.SetDnsResolverSettings(c.settings); err != nil {
+				t.Fatal(err)
+			}
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil {
+			t.Errorf("%s: record did not load", c.name)
+			continue
+		}
+		saved := testingDnsResolverSettingsLists(c.settings)
+		for name, list := range testingDnsResolverSettingsLists(persisted) {
+			if !slices.Equal(list, saved[name]) {
+				t.Errorf("%s: %s loaded as %v, want %v as saved", c.name, name, list, saved[name])
+			}
+		}
+	}
+}
+
+// An sdk that knows only version 1 migrates a record only below
+// DefaultServersVersion 1 and resets the fallback only below
+// FallbackOptInVersion 1, and reads unknown fields as absent. A record this
+// sdk writes carries version 2 of the first and version 1 of the second, so
+// that sdk (shipped at sdk 92553ef0) loads it as saved.
+func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
+	settings := testingOpenDnsEraDefaultDnsResolverSettings()
+	data, err := encodeDnsResolverSettingsRecord(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version1Record struct {
+		DnsResolverSettings
+		FallbackOptInVersion  int `json:",omitempty"`
+		DefaultServersVersion int `json:",omitempty"`
+	}
+	if err := json.Unmarshal(data, &version1Record); err != nil {
+		t.Fatal(err)
+	}
+	if version1Record.DefaultServersVersion != 2 || version1Record.FallbackOptInVersion != 1 {
+		t.Fatalf("record versions = default servers %d, fallback opt-in %d; want 2 and 1",
+			version1Record.DefaultServersVersion, version1Record.FallbackOptInVersion)
+	}
+	saved := testingDnsResolverSettingsLists(settings)
+	for name, list := range testingDnsResolverSettingsLists(&version1Record.DnsResolverSettings) {
+		if !slices.Equal(list, saved[name]) {
+			t.Errorf("%s reads as %v, want %v", name, list, saved[name])
+		}
+	}
+	if !version1Record.EnableFallback || !version1Record.EnableRemoteDoh {
+		t.Errorf("toggles read as %+v", version1Record.DnsResolverSettings)
+	}
+}
