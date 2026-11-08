@@ -3610,9 +3610,11 @@ struct ReliabilitySettings {
 	bool PerformanceAwareAffinity{};
 	int32_t MaxStickyFlowsPerExit{};
 	int64_t StickyFlowIdleTimeoutMillis{};
+	bool ScoredAffinityDonor{};
 	bool QuarantineGroupFollow{};
 	int64_t GroupFollowWindowMillis{};
 	int64_t UplinkStalenessGateMillis{};
+	int64_t UplinkStalenessMaxHoldMillis{};
 	bool SoftVerdictDemote{};
 	int32_t RemovalBudgetCount{};
 	int64_t RemovalBudgetWindowMillis{};
@@ -3628,6 +3630,8 @@ struct ReliabilitySettings {
 	int64_t SharedFateWindowMillis{};
 	int32_t EvaluationPoolMultiple{};
 	int64_t FormationPollTimeoutMillis{};
+	int64_t WindowOutcomeDeadlineMillis{};
+	int64_t WindowOutcomeRebuildDeadlineMillis{};
 	bool BusyProbe{};
 	int64_t BusyProbeBudgetMillis{};
 	int64_t SchedulerPauseToleranceMillis{};
@@ -3638,7 +3642,9 @@ struct ReliabilitySettings {
 	double PlacementHysteresisPct{};
 	int32_t PlacementDemoteConsecutive{};
 	bool RewardInstrumentation{};
+	bool LightClassifier{};
 	bool QuarantineDampening{};
+	int64_t QuarantineReentryRampMillis{};
 };
 
 struct RemoveAuthArgs {
@@ -16328,9 +16334,11 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["PerformanceAwareAffinity"] = v.PerformanceAwareAffinity;
 	j["MaxStickyFlowsPerExit"] = v.MaxStickyFlowsPerExit;
 	j["StickyFlowIdleTimeoutMillis"] = v.StickyFlowIdleTimeoutMillis;
+	j["ScoredAffinityDonor"] = v.ScoredAffinityDonor;
 	j["QuarantineGroupFollow"] = v.QuarantineGroupFollow;
 	j["GroupFollowWindowMillis"] = v.GroupFollowWindowMillis;
 	j["UplinkStalenessGateMillis"] = v.UplinkStalenessGateMillis;
+	j["UplinkStalenessMaxHoldMillis"] = v.UplinkStalenessMaxHoldMillis;
 	j["SoftVerdictDemote"] = v.SoftVerdictDemote;
 	j["RemovalBudgetCount"] = v.RemovalBudgetCount;
 	j["RemovalBudgetWindowMillis"] = v.RemovalBudgetWindowMillis;
@@ -16346,6 +16354,8 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["SharedFateWindowMillis"] = v.SharedFateWindowMillis;
 	j["EvaluationPoolMultiple"] = v.EvaluationPoolMultiple;
 	j["FormationPollTimeoutMillis"] = v.FormationPollTimeoutMillis;
+	j["WindowOutcomeDeadlineMillis"] = v.WindowOutcomeDeadlineMillis;
+	j["WindowOutcomeRebuildDeadlineMillis"] = v.WindowOutcomeRebuildDeadlineMillis;
 	j["BusyProbe"] = v.BusyProbe;
 	j["BusyProbeBudgetMillis"] = v.BusyProbeBudgetMillis;
 	j["SchedulerPauseToleranceMillis"] = v.SchedulerPauseToleranceMillis;
@@ -16356,7 +16366,9 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["PlacementHysteresisPct"] = v.PlacementHysteresisPct;
 	j["PlacementDemoteConsecutive"] = v.PlacementDemoteConsecutive;
 	j["RewardInstrumentation"] = v.RewardInstrumentation;
+	j["LightClassifier"] = v.LightClassifier;
 	j["QuarantineDampening"] = v.QuarantineDampening;
+	j["QuarantineReentryRampMillis"] = v.QuarantineReentryRampMillis;
 }
 inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (!j.is_object()) {
@@ -16410,6 +16422,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("StickyFlowIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StickyFlowIdleTimeoutMillis);
 	}
+	if (auto it = j.find("ScoredAffinityDonor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ScoredAffinityDonor);
+	}
 	if (auto it = j.find("QuarantineGroupFollow"); it != j.end() && !it->is_null()) {
 		it->get_to(v.QuarantineGroupFollow);
 	}
@@ -16418,6 +16433,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("UplinkStalenessGateMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.UplinkStalenessGateMillis);
+	}
+	if (auto it = j.find("UplinkStalenessMaxHoldMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UplinkStalenessMaxHoldMillis);
 	}
 	if (auto it = j.find("SoftVerdictDemote"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SoftVerdictDemote);
@@ -16464,6 +16482,12 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("FormationPollTimeoutMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.FormationPollTimeoutMillis);
 	}
+	if (auto it = j.find("WindowOutcomeDeadlineMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowOutcomeDeadlineMillis);
+	}
+	if (auto it = j.find("WindowOutcomeRebuildDeadlineMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowOutcomeRebuildDeadlineMillis);
+	}
 	if (auto it = j.find("BusyProbe"); it != j.end() && !it->is_null()) {
 		it->get_to(v.BusyProbe);
 	}
@@ -16494,8 +16518,14 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("RewardInstrumentation"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RewardInstrumentation);
 	}
+	if (auto it = j.find("LightClassifier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LightClassifier);
+	}
 	if (auto it = j.find("QuarantineDampening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.QuarantineDampening);
+	}
+	if (auto it = j.find("QuarantineReentryRampMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineReentryRampMillis);
 	}
 }
 
