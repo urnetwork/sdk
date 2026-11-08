@@ -3690,6 +3690,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PackQueueCapacityByteCount: number
  *   ProviderSendByteCount: number
  *   ProviderReceiveByteCount: number
+ *   ProviderReceiveHeadRecoveryBudgetByteCount: number
+ *   ProviderReceiveHeadRecoveryUsedByteCount: number
+ *   ProviderReceiveHeadRecoveryReservedByteCount: number
+ *   ProviderReceiveHeadRecoveryReleasedByteCount: number
  *   TransferRootBudgetByteCount: number
  *   TransferRootUsedByteCount: number
  *   TransferRootReservedByteCount: number

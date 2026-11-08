@@ -2258,6 +2258,10 @@ struct DeviceLocalMemoryUsage {
 	int64_t PackQueueCapacityByteCount{};
 	int64_t ProviderSendByteCount{};
 	int64_t ProviderReceiveByteCount{};
+	int64_t ProviderReceiveHeadRecoveryBudgetByteCount{};
+	int64_t ProviderReceiveHeadRecoveryUsedByteCount{};
+	int64_t ProviderReceiveHeadRecoveryReservedByteCount{};
+	int64_t ProviderReceiveHeadRecoveryReleasedByteCount{};
 	int64_t TransferRootBudgetByteCount{};
 	int64_t TransferRootUsedByteCount{};
 	int64_t TransferRootReservedByteCount{};
@@ -10076,6 +10080,10 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["PackQueueCapacityByteCount"] = v.PackQueueCapacityByteCount;
 	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
 	j["ProviderReceiveByteCount"] = v.ProviderReceiveByteCount;
+	j["ProviderReceiveHeadRecoveryBudgetByteCount"] = v.ProviderReceiveHeadRecoveryBudgetByteCount;
+	j["ProviderReceiveHeadRecoveryUsedByteCount"] = v.ProviderReceiveHeadRecoveryUsedByteCount;
+	j["ProviderReceiveHeadRecoveryReservedByteCount"] = v.ProviderReceiveHeadRecoveryReservedByteCount;
+	j["ProviderReceiveHeadRecoveryReleasedByteCount"] = v.ProviderReceiveHeadRecoveryReleasedByteCount;
 	j["TransferRootBudgetByteCount"] = v.TransferRootBudgetByteCount;
 	j["TransferRootUsedByteCount"] = v.TransferRootUsedByteCount;
 	j["TransferRootReservedByteCount"] = v.TransferRootReservedByteCount;
@@ -10175,6 +10183,18 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("ProviderReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderReceiveByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryBudgetByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryUsedByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryReservedByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryReleasedByteCount);
 	}
 	if (auto it = j.find("TransferRootBudgetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransferRootBudgetByteCount);
