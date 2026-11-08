@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -600,19 +601,28 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 // resolves only through the tunnel); a record written at this version keeps the user's choice.
 const dnsResolverSettingsFallbackOptInVersion = 1
 
+// The record also carries the version of the default server lists it was written against. The
+// defaults named Google Public DNS until the owner removed it (2026-11-08, support inbox 8236),
+// and the dns editors save every list, so a record written before this version can hold the old
+// default lists carried along rather than chosen. See migrateGoogleDefaultServerLists.
+const dnsResolverSettingsDefaultServersVersion = 1
+
 type dnsResolverSettingsRecord struct {
 	DnsResolverSettings
-	FallbackOptInVersion int `json:",omitempty"`
+	FallbackOptInVersion  int `json:",omitempty"`
+	DefaultServersVersion int `json:",omitempty"`
 }
 
 func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) ([]byte, error) {
 	return json.Marshal(&dnsResolverSettingsRecord{
-		DnsResolverSettings:  *dnsResolverSettings,
-		FallbackOptInVersion: dnsResolverSettingsFallbackOptInVersion,
+		DnsResolverSettings:   *dnsResolverSettings,
+		FallbackOptInVersion:  dnsResolverSettingsFallbackOptInVersion,
+		DefaultServersVersion: dnsResolverSettingsDefaultServersVersion,
 	})
 }
 
-// Applies the fallback opt-in migration to records written by older sdks.
+// Applies the fallback opt-in and default server list migrations to records written by older
+// sdks.
 func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) {
 	var record dnsResolverSettingsRecord
 	if err := json.Unmarshal(data, &record); err != nil {
@@ -622,7 +632,106 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 		record.EnableFallback = false
 	}
 	dnsResolverSettings := record.DnsResolverSettings
+	if record.DefaultServersVersion < dnsResolverSettingsDefaultServersVersion {
+		migrateGoogleDefaultServerLists(&dnsResolverSettings)
+	}
 	return &dnsResolverSettings, nil
+}
+
+// The default server lists as shipped while they named Google Public DNS (connect, 2026-07-02
+// to 2026-11-08), each with the current default list that replaces it.
+var dnsResolverSettingsGoogleDefaultServerLists = []struct {
+	servers []string
+	current func(defaults *connect.DnsResolverSettings) []string
+}{
+	{
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://8.8.8.8/dns-query",
+			"https://9.9.9.9/dns-query",
+			"https://208.67.222.222/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2001:4860:4860::8888]/dns-query",
+			"https://[2620:fe::fe]/dns-query",
+			"https://[2620:119:35::35]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		servers: []string{"1.1.1.1", "9.9.9.9", "8.8.8.8", "208.67.222.222"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2001:4860:4860::8888", "2620:119:35::35"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
+}
+
+// Replaces each saved list that holds exactly the servers of an old default list (in any order)
+// with the current default list, keeping the saved order of the servers that remain. Such a list
+// is the old default carried along by an editor, not a choice. Every other list loads as saved,
+// so a user who named Google themselves, alone or among other servers, keeps it. The old
+// regional recommendations that named Google (kz, tm) are left as saved too: a list of one
+// Google address cannot be told apart from a user who typed it.
+func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
+	defaults := connect.DefaultDnsResolverSettings()
+	sameServers := func(saved []string, servers []string) bool {
+		if len(saved) != len(servers) {
+			return false
+		}
+		for _, server := range saved {
+			if !slices.Contains(servers, server) {
+				return false
+			}
+		}
+		for _, server := range servers {
+			if !slices.Contains(saved, server) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, list := range []**StringList{
+		&dnsResolverSettings.RemoteDohUrlsIpv4,
+		&dnsResolverSettings.RemoteDohUrlsIpv6,
+		&dnsResolverSettings.LocalDohUrlsIpv4,
+		&dnsResolverSettings.LocalDohUrlsIpv6,
+		&dnsResolverSettings.RemoteDnsIpv4,
+		&dnsResolverSettings.RemoteDnsIpv6,
+		&dnsResolverSettings.LocalDnsIpv4,
+		&dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if *list == nil {
+			continue
+		}
+		saved := (*list).getAll()
+		for _, googleDefault := range dnsResolverSettingsGoogleDefaultServerLists {
+			if !sameServers(saved, googleDefault.servers) {
+				continue
+			}
+			current := googleDefault.current(defaults)
+			migrated := []string{}
+			for _, server := range saved {
+				if slices.Contains(current, server) {
+					migrated = append(migrated, server)
+				}
+			}
+			for _, server := range current {
+				if !slices.Contains(migrated, server) {
+					migrated = append(migrated, server)
+				}
+			}
+			migratedList := NewStringList()
+			migratedList.addAll(migrated...)
+			*list = migratedList
+			break
+		}
+	}
 }
 
 // Dropped while the space is signed out, as SetProvideNetworkMode.
