@@ -476,6 +476,11 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		TransportDelayBadDownQueueDelay:     defaultTransportDelayBadDownQueueDelay,
 		TransportDelayQualityStep:           defaultTransportDelayQualityStep,
 		TransportDelayQualityHysteresis:     defaultTransportDelayQualityHysteresis,
+		// and how promptly they connect (transport_connect.go), on the window
+		// transports' own connect timing
+		TransportDelayGoodConnectStall:     defaultTransportDelayGoodConnectStall,
+		TransportDelayBadConnectStall:      defaultTransportDelayBadConnectStall,
+		TransportDelayPromptConnectTimeout: defaultTransportDelayPromptConnectTimeout,
 
 		ClientSettings: *clientSettings,
 	}
@@ -588,6 +593,30 @@ func (self *DeviceLocalSettings) GetTransportDelayBadDownQueueDelayMillis() int6
 
 func (self *DeviceLocalSettings) SetTransportDelayBadDownQueueDelayMillis(millis int64) {
 	self.TransportDelayBadDownQueueDelay = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayGoodConnectStallMillis() int64 {
+	return self.TransportDelayGoodConnectStall.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayGoodConnectStallMillis(millis int64) {
+	self.TransportDelayGoodConnectStall = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayBadConnectStallMillis() int64 {
+	return self.TransportDelayBadConnectStall.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayBadConnectStallMillis(millis int64) {
+	self.TransportDelayBadConnectStall = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetTransportDelayPromptConnectTimeoutMillis() int64 {
+	return self.TransportDelayPromptConnectTimeout.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetTransportDelayPromptConnectTimeoutMillis(millis int64) {
+	self.TransportDelayPromptConnectTimeout = time.Duration(millis) * time.Millisecond
 }
 
 // DeviceLocalSettings is BOUND and app-facing, despite what a
@@ -811,6 +840,21 @@ type DeviceLocalSettings struct {
 	// below the level's band (§10.3)
 	TransportDelayQualityStep       float64
 	TransportDelayQualityHysteresis float64
+	// the connect stall, how long the window goes without a transport
+	// connecting while it is trying to connect, where both directions'
+	// quality reaches 0 (at or below good) and 1 (at or above bad)
+	// (transport_connect.go)
+	//
+	//gomobile:noexport time.Duration — bound as GetTransportDelayGoodConnectStallMillis/SetTransportDelayGoodConnectStallMillis
+	TransportDelayGoodConnectStall time.Duration
+	//gomobile:noexport time.Duration — bound as GetTransportDelayBadConnectStallMillis/SetTransportDelayBadConnectStallMillis
+	TransportDelayBadConnectStall time.Duration
+	// a transport that connects within this long of starting its attempt
+	// clears the stalls that ended before the attempt; zero or less clears
+	// none early
+	//
+	//gomobile:noexport time.Duration — bound as GetTransportDelayPromptConnectTimeoutMillis/SetTransportDelayPromptConnectTimeoutMillis
+	TransportDelayPromptConnectTimeout time.Duration
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	//
@@ -1143,6 +1187,10 @@ type DeviceLocal struct {
 	// goroutine never takes stateLock, and the wake of watchTransportDelay
 	transportDelay       *transportDelayWindow
 	transportDelayNotify chan struct{}
+	// the connect state of the current generation's window transports, which
+	// the generator reports as it builds them (transport_connect.go). Guarded
+	// by its own lock, so the generator's setup path never takes stateLock
+	transportConnect *transportConnectWindow
 
 	// a stable windowMonitor instance per remoteUserNatClient for the
 	// fixed/empty monitor types (see cachedWindowMonitor). Guarded by its own
@@ -2039,6 +2087,8 @@ func newDeviceLocalWithOverridesForPlatform(
 		providerIngressContractStatsChangeListeners:   connect.NewCallbackList[ContractStatsChangeListener](),
 		providerIngressContractDetailsChangeListeners: connect.NewCallbackList[ContractDetailsChangeListener](),
 	}
+	// a connect change wakes the transport delay watch, which reads both
+	deviceLocal.transportConnect = newTransportConnectWindow(ctx, settings, deviceLocal.notifyTransportDelay)
 	// the enabled subprotocols follow the device's own client
 	if provider != nil {
 		deviceLocal.attachSubprotocolsToClient(provider.Client())
@@ -5127,6 +5177,9 @@ func (self *DeviceLocal) applyDestination(
 		// the samples and levels are the retired multi client's. A sample one
 		// of its transports publishes late is dropped from here on
 		self.transportDelay.reset(self.connectionGeneration, nil)
+		// so are its transports and connect stalls; the new generator reports
+		// the new generation's transports from its first
+		self.transportConnect.reset(self.connectionGeneration)
 		// the prior mux is closed here but its learned IP→hostname names are carried
 		// into the new mux below (AdoptServerNames): server names outlive the physical
 		// connection, so a reconnect/location change must not blank the reverse index —
@@ -5229,11 +5282,9 @@ func (self *DeviceLocal) applyDestination(
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
 				apiGeneratorSettings.PlatformTransportModePreferences = modePreferences
-				// every window client's transports offer the delay header and
-				// measure (connect/DELAY.md D3)
-				if self.settings.EnableTransportDelay {
-					apiGeneratorSettings.TransportDelay = connect.DefaultTransportDelaySettings()
-				}
+				// every window client's transports measure, and report how
+				// promptly they connect
+				self.applyWindowTransportDelaySettings(apiGeneratorSettings, self.connectionGeneration)
 				apiGenerator := connect.NewApiMultiClientGenerator(
 					self.ctx,
 					connectSpecs,
@@ -6173,6 +6224,10 @@ func (self *DeviceLocal) close() {
 		self.transportDelayStatsSub = nil
 	}
 	self.transportDelay.reset(self.connectionGeneration, nil)
+	// the connect window takes no transport from here on; the join waits out
+	// its transport watchers
+	self.transportConnect.close()
+	self.startLifecycleWorkerWithLock(self.transportConnect.wait)
 	self.closeUpgradeMuxWithLock()
 	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()

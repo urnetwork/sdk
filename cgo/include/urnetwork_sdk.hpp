@@ -2250,6 +2250,10 @@ struct DeviceLocalMemoryUsage {
 	int64_t DnsByteCount{};
 	int64_t ClientSendByteCount{};
 	int64_t ClientReceiveByteCount{};
+	int64_t ClientReceiveHeadRecoveryBudgetByteCount{};
+	int64_t ClientReceiveHeadRecoveryUsedByteCount{};
+	int64_t ClientReceiveHeadRecoveryReservedByteCount{};
+	int64_t ClientReceiveHeadRecoveryReleasedByteCount{};
 	int64_t PackQueueUsedByteCount{};
 	int64_t PackQueueCapacityByteCount{};
 	int64_t ProviderSendByteCount{};
@@ -2330,6 +2334,9 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayBadDownQueueDelay{};
 	double TransportDelayQualityStep{};
 	double TransportDelayQualityHysteresis{};
+	int64_t TransportDelayGoodConnectStall{};
+	int64_t TransportDelayBadConnectStall{};
+	int64_t TransportDelayPromptConnectTimeout{};
 	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -10061,6 +10068,10 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["DnsByteCount"] = v.DnsByteCount;
 	j["ClientSendByteCount"] = v.ClientSendByteCount;
 	j["ClientReceiveByteCount"] = v.ClientReceiveByteCount;
+	j["ClientReceiveHeadRecoveryBudgetByteCount"] = v.ClientReceiveHeadRecoveryBudgetByteCount;
+	j["ClientReceiveHeadRecoveryUsedByteCount"] = v.ClientReceiveHeadRecoveryUsedByteCount;
+	j["ClientReceiveHeadRecoveryReservedByteCount"] = v.ClientReceiveHeadRecoveryReservedByteCount;
+	j["ClientReceiveHeadRecoveryReleasedByteCount"] = v.ClientReceiveHeadRecoveryReleasedByteCount;
 	j["PackQueueUsedByteCount"] = v.PackQueueUsedByteCount;
 	j["PackQueueCapacityByteCount"] = v.PackQueueCapacityByteCount;
 	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
@@ -10140,6 +10151,18 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("ClientReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClientReceiveByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryBudgetByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryUsedByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryReservedByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryReleasedByteCount);
 	}
 	if (auto it = j.find("PackQueueUsedByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PackQueueUsedByteCount);
@@ -10294,6 +10317,9 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayBadDownQueueDelay"] = v.TransportDelayBadDownQueueDelay;
 	j["TransportDelayQualityStep"] = v.TransportDelayQualityStep;
 	j["TransportDelayQualityHysteresis"] = v.TransportDelayQualityHysteresis;
+	j["TransportDelayGoodConnectStall"] = v.TransportDelayGoodConnectStall;
+	j["TransportDelayBadConnectStall"] = v.TransportDelayBadConnectStall;
+	j["TransportDelayPromptConnectTimeout"] = v.TransportDelayPromptConnectTimeout;
 	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -10427,6 +10453,15 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("TransportDelayQualityHysteresis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportDelayQualityHysteresis);
+	}
+	if (auto it = j.find("TransportDelayGoodConnectStall"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodConnectStall);
+	}
+	if (auto it = j.find("TransportDelayBadConnectStall"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadConnectStall);
+	}
+	if (auto it = j.find("TransportDelayPromptConnectTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayPromptConnectTimeout);
 	}
 	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StrictWindowHandover);

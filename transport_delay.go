@@ -32,6 +32,12 @@ package sdk
 // so an app hears a change only when a level moves (D7). A direction with no
 // live sample is 0 (D4).
 //
+// A transport that is still connecting has no traffic to sample, so the delay
+// samples alone read a device whose transports take a long time to connect as
+// normal operation. The connect window (transport_connect.go) scores those
+// connect stalls, and its score is folded into both directions before the
+// levels move.
+//
 // The window takes the samples of one multi client generation at a time. A
 // rebuild drops the retired generation's samples and its levels, and a sample
 // a retired multi client's transports publish late is dropped.
@@ -432,6 +438,16 @@ func (self *transportDelayWindow) add(
 // any sample is still live, which keeps the caller evaluating once a second so
 // a direction returns to 0 without new traffic (D4).
 func (self *transportDelayWindow) evaluate(now time.Time) (*TransportDelay, bool) {
+	return self.evaluateWithConnect(now, transportConnectScore{})
+}
+
+// evaluate with the connect window's score (transport_connect.go) folded into
+// both directions: a transport that cannot connect is held back both ways, and
+// has no traffic for the delay samples to read. The levels move from the worse
+// of each direction's own score and the connect score, so the quantization and
+// the release hysteresis apply to both alike. The readout's rates and standing
+// queues stay the delay samples'.
+func (self *transportDelayWindow) evaluateWithConnect(now time.Time, connectScore transportConnectScore) (*TransportDelay, bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -439,8 +455,8 @@ func (self *transportDelayWindow) evaluate(now time.Time) (*TransportDelay, bool
 		return !self.live(sample, now)
 	})
 	self.secondsWithLock()
-	up := self.scoreWithLock(self.upSeconds, self.up)
-	down := self.scoreWithLock(self.downSeconds, self.down)
+	up := transportDelayWithConnect(self.scoreWithLock(self.upSeconds, self.up), connectScore)
+	down := transportDelayWithConnect(self.scoreWithLock(self.downSeconds, self.down), connectScore)
 	upLevel := transportDelayLevel(up.quality, self.delay.UpQuality, self.qualityStep, self.qualityHysteresis)
 	downLevel := transportDelayLevel(down.quality, self.delay.DownQuality, self.qualityStep, self.qualityHysteresis)
 	// the second that set the reported level says whose slowness it is
@@ -472,6 +488,20 @@ func (self *transportDelayWindow) evaluate(now time.Time) (*TransportDelay, bool
 	}
 	delay := self.delay
 	return &delay, 0 < len(self.samples)
+}
+
+// The worse of a direction's score and the connect score, which also sets the
+// fallback. Between equal non-zero qualities the reading is the fallback's
+// only if both are, as between the two signals of a direction.
+func transportDelayWithConnect(score transportDelayScore, connectScore transportConnectScore) transportDelayScore {
+	switch {
+	case score.quality < connectScore.quality:
+		score.quality = connectScore.quality
+		score.fallback = connectScore.fallback
+	case 0 < score.quality && score.quality == connectScore.quality:
+		score.fallback = score.fallback && connectScore.fallback
+	}
+	return score
 }
 
 // The last evaluation, normal operation before the first and after a reset.
