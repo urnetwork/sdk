@@ -142,12 +142,16 @@ type manageDevicesDevice interface {
 
 // manageDevicesSettings tunes the controller.
 type manageDevicesSettings struct {
-	// how long after a removal whose retry the device's interval refused the
-	// controller retries once more: just past the device's
-	// ClientLimitRetryMinInterval (30 s by default), so a user who removes
-	// two devices in a row is not left in the hold. Zero or less does not
+	// how long after a removal whose retry the device's floor refused the
+	// controller retries again, and between those retries: just past the
+	// device's ClientLimitRetryMinInterval (30 s by default), so a user who
+	// removes devices in a row is not left in the hold. Zero or less does not
 	// retry again.
 	RetryAddDelay time.Duration
+	// how many times it retries again, while the hold lasts. The device's
+	// floor doubles with each retry in a row (DeviceLocal.RetryClientLimit),
+	// and these reach past the floor after a few removals in a row.
+	RetryAddAttempts int
 	// bounds each request
 	RequestTimeout time.Duration
 	// the delay of RetryAddDelay; time.After, replaced only by tests
@@ -156,9 +160,10 @@ type manageDevicesSettings struct {
 
 func defaultManageDevicesSettings() *manageDevicesSettings {
 	return &manageDevicesSettings{
-		RetryAddDelay:  31 * time.Second,
-		RequestTimeout: 30 * time.Second,
-		after:          time.After,
+		RetryAddDelay:    31 * time.Second,
+		RetryAddAttempts: 8,
+		RequestTimeout:   30 * time.Second,
+		after:            time.After,
 	}
 }
 
@@ -529,14 +534,20 @@ func (self *ManageDevicesViewController) retryAdd() {
 		}
 		self.countAddRetry()
 		if !retried && 0 < self.settings.RetryAddDelay {
-			// inside the hold's retry interval, from an earlier retry: once
-			// more when it has passed, so a second removal in a row is not
-			// left waiting out the hold
+			// inside the device's retry floor, from an earlier retry: again
+			// each RetryAddDelay while the hold lasts, so removals in a row
+			// are not left waiting out the hold. The device decides when a
+			// retry dials; one it refuses costs nothing.
 			go connect.HandleError(func() {
-				select {
-				case <-self.ctx.Done():
-				case <-self.settings.after(self.settings.RetryAddDelay):
-					retry()
+				for range self.settings.RetryAddAttempts {
+					select {
+					case <-self.ctx.Done():
+						return
+					case <-self.settings.after(self.settings.RetryAddDelay):
+					}
+					if held, retried := retry(); !held || retried {
+						return
+					}
 				}
 			})
 		}

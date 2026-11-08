@@ -424,6 +424,82 @@ func TestManageDevicesRemoveRetriesAgainAfterTheInterval(t *testing.T) {
 	}
 }
 
+// The device's floor doubles with each retry in a row, so after a few
+// removals in a row one retry interval is not enough: the controller retries
+// again each interval while the hold lasts, and stops once one ends the hold,
+// or the hold ends by itself.
+func TestManageDevicesRemoveRetriesUntilTheFloorPasses(t *testing.T) {
+	this, laptop := NewId(), NewId()
+	server := &testingManageDevicesServer{
+		devices: []*NetworkClientInfo{testingManagedClient(laptop, "Laptop", "", 1_000, true)},
+	}
+	api := newTestingManageDevicesApi(t, testingManageDevicesNetworkJwt)
+	server.install(t, api)
+	device := &testingManageDevicesDevice{
+		api:      api,
+		clientId: this,
+		status:   &ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: 1, Prompt: ClientLimitPromptUpgrade},
+		// the floor refuses the first three
+		retryAnswers: []bool{false, false, false},
+		retries:      make(chan struct{}, 8),
+	}
+	interval := make(chan time.Time)
+	settings := defaultManageDevicesSettings()
+	settings.after = func(time.Duration) <-chan time.Time { return interval }
+	vc := newManageDevicesViewControllerWithDevice(t.Context(), device, settings)
+	defer vc.Close()
+	listener := newTestingManageDevicesListener()
+	defer vc.AddManageDevicesListener(listener).Close()
+	vc.Start()
+	listener.until(t, "the list never loaded", func(s *ManageDevicesSnapshot) bool { return s.Loaded })
+
+	vc.RemoveDevice(laptop)
+	<-device.retries
+	for i := 0; i < 3; i += 1 {
+		interval <- time.Now()
+		select {
+		case <-device.retries:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("no retry after interval %d", i+1)
+		}
+	}
+	// the third interval's retry ended the hold: no more intervals
+	select {
+	case interval <- time.Now():
+		t.Fatal("the controller kept waiting after a retry ended the hold")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// a hold that ends by itself also stops the retries
+	func() {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		device.retryAnswers = []bool{false}
+	}()
+	server.stateLock.Lock()
+	server.devices = []*NetworkClientInfo{testingManagedClient(laptop, "Laptop", "", 1_000, true)}
+	server.stateLock.Unlock()
+	vc.Refresh()
+	listener.until(t, "the list never reloaded", func(s *ManageDevicesSnapshot) bool {
+		return !s.Loading && s.Devices.Len() == 1
+	})
+	vc.RemoveDevice(laptop)
+	<-device.retries
+	func() {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		device.status = noneClientLimitStatus()
+	}()
+	interval <- time.Now()
+	select {
+	case <-device.retries:
+		t.Fatal("the controller retried a hold that had ended")
+	case interval <- time.Now():
+		t.Fatal("the controller kept waiting after the hold ended")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 // A sign-in the limit refused lists the devices with the sign-in's own
 // network token, and a removal runs the sign-in again.
 func TestManageDevicesSignInRemoveRetriesTheSignIn(t *testing.T) {

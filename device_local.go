@@ -870,8 +870,9 @@ type DeviceLocalSettings struct {
 	// the least time between two client limit holds RetryClientLimit ends.
 	// Each retry is one dial the platform judges again, and a refusal starts a
 	// new hold of at least 15 minutes, so this bounds the dials an app or a
-	// user's repeated taps can make against the limit. Zero or less does not
-	// limit.
+	// user's repeated taps can make against the limit. The floor doubles with
+	// each retry in a row, up to the platform's shortest hold. Zero or less
+	// does not limit.
 	//
 	//gomobile:noexport time.Duration — bound as GetClientLimitRetryMinIntervalMillis/SetClientLimitRetryMinIntervalMillis
 	ClientLimitRetryMinInterval time.Duration

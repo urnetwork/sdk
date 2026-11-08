@@ -107,9 +107,11 @@ type deviceLocalProvider struct {
 	// the client limit hold every transport generation shares, carried to
 	// each through its settings. Immutable after construction.
 	clientLimitBackoff *connect.ClientLimitBackoff
-	// when retryClientLimit last ended a hold; zero before the first. Guarded
-	// by stateLock.
-	clientLimitRetryTime time.Time
+	// when retryClientLimit last ended a hold, zero before the first, and how
+	// many holds it ended in a row, each within the backoff window of the one
+	// before (clientLimitRetryAdmit). Guarded by stateLock.
+	clientLimitRetryTime  time.Time
+	clientLimitRetryCount int
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -505,10 +507,11 @@ func (self *deviceLocalProvider) clientLimitStatus() (connect.ClientLimitStatus,
 
 // retryClientLimit ends the client limit hold in force at `now`, so the
 // transports parked on it dial again, and returns whether it did. It ends
-// none when no hold is in force, and none within `minInterval` of the last
-// hold it ended (a non-positive interval does not limit); see
-// DeviceLocal.RetryClientLimit. A provider built without a hold ends none.
-func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval time.Duration) bool {
+// none when no hold is in force, and none before the retry floor since the
+// last hold it ended (clientLimitRetryAdmit: `minInterval`, doubling with each
+// retry in a row up to `maxInterval`); see DeviceLocal.RetryClientLimit. A
+// provider built without a hold ends none.
+func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
 	if self.clientLimitBackoff == nil {
 		return false
 	}
@@ -517,14 +520,64 @@ func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval tim
 	if self.closed || !self.clientLimitBackoff.Status().Exceeded {
 		return false
 	}
-	if !self.clientLimitRetryTime.IsZero() && 0 < minInterval && now.Sub(self.clientLimitRetryTime) < minInterval {
+	admit, count := clientLimitRetryAdmit(
+		self.clientLimitRetryTime,
+		self.clientLimitRetryCount,
+		now,
+		minInterval,
+		maxInterval,
+	)
+	if !admit {
 		return false
 	}
 	self.clientLimitRetryTime = now
+	self.clientLimitRetryCount = count
 	// under the lock, as setProvideMode resets it: the platform judges the next
 	// dial again, and a refusal starts a new hold
 	self.clientLimitBackoff.Reset()
 	return true
+}
+
+// clientLimitRetryAdmit decides a retry at `now`, after `count` retries in a
+// row that ended a hold, the last at `last` (zero before the first): whether it
+// may end the hold in force, and the count to keep when it does.
+//
+// A hold is in force at every retry, so each retry after the first in a row
+// follows a redial the platform refused again. The floor after the first is
+// minInterval, and it doubles with each retry in a row up to maxInterval (the
+// platform's shortest hold), so an app that loops on the retry costs at most
+// the dials the holds themselves allow, not one per minInterval. A retry more
+// than twice the larger interval after the last starts a new row. A
+// non-positive minInterval does not limit.
+func clientLimitRetryAdmit(
+	last time.Time,
+	count int,
+	now time.Time,
+	minInterval time.Duration,
+	maxInterval time.Duration,
+) (admit bool, nextCount int) {
+	if last.IsZero() || minInterval <= 0 {
+		return true, 1
+	}
+	elapsed := now.Sub(last)
+	if 2*max(minInterval, maxInterval) < elapsed {
+		return true, 1
+	}
+	if elapsed < clientLimitRetryFloor(count, minInterval, maxInterval) {
+		return false, count
+	}
+	return true, count + 1
+}
+
+// clientLimitRetryFloor is how long after the last of `count` retries in a row
+// the next may end a hold: minInterval after the first, doubling with each
+// retry since, up to maxInterval, and never less than minInterval.
+func clientLimitRetryFloor(count int, minInterval time.Duration, maxInterval time.Duration) time.Duration {
+	floor := minInterval
+	for i := 1; i < count && floor < maxInterval; i += 1 {
+		floor *= 2
+	}
+	return max(minInterval, min(floor, maxInterval))
 }
 
 // newProviderPlatformTransport builds the provider's transport group: the

@@ -57,9 +57,12 @@ func (self *DeviceLocal) AddClientLimitStatusChangeListener(listener ClientLimit
 // hold was ended.
 //
 // It does nothing with no hold in force, since ending one also supersedes every
-// connection dialed before it (connect/transport_client_limit.go), and it ends
-// at most one hold per ClientLimitRetryMinInterval, so an app that calls it in a
-// loop cannot turn the hold into a retry storm against the limit.
+// connection dialed before it (connect/transport_client_limit.go). It ends at
+// most one hold per ClientLimitRetryMinInterval, and the floor doubles with
+// each retry in a row whose redial the platform refused again, up to the
+// platform's shortest hold (connect.ClientLimitBackoffTimeout, 15 minutes), so
+// an app that calls it in a loop cannot turn the hold into a retry storm
+// against the limit. Quiet for twice that long, the floor starts over.
 func (self *DeviceLocal) RetryClientLimit() bool {
 	provider, closed := func() (*deviceLocalProvider, bool) {
 		self.stateLock.Lock()
@@ -69,7 +72,11 @@ func (self *DeviceLocal) RetryClientLimit() bool {
 	if closed || provider == nil {
 		return false
 	}
-	if !provider.retryClientLimit(time.Now(), self.settings.ClientLimitRetryMinInterval) {
+	if !provider.retryClientLimit(
+		time.Now(),
+		self.settings.ClientLimitRetryMinInterval,
+		connect.ClientLimitBackoffTimeout,
+	) {
 		return false
 	}
 	self.GetApi().RequestJwtRefresh()

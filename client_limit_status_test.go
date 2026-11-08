@@ -680,3 +680,61 @@ func TestClientLimitNoticeTrackerAlertsOncePerConnectionRequest(t *testing.T) {
 	connect.AssertEqual(t, tracker.Reset(), ClientLimitNoticeNone)
 	connect.AssertEqual(t, tracker.Update(upgrade, true), ClientLimitNoticePost)
 }
+
+// The retry floor doubles with each retry in a row, up to the platform's
+// shortest hold, and starts over after a quiet spell. Before, it stayed at
+// ClientLimitRetryMinInterval: an app that looped on the retry redialed the
+// limit every 30 s for as long as the hold came back.
+func TestClientLimitRetryAdmitBacksOffRetriesInARow(t *testing.T) {
+	const minInterval = 30 * time.Second
+	const maxInterval = 15 * time.Minute
+	start := time.Unix(1_800_000_000, 0)
+
+	last := time.Time{}
+	count := 0
+	retry := func(at time.Duration) bool {
+		admit, nextCount := clientLimitRetryAdmit(last, count, start.Add(at), minInterval, maxInterval)
+		if admit {
+			last = start.Add(at)
+			count = nextCount
+		}
+		return admit
+	}
+
+	connect.AssertEqual(t, retry(0), true)
+	connect.AssertEqual(t, retry(10*time.Second), false)
+	connect.AssertEqual(t, retry(30*time.Second), true)
+	// the second refused redial: the floor is a minute now
+	connect.AssertEqual(t, retry(89*time.Second), false)
+	connect.AssertEqual(t, retry(90*time.Second), true)
+	connect.AssertEqual(t, retry(90*time.Second+119*time.Second), false)
+	connect.AssertEqual(t, retry(90*time.Second+120*time.Second), true)
+
+	// the floor stops at the shortest hold
+	connect.AssertEqual(t, clientLimitRetryFloor(1, minInterval, maxInterval), 30*time.Second)
+	connect.AssertEqual(t, clientLimitRetryFloor(2, minInterval, maxInterval), time.Minute)
+	connect.AssertEqual(t, clientLimitRetryFloor(5, minInterval, maxInterval), 8*time.Minute)
+	connect.AssertEqual(t, clientLimitRetryFloor(6, minInterval, maxInterval), maxInterval)
+	connect.AssertEqual(t, clientLimitRetryFloor(40, minInterval, maxInterval), maxInterval)
+	// a max under the min does not back off
+	connect.AssertEqual(t, clientLimitRetryFloor(4, time.Hour, maxInterval), time.Hour)
+
+	// a loop that retries as soon as each floor passes keeps to the hold's rate
+	at := 90*time.Second + 120*time.Second
+	for range 10 {
+		at += clientLimitRetryFloor(count, minInterval, maxInterval)
+		connect.AssertEqual(t, retry(at), true)
+	}
+	connect.AssertEqual(t, retry(at+maxInterval-time.Second), false)
+	connect.AssertEqual(t, retry(at+maxInterval), true)
+
+	// quiet for more than twice the shortest hold: a new row at the least floor
+	at += maxInterval
+	connect.AssertEqual(t, retry(at+2*maxInterval+time.Second), true)
+	connect.AssertEqual(t, count, 1)
+	connect.AssertEqual(t, retry(at+2*maxInterval+time.Second+minInterval), true)
+
+	// no floor at all
+	admit, _ := clientLimitRetryAdmit(start, 9, start, 0, maxInterval)
+	connect.AssertEqual(t, admit, true)
+}
