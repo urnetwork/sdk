@@ -672,12 +672,25 @@ var dnsResolverSettingsGoogleDefaultServerLists = []struct {
 	},
 }
 
+// The tm regional recommendation as shipped while it named Google Public DNS (connect,
+// 2026-07-10 to 2026-11-08): Turkmentelecom and Google in the remote plain v4 list, and from
+// 2026-09-11 Google's v6 address in the remote plain v6 list.
+var (
+	dnsResolverSettingsGoogleTmRemoteDnsIpv4 = []string{"217.174.238.141", "8.8.4.4"}
+	dnsResolverSettingsGoogleTmRemoteDnsIpv6 = []string{"2001:4860:4860::8844"}
+)
+
 // Replaces each saved list that holds exactly the servers of an old default list (in any order)
 // with the current default list, keeping the saved order of the servers that remain. Such a list
-// is the old default carried along by an editor, not a choice. Every other list loads as saved,
-// so a user who named Google themselves, alone or among other servers, keeps it. The old
-// regional recommendations that named Google (kz, tm) are left as saved too: a list of one
-// Google address cannot be told apart from a user who typed it.
+// is the old default carried along by an editor, not a choice.
+//
+// The old tm recommendation is replaced the same way by the current one: a remote plain v4 list
+// of exactly Turkmentelecom and Google, with a remote plain v6 list that is empty or exactly
+// Google's tm address. Turkmentelecom's address is what marks the pair as the recommendation.
+//
+// Every other list loads as saved, so a user who named Google themselves, alone or among other
+// servers, keeps it. That includes the old kz recommendation, which was Google alone: a list of
+// one Google address cannot be told apart from a user who typed it.
 func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 	defaults := connect.DefaultDnsResolverSettings()
 	sameServers := func(saved []string, servers []string) bool {
@@ -696,6 +709,40 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 		}
 		return true
 	}
+	// the saved servers that the current list still has, in their saved order, then the current
+	// list's other servers
+	migrated := func(saved []string, current []string) *StringList {
+		servers := []string{}
+		for _, server := range saved {
+			if slices.Contains(current, server) {
+				servers = append(servers, server)
+			}
+		}
+		for _, server := range current {
+			if !slices.Contains(servers, server) {
+				servers = append(servers, server)
+			}
+		}
+		migratedList := NewStringList()
+		migratedList.addAll(servers...)
+		return migratedList
+	}
+
+	if dnsResolverSettings.RemoteDnsIpv4 != nil {
+		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
+		var savedIpv6 []string
+		if dnsResolverSettings.RemoteDnsIpv6 != nil {
+			savedIpv6 = dnsResolverSettings.RemoteDnsIpv6.getAll()
+		}
+		if sameServers(savedIpv4, dnsResolverSettingsGoogleTmRemoteDnsIpv4) &&
+			(len(savedIpv6) == 0 || sameServers(savedIpv6, dnsResolverSettingsGoogleTmRemoteDnsIpv6)) {
+			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("tm"))
+			if 0 < len(savedIpv6) {
+				dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("tm"))
+			}
+		}
+	}
+
 	for _, list := range []**StringList{
 		&dnsResolverSettings.RemoteDohUrlsIpv4,
 		&dnsResolverSettings.RemoteDohUrlsIpv6,
@@ -714,21 +761,7 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 			if !sameServers(saved, googleDefault.servers) {
 				continue
 			}
-			current := googleDefault.current(defaults)
-			migrated := []string{}
-			for _, server := range saved {
-				if slices.Contains(current, server) {
-					migrated = append(migrated, server)
-				}
-			}
-			for _, server := range current {
-				if !slices.Contains(migrated, server) {
-					migrated = append(migrated, server)
-				}
-			}
-			migratedList := NewStringList()
-			migratedList.addAll(migrated...)
-			*list = migratedList
+			*list = migrated(saved, googleDefault.current(defaults))
 			break
 		}
 	}

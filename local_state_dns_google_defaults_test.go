@@ -5,7 +5,8 @@ package sdk
 // record an older sdk wrote can hold the old default lists, Google included,
 // carried along rather than chosen. These tests drive the real record files
 // and DeviceLocal load path, with no network: an old default list loads as
-// the current default, and every list a user chose loads as saved.
+// the current default, the old tm recommendation as the current one, and
+// every list a user chose loads as saved.
 
 import (
 	"encoding/json"
@@ -285,5 +286,96 @@ func TestV4OnlyGoogleEraRecordKeepsEmptyV6Lists(t *testing.T) {
 	}
 	if 0 < len(testingStringsOf(persisted.RemoteDohUrlsIpv6)) || 0 < len(testingStringsOf(persisted.RemoteDnsIpv6)) {
 		t.Errorf("v6 lists gained servers: %v %v", testingStringsOf(persisted.RemoteDohUrlsIpv6), testingStringsOf(persisted.RemoteDnsIpv6))
+	}
+}
+
+// The tm recommendation as an older sdk applied it: Turkmentelecom and Google
+// in the remote plain v4 list, and Google's tm v6 address (none before
+// 2026-09-11). Turkmentelecom's address marks it as the recommendation, so it
+// loads as the current tm recommendation, in either order and either era.
+func TestGoogleEraTmRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
+	tmIpv4 := connect.RegionalDnsServerIps("tm")
+	tmIpv6 := connect.RegionalDnsServerIpv6s("tm")
+	cases := []struct {
+		name  string
+		ipv4  []string
+		ipv6  []string
+		empty bool
+	}{
+		{name: "dual stack", ipv4: []string{"217.174.238.141", "8.8.4.4"}, ipv6: []string{"2001:4860:4860::8844"}},
+		{name: "v4 only era", ipv4: []string{"217.174.238.141", "8.8.4.4"}, empty: true},
+		{name: "reordered", ipv4: []string{"8.8.4.4", "217.174.238.141"}, ipv6: []string{"2001:4860:4860::8844"}},
+	}
+	for _, c := range cases {
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		recommended := &DnsResolverSettings{
+			EnableRemoteDns:       true,
+			DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
+			RemoteDnsIpv4:         testing_stringList(c.ipv4...),
+		}
+		if !c.empty {
+			recommended.RemoteDnsIpv6 = testing_stringList(c.ipv6...)
+		}
+		testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil || !persisted.EnableRemoteDns {
+			t.Errorf("%s: old tm recommendation did not load: %+v", c.name, persisted)
+			continue
+		}
+		testingErrorGoogleDns(t, "old tm recommendation "+c.name, persisted)
+		if got := testingStringsOf(persisted.RemoteDnsIpv4); !slices.Equal(got, tmIpv4) {
+			t.Errorf("%s: tm v4 = %v, want the current recommendation %v", c.name, got, tmIpv4)
+		}
+		if got := testingStringsOf(persisted.RemoteDnsIpv6); !slices.Equal(got, tmIpv6) && !(len(got) == 0 && len(tmIpv6) == 0) {
+			t.Errorf("%s: tm v6 = %v, want the current recommendation %v", c.name, got, tmIpv6)
+		}
+	}
+}
+
+// The tm pair with a server the user added, or with a v6 list the user
+// changed, is a choice and loads as saved, Google included. So does the tm
+// pair in a record this sdk wrote.
+func TestChangedTmRecommendationLoadsAsSaved(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings *DnsResolverSettings
+		current  bool
+	}{
+		{name: "added v4 server", settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("217.174.238.141", "8.8.4.4", "192.0.2.53"),
+			RemoteDnsIpv6:   testing_stringList("2001:4860:4860::8844"),
+		}},
+		{name: "changed v6", settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("217.174.238.141", "8.8.4.4"),
+			RemoteDnsIpv6:   testing_stringList("2001:4860:4860::8844", "2001:db8::53"),
+		}},
+		{name: "written by this sdk", current: true, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("217.174.238.141", "8.8.4.4"),
+			RemoteDnsIpv6:   testing_stringList("2001:4860:4860::8844"),
+		}},
+	}
+	for _, c := range cases {
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		if c.current {
+			if err := localState.SetDnsResolverSettings(c.settings); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, c.settings)
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil {
+			t.Errorf("%s: record did not load", c.name)
+			continue
+		}
+		saved := testingDnsResolverSettingsLists(c.settings)
+		for name, list := range testingDnsResolverSettingsLists(persisted) {
+			if !slices.Equal(list, saved[name]) {
+				t.Errorf("%s: %s loaded as %v, want %v as saved", c.name, name, list, saved[name])
+			}
+		}
 	}
 }
