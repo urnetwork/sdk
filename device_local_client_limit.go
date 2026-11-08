@@ -1,16 +1,25 @@
 package sdk
 
 // device_local_client_limit.go -- the client limit status of a local device
-// (client_limit_status.go): the getter, the listener, and the watch that turns
-// the provider's client limit hold into callbacks.
+// (client_limit_status.go): the getter, the listener, the watch that turns
+// the provider's client limit hold into callbacks, and the retry an app asks
+// for once its user has acted on the prompt.
 //
 // The device's platform connection is its provider's (deviceLocalProvider),
 // which every app build runs whether or not it provides, so the hold of the
 // provider's transports is the device's hold. A device built without a
 // provider has no platform connection to hold and always reads
 // ClientLimitStatusNone.
+//
+// The prompt follows the plan of the device's client, the pro claim of its
+// client jwt (clientLimitPro). The claim is as old as the jwt, which renews
+// only at a fraction of its lifetime, so a new hold asks for a refresh, and a
+// refreshed claim that changes the prompt of the hold in force is emitted
+// again.
 
 import (
+	"time"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -26,16 +35,45 @@ func (self *DeviceLocal) GetClientLimitStatus() *ClientLimitStatus {
 		return noneClientLimitStatus()
 	}
 	status, _ := provider.clientLimitStatus()
-	return newClientLimitStatus(status)
+	return newClientLimitStatus(status, self.clientLimitPro.Value())
 }
 
 // AddClientLimitStatusChangeListener subscribes to every change of the client
-// limit status: a hold starting, and a hold ending or being reset.
+// limit status: a hold starting, a hold ending or being reset, and the prompt
+// of the hold in force changing with the plan.
 func (self *DeviceLocal) AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub {
 	callbackId := self.clientLimitStatusChangeListeners.Add(listener)
 	return newSub(func() {
 		self.clientLimitStatusChangeListeners.Remove(callbackId)
 	})
+}
+
+// RetryClientLimit ends the device's client limit hold at once, so its
+// platform connection dials again now instead of at the hold's retry time.
+// An app calls it when its user has acted on the prompt: an upgrade whose
+// purchase is confirmed, or a slot freed on another device. It also refreshes
+// the client jwt, so a refusal of the new dial, which starts a new hold of at
+// least 15 minutes, prompts for the plan the network has now. Returns whether a
+// hold was ended.
+//
+// It does nothing with no hold in force, since ending one also supersedes every
+// connection dialed before it (connect/transport_client_limit.go), and it ends
+// at most one hold per ClientLimitRetryMinInterval, so an app that calls it in a
+// loop cannot turn the hold into a retry storm against the limit.
+func (self *DeviceLocal) RetryClientLimit() bool {
+	provider, closed := func() (*deviceLocalProvider, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.provider, self.closed
+	}()
+	if closed || provider == nil {
+		return false
+	}
+	if !provider.retryClientLimit(time.Now(), self.settings.ClientLimitRetryMinInterval) {
+		return false
+	}
+	self.GetApi().RequestJwtRefresh()
+	return true
 }
 
 func (self *DeviceLocal) clientLimitStatusChanged(status *ClientLimitStatus) {
@@ -46,22 +84,48 @@ func (self *DeviceLocal) clientLimitStatusChanged(status *ClientLimitStatus) {
 	}
 }
 
-// watchClientLimitStatus emits each change of the provider's client limit
-// hold. The hold notifies only on an actual change, so every wake carries a
-// new status. update is armed by the constructor before this goroutine starts,
-// so a hold that starts the instant the constructor returns still wakes it.
-func (self *DeviceLocal) watchClientLimitStatus(provider *deviceLocalProvider, update chan struct{}) {
+// watchClientLimitStatus emits each change of the client limit status: the
+// provider's hold, and the plan the prompt follows. Both notify only on an
+// actual change, and an unchanged readout is not emitted again, so a plan
+// change with no hold in force emits nothing. update and proUpdate are armed
+// by the constructor before this goroutine starts, so a hold that starts the
+// instant the constructor returns still wakes it.
+func (self *DeviceLocal) watchClientLimitStatus(
+	provider *deviceLocalProvider,
+	update chan struct{},
+	proUpdate chan struct{},
+) {
+	emitted := noneClientLimitStatus()
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-update:
+		case <-proUpdate:
 		}
-		var status connect.ClientLimitStatus
-		status, update = provider.clientLimitStatus()
+		var hold connect.ClientLimitStatus
+		hold, update = provider.clientLimitStatus()
+		var pro bool
+		pro, proUpdate = self.clientLimitPro.Get()
+		status := newClientLimitStatus(hold, pro)
+		if *status == *emitted {
+			continue
+		}
+		if status.Status == ClientLimitStatusExceeded && emitted.Status != ClientLimitStatusExceeded {
+			// a new hold: refresh the plan its prompt follows, once per hold
+			self.GetApi().RequestJwtRefresh()
+		}
+		emitted = status
 		// contain a panic to the emit: a failed emit must never end the watch
 		connect.HandleError(func() {
-			self.clientLimitStatusChanged(newClientLimitStatus(status))
+			self.clientLimitStatusChanged(status)
 		})
 	}
+}
+
+// clientLimitProClaim is the pro claim of a client jwt, false when it has none
+// or does not parse.
+func clientLimitProClaim(byJwt string) bool {
+	pro, _ := parseJwtProGuestClaims(byJwt)
+	return pro
 }

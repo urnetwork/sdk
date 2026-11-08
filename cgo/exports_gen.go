@@ -7957,6 +7957,35 @@ func urnet_client_event_queue_set_locale(self C.uint64_t, locale *C.char) {
 	self_.SetLocale(goString(locale))
 }
 
+//export urnet_client_limit_notice_tracker_reset
+func urnet_client_limit_notice_tracker_reset(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_client_limit_notice_tracker_reset")
+	self_, ok := resolveHandle[*sdk.ClientLimitNoticeTracker](uint64(self), "urnet_client_limit_notice_tracker_reset")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Reset()
+	return cString(string(r0))
+}
+
+//export urnet_client_limit_notice_tracker_update
+func urnet_client_limit_notice_tracker_update(self C.uint64_t, status *C.char, connectRequested C.bool) *C.char {
+	defer cgoGuard("urnet_client_limit_notice_tracker_update")
+	self_, ok := resolveHandle[*sdk.ClientLimitNoticeTracker](uint64(self), "urnet_client_limit_notice_tracker_update")
+	if !ok {
+		return nil
+	}
+	var status_ *sdk.ClientLimitStatus
+	if status != nil {
+		status_ = &sdk.ClientLimitStatus{}
+		if !goJson(status, status_, "urnet_client_limit_notice_tracker_update") {
+			return nil
+		}
+	}
+	r0 := self_.Update(status_, bool(connectRequested))
+	return cString(string(r0))
+}
+
 //export urnet_client_refresh_integrity_notice_close_api_if_current
 func urnet_client_refresh_integrity_notice_close_api_if_current(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_client_refresh_integrity_notice_close_api_if_current")
@@ -11131,6 +11160,17 @@ func urnet_device_reset_extenders(self C.uint64_t) {
 		return
 	}
 	self_.ResetExtenders()
+}
+
+//export urnet_device_retry_client_limit
+func urnet_device_retry_client_limit(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_retry_client_limit")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_retry_client_limit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.RetryClientLimit()
+	return C.bool(r0)
 }
 
 //export urnet_device_set_allow_foreground
@@ -18835,6 +18875,16 @@ func urnet_new_client_info(deviceType *C.char, appVersion *C.char) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_new_client_info")
+}
+
+//export urnet_new_client_limit_notice_tracker
+func urnet_new_client_limit_notice_tracker() C.uint64_t {
+	defer cgoGuard("urnet_new_client_limit_notice_tracker")
+	r0 := sdk.NewClientLimitNoticeTracker()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_new_connect_first_event

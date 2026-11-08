@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 
 	"github.com/urnetwork/connect"
@@ -230,18 +231,27 @@ func waitProviderSettled(t *testing.T, device *DeviceLocal) {
 	}
 }
 
-// The app form of the hold: none without a hold, exceeded with the retry time
-// in unix milliseconds while one is in force.
+// The app form of the hold: none without a hold, whatever the plan; exceeded
+// with the retry time in unix milliseconds while one is in force, and the
+// prompt of the plan: the upgrade for a free network, a freed slot for a Pro
+// network, whose plan is already the highest.
 func TestNewClientLimitStatusMapsTheHold(t *testing.T) {
-	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}), noneClientLimitStatus())
+	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, false), noneClientLimitStatus())
+	connect.AssertEqual(t, newClientLimitStatus(connect.ClientLimitStatus{}, true), noneClientLimitStatus())
 	retryTime := time.Date(2026, 10, 6, 12, 15, 0, 0, time.UTC)
 	connect.AssertEqual(
 		t,
-		newClientLimitStatus(connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}),
-		&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli()},
+		newClientLimitStatus(connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}, false),
+		&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli(), Prompt: ClientLimitPromptUpgrade},
+	)
+	connect.AssertEqual(
+		t,
+		newClientLimitStatus(connect.ClientLimitStatus{Exceeded: true, RetryTime: retryTime}, true),
+		&ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: retryTime.UnixMilli(), Prompt: ClientLimitPromptRemoveClient},
 	)
 	connect.AssertEqual(t, noneClientLimitStatus().Status, ClientLimitStatusNone)
 	connect.AssertEqual(t, noneClientLimitStatus().RetryTime, int64(0))
+	connect.AssertEqual(t, noneClientLimitStatus().Prompt, ClientLimitPromptNone)
 }
 
 // The provider declares provide intent exactly while its mode includes public:
@@ -459,4 +469,214 @@ func TestDeviceRemoteClientLimitStatus(t *testing.T) {
 	deviceLocal.Close()
 	testWaitRemoteDisconnected(t, deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), status)
+}
+
+// The prompt follows the plan of the device's client. A plan change with no
+// hold in force emits nothing; a hold prompts for the plan the client has, and
+// a plan change during the hold, as a refreshed client jwt brings, emits the
+// same hold again with the new prompt.
+func TestDeviceLocalClientLimitPromptFollowsThePlan(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	_, device := newTestingClientLimitDevice(t, platform, nil)
+	listener := newTestingClientLimitListener()
+	sub := device.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	// a Pro client with no hold: nothing to emit, so the first status the
+	// listener receives is the hold below
+	device.clientLimitPro.Set(true)
+	connect.AssertEqual(t, device.GetClientLimitStatus(), noneClientLimitStatus())
+
+	undeclared := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+	undeclared.closeForClientLimit()
+	held := listener.next(t, "the client limit close reached no listener")
+	if held.Status != ClientLimitStatusExceeded || held.Prompt != ClientLimitPromptRemoveClient {
+		t.Fatalf("the Pro client's hold = %+v, want exceeded prompting to free a slot", held)
+	}
+	connect.AssertEqual(t, device.GetClientLimitStatus(), held)
+
+	// the plan is free now: the same hold offers the upgrade
+	device.clientLimitPro.Set(false)
+	free := listener.next(t, "the plan change reached no listener")
+	connect.AssertEqual(t, free, &ClientLimitStatus{
+		Status:    ClientLimitStatusExceeded,
+		RetryTime: held.RetryTime,
+		Prompt:    ClientLimitPromptUpgrade,
+	})
+	connect.AssertEqual(t, device.GetClientLimitStatus(), free)
+}
+
+// The plan the prompt follows is the client jwt's pro claim; a jwt without
+// one, or one that does not parse, is free.
+func TestClientLimitProClaim(t *testing.T) {
+	signed := func(claims gojwt.MapClaims) string {
+		token, err := gojwt.NewWithClaims(gojwt.SigningMethodHS256, claims).SignedString([]byte("synthetic-client-limit-key"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	connect.AssertEqual(t, clientLimitProClaim(signed(gojwt.MapClaims{"network_id": "synthetic", "pro": true})), true)
+	connect.AssertEqual(t, clientLimitProClaim(signed(gojwt.MapClaims{"network_id": "synthetic", "pro": false})), false)
+	connect.AssertEqual(t, clientLimitProClaim(signed(gojwt.MapClaims{"network_id": "synthetic"})), false)
+	connect.AssertEqual(t, clientLimitProClaim(""), false)
+	connect.AssertEqual(t, clientLimitProClaim("not.a.jwt"), false)
+}
+
+// RetryClientLimit ends a hold at once and the device dials again, never with
+// no hold in force, and at most once per ClientLimitRetryMinInterval. Before,
+// a user who upgraded or freed a slot waited out the rest of the 15 to 20
+// minute hold, with no way for the app to reconnect sooner.
+func TestDeviceLocalRetryClientLimitEndsTheHoldOncePerInterval(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	_, device := newTestingClientLimitDevice(t, platform, func(settings *DeviceLocalSettings) {
+		// longer than the test, so the second retry is inside it
+		settings.ClientLimitRetryMinInterval = time.Hour
+	})
+	listener := newTestingClientLimitListener()
+	sub := device.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	if device.RetryClientLimit() {
+		t.Fatal("a retry with no hold in force ended one")
+	}
+
+	first := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+	first.closeForClientLimit()
+	if status := listener.next(t, "the client limit close reached no listener"); status.Status != ClientLimitStatusExceeded {
+		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
+	}
+
+	// held: what the platform accepted so far predates the retry
+	platform.drain()
+	if !device.RetryClientLimit() {
+		t.Fatal("the retry did not end the hold")
+	}
+	if status := listener.next(t, "the retry reached no listener"); status.Status != ClientLimitStatusNone {
+		t.Fatalf("listener status after the retry = %+v, want none", status)
+	}
+	// the device dials again at once, not at the hold's retry time
+	second := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, device)
+
+	// the platform refuses again: a new hold, and a retry inside the interval
+	// ends nothing
+	second.closeForClientLimit()
+	if status := listener.next(t, "the second close reached no listener"); status.Status != ClientLimitStatusExceeded {
+		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
+	}
+	if device.RetryClientLimit() {
+		t.Fatal("a second retry inside the interval ended the hold")
+	}
+	connect.AssertEqual(t, device.GetClientLimitStatus().Status, ClientLimitStatusExceeded)
+}
+
+// A remote device's retry crosses the device rpc to the device process, and
+// the prompt crosses with the status. With no device process a retry ends
+// nothing.
+func TestDeviceRemoteRetryClientLimit(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// the api and pump names resolve in the process; the platform is local
+	strategySettings := testOfflineClientStrategySettings()
+	strategySettings.Log = connect.NewNoopLogger()
+	strategySettings.EnableNormal = true
+	strategySettings.EnableResilient = false
+	networkSpace := NewNetworkSpaceWithUrls(ctx, "https://api.client-limit.example", platform.url, strategySettings)
+	defer networkSpace.Close()
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.ProvideExtenderEnabled = false
+			settings.DnsPumpHost = "pump.client-limit.example"
+		},
+	)
+	listener := newTestingClientLimitListener()
+	sub := deviceRemote.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	undeclared := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, deviceLocal)
+	undeclared.closeForClientLimit()
+	// the sync pushes the current status when the listener attaches, so skip
+	// any none until the hold arrives
+	var status *ClientLimitStatus
+	for status == nil || status.Status == ClientLimitStatusNone {
+		status = listener.next(t, "the client limit close reached no remote listener")
+	}
+	connect.AssertEqual(t, status.Prompt, ClientLimitPromptUpgrade)
+	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), deviceLocal.GetClientLimitStatus())
+
+	platform.drain()
+	if !deviceRemote.RetryClientLimit() {
+		t.Fatal("the remote's retry did not end the hold")
+	}
+	for status.Status != ClientLimitStatusNone {
+		status = listener.next(t, "the retry reached no remote listener")
+	}
+	connect.AssertEqual(t, deviceLocal.GetClientLimitStatus(), noneClientLimitStatus())
+	platform.nextConnectionDeclaring(t, "")
+	if deviceRemote.RetryClientLimit() {
+		t.Fatal("a remote retry with no hold in force ended one")
+	}
+
+	deviceLocal.Close()
+	testWaitRemoteDisconnected(t, deviceRemote)
+	if deviceRemote.RetryClientLimit() {
+		t.Fatal("a remote retry with no device process ended a hold")
+	}
+}
+
+// The notice of a hold, the same on every platform: it shows only while a
+// connection is requested, alerts once per request, shows again quietly when
+// the platform refuses the device again at its retry time, replaces itself in
+// place when the prompt changes, and goes when the hold ends, when the request
+// ends, and at a sign out.
+func TestClientLimitNoticeTrackerAlertsOncePerConnectionRequest(t *testing.T) {
+	upgrade := &ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: 1, Prompt: ClientLimitPromptUpgrade}
+	removeClient := &ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: 1, Prompt: ClientLimitPromptRemoveClient}
+	none := noneClientLimitStatus()
+
+	tracker := NewClientLimitNoticeTracker()
+	steps := []struct {
+		status           *ClientLimitStatus
+		connectRequested bool
+		action           string
+	}{
+		// held with no connection requested: no notice
+		{status: upgrade, connectRequested: false, action: ClientLimitNoticeNone},
+		// the user connects: the notice alerts once
+		{status: upgrade, connectRequested: true, action: ClientLimitNoticePost},
+		{status: upgrade, connectRequested: true, action: ClientLimitNoticeNone},
+		// the refreshed plan is Pro: replaced in place
+		{status: removeClient, connectRequested: true, action: ClientLimitNoticeUpdate},
+		// the hold ends and the device dials again
+		{status: none, connectRequested: true, action: ClientLimitNoticeRemove},
+		{status: none, connectRequested: true, action: ClientLimitNoticeNone},
+		// refused again in the same request: shown without alerting
+		{status: removeClient, connectRequested: true, action: ClientLimitNoticeUpdate},
+		// the user disconnects
+		{status: removeClient, connectRequested: false, action: ClientLimitNoticeRemove},
+		// a new request alerts again
+		{status: upgrade, connectRequested: true, action: ClientLimitNoticePost},
+		// a status the app could not read is no hold
+		{status: nil, connectRequested: true, action: ClientLimitNoticeRemove},
+		// an older device process sends no prompt: still a hold to tell
+		{status: &ClientLimitStatus{Status: ClientLimitStatusExceeded, RetryTime: 1}, connectRequested: true, action: ClientLimitNoticeUpdate},
+	}
+	for i, step := range steps {
+		if action := tracker.Update(step.status, step.connectRequested); action != step.action {
+			t.Fatalf("step %d (%+v, requested %t): action = %q, want %q", i, step.status, step.connectRequested, action, step.action)
+		}
+	}
+
+	// a sign out withdraws the notice, and the next account's request alerts
+	connect.AssertEqual(t, tracker.Reset(), ClientLimitNoticeRemove)
+	connect.AssertEqual(t, tracker.Reset(), ClientLimitNoticeNone)
+	connect.AssertEqual(t, tracker.Update(upgrade, true), ClientLimitNoticePost)
 }

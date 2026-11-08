@@ -521,6 +521,8 @@ module URnetwork
       attach_function :urnet_client_event_queue_pending_count, [:uint64], :int64, blocking: true
       attach_function :urnet_client_event_queue_set_app_version, [:uint64, :string], :void, blocking: true
       attach_function :urnet_client_event_queue_set_locale, [:uint64, :string], :void, blocking: true
+      attach_function :urnet_client_limit_notice_tracker_reset, [:uint64], :pointer, blocking: true
+      attach_function :urnet_client_limit_notice_tracker_update, [:uint64, :string, :bool], :pointer, blocking: true
       attach_function :urnet_client_refresh_integrity_notice_close_api_if_current, [:uint64], :bool, blocking: true
       attach_function :urnet_client_session_action_get_error, [:uint64], :uint64, blocking: true
       attach_function :urnet_client_session_action_get_loading, [:uint64], :bool, blocking: true
@@ -745,6 +747,7 @@ module URnetwork
       attach_function :urnet_device_remove_connected_provider, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_remove_destination, [:uint64], :void, blocking: true
       attach_function :urnet_device_reset_extenders, [:uint64], :void, blocking: true
+      attach_function :urnet_device_retry_client_limit, [:uint64], :bool, blocking: true
       attach_function :urnet_device_set_allow_foreground, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_block_action_overrides, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_blocker_enabled, [:uint64, :bool], :void, blocking: true
@@ -1555,6 +1558,7 @@ module URnetwork
       attach_function :urnet_new_bittensor_wallet_session, [:string, :string, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_client_event_queue, [:uint64, :string, :string, :string], :uint64, blocking: true
       attach_function :urnet_new_client_info, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_new_client_limit_notice_tracker, [], :uint64, blocking: true
       attach_function :urnet_new_connect_first_event, [], :pointer, blocking: true
       attach_function :urnet_new_crypto_invoice_view_controller, [:uint64, :string], :uint64, blocking: true
       attach_function :urnet_new_device_local, [:uint64, :string, :string, :string, :string, :string, :string, :pointer], :uint64, blocking: true

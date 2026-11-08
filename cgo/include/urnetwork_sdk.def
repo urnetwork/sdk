@@ -266,6 +266,8 @@ EXPORTS
 	urnet_client_event_queue_pending_count
 	urnet_client_event_queue_set_app_version
 	urnet_client_event_queue_set_locale
+	urnet_client_limit_notice_tracker_reset
+	urnet_client_limit_notice_tracker_update
 	urnet_client_refresh_integrity_notice_close_api_if_current
 	urnet_client_session_action_get_error
 	urnet_client_session_action_get_loading
@@ -775,6 +777,7 @@ EXPORTS
 	urnet_device_remove_connected_provider
 	urnet_device_remove_destination
 	urnet_device_reset_extenders
+	urnet_device_retry_client_limit
 	urnet_device_rpc_key_material_get_client_cert_pem
 	urnet_device_rpc_key_material_get_client_pem
 	urnet_device_rpc_key_material_get_server_cert_pem
@@ -1116,6 +1119,7 @@ EXPORTS
 	urnet_new_bittensor_wallet_session
 	urnet_new_client_event_queue
 	urnet_new_client_info
+	urnet_new_client_limit_notice_tracker
 	urnet_new_connect_first_event
 	urnet_new_crypto_invoice_view_controller
 	urnet_new_device_local

@@ -614,6 +614,7 @@ export interface AuthNetworkClientError {
   upgrade_required?: boolean;
   no_unique_supply?: boolean;
   message: string;
+  client_limit_prompt?: string;
 }
 
 export interface AuthNetworkClientArgs {

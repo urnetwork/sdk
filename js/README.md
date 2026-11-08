@@ -98,7 +98,7 @@ const status = {
   providePaused: device.getProvidePaused(),
   provideEnabled: device.getProvideEnabled(),
   providerConnected: device.getProviderConnected(),
-  clientLimitStatus: device.getClientLimitStatus(), // {status, retryTime}
+  clientLimitStatus: device.getClientLimitStatus(), // {status, retryTime, prompt}
 };
 const stats = device.getProviderPacketStats(); // null without a provider
 const dataProvided = stats

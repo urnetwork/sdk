@@ -286,6 +286,13 @@ inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
 inline constexpr int64_t ClientEventMaxAttempts = 3;
+inline constexpr const char* ClientLimitNoticeNone = "";
+inline constexpr const char* ClientLimitNoticePost = "post";
+inline constexpr const char* ClientLimitNoticeRemove = "remove";
+inline constexpr const char* ClientLimitNoticeUpdate = "update";
+inline constexpr const char* ClientLimitPromptNone = "";
+inline constexpr const char* ClientLimitPromptRemoveClient = "remove_client";
+inline constexpr const char* ClientLimitPromptUpgrade = "upgrade";
 inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
 inline constexpr const char* ClientLimitStatusNone = "";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
@@ -742,6 +749,7 @@ class BittensorLocalKeyFlow;
 class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
+class ClientLimitNoticeTracker;
 class ClientRefreshIntegrityNotice;
 class ClientSessionAction;
 class ClientSessionActionList;
@@ -1565,6 +1573,7 @@ struct AuthNetworkClientError {
 	std::optional<bool> upgrade_required;
 	std::optional<bool> no_unique_supply;
 	std::string message{};
+	std::optional<std::string> client_limit_prompt;
 };
 
 struct ProxyAuthResult {
@@ -1989,6 +1998,7 @@ struct ClientInfo {
 struct ClientLimitStatus {
 	std::string Status{};
 	int64_t RetryTime{};
+	std::string Prompt{};
 };
 
 struct ConnectedProviderLocation {
@@ -2337,6 +2347,7 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayGoodConnectStall{};
 	int64_t TransportDelayBadConnectStall{};
 	int64_t TransportDelayPromptConnectTimeout{};
+	int64_t ClientLimitRetryMinInterval{};
 	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -6962,6 +6973,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 		j["no_unique_supply"] = *v.no_unique_supply;
 	}
 	j["message"] = v.message;
+	if (v.client_limit_prompt) {
+		j["client_limit_prompt"] = *v.client_limit_prompt;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	if (!j.is_object()) {
@@ -6982,6 +6996,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
+	}
+	if (auto it = j.find("client_limit_prompt"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_limit_prompt = std::move(tmp);
 	}
 }
 
@@ -8886,6 +8905,7 @@ inline void to_json(nlohmann::json& j, const ClientLimitStatus& v) {
 	j = nlohmann::json::object();
 	j["Status"] = v.Status;
 	j["RetryTime"] = v.RetryTime;
+	j["Prompt"] = v.Prompt;
 }
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	if (!j.is_object()) {
@@ -8896,6 +8916,9 @@ inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	}
 	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RetryTime);
+	}
+	if (auto it = j.find("Prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Prompt);
 	}
 }
 
@@ -10320,6 +10343,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayGoodConnectStall"] = v.TransportDelayGoodConnectStall;
 	j["TransportDelayBadConnectStall"] = v.TransportDelayBadConnectStall;
 	j["TransportDelayPromptConnectTimeout"] = v.TransportDelayPromptConnectTimeout;
+	j["ClientLimitRetryMinInterval"] = v.ClientLimitRetryMinInterval;
 	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -10462,6 +10486,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("TransportDelayPromptConnectTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportDelayPromptConnectTimeout);
+	}
+	if (auto it = j.find("ClientLimitRetryMinInterval"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientLimitRetryMinInterval);
 	}
 	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StrictWindowHandover);
@@ -21672,6 +21699,7 @@ public:
 	void removeConnectedProvider(const std::string& client_id) const;
 	void removeDestination() const;
 	void resetExtenders() const;
+	bool retryClientLimit() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
@@ -21990,6 +22018,14 @@ public:
 	int64_t pendingCount() const;
 	void setAppVersion(const std::string& app_version) const;
 	void setLocale(const std::string& locale) const;
+};
+
+class ClientLimitNoticeTracker final : public detail::Handle {
+public:
+	ClientLimitNoticeTracker() = default;
+	explicit ClientLimitNoticeTracker(uint64_t h) : detail::Handle(h) {}
+	std::string reset() const;
+	std::string update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const;
 };
 
 class ClientRefreshIntegrityNotice final : public detail::Handle {
@@ -30923,6 +30959,10 @@ inline void Device::removeDestination() const {
 inline void Device::resetExtenders() const {
 	urnet_device_reset_extenders(handle());
 }
+inline bool Device::retryClientLimit() const {
+	bool r = urnet_device_retry_client_limit(handle());
+	return r;
+}
 inline void Device::setAllowForeground(bool allow_foreground) const {
 	urnet_device_set_allow_foreground(handle(), allow_foreground);
 }
@@ -32797,6 +32837,20 @@ inline void ClientEventQueue::setAppVersion(const std::string& app_version) cons
 }
 inline void ClientEventQueue::setLocale(const std::string& locale) const {
 	urnet_client_event_queue_set_locale(handle(), locale.c_str());
+}
+inline std::string ClientLimitNoticeTracker::reset() const {
+	char* r_c = urnet_client_limit_notice_tracker_reset(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientLimitNoticeTracker::update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_client_limit_notice_tracker_update(handle(), status_c, connect_requested);
+	return detail::takeString(r_c);
 }
 inline bool ClientRefreshIntegrityNotice::closeApiIfCurrent() const {
 	bool r = urnet_client_refresh_integrity_notice_close_api_if_current(handle());
@@ -38064,6 +38118,10 @@ inline std::optional<ClientInfo> newClientInfo(const std::string& device_type, c
 		return std::nullopt;
 	}
 	return detail::parseJson<ClientInfo>(r_s->c_str());
+}
+inline ClientLimitNoticeTracker newClientLimitNoticeTracker() {
+	ClientLimitNoticeTracker r(urnet_new_client_limit_notice_tracker());
+	return r;
 }
 inline std::optional<ClientEvent> newConnectFirstEvent() {
 	char* r_c = urnet_new_connect_first_event();

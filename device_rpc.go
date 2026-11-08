@@ -1469,6 +1469,30 @@ func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
 	return noneClientLimitStatus()
 }
 
+// RetryClientLimit asks the local device, whose provider holds the platform
+// connection, to end its client limit hold (DeviceLocal.RetryClientLimit). With
+// no service it ends none: nothing is queued, since a retry is the user's
+// answer to a hold now and a later replay could end a hold the user never saw.
+// A device process too old to answer keeps its rpc session and ends none, which
+// is what the caller reads from false.
+func (self *DeviceRemote) RetryClientLimit() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return false
+	}
+	retried, err := rpcCallNoArgAllowMissingMethod[bool](
+		self.service,
+		"DeviceLocalRpc.RetryClientLimit",
+		self.closeService,
+	)
+	if err != nil {
+		return false
+	}
+	return retried
+}
+
 // GetTransportDelay reads through to the local device, whose multi client
 // measures the window transports (on ios that is the packet tunnel
 // extension). The read holds no stateLock while it waits, as GetContractStatus
@@ -12756,6 +12780,13 @@ func (self *DeviceLocalRpc) GetExtenderProvideStatus(_ RpcNoArg, status **Extend
 // GetClientLimitStatus answers the device's client limit status.
 func (self *DeviceLocalRpc) GetClientLimitStatus(_ RpcNoArg, status **ClientLimitStatus) error {
 	*status = self.deviceLocal.GetClientLimitStatus()
+	return nil
+}
+
+// RetryClientLimit ends the device's client limit hold for a remote whose user
+// acted on the prompt, and answers whether it did.
+func (self *DeviceLocalRpc) RetryClientLimit(_ RpcNoArg, retried *bool) error {
+	*retried = self.deviceLocal.RetryClientLimit()
 	return nil
 }
 

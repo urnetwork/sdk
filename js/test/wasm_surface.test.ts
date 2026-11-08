@@ -85,6 +85,7 @@ test("provider status declarations match WASM runtime keys", () => {
     "getProviderConnected",
     "getClientLimitStatus",
     "addClientLimitStatusChangeListener",
+    "retryClientLimit",
     "getProviderPacketStats",
     "addProviderPacketStatsChangeListener",
     "getProviderEgressContractDetails",
@@ -98,6 +99,7 @@ test("provider status declarations match WASM runtime keys", () => {
 
   for (const field of [
     "retryTime",
+    "prompt",
     "contractId",
     "contractUsedByteCount",
     "contractByteCount",

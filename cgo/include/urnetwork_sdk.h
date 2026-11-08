@@ -235,6 +235,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
 #define URNET_CLIENT_EVENT_MAX_ATTEMPTS 3
+#define URNET_CLIENT_LIMIT_NOTICE_NONE ""
+#define URNET_CLIENT_LIMIT_NOTICE_POST "post"
+#define URNET_CLIENT_LIMIT_NOTICE_REMOVE "remove"
+#define URNET_CLIENT_LIMIT_NOTICE_UPDATE "update"
+#define URNET_CLIENT_LIMIT_PROMPT_NONE ""
+#define URNET_CLIENT_LIMIT_PROMPT_REMOVE_CLIENT "remove_client"
+#define URNET_CLIENT_LIMIT_PROMPT_UPGRADE "upgrade"
 #define URNET_CLIENT_LIMIT_STATUS_EXCEEDED "client_limit_exceeded"
 #define URNET_CLIENT_LIMIT_STATUS_NONE ""
 #define URNET_CONNECTED "CONNECTED"
@@ -1419,6 +1426,11 @@ int64_t urnet_client_event_queue_pending_count(uint64_t self);
 void urnet_client_event_queue_set_app_version(uint64_t self, const char* app_version);
 void urnet_client_event_queue_set_locale(uint64_t self, const char* locale);
 
+/* ----- ClientLimitNoticeTracker ----- */
+
+char* urnet_client_limit_notice_tracker_reset(uint64_t self);
+char* urnet_client_limit_notice_tracker_update(uint64_t self, const char* status_json, bool connect_requested);
+
 /* ----- ClientRefreshIntegrityNotice ----- */
 
 bool urnet_client_refresh_integrity_notice_close_api_if_current(uint64_t self);
@@ -1678,6 +1690,7 @@ void urnet_device_remove_block_action_override(uint64_t self, const char* overri
 void urnet_device_remove_connected_provider(uint64_t self, const char* client_id);
 void urnet_device_remove_destination(uint64_t self);
 void urnet_device_reset_extenders(uint64_t self);
+bool urnet_device_retry_client_limit(uint64_t self);
 void urnet_device_set_allow_foreground(uint64_t self, bool allow_foreground);
 void urnet_device_set_block_action_overrides(uint64_t self, const char* overrides_json);
 void urnet_device_set_blocker_enabled(uint64_t self, bool blocker_enabled);
@@ -2628,6 +2641,7 @@ uint64_t urnet_new_bittensor_local_key_flow(uint64_t api, const char* network_id
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_client_info(const char* device_type, const char* app_version);
+uint64_t urnet_new_client_limit_notice_tracker(void);
 char* urnet_new_connect_first_event(void);
 uint64_t urnet_new_crypto_invoice_view_controller(uint64_t api, const char* storage_dir);
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
@@ -2969,6 +2983,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   upgrade_required?: boolean
  *   no_unique_supply?: boolean
  *   message: string
+ *   client_limit_prompt?: string
  */
 
 /* AuthNetworkClientResult (json):
@@ -3364,6 +3379,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientLimitStatus (json):
  *   Status: string
  *   RetryTime: number
+ *   Prompt: string
  */
 
 /* ConnectLocation (json):
@@ -3769,6 +3785,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TransportDelayGoodConnectStall: number (ns)
  *   TransportDelayBadConnectStall: number (ns)
  *   TransportDelayPromptConnectTimeout: number (ns)
+ *   ClientLimitRetryMinInterval: number (ns)
  *   StrictWindowHandover: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean

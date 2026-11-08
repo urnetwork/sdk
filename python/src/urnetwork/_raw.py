@@ -798,6 +798,10 @@ def bind(lib):
     lib.urnet_client_event_queue_set_app_version.restype = None
     lib.urnet_client_event_queue_set_locale.argtypes = [c_uint64, c_char_p]
     lib.urnet_client_event_queue_set_locale.restype = None
+    lib.urnet_client_limit_notice_tracker_reset.argtypes = [c_uint64]
+    lib.urnet_client_limit_notice_tracker_reset.restype = c_void_p
+    lib.urnet_client_limit_notice_tracker_update.argtypes = [c_uint64, c_char_p, c_bool]
+    lib.urnet_client_limit_notice_tracker_update.restype = c_void_p
     lib.urnet_client_refresh_integrity_notice_close_api_if_current.argtypes = [c_uint64]
     lib.urnet_client_refresh_integrity_notice_close_api_if_current.restype = c_bool
     lib.urnet_client_session_action_get_error.argtypes = [c_uint64]
@@ -1246,6 +1250,8 @@ def bind(lib):
     lib.urnet_device_remove_destination.restype = None
     lib.urnet_device_reset_extenders.argtypes = [c_uint64]
     lib.urnet_device_reset_extenders.restype = None
+    lib.urnet_device_retry_client_limit.argtypes = [c_uint64]
+    lib.urnet_device_retry_client_limit.restype = c_bool
     lib.urnet_device_set_allow_foreground.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_allow_foreground.restype = None
     lib.urnet_device_set_block_action_overrides.argtypes = [c_uint64, c_char_p]
@@ -2866,6 +2872,8 @@ def bind(lib):
     lib.urnet_new_client_event_queue.restype = c_uint64
     lib.urnet_new_client_info.argtypes = [c_char_p, c_char_p]
     lib.urnet_new_client_info.restype = c_void_p
+    lib.urnet_new_client_limit_notice_tracker.argtypes = []
+    lib.urnet_new_client_limit_notice_tracker.restype = c_uint64
     lib.urnet_new_connect_first_event.argtypes = []
     lib.urnet_new_connect_first_event.restype = c_void_p
     lib.urnet_new_crypto_invoice_view_controller.argtypes = [c_uint64, c_char_p]

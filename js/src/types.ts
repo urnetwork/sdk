@@ -227,10 +227,14 @@ export type ProvideMode = number;
  * "" (no hold) or "client_limit_exceeded": the platform closed the device for
  * its network's concurrent client limit, and the device holds off
  * reconnecting until `retryTime` (unix milliseconds; 0 with no hold).
+ * `prompt` is what to offer while held: "upgrade" (UR Pro lifts the limit) or
+ * "remove_client" (the plan's most clients are connected: free a slot); ""
+ * with no hold. After the user acts on it, `retryClientLimit()` dials again.
  */
 export interface ClientLimitStatus {
   status: "" | "client_limit_exceeded";
   retryTime: number;
+  prompt: "" | "upgrade" | "remove_client";
 }
 
 /**
@@ -322,6 +326,9 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   /** see ClientLimitStatus; never null from the device */
   getClientLimitStatus(): ClientLimitStatus;
   addClientLimitStatusChangeListener(cb: (status: ClientLimitStatus) => void): Unsubscribe;
+  /** ends the client limit hold once the user acted on its prompt, at most
+   * once per retry interval; true when a hold was ended */
+  retryClientLimit(): boolean;
 
   // provider traffic: what the device's provider relayed for clients. null
   // when the device has no provider. Contract rows arrive one per listener

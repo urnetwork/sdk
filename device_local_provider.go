@@ -107,6 +107,9 @@ type deviceLocalProvider struct {
 	// the client limit hold every transport generation shares, carried to
 	// each through its settings. Immutable after construction.
 	clientLimitBackoff *connect.ClientLimitBackoff
+	// when retryClientLimit last ended a hold; zero before the first. Guarded
+	// by stateLock.
+	clientLimitRetryTime time.Time
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -498,6 +501,30 @@ func (self *deviceLocalProvider) clientLimitStatus() (connect.ClientLimitStatus,
 		return connect.ClientLimitStatus{}, nil
 	}
 	return self.clientLimitBackoff.Get()
+}
+
+// retryClientLimit ends the client limit hold in force at `now`, so the
+// transports parked on it dial again, and returns whether it did. It ends
+// none when no hold is in force, and none within `minInterval` of the last
+// hold it ended (a non-positive interval does not limit); see
+// DeviceLocal.RetryClientLimit. A provider built without a hold ends none.
+func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval time.Duration) bool {
+	if self.clientLimitBackoff == nil {
+		return false
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || !self.clientLimitBackoff.Status().Exceeded {
+		return false
+	}
+	if !self.clientLimitRetryTime.IsZero() && 0 < minInterval && now.Sub(self.clientLimitRetryTime) < minInterval {
+		return false
+	}
+	self.clientLimitRetryTime = now
+	// under the lock, as setProvideMode resets it: the platform judges the next
+	// dial again, and a refusal starts a new hold
+	self.clientLimitBackoff.Reset()
+	return true
 }
 
 // newProviderPlatformTransport builds the provider's transport group: the

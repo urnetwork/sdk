@@ -522,6 +522,8 @@ public interface Raw extends Library {
   long urnet_client_event_queue_pending_count(long a0);
   void urnet_client_event_queue_set_app_version(long a0, String a1);
   void urnet_client_event_queue_set_locale(long a0, String a1);
+  Pointer urnet_client_limit_notice_tracker_reset(long a0);
+  Pointer urnet_client_limit_notice_tracker_update(long a0, String a1, byte a2);
   byte urnet_client_refresh_integrity_notice_close_api_if_current(long a0);
   long urnet_client_session_action_get_error(long a0);
   byte urnet_client_session_action_get_loading(long a0);
@@ -746,6 +748,7 @@ public interface Raw extends Library {
   void urnet_device_remove_connected_provider(long a0, String a1);
   void urnet_device_remove_destination(long a0);
   void urnet_device_reset_extenders(long a0);
+  byte urnet_device_retry_client_limit(long a0);
   void urnet_device_set_allow_foreground(long a0, byte a1);
   void urnet_device_set_block_action_overrides(long a0, String a1);
   void urnet_device_set_blocker_enabled(long a0, byte a1);
@@ -1556,6 +1559,7 @@ public interface Raw extends Library {
   long urnet_new_bittensor_wallet_session(String a0, String a1, String a2, String a3, PointerByReference a4);
   long urnet_new_client_event_queue(long a0, String a1, String a2, String a3);
   Pointer urnet_new_client_info(String a0, String a1);
+  long urnet_new_client_limit_notice_tracker();
   Pointer urnet_new_connect_first_event();
   long urnet_new_crypto_invoice_view_controller(long a0, String a1);
   long urnet_new_device_local(long a0, String a1, String a2, String a3, String a4, String a5, String a6, PointerByReference a7);
