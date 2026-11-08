@@ -371,7 +371,7 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 	// re-derives from the final settings (target overrides, provider fold)
 	clientShareByteCount := memoryTargetByteCount * deviceMemoryRatioClient / deviceMemoryRatioParts
 	bufferSize := deviceLocalSequenceBufferSize(clientShareByteCount)
-	clientSettings := connect.DefaultClientSettingsWithBufferSize(bufferSize)
+	clientSettings := newDeviceLocalDefaultClientSettings(bufferSize, memoryTargetByteCount, lowMemoryProfile)
 	// A VPN device needs only the current physical/default-route addresses.
 	// Enumerating every bridge, stale tunnel, AWDL, and VM interface makes
 	// ICE check a local×remote candidate cross-product for every window
@@ -1478,10 +1478,9 @@ func NewDeviceLocalWithMemoryTarget(
 	keyMaterial *DeviceLocalKeyMaterial,
 	memoryTargetByteCount int64,
 ) (*DeviceLocal, error) {
-	settings := DefaultDeviceLocalSettings()
+	settings := defaultDeviceLocalSettingsWithMemoryTarget(memoryTargetByteCount)
 	settings.EnableRpc = enableRpc
 	settings.KeyMaterial = keyMaterial
-	settings.MemoryTargetByteCount = memoryTargetByteCount
 	return NewDeviceLocal(
 		networkSpace,
 		byJwt,
@@ -2483,6 +2482,11 @@ type DeviceLocalMemoryUsage struct {
 	PackQueueCapacityByteCount int64
 	ProviderSendByteCount      int64
 	ProviderReceiveByteCount   int64
+	// Shared provider-head recovery is included once in ProviderReceiveByteCount.
+	ProviderReceiveHeadRecoveryBudgetByteCount   int64
+	ProviderReceiveHeadRecoveryUsedByteCount     int64
+	ProviderReceiveHeadRecoveryReservedByteCount int64
+	ProviderReceiveHeadRecoveryReleasedByteCount int64
 	// The root includes client/provider queues, the shared Pack queue once,
 	// all P2P generations, and both NATs. Child samples are diagnostic subsets,
 	// not additional memory. Root and group fields share one coherent snapshot.
@@ -4702,6 +4706,9 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 			// working while its pool is reallocated
 			resendQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 3, 7), 256*1024))
 			receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
+			if self.transferMemory != nil && self.transferMemory.providerHeadRecovery != nil {
+				self.transferMemory.providerHeadRecovery.SetTotalByteCount(receiveQueueBudget.TotalByteCount())
+			}
 			if provideActive && self.transferMemory != nil &&
 				0 < self.transferMemory.providerShare &&
 				0 < self.settings.ProviderSendBorrowByteCount &&
@@ -4737,8 +4744,22 @@ func providerLocalUserNatSettings(
 	log connect.Logger,
 	dialContextSettings ...*connect.DialContextSettings,
 ) *connect.LocalUserNatSettings {
+	return providerLocalUserNatSettingsForProfile(memoryTargetByteCount, 0, false, log, dialContextSettings...)
+}
+
+// Low-profile owners retain the phone's full NAT defaults on an unscaled host.
+// The provider share still owns flow counts; it is not the device sizing target.
+func providerLocalUserNatSettingsForProfile(
+	memoryTargetByteCount ByteCount,
+	deviceMemoryTargetByteCount ByteCount,
+	lowMemoryProfile bool,
+	log connect.Logger,
+	dialContextSettings ...*connect.DialContextSettings,
+) *connect.LocalUserNatSettings {
 	var localUserNatSettings *connect.LocalUserNatSettings
-	if memoryTargetByteCount <= 0 && 0 < connect.MemoryBudget() {
+	if lowMemoryProfile && 0 < memoryTargetByteCount && 0 < deviceMemoryTargetByteCount {
+		localUserNatSettings = connect.DefaultProviderLocalUserNatSettingsWithMemoryTargets(memoryTargetByteCount, deviceMemoryTargetByteCount)
+	} else if memoryTargetByteCount <= 0 && 0 < connect.MemoryBudget() {
 		// DeviceLocal promises process-budget sizing when its target is off.
 		// The connect targetless provider profile serves independent server
 		// callers and deliberately does not infer flow caps from that budget.
@@ -5229,7 +5250,7 @@ func (self *DeviceLocal) applyDestination(
 					// connect.DefaultClientSettingsNoNetworkEvents,
 					func() *connect.ClientSettings {
 						clientSettings := newDeviceClientSettings(
-							connect.DefaultClientSettingsWithBufferSize(self.settings.SequenceBufferSize),
+							newDeviceLocalDefaultClientSettings(self.settings.SequenceBufferSize, self.settings.MemoryTargetByteCount, self.settings.LowMemoryProfile),
 							self.networkSpace.apiUrl,
 							self.clientStrategy,
 						)
@@ -6451,8 +6472,10 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 	}
 	_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
 	if self.remoteUserNatProviderLocalUserNat == nil {
-		localUserNatSettings := providerLocalUserNatSettings(
+		localUserNatSettings := providerLocalUserNatSettingsForProfile(
 			providerShareByteCount,
+			self.settings.MemoryTargetByteCount,
+			mobileRuntime() || self.transferMemory != nil,
 			self.log,
 			self.settings.ProviderDialContextSettings,
 		)

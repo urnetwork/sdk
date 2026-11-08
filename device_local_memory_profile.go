@@ -28,3 +28,20 @@ func defaultDeviceLocalSettingsForPlatform(goos string) *DeviceLocalSettings {
 		defaultDeviceLocalMemoryTargetByteCountForPlatform(mobile), mobile,
 	)
 }
+
+// The explicit host-facing constructor chooses its final low-profile target
+// before any process-derived default is captured. Other profiles preserve
+// their historical provisional defaults and targetless compatibility.
+func defaultDeviceLocalSettingsWithMemoryTargetForPlatform(memoryTargetByteCount ByteCount, goos string) *DeviceLocalSettings {
+	settings := defaultDeviceLocalSettingsForPlatform(goos)
+	if settings.LowMemoryProfile && 0 < memoryTargetByteCount {
+		return defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount, true)
+	}
+	settings.MemoryTargetByteCount = memoryTargetByteCount
+	return settings
+}
+
+// Keep platform selection at the public constructor boundary.
+func defaultDeviceLocalSettingsWithMemoryTarget(memoryTargetByteCount ByteCount) *DeviceLocalSettings {
+	return defaultDeviceLocalSettingsWithMemoryTargetForPlatform(memoryTargetByteCount, runtime.GOOS)
+}

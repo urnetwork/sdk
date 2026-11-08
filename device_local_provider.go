@@ -271,12 +271,15 @@ func newDeviceLocalProviderWithOverrides(
 		providerMemoryTargetByteCount,
 		providerTransferParent,
 	)
+	transferMemory.configureProviderHeadRecovery(clientSettings)
 	// Admit the fallback NAT while the new device root is still empty, before
 	// starting the provider client. It is a lifetime owner even with providing
 	// disabled. Refusal is observable; never install a dead/nil NAT as a route.
 	// It carries the device's local route, so it dials through that seam.
-	localUserNatSettings := providerLocalUserNatSettings(
+	localUserNatSettings := providerLocalUserNatSettingsForProfile(
 		providerMemoryTargetByteCount,
+		deviceMemoryTargetByteCount,
+		mobileRuntime() || transferMemory != nil,
 		clientSettings.Log,
 		localDialContextSettings,
 	)

@@ -7,12 +7,13 @@ import "github.com/urnetwork/connect"
 // reservations: idle provider capacity can be borrowed without forgetting
 // owners still draining after a role change.
 type deviceLocalTransferMemory struct {
-	root         *connect.TransferMemoryBudget
-	client       *connect.TransferMemoryBudget
-	provider     *connect.TransferMemoryBudget
-	nat          *connect.TransferMemoryBudget
-	peerKeyPins  *connect.TransferMemoryBudget
-	headRecovery *connect.TransferMemoryBudget
+	root                 *connect.TransferMemoryBudget
+	client               *connect.TransferMemoryBudget
+	provider             *connect.TransferMemoryBudget
+	nat                  *connect.TransferMemoryBudget
+	peerKeyPins          *connect.TransferMemoryBudget
+	headRecovery         *connect.TransferMemoryBudget
+	providerHeadRecovery *connect.TransferMemoryBudget
 
 	clientShare   ByteCount
 	providerShare ByteCount
@@ -36,7 +37,27 @@ func newDeviceLocalTransferMemoryForPlatform(settings *DeviceLocalSettings, mobi
 	// Construction exposes a stable empty child before clients receive their
 	// effective RX ceiling. Configuration grants permission without reserving.
 	memory.headRecovery = connect.NewTransferMemoryBudgetWithParent(0, memory.client)
+	memory.providerHeadRecovery = connect.NewTransferMemoryBudgetWithParent(0, memory.provider)
 	return memory
+}
+
+// The actual provider generation shares one device-owned recovery partition.
+// It is a sibling of provider RX under the unchanged provider parent/root;
+// permission is granted without reserving bytes or changing an ancestor cap.
+func (self *deviceLocalTransferMemory) configureProviderHeadRecovery(settings *connect.ClientSettings) {
+	if self == nil || settings == nil || settings.ReceiveBufferSettings == nil {
+		return
+	}
+	receive := settings.ReceiveBufferSettings
+	rx := receive.ReceiveQueueBudget
+	if rx == nil || rx.Parent() != self.provider {
+		return
+	}
+	if self.providerHeadRecovery == nil {
+		self.providerHeadRecovery = connect.NewTransferMemoryBudgetWithParent(0, self.provider)
+	}
+	self.providerHeadRecovery.SetTotalByteCount(rx.TotalByteCount())
+	receive.ReceiveHeadRecoveryBudget = self.providerHeadRecovery
 }
 
 const deviceLocalProviderIdleTransferByteCount ByteCount = (256 + 384) * 1024
@@ -122,10 +143,11 @@ func applyDeviceLocalTransferMemoryUsage(usage *DeviceLocalMemoryUsage, memory *
 	// can outlive its actual charge during a concurrent drain, falsely placing
 	// it above the later root usage. Sample it and the pin child under the root's lock;
 	// StatsWithDescendants also verifies that Pack belongs to that tree.
-	stats := memory.root.StatsWithDescendants(memory.client, memory.provider, memory.nat, packQueue, memory.peerKeyPins, memory.headRecovery)
+	stats := memory.root.StatsWithDescendants(memory.client, memory.provider, memory.nat, packQueue, memory.peerKeyPins, memory.headRecovery, memory.providerHeadRecovery)
 	root, client, provider, nat, pack := stats[0], stats[1], stats[2], stats[3], stats[4]
 	pins := stats[5]
 	head := stats[6]
+	providerHead := stats[7]
 	usage.PeerKeyPinBudgetByteCount = pins.TotalByteCount
 	usage.PeerKeyPinUsedByteCount = pins.UsedByteCount
 	usage.PeerKeyPinReservedByteCount = pins.ReservedByteCount
@@ -148,6 +170,11 @@ func applyDeviceLocalTransferMemoryUsage(usage *DeviceLocalMemoryUsage, memory *
 	usage.ClientReceiveHeadRecoveryUsedByteCount = head.UsedByteCount
 	usage.ClientReceiveHeadRecoveryReservedByteCount = head.ReservedByteCount
 	usage.ClientReceiveHeadRecoveryReleasedByteCount = head.ReleasedByteCount
+	usage.ProviderReceiveByteCount += providerHead.UsedByteCount - usage.ProviderReceiveHeadRecoveryUsedByteCount
+	usage.ProviderReceiveHeadRecoveryBudgetByteCount = providerHead.TotalByteCount
+	usage.ProviderReceiveHeadRecoveryUsedByteCount = providerHead.UsedByteCount
+	usage.ProviderReceiveHeadRecoveryReservedByteCount = providerHead.ReservedByteCount
+	usage.ProviderReceiveHeadRecoveryReleasedByteCount = providerHead.ReleasedByteCount
 	usage.PackQueueCapacityByteCount = pack.TotalByteCount
 	usage.PackQueueUsedByteCount = pack.UsedByteCount
 }
