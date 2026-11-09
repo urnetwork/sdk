@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1750,6 +1751,18 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	if self.dialContextSettings != nil {
 		connectSettings.DialContextSettings = self.dialContextSettings
 	}
+	// a client names where the relay forwards to, and the name resolves on
+	// this host, so every forward socket is judged before it connects: an
+	// address that is not public, or is this host's own or on its links, is
+	// refused (connect docs/IP_SECURITY.md §2.2.4). A dial the host supplies
+	// itself (dialContextSettings, a test harness seam) is the host's
+	connectSettings.DialControl = extenderForwardDialControl(connectSettings.DialControl)
+	// the datagram relay's udp sockets: the same control and resolver as the
+	// stream forward's
+	packetDialer := &net.Dialer{
+		Resolver: connectSettings.Resolver,
+		Control:  connectSettings.DialControl,
+	}
 
 	settings := &deviceLocalExtenderSettings{
 		Log:                    networkSpace.logger(),
@@ -1768,6 +1781,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ByJwt:                  self.byJwt,
 		ClientStrategySettings: self.clientStrategySettings,
 		DialContext:            connectSettings.DialContext,
+		DialPacketContext:      packetDialer.DialContext,
 		Restart:                self.restartExtender,
 		RenewKey:               self.renewExtenderKey,
 		RestartJitter:          self.extenderRestartJitter,
