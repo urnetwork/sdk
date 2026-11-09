@@ -1046,8 +1046,15 @@ func (self *dnsPresetPersonalId) dohUrl(id string) (string, bool) {
 // draft does, chose custom settings: they apply as custom, the lists as given,
 // so an editor that predates the presets keeps working. A catalog preset
 // keeps its selection and the device derives its lists, ignoring the ones
-// given (E1). Stored records never pass through here: a record's default
-// lists follow later default changes (E4).
+// given (E1).
+//
+// Lists are not edited when they are a derivation of the selection, today's
+// or an earlier release's: an app seeds a device from a copy it kept, whose
+// lists are those of the release that wrote it. An earlier release's default
+// lists and regional recommendations are the ones the default server list
+// migration knows (migrateDefaultServerLists); a release that changes them
+// adds the old ones there, as it must for custom records anyway. A bare
+// selection, with no list and no toggle, is not an edit either.
 func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
 	if dnsResolverSettings == nil {
 		return nil
@@ -1056,14 +1063,48 @@ func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsR
 	if presetId != DnsPresetIdDefault && !strings.HasPrefix(presetId, DnsPresetIdRegionalPrefix) {
 		return dnsResolverSettings
 	}
+	if dnsResolverSettingsBare(dnsResolverSettings) {
+		return dnsResolverSettings
+	}
 	derived := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
 	if dnsResolverSettingsListsEqual(dnsResolverSettings, derived) {
 		return dnsResolverSettings
+	}
+	// an earlier release's derivation: its lists migrate to today's
+	for _, recordVersion := range []int{0, 1} {
+		earlier := copyDnsResolverSettings(dnsResolverSettings)
+		migrateDefaultServerLists(earlier, recordVersion)
+		if dnsResolverSettingsListsEqual(earlier, derived) {
+			return dnsResolverSettings
+		}
 	}
 	edited := copyDnsResolverSettings(dnsResolverSettings)
 	edited.PresetId = ""
 	edited.PresetPersonalId = ""
 	return edited
+}
+
+// Whether settings name no resolver toggle and no list: a selection alone.
+func dnsResolverSettingsBare(dnsResolverSettings *DnsResolverSettings) bool {
+	if dnsResolverSettings.EnableRemoteDoh || dnsResolverSettings.EnableLocalDoh ||
+		dnsResolverSettings.EnableRemoteDns || dnsResolverSettings.EnableLocalDns {
+		return false
+	}
+	for _, list := range []*StringList{
+		dnsResolverSettings.RemoteDohUrlsIpv4,
+		dnsResolverSettings.RemoteDohUrlsIpv6,
+		dnsResolverSettings.LocalDohUrlsIpv4,
+		dnsResolverSettings.LocalDohUrlsIpv6,
+		dnsResolverSettings.RemoteDnsIpv4,
+		dnsResolverSettings.RemoteDnsIpv6,
+		dnsResolverSettings.LocalDnsIpv4,
+		dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if list != nil && 0 < list.Len() {
+			return false
+		}
+	}
+	return true
 }
 
 // Whether two settings resolve with the same toggles and lists, in order, an

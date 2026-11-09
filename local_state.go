@@ -614,6 +614,12 @@ const dnsResolverSettingsDefaultServersVersion = 2
 // (dns_presets.go). A record without it was written by an sdk before the presets, where the
 // editors saved every list, so the defaults carried along cannot be told apart from a choice by
 // its PresetId. See migrateDnsResolverSettingsSelection.
+//
+// In a record at this version, the lists of a selection are always the derivation of the release
+// that wrote it, never an edit: every writer turns lists edited under a selection into custom
+// settings first (dnsResolverSettingsAsEdited). So a record's selection loads with the lists it
+// derives today, and a selection follows a later release's defaults, presets and regional
+// recommendations, through an app's own copy of the settings too.
 const dnsResolverSettingsPresetVersion = 1
 
 type dnsResolverSettingsRecord struct {
@@ -648,6 +654,9 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 	}
 	if record.PresetVersion < dnsResolverSettingsPresetVersion {
 		migrateDnsResolverSettingsSelection(&dnsResolverSettings)
+	} else if dnsResolverSettings.PresetId != "" {
+		// the release that wrote it derived these lists; derive them again
+		return ownDnsResolverSettings(&dnsResolverSettings), nil
 	}
 	return &dnsResolverSettings, nil
 }
@@ -905,7 +914,9 @@ func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordV
 	}
 }
 
-// Dropped while the space is signed out, as SetProvideNetworkMode.
+// Dropped while the space is signed out, as SetProvideNetworkMode. An app keeps its copy of the
+// device's settings here, saved as the device saves them: lists edited under the default or a
+// regional selection as custom settings, and a selection with the lists it derives.
 func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettings == nil {
@@ -914,6 +925,10 @@ func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverS
 			return nil
 		})
 	} else {
+		dnsResolverSettings = dnsResolverSettingsAsEdited(dnsResolverSettings)
+		if dnsResolverSettings.PresetId != "" {
+			dnsResolverSettings = ownDnsResolverSettings(dnsResolverSettings)
+		}
 		dnsResolverSettingsBytes, err := encodeDnsResolverSettingsRecord(dnsResolverSettings)
 		if err != nil {
 			return err

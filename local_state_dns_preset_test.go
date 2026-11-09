@@ -200,8 +200,9 @@ func TestPresetVersionRecordAtTheCurrentVersionNeverMigrates(t *testing.T) {
 	connect.AssertEqual(t, localState.GetDnsResolverSettings().PresetId, "")
 }
 
-// The record keeps the selection and the derived lists, and a filled record
-// comes back field for field (E3).
+// The record keeps the selection and the derived lists; custom settings with
+// every field filled come back field for field, and a selection comes back
+// with its ids and fallback choice and the lists it derives today (E3).
 func TestPresetRecordRoundTrip(t *testing.T) {
 	testingWithDnsPresetCatalog(t)
 	localState := &LocalState{localStorageDir: t.TempDir()}
@@ -211,18 +212,28 @@ func TestPresetRecordRoundTrip(t *testing.T) {
 	}
 	connect.AssertEqual(t, testingDnsResolverSettingsValue(localState.GetDnsResolverSettings()), testingDnsResolverSettingsValue(selected))
 
+	codec := func(settings *DnsResolverSettings) *DnsResolverSettings {
+		t.Helper()
+		data, err := encodeDnsResolverSettingsRecord(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeDnsResolverSettingsRecord(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
 	seed := 0
 	filled := &DnsResolverSettings{}
 	fillNonZero(t, reflect.ValueOf(filled), &seed)
-	data, err := encodeDnsResolverSettingsRecord(filled)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := decodeDnsResolverSettingsRecord(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connect.AssertEqual(t, testingDnsResolverSettingsValue(decoded), testingDnsResolverSettingsValue(filled))
+	selection := CopyDnsResolverSettings(filled)
+	filled.PresetId = ""
+	connect.AssertEqual(t, testingDnsResolverSettingsValue(codec(filled)), testingDnsResolverSettingsValue(filled))
+	// an id this catalog never knew loads as stored, applying the defaults
+	want := ownDnsResolverSettings(selection)
+	connect.AssertEqual(t, []string{want.PresetId, want.PresetPersonalId}, []string{selection.PresetId, selection.PresetPersonalId})
+	connect.AssertEqual(t, testingDnsResolverSettingsValue(codec(selection)), testingDnsResolverSettingsValue(want))
 }
 
 // An older sdk ignores the selection and reads the lists, which are the
