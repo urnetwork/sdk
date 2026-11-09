@@ -450,10 +450,16 @@ func (self *testingDnsLogLogger) record(line string) {
 	self.lines = append(self.lines, line)
 }
 
-func (self *testingDnsLogLogger) Info(args ...any)                   { self.record(fmt.Sprint(args...)) }
-func (self *testingDnsLogLogger) Infof(format string, args ...any)    { self.record(fmt.Sprintf(format, args...)) }
-func (self *testingDnsLogLogger) Warningf(format string, args ...any) { self.record(fmt.Sprintf(format, args...)) }
-func (self *testingDnsLogLogger) Errorf(format string, args ...any)   { self.record(fmt.Sprintf(format, args...)) }
+func (self *testingDnsLogLogger) Info(args ...any) { self.record(fmt.Sprint(args...)) }
+func (self *testingDnsLogLogger) Infof(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
+func (self *testingDnsLogLogger) Warningf(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
+func (self *testingDnsLogLogger) Errorf(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
 func (self *testingDnsLogLogger) V(level int32) connect.Verbose {
 	return testingDnsLogVerbose{logger: self}
 }
@@ -466,9 +472,11 @@ func (self *testingDnsLogLogger) all() []string {
 
 type testingDnsLogVerbose struct{ logger *testingDnsLogLogger }
 
-func (self testingDnsLogVerbose) Enabled() bool                    { return true }
-func (self testingDnsLogVerbose) Info(args ...any)                 { self.logger.record(fmt.Sprint(args...)) }
-func (self testingDnsLogVerbose) Infof(format string, args ...any) { self.logger.record(fmt.Sprintf(format, args...)) }
+func (self testingDnsLogVerbose) Enabled() bool    { return true }
+func (self testingDnsLogVerbose) Info(args ...any) { self.logger.record(fmt.Sprint(args...)) }
+func (self testingDnsLogVerbose) Infof(format string, args ...any) {
+	self.logger.record(fmt.Sprintf(format, args...))
+}
 
 // Applying a personal preset, a refused id, every status and verification
 // change and a connect write no personal id, no url path and no blocked count
