@@ -191,6 +191,26 @@ func TestDnsPresetCatalogIntegrity(t *testing.T) {
 			t.Errorf("reserved id %s is in the catalog", id)
 		}
 	}
+	// every pick shows a name no other pick of its group shows, so a row, a
+	// summary or a status says which one is meant (decision 20), and a
+	// preset's own name begins with its provider's, which still says whose
+	// resolver it is and keeps the group alphabetical by provider (O9)
+	groupNamePresetIds := map[string]string{}
+	for _, preset := range catalog.presets {
+		name := catalog.presetName(preset)
+		if name == "" {
+			t.Errorf("preset %s shows no name", preset.presetId)
+			continue
+		}
+		key := preset.group + "\x00" + name
+		if other, ok := groupNamePresetIds[key]; ok {
+			t.Errorf("presets %s and %s both show %q in %s", other, preset.presetId, name, preset.group)
+		}
+		groupNamePresetIds[key] = preset.presetId
+		if provider := catalog.provider(preset.providerId); preset.name != "" && provider != nil && !strings.HasPrefix(preset.name, provider.name+" ") {
+			t.Errorf("preset %s name %q does not begin with its provider's name %q", preset.presetId, preset.name, provider.name)
+		}
+	}
 }
 
 // The id patterns admit only letters, digits and hyphens, so an id can never
@@ -212,11 +232,13 @@ func TestDnsPresetPersonalIdPatternsAdmitOnlyLabelCharacters(t *testing.T) {
 	}
 }
 
-// The catalog as it ships: every id, group, url, pin and canary of A3, as
-// the owner decided it on 2026-11-09. RethinkDNS is not in it (decision 17).
+// The catalog as it ships: every id, name, group, url, pin and canary of A3,
+// as the owner decided it on 2026-11-09. RethinkDNS is not in it (decision
+// 17), and DNS4EU's two family presets have names of their own (decision 20).
 func TestDnsPresetCatalogAsShipped(t *testing.T) {
 	type expected struct {
 		providerId  string
+		name        string
 		group       string
 		blocksAds   bool
 		failover    bool
@@ -284,13 +306,13 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-child": {
-			providerId: "dns4eu", group: DnsPresetGroupFamily,
+			providerId: "dns4eu", name: "DNS4EU Child", group: DnsPresetGroupFamily,
 			dohUrlsIpv4: hostname("https://child.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://child.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.12", "86.54.11.212"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:12", "2a13:1001::86:54:11:212"},
 			blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-child-noads": {
-			providerId: "dns4eu", group: DnsPresetGroupFamily, blocksAds: true,
+			providerId: "dns4eu", name: "DNS4EU Child, no ads", group: DnsPresetGroupFamily, blocksAds: true,
 			dohUrlsIpv4: hostname("https://child-noads.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://child-noads.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.11", "86.54.11.211"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:11", "2a13:1001::86:54:11:211"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
@@ -343,6 +365,7 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 		}
 		got := expected{
 			providerId:  preset.providerId,
+			name:        preset.name,
 			group:       preset.group,
 			blocksAds:   preset.blocksAds,
 			failover:    preset.failover,
@@ -359,6 +382,52 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 	connect.AssertEqual(t, catalog.preset("controld-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdRefused)
 	connect.AssertEqual(t, catalog.preset("adguard-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdUnfilteredOrServfail)
 	connect.AssertEqual(t, catalog.preset("nextdns-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdUnfiltered)
+}
+
+// DNS4EU's two family presets show their own names on every line that names
+// a preset (decision 20): the picker row, the provider list, the summary, the
+// status line and the dropped-preset notice, as {provider}. DNS4EU's other
+// presets, and the provider itself, show "DNS4EU".
+func TestDnsPresetDns4euFamilyNamesShowOnEveryLine(t *testing.T) {
+	t.Cleanup(func() { SetDnsPresetsHideAdBlocking(false) })
+	names := map[string]string{
+		"dns4eu-noads":       "DNS4EU",
+		"dns4eu-protective":  "DNS4EU",
+		"dns4eu-child":       "DNS4EU Child",
+		"dns4eu-child-noads": "DNS4EU Child, no ads",
+		"dns4eu-unfiltered":  "DNS4EU",
+	}
+	for presetId, name := range names {
+		connect.AssertEqual(t, GetDnsPreset(presetId).ProviderName, name)
+		settings := DnsResolverSettingsWithPreset(nil, presetId, "")
+		connect.AssertEqual(t, DescribeDnsResolverSettings(settings, "de").ProviderName, name)
+		connect.AssertEqual(t, DescribeDnsResolverStatus(settings, nil).ProviderName, name)
+	}
+	pickNames := map[string]string{}
+	for _, pick := range GetDnsPicks("de").getAll() {
+		if pick.Preset != nil && pick.Preset.ProviderId == "dns4eu" {
+			pickNames[pick.PresetId] = pick.Preset.ProviderName
+		}
+	}
+	connect.AssertEqual(t, pickNames, names)
+	providerNames := map[string]string{}
+	for _, provider := range GetDnsPresetProviders().getAll() {
+		if provider.ProviderId != "dns4eu" {
+			continue
+		}
+		connect.AssertEqual(t, provider.Name, "DNS4EU")
+		for _, preset := range provider.Presets.getAll() {
+			providerNames[preset.PresetId] = preset.ProviderName
+		}
+	}
+	connect.AssertEqual(t, providerNames, names)
+
+	// the Play-only catalog hides the ad-blocking child preset: its notice
+	// names it
+	selected := DnsResolverSettingsWithPreset(nil, "dns4eu-child-noads", "")
+	SetDnsPresetsHideAdBlocking(true)
+	dropped := DescribeDnsResolverSettings(selected, "de")
+	connect.AssertEqual(t, []any{dropped.Dropped, dropped.DroppedPresetId, dropped.DroppedProviderName}, []any{true, "dns4eu-child-noads", "DNS4EU Child, no ads"})
 }
 
 // RethinkDNS left the catalog (decision 17): no provider, preset, host or
