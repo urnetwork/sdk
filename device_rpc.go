@@ -392,6 +392,9 @@ type DeviceRemote struct {
 	// the settings the listeners are told, and their delivery
 	// (device_remote_setting_state.go). Guarded by stateLock
 	settingsTold deviceRemoteSettingsTold
+	// the split rules this remote saves for the next one
+	// (device_remote_saved_settings.go)
+	savedBlockActionOverrides deviceRemoteSavedBlockActionOverrides
 	// Guarded by stateLock. A status RPC must not replace a notification or
 	// another status reply published while it was in flight.
 	contractStatusRevision uint64
@@ -670,6 +673,10 @@ func newDeviceRemoteWithOverrides(
 			deviceRemote.state.ControlIpFamilyPolicy.Set(policy)
 		}
 	}
+	// the kill switch and the split rules the app saved, queued for the device
+	// the same way: the device does not keep them
+	// (device_remote_saved_settings.go)
+	deviceRemote.queueSavedSettings()
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
@@ -4825,13 +4832,23 @@ func (self *DeviceRemote) blockStatsChanged(blockStats *BlockStats) {
 	}
 }
 
-func (self *DeviceRemote) blockActionOverridesChanged(overridesRpc []*BlockActionOverrideRpc) {
+// `source` says whether the list is the device's or the app's (an edit or a
+// whole list queued for the next sync), which decides whether it is saved
+// (device_remote_saved_settings.go).
+func (self *DeviceRemote) blockActionOverridesChanged(
+	overridesRpc []*BlockActionOverrideRpc,
+	source deviceRemoteBlockActionOverridesSource,
+) {
+	var save func()
 	listenerList := func() []BlockActionOverridesChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		save = self.learnBlockActionOverridesWithLock(overridesRpc, source)
 		return listenerList(self.blockActionOverridesChangeListeners)
 	}()
+	if save != nil {
+		save()
+	}
 	blockActionOverrides := toBlockActionOverrideList(overridesRpc)
 	for _, blockActionOverridesChangeListener := range listenerList {
 		connect.HandleError(func() {
@@ -5475,6 +5492,7 @@ func (self *DeviceRemote) AddBlockActionOverride(override *BlockActionOverride) 
 	overrideRpc := newBlockActionOverrideRpc(override)
 	var eventOverridesRpc []*BlockActionOverrideRpc
 	event := false
+	var save func()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -5502,15 +5520,18 @@ func (self *DeviceRemote) AddBlockActionOverride(override *BlockActionOverride) 
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesEdited)
 		} else {
 			event = true
 			eventOverridesRpc = overridesRpc
 			self.state.BlockActionOverrides.Set(overridesRpc)
 		}
 	}()
+	if save != nil {
+		save()
+	}
 	if event {
-		self.blockActionOverridesChanged(eventOverridesRpc)
+		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteBlockActionOverridesEdited)
 	}
 }
 
@@ -5521,6 +5542,7 @@ func (self *DeviceRemote) RemoveBlockActionOverride(overrideId *Id) {
 	}
 	var eventOverridesRpc []*BlockActionOverrideRpc
 	event := false
+	var save func()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -5547,21 +5569,25 @@ func (self *DeviceRemote) RemoveBlockActionOverride(overrideId *Id) {
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesEdited)
 		} else {
 			event = true
 			eventOverridesRpc = overridesRpc
 			self.state.BlockActionOverrides.Set(overridesRpc)
 		}
 	}()
+	if save != nil {
+		save()
+	}
 	if event {
-		self.blockActionOverridesChanged(eventOverridesRpc)
+		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteBlockActionOverridesEdited)
 	}
 }
 
 func (self *DeviceRemote) SetBlockActionOverrides(overrides *BlockActionOverrideList) {
 	overridesRpc := newBlockActionOverridesRpc(overrides)
 	event := false
+	var save func()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -5582,41 +5608,51 @@ func (self *DeviceRemote) SetBlockActionOverrides(overrides *BlockActionOverride
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesSet)
 		} else {
 			event = true
 			self.state.BlockActionOverrides.Set(overridesRpc)
 		}
 	}()
+	if save != nil {
+		save()
+	}
 	if event {
-		self.blockActionOverridesChanged(overridesRpc)
+		self.blockActionOverridesChanged(overridesRpc, deviceRemoteBlockActionOverridesSet)
 	}
 }
 
 func (self *DeviceRemote) GetBlockActionOverrides() *BlockActionOverrideList {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	var save func()
+	overrides := func() *BlockActionOverrideList {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	overridesRpc, success := func() ([]*BlockActionOverrideRpc, bool) {
-		if self.service == nil {
-			return nil, false
-		}
+		overridesRpc, success := func() ([]*BlockActionOverrideRpc, bool) {
+			if self.service == nil {
+				return nil, false
+			}
 
-		deviceOverrides, err := rpcCallNoArg[*DeviceRemoteBlockActionOverrides](self.service, "DeviceLocalRpc.GetBlockActionOverrides", self.closeService)
-		if err != nil {
-			return nil, false
+			deviceOverrides, err := rpcCallNoArg[*DeviceRemoteBlockActionOverrides](self.service, "DeviceLocalRpc.GetBlockActionOverrides", self.closeService)
+			if err != nil {
+				return nil, false
+			}
+			overridesRpc := deviceOverrides.BlockActionOverrides
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesReported)
+			return overridesRpc, true
+		}()
+		if success {
+			return toBlockActionOverrideList(overridesRpc)
+		} else {
+			return toBlockActionOverrideList(self.state.BlockActionOverrides.Get(
+				self.lastKnownState.BlockActionOverrides.Get(nil),
+			))
 		}
-		overridesRpc := deviceOverrides.BlockActionOverrides
-		self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
-		return overridesRpc, true
 	}()
-	if success {
-		return toBlockActionOverrideList(overridesRpc)
-	} else {
-		return toBlockActionOverrideList(self.state.BlockActionOverrides.Get(
-			self.lastKnownState.BlockActionOverrides.Get(nil),
-		))
+	if save != nil {
+		save()
 	}
+	return overrides
 }
 
 func (self *DeviceRemote) GetLocalOverrideAppIds() *OverrideLocalAppIds {
@@ -14579,7 +14615,7 @@ func (self *DeviceRemoteRpc) BlockStatsChanged(stats *DeviceRemoteBlockStats, _ 
 func (self *DeviceRemoteRpc) BlockActionOverridesChanged(event *DeviceRemoteBlockActionOverrides, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]BlockActionOverridesChanged")
 	self.dispatch(func() {
-		self.deviceRemote.blockActionOverridesChanged(event.BlockActionOverrides)
+		self.deviceRemote.blockActionOverridesChanged(event.BlockActionOverrides, deviceRemoteBlockActionOverridesReported)
 	})
 	return nil
 }
