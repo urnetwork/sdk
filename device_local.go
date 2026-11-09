@@ -629,6 +629,10 @@ type DeviceLocalSettings struct {
 	PlatformPlacement connect.PlatformPlacement `json:"-"`
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
+	// Chooses the 10/8 tunnel address from the prefixes it must avoid, in place
+	// of connect.RandomLocalIpv4, so a test sees the avoid list. Nil is the real
+	// one.
+	testingRandomLocalIpv4 func(avoid []netip.Prefix) netip.Addr
 	// Constructor seams observe admission ordering without creating a client.
 	testingBeforePeerPinStoreAdmission func(*deviceLocalTransferMemory)
 	testingBeforeProviderConstruction  func()
@@ -1938,10 +1942,13 @@ func newDeviceLocalWithOverridesForPlatform(
 	// private, so the browser's mDNS obfuscation rewrites the host candidate to
 	// <hash>.local and the tunnel address does not leak in WebRTC peer discovery.
 	// The randomized host avoids a fixed fingerprint; the /24 avoids a real local
-	// subnet. Not from the pool -> not returned in Close.
+	// subnet, and the restored device role's block and routes (sidecar §17.7,
+	// device_sidecar_exit.go), read once here, so a later change applies to the
+	// next tunnel address and never moves this one. Not from the pool -> not
+	// returned in Close.
 	var tunnelLocalAddress netip.Addr
 	if settings.UseExperimentalTunnelAddress {
-		tunnelLocalAddress = connect.RandomLocalIpv4(connect.LocalIpv4Networks())
+		tunnelLocalAddress = deviceLocalTunnelAddress(settings, bridgeOwner)
 	} else {
 		var ok bool
 		takeLocalAddress := connect.TakeLocalIpv4Address

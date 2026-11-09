@@ -5,7 +5,8 @@
 //
 //	off      DeviceLocalSettings.EnableBridge false, the default: no store is opened, every bridge call refuses, and a
 //	         send costs one nil check
-//	hosted   a HostedIncompatible device builds no bridge and refuses every bridge call (D-SDK-12)
+//	hosted   a HostedIncompatible device builds no bridge and refuses every bridge call (D-SDK-12), and so does a
+//	         browser's (D-BRIDGE-11, device_sidecar_exit.go)
 //	legacy   no sidecar role has enrolled for the device's network here: no device.Bridge, today's route
 //	past     a device.Bridge, restored from the posture store while the device is built, so what was in force is in
 //	         force before the first packet (DP1); Route runs on both send paths before the mux, so no bridged :53 or :80
@@ -14,7 +15,8 @@
 // The posture moves only through setBridgePending, setBridgeState and applyBridgeDeltas, which SDK-M8-07's channel
 // calls, and after each the owner holds the bridge while it is past legacy and closes it once this sidecar's own
 // sign-out wipes it back. A bridge's change callback re-reads its routes and keeps its zone on the mux. Each hold also
-// moves the bridge's hook onto the exit NAT (device_sidecar_exit.go).
+// moves the bridge's hook onto the exit NAT, and the restored bridge's block and routes join the tunnel address's avoid
+// list (device_sidecar_exit.go).
 //
 // Not here yet, and closed meanwhile: the bridge has no BridgeHost and no signer until SDK-M8-08's
 // DeviceLocal.NewBridgeLink and delegations, so every link entry answers with a reject; the channel and the status
@@ -174,13 +176,11 @@ func newDeviceLocalBridgeOwner(
 	if self.newBridge == nil {
 		self.newBridge = newDeviceBridge
 	}
-	switch {
-	case !settings.EnableBridge:
-		self.refusal = errDeviceBridgeOff
-		return self, nil
-	case settings.HostedIncompatible:
-		log.Infof("[device]hosted incompatible: the device role is not run\n")
-		self.refusal = errDeviceBridgeHosted
+	if refusal := deviceBridgeRefusal(settings, runtime.GOOS); refusal != nil {
+		if refusal != errDeviceBridgeOff {
+			log.Infof("[device]the device role is not run: %v\n", refusal)
+		}
+		self.refusal = refusal
 		return self, nil
 	}
 	networkId, err := connect.ParseId(networkIdText)

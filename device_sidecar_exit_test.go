@@ -1,6 +1,7 @@
 // The device role's bridge beyond its seam (device_sidecar_exit.go): its hook on the exit NAT, at the NAT's
 // construction and on a live one, never on the fallback NAT, so this device's own route-local flows pass while the
-// posture is pending; and provider flows under the sdk provider's table. Devices are built through NewDeviceLocal on sidecar's
+// posture is pending; provider flows under the sdk provider's table; the tunnel address avoiding the block and the
+// approved prefixes; and the devices that build no bridge. Devices are built through NewDeviceLocal on sidecar's
 // posture vectors (device_sidecar_test.go) and given a provider in the process: a client with no transport, as the
 // provider rotation tests use, so nothing leaves the process, and an exit NAT whose dials a dialer records and refuses.
 package sdk
@@ -153,8 +154,10 @@ func (self *testingExitBridge) EgressHook() connect.EgressHook {
 	return self.hook
 }
 
-// The bridges a device role built, in order, each a testingExitBridge.
+// The bridges a device role built, in order, each a testingExitBridge, with settings adjusted by configure first.
 type testingExitBridges struct {
+	configure func(settings *sidecardevice.BridgeSettings)
+
 	stateLock sync.Mutex
 	built     []*testingExitBridge
 }
@@ -170,6 +173,11 @@ func (self *testingExitBridges) newBridge(
 	store sidecardevice.PostureStore,
 	settings *sidecardevice.BridgeSettings,
 ) (deviceBridgeOwned, error) {
+	if self.configure != nil {
+		configured := *settings
+		self.configure(&configured)
+		settings = &configured
+	}
 	bridge, err := sidecardevice.NewBridge(ctx, store, nil, settings)
 	if err != nil {
 		return nil, err
@@ -374,6 +382,77 @@ func testingExitRules() *bridge.BridgeRules {
 		Exit:      []*bridge.BridgeRuleReach{{Protocol: 0}},
 	}}
 	return rules
+}
+
+// What the avoid list must hold: a block chosen in 10/8 (owner decision 132), the block it replaced, still draining,
+// and a granted subnet route in 10/8.
+var (
+	testingExitBlock         = netip.MustParsePrefix("10.0.0.0/16")
+	testingExitPreviousBlock = netip.MustParsePrefix("10.2.0.0/16")
+	testingExitRoute         = netip.MustParsePrefix("10.1.0.0/16")
+)
+
+// The block, the previous block and the route, the route over one advertiser.
+func testingExitAvoidRules() *bridge.BridgeRules {
+	prefix := func(prefix netip.Prefix) *bridge.BridgeIpv4Prefix {
+		return &bridge.BridgeIpv4Prefix{Address: testingExitIpv4Value(prefix.Addr()), Length: uint32(prefix.Bits())}
+	}
+	return &bridge.BridgeRules{
+		Block:                   prefix(testingExitBlock),
+		PreviousBlock:           prefix(testingExitPreviousBlock),
+		PreviousBlockDrainUntil: time.Now().Add(time.Hour).UnixMilli(),
+		Entries: []*bridge.BridgeRuleEntry{
+			{
+				Prefix: prefix(netip.PrefixFrom(testingExitBlock.Addr(), 24)),
+				Kind:   bridge.BridgeRuleEntryKind_BRIDGE_RULE_ENTRY_KIND_SERVICE,
+			},
+			{
+				Prefix: prefix(testingExitRoute),
+				Kind:   bridge.BridgeRuleEntryKind_BRIDGE_RULE_ENTRY_KIND_LINK,
+				Links: []*bridge.BridgeRuleLink{{
+					TargetClientId:          bytes.Repeat([]byte{0x41}, 16),
+					TargetSidecarId:         bytes.Repeat([]byte{0x42}, 16),
+					TargetIdentityPublicKey: bytes.Repeat([]byte{0x43}, 32),
+					RuleId:                  bytes.Repeat([]byte{0x44}, 32),
+					Weight:                  1,
+				}},
+			},
+		},
+	}
+}
+
+// An IPv4 address as the rules' fixed32.
+func testingExitIpv4Value(addr netip.Addr) uint32 {
+	octets := addr.As4()
+	return uint32(octets[0])<<24 | uint32(octets[1])<<16 | uint32(octets[2])<<8 | uint32(octets[3])
+}
+
+// Each avoid list a device chose its tunnel address from, and the address.
+type testingExitAvoids struct {
+	stateLock sync.Mutex
+	avoids    [][]netip.Prefix
+	addrs     []netip.Addr
+}
+
+// DeviceLocalSettings.testingRandomLocalIpv4: the real choice, recorded.
+func (self *testingExitAvoids) choose(avoid []netip.Prefix) netip.Addr {
+	addr := connect.RandomLocalIpv4(avoid)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.avoids = append(self.avoids, slices.Clone(avoid))
+	self.addrs = append(self.addrs, addr)
+	return addr
+}
+
+// The last avoid list and address.
+func (self *testingExitAvoids) last(t *testing.T) ([]netip.Prefix, netip.Addr) {
+	t.Helper()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if len(self.avoids) == 0 {
+		t.Fatal("no tunnel address was chosen")
+	}
+	return self.avoids[len(self.avoids)-1], self.addrs[len(self.addrs)-1]
 }
 
 // A live exit NAT takes the hook when a bridge is first held, and gives it up at this sidecar's own sign-out; a publish
@@ -665,5 +744,134 @@ func TestExitNatProviderFlowsUnderTheSdkTable(t *testing.T) {
 	slices.Sort(want)
 	if dialed := dialer.all(); !slices.Equal(dialed, want) {
 		t.Fatalf("the exit NAT dialed %v, want only what passed, %v", dialed, want)
+	}
+}
+
+// The block in force, the block it replaced and the routes the bridge routes join the local networks the tunnel
+// address avoids, read while the device is built from the restored bridge: a block chosen in 10/8, where
+// RandomLocalIpv4 draws, never holds the tunnel's own address. A live device's address never moves; the next device
+// takes the change.
+func TestTunnelAddressAvoidsTheBlock(t *testing.T) {
+	if !testingExitBlock.Contains(connect.RandomLocalIpv4(nil)) {
+		t.Fatal("CONTROL FAILED: with nothing to avoid, the tunnel address would not fall in the test's block")
+	}
+	role := newTestingDeviceRole(t)
+	avoids := &testingExitAvoids{}
+	// no local network wins the route, whatever this machine's interfaces are
+	bridges := &testingExitBridges{configure: func(settings *sidecardevice.BridgeSettings) {
+		settings.LocalIpv4Networks = func() []netip.Prefix { return []netip.Prefix{} }
+	}}
+	adjust := func(settings *DeviceLocalSettings) {
+		bridges.adjust(settings)
+		settings.UseExperimentalTunnelAddress = true
+		settings.testingRandomLocalIpv4 = avoids.choose
+	}
+
+	first := role.device(t, adjust)
+	firstAvoid, firstAddr := avoids.last(t)
+	if first.tunnelLocalAddress != firstAddr {
+		t.Fatalf("the device's tunnel address %v is not the one chosen, %v", first.tunnelLocalAddress, firstAddr)
+	}
+	for _, prefix := range []netip.Prefix{testingExitBlock, testingExitPreviousBlock, testingExitRoute} {
+		if slices.Contains(firstAvoid, prefix) {
+			t.Fatalf("a legacy device avoided %v", prefix)
+		}
+	}
+	role.enforce(t, first, testingExitAvoidRules())
+	if first.tunnelLocalAddress != firstAddr {
+		t.Fatal("a state moved a live tunnel address")
+	}
+	if routes := bridges.last(t).Routes(); !slices.Contains(routes, testingExitRoute) {
+		t.Fatalf("CONTROL FAILED: the bridge routes %v, without the granted route", routes)
+	}
+	testingJoinDeviceRole(t, first)
+
+	second := role.device(t, adjust)
+	secondAvoid, secondAddr := avoids.last(t)
+	if second.tunnelLocalAddress != secondAddr {
+		t.Fatalf("the device's tunnel address %v is not the one chosen, %v", second.tunnelLocalAddress, secondAddr)
+	}
+	for _, prefix := range []netip.Prefix{testingExitBlock, testingExitPreviousBlock, testingExitRoute} {
+		if !slices.Contains(secondAvoid, prefix) {
+			t.Errorf("the avoid list lacks %v", prefix)
+		}
+		if prefix.Contains(secondAddr) {
+			t.Errorf("the tunnel address %v lies in %v", secondAddr, prefix)
+		}
+	}
+	if !netip.MustParsePrefix("10.0.0.0/8").Contains(secondAddr) {
+		t.Fatalf("the tunnel address %v left 10/8", secondAddr)
+	}
+}
+
+// A proxy device, shaped as server/proxy builds every hosted device (newProxyDeviceLocalSettings: the low profile and
+// HostedIncompatible), builds no bridge with the role asked for and an enforcing posture stored, so nothing of a block
+// reaches its tunnel address either (D-BRIDGE-11, D-SDK-12).
+func TestProxyDeviceBuildsNoBridge(t *testing.T) {
+	role := newTestingDeviceRole(t)
+	enforcing := role.device(t, nil)
+	role.enforce(t, enforcing, testingExitAvoidRules())
+	testingJoinDeviceRole(t, enforcing)
+
+	avoids := &testingExitAvoids{}
+	settings := DefaultLowMemoryDeviceLocalSettings()
+	settings.DisableLogging = true
+	settings.HostedIncompatible = true
+	settings.EnableBridge = true
+	// a hosted device provides nothing, and this keeps the test in the process
+	settings.AllowProvider = false
+	settings.GeneratorFunc = func([]*connect.ProviderSpec) connect.MultiClientGenerator {
+		return &testingDnsOwnerGenerator{}
+	}
+	settings.UseExperimentalTunnelAddress = true
+	settings.testingRandomLocalIpv4 = avoids.choose
+	proxy, err := NewDeviceLocal(role.space, role.clientJwt, "device-role-proxy", "test", "0", role.instanceId, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		testingJoinDeviceRole(t, proxy)
+	})
+	if proxy.sendRoute.Load().bridge != nil || proxy.bridgeOwner.store != nil || proxy.bridgeOwner.bridge != nil {
+		t.Fatal("a proxy device built a bridge or opened a posture")
+	}
+	if !errors.Is(proxy.bridgeOwner.refusal, errDeviceBridgeHosted) {
+		t.Fatalf("a proxy device's role was refused as %v", proxy.bridgeOwner.refusal)
+	}
+	avoid, _ := avoids.last(t)
+	for _, prefix := range []netip.Prefix{testingExitBlock, testingExitPreviousBlock, testingExitRoute} {
+		if slices.Contains(avoid, prefix) {
+			t.Fatalf("a proxy device avoided %v of a bridge it does not run", prefix)
+		}
+	}
+}
+
+// Which devices run the role: one asked for it, on any platform with raw sockets; never one off, hosted or a
+// browser's, whose extension worker and pages have no raw sockets (D-BRIDGE-11), in that order of reasons.
+func TestDeviceBridgeRefusals(t *testing.T) {
+	cases := []struct {
+		enable bool
+		hosted bool
+		goos   string
+		want   error
+	}{
+		{enable: false, hosted: false, goos: "linux", want: errDeviceBridgeOff},
+		{enable: false, hosted: true, goos: "js", want: errDeviceBridgeOff},
+		{enable: true, hosted: true, goos: "js", want: errDeviceBridgeHosted},
+		{enable: true, hosted: true, goos: "linux", want: errDeviceBridgeHosted},
+		{enable: true, hosted: false, goos: "js", want: errDeviceBridgeBrowser},
+		{enable: true, hosted: false, goos: "linux", want: nil},
+		{enable: true, hosted: false, goos: "darwin", want: nil},
+		{enable: true, hosted: false, goos: "windows", want: nil},
+		{enable: true, hosted: false, goos: "android", want: nil},
+		{enable: true, hosted: false, goos: "ios", want: nil},
+	}
+	for _, c := range cases {
+		settings := DefaultDeviceLocalSettings()
+		settings.EnableBridge = c.enable
+		settings.HostedIncompatible = c.hosted
+		if got := deviceBridgeRefusal(settings, c.goos); got != c.want {
+			t.Errorf("enable=%v hosted=%v on %s: %v, want %v", c.enable, c.hosted, c.goos, got, c.want)
+		}
 	}
 }
