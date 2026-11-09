@@ -67,7 +67,7 @@ func TestDnsPresetCatalogIntegrity(t *testing.T) {
 		if id == DnsPresetIdDefault || strings.HasPrefix(id, DnsPresetIdRegionalPrefix) {
 			t.Errorf("preset id %q is a reserved selection", id)
 		}
-		if _, reserved := catalog.reservedProviderNames[id]; reserved {
+		if _, reserved := catalog.reservedPresets[id]; reserved {
 			t.Errorf("preset id %q reuses a dropped preset's id", id)
 		}
 		if !providerIds[preset.providerId] {
@@ -186,29 +186,49 @@ func TestDnsPresetCatalogIntegrity(t *testing.T) {
 			t.Errorf("provider %s has no preset", providerId)
 		}
 	}
-	for id := range catalog.reservedProviderNames {
+	for id, reserved := range catalog.reservedPresets {
 		if presetIds[id] {
 			t.Errorf("reserved id %s is in the catalog", id)
 		}
+		if reserved.name.key == "" || reserved.name.provider == "" || reserved.providerName == "" {
+			t.Errorf("reserved id %s keeps no name for its notice", id)
+		}
 	}
-	// every pick shows a name no other pick of its group shows, so a row, a
-	// summary or a status says which one is meant (decision 20), and a
-	// preset's own name begins with its provider's, which still says whose
-	// resolver it is and keeps the group alphabetical by provider (O9)
-	groupNamePresetIds := map[string]string{}
+	// every preset has a short, descriptive name of its own (owner,
+	// 2026-11-09): its provider's short name and a name key of its group's
+	// purpose. No two presets of the catalog show the same name, so a row, a
+	// summary or a status line says which one is meant; and DNS4EU's two
+	// family names (decision 20) say whether ads are blocked, as their presets
+	// do.
+	groupNameKeys := map[string][]string{
+		DnsPresetGroupAdblock:    {"dns_preset_name_ad_blocking"},
+		DnsPresetGroupSecurity:   {"dns_preset_name_malware_blocking"},
+		DnsPresetGroupFamily:     {"dns_preset_name_family", "dns_preset_name_child", "dns_preset_name_child_ads"},
+		DnsPresetGroupPersonal:   {"dns_preset_name_personal"},
+		DnsPresetGroupUnfiltered: {"dns_preset_name_no_filtering"},
+	}
+	namePresetIds := map[dnsPresetName]string{}
 	for _, preset := range catalog.presets {
 		name := catalog.presetName(preset)
-		if name == "" {
-			t.Errorf("preset %s shows no name", preset.presetId)
-			continue
+		if !slices.Contains(groupNameKeys[preset.group], name.key) {
+			t.Errorf("preset %s in %s is named by %q", preset.presetId, preset.group, name.key)
 		}
-		key := preset.group + "\x00" + name
-		if other, ok := groupNamePresetIds[key]; ok {
-			t.Errorf("presets %s and %s both show %q in %s", other, preset.presetId, name, preset.group)
+		if name.provider == "" {
+			t.Errorf("preset %s names no provider", preset.presetId)
 		}
-		groupNamePresetIds[key] = preset.presetId
-		if provider := catalog.provider(preset.providerId); preset.name != "" && provider != nil && !strings.HasPrefix(preset.name, provider.name+" ") {
-			t.Errorf("preset %s name %q does not begin with its provider's name %q", preset.presetId, preset.name, provider.name)
+		if other, ok := namePresetIds[name]; ok {
+			t.Errorf("presets %s and %s both show %+v", other, preset.presetId, name)
+		}
+		namePresetIds[name] = preset.presetId
+		if (name.key == "dns_preset_name_child_ads" && !preset.blocksAds) || (name.key == "dns_preset_name_child" && preset.blocksAds) {
+			t.Errorf("preset %s is named %q, which says otherwise about ads", preset.presetId, name.key)
+		}
+	}
+	// a short name shortens its provider's name, so it still says whose
+	// resolver a preset is and keeps each group alphabetical by provider (O9)
+	for _, provider := range catalog.providers {
+		if provider.shortName != "" && (provider.shortName == provider.name || !strings.HasPrefix(provider.name, provider.shortName+" ")) {
+			t.Errorf("provider %s short name %q does not shorten %q", provider.providerId, provider.shortName, provider.name)
 		}
 	}
 }
@@ -232,13 +252,14 @@ func TestDnsPresetPersonalIdPatternsAdmitOnlyLabelCharacters(t *testing.T) {
 	}
 }
 
-// The catalog as it ships: every id, name, group, url, pin and canary of A3,
-// as the owner decided it on 2026-11-09. RethinkDNS is not in it (decision
-// 17), and DNS4EU's two family presets have names of their own (decision 20).
+// The catalog as it ships: every id, name key, group, url, pin and canary of
+// A3, as the owner decided it on 2026-11-09. RethinkDNS is not in it
+// (decision 17), and every preset has a name of its own (decision 20, then
+// per-preset names, owner, 2026-11-09).
 func TestDnsPresetCatalogAsShipped(t *testing.T) {
 	type expected struct {
 		providerId  string
-		name        string
+		nameKey     string
 		group       string
 		blocksAds   bool
 		failover    bool
@@ -252,103 +273,103 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 	hostname := func(dohUrl string) []string { return []string{dohUrl} }
 	shipped := map[string]expected{
 		"adguard": {
-			providerId: "adguard", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
+			providerId: "adguard", nameKey: "dns_preset_name_ad_blocking", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
 			dohUrlsIpv4: hostname("https://dns.adguard-dns.com/dns-query"), dohUrlsIpv6: hostname("https://dns.adguard-dns.com/dns-query"),
 			dohPinIpv4s: []string{"94.140.14.14", "94.140.15.15"}, dohPinIpv6s: []string{"2a10:50c0::ad1:ff", "2a10:50c0::ad2:ff"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"controld-ads": {
-			providerId: "controld", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
+			providerId: "controld", nameKey: "dns_preset_name_ad_blocking", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
 			dohUrlsIpv4: hostname("https://freedns.controld.com/p2"), dohUrlsIpv6: hostname("https://freedns.controld.com/p2"),
 			dohPinIpv4s: []string{"76.76.2.11"}, dohPinIpv6s: []string{"2606:1a40::11"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-noads": {
-			providerId: "dns4eu", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
+			providerId: "dns4eu", nameKey: "dns_preset_name_ad_blocking", group: DnsPresetGroupAdblock, blocksAds: true, failover: true,
 			dohUrlsIpv4: hostname("https://noads.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://noads.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.13", "86.54.11.213"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:13", "2a13:1001::86:54:11:213"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"cloudflare-security": {
-			providerId: "cloudflare", group: DnsPresetGroupSecurity,
+			providerId: "cloudflare", nameKey: "dns_preset_name_malware_blocking", group: DnsPresetGroupSecurity,
 			dohUrlsIpv4: []string{"https://1.1.1.2/dns-query", "https://1.0.0.2/dns-query"},
 			dohUrlsIpv6: []string{"https://[2606:4700:4700::1112]/dns-query", "https://[2606:4700:4700::1002]/dns-query"},
 			blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-protective": {
-			providerId: "dns4eu", group: DnsPresetGroupSecurity,
+			providerId: "dns4eu", nameKey: "dns_preset_name_malware_blocking", group: DnsPresetGroupSecurity,
 			dohUrlsIpv4: hostname("https://protective.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://protective.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.1", "86.54.11.201"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:1", "2a13:1001::86:54:11:201"},
 			blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"quad9": {
-			providerId: "quad9", group: DnsPresetGroupSecurity,
+			providerId: "quad9", nameKey: "dns_preset_name_malware_blocking", group: DnsPresetGroupSecurity,
 			dohUrlsIpv4: []string{"https://9.9.9.9/dns-query", "https://149.112.112.112/dns-query"},
 			dohUrlsIpv6: []string{"https://[2620:fe::fe]/dns-query", "https://[2620:fe::9]/dns-query"},
 			canaryName:  "examplemalwaredomain.com", blockAnswer: dnsPresetBlockAnswerNxdomain,
 		},
 		"adguard-family": {
-			providerId: "adguard", group: DnsPresetGroupFamily, blocksAds: true,
+			providerId: "adguard", nameKey: "dns_preset_name_family", group: DnsPresetGroupFamily, blocksAds: true,
 			dohUrlsIpv4: hostname("https://family.adguard-dns.com/dns-query"), dohUrlsIpv6: hostname("https://family.adguard-dns.com/dns-query"),
 			dohPinIpv4s: []string{"94.140.14.15", "94.140.15.16"}, dohPinIpv6s: []string{"2a10:50c0::bad1:ff", "2a10:50c0::bad2:ff"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"cloudflare-family": {
-			providerId: "cloudflare", group: DnsPresetGroupFamily,
+			providerId: "cloudflare", nameKey: "dns_preset_name_family", group: DnsPresetGroupFamily,
 			dohUrlsIpv4: []string{"https://1.1.1.3/dns-query", "https://1.0.0.3/dns-query"},
 			dohUrlsIpv6: []string{"https://[2606:4700:4700::1113]/dns-query", "https://[2606:4700:4700::1003]/dns-query"},
 			blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"controld-family": {
-			providerId: "controld", group: DnsPresetGroupFamily, blocksAds: true,
+			providerId: "controld", nameKey: "dns_preset_name_family", group: DnsPresetGroupFamily, blocksAds: true,
 			dohUrlsIpv4: hostname("https://freedns.controld.com/family"), dohUrlsIpv6: hostname("https://freedns.controld.com/family"),
 			dohPinIpv4s: []string{"76.76.2.11"}, dohPinIpv6s: []string{"2606:1a40::11"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-child": {
-			providerId: "dns4eu", name: "DNS4EU Child", group: DnsPresetGroupFamily,
+			providerId: "dns4eu", nameKey: "dns_preset_name_child", group: DnsPresetGroupFamily,
 			dohUrlsIpv4: hostname("https://child.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://child.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.12", "86.54.11.212"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:12", "2a13:1001::86:54:11:212"},
 			blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"dns4eu-child-noads": {
-			providerId: "dns4eu", name: "DNS4EU Child, no ads", group: DnsPresetGroupFamily, blocksAds: true,
+			providerId: "dns4eu", nameKey: "dns_preset_name_child_ads", group: DnsPresetGroupFamily, blocksAds: true,
 			dohUrlsIpv4: hostname("https://child-noads.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://child-noads.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.11", "86.54.11.211"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:11", "2a13:1001::86:54:11:211"},
 			canaryName: "doubleclick.net", blockAnswer: dnsPresetBlockAnswerNull,
 		},
 		"adguard-unfiltered": {
-			providerId: "adguard", group: DnsPresetGroupUnfiltered, failover: true,
+			providerId: "adguard", nameKey: "dns_preset_name_no_filtering", group: DnsPresetGroupUnfiltered, failover: true,
 			dohUrlsIpv4: hostname("https://unfiltered.adguard-dns.com/dns-query"), dohUrlsIpv6: hostname("https://unfiltered.adguard-dns.com/dns-query"),
 			dohPinIpv4s: []string{"94.140.14.140", "94.140.14.141"}, dohPinIpv6s: []string{"2a10:50c0::1:ff", "2a10:50c0::2:ff"},
 		},
 		"cloudflare": {
-			providerId: "cloudflare", group: DnsPresetGroupUnfiltered, failover: true,
+			providerId: "cloudflare", nameKey: "dns_preset_name_no_filtering", group: DnsPresetGroupUnfiltered, failover: true,
 			dohUrlsIpv4: []string{"https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"},
 			dohUrlsIpv6: []string{"https://[2606:4700:4700::1111]/dns-query", "https://[2606:4700:4700::1001]/dns-query"},
 		},
 		"controld-unfiltered": {
-			providerId: "controld", group: DnsPresetGroupUnfiltered, failover: true,
+			providerId: "controld", nameKey: "dns_preset_name_no_filtering", group: DnsPresetGroupUnfiltered, failover: true,
 			dohUrlsIpv4: hostname("https://freedns.controld.com/p0"), dohUrlsIpv6: hostname("https://freedns.controld.com/p0"),
 			dohPinIpv4s: []string{"76.76.2.11"}, dohPinIpv6s: []string{"2606:1a40::11"},
 		},
 		"dns4eu-unfiltered": {
-			providerId: "dns4eu", group: DnsPresetGroupUnfiltered, failover: true,
+			providerId: "dns4eu", nameKey: "dns_preset_name_no_filtering", group: DnsPresetGroupUnfiltered, failover: true,
 			dohUrlsIpv4: hostname("https://unfiltered.joindns4.eu/dns-query"), dohUrlsIpv6: hostname("https://unfiltered.joindns4.eu/dns-query"),
 			dohPinIpv4s: []string{"86.54.11.100", "86.54.11.200"}, dohPinIpv6s: []string{"2a13:1001::86:54:11:100", "2a13:1001::86:54:11:200"},
 		},
 		"adguard-personal": {
-			providerId: "adguard", group: DnsPresetGroupPersonal,
+			providerId: "adguard", nameKey: "dns_preset_name_personal", group: DnsPresetGroupPersonal,
 			dohUrlsIpv4: hostname("https://d.adguard-dns.com/dns-query/{id}"), dohUrlsIpv6: hostname("https://d.adguard-dns.com/dns-query/{id}"),
 			dohPinIpv4s: []string{"94.140.14.49"}, dohPinIpv6s: []string{"2a10:50c0::ded:ff"},
 		},
 		"controld-personal": {
-			providerId: "controld", group: DnsPresetGroupPersonal,
+			providerId: "controld", nameKey: "dns_preset_name_personal", group: DnsPresetGroupPersonal,
 			dohUrlsIpv4: hostname("https://dns.controld.com/{id}"), dohUrlsIpv6: hostname("https://dns.controld.com/{id}"),
 			dohPinIpv4s: []string{"76.76.2.22"}, dohPinIpv6s: []string{"2606:1a40::22"},
 		},
 		"nextdns-personal": {
-			providerId: "nextdns", group: DnsPresetGroupPersonal,
+			providerId: "nextdns", nameKey: "dns_preset_name_personal", group: DnsPresetGroupPersonal,
 			dohUrlsIpv4: hostname("https://dns.nextdns.io/{id}"), dohUrlsIpv6: hostname("https://dns.nextdns.io/{id}"),
 			dohPinIpv4s: []string{"45.90.28.0", "45.90.30.0"}, dohPinIpv6s: []string{"2a07:a8c0::", "2a07:a8c1::"},
 		},
@@ -365,7 +386,7 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 		}
 		got := expected{
 			providerId:  preset.providerId,
-			name:        preset.name,
+			nameKey:     preset.nameKey,
 			group:       preset.group,
 			blocksAds:   preset.blocksAds,
 			failover:    preset.failover,
@@ -382,52 +403,143 @@ func TestDnsPresetCatalogAsShipped(t *testing.T) {
 	connect.AssertEqual(t, catalog.preset("controld-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdRefused)
 	connect.AssertEqual(t, catalog.preset("adguard-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdUnfilteredOrServfail)
 	connect.AssertEqual(t, catalog.preset("nextdns-personal").personalId.unknownIdAnswer, dnsPresetUnknownIdUnfiltered)
+	// the short names the presets' names begin with: AdGuard's alone differs
+	// from its name
+	shortNames := map[string]string{}
+	for _, provider := range catalog.providers {
+		if provider.shortName != "" {
+			shortNames[provider.providerId] = provider.shortName
+		}
+	}
+	connect.AssertEqual(t, shortNames, map[string]string{"adguard": "AdGuard"})
 }
 
-// DNS4EU's two family presets show their own names on every line that names
-// a preset (decision 20): the picker row, the provider list, the summary, the
-// status line and the dropped-preset notice, as {provider}. DNS4EU's other
-// presets, and the provider itself, show "DNS4EU".
-func TestDnsPresetDns4euFamilyNamesShowOnEveryLine(t *testing.T) {
+// The English of the presets' name keys, as the localization store has them
+// (localizations keys/dns_preset_name_*.yaml, which
+// TestDnsPresetNameKeysMatchTheStore checks when the store is at hand). Each
+// key's {provider} is the provider's short name.
+var testingDnsPresetNamesEnglish = map[string]string{
+	"dns_preset_name_ad_blocking":      "{provider} Ad Blocking",
+	"dns_preset_name_malware_blocking": "{provider} Malware Blocking",
+	"dns_preset_name_family":           "{provider} Family",
+	"dns_preset_name_child":            "{provider} Child",
+	"dns_preset_name_child_ads":        "{provider} Child, no ads",
+	"dns_preset_name_no_filtering":     "{provider} No Filtering",
+	"dns_preset_name_personal":         "{provider} Personal",
+}
+
+// A preset's name as the apps render it in English.
+func testingDnsPresetNameInEnglish(t *testing.T, nameKey string, nameProvider string) string {
+	t.Helper()
+	english, ok := testingDnsPresetNamesEnglish[nameKey]
+	if !ok {
+		t.Fatalf("%q is not a preset name key", nameKey)
+	}
+	return strings.Replace(english, "{provider}", nameProvider, 1)
+}
+
+// Every preset has a short, descriptive name of its own (owner, 2026-11-09),
+// unique in the catalog, on every line that names the preset: the picker
+// row, the provider list, the summary row, the status line and, under the
+// Play-only catalog, the dropped notice of a hidden preset. DNS4EU's two
+// family presets keep the names of decision 20. The lines that name the
+// adblock provider keep its name, "AdGuard DNS" and "DNS4EU" included.
+func TestDnsPresetNamesShowOnEveryLine(t *testing.T) {
 	t.Cleanup(func() { SetDnsPresetsHideAdBlocking(false) })
 	names := map[string]string{
-		"dns4eu-noads":       "DNS4EU",
-		"dns4eu-protective":  "DNS4EU",
-		"dns4eu-child":       "DNS4EU Child",
-		"dns4eu-child-noads": "DNS4EU Child, no ads",
-		"dns4eu-unfiltered":  "DNS4EU",
+		"adguard":             "AdGuard Ad Blocking",
+		"controld-ads":        "Control D Ad Blocking",
+		"dns4eu-noads":        "DNS4EU Ad Blocking",
+		"cloudflare-security": "Cloudflare Malware Blocking",
+		"dns4eu-protective":   "DNS4EU Malware Blocking",
+		"quad9":               "Quad9 Malware Blocking",
+		"adguard-family":      "AdGuard Family",
+		"cloudflare-family":   "Cloudflare Family",
+		"controld-family":     "Control D Family",
+		"dns4eu-child":        "DNS4EU Child",
+		"dns4eu-child-noads":  "DNS4EU Child, no ads",
+		"adguard-personal":    "AdGuard Personal",
+		"controld-personal":   "Control D Personal",
+		"nextdns-personal":    "NextDNS Personal",
+		"adguard-unfiltered":  "AdGuard No Filtering",
+		"cloudflare":          "Cloudflare No Filtering",
+		"controld-unfiltered": "Control D No Filtering",
+		"dns4eu-unfiltered":   "DNS4EU No Filtering",
 	}
+	providerNames := map[string]string{
+		"adguard":    "AdGuard DNS",
+		"cloudflare": "Cloudflare",
+		"controld":   "Control D",
+		"dns4eu":     "DNS4EU",
+		"nextdns":    "NextDNS",
+		"quad9":      "Quad9",
+	}
+	// no two presets read alike, in a group or across groups
+	namePresetIds := map[string]string{}
 	for presetId, name := range names {
-		connect.AssertEqual(t, GetDnsPreset(presetId).ProviderName, name)
-		settings := DnsResolverSettingsWithPreset(nil, presetId, "")
-		connect.AssertEqual(t, DescribeDnsResolverSettings(settings, "de").ProviderName, name)
-		connect.AssertEqual(t, DescribeDnsResolverStatus(settings, nil).ProviderName, name)
+		if other, ok := namePresetIds[name]; ok {
+			t.Errorf("%s and %s are both named %q", other, presetId, name)
+		}
+		namePresetIds[name] = presetId
 	}
+
+	// the picker rows and the provider list
 	pickNames := map[string]string{}
 	for _, pick := range GetDnsPicks("de").getAll() {
-		if pick.Preset != nil && pick.Preset.ProviderId == "dns4eu" {
-			pickNames[pick.PresetId] = pick.Preset.ProviderName
+		if preset := pick.Preset; preset != nil {
+			pickNames[preset.PresetId] = testingDnsPresetNameInEnglish(t, preset.NameKey, preset.NameProvider)
+			connect.AssertEqual(t, preset.ProviderName, providerNames[preset.ProviderId])
+			if pick.LabelKey != "" {
+				t.Errorf("the preset pick %s has a label key %q", preset.PresetId, pick.LabelKey)
+			}
 		}
 	}
 	connect.AssertEqual(t, pickNames, names)
-	providerNames := map[string]string{}
+	listNames := map[string]string{}
 	for _, provider := range GetDnsPresetProviders().getAll() {
-		if provider.ProviderId != "dns4eu" {
-			continue
-		}
-		connect.AssertEqual(t, provider.Name, "DNS4EU")
+		connect.AssertEqual(t, provider.Name, providerNames[provider.ProviderId])
 		for _, preset := range provider.Presets.getAll() {
-			providerNames[preset.PresetId] = preset.ProviderName
+			listNames[preset.PresetId] = testingDnsPresetNameInEnglish(t, preset.NameKey, preset.NameProvider)
 		}
 	}
-	connect.AssertEqual(t, providerNames, names)
+	connect.AssertEqual(t, listNames, names)
 
-	// the Play-only catalog hides the ad-blocking child preset: its notice
-	// names it
-	selected := DnsResolverSettingsWithPreset(nil, "dns4eu-child-noads", "")
+	// the summary row ("DNS: <name>") and the status line of each one
+	// selected; the presets that block ads are kept for the Play-only notice
+	adBlockingSettings := map[string]*DnsResolverSettings{}
+	for presetId, name := range names {
+		preset := GetDnsPreset(presetId)
+		personalId := ""
+		if preset.PersonalIdRequired {
+			personalId = preset.PersonalIdExample
+		}
+		settings := DnsResolverSettingsWithPreset(nil, presetId, personalId)
+		if settings == nil {
+			t.Fatalf("%s cannot be selected", presetId)
+		}
+		summary := DescribeDnsResolverSettings(settings, "de")
+		connect.AssertEqual(t,
+			[]any{summary.SummaryKey, testingDnsPresetNameInEnglish(t, summary.NameKey, summary.NameProvider), summary.ProviderName},
+			[]any{"dns_status_provider", name, providerNames[preset.ProviderId]})
+		status := DescribeDnsResolverStatus(settings, nil)
+		connect.AssertEqual(t,
+			[]any{status.StatusKey, testingDnsPresetNameInEnglish(t, status.NameKey, status.NameProvider), status.ProviderName},
+			[]any{"dns_status_provider", name, providerNames[preset.ProviderId]})
+		if preset.BlocksAds {
+			adBlockingSettings[presetId] = settings
+		}
+	}
+
+	// the Play-only catalog hides the presets that block ads: each one's
+	// notice names it as it showed
 	SetDnsPresetsHideAdBlocking(true)
-	dropped := DescribeDnsResolverSettings(selected, "de")
-	connect.AssertEqual(t, []any{dropped.Dropped, dropped.DroppedPresetId, dropped.DroppedProviderName}, []any{true, "dns4eu-child-noads", "DNS4EU Child, no ads"})
+	for presetId, settings := range adBlockingSettings {
+		dropped := DescribeDnsResolverSettings(settings, "de")
+		connect.AssertEqual(t,
+			[]any{dropped.Dropped, dropped.DroppedPresetId, testingDnsPresetNameInEnglish(t, dropped.DroppedNameKey, dropped.DroppedNameProvider)},
+			[]any{true, presetId, names[presetId]})
+	}
+	connect.AssertEqual(t, len(adBlockingSettings), 6)
 }
 
 // RethinkDNS left the catalog (decision 17): no provider, preset, host or

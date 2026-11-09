@@ -6,10 +6,13 @@
 // save starts from, and the descriptions of a selection and of the resolver
 // status. The rules live here so the apps only render. A saved personal id
 // shows in its own field alone (GetDnsPresetPersonalIdForEdit, decision 21):
-// no description carries it (D5). Copy is localization key ids (G1), with the
-// provider's name as the argument where a key takes one; provider names,
-// operators and jurisdictions are shown as they are (G2). Excluded from the
-// ios packet tunnel extension, which only applies the stored settings.
+// no description carries it (D5). Copy is localization key ids (G1). A
+// preset's name is a key too, with the provider's short name as its argument
+// (owner, 2026-11-09): the apps render it and pass it, rendered, to the lines
+// that name the preset; the lines that name the adblock provider take its
+// name. Provider names, operators and jurisdictions are shown as they are
+// (G2). Excluded from the ios packet tunnel extension, which only applies the
+// stored settings.
 package sdk
 
 import (
@@ -28,9 +31,10 @@ const (
 
 // The localization key ids the sdk hands the screens, as the localization
 // store has them (localizations keys/, ADBLOCK3RD G1). A key whose text names
-// the provider takes it as {provider}, never inside the key. The ad-blocking
-// group heading, the regional explanation and the pills are keys the apps
-// already show.
+// a preset or its provider takes the name as {provider}, never inside the
+// key. The ad-blocking group heading, the regional explanation and the pills
+// are keys the apps already show. The presets' name keys (dns_preset_name_*)
+// are the catalog's (dnsPreset.nameKey).
 const (
 	dnsGroupKeyBlockAds            = "block_ads_and_trackers"
 	dnsGroupKeyBlockMalware        = "dns_group_block_malware"
@@ -44,11 +48,6 @@ const (
 	dnsProviderKeyRegional         = "dns_provider_regional"
 	dnsProviderKeyRegionalCopy     = "dns_recommendation_message"
 	dnsSummaryKeyDefault           = "dns_summary_default"
-	dnsSummaryKeyAdBlocking        = "dns_summary_ad_blocking"
-	dnsSummaryKeyMalwareBlocking   = "dns_summary_malware_blocking"
-	dnsSummaryKeyFamily            = "dns_summary_family"
-	dnsSummaryKeyNoFiltering       = "dns_summary_no_filtering"
-	dnsSummaryKeyPersonal          = "dns_summary_personal"
 	dnsSummaryKeyCustom            = "dns_summary_custom"
 	dnsSummaryKeyCustomUnencrypted = "dns_summary_custom_unencrypted"
 	dnsSummaryKeyRegional          = "dns_summary_regional"
@@ -65,6 +64,10 @@ const (
 	dnsStatusKeyFallback           = "dns_status_fallback"
 	dnsPillKeyRecommended          = "dns_pill_recommended"
 	dnsPillKeyDefaults             = "dns_pill_defaults"
+	// a preset's summary row, "DNS: <name>": its name says what it does, so
+	// every preset has one summary, the text of the status line of a preset
+	// that answers, and so its key (apple keys a string by its text)
+	dnsSummaryKeyPreset = dnsStatusKeyProvider
 )
 
 // A provider of presets. Its name, operator and jurisdiction are shown as
@@ -86,10 +89,18 @@ type DnsPresetProvider struct {
 type DnsPreset struct {
 	PresetId   string
 	ProviderId string
-	// the name shown for the preset, as it is, on its row and as the argument
-	// of the keys that take a provider: its provider's name, or the preset's
-	// own where the provider has two presets in a group, "DNS4EU Child" and
-	// "DNS4EU Child, no ads" (the DnsPresetProvider keeps the provider's name)
+	// the preset's name, short and descriptive (owner, 2026-11-09): the key
+	// (dns_preset_name_*) and its {provider}, the provider's short name, as
+	// it is ("AdGuard" for AdGuard DNS). The row shows it rendered, "AdGuard
+	// Family", and the lines that name the selected preset take it, rendered,
+	// as their {provider}: the summary row, the status line, the blocked
+	// count, the Fast DNS note and the dropped notice (DnsSelectionSummary,
+	// DnsStatusSummary)
+	NameKey      string
+	NameProvider string
+	// the provider's name, as it is: the {provider} of the lines that name the
+	// adblock provider rather than the preset, the disclosure,
+	// dns_preset_copy_personal and the personal id field's lines
 	ProviderName string
 	Jurisdiction string
 	PrivacyUrl   string
@@ -142,7 +153,7 @@ type DnsPick struct {
 	GroupKey string
 	// the label key of a default, custom or regional pick: dns_provider_default,
 	// dns_provider_custom or dns_provider_regional (with {country}). Empty for
-	// a preset pick, which shows its provider's name.
+	// a preset pick, which shows its preset's name (DnsPreset.NameKey).
 	LabelKey string
 	// the key of the pick's line under its label: a preset's CopyKey,
 	// dns_provider_default_copy, dns_provider_custom_copy, or for a regional
@@ -165,18 +176,22 @@ type DnsSelectionSummary struct {
 	// the pick to mark as selected: DnsPresetIdDefault, the preset id,
 	// "regional-<cc>", or empty for Custom
 	PresetId string
-	// the selected preset's provider, the name it shows (DnsPreset.ProviderName),
-	// and its group and copy keys, empty for the other kinds
+	// the selected preset's provider and its name (DnsPreset.ProviderName,
+	// the disclosure's {provider}), the preset's name (DnsPreset.NameKey and
+	// NameProvider, rendered: the summary row's, the Fast DNS note's and the
+	// Private DNS line's {provider}), and its group and copy keys, empty for
+	// the other kinds
 	ProviderId   string
 	ProviderName string
+	NameKey      string
+	NameProvider string
 	Group        string
 	GroupKey     string
 	CopyKey      string
 	// the summary row's key: dns_summary_default, dns_summary_custom,
 	// dns_summary_custom_unencrypted, dns_summary_regional, or for a preset
-	// by its group dns_summary_ad_blocking, dns_summary_malware_blocking,
-	// dns_summary_family, dns_summary_no_filtering or dns_summary_personal,
-	// each with {provider}
+	// dns_status_provider ("DNS: {provider}") with the preset's name, which
+	// says what the preset does
 	SummaryKey string
 	// the label key of a default, custom or regional selection, and the
 	// country of a regional one
@@ -192,12 +207,16 @@ type DnsSelectionSummary struct {
 	// whether the screen shows the blocked-lookups count (I3)
 	ShowBlockedCount bool
 	// the stored selection cannot apply and URnetwork's dns is in force (A7):
-	// the screen shows the dropped-preset notice naming DroppedProviderName,
-	// with "Choose another preset" and "Enter it yourself under Custom".
-	// DroppedProviderName is empty for an id this release never knew.
-	// Dismissing the notice saves DnsPresetIdDefault.
+	// the screen shows the dropped-preset notice naming the preset as it
+	// showed, DroppedNameKey with DroppedNameProvider, rendered, as
+	// dns_preset_dropped's {provider}, with "Choose another preset" and "Enter
+	// it yourself under Custom". The name, and DroppedProviderName, the
+	// provider's name, are empty for an id this release never knew, whose
+	// notice names nothing. Dismissing the notice saves DnsPresetIdDefault.
 	Dropped             bool
 	DroppedPresetId     string
+	DroppedNameKey      string
+	DroppedNameProvider string
 	DroppedProviderName string
 	// the pill over the summary, or empty: dns_pill_recommended (with
 	// PillCountryCode) while the exit's country has a recommendation the
@@ -210,12 +229,18 @@ type DnsSelectionSummary struct {
 // What the status line, the verification line and the blocked count show for
 // the settings in force and the device's dns resolver status (C6, C8, I3).
 type DnsStatusSummary struct {
-	// the status line's key, with ProviderName as {provider}, or empty when
-	// there is no status line (no preset selected): dns_status_provider while
-	// the preset answers; dns_status_paused for an ad-blocking preset and
-	// dns_status_fallback for a no-filtering one failed over to URnetwork's
-	// dns; dns_status_unreachable for a failing preset
-	StatusKey    string
+	// the status line's key, with the preset's name as {provider}, or empty
+	// when there is no status line (no preset selected): dns_status_provider
+	// while the preset answers; dns_status_paused for an ad-blocking preset
+	// and dns_status_fallback for a no-filtering one failed over to
+	// URnetwork's dns; dns_status_unreachable for a failing preset
+	StatusKey string
+	// the selected preset's name (DnsPreset.NameKey and NameProvider),
+	// rendered: the status line's and the blocked count's {provider}
+	NameKey      string
+	NameProvider string
+	// the selected preset's provider's name (DnsPreset.ProviderName): the
+	// verification line's and its link's {provider}
 	ProviderName string
 	// the line under the status line, or empty: dns_status_paused_detail
 	// under dns_status_paused, and dns_status_unreachable_detail under the
@@ -236,7 +261,7 @@ type DnsStatusSummary struct {
 	ShowUseDefault     bool
 	ShowChangeLocation bool
 	// whether the blocked-lookups count shows (dns_blocked_count with
-	// BlockedCount and ProviderName, and dns_blocked_count_floor_note)
+	// BlockedCount and the preset's name, and dns_blocked_count_floor_note)
 	ShowBlockedCount bool
 	BlockedCount     int64
 }
@@ -293,22 +318,6 @@ func dnsPresetGroupRank(group string) (int, string) {
 	return len(dnsPresetGroupKeys), ""
 }
 
-// The summary row's key of a preset, by its group.
-func dnsPresetSummaryKey(group string) string {
-	switch group {
-	case DnsPresetGroupAdblock:
-		return dnsSummaryKeyAdBlocking
-	case DnsPresetGroupSecurity:
-		return dnsSummaryKeyMalwareBlocking
-	case DnsPresetGroupFamily:
-		return dnsSummaryKeyFamily
-	case DnsPresetGroupPersonal:
-		return dnsSummaryKeyPersonal
-	default:
-		return dnsSummaryKeyNoFiltering
-	}
-}
-
 // Whether a preset filters, so the blocked count shows (I3).
 func dnsPresetFiltering(preset *dnsPreset) bool {
 	return preset.group != DnsPresetGroupUnfiltered
@@ -347,10 +356,13 @@ func dnsPresetsInDisplayOrder(catalog *dnsPresetCatalog) []*dnsPreset {
 // The app form of a catalog preset.
 func newDnsPreset(catalog *dnsPresetCatalog, preset *dnsPreset) *DnsPreset {
 	_, groupKey := dnsPresetGroupRank(preset.group)
+	name := catalog.presetName(preset)
 	exported := &DnsPreset{
 		PresetId:     preset.presetId,
 		ProviderId:   preset.providerId,
-		ProviderName: catalog.presetName(preset),
+		NameKey:      name.key,
+		NameProvider: name.provider,
+		ProviderName: catalog.providerName(preset),
 		Group:        preset.group,
 		GroupKey:     groupKey,
 		CopyKey:      preset.copyKey,
@@ -602,10 +614,12 @@ func DescribeDnsResolverSettings(settings *DnsResolverSettings, exitCountryCode 
 		summary.PresetId = preset.PresetId
 		summary.ProviderId = preset.ProviderId
 		summary.ProviderName = preset.ProviderName
+		summary.NameKey = preset.NameKey
+		summary.NameProvider = preset.NameProvider
 		summary.Group = preset.Group
 		summary.GroupKey = preset.GroupKey
 		summary.CopyKey = preset.CopyKey
-		summary.SummaryKey = dnsPresetSummaryKey(preset.Group)
+		summary.SummaryKey = dnsSummaryKeyPreset
 		summary.Personal = preset.PersonalIdRequired
 		summary.Failover = preset.Failover
 		summary.ShowBlockedCount = preset.Filtering
@@ -624,6 +638,8 @@ func DescribeDnsResolverSettings(settings *DnsResolverSettings, exitCountryCode 
 		if selection.unavailable {
 			summary.Dropped = true
 			summary.DroppedPresetId = settings.PresetId
+			summary.DroppedNameKey = selection.unavailableName.key
+			summary.DroppedNameProvider = selection.unavailableName.provider
 			summary.DroppedProviderName = selection.unavailableProviderName
 		}
 	}
@@ -666,7 +682,10 @@ func DescribeDnsResolverStatus(settings *DnsResolverSettings, status *DnsResolve
 	if preset == nil {
 		return summary
 	}
-	summary.ProviderName = catalog.presetName(preset)
+	name := catalog.presetName(preset)
+	summary.NameKey = name.key
+	summary.NameProvider = name.provider
+	summary.ProviderName = catalog.providerName(preset)
 	if status == nil || status.PresetId != settings.PresetId {
 		status = unknownDnsResolverStatus()
 	}

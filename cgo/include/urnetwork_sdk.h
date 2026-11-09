@@ -3912,6 +3912,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* DnsPreset (json):
  *   PresetId: string
  *   ProviderId: string
+ *   NameKey: string
+ *   NameProvider: string
  *   ProviderName: string
  *   Jurisdiction: string
  *   PrivacyUrl: string
@@ -3981,6 +3983,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PresetId: string
  *   ProviderId: string
  *   ProviderName: string
+ *   NameKey: string
+ *   NameProvider: string
  *   Group: string
  *   GroupKey: string
  *   CopyKey: string
@@ -3993,6 +3997,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ShowBlockedCount: boolean
  *   Dropped: boolean
  *   DroppedPresetId: string
+ *   DroppedNameKey: string
+ *   DroppedNameProvider: string
  *   DroppedProviderName: string
  *   PillKey: string
  *   PillCountryCode: string
@@ -4000,6 +4006,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* DnsStatusSummary (json):
  *   StatusKey: string
+ *   NameKey: string
+ *   NameProvider: string
  *   ProviderName: string
  *   StatusDetailKey: string
  *   VerificationKey: string

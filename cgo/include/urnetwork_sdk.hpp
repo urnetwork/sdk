@@ -2427,6 +2427,8 @@ struct DeviceSetNameResult {
 struct DnsPreset {
 	std::string PresetId{};
 	std::string ProviderId{};
+	std::string NameKey{};
+	std::string NameProvider{};
 	std::string ProviderName{};
 	std::string Jurisdiction{};
 	std::string PrivacyUrl{};
@@ -2500,6 +2502,8 @@ struct DnsSelectionSummary {
 	std::string PresetId{};
 	std::string ProviderId{};
 	std::string ProviderName{};
+	std::string NameKey{};
+	std::string NameProvider{};
 	std::string Group{};
 	std::string GroupKey{};
 	std::string CopyKey{};
@@ -2512,6 +2516,8 @@ struct DnsSelectionSummary {
 	bool ShowBlockedCount{};
 	bool Dropped{};
 	std::string DroppedPresetId{};
+	std::string DroppedNameKey{};
+	std::string DroppedNameProvider{};
 	std::string DroppedProviderName{};
 	std::string PillKey{};
 	std::string PillCountryCode{};
@@ -2519,6 +2525,8 @@ struct DnsSelectionSummary {
 
 struct DnsStatusSummary {
 	std::string StatusKey{};
+	std::string NameKey{};
+	std::string NameProvider{};
 	std::string ProviderName{};
 	std::string StatusDetailKey{};
 	std::string VerificationKey{};
@@ -10782,6 +10790,8 @@ inline void to_json(nlohmann::json& j, const DnsPreset& v) {
 	j = nlohmann::json::object();
 	j["PresetId"] = v.PresetId;
 	j["ProviderId"] = v.ProviderId;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
 	j["ProviderName"] = v.ProviderName;
 	j["Jurisdiction"] = v.Jurisdiction;
 	j["PrivacyUrl"] = v.PrivacyUrl;
@@ -10808,6 +10818,12 @@ inline void from_json(const nlohmann::json& j, DnsPreset& v) {
 	}
 	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
 	}
 	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderName);
@@ -11093,6 +11109,8 @@ inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v) {
 	j["PresetId"] = v.PresetId;
 	j["ProviderId"] = v.ProviderId;
 	j["ProviderName"] = v.ProviderName;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
 	j["Group"] = v.Group;
 	j["GroupKey"] = v.GroupKey;
 	j["CopyKey"] = v.CopyKey;
@@ -11105,6 +11123,8 @@ inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v) {
 	j["ShowBlockedCount"] = v.ShowBlockedCount;
 	j["Dropped"] = v.Dropped;
 	j["DroppedPresetId"] = v.DroppedPresetId;
+	j["DroppedNameKey"] = v.DroppedNameKey;
+	j["DroppedNameProvider"] = v.DroppedNameProvider;
 	j["DroppedProviderName"] = v.DroppedProviderName;
 	j["PillKey"] = v.PillKey;
 	j["PillCountryCode"] = v.PillCountryCode;
@@ -11124,6 +11144,12 @@ inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
 	}
 	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
 	}
 	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Group);
@@ -11161,6 +11187,12 @@ inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
 	if (auto it = j.find("DroppedPresetId"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DroppedPresetId);
 	}
+	if (auto it = j.find("DroppedNameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedNameKey);
+	}
+	if (auto it = j.find("DroppedNameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedNameProvider);
+	}
 	if (auto it = j.find("DroppedProviderName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DroppedProviderName);
 	}
@@ -11175,6 +11207,8 @@ inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
 inline void to_json(nlohmann::json& j, const DnsStatusSummary& v) {
 	j = nlohmann::json::object();
 	j["StatusKey"] = v.StatusKey;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
 	j["ProviderName"] = v.ProviderName;
 	j["StatusDetailKey"] = v.StatusDetailKey;
 	j["VerificationKey"] = v.VerificationKey;
@@ -11191,6 +11225,12 @@ inline void from_json(const nlohmann::json& j, DnsStatusSummary& v) {
 	}
 	if (auto it = j.find("StatusKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StatusKey);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
 	}
 	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderName);

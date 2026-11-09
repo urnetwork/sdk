@@ -99,9 +99,11 @@ func TestDnsPresetWithPresetRefuses(t *testing.T) {
 	}
 }
 
-// The summary of each kind of selection: its keys, the preset's provider,
-// the blocked count only for a preset that filters, and the notice of a
-// stored preset that cannot apply (A7, F1, I3).
+// The summary of each kind of selection: its keys, the preset's name and its
+// provider's, one summary row for every preset ("DNS: <name>", owner,
+// 2026-11-09), the blocked count only for a preset that filters, and the
+// notice of a stored preset that cannot apply, naming it as it showed (A7,
+// F1, I3).
 func TestDescribeDnsResolverSettingsKinds(t *testing.T) {
 	testingWithDnsPresetCatalog(t)
 	describe := func(settings *DnsResolverSettings) *DnsSelectionSummary {
@@ -127,22 +129,27 @@ func TestDescribeDnsResolverSettingsKinds(t *testing.T) {
 	})
 	connect.AssertEqual(t, describe(testingPresetSettings(t, "alpha-ads", "")), &DnsSelectionSummary{
 		Kind: DnsPickKindPreset, PresetId: "alpha-ads", ProviderId: "alpha", ProviderName: "Alpha DNS",
+		NameKey: "dns_preset_name_ad_blocking", NameProvider: "Alpha",
 		Group: DnsPresetGroupAdblock, GroupKey: "block_ads_and_trackers", CopyKey: "dns_preset_copy_ads_phishing",
-		SummaryKey: "dns_summary_ad_blocking", Failover: true, ShowBlockedCount: true,
+		SummaryKey: "dns_status_provider", Failover: true, ShowBlockedCount: true,
 	})
 	for _, c := range []struct {
-		presetId   string
-		personalId string
-		summaryKey string
-		count      bool
+		presetId     string
+		personalId   string
+		nameKey      string
+		nameProvider string
+		providerName string
+		count        bool
 	}{
-		{presetId: "beta-security", summaryKey: "dns_summary_malware_blocking", count: true},
-		{presetId: "alpha-family", summaryKey: "dns_summary_family", count: true},
-		{presetId: "beta-unfiltered", summaryKey: "dns_summary_no_filtering", count: false},
-		{presetId: "gamma-personal", personalId: "abc123", summaryKey: "dns_summary_personal", count: true},
+		{presetId: "beta-security", nameKey: "dns_preset_name_malware_blocking", nameProvider: "Beta Resolver", providerName: "Beta Resolver", count: true},
+		{presetId: "alpha-family", nameKey: "dns_preset_name_family", nameProvider: "Alpha", providerName: "Alpha DNS", count: true},
+		{presetId: "beta-unfiltered", nameKey: "dns_preset_name_no_filtering", nameProvider: "Beta Resolver", providerName: "Beta Resolver", count: false},
+		{presetId: "gamma-personal", personalId: "abc123", nameKey: "dns_preset_name_personal", nameProvider: "Gamma", providerName: "Gamma", count: true},
 	} {
 		summary := describe(testingPresetSettings(t, c.presetId, c.personalId))
-		connect.AssertEqual(t, summary.SummaryKey, c.summaryKey)
+		connect.AssertEqual(t,
+			[]any{summary.SummaryKey, summary.NameKey, summary.NameProvider, summary.ProviderName},
+			[]any{"dns_status_provider", c.nameKey, c.nameProvider, c.providerName})
 		connect.AssertEqual(t, summary.ShowBlockedCount, c.count)
 		connect.AssertEqual(t, summary.Personal, c.personalId != "")
 	}
@@ -155,13 +162,18 @@ func TestDescribeDnsResolverSettingsKinds(t *testing.T) {
 	// a dropped, hidden or unknown preset reads as default with the notice,
 	// until the user picks again
 	dropped := describe(&DnsResolverSettings{PresetId: "retired-preset"})
-	connect.AssertEqual(t, []any{dropped.Kind, dropped.PresetId, dropped.Dropped, dropped.DroppedPresetId, dropped.DroppedProviderName},
-		[]any{DnsPickKindDefault, DnsPresetIdDefault, true, "retired-preset", "Retired DNS"})
+	connect.AssertEqual(t,
+		[]any{dropped.Kind, dropped.PresetId, dropped.Dropped, dropped.DroppedPresetId, dropped.DroppedNameKey, dropped.DroppedNameProvider, dropped.DroppedProviderName},
+		[]any{DnsPickKindDefault, DnsPresetIdDefault, true, "retired-preset", "dns_preset_name_ad_blocking", "Retired", "Retired DNS"})
 	unknown := describe(&DnsResolverSettings{PresetId: "from-a-later-release"})
-	connect.AssertEqual(t, []any{unknown.Dropped, unknown.DroppedProviderName}, []any{true, ""})
+	connect.AssertEqual(t,
+		[]any{unknown.Dropped, unknown.DroppedNameKey, unknown.DroppedNameProvider, unknown.DroppedProviderName},
+		[]any{true, "", "", ""})
 	SetDnsPresetsHideAdBlocking(true)
 	hidden := describe(&DnsResolverSettings{PresetId: "alpha-ads"})
-	connect.AssertEqual(t, []any{hidden.Dropped, hidden.DroppedProviderName}, []any{true, "Alpha DNS"})
+	connect.AssertEqual(t,
+		[]any{hidden.Dropped, hidden.DroppedNameKey, hidden.DroppedNameProvider, hidden.DroppedProviderName},
+		[]any{true, "dns_preset_name_ad_blocking", "Alpha", "Alpha DNS"})
 	dismissed := describe(DnsResolverSettingsWithPreset(&DnsResolverSettings{PresetId: "alpha-ads"}, DnsPresetIdDefault, ""))
 	connect.AssertEqual(t, dismissed.Dropped, false)
 }
@@ -199,7 +211,8 @@ func TestDescribeDnsResolverSettingsPill(t *testing.T) {
 }
 
 // The status line, its detail and actions, the verification line and the
-// blocked count for each preset group and state (C6, C8, I3).
+// blocked count for each preset group and state (C6, C8, I3). The status line
+// and the count name the preset, the verification line its provider.
 func TestDescribeDnsResolverStatusLines(t *testing.T) {
 	testingWithDnsPresetCatalog(t)
 	describe := func(presetId string, personalId string, state string, verification string) *DnsStatusSummary {
@@ -209,29 +222,34 @@ func TestDescribeDnsResolverStatusLines(t *testing.T) {
 		})
 	}
 	connect.AssertEqual(t, describe("alpha-ads", "", DnsResolverStateOk, DnsResolverVerificationConfirmed), &DnsStatusSummary{
-		StatusKey: "dns_status_provider", ProviderName: "Alpha DNS", ShowBlockedCount: true, BlockedCount: 7,
+		StatusKey: "dns_status_provider", NameKey: "dns_preset_name_ad_blocking", NameProvider: "Alpha", ProviderName: "Alpha DNS",
+		ShowBlockedCount: true, BlockedCount: 7,
 	})
 	connect.AssertEqual(t, describe("alpha-ads", "", DnsResolverStateFailedOver, DnsResolverVerificationNone), &DnsStatusSummary{
-		StatusKey: "dns_status_paused", StatusDetailKey: "dns_status_paused_detail", ProviderName: "Alpha DNS",
-		ShowUseDefault: true, ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
+		StatusKey: "dns_status_paused", NameKey: "dns_preset_name_ad_blocking", NameProvider: "Alpha", ProviderName: "Alpha DNS",
+		StatusDetailKey: "dns_status_paused_detail",
+		ShowUseDefault:  true, ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
 	})
 	connect.AssertEqual(t, describe("alpha-ads", "", DnsResolverStateFailing, DnsResolverVerificationNone), &DnsStatusSummary{
-		StatusKey: "dns_status_unreachable", ProviderName: "Alpha DNS",
+		StatusKey: "dns_status_unreachable", NameKey: "dns_preset_name_ad_blocking", NameProvider: "Alpha", ProviderName: "Alpha DNS",
 		ShowUseDefault: true, ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
 	})
 	connect.AssertEqual(t, describe("beta-unfiltered", "", DnsResolverStateFailedOver, DnsResolverVerificationNone), &DnsStatusSummary{
-		StatusKey: "dns_status_fallback", ProviderName: "Beta Resolver", ShowUseDefault: true, ShowChangeLocation: true,
+		StatusKey: "dns_status_fallback", NameKey: "dns_preset_name_no_filtering", NameProvider: "Beta Resolver", ProviderName: "Beta Resolver",
+		ShowUseDefault: true, ShowChangeLocation: true,
 	})
 	connect.AssertEqual(t, describe("alpha-family", "", DnsResolverStateFailing, DnsResolverVerificationNone), &DnsStatusSummary{
-		StatusKey: "dns_status_unreachable", StatusDetailKey: "dns_status_unreachable_detail", ProviderName: "Alpha DNS",
-		ShowUseDefault: true, ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
+		StatusKey: "dns_status_unreachable", NameKey: "dns_preset_name_family", NameProvider: "Alpha", ProviderName: "Alpha DNS",
+		StatusDetailKey: "dns_status_unreachable_detail",
+		ShowUseDefault:  true, ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
 	})
 	connect.AssertEqual(t, describe("beta-security", "", DnsResolverStateOk, DnsResolverVerificationNotFiltering), &DnsStatusSummary{
-		StatusKey: "dns_status_provider", ProviderName: "Beta Resolver", VerificationKey: "dns_verify_not_filtering",
-		ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
+		StatusKey: "dns_status_provider", NameKey: "dns_preset_name_malware_blocking", NameProvider: "Beta Resolver", ProviderName: "Beta Resolver",
+		VerificationKey: "dns_verify_not_filtering", ShowChangeLocation: true, ShowBlockedCount: true, BlockedCount: 7,
 	})
 	connect.AssertEqual(t, describe("gamma-personal", "abc123", DnsResolverStateUnknown, DnsResolverVerificationUnconfirmed), &DnsStatusSummary{
-		StatusKey: "dns_status_provider", ProviderName: "Gamma", VerificationKey: "dns_verify_unconfirmed",
+		StatusKey: "dns_status_provider", NameKey: "dns_preset_name_personal", NameProvider: "Gamma", ProviderName: "Gamma",
+		VerificationKey: "dns_verify_unconfirmed",
 		VerificationUrl: "https://gamma.example/dashboard", VerificationLinkKey: "dns_personal_id_dashboard_link",
 		ShowBlockedCount: true, BlockedCount: 7,
 	})
@@ -244,7 +262,10 @@ func TestDescribeDnsResolverStatusLines(t *testing.T) {
 	stale := DescribeDnsResolverStatus(testingPresetSettings(t, "alpha-family", ""), &DnsResolverStatus{
 		State: DnsResolverStateFailing, Verification: DnsResolverVerificationNotFiltering, PresetId: "alpha-ads", BlockedCount: 3,
 	})
-	connect.AssertEqual(t, stale, &DnsStatusSummary{StatusKey: "dns_status_provider", ProviderName: "Alpha DNS", ShowBlockedCount: true})
+	connect.AssertEqual(t, stale, &DnsStatusSummary{
+		StatusKey: "dns_status_provider", NameKey: "dns_preset_name_family", NameProvider: "Alpha", ProviderName: "Alpha DNS",
+		ShowBlockedCount: true,
+	})
 }
 
 // The picks in the screen's order on the synthetic catalog, with each pick's
@@ -300,7 +321,8 @@ func TestGetDnsPresetProvidersGroupsPresets(t *testing.T) {
 	}
 	connect.AssertEqual(t, names, []string{"Alpha DNS:alpha-ads", "Beta Resolver:beta-plain", "Gamma:gamma-personal"})
 	connect.AssertEqual(t, GetDnsPreset("gamma-personal"), &DnsPreset{
-		PresetId: "gamma-personal", ProviderId: "gamma", ProviderName: "Gamma", Jurisdiction: "Testland",
+		PresetId: "gamma-personal", ProviderId: "gamma", NameKey: "dns_preset_name_personal", NameProvider: "Gamma",
+		ProviderName: "Gamma", Jurisdiction: "Testland",
 		PrivacyUrl: "https://gamma.example/privacy", HelpUrl: "https://gamma.example/help",
 		Group: DnsPresetGroupPersonal, GroupKey: "dns_group_my_account", CopyKey: "dns_preset_copy_personal",
 		Filtering: true, PersonalIdRequired: true, PersonalIdExample: "abc123",
@@ -394,7 +416,9 @@ func TestDnsPersonalIdShowsInItsFieldAlone(t *testing.T) {
 		connect.AssertEqual(t, GetDnsPresetPersonalIdForEdit(settings, c.presetId), c.personalId)
 		// the settings select the personal preset, and the summary says so
 		summary := DescribeDnsResolverSettings(settings, "")
-		connect.AssertEqual(t, []any{summary.PresetId, summary.Personal, summary.SummaryKey}, []any{c.presetId, true, "dns_summary_personal"})
+		connect.AssertEqual(t,
+			[]any{summary.PresetId, summary.Personal, summary.SummaryKey, summary.NameKey},
+			[]any{c.presetId, true, "dns_status_provider", "dns_preset_name_personal"})
 
 		shown := []any{GetDnsPicks(""), GetDnsPicks("cn"), GetDnsPreset(c.presetId), GetDnsPresetProviders()}
 		for _, exitCountryCode := range []string{"", "cn"} {
