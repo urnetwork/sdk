@@ -50,12 +50,15 @@ const legacyMessage = (error: unknown, fallback: string): string =>
     ? `HTTP error! status: ${error.status}`
     : errorMessage(error, fallback);
 
-// A plan limit refusing POST /network/auth-client while x402 is on: HTTP 402
+// A plan limit refusing POST /network/auth-client with x402 terms: HTTP 402
 // whose body carries the server's message in `error` beside the payment
-// terms. It is the refusal a 200 answers with `error.upgrade_required`, so it
-// reads as that one; the legacy message ("HTTP error! status: 402") dropped
-// why the client was refused (the plan's active-proxy cap, the per-minute
-// rate, or the concurrent client limit). Anything else is not a limit.
+// terms. The server quotes only a caller that asks (`X-UR-X402: 1`, which
+// this client never sends), but servers before 2026-11-10 quoted callers that
+// named no app in their client info. It is the refusal a 200 answers with
+// `error.upgrade_required`, so it reads as that one; the legacy message
+// ("HTTP error! status: 402") dropped why the client was refused (the plan's
+// active-proxy cap, the per-minute rate, or the concurrent client limit).
+// Anything else is not a limit.
 const authNetworkClientLimitRefusal = (
   error: unknown,
 ): AuthNetworkClientError | null => {
