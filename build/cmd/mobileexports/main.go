@@ -95,11 +95,21 @@ var mobileSnFleetGoOnlyIds = map[string]bool{
 	"SnFleetDevice.RunWithContext":                true,
 }
 
+// sdk.Sidecar's Go-only members (sidecar §18.5): Core hands a Go embedder the
+// sidecar package's own Sidecar, which no binding carries, and CloseAndWait is
+// the lifecycle join, whose context no binding carries either; apps call
+// Close. SDK-M8-06 adds ListenContext beside them.
+var mobileSidecarGoOnlyIds = map[string]bool{
+	"Sidecar.Core":         true,
+	"Sidecar.CloseAndWait": true,
+}
+
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
 // callbacks retain the non-joining Close methods so they cannot self-join.
 func allowedMobileOmission(identifier string) bool {
 	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] ||
-		mobileExtenderStringSliceIds[identifier] || mobileSnFleetGoOnlyIds[identifier] {
+		mobileExtenderStringSliceIds[identifier] || mobileSnFleetGoOnlyIds[identifier] ||
+		mobileSidecarGoOnlyIds[identifier] {
 		return true
 	}
 	parts := strings.SplitN(identifier, ".", 2)

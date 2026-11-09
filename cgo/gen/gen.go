@@ -150,6 +150,14 @@ var skipTypePatterns = []*regexp.Regexp{
 // explicitly not skipped even though they match skipTypePatterns
 var keepTypes = map[string]bool{}
 
+// sdk.Sidecar's surface (sidecar §18.5) lands in the sdk ahead of its c abi, whose handles, json types and function
+// pointers are SDK-M8-06's (§18.5's Gate table). Until that task binds them, every symbol of it is skipped here, by
+// name, so the abi, its header and the language packages do not move: SDK-M8-06 replaces this rule with the bindings.
+var pendingSidecarSymbolPattern = regexp.MustCompile(`^(New|Default)?Sidecar`)
+
+// The reason a pending sdk.Sidecar symbol is not exported.
+const pendingSidecarSymbolReason = "sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)"
+
 // json arguments decoded over their type's defaults rather than over a zero
 // value, by the type's defaults function: a field the json omits keeps its
 // default, and a NULL json is the defaults. A zero DeviceLocalSettings is no
@@ -579,6 +587,9 @@ func (g *gen) typeSkipReason(name string) (string, bool) {
 	if reason, ok := skipTypes[name]; ok {
 		return reason, true
 	}
+	if pendingSidecarSymbolPattern.MatchString(name) {
+		return pendingSidecarSymbolReason, true
+	}
 	if keepTypes[name] {
 		return "", false
 	}
@@ -594,6 +605,10 @@ func (g *gen) typeSkipReason(name string) (string, bool) {
 // emission
 
 func (g *gen) emitConst(obj *types.Const) {
+	if pendingSidecarSymbolPattern.MatchString(obj.Name()) {
+		g.skip(obj.Name(), "skipped: "+pendingSidecarSymbolReason)
+		return
+	}
 	if obj.Name() == "Version" {
 		// crosses via urnet_version(), which returns the linker-set value
 		g.skip("Version", "crosses via urnet_version()")
@@ -635,6 +650,10 @@ func (g *gen) emitFunc(obj *types.Func) {
 	name := obj.Name()
 	if reason, ok := skipFuncs[name]; ok {
 		g.skip(name, "skipped: "+reason)
+		return
+	}
+	if pendingSidecarSymbolPattern.MatchString(name) {
+		g.skip(name, "skipped: "+pendingSidecarSymbolReason)
 		return
 	}
 	for _, p := range skipFuncPatterns {
