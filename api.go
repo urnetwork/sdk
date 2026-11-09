@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"sync"
 	"sync/atomic"
 
@@ -77,6 +78,12 @@ type Api struct {
 	// An optional registration launcher, installed before use. Nil starts a
 	// goroutine; tests can hold one instance's requests before execution.
 	authNetworkClientLaunch func(func())
+	// the signer of a sidecar token's DPoP proofs, installed by sdk/sidecar.go
+	// (api_dpop.go); nil sends no such request
+	dpopSigner dpopSignerFunc
+	// the transport of a request with a proof: a test's, else dpopTransport's
+	httpDpopRaw   apiHttpDpopRawFunction
+	dpopTransport http.RoundTripper
 
 	jwtRefreshListeners             *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]

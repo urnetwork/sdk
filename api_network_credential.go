@@ -357,12 +357,23 @@ func (self *Api) getHttpPostRaw(expectedNetworkGeneration ...uint64) connect.Htt
 		if err != nil {
 			return nil, err
 		}
+		// a sidecar's token mints only with its proof (api_dpop.go)
+		proof, err := self.dpopProof(http.MethodPost, requestUrl, byJwt)
+		if err != nil {
+			return nil, err
+		}
 		target, tracked := self.networkRequestTarget(byJwt)
 		if 0 < len(expectedNetworkGeneration) && target.generation != expectedNetworkGeneration[0] {
 			tracked = false
 		}
 		ctx = self.clientInfoContext(ctx)
-		result, requestErr := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		var result []byte
+		var requestErr error
+		if proof != "" {
+			result, requestErr = self.transportHttpDpopRaw()(ctx, http.MethodPost, requestUrl, requestBodyBytes, byJwt, proof)
+		} else {
+			result, requestErr = httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		}
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
 			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
@@ -379,9 +390,20 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 		if err != nil {
 			return nil, err
 		}
+		// a sidecar's token renews only with its proof (api_dpop.go)
+		proof, err := self.dpopProof(http.MethodGet, requestUrl, byJwt)
+		if err != nil {
+			return nil, err
+		}
 		target, tracked := self.networkRequestTarget(byJwt)
 		ctx = self.clientInfoContext(ctx)
-		result, requestErr := httpGetRaw(ctx, requestUrl, byJwt)
+		var result []byte
+		var requestErr error
+		if proof != "" {
+			result, requestErr = self.transportHttpDpopRaw()(ctx, http.MethodGet, requestUrl, nil, byJwt, proof)
+		} else {
+			result, requestErr = httpGetRaw(ctx, requestUrl, byJwt)
+		}
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
 			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())

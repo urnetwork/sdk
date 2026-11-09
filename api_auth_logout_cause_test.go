@@ -872,3 +872,37 @@ func gobRoundTripAs[T any](t *testing.T, value any) T {
 	}
 	return out
 }
+
+// A sidecar token's refresh refused for its proof (§7.4) is a 403, which never
+// signs out: the token manager keeps the token and tries again. So is a refresh
+// the api never sends for want of a signer: it is unenrolled, not rejected.
+func TestStrictExpProofRefusalDoesNotSignOut(t *testing.T) {
+	strict := dpopTestStrictToken(t)
+	_, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth/refresh" || r.Header.Get("DPoP") == "" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "A sidecar token needs a proof of its client key on this route.", http.StatusForbidden)
+	}))
+	api.SetByJwt(strict)
+	recorder := newTestingLogoutRecorder()
+	api.AddAuthLogoutListener(recorder.listener(api.GetAuthLogoutCause))
+
+	outcome := api.tokenManager.refreshTokenWithContext(t.Context(), strict)
+	if outcome.loggedOut || !errors.Is(outcome.err, ErrDpopSignerRequired) {
+		t.Fatalf("without a signer: %+v", outcome)
+	}
+
+	signer, _ := dpopTestSigner(t)
+	api.SetDpopSigner(signer)
+	outcome = api.tokenManager.refreshTokenWithContext(t.Context(), strict)
+	var status *connect.HttpStatusError
+	if outcome.loggedOut || !errors.As(outcome.err, &status) || status.StatusCode != http.StatusForbidden {
+		t.Fatalf("a refused proof: %+v", outcome)
+	}
+	recorder.requireCauses(t)
+	if api.GetByJwt() != strict || api.GetAuthLogoutCause() != "" {
+		t.Fatal("a 403 signed the sidecar token out")
+	}
+}
