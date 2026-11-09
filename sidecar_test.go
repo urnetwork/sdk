@@ -529,15 +529,20 @@ func TestNoSidecarTypeCrosses(t *testing.T) {
 	}
 }
 
-// No leg the sdk ships links mcp/, cli/ or sidecarctl (R-SDK-4), and the iOS extension's links no sidecar package at
-// all, since the sidecar role is !ios_extension (D-SDK-20).
+// No leg the sdk ships links mcp/, cli/ or sidecarctl (R-SDK-4), and the iOS extension's links of the sidecar module
+// only the device role, sidecar/device and protocol/bridge, since the sidecar role is !ios_extension (D-SDK-20).
 func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 	refused := []string{
 		"github.com/urnetwork/sidecar/mcp",
 		"github.com/urnetwork/sidecar/cli",
 		"github.com/urnetwork/sidecar/sidecarctl",
 	}
+	deviceRole := []string{
+		"github.com/urnetwork/sidecar/device",
+		"github.com/urnetwork/sidecar/protocol/bridge",
+	}
 	linksSidecar := false
+	extensionLinksDeviceRole := false
 	for _, leg := range messagingBoundaryLegs {
 		if leg.name == sidecarWasmLegName || leg.moduleDirectory == "build" {
 			continue
@@ -549,8 +554,14 @@ func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 					t.Errorf("%s links %s", leg.name, packagePath)
 				}
 			}
-			if strings.Contains(leg.tags, "ios_extension") && (packagePath == "github.com/urnetwork/sidecar" ||
-				strings.HasPrefix(packagePath, "github.com/urnetwork/sidecar/protocol")) {
+			if !strings.Contains(leg.tags, "ios_extension") {
+				continue
+			}
+			if slices.Contains(deviceRole, packagePath) {
+				extensionLinksDeviceRole = true
+				continue
+			}
+			if packagePath == "github.com/urnetwork/sidecar" || strings.HasPrefix(packagePath, "github.com/urnetwork/sidecar/") {
 				t.Errorf("%s links %s", leg.name, packagePath)
 			}
 		}
@@ -558,7 +569,7 @@ func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 			linksSidecar = true
 		}
 	}
-	if !linksSidecar {
-		t.Fatal("CONTROL FAILED: no leg links the sidecar root, so the rule saw nothing")
+	if !linksSidecar || !extensionLinksDeviceRole {
+		t.Fatal("CONTROL FAILED: no leg links the sidecar root, or the extension no device role, so the rule saw nothing")
 	}
 }

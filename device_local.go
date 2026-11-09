@@ -944,6 +944,19 @@ type DeviceLocalSettings struct {
 	// servers and the extenders a signed record verifies.
 	HostedIncompatible bool
 
+	// Runs the keyless device role (sidecar §18.6, device_sidecar.go): the
+	// device restores its network's posture from the network space's storage
+	// before its first packet, and past legacy routes each packet through the
+	// role's bridge before the mux. Off by default, which keeps today's
+	// behavior at one nil check per send. A hosted device runs no role whatever
+	// this says (D-SDK-12). Go-only while the role is dark: the bindings carry
+	// it when SDK-M8-07's channel can move a posture.
+	//gomobile:noexport Go-only while the device role is dark.
+	EnableBridge bool `json:"-"`
+	// Builds the device role's bridge in place of device.NewBridge. Nil builds
+	// the real one.
+	testingNewDeviceBridge deviceBridgeConstructor
+
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
 	// 10.x.y.h (RFC1918, DHCP-shaped) address instead of drawing from connect's
 	// 169.254/16 pool. 10.x is private, so the browser's mDNS obfuscation masks it
@@ -1210,6 +1223,20 @@ type DeviceLocal struct {
 	// does not take `stateLock` once per packet just to read rarely-changing
 	// configuration.
 	sendRoute atomic.Pointer[deviceLocalSendRoute]
+
+	// the keyless device role (device_sidecar.go): its owner, set at
+	// construction and never nil, and under `stateLock` the bridge the send
+	// route holds, nil off, in legacy and once closed, the zone each mux holds
+	// for it, and the routes it exports with the number of the read they came
+	// from
+	bridgeOwner            *deviceLocalBridgeOwner
+	bridge                 deviceBridge
+	bridgeZone             connect.LocalZone
+	bridgeRoutes           []netip.Prefix
+	bridgeRoutesReadNumber uint64
+	// numbers each read of a bridge's routes, so an older read never replaces
+	// a newer one
+	bridgeReadNumber atomic.Uint64
 
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
@@ -1887,6 +1914,18 @@ func newDeviceLocalWithOverridesForPlatform(
 	blocker := connect.NewBlockerWithDefaults()
 	blocker.SetEnabled(settings.DefaultBlockerEnabled)
 
+	// the keyless device role's posture, restored here, synchronously, so what
+	// was in force is in force before the device's first packet (sidecar
+	// §18.6, DP1); off, hosted or of no network, an owner that refuses
+	bridgeOwner, err := newDeviceLocalBridgeOwner(ctx, networkSpace, byJwtNetworkId(byJwt), settings, log)
+	if err != nil {
+		cancel()
+		if ownsApi {
+			_ = api.CloseAndWait(context.Background())
+		}
+		return nil, fmt.Errorf("restore the device role: %w", err)
+	}
+
 	// EXPERIMENT: when UseExperimentalTunnelAddress is set (default on for now),
 	// assign the TUN interface a 10.x.y.h address (minimum free /24, host
 	// randomized in 2..254 like a DHCP lease) instead of reserving from connect's
@@ -1924,6 +1963,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		byJwt:              byJwt,
 		networkId:          byJwtNetworkId(byJwt),
 		subprotocols:       newDeviceLocalSubprotocols(ctx, log),
+		bridgeOwner:        bridgeOwner,
 		// apiUrl:            apiUrl,
 		deviceDescription:      deviceDescription,
 		deviceSpec:             deviceSpec,
@@ -2059,6 +2099,10 @@ func newDeviceLocalWithOverridesForPlatform(
 			deviceLocal.windowIdentityStore = newLocalStateWindowIdentityStore(localState, clientId)
 		}
 	}
+
+	// the restored device role's bridge joins the first send route, and its
+	// rejects and resolver replies enter the tun through the device's receive
+	bridgeOwner.attach(deviceLocal.holdBridge, deviceLocal.bridgeChanged, deviceLocal.receive)
 
 	// publish the initial send-route snapshot so `sendPacket` always has a
 	// non-nil snapshot to read
@@ -5383,6 +5427,10 @@ func (self *DeviceLocal) applyDestination(
 				multi.SetServerNameLookup(upgradeMux)
 				// the mux blocks ad/tracker hostnames at the dns layer
 				upgradeMux.SetBlocker(self.blocker)
+				// and answers the device role's private names beside it; a new
+				// mux holds no zone, so a rebuild puts it back here
+				// (device_sidecar.go)
+				upgradeMux.SetLocalZone(self.bridgeZone)
 				// while no exit can carry v6, AAAA answers empty so apps do not
 				// blackhole on a v6 address the tunnel cannot route (IPV6.md B6)
 				upgradeMux.SetIpv6Unroutable(multi.Ipv6Unroutable)
@@ -5729,6 +5777,9 @@ type deviceLocalSendRoute struct {
 	upgradeMux          *connect.UpgradeMux
 	routeLocal          bool
 	provider            *deviceLocalProvider
+	// the device role's bridge past legacy, which routes each packet before
+	// the mux; nil keeps today's route (device_sidecar.go)
+	bridge deviceBridge
 }
 
 // must be called with `stateLock`
@@ -5738,6 +5789,7 @@ func (self *DeviceLocal) updateSendRouteWithLock() {
 		upgradeMux:          self.upgradeMux,
 		routeLocal:          self.routeLocal,
 		provider:            self.provider,
+		bridge:              self.bridge,
 	})
 }
 
@@ -5764,6 +5816,21 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	// read the routing snapshot lock-free; it is rebuilt under `stateLock`
 	// whenever the routing fields change
 	route := self.sendRoute.Load()
+
+	// the device role's bridge decides first, before the mux, so it claims no
+	// bridged :53 or :80 (sidecar §17.5): a link, a reject or its resolver
+	// takes the packet on success, a building link refuses it to the caller,
+	// and nil leaves it to today's route
+	if route.bridge != nil {
+		if client := route.bridge.Route(packet); client != nil {
+			return client.SendPacket(
+				source,
+				protocol.ProvideMode_Network,
+				packet,
+				self.settings.SendTimeout,
+			)
+		}
+	}
 
 	if route.upgradeMux != nil {
 		// the mux claims DNS/HTTP and forwards everything else to remoteUserNatClient
@@ -5857,6 +5924,15 @@ func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress b
 		return 0
 	}
 	route := self.sendRoute.Load()
+	if route.bridge != nil {
+		return self.sendPacketsWithBridge(route, packets, nativeIngress)
+	}
+	return self.sendPacketsOnRoute(route, packets, nativeIngress)
+}
+
+// Today's route for a burst: the mux, the multi client or the local NAT, with
+// one stats update for the burst. Takes every packet.
+func (self *DeviceLocal) sendPacketsOnRoute(route *deviceLocalSendRoute, packets [][]byte, nativeIngress bool) int {
 	packetByteCount := 0
 	for _, packet := range packets {
 		packetByteCount += len(packet)
@@ -6135,6 +6211,15 @@ func (self *DeviceLocal) close() {
 		self.transportDelayStatsSub = nil
 	}
 	self.transportDelay.reset(self.connectionGeneration, nil)
+	// the send route lets go of the device role's bridge below, and its owner
+	// ends it on a lifecycle worker, since ending it waits for the bridge's run,
+	// which may be in a change callback waiting for this lock
+	self.bridge = nil
+	self.bridgeZone = nil
+	self.bridgeRoutes = nil
+	if self.bridgeOwner != nil {
+		self.startLifecycleWorkerWithLock(self.bridgeOwner.close)
+	}
 	self.closeUpgradeMuxWithLock()
 	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()
