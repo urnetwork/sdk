@@ -373,6 +373,7 @@ EXPORTS
 	urnet_contract_view_controller_set_window_duration_seconds
 	urnet_contract_view_controller_start
 	urnet_contract_view_controller_stop
+	urnet_copy_dns_resolver_settings
 	urnet_copy_string
 	urnet_create_payment_reference
 	urnet_crypto_asset_sells
@@ -401,6 +402,8 @@ EXPORTS
 	urnet_default_transport_mode_priority
 	urnet_default_transport_settings
 	urnet_default_tunnel_dns_setting
+	urnet_describe_dns_resolver_settings
+	urnet_describe_dns_resolver_status
 	urnet_device_add_allow_foreground_change_listener
 	urnet_device_add_auth_logout_listener
 	urnet_device_add_block_action_override
@@ -418,6 +421,7 @@ EXPORTS
 	urnet_device_add_contract_status_change_listener
 	urnet_device_add_default_location_change_listener
 	urnet_device_add_dns_resolver_settings_change_listener
+	urnet_device_add_dns_resolver_status_change_listener
 	urnet_device_add_egress_contract_details_change_listener
 	urnet_device_add_egress_contract_stats_change_listener
 	urnet_device_add_extender_provide_status_change_listener
@@ -475,7 +479,9 @@ EXPORTS
 	urnet_device_get_control_ip_family_policy
 	urnet_device_get_control_ip_family_status
 	urnet_device_get_default_location
+	urnet_device_get_dns_blocked_count
 	urnet_device_get_dns_resolver_settings
+	urnet_device_get_dns_resolver_status
 	urnet_device_get_done
 	urnet_device_get_egress_contract_details
 	urnet_device_get_egress_contract_stats
@@ -829,6 +835,9 @@ EXPORTS
 	urnet_devices_view_controller_close
 	urnet_devices_view_controller_start
 	urnet_devices_view_controller_stop
+	urnet_dns_resolver_settings_as_custom
+	urnet_dns_resolver_settings_with_fallback
+	urnet_dns_resolver_settings_with_preset
 	urnet_encode_base58
 	urnet_encrypt_data
 	urnet_evm_mirror_ss58
@@ -881,6 +890,9 @@ EXPORTS
 	urnet_get_default_tunnel_dns_address_ipv4
 	urnet_get_default_tunnel_dns_address_ipv6
 	urnet_get_default_tunnel_mtu
+	urnet_get_dns_picks
+	urnet_get_dns_preset
+	urnet_get_dns_preset_providers
 	urnet_get_extender_color_hex
 	urnet_get_extender_store_read_only
 	urnet_get_filtered_locations_from_result
@@ -1182,6 +1194,7 @@ EXPORTS
 	urnet_normal_env_name
 	urnet_normal_extender_gossip_mode
 	urnet_normalize_bittensor_signature
+	urnet_normalize_dns_preset_personal_id
 	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
@@ -1314,6 +1327,7 @@ EXPORTS
 	urnet_session_sign_out_result_get_revocation_confirmed
 	urnet_set_control_ip_family_policy
 	urnet_set_device_rpc_h1_plus_enabled
+	urnet_set_dns_presets_hide_ad_blocking
 	urnet_set_egress_interface_index
 	urnet_set_extender_network_client_enabled
 	urnet_set_extender_store_read_only
@@ -1402,6 +1416,7 @@ EXPORTS
 	urnet_upload_logs_inventory
 	urnet_usd_to_nano_cents
 	urnet_validate_control_doh_url
+	urnet_validate_dns_preset_personal_id
 	urnet_validate_emoji_tag
 	urnet_validate_ss58
 	urnet_validate_vless_settings

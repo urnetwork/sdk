@@ -609,10 +609,18 @@ const dnsResolverSettingsFallbackOptInVersion = 1
 // migrateDefaultServerLists.
 const dnsResolverSettingsDefaultServersVersion = 2
 
+// The record also carries the version of the dns selection (connect ADBLOCK3RD E4): 1 once the
+// record holds PresetId and PresetPersonalId, the selection the device derives the lists from
+// (dns_presets.go). A record without it was written by an sdk before the presets, where the
+// editors saved every list, so the defaults carried along cannot be told apart from a choice by
+// its PresetId. See migrateDnsResolverSettingsSelection.
+const dnsResolverSettingsPresetVersion = 1
+
 type dnsResolverSettingsRecord struct {
 	DnsResolverSettings
 	FallbackOptInVersion  int `json:",omitempty"`
 	DefaultServersVersion int `json:",omitempty"`
+	PresetVersion         int `json:",omitempty"`
 }
 
 func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) ([]byte, error) {
@@ -620,11 +628,12 @@ func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) (
 		DnsResolverSettings:   *dnsResolverSettings,
 		FallbackOptInVersion:  dnsResolverSettingsFallbackOptInVersion,
 		DefaultServersVersion: dnsResolverSettingsDefaultServersVersion,
+		PresetVersion:         dnsResolverSettingsPresetVersion,
 	})
 }
 
-// Applies the fallback opt-in and default server list migrations to records written by older
-// sdks.
+// Applies the fallback opt-in, default server list and selection migrations to records written
+// by older sdks.
 func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) {
 	var record dnsResolverSettingsRecord
 	if err := json.Unmarshal(data, &record); err != nil {
@@ -637,7 +646,59 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 	if record.DefaultServersVersion < dnsResolverSettingsDefaultServersVersion {
 		migrateDefaultServerLists(&dnsResolverSettings, record.DefaultServersVersion)
 	}
+	if record.PresetVersion < dnsResolverSettingsPresetVersion {
+		migrateDnsResolverSettingsSelection(&dnsResolverSettings)
+	}
 	return &dnsResolverSettings, nil
+}
+
+// A record from before the presets selects URnetwork's default (DnsPresetIdDefault) when its
+// toggles are the defaults' (remote DoH alone, with any fallback choice) and every list equals
+// the current default list, in order, after the default server list migration: an editor saved
+// the defaults along, so the device follows later default changes without another list
+// migration, and resolves exactly as before. The mask is the user's either way. Every other
+// record is custom, its lists as saved.
+func migrateDnsResolverSettingsSelection(dnsResolverSettings *DnsResolverSettings) {
+	dnsResolverSettings.PresetPersonalId = ""
+	if dnsResolverSettingsSelectDefault(dnsResolverSettings) {
+		dnsResolverSettings.PresetId = DnsPresetIdDefault
+	} else {
+		dnsResolverSettings.PresetId = ""
+	}
+}
+
+// Whether settings resolve exactly as URnetwork's default: the default toggles and all eight
+// lists equal to the default lists in order, an absent list the same as an empty one. The
+// fallback choice and the mask do not count.
+func dnsResolverSettingsSelectDefault(dnsResolverSettings *DnsResolverSettings) bool {
+	defaults := defaultDnsResolver()
+	if dnsResolverSettings.EnableRemoteDoh != defaults.EnableRemoteDoh ||
+		dnsResolverSettings.EnableLocalDoh != defaults.EnableLocalDoh ||
+		dnsResolverSettings.EnableRemoteDns != defaults.EnableRemoteDns ||
+		dnsResolverSettings.EnableLocalDns != defaults.EnableLocalDns {
+		return false
+	}
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	for _, pair := range [][2][]string{
+		{stringsOf(dnsResolverSettings.RemoteDohUrlsIpv4), defaults.RemoteDohUrlsIpv4},
+		{stringsOf(dnsResolverSettings.RemoteDohUrlsIpv6), defaults.RemoteDohUrlsIpv6},
+		{stringsOf(dnsResolverSettings.LocalDohUrlsIpv4), defaults.LocalDohUrlsIpv4},
+		{stringsOf(dnsResolverSettings.LocalDohUrlsIpv6), defaults.LocalDohUrlsIpv6},
+		{stringsOf(dnsResolverSettings.RemoteDnsIpv4), defaults.RemoteDnsIpv4},
+		{stringsOf(dnsResolverSettings.RemoteDnsIpv6), defaults.RemoteDnsIpv6},
+		{stringsOf(dnsResolverSettings.LocalDnsIpv4), defaults.LocalDnsIpv4},
+		{stringsOf(dnsResolverSettings.LocalDnsIpv6), defaults.LocalDnsIpv6},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			return false
+		}
+	}
+	return true
 }
 
 // The default server lists as shipped before each DefaultServersVersion, each with the current

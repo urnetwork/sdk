@@ -70,6 +70,7 @@ public interface Raw extends Library {
   interface urnet_device_recreated_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_device_set_name_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_dns_resolver_settings_change_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_dns_resolver_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_extender_provide_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_extender_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_extender_view_controller_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -642,6 +643,7 @@ public interface Raw extends Library {
   long urnet_device_add_contract_status_change_listener(long a0, urnet_contract_status_change_cb a1, Pointer a2);
   long urnet_device_add_default_location_change_listener(long a0, urnet_default_location_change_cb a1, Pointer a2);
   long urnet_device_add_dns_resolver_settings_change_listener(long a0, urnet_dns_resolver_settings_change_cb a1, Pointer a2);
+  long urnet_device_add_dns_resolver_status_change_listener(long a0, urnet_dns_resolver_status_change_cb a1, Pointer a2);
   long urnet_device_add_egress_contract_details_change_listener(long a0, urnet_contract_details_change_cb a1, Pointer a2);
   long urnet_device_add_egress_contract_stats_change_listener(long a0, urnet_contract_stats_change_cb a1, Pointer a2);
   long urnet_device_add_extender_provide_status_change_listener(long a0, urnet_extender_provide_status_change_cb a1, Pointer a2);
@@ -697,7 +699,9 @@ public interface Raw extends Library {
   long urnet_device_get_control_ip_family_policy(long a0);
   Pointer urnet_device_get_control_ip_family_status(long a0);
   Pointer urnet_device_get_default_location(long a0);
+  long urnet_device_get_dns_blocked_count(long a0);
   Pointer urnet_device_get_dns_resolver_settings(long a0);
+  Pointer urnet_device_get_dns_resolver_status(long a0);
   byte urnet_device_get_done(long a0);
   Pointer urnet_device_get_egress_contract_details(long a0);
   Pointer urnet_device_get_egress_contract_stats(long a0);
@@ -1498,6 +1502,7 @@ public interface Raw extends Library {
   long urnet_compare_points_leaderboard_values(String a0, String a1, String a2);
   Pointer urnet_compute_price_equivalent(double a0, double a1, long a2);
   Pointer urnet_connect_link_url(String a0, String a1, String a2);
+  Pointer urnet_copy_dns_resolver_settings(String a0);
   Pointer urnet_create_payment_reference();
   byte urnet_crypto_asset_sells(String a0, String a1, String a2);
   Pointer urnet_crypto_asset_ticker(String a0);
@@ -1512,6 +1517,11 @@ public interface Raw extends Library {
   long urnet_default_transport_mode_priority(String a0);
   Pointer urnet_default_transport_settings();
   Pointer urnet_default_tunnel_dns_setting();
+  Pointer urnet_describe_dns_resolver_settings(String a0, String a1);
+  Pointer urnet_describe_dns_resolver_status(String a0, String a1);
+  Pointer urnet_dns_resolver_settings_as_custom(String a0);
+  Pointer urnet_dns_resolver_settings_with_fallback(String a0, byte a1);
+  Pointer urnet_dns_resolver_settings_with_preset(String a0, String a1, String a2);
   Pointer urnet_encode_base58(Pointer a0, int a1);
   Pointer urnet_encrypt_data(Pointer a0, int a1, String a2, String a3, PointerByReference a4);
   Pointer urnet_evm_mirror_ss58(String a0);
@@ -1539,6 +1549,9 @@ public interface Raw extends Library {
   Pointer urnet_get_default_tunnel_dns_address_ipv4();
   Pointer urnet_get_default_tunnel_dns_address_ipv6();
   long urnet_get_default_tunnel_mtu();
+  Pointer urnet_get_dns_picks(String a0);
+  Pointer urnet_get_dns_preset(String a0);
+  Pointer urnet_get_dns_preset_providers();
   Pointer urnet_get_extender_color_hex(String a0);
   byte urnet_get_extender_store_read_only();
   Pointer urnet_get_filtered_locations_from_result(String a0, String a1);
@@ -1624,6 +1637,7 @@ public interface Raw extends Library {
   Pointer urnet_normal_env_name(String a0);
   Pointer urnet_normal_extender_gossip_mode(String a0);
   Pointer urnet_normalize_bittensor_signature(String a0);
+  Pointer urnet_normalize_dns_preset_personal_id(String a0, String a1);
   Pointer urnet_order_connected_provider_locations(String a0);
   Pointer urnet_parse_bittensor_challenge_message(String a0, PointerByReference a1);
   Pointer urnet_parse_bittensor_wallet_return(String a0, String a1, PointerByReference a2);
@@ -1647,6 +1661,7 @@ public interface Raw extends Library {
   Pointer urnet_service_url(String a0, String a1, String a2, String a3);
   void urnet_set_control_ip_family_policy(long a0);
   void urnet_set_device_rpc_h1_plus_enabled(byte a0);
+  void urnet_set_dns_presets_hide_ad_blocking(byte a0);
   void urnet_set_egress_interface_index(long a0, long a1);
   byte urnet_set_extender_network_client_enabled(byte a0);
   void urnet_set_extender_store_read_only(byte a0);
@@ -1677,6 +1692,7 @@ public interface Raw extends Library {
   Pointer urnet_upload_logs_inventory();
   long urnet_usd_to_nano_cents(double a0);
   Pointer urnet_validate_control_doh_url(String a0);
+  Pointer urnet_validate_dns_preset_personal_id(String a0, String a1);
   Pointer urnet_validate_emoji_tag(String a0);
   byte urnet_validate_ss58(String a0);
   Pointer urnet_validate_vless_settings(String a0);

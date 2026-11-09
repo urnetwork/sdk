@@ -328,6 +328,32 @@ inline constexpr int64_t DeviceRpcVersion = 3;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
+inline constexpr const char* DnsPickKindCustom = "custom";
+inline constexpr const char* DnsPickKindDefault = "default";
+inline constexpr const char* DnsPickKindPreset = "preset";
+inline constexpr const char* DnsPickKindRegional = "regional";
+inline constexpr const char* DnsPresetErrorPersonalIdInvalid = "dns_preset_error_personal_id_invalid";
+inline constexpr const char* DnsPresetErrorPersonalIdNotAccepted = "dns_preset_error_personal_id_not_accepted";
+inline constexpr const char* DnsPresetErrorPersonalIdOtherProvider = "dns_preset_error_personal_id_other_provider";
+inline constexpr const char* DnsPresetErrorPersonalIdRequired = "dns_preset_error_personal_id_required";
+inline constexpr const char* DnsPresetErrorUnknown = "dns_preset_error_unknown";
+inline constexpr const char* DnsPresetGroupAdblock = "adblock";
+inline constexpr const char* DnsPresetGroupFamily = "family";
+inline constexpr const char* DnsPresetGroupPersonal = "personal";
+inline constexpr const char* DnsPresetGroupSecurity = "security";
+inline constexpr const char* DnsPresetGroupUnfiltered = "unfiltered";
+inline constexpr const char* DnsPresetIdDefault = "default";
+inline constexpr const char* DnsPresetIdRegionalPrefix = "regional-";
+inline constexpr const char* DnsResolverStateFailedOver = "failedOver";
+inline constexpr const char* DnsResolverStateFailing = "failing";
+inline constexpr const char* DnsResolverStateOk = "ok";
+inline constexpr const char* DnsResolverStateUnknown = "unknown";
+inline constexpr const char* DnsResolverVerificationConfirmed = "confirmed";
+inline constexpr const char* DnsResolverVerificationMalformed = "malformed";
+inline constexpr const char* DnsResolverVerificationNone = "none";
+inline constexpr const char* DnsResolverVerificationNotFiltering = "notFiltering";
+inline constexpr const char* DnsResolverVerificationRejected = "rejected";
+inline constexpr const char* DnsResolverVerificationUnconfirmed = "unconfirmed";
 inline constexpr int64_t EmojiTagMaxCount = 6;
 inline constexpr const char* EmojiTagReasonEmpty = "empty";
 inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
@@ -942,7 +968,13 @@ struct DeviceRemoteAddress;
 struct DeviceSetNameArgs;
 struct DeviceSetNameError;
 struct DeviceSetNameResult;
+struct DnsPreset;
+struct DnsPick;
+struct DnsPresetProvider;
 struct DnsResolverSettings;
+struct DnsResolverStatus;
+struct DnsSelectionSummary;
+struct DnsStatusSummary;
 struct EmojiTagValidation;
 struct Exit;
 struct ExperimentAssignment;
@@ -1252,6 +1284,9 @@ using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using CryptoPaymentAssetList = std::vector<CryptoPaymentAsset>;
 using DestinationExitList = std::vector<DestinationExit>;
+using DnsPickList = std::vector<DnsPick>;
+using DnsPresetList = std::vector<DnsPreset>;
+using DnsPresetProviderList = std::vector<DnsPresetProvider>;
 using ExitList = std::vector<Exit>;
 using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
 using ExtenderInfoList = std::vector<ExtenderInfo>;
@@ -2362,6 +2397,7 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayBadConnectStall{};
 	int64_t TransportDelayPromptConnectTimeout{};
 	int64_t ClientLimitRetryMinInterval{};
+	int64_t DnsResolverVerifyMinInterval{};
 	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -2388,7 +2424,51 @@ struct DeviceSetNameResult {
 	std::optional<DeviceSetNameError> error;
 };
 
+struct DnsPreset {
+	std::string PresetId{};
+	std::string ProviderId{};
+	std::string ProviderName{};
+	std::string Jurisdiction{};
+	std::string PrivacyUrl{};
+	std::string HelpUrl{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string CopyKey{};
+	bool BlocksAds{};
+	bool Failover{};
+	bool Filtering{};
+	bool PersonalIdRequired{};
+	std::string PersonalIdExample{};
+	std::string PersonalIdHelpUrl{};
+	std::string PersonalIdFormatKey{};
+	std::string QuotaNoteKey{};
+};
+
+struct DnsPick {
+	std::string Kind{};
+	std::string PresetId{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string LabelKey{};
+	std::string CountryCode{};
+	bool Unencrypted{};
+	std::optional<DnsPreset> Preset;
+};
+
+struct DnsPresetProvider {
+	std::string ProviderId{};
+	std::string Name{};
+	std::string Operator{};
+	std::string Jurisdiction{};
+	std::string HelpUrl{};
+	std::string PrivacyUrl{};
+	std::string TermsUrl{};
+	std::optional<DnsPresetList> Presets;
+};
+
 struct DnsResolverSettings {
+	std::string PresetId{};
+	std::string PresetPersonalId{};
 	bool EnableRemoteDoh{};
 	bool EnableLocalDoh{};
 	bool EnableRemoteDns{};
@@ -2403,6 +2483,46 @@ struct DnsResolverSettings {
 	std::optional<StringList> RemoteDnsIpv6;
 	std::optional<StringList> LocalDnsIpv4;
 	std::optional<StringList> LocalDnsIpv6;
+};
+
+struct DnsResolverStatus {
+	std::string State{};
+	std::string Verification{};
+	std::string PresetId{};
+	int64_t SinceTime{};
+	int64_t BlockedCount{};
+};
+
+struct DnsSelectionSummary {
+	std::string Kind{};
+	std::string PresetId{};
+	std::string ProviderId{};
+	std::string ProviderName{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string CopyKey{};
+	std::string LabelKey{};
+	std::string CountryCode{};
+	bool Personal{};
+	bool Unencrypted{};
+	bool Failover{};
+	bool ShowBlockedCount{};
+	bool Dropped{};
+	std::string DroppedPresetId{};
+	std::string DroppedProviderName{};
+	std::string PillKey{};
+	std::string PillCountryCode{};
+};
+
+struct DnsStatusSummary {
+	std::string StatusKey{};
+	std::string ProviderName{};
+	std::string VerificationKey{};
+	std::string VerificationUrl{};
+	bool ShowUseDefault{};
+	bool ShowChangeLocation{};
+	bool ShowBlockedCount{};
+	int64_t BlockedCount{};
 };
 
 struct EmojiTagValidation {
@@ -4987,8 +5107,20 @@ inline void to_json(nlohmann::json& j, const DeviceSetNameError& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameError& v);
 inline void to_json(nlohmann::json& j, const DeviceSetNameResult& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v);
+inline void to_json(nlohmann::json& j, const DnsPreset& v);
+inline void from_json(const nlohmann::json& j, DnsPreset& v);
+inline void to_json(nlohmann::json& j, const DnsPick& v);
+inline void from_json(const nlohmann::json& j, DnsPick& v);
+inline void to_json(nlohmann::json& j, const DnsPresetProvider& v);
+inline void from_json(const nlohmann::json& j, DnsPresetProvider& v);
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v);
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v);
+inline void to_json(nlohmann::json& j, const DnsResolverStatus& v);
+inline void from_json(const nlohmann::json& j, DnsResolverStatus& v);
+inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v);
+inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v);
+inline void to_json(nlohmann::json& j, const DnsStatusSummary& v);
+inline void from_json(const nlohmann::json& j, DnsStatusSummary& v);
 inline void to_json(nlohmann::json& j, const EmojiTagValidation& v);
 inline void from_json(const nlohmann::json& j, EmojiTagValidation& v);
 inline void to_json(nlohmann::json& j, const Exit& v);
@@ -10403,6 +10535,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayBadConnectStall"] = v.TransportDelayBadConnectStall;
 	j["TransportDelayPromptConnectTimeout"] = v.TransportDelayPromptConnectTimeout;
 	j["ClientLimitRetryMinInterval"] = v.ClientLimitRetryMinInterval;
+	j["DnsResolverVerifyMinInterval"] = v.DnsResolverVerifyMinInterval;
 	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -10549,6 +10682,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (auto it = j.find("ClientLimitRetryMinInterval"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClientLimitRetryMinInterval);
 	}
+	if (auto it = j.find("DnsResolverVerifyMinInterval"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsResolverVerifyMinInterval);
+	}
 	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StrictWindowHandover);
 	}
@@ -10637,8 +10773,177 @@ inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const DnsPreset& v) {
+	j = nlohmann::json::object();
+	j["PresetId"] = v.PresetId;
+	j["ProviderId"] = v.ProviderId;
+	j["ProviderName"] = v.ProviderName;
+	j["Jurisdiction"] = v.Jurisdiction;
+	j["PrivacyUrl"] = v.PrivacyUrl;
+	j["HelpUrl"] = v.HelpUrl;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["CopyKey"] = v.CopyKey;
+	j["BlocksAds"] = v.BlocksAds;
+	j["Failover"] = v.Failover;
+	j["Filtering"] = v.Filtering;
+	j["PersonalIdRequired"] = v.PersonalIdRequired;
+	j["PersonalIdExample"] = v.PersonalIdExample;
+	j["PersonalIdHelpUrl"] = v.PersonalIdHelpUrl;
+	j["PersonalIdFormatKey"] = v.PersonalIdFormatKey;
+	j["QuotaNoteKey"] = v.QuotaNoteKey;
+}
+inline void from_json(const nlohmann::json& j, DnsPreset& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("Jurisdiction"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Jurisdiction);
+	}
+	if (auto it = j.find("PrivacyUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PrivacyUrl);
+	}
+	if (auto it = j.find("HelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HelpUrl);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("BlocksAds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlocksAds);
+	}
+	if (auto it = j.find("Failover"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failover);
+	}
+	if (auto it = j.find("Filtering"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Filtering);
+	}
+	if (auto it = j.find("PersonalIdRequired"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdRequired);
+	}
+	if (auto it = j.find("PersonalIdExample"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdExample);
+	}
+	if (auto it = j.find("PersonalIdHelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdHelpUrl);
+	}
+	if (auto it = j.find("PersonalIdFormatKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdFormatKey);
+	}
+	if (auto it = j.find("QuotaNoteKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuotaNoteKey);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsPick& v) {
+	j = nlohmann::json::object();
+	j["Kind"] = v.Kind;
+	j["PresetId"] = v.PresetId;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["LabelKey"] = v.LabelKey;
+	j["CountryCode"] = v.CountryCode;
+	j["Unencrypted"] = v.Unencrypted;
+	if (v.Preset) {
+		j["Preset"] = *v.Preset;
+	}
+}
+inline void from_json(const nlohmann::json& j, DnsPick& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LabelKey);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("Unencrypted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Unencrypted);
+	}
+	if (auto it = j.find("Preset"); it != j.end() && !it->is_null()) {
+		DnsPreset tmp{};
+		it->get_to(tmp);
+		v.Preset = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsPresetProvider& v) {
+	j = nlohmann::json::object();
+	j["ProviderId"] = v.ProviderId;
+	j["Name"] = v.Name;
+	j["Operator"] = v.Operator;
+	j["Jurisdiction"] = v.Jurisdiction;
+	j["HelpUrl"] = v.HelpUrl;
+	j["PrivacyUrl"] = v.PrivacyUrl;
+	j["TermsUrl"] = v.TermsUrl;
+	if (v.Presets) {
+		j["Presets"] = *v.Presets;
+	}
+}
+inline void from_json(const nlohmann::json& j, DnsPresetProvider& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Operator"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Operator);
+	}
+	if (auto it = j.find("Jurisdiction"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Jurisdiction);
+	}
+	if (auto it = j.find("HelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HelpUrl);
+	}
+	if (auto it = j.find("PrivacyUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PrivacyUrl);
+	}
+	if (auto it = j.find("TermsUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TermsUrl);
+	}
+	if (auto it = j.find("Presets"); it != j.end() && !it->is_null()) {
+		DnsPresetList tmp{};
+		it->get_to(tmp);
+		v.Presets = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v) {
 	j = nlohmann::json::object();
+	j["PresetId"] = v.PresetId;
+	j["PresetPersonalId"] = v.PresetPersonalId;
 	j["EnableRemoteDoh"] = v.EnableRemoteDoh;
 	j["EnableLocalDoh"] = v.EnableLocalDoh;
 	j["EnableRemoteDns"] = v.EnableRemoteDns;
@@ -10673,6 +10978,12 @@ inline void to_json(nlohmann::json& j, const DnsResolverSettings& v) {
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("PresetPersonalId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetPersonalId);
 	}
 	if (auto it = j.find("EnableRemoteDoh"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRemoteDoh);
@@ -10731,6 +11042,157 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.LocalDnsIpv6 = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsResolverStatus& v) {
+	j = nlohmann::json::object();
+	j["State"] = v.State;
+	j["Verification"] = v.Verification;
+	j["PresetId"] = v.PresetId;
+	j["SinceTime"] = v.SinceTime;
+	j["BlockedCount"] = v.BlockedCount;
+}
+inline void from_json(const nlohmann::json& j, DnsResolverStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.State);
+	}
+	if (auto it = j.find("Verification"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Verification);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("SinceTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SinceTime);
+	}
+	if (auto it = j.find("BlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlockedCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v) {
+	j = nlohmann::json::object();
+	j["Kind"] = v.Kind;
+	j["PresetId"] = v.PresetId;
+	j["ProviderId"] = v.ProviderId;
+	j["ProviderName"] = v.ProviderName;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["CopyKey"] = v.CopyKey;
+	j["LabelKey"] = v.LabelKey;
+	j["CountryCode"] = v.CountryCode;
+	j["Personal"] = v.Personal;
+	j["Unencrypted"] = v.Unencrypted;
+	j["Failover"] = v.Failover;
+	j["ShowBlockedCount"] = v.ShowBlockedCount;
+	j["Dropped"] = v.Dropped;
+	j["DroppedPresetId"] = v.DroppedPresetId;
+	j["DroppedProviderName"] = v.DroppedProviderName;
+	j["PillKey"] = v.PillKey;
+	j["PillCountryCode"] = v.PillCountryCode;
+}
+inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LabelKey);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("Personal"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Personal);
+	}
+	if (auto it = j.find("Unencrypted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Unencrypted);
+	}
+	if (auto it = j.find("Failover"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failover);
+	}
+	if (auto it = j.find("ShowBlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowBlockedCount);
+	}
+	if (auto it = j.find("Dropped"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Dropped);
+	}
+	if (auto it = j.find("DroppedPresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedPresetId);
+	}
+	if (auto it = j.find("DroppedProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedProviderName);
+	}
+	if (auto it = j.find("PillKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PillKey);
+	}
+	if (auto it = j.find("PillCountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PillCountryCode);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsStatusSummary& v) {
+	j = nlohmann::json::object();
+	j["StatusKey"] = v.StatusKey;
+	j["ProviderName"] = v.ProviderName;
+	j["VerificationKey"] = v.VerificationKey;
+	j["VerificationUrl"] = v.VerificationUrl;
+	j["ShowUseDefault"] = v.ShowUseDefault;
+	j["ShowChangeLocation"] = v.ShowChangeLocation;
+	j["ShowBlockedCount"] = v.ShowBlockedCount;
+	j["BlockedCount"] = v.BlockedCount;
+}
+inline void from_json(const nlohmann::json& j, DnsStatusSummary& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("StatusKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StatusKey);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("VerificationKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationKey);
+	}
+	if (auto it = j.find("VerificationUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationUrl);
+	}
+	if (auto it = j.find("ShowUseDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowUseDefault);
+	}
+	if (auto it = j.find("ShowChangeLocation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowChangeLocation);
+	}
+	if (auto it = j.find("ShowBlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowBlockedCount);
+	}
+	if (auto it = j.find("BlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlockedCount);
 	}
 }
 
@@ -21523,6 +21985,7 @@ using DeviceConfigurationChangedListener = std::function<void()>;
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
+using DnsResolverStatusChangeListener = std::function<void(std::optional<DnsResolverStatus> dns_resolver_status)>;
 using ExtenderProvideStatusChangeListener = std::function<void(std::optional<ExtenderProvideStatus> status)>;
 using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using ExtenderViewControllerListener = std::function<void(std::optional<ExtenderStatus> status)>;
@@ -21757,6 +22220,7 @@ public:
 	Sub addContractStatusChangeListener(ContractStatusChangeListener listener) const;
 	Sub addDefaultLocationChangeListener(DefaultLocationChangeListener listener) const;
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
+	Sub addDnsResolverStatusChangeListener(DnsResolverStatusChangeListener listener) const;
 	Sub addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const;
@@ -21812,7 +22276,9 @@ public:
 	int64_t getControlIpFamilyPolicy() const;
 	std::string getControlIpFamilyStatus() const;
 	std::optional<ConnectLocation> getDefaultLocation() const;
+	int64_t getDnsBlockedCount() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
+	std::optional<DnsResolverStatus> getDnsResolverStatus() const;
 	bool getDone() const;
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
@@ -25162,6 +25628,34 @@ inline void oneshot_dns_resolver_settings_change(void* user_data, const char* dn
 			dns_resolver_settings_v = parseJson<DnsResolverSettings>(dns_resolver_settings_json);
 		}
 		(*f)(std::move(dns_resolver_settings_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_dns_resolver_status_change(void* user_data, const char* dns_resolver_status_json) {
+	auto* f = static_cast<DnsResolverStatusChangeListener*>(user_data);
+	try {
+		std::optional<DnsResolverStatus> dns_resolver_status_v;
+		if (dns_resolver_status_json) {
+			dns_resolver_status_v = parseJson<DnsResolverStatus>(dns_resolver_status_json);
+		}
+		(*f)(std::move(dns_resolver_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_dns_resolver_status_change(void* user_data, const char* dns_resolver_status_json) {
+	auto* f = static_cast<DnsResolverStatusChangeListener*>(user_data);
+	try {
+		std::optional<DnsResolverStatus> dns_resolver_status_v;
+		if (dns_resolver_status_json) {
+			dns_resolver_status_v = parseJson<DnsResolverStatus>(dns_resolver_status_json);
+		}
+		(*f)(std::move(dns_resolver_status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -30380,6 +30874,17 @@ inline Sub Device::addDnsResolverSettingsChangeListener(DnsResolverSettingsChang
 	}
 	return r;
 }
+inline Sub Device::addDnsResolverStatusChangeListener(DnsResolverStatusChangeListener listener) const {
+	std::shared_ptr<DnsResolverStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DnsResolverStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_dns_resolver_status_change_listener(handle(), listener_fn ? &detail::retained_dns_resolver_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -30853,6 +31358,10 @@ inline std::optional<ConnectLocation> Device::getDefaultLocation() const {
 	}
 	return detail::parseJson<ConnectLocation>(r_s->c_str());
 }
+inline int64_t Device::getDnsBlockedCount() const {
+	int64_t r = urnet_device_get_dns_blocked_count(handle());
+	return r;
+}
 inline std::optional<DnsResolverSettings> Device::getDnsResolverSettings() const {
 	char* r_c = urnet_device_get_dns_resolver_settings(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30860,6 +31369,14 @@ inline std::optional<DnsResolverSettings> Device::getDnsResolverSettings() const
 		return std::nullopt;
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverStatus> Device::getDnsResolverStatus() const {
+	char* r_c = urnet_device_get_dns_resolver_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverStatus>(r_s->c_str());
 }
 inline bool Device::getDone() const {
 	bool r = urnet_device_get_done(handle());
@@ -37913,6 +38430,20 @@ inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, con
 	char* r_c = urnet_connect_link_url(key_c, values_c, target.c_str());
 	return detail::takeString(r_c);
 }
+inline std::optional<DnsResolverSettings> copyDnsResolverSettings(const std::optional<DnsResolverSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_copy_dns_resolver_settings(settings_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
 inline std::string createPaymentReference() {
 	char* r_c = urnet_create_payment_reference();
 	return detail::takeString(r_c);
@@ -38016,6 +38547,82 @@ inline std::optional<TunnelDnsSetting> defaultTunnelDnsSetting() {
 		return std::nullopt;
 	}
 	return detail::parseJson<TunnelDnsSetting>(r_s->c_str());
+}
+inline std::optional<DnsSelectionSummary> describeDnsResolverSettings(const std::optional<DnsResolverSettings>& settings, const std::string& exit_country_code) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_describe_dns_resolver_settings(settings_c, exit_country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsSelectionSummary>(r_s->c_str());
+}
+inline std::optional<DnsStatusSummary> describeDnsResolverStatus(const std::optional<DnsResolverSettings>& settings, const std::optional<DnsResolverStatus>& status) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_describe_dns_resolver_status(settings_c, status_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsStatusSummary>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsAsCustom(const std::optional<DnsResolverSettings>& base) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_as_custom(base_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsWithFallback(const std::optional<DnsResolverSettings>& base, bool enable_fallback) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_with_fallback(base_c, enable_fallback);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsWithPreset(const std::optional<DnsResolverSettings>& base, const std::string& preset_id, const std::string& personal_id) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_with_preset(base_c, preset_id.c_str(), personal_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
 inline std::string encodeBase58(const uint8_t* data, int32_t data_len) {
 	char* r_c = urnet_encode_base58(data, data_len);
@@ -38198,6 +38805,30 @@ inline std::string getDefaultTunnelDnsAddressIpv6() {
 inline int64_t getDefaultTunnelMtu() {
 	int64_t r = urnet_get_default_tunnel_mtu();
 	return r;
+}
+inline std::optional<DnsPickList> getDnsPicks(const std::string& exit_country_code) {
+	char* r_c = urnet_get_dns_picks(exit_country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPickList>(r_s->c_str());
+}
+inline std::optional<DnsPreset> getDnsPreset(const std::string& preset_id) {
+	char* r_c = urnet_get_dns_preset(preset_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPreset>(r_s->c_str());
+}
+inline std::optional<DnsPresetProviderList> getDnsPresetProviders() {
+	char* r_c = urnet_get_dns_preset_providers();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPresetProviderList>(r_s->c_str());
 }
 inline std::string getExtenderColorHex(const std::string& ip) {
 	char* r_c = urnet_get_extender_color_hex(ip.c_str());
@@ -38788,6 +39419,10 @@ inline std::string normalizeBittensorSignature(const std::string& signature) {
 	char* r_c = urnet_normalize_bittensor_signature(signature.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string normalizeDnsPresetPersonalId(const std::string& preset_id, const std::string& input) {
+	char* r_c = urnet_normalize_dns_preset_personal_id(preset_id.c_str(), input.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -38988,6 +39623,9 @@ inline void setControlIpFamilyPolicy(int64_t policy) {
 }
 inline void setDeviceRpcH1PlusEnabled(bool enabled) {
 	urnet_set_device_rpc_h1_plus_enabled(enabled);
+}
+inline void setDnsPresetsHideAdBlocking(bool hide) {
+	urnet_set_dns_presets_hide_ad_blocking(hide);
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
@@ -39235,6 +39873,11 @@ inline int64_t usdToNanoCents(double usd) {
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateControlDohUrl(const std::string& doh_url) {
 	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
+	return detail::takeString(r_c);
+}
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+inline std::string validateDnsPresetPersonalId(const std::string& preset_id, const std::string& personal_id) {
+	char* r_c = urnet_validate_dns_preset_personal_id(preset_id.c_str(), personal_id.c_str());
 	return detail::takeString(r_c);
 }
 inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {

@@ -269,6 +269,10 @@ void urnet_invoke_dns_resolver_settings_change(urnet_dns_resolver_settings_chang
 	cb(user_data, dns_resolver_settings_json);
 }
 
+void urnet_invoke_dns_resolver_status_change(urnet_dns_resolver_status_change_cb cb, void* user_data, const char* dns_resolver_status_json) {
+	cb(user_data, dns_resolver_status_json);
+}
+
 void urnet_invoke_extender_provide_status_change(urnet_extender_provide_status_change_cb cb, void* user_data, const char* status_json) {
 	cb(user_data, status_json);
 }

@@ -442,6 +442,23 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getDefaultDnsResolverSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsDnsResolverSettings(sdk.GetDefaultDnsResolverSettings())
 	})
+	// the dns resolver status (sdk.Device.GetDnsResolverStatus): never null
+	// from the device. A hosted device has no resolver and reads unknown
+	m["getDnsResolverStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsDnsResolverStatus(device.GetDnsResolverStatus())
+	})
+	m["addDnsResolverStatusChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddDnsResolverStatusChangeListener(&jsDnsResolverStatusChangeListener{cb: cb}))
+	})
+	// this connection's blocked-lookups count (sdk.Device.GetDnsBlockedCount),
+	// polled: it changes without a callback
+	m["getDnsBlockedCount"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(float64(device.GetDnsBlockedCount()))
+	})
 
 	// performance profile (over the device-rpc): the connect options the
 	// native apps write -- the window type, the window size (Fixed IP is a
@@ -784,6 +801,13 @@ func (self *jsProvideModeChangeListener) ProvideModeChanged(provideMode int) {
 	self.cb.Invoke(provideMode)
 }
 
+// Calls the page with the dns resolver status, as jsDnsResolverStatus renders it.
+type jsDnsResolverStatusChangeListener struct{ cb js.Value }
+
+func (self *jsDnsResolverStatusChangeListener) DnsResolverStatusChanged(status *sdk.DnsResolverStatus) {
+	self.cb.Invoke(jsDnsResolverStatus(status))
+}
+
 // Calls the page with the client limit status, as jsClientLimitStatus renders it.
 type jsClientLimitStatusChangeListener struct{ cb js.Value }
 
@@ -803,6 +827,24 @@ type jsContractDetailsChangeListener struct{ cb js.Value }
 
 func (self *jsContractDetailsChangeListener) ContractDetailsChanged(contractDetails *sdk.ContractDetails) {
 	self.cb.Invoke(jsContractDetails(contractDetails))
+}
+
+// Mirrors sdk.DnsResolverStatus ({state, verification, presetId, sinceTime,
+// blockedCount}): state is "unknown", "ok", "failing" or "failedOver",
+// verification "none", "confirmed", "notFiltering", "rejected", "malformed"
+// or "unconfirmed", sinceTime the unix millisecond time the state last
+// changed, 0 for never, and blockedCount this connection's blocked lookups
+func jsDnsResolverStatus(status *sdk.DnsResolverStatus) js.Value {
+	if status == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"state":        status.State,
+		"verification": status.Verification,
+		"presetId":     status.PresetId,
+		"sinceTime":    float64(status.SinceTime),
+		"blockedCount": float64(status.BlockedCount),
+	})
 }
 
 // ── provider status ──────────────────────────────────────────────────────────
@@ -903,12 +945,15 @@ func parseStringListDR(v js.Value) *sdk.StringList {
 }
 
 // jsDnsResolverSettings mirrors the DoH/DNS toggles + per-family server lists the
-// native DNS editor renders.
+// native DNS editor renders, with the selection (presetId, presetPersonalId)
+// the device derives the lists from.
 func jsDnsResolverSettings(s *sdk.DnsResolverSettings) js.Value {
 	if s == nil {
 		return js.Null()
 	}
 	return js.ValueOf(map[string]any{
+		"presetId":              s.PresetId,
+		"presetPersonalId":      s.PresetPersonalId,
 		"enableRemoteDoh":       s.EnableRemoteDoh,
 		"enableLocalDoh":        s.EnableLocalDoh,
 		"enableRemoteDns":       s.EnableRemoteDns,
@@ -943,7 +988,16 @@ func parseDnsResolverSettings(v js.Value) *sdk.DnsResolverSettings {
 	if x := v.Get("dnsUpgradeMaskAddress"); x.Type() == js.TypeString && strings.TrimSpace(x.String()) != "" {
 		dnsUpgradeMaskAddress = strings.TrimSpace(x.String())
 	}
+	str := func(key string) string {
+		x := v.Get(key)
+		if x.Type() != js.TypeString {
+			return ""
+		}
+		return x.String()
+	}
 	return &sdk.DnsResolverSettings{
+		PresetId:              str("presetId"),
+		PresetPersonalId:      str("presetPersonalId"),
 		EnableRemoteDoh:       b("enableRemoteDoh"),
 		EnableLocalDoh:        b("enableLocalDoh"),
 		EnableRemoteDns:       b("enableRemoteDns"),

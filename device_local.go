@@ -14,6 +14,7 @@ import (
 
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -486,6 +487,12 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// this often (DeviceLocal.RetryClientLimit)
 		ClientLimitRetryMinInterval: 30 * time.Second,
 
+		// a preset is verified again after a resolver generation change at most
+		// this often: a phone that walks between networks changes generation
+		// often, and an exit that stops filtering is rare enough that minutes
+		// of a stale verification cost less than a probe at every change
+		DnsResolverVerifyMinInterval: 5 * time.Minute,
+
 		ClientSettings: *clientSettings,
 	}
 }
@@ -629,6 +636,14 @@ func (self *DeviceLocalSettings) GetClientLimitRetryMinIntervalMillis() int64 {
 
 func (self *DeviceLocalSettings) SetClientLimitRetryMinIntervalMillis(millis int64) {
 	self.ClientLimitRetryMinInterval = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetDnsResolverVerifyMinIntervalMillis() int64 {
+	return self.DnsResolverVerifyMinInterval.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetDnsResolverVerifyMinIntervalMillis(millis int64) {
+	self.DnsResolverVerifyMinInterval = time.Duration(millis) * time.Millisecond
 }
 
 // DeviceLocalSettings is BOUND and app-facing, despite what a
@@ -876,6 +891,15 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport time.Duration — bound as GetClientLimitRetryMinIntervalMillis/SetClientLimitRetryMinIntervalMillis
 	ClientLimitRetryMinInterval time.Duration
+	// the least time between two verification probes of the selected dns
+	// preset on one connection (ADBLOCK3RD C6): the device probes after the
+	// preset is applied and the tunnel resolver has answered or failed, and
+	// again after a resolver generation change (a network change) at most
+	// this often. A new selection or a new connection probes at once. Zero
+	// or less probes at every generation change.
+	//
+	//gomobile:noexport time.Duration — bound as GetDnsResolverVerifyMinIntervalMillis/SetDnsResolverVerifyMinIntervalMillis
+	DnsResolverVerifyMinInterval time.Duration
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	//
@@ -1230,6 +1254,13 @@ type DeviceLocal struct {
 	// The settings actually applied to the selected mux. A nil future setting
 	// disables the mux only on rebuild, not the still-live packet interceptor.
 	upgradeMuxLiveSettings *connect.UpgradeMuxSettings
+	// The dns selection the mux settings derive from, and the status of the
+	// resolver and its verification (dns_resolver_status.go). Guarded by
+	// stateLock.
+	dnsResolver dnsResolverStatusTracker
+	// When set, replaces the live mux's ProbeDnsResolver for the
+	// verification probe. Production never sets it.
+	testingDnsResolverProbe func(ctx context.Context, upgradeMux *connect.UpgradeMux, name string) []connect.DnsResolverProbeResult
 
 	// dnsMemoryTarget is the dns share of the device memory target: one live
 	// byte budget shared by the device's resolver caches across mux rebuilds
@@ -1471,6 +1502,7 @@ type DeviceLocal struct {
 	ingressContractStatsChangeListeners      *connect.CallbackList[ContractStatsChangeListener]
 	ingressContractDetailsChangeListeners    *connect.CallbackList[ContractDetailsChangeListener]
 	dnsResolverSettingsChangeListeners       *connect.CallbackList[DnsResolverSettingsChangeListener]
+	dnsResolverStatusChangeListeners         *connect.CallbackList[DnsResolverStatusChangeListener]
 	networkPeersChangeListeners              *connect.CallbackList[NetworkPeersChangeListener]
 
 	providerPacketStatsChangeListeners            *connect.CallbackList[PacketStatsChangeListener]
@@ -2034,6 +2066,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		remoteUserNatClient:                      nil,
 		upgradeMux:                               nil,
 		upgradeMuxSettings:                       connect.DefaultUpgradeMuxSettings(),
+		dnsResolver:                              newDnsResolverStatusTracker(),
 		remoteUserNatProviderLocalUserNat:        nil,
 		remoteUserNatProvider:                    nil,
 		blocker:                                  blocker,
@@ -2105,6 +2138,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		ingressContractStatsChangeListeners:      connect.NewCallbackList[ContractStatsChangeListener](),
 		ingressContractDetailsChangeListeners:    connect.NewCallbackList[ContractDetailsChangeListener](),
 		dnsResolverSettingsChangeListeners:       connect.NewCallbackList[DnsResolverSettingsChangeListener](),
+		dnsResolverStatusChangeListeners:         connect.NewCallbackList[DnsResolverStatusChangeListener](),
 		networkPeersChangeListeners:              connect.NewCallbackList[NetworkPeersChangeListener](),
 
 		providerPacketStatsChangeListeners:            connect.NewCallbackList[PacketStatsChangeListener](),
@@ -2482,8 +2516,27 @@ func tunnelDnsAddressesWithDefault(
 // (direct pass-through to the exit). gomobile:noexport until a platform-friendly
 // settings surface lands with the per-use-case defaults.
 //
+// Settings given here name their resolver directly, so they read back as
+// custom dns settings (an empty PresetId).
+//
 //gomobile:noexport
 func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSettings) {
+	if self.setUpgradeMuxSettingsWithSelection(settings, "", "") {
+		self.dnsResolverStatusChanged(self.GetDnsResolverStatus())
+	}
+}
+
+// Installs the mux settings together with the dns selection they were derived
+// from, so the read-back never pairs one with the other's predecessor. A
+// changed selection starts the live mux's blocked-lookups count over, so the
+// count always names the selected provider (ADBLOCK3RD I3), and starts its
+// verification anew. Returns whether the dns resolver status changed, which
+// the caller publishes after this returns.
+func (self *DeviceLocal) setUpgradeMuxSettingsWithSelection(
+	settings *connect.UpgradeMuxSettings,
+	presetId string,
+	personalId string,
+) bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if settings != nil && settings.Dns != nil {
@@ -2494,6 +2547,7 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 		settings.Dns.ServerStatsSeed = self.dohServerScoresSeed
 	}
 	self.upgradeMuxSettings = settings
+	selectionChanged := self.dnsResolver.setSelection(presetId, personalId)
 	self.sockets.setResolver(self.dnsResolverSettingsWithLock())
 	// apply to the live mux immediately when non-nil (rebuilds its DohCache); nil takes
 	// effect on the next client recreation, which then creates no mux
@@ -2501,6 +2555,11 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 		self.upgradeMux.SetSettings(settings)
 		self.upgradeMuxLiveSettings = settings
 	}
+	if selectionChanged && self.upgradeMux != nil {
+		// a Fast DNS toggle keeps the selection, and so the count
+		self.upgradeMux.ResetDnsBlockedCount()
+	}
+	return selectionChanged
 }
 
 // Reports current ownership of the tunnel DNS interceptor, not successful
@@ -5495,6 +5554,10 @@ func (self *DeviceLocal) applyDestination(
 			self.peerIdentitySub = multi.AddPeerIdentityChangeCallback(self.providerIdentitiesChanged)
 			self.remoteUserNatClient = multi
 			self.activityMultiClient.Store(multi)
+			// whether this generation's window carries traffic: some exit is
+			// added. The mux reads it on its own paths, so it is a plain atomic
+			// the window monitor below keeps current, never the state lock
+			tunnelReady := &atomic.Bool{}
 			if upgradeMux != nil {
 				upgradeMux.SetUpstreamBatchClient(multi)
 				// the mux's DNS reverse index drives ServerName path affinity (point 4)
@@ -5504,8 +5567,13 @@ func (self *DeviceLocal) applyDestination(
 				// while no exit can carry v6, AAAA answers empty so apps do not
 				// blackhole on a v6 address the tunnel cannot route (IPV6.md B6)
 				upgradeMux.SetIpv6Unroutable(multi.Ipv6Unroutable)
+				// resolver failures count, and a preset's Fast DNS fallback races,
+				// only by the window's readiness (ADBLOCK3RD C2, C7)
+				upgradeMux.SetTunnelReady(tunnelReady.Load)
 				self.upgradeMux = upgradeMux
 				self.upgradeMuxLiveSettings = self.upgradeMuxSettings
+				// the dns resolver status follows this mux's resolver health
+				self.dnsResolverMuxChangedWithLock(upgradeMux)
 				// pre-warm the DoH connections in the background: the tunnel dials park
 				// until the window can carry traffic and complete at tunnel-up, so the
 				// first lookup rides an already-open connection (see UpgradeMux.WarmDns)
@@ -5529,6 +5597,7 @@ func (self *DeviceLocal) applyDestination(
 						return
 					}
 					current = true
+					tunnelReady.Store(0 < windowStatus.ProviderStateAdded)
 					if self.lastWindowStatus == nil || *self.lastWindowStatus != *windowStatus {
 						self.lastWindowStatus = windowStatus
 						changed = true
@@ -5611,6 +5680,8 @@ func (self *DeviceLocal) applyDestination(
 		self.stats.UpdateConnect(connectEnabled)
 		self.connectChanged(connectEnabled)
 		self.windowStatusChanged(self.GetWindowStatus())
+		// the rebuild replaced the mux, and the dns resolver status with it
+		self.dnsResolverStatusChanged(self.GetDnsResolverStatus())
 		// the rebuild reset the window; the watch emits the reset levels if
 		// they changed
 		self.notifyTransportDelay()
@@ -6784,6 +6855,8 @@ func (self *DeviceLocal) closeUpgradeMuxWithLock() *connect.UpgradeMux {
 	upgradeMux.Close()
 	self.upgradeMux = nil
 	self.upgradeMuxLiveSettings = nil
+	// no resolver until the next mux: the status reads unknown
+	self.dnsResolverMuxChangedWithLock(nil)
 	self.startLifecycleWorkerWithLock(func() {
 		_ = upgradeMux.WaitForPump(context.Background())
 	})
@@ -8263,7 +8336,33 @@ func dnsResolverSettingsFromConnect(resolver *connect.DnsResolverSettings) *DnsR
 	}
 }
 
+// The connect resolver the settings resolve with (ADBLOCK3RD A6): the explicit
+// lists for custom settings, else the lists the selection derives
+// (resolveDnsResolverSelection), with the user's mask either way. Every DoH
+// url whose host the catalog knows gets the catalog's pins, so its host is
+// never looked up (dnsResolverPins). The mux settings and the socket resolver
+// both convert through here.
 func (self *DnsResolverSettings) toConnect() *connect.DnsResolverSettings {
+	selection := resolveDnsResolverSelection(self.PresetId, self.PresetPersonalId)
+	var resolver *connect.DnsResolverSettings
+	switch {
+	case selection.custom():
+		resolver = self.customToConnect()
+	case selection.preset != nil:
+		resolver = selection.preset.resolver(selection.personalId)
+	case selection.regional():
+		resolver = cloneConnectDnsResolverSettings(connect.RegionalDnsResolverSettings(selection.countryCode))
+	default:
+		// "default", and a selection that cannot apply (A7)
+		resolver = defaultDnsResolver()
+	}
+	resolver.DnsUpgradeMaskAddress = dnsUpgradeMaskAddress(self.DnsUpgradeMaskAddress)
+	resolver.DohServerHostAddrs = dnsResolverPins(resolver)
+	return resolver
+}
+
+// The explicit lists, as every setting converted before the presets.
+func (self *DnsResolverSettings) customToConnect() *connect.DnsResolverSettings {
 	stringsOf := func(list *StringList) []string {
 		if list == nil {
 			return nil
@@ -8300,6 +8399,18 @@ func dnsUpgradeMaskAddress(value string) string {
 // upgradeMuxSettingsWithDnsResolverSettings builds the next upgrade mux settings
 // with the resolver and the derived fallback applied, copy on write.
 // returns nil when the mux is disabled (base nil)
+//
+// While a catalog preset is selected (ADBLOCK3RD decisions 3 and 5):
+//   - an ad-blocking or no-filtering preset fails over to URnetwork's default
+//     resolver through the tunnel; a family, malware or personal preset has
+//     no failover and fails closed.
+//   - Fast DNS on connect races URnetwork's default resolver over the host
+//     network, never the preset, and only until the tunnel is ready, so the
+//     provider never sees the user's own address and no unfiltered answer
+//     races the preset once connected.
+//
+// "default", custom and regional selections keep the settings as before: no
+// failover, and the fallback as the host projection of the lists.
 func upgradeMuxSettingsWithDnsResolverSettings(base *connect.UpgradeMuxSettings, dnsResolverSettings *DnsResolverSettings) *connect.UpgradeMuxSettings {
 	if base == nil {
 		return nil
@@ -8313,11 +8424,28 @@ func upgradeMuxSettingsWithDnsResolverSettings(base *connect.UpgradeMuxSettings,
 	}
 	resolver := dnsResolverSettings.toConnect()
 	nextDns.Resolver = resolver
-	if dnsResolverSettings.EnableFallback {
-		nextDns.Fallback = hostFallbackDnsResolverSettings(resolver)
+	selection := resolveDnsResolverSelection(dnsResolverSettings.PresetId, dnsResolverSettings.PresetPersonalId)
+	if preset := selection.preset; preset != nil {
+		if dnsResolverSettings.EnableFallback {
+			nextDns.Fallback = connect.DefaultDnsUpgradeFallbackSettings()
+		} else {
+			nextDns.Fallback = nil
+		}
+		nextDns.FallbackUntilTunnelReady = true
+		if preset.failover {
+			nextDns.Failover = defaultDnsResolver()
+		} else {
+			nextDns.Failover = nil
+		}
 	} else {
-		// nil disables the fallback (see `connect.DnsUpgradeSettings`)
-		nextDns.Fallback = nil
+		if dnsResolverSettings.EnableFallback {
+			nextDns.Fallback = hostFallbackDnsResolverSettings(resolver)
+		} else {
+			// nil disables the fallback (see `connect.DnsUpgradeSettings`)
+			nextDns.Fallback = nil
+		}
+		nextDns.FallbackUntilTunnelReady = false
+		nextDns.Failover = nil
 	}
 	nextSettings.Dns = &nextDns
 	return &nextSettings
@@ -8326,7 +8454,9 @@ func upgradeMuxSettingsWithDnsResolverSettings(base *connect.UpgradeMuxSettings,
 // hostFallbackDnsResolverSettings derives the fallback resolver, which bridges
 // tunnel startup by resolving over the host network, as the host-side projection
 // of the resolver: remote entries are host-dialed (remote doh urls become local
-// doh urls, remote dns ips become local dns ips)
+// doh urls, remote dns ips become local dns ips). The pins of the resolver's
+// DoH hosts carry over, so a host-dialed DoH host the catalog knows is never
+// looked up with the host's resolver.
 func hostFallbackDnsResolverSettings(resolver *connect.DnsResolverSettings) *connect.DnsResolverSettings {
 	union := func(locals []string, remotes []string) []string {
 		var out []string
@@ -8339,7 +8469,7 @@ func hostFallbackDnsResolverSettings(resolver *connect.DnsResolverSettings) *con
 		}
 		return out
 	}
-	return &connect.DnsResolverSettings{
+	fallback := &connect.DnsResolverSettings{
 		EnableLocalDoh:   resolver.EnableLocalDoh || resolver.EnableRemoteDoh,
 		EnableLocalDns:   resolver.EnableLocalDns || resolver.EnableRemoteDns,
 		LocalDohUrlsIpv4: union(resolver.LocalDohUrlsIpv4, resolver.RemoteDohUrlsIpv4),
@@ -8347,11 +8477,24 @@ func hostFallbackDnsResolverSettings(resolver *connect.DnsResolverSettings) *con
 		LocalDnsIpv4:     union(resolver.LocalDnsIpv4, resolver.RemoteDnsIpv4),
 		LocalDnsIpv6:     union(resolver.LocalDnsIpv6, resolver.RemoteDnsIpv6),
 	}
+	if resolver.DohServerHostAddrs != nil {
+		fallback.DohServerHostAddrs = map[string][]string{}
+		for host, addrs := range resolver.DohServerHostAddrs {
+			fallback.DohServerHostAddrs[host] = slices.Clone(addrs)
+		}
+	}
+	return fallback
 }
 
 // SetDnsResolverSettings sets the mux tunnel resolver and the derived
 // host-side fallback (used to bridge tunnel startup), persisted to local state.
-// TLS/cert pinning is applied internally and is not part of this surface
+// TLS/cert pinning is applied internally and is not part of this surface.
+//
+// The selection is the source of truth (ADBLOCK3RD E2): with a PresetId the
+// device derives the lists, and with an empty one the given lists apply, as
+// before. A selection no device can apply, an unknown preset id or a personal
+// id that does not validate, is refused: neither saved nor applied, so the
+// previous settings stay (validateDnsResolverSettingsSelection).
 func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
 	_ = self.setLocalCatalogPreference("dns-resolver-settings", dnsResolverSettings)
 }
@@ -8369,7 +8512,7 @@ func (self *DeviceLocal) applyDnsResolverSettingsWithLock(dnsResolverSettings *D
 	// The caller owns this mutable gomobile settings object and may reuse it as
 	// soon as this method returns. Retain an owned snapshot so later UI edits
 	// cannot silently alter the installed resolver.
-	dnsResolverSettings = cloneDnsResolverSettings(dnsResolverSettings)
+	dnsResolverSettings = ownDnsResolverSettings(dnsResolverSettings)
 	var upgradeMuxSettings *connect.UpgradeMuxSettings
 	func() {
 		self.stateLock.Lock()
@@ -8382,18 +8525,75 @@ func (self *DeviceLocal) applyDnsResolverSettingsWithLock(dnsResolverSettings *D
 		// the mux is disabled. there is no resolver to configure
 		return nil, nil
 	}
-	// applies to the live mux, if any
-	self.SetUpgradeMuxSettings(upgradeMuxSettings)
-	return func() { self.dnsResolverSettingsChanged(self.GetDnsResolverSettings()) }, nil
+	// applies to the live mux, if any, with the selection it derives from
+	statusChanged := self.setUpgradeMuxSettingsWithSelection(
+		upgradeMuxSettings,
+		dnsResolverSettings.PresetId,
+		dnsResolverSettings.PresetPersonalId,
+	)
+	return func() {
+		self.dnsResolverSettingsChanged(self.GetDnsResolverSettings())
+		if statusChanged {
+			self.dnsResolverStatusChanged(self.GetDnsResolverStatus())
+		}
+	}, nil
 }
 
-func cloneDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
+// The value the device saves and applies for settings a caller gave (ADBLOCK3RD
+// E2, E5): a deep copy of its own, with the lists, toggles and mask the
+// settings resolve with, so the saved record carries the derived lists beside
+// the selection for an older sdk, which ignores the selection. Custom settings
+// keep their lists, as before. A personal preset's id is normalized; a
+// personal id given with a selection that takes none is dropped.
+func ownDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
 	if dnsResolverSettings == nil {
 		return nil
 	}
-	cloned := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
-	cloned.EnableFallback = dnsResolverSettings.EnableFallback
-	return cloned
+	owned := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
+	owned.EnableFallback = dnsResolverSettings.EnableFallback
+	owned.PresetId = dnsResolverSettings.PresetId
+	selection := resolveDnsResolverSelection(dnsResolverSettings.PresetId, dnsResolverSettings.PresetPersonalId)
+	switch {
+	case selection.preset != nil:
+		owned.PresetPersonalId = selection.personalId
+	case selection.unavailable:
+		// kept as stored until the user picks again (A7)
+		owned.PresetPersonalId = dnsResolverSettings.PresetPersonalId
+	}
+	return owned
+}
+
+// A deep copy of every field.
+func copyDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
+	if dnsResolverSettings == nil {
+		return nil
+	}
+	copyList := func(list *StringList) *StringList {
+		if list == nil {
+			return nil
+		}
+		copied := NewStringList()
+		copied.addAll(list.getAll()...)
+		return copied
+	}
+	return &DnsResolverSettings{
+		PresetId:              dnsResolverSettings.PresetId,
+		PresetPersonalId:      dnsResolverSettings.PresetPersonalId,
+		EnableRemoteDoh:       dnsResolverSettings.EnableRemoteDoh,
+		EnableLocalDoh:        dnsResolverSettings.EnableLocalDoh,
+		EnableRemoteDns:       dnsResolverSettings.EnableRemoteDns,
+		EnableLocalDns:        dnsResolverSettings.EnableLocalDns,
+		EnableFallback:        dnsResolverSettings.EnableFallback,
+		DnsUpgradeMaskAddress: dnsResolverSettings.DnsUpgradeMaskAddress,
+		RemoteDohUrlsIpv4:     copyList(dnsResolverSettings.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6:     copyList(dnsResolverSettings.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:      copyList(dnsResolverSettings.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:      copyList(dnsResolverSettings.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:         copyList(dnsResolverSettings.RemoteDnsIpv4),
+		RemoteDnsIpv6:         copyList(dnsResolverSettings.RemoteDnsIpv6),
+		LocalDnsIpv4:          copyList(dnsResolverSettings.LocalDnsIpv4),
+		LocalDnsIpv6:          copyList(dnsResolverSettings.LocalDnsIpv6),
+	}
 }
 
 func (self *DeviceLocal) GetDnsResolverSettings() *DnsResolverSettings {
@@ -8402,13 +8602,16 @@ func (self *DeviceLocal) GetDnsResolverSettings() *DnsResolverSettings {
 	return self.dnsResolverSettingsWithLock()
 }
 
-// must be called with `stateLock`
+// must be called with `stateLock`. The lists in force, read back from the mux
+// settings, with the selection they were derived from.
 func (self *DeviceLocal) dnsResolverSettingsWithLock() *DnsResolverSettings {
 	if self.upgradeMuxSettings == nil || self.upgradeMuxSettings.Dns == nil || self.upgradeMuxSettings.Dns.Resolver == nil {
 		return nil
 	}
 	dnsResolverSettings := dnsResolverSettingsFromConnect(self.upgradeMuxSettings.Dns.Resolver)
 	dnsResolverSettings.EnableFallback = self.upgradeMuxSettings.Dns.Fallback != nil
+	dnsResolverSettings.PresetId = self.dnsResolver.presetId
+	dnsResolverSettings.PresetPersonalId = self.dnsResolver.personalId
 	return dnsResolverSettings
 }
 
@@ -8446,7 +8649,9 @@ func dnsIgnoreHostValues(dnsResolverSettings *DnsResolverSettings) []string {
 			add(value)
 		}
 	}
-	// doh urls contribute their host (a hostname or a literal ip)
+	// doh urls contribute their host (a hostname or a literal ip), and a host
+	// the preset catalog knows its pins, which the dial goes to (ADBLOCK3RD A6)
+	hostPins := currentDnsPresetCatalog().hostPins
 	addUrlHosts := func(list *StringList) {
 		if list == nil {
 			return
@@ -8454,6 +8659,9 @@ func dnsIgnoreHostValues(dnsResolverSettings *DnsResolverSettings) []string {
 		for _, value := range list.getAll() {
 			if u, err := url.Parse(strings.TrimSpace(value)); err == nil && u.Hostname() != "" {
 				add(u.Hostname())
+				for _, pin := range hostPins[strings.ToLower(u.Hostname())] {
+					add(pin)
+				}
 			} else {
 				add(value)
 			}

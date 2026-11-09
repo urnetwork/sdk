@@ -351,6 +351,7 @@ type DeviceRemote struct {
 	ingressContractStatsChangeListeners      map[connect.Id]ContractStatsChangeListener
 	ingressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
 	dnsResolverSettingsChangeListeners       map[connect.Id]DnsResolverSettingsChangeListener
+	dnsResolverStatusChangeListeners         map[connect.Id]DnsResolverStatusChangeListener
 	networkPeersChangeListeners              map[connect.Id]NetworkPeersChangeListener
 
 	providerPacketStatsChangeListeners            map[connect.Id]PacketStatsChangeListener
@@ -416,6 +417,9 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last dns resolver status read or pushed, which the getter answers
+	// while the device process cannot be reached
+	lastDnsResolverStatus *DnsResolverStatus
 	// the last transport quality the local device answered or pushed, read
 	// while the rpc is down. Guarded by stateLock, as is the revision, which
 	// keeps a read from replacing a push or another read published while it
@@ -617,6 +621,7 @@ func newDeviceRemoteWithOverrides(
 		ingressContractStatsChangeListeners:      map[connect.Id]ContractStatsChangeListener{},
 		ingressContractDetailsChangeListeners:    map[connect.Id]ContractDetailsChangeListener{},
 		dnsResolverSettingsChangeListeners:       map[connect.Id]DnsResolverSettingsChangeListener{},
+		dnsResolverStatusChangeListeners:         map[connect.Id]DnsResolverStatusChangeListener{},
 		networkPeersChangeListeners:              map[connect.Id]NetworkPeersChangeListener{},
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
@@ -812,6 +817,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		IngressContractStatsChangeListenerIds:           slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
 		IngressContractDetailsChangeListenerIds:         slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
 		DnsResolverSettingsChangeListenerIds:            slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
+		DnsResolverStatusChangeListenerIds:              slices.Collect(maps.Keys(self.dnsResolverStatusChangeListeners)),
 		NetworkPeersChangeListenerIds:                   slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
 		ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
 		ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
@@ -6014,6 +6020,18 @@ func (self *DeviceRemote) SetDnsResolverSettings(dnsResolverSettings *DnsResolve
 	if dnsResolverSettings == nil {
 		return
 	}
+	// The device refuses a selection it cannot apply (see
+	// validateDnsResolverSettingsSelection). Refuse it here too, so it is
+	// never sent or queued for the next sync, and the previous settings stay
+	// in force. The refusal names no id.
+	if err := validateDnsResolverSettingsSelection(dnsResolverSettings); err != nil {
+		if self.log != nil && self.log.V(1).Enabled() {
+			self.log.Infof("[dr]refused dns resolver settings: %v", err)
+		}
+		return
+	}
+	// queued and emitted as the device applies them
+	dnsResolverSettings = dnsResolverSettingsAsEdited(dnsResolverSettings)
 	settingsRpc := newDnsResolverSettingsRpc(dnsResolverSettings)
 	event := false
 	func() {
@@ -6081,6 +6099,96 @@ func (self *DeviceRemote) AddDnsResolverSettingsChangeListener(listener DnsResol
 		"DeviceLocalRpc.AddDnsResolverSettingsChangeListener",
 		"DeviceLocalRpc.RemoveDnsResolverSettingsChangeListener",
 	)
+}
+
+// GetDnsResolverStatus reads through to the local device, which holds the
+// resolver (on ios the packet tunnel extension). With no service it answers
+// the last status read or pushed, else unknown; a device process too old to
+// answer keeps its rpc session and reads unknown.
+func (self *DeviceRemote) GetDnsResolverStatus() *DnsResolverStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	status, success := func() (*DnsResolverStatus, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+		status, err := rpcCallNoArgAllowMissingMethod[*DnsResolverStatus](
+			self.service,
+			"DeviceLocalRpc.GetDnsResolverStatus",
+			self.closeService,
+		)
+		if err != nil || status == nil {
+			return nil, false
+		}
+		self.lastDnsResolverStatus = cloneDnsResolverStatus(status)
+		return status, true
+	}()
+	if success {
+		return status
+	}
+	if self.lastDnsResolverStatus != nil {
+		return cloneDnsResolverStatus(self.lastDnsResolverStatus)
+	}
+	return unknownDnsResolverStatus()
+}
+
+// The dns resolver status mirrors like the client limit status: the local
+// device's callback is forwarded over the reverse rpc and re-emitted here.
+// Compatible, so an app attached to a device process without the listener
+// keeps its session and degrades to the getter.
+func (self *DeviceRemote) AddDnsResolverStatusChangeListener(listener DnsResolverStatusChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.dnsResolverStatusChangeListeners,
+		"DeviceLocalRpc.AddDnsResolverStatusChangeListener",
+		"DeviceLocalRpc.RemoveDnsResolverStatusChangeListener",
+	)
+}
+
+// GetDnsBlockedCount reads through to the local device, whose mux counts.
+// Not cached: zero while the device process cannot be reached or is too old
+// to answer, since the count belongs to the live connection.
+func (self *DeviceRemote) GetDnsBlockedCount() int64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return 0
+	}
+	count, err := rpcCallNoArgAllowMissingMethod[int64](
+		self.service,
+		"DeviceLocalRpc.GetDnsBlockedCount",
+		self.closeService,
+	)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
+// The pushed dns resolver status refreshes the cached last value, so a getter
+// called right after a disconnect still answers it.
+func (self *DeviceRemote) dnsResolverStatusChanged(status *DnsResolverStatus) {
+	listenerList := func() []DnsResolverStatusChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if status != nil {
+			self.lastDnsResolverStatus = cloneDnsResolverStatus(status)
+		}
+		return listenerList(self.dnsResolverStatusChangeListeners)
+	}()
+	// a listener is handed the published value, never nil
+	published := cloneDnsResolverStatus(status)
+	if published == nil {
+		published = unknownDnsResolverStatus()
+	}
+	for _, dnsResolverStatusChangeListener := range listenerList {
+		connect.HandleError(func() {
+			dnsResolverStatusChangeListener.DnsResolverStatusChanged(cloneDnsResolverStatus(published))
+		})
+	}
 }
 
 // transport settings
@@ -7800,6 +7908,7 @@ type DeviceRemoteSyncRequest struct {
 	IngressContractStatsChangeListenerIds      []connect.Id
 	IngressContractDetailsChangeListenerIds    []connect.Id
 	DnsResolverSettingsChangeListenerIds       []connect.Id
+	DnsResolverStatusChangeListenerIds         []connect.Id
 	NetworkPeersChangeListenerIds              []connect.Id
 	WindowMonitorEventListenerIds              map[connect.Id][]connect.Id
 	State                                      DeviceRemoteState
@@ -8290,8 +8399,14 @@ func (self *OverrideLocalAppIdsRpc) toOverrideLocalAppIds() *OverrideLocalAppIds
 	}
 }
 
+// The device rpc form of DnsResolverSettings. Gob ignores a field the peer
+// lacks, so an older peer drops the selection and keeps the lists, which are
+// the derived ones (ADBLOCK3RD E3, E5).
+//
 //gomobile:noexport
 type DnsResolverSettingsRpc struct {
+	PresetId              string
+	PresetPersonalId      string
 	EnableRemoteDoh       bool
 	EnableLocalDoh        bool
 	EnableRemoteDns       bool
@@ -8314,6 +8429,8 @@ func newDnsResolverSettingsRpc(dnsResolverSettings *DnsResolverSettings) *DnsRes
 		return nil
 	}
 	return &DnsResolverSettingsRpc{
+		PresetId:              dnsResolverSettings.PresetId,
+		PresetPersonalId:      dnsResolverSettings.PresetPersonalId,
 		EnableRemoteDoh:       dnsResolverSettings.EnableRemoteDoh,
 		EnableLocalDoh:        dnsResolverSettings.EnableLocalDoh,
 		EnableRemoteDns:       dnsResolverSettings.EnableRemoteDns,
@@ -8337,6 +8454,8 @@ func (self *DnsResolverSettingsRpc) toDnsResolverSettings() *DnsResolverSettings
 		return nil
 	}
 	return &DnsResolverSettings{
+		PresetId:              self.PresetId,
+		PresetPersonalId:      self.PresetPersonalId,
 		EnableRemoteDoh:       self.EnableRemoteDoh,
 		EnableLocalDoh:        self.EnableLocalDoh,
 		EnableRemoteDns:       self.EnableRemoteDns,
@@ -9684,6 +9803,7 @@ type DeviceLocalRpc struct {
 	ingressContractStatsChangeListenerIds      map[connect.Id]bool
 	ingressContractDetailsChangeListenerIds    map[connect.Id]bool
 	dnsResolverSettingsChangeListenerIds       map[connect.Id]bool
+	dnsResolverStatusChangeListenerIds         map[connect.Id]bool
 	networkPeersChangeListenerIds              map[connect.Id]bool
 
 	providerPacketStatsChangeListenerIds            map[connect.Id]bool
@@ -9737,6 +9857,7 @@ type DeviceLocalRpc struct {
 	ingressContractStatsChangeListenerSub      Sub
 	ingressContractDetailsChangeListenerSub    Sub
 	dnsResolverSettingsChangeListenerSub       Sub
+	dnsResolverStatusChangeListenerSub         Sub
 	networkPeersChangeListenerSub              Sub
 
 	providerPacketStatsChangeListenerSub            Sub
@@ -9825,6 +9946,7 @@ func newDeviceLocalRpc(
 		ingressContractStatsChangeListenerIds:      map[connect.Id]bool{},
 		ingressContractDetailsChangeListenerIds:    map[connect.Id]bool{},
 		dnsResolverSettingsChangeListenerIds:       map[connect.Id]bool{},
+		dnsResolverStatusChangeListenerIds:         map[connect.Id]bool{},
 		networkPeersChangeListenerIds:              map[connect.Id]bool{},
 		localWindowIds:                             map[connect.Id]connect.Id{},
 		sendPending:                                map[string]func(){},
@@ -10102,6 +10224,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for dnsResolverSettingsChangeListenerId, _ := range self.dnsResolverSettingsChangeListenerIds {
 		self.removeDnsResolverSettingsChangeListener(dnsResolverSettingsChangeListenerId)
+	}
+	for dnsResolverStatusChangeListenerId := range self.dnsResolverStatusChangeListenerIds {
+		self.removeDnsResolverStatusChangeListenerWithLock(dnsResolverStatusChangeListenerId)
 	}
 	for networkPeersChangeListenerId, _ := range self.networkPeersChangeListenerIds {
 		self.removeNetworkPeersChangeListener(networkPeersChangeListenerId)
@@ -10600,7 +10725,16 @@ func (self *DeviceLocalRpc) Sync(
 		}
 	}
 	if state.DnsResolverSettings.IsSet && !hostedIncompatible {
-		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("dns-resolver-settings", state.DnsResolverSettings.Value.toDnsResolverSettings())); err != nil {
+		// A selection the device refuses (see
+		// validateDnsResolverSettingsSelection) keeps the previous settings in
+		// force and does not fail the sync, as a refused performance profile
+		// does. The refusal names no id.
+		dnsResolverSettings := state.DnsResolverSettings.Value.toDnsResolverSettings()
+		if err := validateDnsResolverSettingsSelection(dnsResolverSettings); err != nil {
+			if self.deviceLocal.log.V(1).Enabled() {
+				self.deviceLocal.log.Infof("[dlrpc]sync refused dns resolver settings: %v", err)
+			}
+		} else if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("dns-resolver-settings", dnsResolverSettings)); err != nil {
 			return err
 		}
 	}
@@ -10758,6 +10892,9 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	for _, dnsResolverSettingsChangeListenerId := range syncRequest.DnsResolverSettingsChangeListenerIds {
 		self.addDnsResolverSettingsChangeListener(dnsResolverSettingsChangeListenerId)
+	}
+	for _, dnsResolverStatusChangeListenerId := range syncRequest.DnsResolverStatusChangeListenerIds {
+		self.addDnsResolverStatusChangeListenerWithLock(dnsResolverStatusChangeListenerId)
 	}
 	for _, networkPeersChangeListenerId := range syncRequest.NetworkPeersChangeListenerIds {
 		self.addNetworkPeersChangeListener(networkPeersChangeListenerId)
@@ -10966,6 +11103,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.dnsResolverSettingsChangeListenerSub != nil {
 		self.dnsResolverSettingsChanged(self.deviceLocal.GetDnsResolverSettings())
+	}
+	if self.dnsResolverStatusChangeListenerSub != nil {
+		self.dnsResolverStatusChangedWithLock(self.deviceLocal.GetDnsResolverStatus())
 	}
 	if self.networkPeersChangeListenerSub != nil {
 		self.networkPeersChanged(self.deviceLocal.GetNetworkPeers())
@@ -12163,6 +12303,74 @@ func (self *DeviceLocalRpc) dnsResolverSettingsChanged(dnsResolverSettings *DnsR
 		DnsResolverSettings: newDnsResolverSettingsRpc(dnsResolverSettings),
 	}
 	self.reverseNotify("DeviceRemoteRpc.DnsResolverSettingsChanged", event)
+}
+
+// GetDnsResolverStatus answers the device's dns resolver status, with the
+// blocked count.
+func (self *DeviceLocalRpc) GetDnsResolverStatus(_ RpcNoArg, status **DnsResolverStatus) error {
+	*status = self.deviceLocal.GetDnsResolverStatus()
+	return nil
+}
+
+// GetDnsBlockedCount answers this connection's blocked-lookups count. It
+// crosses only this local rpc (ADBLOCK3RD I3).
+func (self *DeviceLocalRpc) GetDnsBlockedCount(_ RpcNoArg, count *int64) error {
+	*count = self.deviceLocal.GetDnsBlockedCount()
+	return nil
+}
+
+// AddDnsResolverStatusChangeListener forwards the device's dns resolver status
+// to the remote listener listenerId.
+func (self *DeviceLocalRpc) AddDnsResolverStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addDnsResolverStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// addDnsResolverStatusChangeListenerWithLock subscribes to the device once,
+// for the first remote listener.
+func (self *DeviceLocalRpc) addDnsResolverStatusChangeListenerWithLock(listenerId connect.Id) {
+	self.dnsResolverStatusChangeListenerIds[listenerId] = true
+	if self.dnsResolverStatusChangeListenerSub == nil {
+		self.dnsResolverStatusChangeListenerSub = self.deviceLocal.AddDnsResolverStatusChangeListener(self)
+	}
+}
+
+// RemoveDnsResolverStatusChangeListener stops forwarding to the remote listener
+// listenerId.
+func (self *DeviceLocalRpc) RemoveDnsResolverStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeDnsResolverStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// removeDnsResolverStatusChangeListenerWithLock unsubscribes from the device
+// with the last remote listener.
+func (self *DeviceLocalRpc) removeDnsResolverStatusChangeListenerWithLock(listenerId connect.Id) {
+	delete(self.dnsResolverStatusChangeListenerIds, listenerId)
+	if len(self.dnsResolverStatusChangeListenerIds) == 0 && self.dnsResolverStatusChangeListenerSub != nil {
+		self.dnsResolverStatusChangeListenerSub.Close()
+		self.dnsResolverStatusChangeListenerSub = nil
+	}
+}
+
+// DnsResolverStatusChanged is the device's DnsResolverStatusChangeListener.
+func (self *DeviceLocalRpc) DnsResolverStatusChanged(status *DnsResolverStatus) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.dnsResolverStatusChangedWithLock(status)
+}
+
+// dnsResolverStatusChangedWithLock enqueues an async, coalescing reverse
+// notification (see sendLoop). Every field is a plain value, so the status
+// crosses as it stands.
+func (self *DeviceLocalRpc) dnsResolverStatusChangedWithLock(status *DnsResolverStatus) {
+	if status == nil {
+		status = unknownDnsResolverStatus()
+	}
+	self.reverseNotify("DeviceRemoteRpc.DnsResolverStatusChanged", status)
 }
 
 // network peers
@@ -14328,6 +14536,16 @@ func (self *DeviceRemoteRpc) ClientLimitStatusChanged(status *ClientLimitStatus,
 	self.deviceRemote.log.Infof("[drrpc]ClientLimitStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.clientLimitStatusChanged(status)
+	})
+	return nil
+}
+
+// DnsResolverStatusChanged re-emits a dns resolver status the device process
+// pushed. The log names the event only.
+func (self *DeviceRemoteRpc) DnsResolverStatusChanged(status *DnsResolverStatus, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]DnsResolverStatusChanged")
+	self.dispatch(func() {
+		self.deviceRemote.dnsResolverStatusChanged(status)
 	})
 	return nil
 }
