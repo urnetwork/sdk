@@ -1445,6 +1445,10 @@ public interface Raw extends Library {
   void urnet_subscription_balance_view_controller_start(long a0);
   void urnet_subscription_balance_view_controller_start_purchase_confirmation(long a0);
   void urnet_subscription_balance_view_controller_stop(long a0);
+  byte urnet_subscription_pro_tracker_balance_loaded(long a0, byte a1);
+  byte urnet_subscription_pro_tracker_get_is_pro(long a0);
+  void urnet_subscription_pro_tracker_reset(long a0);
+  byte urnet_subscription_pro_tracker_set_jwt(long a0, String a1);
   void urnet_tunnel_cancel(long a0);
   void urnet_tunnel_close(long a0);
   byte urnet_tunnel_get_done(long a0);
@@ -1627,6 +1631,7 @@ public interface Raw extends Library {
   long urnet_new_sn_fleet_device_for_local(long a0, long a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, Pointer a4);
   long urnet_new_sn_fleet_device_for_remote(long a0, long a1, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb a2, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb a3, Pointer a4);
   long urnet_new_subscription_balance_view_controller(long a0);
+  long urnet_new_subscription_pro_tracker();
   long urnet_new_time_unix_milli(long a0);
   Pointer urnet_new_transfer_path(String a0, String a1, String a2);
   long urnet_new_tunnel();

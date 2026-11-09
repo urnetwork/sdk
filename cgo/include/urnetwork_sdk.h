@@ -2554,6 +2554,13 @@ void urnet_subscription_balance_view_controller_start(uint64_t self);
 void urnet_subscription_balance_view_controller_start_purchase_confirmation(uint64_t self);
 void urnet_subscription_balance_view_controller_stop(uint64_t self);
 
+/* ----- SubscriptionProTracker ----- */
+
+bool urnet_subscription_pro_tracker_balance_loaded(uint64_t self, bool server_is_pro);
+bool urnet_subscription_pro_tracker_get_is_pro(uint64_t self);
+void urnet_subscription_pro_tracker_reset(uint64_t self);
+bool urnet_subscription_pro_tracker_set_jwt(uint64_t self, const char* by_jwt);
+
 /* ----- Tunnel ----- */
 
 void urnet_tunnel_cancel(uint64_t self);
@@ -2747,6 +2754,7 @@ uint64_t urnet_new_sn_fleet_claim(uint64_t api, const char* settings_json, urnet
 uint64_t urnet_new_sn_fleet_device_for_local(uint64_t api, uint64_t device, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb store_load_sn_fleet_device_state, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb store_save_sn_fleet_device_state, void* store_user_data);
 uint64_t urnet_new_sn_fleet_device_for_remote(uint64_t api, uint64_t device, urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb store_load_sn_fleet_device_state, urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb store_save_sn_fleet_device_state, void* store_user_data);
 uint64_t urnet_new_subscription_balance_view_controller(uint64_t api);
+uint64_t urnet_new_subscription_pro_tracker(void);
 int64_t urnet_new_time_unix_milli(int64_t unix_milli);
 char* urnet_new_transfer_path(const char* source_id, const char* destination_id, const char* stream_id);
 uint64_t urnet_new_tunnel(void);

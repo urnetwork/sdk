@@ -100,6 +100,8 @@ var behavioralTypes = map[string]bool{
 	"SnFleetDevice": true,
 	// the client limit notice's episode state: private fields and methods
 	"ClientLimitNoticeTracker": true,
+	// the balance's Pro and jwt refresh decision: lock-guarded private state
+	"SubscriptionProTracker": true,
 
 	"AccountPreferencesViewController":    true,
 	"AccountViewController":               true,

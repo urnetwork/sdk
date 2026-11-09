@@ -835,6 +835,7 @@ class SnFleetClaim;
 class SnFleetDevice;
 class Socket;
 class SubscriptionBalanceViewController;
+class SubscriptionProTracker;
 class Tunnel;
 class WalletViewController;
 class WebsocketDeviceRpcDialer;
@@ -23790,6 +23791,16 @@ public:
 	void stop() const;
 };
 
+class SubscriptionProTracker final : public detail::Handle {
+public:
+	SubscriptionProTracker() = default;
+	explicit SubscriptionProTracker(uint64_t h) : detail::Handle(h) {}
+	bool balanceLoaded(bool server_is_pro) const;
+	bool getIsPro() const;
+	void reset() const;
+	bool setJwt(const std::string& by_jwt) const;
+};
+
 class Tunnel final : public detail::Handle {
 public:
 	Tunnel() = default;
@@ -38012,6 +38023,21 @@ inline void SubscriptionBalanceViewController::startPurchaseConfirmation() const
 inline void SubscriptionBalanceViewController::stop() const {
 	urnet_subscription_balance_view_controller_stop(handle());
 }
+inline bool SubscriptionProTracker::balanceLoaded(bool server_is_pro) const {
+	bool r = urnet_subscription_pro_tracker_balance_loaded(handle(), server_is_pro);
+	return r;
+}
+inline bool SubscriptionProTracker::getIsPro() const {
+	bool r = urnet_subscription_pro_tracker_get_is_pro(handle());
+	return r;
+}
+inline void SubscriptionProTracker::reset() const {
+	urnet_subscription_pro_tracker_reset(handle());
+}
+inline bool SubscriptionProTracker::setJwt(const std::string& by_jwt) const {
+	bool r = urnet_subscription_pro_tracker_set_jwt(handle(), by_jwt.c_str());
+	return r;
+}
 inline void Tunnel::cancel() const {
 	urnet_tunnel_cancel(handle());
 }
@@ -39386,6 +39412,10 @@ inline SnFleetDevice newSnFleetDeviceForRemote(const Api& api, const DeviceRemot
 }
 inline SubscriptionBalanceViewController newSubscriptionBalanceViewController(const Api& api) {
 	SubscriptionBalanceViewController r(urnet_new_subscription_balance_view_controller(api.handle()));
+	return r;
+}
+inline SubscriptionProTracker newSubscriptionProTracker() {
+	SubscriptionProTracker r(urnet_new_subscription_pro_tracker());
 	return r;
 }
 inline int64_t newTimeUnixMilli(int64_t unix_milli) {
