@@ -1051,6 +1051,20 @@ func (self *cAdapterDnsResolverSettingsChangeListener) DnsResolverSettingsChange
 	}
 }
 
+type cAdapterDnsResolverStatusChangeListener struct {
+	cbDnsResolverStatusChanged C.urnet_dns_resolver_status_change_cb
+	userData                   unsafe.Pointer
+}
+
+func (self *cAdapterDnsResolverStatusChangeListener) DnsResolverStatusChanged(dnsResolverStatus *sdk.DnsResolverStatus) {
+	defer cgoGuard("urnet_dns_resolver_status_change_cb")
+	dnsResolverStatus_ := cJson(dnsResolverStatus, "urnet_dns_resolver_status_change_cb")
+	C.urnet_invoke_dns_resolver_status_change(self.cbDnsResolverStatusChanged, self.userData, dnsResolverStatus_)
+	if dnsResolverStatus_ != nil {
+		cStringFree(dnsResolverStatus_)
+	}
+}
+
 type cAdapterExtenderProvideStatusChangeListener struct {
 	cbExtenderProvideStatusChanged C.urnet_extender_provide_status_change_cb
 	userData                       unsafe.Pointer
@@ -9223,6 +9237,23 @@ func urnet_contract_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_copy_dns_resolver_settings
+func urnet_copy_dns_resolver_settings(settings *C.char) *C.char {
+	defer cgoGuard("urnet_copy_dns_resolver_settings")
+	var settings_ *sdk.DnsResolverSettings
+	if settings != nil {
+		settings_ = &sdk.DnsResolverSettings{}
+		if !goJson(settings, settings_, "urnet_copy_dns_resolver_settings") {
+			return nil
+		}
+	}
+	r0 := sdk.CopyDnsResolverSettings(settings_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_copy_dns_resolver_settings")
+}
+
 //export urnet_create_payment_reference
 func urnet_create_payment_reference() *C.char {
 	defer cgoGuard("urnet_create_payment_reference")
@@ -9483,6 +9514,47 @@ func urnet_default_tunnel_dns_setting() *C.char {
 	return cJson(r0, "urnet_default_tunnel_dns_setting")
 }
 
+//export urnet_describe_dns_resolver_settings
+func urnet_describe_dns_resolver_settings(settings *C.char, exitCountryCode *C.char) *C.char {
+	defer cgoGuard("urnet_describe_dns_resolver_settings")
+	var settings_ *sdk.DnsResolverSettings
+	if settings != nil {
+		settings_ = &sdk.DnsResolverSettings{}
+		if !goJson(settings, settings_, "urnet_describe_dns_resolver_settings") {
+			return nil
+		}
+	}
+	r0 := sdk.DescribeDnsResolverSettings(settings_, goString(exitCountryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_describe_dns_resolver_settings")
+}
+
+//export urnet_describe_dns_resolver_status
+func urnet_describe_dns_resolver_status(settings *C.char, status *C.char) *C.char {
+	defer cgoGuard("urnet_describe_dns_resolver_status")
+	var settings_ *sdk.DnsResolverSettings
+	if settings != nil {
+		settings_ = &sdk.DnsResolverSettings{}
+		if !goJson(settings, settings_, "urnet_describe_dns_resolver_status") {
+			return nil
+		}
+	}
+	var status_ *sdk.DnsResolverStatus
+	if status != nil {
+		status_ = &sdk.DnsResolverStatus{}
+		if !goJson(status, status_, "urnet_describe_dns_resolver_status") {
+			return nil
+		}
+	}
+	r0 := sdk.DescribeDnsResolverStatus(settings_, status_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_describe_dns_resolver_status")
+}
+
 //export urnet_device_add_allow_foreground_change_listener
 func urnet_device_add_allow_foreground_change_listener(self C.uint64_t, listener_allow_foreground_changed C.urnet_allow_foreground_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_allow_foreground_change_listener")
@@ -9737,6 +9809,21 @@ func urnet_device_add_dns_resolver_settings_change_listener(self C.uint64_t, lis
 		listener_ = &cAdapterDnsResolverSettingsChangeListener{cbDnsResolverSettingsChanged: listener_dns_resolver_settings_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddDnsResolverSettingsChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_dns_resolver_status_change_listener
+func urnet_device_add_dns_resolver_status_change_listener(self C.uint64_t, listener_dns_resolver_status_changed C.urnet_dns_resolver_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_dns_resolver_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_dns_resolver_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.DnsResolverStatusChangeListener
+	if listener_dns_resolver_status_changed != nil {
+		listener_ = &cAdapterDnsResolverStatusChangeListener{cbDnsResolverStatusChanged: listener_dns_resolver_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddDnsResolverStatusChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -10497,6 +10584,17 @@ func urnet_device_get_default_location(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_default_location")
 }
 
+//export urnet_device_get_dns_blocked_count
+func urnet_device_get_dns_blocked_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_device_get_dns_blocked_count")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_dns_blocked_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetDnsBlockedCount()
+	return C.int64_t(r0)
+}
+
 //export urnet_device_get_dns_resolver_settings
 func urnet_device_get_dns_resolver_settings(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_dns_resolver_settings")
@@ -10509,6 +10607,20 @@ func urnet_device_get_dns_resolver_settings(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_dns_resolver_settings")
+}
+
+//export urnet_device_get_dns_resolver_status
+func urnet_device_get_dns_resolver_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_dns_resolver_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_dns_resolver_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDnsResolverStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_dns_resolver_status")
 }
 
 //export urnet_device_get_done
@@ -15189,6 +15301,57 @@ func urnet_devices_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_dns_resolver_settings_as_custom
+func urnet_dns_resolver_settings_as_custom(base *C.char) *C.char {
+	defer cgoGuard("urnet_dns_resolver_settings_as_custom")
+	var base_ *sdk.DnsResolverSettings
+	if base != nil {
+		base_ = &sdk.DnsResolverSettings{}
+		if !goJson(base, base_, "urnet_dns_resolver_settings_as_custom") {
+			return nil
+		}
+	}
+	r0 := sdk.DnsResolverSettingsAsCustom(base_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_dns_resolver_settings_as_custom")
+}
+
+//export urnet_dns_resolver_settings_with_fallback
+func urnet_dns_resolver_settings_with_fallback(base *C.char, enableFallback C.bool) *C.char {
+	defer cgoGuard("urnet_dns_resolver_settings_with_fallback")
+	var base_ *sdk.DnsResolverSettings
+	if base != nil {
+		base_ = &sdk.DnsResolverSettings{}
+		if !goJson(base, base_, "urnet_dns_resolver_settings_with_fallback") {
+			return nil
+		}
+	}
+	r0 := sdk.DnsResolverSettingsWithFallback(base_, bool(enableFallback))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_dns_resolver_settings_with_fallback")
+}
+
+//export urnet_dns_resolver_settings_with_preset
+func urnet_dns_resolver_settings_with_preset(base *C.char, presetId *C.char, personalId *C.char) *C.char {
+	defer cgoGuard("urnet_dns_resolver_settings_with_preset")
+	var base_ *sdk.DnsResolverSettings
+	if base != nil {
+		base_ = &sdk.DnsResolverSettings{}
+		if !goJson(base, base_, "urnet_dns_resolver_settings_with_preset") {
+			return nil
+		}
+	}
+	r0 := sdk.DnsResolverSettingsWithPreset(base_, goString(presetId), goString(personalId))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_dns_resolver_settings_with_preset")
+}
+
 //export urnet_encode_base58
 func urnet_encode_base58(data *C.uint8_t, data_len C.int32_t) *C.char {
 	defer cgoGuard("urnet_encode_base58")
@@ -15755,6 +15918,36 @@ func urnet_get_default_tunnel_mtu() C.int64_t {
 	defer cgoGuard("urnet_get_default_tunnel_mtu")
 	r0 := sdk.GetDefaultTunnelMtu()
 	return C.int64_t(r0)
+}
+
+//export urnet_get_dns_picks
+func urnet_get_dns_picks(exitCountryCode *C.char) *C.char {
+	defer cgoGuard("urnet_get_dns_picks")
+	r0 := sdk.GetDnsPicks(goString(exitCountryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_get_dns_picks")
+}
+
+//export urnet_get_dns_preset
+func urnet_get_dns_preset(presetId *C.char) *C.char {
+	defer cgoGuard("urnet_get_dns_preset")
+	r0 := sdk.GetDnsPreset(goString(presetId))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_get_dns_preset")
+}
+
+//export urnet_get_dns_preset_providers
+func urnet_get_dns_preset_providers() *C.char {
+	defer cgoGuard("urnet_get_dns_preset_providers")
+	r0 := sdk.GetDnsPresetProviders()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_get_dns_preset_providers")
 }
 
 //export urnet_get_extender_color_hex
@@ -19781,6 +19974,13 @@ func urnet_normalize_bittensor_signature(signature *C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_normalize_dns_preset_personal_id
+func urnet_normalize_dns_preset_personal_id(presetId *C.char, input *C.char) *C.char {
+	defer cgoGuard("urnet_normalize_dns_preset_personal_id")
+	r0 := sdk.NormalizeDnsPresetPersonalId(goString(presetId), goString(input))
+	return cString(string(r0))
+}
+
 //export urnet_order_connected_provider_locations
 func urnet_order_connected_provider_locations(locations *C.char) *C.char {
 	defer cgoGuard("urnet_order_connected_provider_locations")
@@ -21249,6 +21449,12 @@ func urnet_set_device_rpc_h1_plus_enabled(enabled C.bool) {
 	sdk.SetDeviceRpcH1PlusEnabled(bool(enabled))
 }
 
+//export urnet_set_dns_presets_hide_ad_blocking
+func urnet_set_dns_presets_hide_ad_blocking(hide C.bool) {
+	defer cgoGuard("urnet_set_dns_presets_hide_ad_blocking")
+	sdk.SetDnsPresetsHideAdBlocking(bool(hide))
+}
+
 //export urnet_set_egress_interface_index
 func urnet_set_egress_interface_index(index4 C.int64_t, index6 C.int64_t) {
 	defer cgoGuard("urnet_set_egress_interface_index")
@@ -22313,6 +22519,18 @@ func urnet_validate_control_doh_url(dohUrl *C.char) (errorId *C.char) {
 		}
 	}()
 	r0 := sdk.ValidateControlDohUrl(goString(dohUrl))
+	return cString(string(r0))
+}
+
+//export urnet_validate_dns_preset_personal_id
+func urnet_validate_dns_preset_personal_id(presetId *C.char, personalId *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_validate_dns_preset_personal_id", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
+	r0 := sdk.ValidateDnsPresetPersonalId(goString(presetId), goString(personalId))
 	return cString(string(r0))
 }
 

@@ -1,6 +1,8 @@
 package sdk
 
 import (
+	"strings"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -114,6 +116,13 @@ type ContractDetailsChangeListener interface {
 
 type DnsResolverSettingsChangeListener interface {
 	DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings)
+}
+
+// fired when the dns resolver status changes: its state, its verification or
+// the selection it describes (dns_resolver_status.go). The blocked-lookups
+// count changes without a callback; read it with `GetDnsBlockedCount`.
+type DnsResolverStatusChangeListener interface {
+	DnsResolverStatusChanged(dnsResolverStatus *DnsResolverStatus)
 }
 
 type TransportSettingsChangeListener interface {
@@ -450,7 +459,21 @@ type NetworkPeer struct {
 // DNS — plain DNS and/or DoH, against local and/or remote servers. It mirrors the
 // resolver configuration in the connect package; the string lists hold resolver IPs
 // and DoH endpoint URLs. TLS/cert-pinning is applied internally and not exposed here.
+//
+// The selection (PresetId, dns_presets.go) is the source of truth: while it is
+// set, the device derives the lists from it and ignores the lists given, and
+// the lists it reads back are the derived ones. Editors never build this from
+// scratch; they start from the dns_presets_ui.go helpers, so every field
+// survives a save.
 type DnsResolverSettings struct {
+	// The selection: DnsPresetIdDefault for URnetwork's built-in resolver,
+	// a catalog preset id, "regional-<cc>" for a country's regional
+	// recommendation, or empty for the explicit lists below (Custom).
+	PresetId string
+	// The user's configuration id of a personal preset, else empty. It
+	// travels only in the DoH path and is never logged or sent to URnetwork.
+	PresetPersonalId string
+
 	EnableRemoteDoh bool
 	EnableLocalDoh  bool
 	EnableRemoteDns bool
@@ -506,19 +529,22 @@ func HasRegionalDnsRecommendation(countryCode string) bool {
 // GetRecommendedDnsResolverSettings returns the recommended dns settings for a
 // country (unencrypted remote dns only, using the region's known-working
 // servers), or nil when there is no recommendation. shares the connect
-// recommendation used by the server proxy config
+// recommendation used by the server proxy config. The settings select the
+// country's regional pick ("regional-<cc>").
 func GetRecommendedDnsResolverSettings(countryCode string) *DnsResolverSettings {
 	resolver := connect.RegionalDnsResolverSettings(countryCode)
 	if resolver == nil {
 		return nil
 	}
-	return dnsResolverSettingsFromConnect(resolver)
+	settings := dnsResolverSettingsFromConnect(resolver)
+	settings.PresetId = DnsPresetIdRegionalPrefix + strings.ToLower(strings.TrimSpace(countryCode))
+	return settings
 }
 
 // GetDefaultDnsResolverSettings returns the default, most secure dns settings:
 // encrypted DNS over HTTPS through the tunnel only. The host-side DoH fallback
 // while the tunnel starts is off (an opt-in). This is what the device uses out
-// of the box
+// of the box, and it selects URnetwork's default (DnsPresetIdDefault).
 func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	muxSettings := connect.DefaultUpgradeMuxSettings()
 	if muxSettings == nil || muxSettings.Dns == nil || muxSettings.Dns.Resolver == nil {
@@ -526,6 +552,7 @@ func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	}
 	settings := dnsResolverSettingsFromConnect(muxSettings.Dns.Resolver)
 	settings.EnableFallback = muxSettings.Dns.Fallback != nil
+	settings.PresetId = DnsPresetIdDefault
 	return settings
 }
 
@@ -928,6 +955,25 @@ type Device interface {
 	GetDnsResolverSettings() *DnsResolverSettings
 
 	AddDnsResolverSettingsChangeListener(listener DnsResolverSettingsChangeListener) Sub
+
+	// GetDnsResolverStatus is the status of the device's dns resolver
+	// (dns_resolver_status.go): whether it answers, has failed over to
+	// URnetwork's dns or fails closed, the verification of the selected
+	// preset, and this connection's blocked-lookups count. Never nil. A
+	// remote device reads through to the device process, with the last
+	// value cached while it cannot be reached.
+	GetDnsResolverStatus() *DnsResolverStatus
+
+	AddDnsResolverStatusChangeListener(listener DnsResolverStatusChangeListener) Sub
+
+	// GetDnsBlockedCount is this connection's count of lookups the selected
+	// resolver answered with a recognizable block: a 0.0.0.0 or :: sink, or
+	// an NXDOMAIN with a filtering extended dns error. A floor, since blocks
+	// answered otherwise are not counted. It starts at zero at each connect
+	// and when the selected preset changes, stays on the device, and is never
+	// logged, saved or sent anywhere. A remote device reads it through the
+	// device rpc, and reads zero while the device cannot be reached.
+	GetDnsBlockedCount() int64
 
 	GetNetworkPeers() *NetworkPeers
 

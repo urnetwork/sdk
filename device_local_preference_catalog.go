@@ -301,7 +301,9 @@ func (self *DeviceLocal) ownLocalCatalogValue(name string, value any) any {
 	case "provider-transport-settings":
 		return normalizeTransportSettings(value.(*TransportSettings), true)
 	case "dns-resolver-settings":
-		return cloneDnsResolverSettings(value.(*DnsResolverSettings))
+		// a setter's value: lists edited under the default or a regional
+		// selection apply as custom (dnsResolverSettingsAsEdited)
+		return ownDnsResolverSettings(dnsResolverSettingsAsEdited(value.(*DnsResolverSettings)))
 	case "block-action-overrides":
 		return self.ownBlockActionOverrides(value.(*BlockActionOverrideList))
 	case "log-verbosity":
@@ -319,6 +321,10 @@ func validateLocalCatalogValue(name string, value any) error {
 	switch name {
 	case "performance-profile":
 		return localStorageStageError("invalid "+name, validatePerformanceProfile(value.(*PerformanceProfile)))
+	case "dns-resolver-settings":
+		// an unknown preset or a personal id that does not validate (E2); the
+		// cause is a fixed text that never carries the id
+		return localStorageStageError("invalid "+name, validateDnsResolverSettingsSelection(value.(*DnsResolverSettings)))
 	default:
 		return nil
 	}

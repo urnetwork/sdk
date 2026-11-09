@@ -413,6 +413,16 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   addDnsResolverSettingsChangeListener(
     cb: (settings: DnsResolverSettings | null) => void,
   ): Unsubscribe;
+  /** see DnsResolverStatus; never null from the device */
+  getDnsResolverStatus(): DnsResolverStatus;
+  /** fires on a change of state, verification or selection, not of the count */
+  addDnsResolverStatusChangeListener(cb: (status: DnsResolverStatus) => void): Unsubscribe;
+  /**
+   * this connection's count of lookups the selected resolver answered with a
+   * recognizable block; a floor, kept on the device and never sent anywhere.
+   * Poll it: it changes without a callback. 0 while the device is unreachable
+   */
+  getDnsBlockedCount(): number;
 
   // performance profile (over the device-rpc): the connect options as the
   // native apps write them. The device applies a change to the live
@@ -984,6 +994,13 @@ export interface ProviderLocationsViewController {
  * an upstream resolver.
  */
 export interface DnsResolverSettings {
+  /**
+   * the selection the device derives the lists from: "default" for URnetwork's
+   * dns, a preset id, "regional-<cc>", or "" for the explicit lists below
+   */
+  presetId: string;
+  /** a personal preset's configuration id, else "" */
+  presetPersonalId: string;
   enableRemoteDoh: boolean;
   enableLocalDoh: boolean;
   enableRemoteDns: boolean;
@@ -999,6 +1016,22 @@ export interface DnsResolverSettings {
   remoteDnsIpv6: string[];
   localDnsIpv4: string[];
   localDnsIpv6: string[];
+}
+
+/**
+ * The status of the device's dns resolver. `state` is whether the selected
+ * resolver answers ("ok"), has failed over to URnetwork's dns ("failedOver"),
+ * fails closed ("failing"), or has not answered or failed yet ("unknown").
+ * `verification` is what the device found out about the selected preset.
+ * `sinceTime` is the unix millisecond time the state last changed, 0 for
+ * never; `blockedCount` is this connection's blocked lookups when read.
+ */
+export interface DnsResolverStatus {
+  state: "unknown" | "ok" | "failing" | "failedOver";
+  verification: "none" | "confirmed" | "notFiltering" | "rejected" | "malformed" | "unconfirmed";
+  presetId: string;
+  sinceTime: number;
+  blockedCount: number;
 }
 
 /** the connection mode: "auto", "quality" (Web) or "speed" (Streaming) */

@@ -69,6 +69,7 @@ module URnetwork
       callback :urnet_device_recreated_cb, [:pointer], :void
       callback :urnet_device_set_name_cb, [:pointer, :string, :string], :void
       callback :urnet_dns_resolver_settings_change_cb, [:pointer, :string], :void
+      callback :urnet_dns_resolver_status_change_cb, [:pointer, :string], :void
       callback :urnet_extender_provide_status_change_cb, [:pointer, :string], :void
       callback :urnet_extender_status_change_cb, [:pointer, :string], :void
       callback :urnet_extender_view_controller_cb, [:pointer, :string], :void
@@ -641,6 +642,7 @@ module URnetwork
       attach_function :urnet_device_add_contract_status_change_listener, [:uint64, :urnet_contract_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_default_location_change_listener, [:uint64, :urnet_default_location_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_dns_resolver_settings_change_listener, [:uint64, :urnet_dns_resolver_settings_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_dns_resolver_status_change_listener, [:uint64, :urnet_dns_resolver_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_egress_contract_details_change_listener, [:uint64, :urnet_contract_details_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_egress_contract_stats_change_listener, [:uint64, :urnet_contract_stats_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_extender_provide_status_change_listener, [:uint64, :urnet_extender_provide_status_change_cb, :pointer], :uint64, blocking: true
@@ -696,7 +698,9 @@ module URnetwork
       attach_function :urnet_device_get_control_ip_family_policy, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_control_ip_family_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_default_location, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_dns_blocked_count, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_dns_resolver_settings, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_dns_resolver_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_done, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_egress_contract_details, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_egress_contract_stats, [:uint64], :pointer, blocking: true
@@ -1497,6 +1501,7 @@ module URnetwork
       attach_function :urnet_compare_points_leaderboard_values, [:string, :string, :string], :int64, blocking: true
       attach_function :urnet_compute_price_equivalent, [:double, :double, :int64], :pointer, blocking: true
       attach_function :urnet_connect_link_url, [:string, :string, :string], :pointer, blocking: true
+      attach_function :urnet_copy_dns_resolver_settings, [:string], :pointer, blocking: true
       attach_function :urnet_create_payment_reference, [], :pointer, blocking: true
       attach_function :urnet_crypto_asset_sells, [:string, :string, :string], :bool, blocking: true
       attach_function :urnet_crypto_asset_ticker, [:string], :pointer, blocking: true
@@ -1511,6 +1516,11 @@ module URnetwork
       attach_function :urnet_default_transport_mode_priority, [:string], :int64, blocking: true
       attach_function :urnet_default_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_tunnel_dns_setting, [], :pointer, blocking: true
+      attach_function :urnet_describe_dns_resolver_settings, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_describe_dns_resolver_status, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_dns_resolver_settings_as_custom, [:string], :pointer, blocking: true
+      attach_function :urnet_dns_resolver_settings_with_fallback, [:string, :bool], :pointer, blocking: true
+      attach_function :urnet_dns_resolver_settings_with_preset, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_encode_base58, [:pointer, :int32], :pointer, blocking: true
       attach_function :urnet_encrypt_data, [:pointer, :int32, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_evm_mirror_ss58, [:string], :pointer, blocking: true
@@ -1538,6 +1548,9 @@ module URnetwork
       attach_function :urnet_get_default_tunnel_dns_address_ipv4, [], :pointer, blocking: true
       attach_function :urnet_get_default_tunnel_dns_address_ipv6, [], :pointer, blocking: true
       attach_function :urnet_get_default_tunnel_mtu, [], :int64, blocking: true
+      attach_function :urnet_get_dns_picks, [:string], :pointer, blocking: true
+      attach_function :urnet_get_dns_preset, [:string], :pointer, blocking: true
+      attach_function :urnet_get_dns_preset_providers, [], :pointer, blocking: true
       attach_function :urnet_get_extender_color_hex, [:string], :pointer, blocking: true
       attach_function :urnet_get_extender_store_read_only, [], :bool, blocking: true
       attach_function :urnet_get_filtered_locations_from_result, [:string, :string], :pointer, blocking: true
@@ -1623,6 +1636,7 @@ module URnetwork
       attach_function :urnet_normal_env_name, [:string], :pointer, blocking: true
       attach_function :urnet_normal_extender_gossip_mode, [:string], :pointer, blocking: true
       attach_function :urnet_normalize_bittensor_signature, [:string], :pointer, blocking: true
+      attach_function :urnet_normalize_dns_preset_personal_id, [:string, :string], :pointer, blocking: true
       attach_function :urnet_order_connected_provider_locations, [:string], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_challenge_message, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_wallet_return, [:string, :string, :pointer], :pointer, blocking: true
@@ -1646,6 +1660,7 @@ module URnetwork
       attach_function :urnet_service_url, [:string, :string, :string, :string], :pointer, blocking: true
       attach_function :urnet_set_control_ip_family_policy, [:int64], :void, blocking: true
       attach_function :urnet_set_device_rpc_h1_plus_enabled, [:bool], :void, blocking: true
+      attach_function :urnet_set_dns_presets_hide_ad_blocking, [:bool], :void, blocking: true
       attach_function :urnet_set_egress_interface_index, [:int64, :int64], :void, blocking: true
       attach_function :urnet_set_extender_network_client_enabled, [:bool], :bool, blocking: true
       attach_function :urnet_set_extender_store_read_only, [:bool], :void, blocking: true
@@ -1676,6 +1691,7 @@ module URnetwork
       attach_function :urnet_upload_logs_inventory, [], :pointer, blocking: true
       attach_function :urnet_usd_to_nano_cents, [:double], :int64, blocking: true
       attach_function :urnet_validate_control_doh_url, [:string], :pointer, blocking: true
+      attach_function :urnet_validate_dns_preset_personal_id, [:string, :string], :pointer, blocking: true
       attach_function :urnet_validate_emoji_tag, [:string], :pointer, blocking: true
       attach_function :urnet_validate_ss58, [:string], :bool, blocking: true
       attach_function :urnet_validate_vless_settings, [:string], :pointer, blocking: true

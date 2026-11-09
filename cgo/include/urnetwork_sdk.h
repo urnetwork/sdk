@@ -277,6 +277,32 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_DEVICE_RPC_WS_BINARY 2
 #define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
+#define URNET_DNS_PICK_KIND_CUSTOM "custom"
+#define URNET_DNS_PICK_KIND_DEFAULT "default"
+#define URNET_DNS_PICK_KIND_PRESET "preset"
+#define URNET_DNS_PICK_KIND_REGIONAL "regional"
+#define URNET_DNS_PRESET_ERROR_PERSONAL_ID_INVALID "dns_preset_error_personal_id_invalid"
+#define URNET_DNS_PRESET_ERROR_PERSONAL_ID_NOT_ACCEPTED "dns_preset_error_personal_id_not_accepted"
+#define URNET_DNS_PRESET_ERROR_PERSONAL_ID_OTHER_PROVIDER "dns_preset_error_personal_id_other_provider"
+#define URNET_DNS_PRESET_ERROR_PERSONAL_ID_REQUIRED "dns_preset_error_personal_id_required"
+#define URNET_DNS_PRESET_ERROR_UNKNOWN "dns_preset_error_unknown"
+#define URNET_DNS_PRESET_GROUP_ADBLOCK "adblock"
+#define URNET_DNS_PRESET_GROUP_FAMILY "family"
+#define URNET_DNS_PRESET_GROUP_PERSONAL "personal"
+#define URNET_DNS_PRESET_GROUP_SECURITY "security"
+#define URNET_DNS_PRESET_GROUP_UNFILTERED "unfiltered"
+#define URNET_DNS_PRESET_ID_DEFAULT "default"
+#define URNET_DNS_PRESET_ID_REGIONAL_PREFIX "regional-"
+#define URNET_DNS_RESOLVER_STATE_FAILED_OVER "failedOver"
+#define URNET_DNS_RESOLVER_STATE_FAILING "failing"
+#define URNET_DNS_RESOLVER_STATE_OK "ok"
+#define URNET_DNS_RESOLVER_STATE_UNKNOWN "unknown"
+#define URNET_DNS_RESOLVER_VERIFICATION_CONFIRMED "confirmed"
+#define URNET_DNS_RESOLVER_VERIFICATION_MALFORMED "malformed"
+#define URNET_DNS_RESOLVER_VERIFICATION_NONE "none"
+#define URNET_DNS_RESOLVER_VERIFICATION_NOT_FILTERING "notFiltering"
+#define URNET_DNS_RESOLVER_VERIFICATION_REJECTED "rejected"
+#define URNET_DNS_RESOLVER_VERIFICATION_UNCONFIRMED "unconfirmed"
 #define URNET_EMOJI_TAG_MAX_COUNT 6
 #define URNET_EMOJI_TAG_REASON_EMPTY "empty"
 #define URNET_EMOJI_TAG_REASON_NOT_EMOJI "not_emoji"
@@ -823,6 +849,8 @@ typedef void (*urnet_device_recreated_cb)(void* user_data);
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* DnsResolverSettingsChangeListener */
 typedef void (*urnet_dns_resolver_settings_change_cb)(void* user_data, const char* dns_resolver_settings_json);
+/* DnsResolverStatusChangeListener */
+typedef void (*urnet_dns_resolver_status_change_cb)(void* user_data, const char* dns_resolver_status_json);
 /* ExtenderProvideStatusChangeListener */
 typedef void (*urnet_extender_provide_status_change_cb)(void* user_data, const char* status_json);
 /* ExtenderStatusChangeListener */
@@ -1592,6 +1620,7 @@ uint64_t urnet_device_add_connected_provider_location_change_listener(uint64_t s
 uint64_t urnet_device_add_contract_status_change_listener(uint64_t self, urnet_contract_status_change_cb listener_contract_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_default_location_change_listener(uint64_t self, urnet_default_location_change_cb listener_default_location_changed, void* listener_user_data);
 uint64_t urnet_device_add_dns_resolver_settings_change_listener(uint64_t self, urnet_dns_resolver_settings_change_cb listener_dns_resolver_settings_changed, void* listener_user_data);
+uint64_t urnet_device_add_dns_resolver_status_change_listener(uint64_t self, urnet_dns_resolver_status_change_cb listener_dns_resolver_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_extender_provide_status_change_listener(uint64_t self, urnet_extender_provide_status_change_cb listener_extender_provide_status_changed, void* listener_user_data);
@@ -1647,7 +1676,9 @@ char* urnet_device_get_contract_status(uint64_t self);
 int64_t urnet_device_get_control_ip_family_policy(uint64_t self);
 char* urnet_device_get_control_ip_family_status(uint64_t self);
 char* urnet_device_get_default_location(uint64_t self);
+int64_t urnet_device_get_dns_blocked_count(uint64_t self);
 char* urnet_device_get_dns_resolver_settings(uint64_t self);
+char* urnet_device_get_dns_resolver_status(uint64_t self);
 bool urnet_device_get_done(uint64_t self);
 char* urnet_device_get_egress_contract_details(uint64_t self);
 char* urnet_device_get_egress_contract_stats(uint64_t self);
@@ -2591,6 +2622,7 @@ int64_t urnet_compare_points_leaderboard_rows(const char* sort, const char* a_js
 int64_t urnet_compare_points_leaderboard_values(const char* sort, const char* a_json, const char* b_json);
 char* urnet_compute_price_equivalent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits);
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
+char* urnet_copy_dns_resolver_settings(const char* settings_json);
 char* urnet_create_payment_reference(void);
 bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const char* item);
 char* urnet_crypto_asset_ticker(const char* asset);
@@ -2605,6 +2637,11 @@ char* urnet_default_sn_chain_settings(void);
 int64_t urnet_default_transport_mode_priority(const char* mode);
 char* urnet_default_transport_settings(void);
 char* urnet_default_tunnel_dns_setting(void);
+char* urnet_describe_dns_resolver_settings(const char* settings_json, const char* exit_country_code);
+char* urnet_describe_dns_resolver_status(const char* settings_json, const char* status_json);
+char* urnet_dns_resolver_settings_as_custom(const char* base_json);
+char* urnet_dns_resolver_settings_with_fallback(const char* base_json, bool enable_fallback);
+char* urnet_dns_resolver_settings_with_preset(const char* base_json, const char* preset_id, const char* personal_id);
 char* urnet_encode_base58(const uint8_t* data, int32_t data_len);
 char* urnet_encrypt_data(const uint8_t* data, int32_t data_len, const char* nonce_base58, const char* shared_secret_base58, char** out_error);
 char* urnet_evm_mirror_ss58(const char* address);
@@ -2632,6 +2669,9 @@ char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
 char* urnet_get_default_tunnel_dns_address_ipv6(void);
 int64_t urnet_get_default_tunnel_mtu(void);
+char* urnet_get_dns_picks(const char* exit_country_code);
+char* urnet_get_dns_preset(const char* preset_id);
+char* urnet_get_dns_preset_providers(void);
 char* urnet_get_extender_color_hex(const char* ip);
 bool urnet_get_extender_store_read_only(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
@@ -2717,6 +2757,7 @@ char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
 char* urnet_normalize_bittensor_signature(const char* signature);
+char* urnet_normalize_dns_preset_personal_id(const char* preset_id, const char* input);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_bittensor_challenge_message(const char* message, char** out_error);
 char* urnet_parse_bittensor_wallet_return(const char* uri, const char* redirect_link, char** out_error);
@@ -2740,6 +2781,7 @@ char* urnet_service_host_name(const char* key_json, const char* values_json, con
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
 void urnet_set_control_ip_family_policy(int64_t policy);
 void urnet_set_device_rpc_h1_plus_enabled(bool enabled);
+void urnet_set_dns_presets_hide_ad_blocking(bool hide);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_extender_network_client_enabled(bool enabled);
 void urnet_set_extender_store_read_only(bool read_only);
@@ -2771,6 +2813,8 @@ char* urnet_upload_logs_inventory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_control_doh_url(const char* doh_url);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+char* urnet_validate_dns_preset_personal_id(const char* preset_id, const char* personal_id);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
@@ -3818,6 +3862,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TransportDelayBadConnectStall: number (ns)
  *   TransportDelayPromptConnectTimeout: number (ns)
  *   ClientLimitRetryMinInterval: number (ns)
+ *   DnsResolverVerifyMinInterval: number (ns)
  *   StrictWindowHandover: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean
@@ -3847,7 +3892,65 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: DeviceSetNameError | null
  */
 
+/* DnsPick (json):
+ *   Kind: string
+ *   PresetId: string
+ *   Group: string
+ *   GroupKey: string
+ *   LabelKey: string
+ *   CopyKey: string
+ *   CountryCode: string
+ *   Unencrypted: boolean
+ *   Preset: DnsPreset | null
+ */
+
+/* DnsPickList (json):
+ *   = DnsPick | null[]
+ */
+
+/* DnsPreset (json):
+ *   PresetId: string
+ *   ProviderId: string
+ *   ProviderName: string
+ *   Jurisdiction: string
+ *   PrivacyUrl: string
+ *   HelpUrl: string
+ *   Group: string
+ *   GroupKey: string
+ *   CopyKey: string
+ *   BlocksAds: boolean
+ *   Failover: boolean
+ *   Filtering: boolean
+ *   PersonalIdRequired: boolean
+ *   PersonalIdExample: string
+ *   PersonalIdHelpUrl: string
+ *   PersonalIdWhereKey: string
+ *   PersonalIdFormatKey: string
+ *   QuotaNoteKey: string
+ */
+
+/* DnsPresetList (json):
+ *   = DnsPreset | null[]
+ */
+
+/* DnsPresetProvider (json):
+ *   ProviderId: string
+ *   Name: string
+ *   Operator: string
+ *   Jurisdiction: string
+ *   HelpUrl: string
+ *   PrivacyUrl: string
+ *   TermsUrl: string
+ *   Presets: DnsPresetList | null
+ */
+
+/* DnsPresetProviderList (json):
+ *   = DnsPresetProvider | null[]
+ */
+
 /* DnsResolverSettings (json):
+ *   PresetId: string
+ *   PresetPersonalId: string
  *   EnableRemoteDoh: boolean
  *   EnableLocalDoh: boolean
  *   EnableRemoteDns: boolean
@@ -3862,6 +3965,49 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   RemoteDnsIpv6: StringList | null
  *   LocalDnsIpv4: StringList | null
  *   LocalDnsIpv6: StringList | null
+ */
+
+/* DnsResolverStatus (json):
+ *   State: string
+ *   Verification: string
+ *   PresetId: string
+ *   SinceTime: number
+ *   BlockedCount: number
+ */
+
+/* DnsSelectionSummary (json):
+ *   Kind: string
+ *   PresetId: string
+ *   ProviderId: string
+ *   ProviderName: string
+ *   Group: string
+ *   GroupKey: string
+ *   CopyKey: string
+ *   SummaryKey: string
+ *   LabelKey: string
+ *   CountryCode: string
+ *   Personal: boolean
+ *   Unencrypted: boolean
+ *   Failover: boolean
+ *   ShowBlockedCount: boolean
+ *   Dropped: boolean
+ *   DroppedPresetId: string
+ *   DroppedProviderName: string
+ *   PillKey: string
+ *   PillCountryCode: string
+ */
+
+/* DnsStatusSummary (json):
+ *   StatusKey: string
+ *   ProviderName: string
+ *   StatusDetailKey: string
+ *   VerificationKey: string
+ *   VerificationUrl: string
+ *   VerificationLinkKey: string
+ *   ShowUseDefault: boolean
+ *   ShowChangeLocation: boolean
+ *   ShowBlockedCount: boolean
+ *   BlockedCount: number
  */
 
 /* EmojiTagValidation (json):
