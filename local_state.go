@@ -744,9 +744,11 @@ var (
 // The old tm recommendation, in a record from before version 1, is replaced the same way by the
 // current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
 // v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
-// the pair as the recommendation. So is the version 1 kz recommendation, in a record from
-// before version 2: remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both
-// families, which load as the current kz recommendation with 9.9.9.10 in Quad9's place.
+// the pair as the recommendation. So is the version 1 kz recommendation, in a version 1 record:
+// remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both families, which load as
+// the current kz recommendation with 9.9.9.10 in Quad9's place. Only a version 1 record can hold
+// it as the recommendation: before version 1, kz recommended Google alone, and no step turns that
+// into it. The same lists in a version 0 record are the user's own choice and load as saved.
 //
 // Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
 // themselves, alone or among other servers, keeps it. That includes the old kz recommendation,
@@ -807,7 +809,8 @@ func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordV
 		}
 	}
 
-	if recordVersion < 2 && dnsResolverSettings.RemoteDnsIpv4 != nil && dnsResolverSettings.RemoteDnsIpv6 != nil {
+	// a version 0 record predates the version 1 kz recommendation, so these lists there are a choice
+	if recordVersion == 1 && dnsResolverSettings.RemoteDnsIpv4 != nil && dnsResolverSettings.RemoteDnsIpv6 != nil {
 		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
 		savedIpv6 := dnsResolverSettings.RemoteDnsIpv6.getAll()
 		if sameServers(savedIpv4, dnsResolverSettingsVersion1KzRemoteDnsIpv4) &&

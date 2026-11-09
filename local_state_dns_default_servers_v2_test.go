@@ -391,27 +391,23 @@ func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 }
 
 // The kz recommendation as the version 1 sdk applied it: Cloudflare and
-// Quad9's filtering 9.9.9.9 in both remote plain lists. In a record below
-// version 2 it loads as the current kz recommendation, Quad9's unfiltered
-// 9.9.9.10 in its place and the saved order kept, in either order.
+// Quad9's filtering 9.9.9.9 in both remote plain lists. In a version 1 record
+// it loads as the current kz recommendation, Quad9's unfiltered 9.9.9.10 in
+// its place and the saved order kept, in either order.
 func TestVersion1KzRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
 	cases := []struct {
 		name     string
-		version  int
 		ipv4     []string
 		ipv6     []string
 		wantIpv4 []string
 		wantIpv6 []string
 	}{
-		{name: "version 1", version: 1,
+		{name: "version 1",
 			ipv4: []string{"1.1.1.1", "9.9.9.9"}, ipv6: []string{"2606:4700:4700::1111", "2620:fe::fe"},
 			wantIpv4: []string{"1.1.1.1", "9.9.9.10"}, wantIpv6: []string{"2606:4700:4700::1111", "2620:fe::10"}},
-		{name: "version 1 reordered", version: 1,
+		{name: "version 1 reordered",
 			ipv4: []string{"9.9.9.9", "1.1.1.1"}, ipv6: []string{"2620:fe::fe", "2606:4700:4700::1111"},
 			wantIpv4: []string{"9.9.9.10", "1.1.1.1"}, wantIpv6: []string{"2620:fe::10", "2606:4700:4700::1111"}},
-		{name: "version 0", version: 0,
-			ipv4: []string{"1.1.1.1", "9.9.9.9"}, ipv6: []string{"2606:4700:4700::1111", "2620:fe::fe"},
-			wantIpv4: []string{"1.1.1.1", "9.9.9.10"}, wantIpv6: []string{"2606:4700:4700::1111", "2620:fe::10"}},
 	}
 	if kzIpv4 := connect.RegionalDnsServerIps("kz"); !slices.Equal(kzIpv4, cases[0].wantIpv4) {
 		t.Fatalf("connect's kz recommendation = %v, want %v", kzIpv4, cases[0].wantIpv4)
@@ -426,12 +422,7 @@ func TestVersion1KzRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
 			RemoteDnsIpv6:         testing_stringList(c.ipv6...),
 		}
 		localState := &LocalState{localStorageDir: t.TempDir()}
-		switch c.version {
-		case 0:
-			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
-		case 1:
-			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, recommended)
-		}
+		testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, recommended)
 		persisted := localState.GetDnsResolverSettings()
 		if persisted == nil || !persisted.EnableRemoteDns || persisted.EnableRemoteDoh {
 			t.Errorf("%s: kz recommendation did not load with its toggles: %+v", c.name, persisted)
@@ -442,6 +433,109 @@ func TestVersion1KzRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
 		}
 		if got := testingStringsOf(persisted.RemoteDnsIpv6); !slices.Equal(got, c.wantIpv6) {
 			t.Errorf("%s: kz v6 = %v, want %v", c.name, got, c.wantIpv6)
+		}
+	}
+}
+
+// A version 0 record cannot hold the version 1 kz recommendation: before
+// version 1, kz recommended Google alone. Remote plain lists of exactly
+// Cloudflare and Quad9's filtering 9.9.9.9 in both families there are the
+// user's own choice (the Google-era defaults with Google and OpenDNS deleted,
+// or servers typed over the old kz recommendation) and load as saved in either
+// order, 9.9.9.9 included. Google-era default DoH lists the editor carried
+// along in the same record still load as the current defaults.
+func TestVersion0RecordWithTheVersion1KzListsLoadsAsSaved(t *testing.T) {
+	defaults := connect.DefaultDnsResolverSettings()
+	cases := []struct {
+		name        string
+		ipv4        []string
+		ipv6        []string
+		dohIpv4     []string
+		dohIpv6     []string
+		wantDohIpv4 []string
+		wantDohIpv6 []string
+	}{
+		{name: "google and opendns deleted from the defaults",
+			ipv4: []string{"1.1.1.1", "9.9.9.9"}, ipv6: []string{"2606:4700:4700::1111", "2620:fe::fe"},
+			dohIpv4: testingGoogleEraRemoteDohUrlsIpv4, dohIpv6: testingGoogleEraRemoteDohUrlsIpv6,
+			wantDohIpv4: defaults.RemoteDohUrlsIpv4, wantDohIpv6: defaults.RemoteDohUrlsIpv6},
+		{name: "typed over the old kz recommendation, reordered",
+			ipv4: []string{"9.9.9.9", "1.1.1.1"}, ipv6: []string{"2620:fe::fe", "2606:4700:4700::1111"}},
+	}
+	for _, c := range cases {
+		chosen := &DnsResolverSettings{
+			EnableRemoteDns:       true,
+			DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
+			RemoteDohUrlsIpv4:     testing_stringList(c.dohIpv4...),
+			RemoteDohUrlsIpv6:     testing_stringList(c.dohIpv6...),
+			RemoteDnsIpv4:         testing_stringList(c.ipv4...),
+			RemoteDnsIpv6:         testing_stringList(c.ipv6...),
+		}
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, chosen)
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil || !persisted.EnableRemoteDns || persisted.EnableRemoteDoh {
+			t.Errorf("%s: record did not load with its toggles: %+v", c.name, persisted)
+			continue
+		}
+		if got := testingStringsOf(persisted.RemoteDnsIpv4); !slices.Equal(got, c.ipv4) {
+			t.Errorf("%s: v4 = %v, want %v as saved", c.name, got, c.ipv4)
+		}
+		if got := testingStringsOf(persisted.RemoteDnsIpv6); !slices.Equal(got, c.ipv6) {
+			t.Errorf("%s: v6 = %v, want %v as saved", c.name, got, c.ipv6)
+		}
+		if got := testingStringsOf(persisted.RemoteDohUrlsIpv4); !slices.Equal(got, c.wantDohIpv4) {
+			t.Errorf("%s: doh v4 = %v, want %v", c.name, got, c.wantDohIpv4)
+		}
+		if got := testingStringsOf(persisted.RemoteDohUrlsIpv6); !slices.Equal(got, c.wantDohIpv6) {
+			t.Errorf("%s: doh v6 = %v, want %v", c.name, got, c.wantDohIpv6)
+		}
+	}
+}
+
+// The kz recommendation before version 1 was Google alone: 8.8.8.8, and
+// 2001:4860:4860::8888 for v6 from 2026-09-11. One Google address cannot be
+// told apart from a user who typed it, so no step migrates it, and nothing
+// turns it into the version 1 kz recommendation that version 2 migrates. It
+// loads as saved from a version 0 record, and from a version 1 record that a
+// version 1 sdk, which loaded it as saved, wrote back.
+func TestOldKzRecommendationLoadsAsSaved(t *testing.T) {
+	cases := []struct {
+		name    string
+		version int
+		ipv4    []string
+		ipv6    []string
+	}{
+		{name: "version 0", version: 0, ipv4: []string{"8.8.8.8"}, ipv6: []string{"2001:4860:4860::8888"}},
+		{name: "version 0, v4 only era", version: 0, ipv4: []string{"8.8.8.8"}},
+		{name: "written back at version 1", version: 1, ipv4: []string{"8.8.8.8"}, ipv6: []string{"2001:4860:4860::8888"}},
+	}
+	for _, c := range cases {
+		recommended := &DnsResolverSettings{
+			EnableRemoteDns:       true,
+			DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
+			RemoteDnsIpv4:         testing_stringList(c.ipv4...),
+		}
+		if c.ipv6 != nil {
+			recommended.RemoteDnsIpv6 = testing_stringList(c.ipv6...)
+		}
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		switch c.version {
+		case 0:
+			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
+		case 1:
+			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, recommended)
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil {
+			t.Errorf("%s: record did not load", c.name)
+			continue
+		}
+		saved := testingDnsResolverSettingsLists(recommended)
+		for name, list := range testingDnsResolverSettingsLists(persisted) {
+			if !slices.Equal(list, saved[name]) {
+				t.Errorf("%s: %s loaded as %v, want %v as saved", c.name, name, list, saved[name])
+			}
 		}
 	}
 }
