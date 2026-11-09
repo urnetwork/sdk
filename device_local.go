@@ -8427,7 +8427,7 @@ func upgradeMuxSettingsWithDnsResolverSettings(base *connect.UpgradeMuxSettings,
 	selection := resolveDnsResolverSelection(dnsResolverSettings.PresetId, dnsResolverSettings.PresetPersonalId)
 	if preset := selection.preset; preset != nil {
 		if dnsResolverSettings.EnableFallback {
-			nextDns.Fallback = connect.DefaultDnsUpgradeFallbackSettings()
+			nextDns.Fallback = dnsPresetFastDnsFallback()
 		} else {
 			nextDns.Fallback = nil
 		}

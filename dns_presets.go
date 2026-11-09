@@ -285,6 +285,20 @@ func (self *dnsPresetCatalog) providerIdOfHost(host string) string {
 // dropped preset.
 var dnsPresetCatalogOverride atomic.Pointer[dnsPresetCatalog]
 
+// When set, replaces URnetwork's default resolver over the host network as
+// the Fast DNS on connect fallback of a preset (decision 5). Production never
+// sets it; tests install a local DoH server so the connect window answers
+// without the network.
+var dnsPresetFastDnsFallbackOverride atomic.Pointer[func() *connect.DnsResolverSettings]
+
+// The Fast DNS on connect fallback while a preset is selected.
+func dnsPresetFastDnsFallback() *connect.DnsResolverSettings {
+	if override := dnsPresetFastDnsFallbackOverride.Load(); override != nil {
+		return (*override)()
+	}
+	return connect.DefaultDnsUpgradeFallbackSettings()
+}
+
 // Whether the presets that block ads are hidden (SetDnsPresetsHideAdBlocking).
 var dnsPresetsHideAdBlocking atomic.Bool
 
