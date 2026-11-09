@@ -415,13 +415,21 @@ func (self *LocalState) SetRouteLocal(routeLocal bool) error {
 }
 
 func (self *LocalState) GetRouteLocal() bool {
+	routeLocal, _ := self.routeLocalIfSet()
+	return routeLocal
+}
+
+// GetRouteLocal plus whether one was saved. A DeviceRemote queues only a saved
+// kill switch for its device (device_remote_saved_settings.go): the default
+// read for a missing record is no instruction to a device that has its own.
+func (self *LocalState) routeLocalIfSet() (bool, bool) {
 	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	if routeLocalBytes, err := os.ReadFile(path); err == nil {
 		if value, err := decodeLocalPreference("route-local", routeLocalBytes); err == nil {
-			return value.(bool)
+			return value.(bool), true
 		}
 	}
-	return true
+	return true, false
 }
 
 // SetLogVerbosity persists the glog verbosity the user chose, so a tunnel
