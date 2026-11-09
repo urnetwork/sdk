@@ -13,6 +13,7 @@
 package sdk
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -707,5 +708,254 @@ func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 	}
 	if findings := sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages); len(findings) != 0 {
 		t.Errorf("without the tag nothing is planted, and the rule found %v", findings)
+	}
+}
+
+// The sidecar module (sidecar §18.10's Imports, D-SDK-20, R-SDK-4), file by file on every leg: in the root package a
+// sidecar-role file, sidecar*.go, may import the sidecar root, protocol, protocol/bridge and device, and carries
+// !ios_extension, since the tunnel links neither the root nor protocol; a device file, device_sidecar*.go, imports only
+// device and protocol/bridge, untagged, since the tunnel links it; no other file of a package this repository builds
+// imports a sidecar package, the page Worker's main aside, which its own leg holds to the root and protocol
+// (TestTheSidecarWasmLegLinksNoConnectOrSdk). On the ios_extension leg a file that imports the root or protocol is
+// refused whatever its name. A rule read from the files each leg compiles, so a file's build constraints are what the
+// leg makes of them.
+const sidecarImportModulePath = "github.com/urnetwork/sidecar"
+
+// What a sidecar-role file and a device file may import of the sidecar module.
+var (
+	sidecarImportRoleAllowed = []string{
+		sidecarImportModulePath,
+		sidecarImportModulePath + "/protocol",
+		sidecarImportModulePath + "/protocol/bridge",
+		sidecarImportModulePath + "/device",
+	}
+	sidecarImportDeviceAllowed = []string{
+		sidecarImportModulePath + "/device",
+		sidecarImportModulePath + "/protocol/bridge",
+	}
+)
+
+// Whether a package path is this repository's, its external tests included.
+func sidecarImportRepositoryPackage(packagePath string) bool {
+	packagePath = strings.TrimSuffix(packagePath, "_test")
+	return packagePath == "github.com/urnetwork/sdk" || strings.HasPrefix(packagePath, "github.com/urnetwork/sdk/")
+}
+
+// This repository's files a leg compiles, by path under repositoryRoot, each with its package's import path; test
+// files only on a leg that builds tests.
+func sidecarImportLegFiles(t *testing.T, repositoryRoot string, leg messagingBoundaryLeg) map[string]string {
+	t.Helper()
+	arguments := []string{"list", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles"}
+	if leg.test {
+		arguments = append(arguments, "-test")
+	}
+	if leg.tags != "" {
+		arguments = append(arguments, "-tags", leg.tags)
+	}
+	arguments = append(arguments, leg.patterns...)
+	command := exec.Command("go", arguments...)
+	command.Dir = filepath.Join(repositoryRoot, filepath.FromSlash(leg.moduleDirectory))
+	command.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+	command.Env = append(command.Env, leg.environment...)
+	output, err := command.Output()
+	if err != nil {
+		stderr := ""
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		t.Fatalf("%s: go %s in %s: %v\n%s", leg.name, strings.Join(arguments, " "), leg.moduleDirectory, err, stderr)
+	}
+	// go list names directories as the system resolves them, so both sides are resolved: a temp directory is often
+	// under a link
+	resolve := func(directory string) string {
+		absolute, err := filepath.Abs(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolved
+	}
+	resolvedRoot := resolve(repositoryRoot)
+	files := map[string]string{}
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for decoder.More() {
+		var listed struct {
+			ImportPath   string
+			Dir          string
+			GoFiles      []string
+			CgoFiles     []string
+			TestGoFiles  []string
+			XTestGoFiles []string
+		}
+		if err := decoder.Decode(&listed); err != nil {
+			t.Fatalf("%s: reading go list: %v", leg.name, err)
+		}
+		packagePath, _, _ := strings.Cut(listed.ImportPath, " ")
+		if !sidecarImportRepositoryPackage(packagePath) || strings.HasSuffix(packagePath, ".test") {
+			continue
+		}
+		names := slices.Concat(listed.GoFiles, listed.CgoFiles)
+		if leg.test {
+			names = slices.Concat(names, listed.TestGoFiles, listed.XTestGoFiles)
+		}
+		resolvedDir := resolve(listed.Dir)
+		for _, name := range names {
+			relative, err := filepath.Rel(resolvedRoot, filepath.Join(resolvedDir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			files[filepath.ToSlash(relative)] = strings.TrimSuffix(packagePath, "_test")
+		}
+	}
+	return files
+}
+
+// Each import of the sidecar module a leg's files make that the rule refuses, and how many it allowed of each kind of
+// file, keyed role and device.
+func sidecarImportFindings(t *testing.T, repositoryRoot string, leg messagingBoundaryLeg) (findings []string, allowedCounts map[string]int) {
+	t.Helper()
+	extension := strings.Contains(leg.tags, "ios_extension")
+	allowedCounts = map[string]int{}
+	fileSet := token.NewFileSet()
+	files := sidecarImportLegFiles(t, repositoryRoot, leg)
+	for relative, packagePath := range files {
+		parsed, err := parser.ParseFile(fileSet, filepath.Join(repositoryRoot, filepath.FromSlash(relative)), nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := path.Base(relative)
+		kind := "other"
+		allowed := []string{}
+		if packagePath == "github.com/urnetwork/sdk" {
+			switch {
+			case strings.HasPrefix(name, "device_sidecar"):
+				kind, allowed = "device", sidecarImportDeviceAllowed
+			case strings.HasPrefix(name, "sidecar"):
+				kind, allowed = "role", sidecarImportRoleAllowed
+			}
+		}
+		for _, spec := range parsed.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if importPath != sidecarImportModulePath && !strings.HasPrefix(importPath, sidecarImportModulePath+"/") {
+				continue
+			}
+			switch {
+			case extension && (importPath == sidecarImportModulePath || importPath == sidecarImportModulePath+"/protocol"):
+				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and the iOS extension links no sidecar root or protocol", leg.name, relative, importPath))
+			case kind == "other":
+				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module", leg.name, relative, importPath))
+			case !slices.Contains(allowed, importPath):
+				findings = append(findings, fmt.Sprintf("%s: %s imports %s, which a %s file may not", leg.name, relative, importPath, kind))
+			default:
+				allowedCounts[kind] += 1
+			}
+		}
+	}
+	sort.Strings(findings)
+	return findings, allowedCounts
+}
+
+// Every leg but the page Worker's holds the rule, and the rule saw both kinds of file: a sidecar-role file importing
+// the root somewhere, and the device files in the iOS extension.
+func TestSdkImportsTheSidecarModuleByRole(t *testing.T) {
+	roleSeen := false
+	extensionDeviceSeen := false
+	for _, leg := range messagingBoundaryLegs {
+		if leg.name == sidecarWasmLegName {
+			continue
+		}
+		findings, allowedCounts := sidecarImportFindings(t, ".", leg)
+		for _, finding := range findings {
+			t.Errorf("%s", finding)
+		}
+		roleSeen = roleSeen || 0 < allowedCounts["role"]
+		if strings.Contains(leg.tags, "ios_extension") {
+			extensionDeviceSeen = 0 < allowedCounts["device"] && allowedCounts["role"] == 0
+		}
+		t.Logf("%s: %d sidecar imports allowed (%v), %d refused", leg.name, allowedCounts["role"]+allowedCounts["device"], allowedCounts, len(findings))
+	}
+	if !roleSeen || !extensionDeviceSeen {
+		t.Fatal("CONTROL FAILED: no leg compiled a sidecar-role import, or the extension no device file's, so the rule saw nothing")
+	}
+}
+
+// The rule finds what a fixture plants and nothing else: on a host leg a device file importing the root, another file
+// importing device, and a sidecar-role file importing mcp; on the extension leg also an untagged sidecar-role file
+// importing the root, while the tagged one is left out; on a test leg also a test file importing sidecartest.
+func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
+	fixture := t.TempDir()
+	fixtureFiles := map[string]string{
+		"core/go.mod": "module github.com/urnetwork/sdk\n\ngo 1.26\n\nrequire github.com/urnetwork/sidecar v0.0.0\n\n" +
+			"replace github.com/urnetwork/sidecar => ../sidecar\n",
+		"core/sidecar_role.go":         "//go:build !ios_extension\n\npackage sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar\"\n\t_ \"github.com/urnetwork/sidecar/protocol\"\n)\n",
+		"core/sidecar_untagged.go":     "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
+		"core/sidecar_mcp.go":          "//go:build !ios_extension\n\npackage sdk\n\nimport _ \"github.com/urnetwork/sidecar/mcp\"\n",
+		"core/device_sidecar.go":       "package sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar/device\"\n\t_ \"github.com/urnetwork/sidecar/protocol/bridge\"\n)\n",
+		"core/device_sidecar_root.go":  "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
+		"core/other.go":                "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/device\"\n",
+		"core/core_test.go":            "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest\"\n",
+		"sidecar/go.mod":               "module github.com/urnetwork/sidecar\n\ngo 1.26\n",
+		"sidecar/sidecar.go":           "package sidecar\n",
+		"sidecar/protocol/p.go":        "package protocol\n",
+		"sidecar/protocol/bridge/b.go": "package bridge\n",
+		"sidecar/device/d.go":          "package device\n",
+		"sidecar/mcp/m.go":             "package mcp\n",
+		"sidecar/sidecartest/s.go":     "package sidecartest\n",
+	}
+	for name, content := range fixtureFiles {
+		fixturePath := filepath.Join(fixture, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(fixturePath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fixturePath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	host := []string{
+		"host: core/device_sidecar_root.go imports github.com/urnetwork/sidecar, which a device file may not",
+		"host: core/other.go imports github.com/urnetwork/sidecar/device, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
+		"host: core/sidecar_mcp.go imports github.com/urnetwork/sidecar/mcp, which a role file may not",
+	}
+	for _, c := range []struct {
+		leg  messagingBoundaryLeg
+		want []string
+	}{
+		{
+			leg:  messagingBoundaryLeg{name: "host", environment: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}},
+			want: host,
+		},
+		{
+			leg: messagingBoundaryLeg{name: "extension", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, tags: "ios_extension"},
+			want: []string{
+				"extension: core/device_sidecar_root.go imports github.com/urnetwork/sidecar, and the iOS extension links no sidecar root or protocol",
+				"extension: core/other.go imports github.com/urnetwork/sidecar/device, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
+				"extension: core/sidecar_untagged.go imports github.com/urnetwork/sidecar, and the iOS extension links no sidecar root or protocol",
+			},
+		},
+		{
+			leg: messagingBoundaryLeg{name: "host", environment: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}, test: true},
+			want: slices.Concat(host, []string{
+				"host: core/core_test.go imports github.com/urnetwork/sidecar/sidecartest, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
+			}),
+		},
+	} {
+		c.leg.moduleDirectory = "core"
+		c.leg.patterns = []string{"."}
+		findings, allowedCounts := sidecarImportFindings(t, fixture, c.leg)
+		want := slices.Clone(c.want)
+		sort.Strings(want)
+		if !slices.Equal(findings, want) {
+			t.Errorf("%s (test=%v): findings\n%s\nwant\n%s", c.leg.name, c.leg.test, strings.Join(findings, "\n"), strings.Join(want, "\n"))
+		}
+		if allowedCounts["device"] != 2 {
+			t.Errorf("%s: %d device imports allowed, want 2", c.leg.name, allowedCounts["device"])
+		}
 	}
 }
