@@ -392,9 +392,9 @@ type DeviceRemote struct {
 	// the settings the listeners are told, and their delivery
 	// (device_remote_setting_state.go). Guarded by stateLock
 	settingsTold deviceRemoteSettingsTold
-	// the split rules this remote saves for the next one
+	// the settings this remote saves for the next one
 	// (device_remote_saved_settings.go)
-	savedBlockActionOverrides deviceRemoteSavedBlockActionOverrides
+	savedSettings deviceRemoteSavedSettings
 	// Guarded by stateLock. A status RPC must not replace a notification or
 	// another status reply published while it was in flight.
 	contractStatusRevision uint64
@@ -673,8 +673,8 @@ func newDeviceRemoteWithOverrides(
 			deviceRemote.state.ControlIpFamilyPolicy.Set(policy)
 		}
 	}
-	// the kill switch and the split rules the app saved, queued for the device
-	// the same way: the device does not keep them
+	// the kill switch, split rules, dns settings and blocker the app saved,
+	// queued for the device the same way: the device does not keep them
 	// (device_remote_saved_settings.go)
 	deviceRemote.queueSavedSettings()
 
@@ -2436,6 +2436,7 @@ func (self *DeviceRemote) GetRouteLocal() bool {
 
 func (self *DeviceRemote) SetBlockerEnabled(blockerEnabled bool) {
 	deliver := false
+	var save func()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -2458,39 +2459,51 @@ func (self *DeviceRemote) SetBlockerEnabled(blockerEnabled bool) {
 		}
 		self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
 		deliver = self.settingsTold.blockerEnabled.tellWithLock(blockerEnabled)
+		save = self.learnBlockerEnabledWithLock(blockerEnabled, deviceRemoteSettingSet)
 	}()
+	if save != nil {
+		save()
+	}
 	if deliver {
 		self.deliverBlockerEnabled()
 	}
 }
 
 func (self *DeviceRemote) GetBlockerEnabled() bool {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	var save func()
+	blockerEnabled := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	// a pending write is the device's state once delivered; the device's own
-	// answer predates it
-	if self.state.BlockerEnabled.IsSet {
-		return self.state.BlockerEnabled.Value
-	}
-
-	blockerEnabled, success := func() (bool, bool) {
-		if self.service == nil {
-			return false, false
+		// a pending write is the device's state once delivered; the device's own
+		// answer predates it
+		if self.state.BlockerEnabled.IsSet {
+			return self.state.BlockerEnabled.Value
 		}
 
-		blockerEnabled, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetBlockerEnabled", self.closeService)
-		if err != nil {
-			return false, false
+		blockerEnabled, success := func() (bool, bool) {
+			if self.service == nil {
+				return false, false
+			}
+
+			blockerEnabled, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetBlockerEnabled", self.closeService)
+			if err != nil {
+				return false, false
+			}
+			self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
+			save = self.learnBlockerEnabledWithLock(blockerEnabled, deviceRemoteSettingReported)
+			return blockerEnabled, true
+		}()
+		if success {
+			return blockerEnabled
+		} else {
+			return self.lastKnownState.BlockerEnabled.Get(self.settings.DefaultBlockerEnabled)
 		}
-		self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
-		return blockerEnabled, true
 	}()
-	if success {
-		return blockerEnabled
-	} else {
-		return self.lastKnownState.BlockerEnabled.Get(self.settings.DefaultBlockerEnabled)
+	if save != nil {
+		save()
 	}
+	return blockerEnabled
 }
 
 type listenerRpcCall func(*rpcClient, string, any, func()) error
@@ -4837,7 +4850,7 @@ func (self *DeviceRemote) blockStatsChanged(blockStats *BlockStats) {
 // (device_remote_saved_settings.go).
 func (self *DeviceRemote) blockActionOverridesChanged(
 	overridesRpc []*BlockActionOverrideRpc,
-	source deviceRemoteBlockActionOverridesSource,
+	source deviceRemoteSettingSource,
 ) {
 	var save func()
 	listenerList := func() []BlockActionOverridesChangeListener {
@@ -5059,13 +5072,23 @@ func (self *DeviceRemote) providerTransportSettingsChanged(
 	}
 }
 
-func (self *DeviceRemote) dnsResolverSettingsChanged(settingsRpc *DnsResolverSettingsRpc) {
+// `source` says whether the settings are the device's or a whole value the app
+// set, queued for the next sync, which decides whether they are saved
+// (device_remote_saved_settings.go).
+func (self *DeviceRemote) dnsResolverSettingsChanged(
+	settingsRpc *DnsResolverSettingsRpc,
+	source deviceRemoteSettingSource,
+) {
+	var save func()
 	listenerList := func() []DnsResolverSettingsChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
+		save = self.learnDnsResolverSettingsWithLock(settingsRpc, source)
 		return listenerList(self.dnsResolverSettingsChangeListeners)
 	}()
+	if save != nil {
+		save()
+	}
 	dnsResolverSettings := settingsRpc.toDnsResolverSettings()
 	for _, dnsResolverSettingsChangeListener := range listenerList {
 		connect.HandleError(func() {
@@ -5520,7 +5543,7 @@ func (self *DeviceRemote) AddBlockActionOverride(override *BlockActionOverride) 
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesEdited)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteSettingEdited)
 		} else {
 			event = true
 			eventOverridesRpc = overridesRpc
@@ -5531,7 +5554,7 @@ func (self *DeviceRemote) AddBlockActionOverride(override *BlockActionOverride) 
 		save()
 	}
 	if event {
-		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteBlockActionOverridesEdited)
+		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteSettingEdited)
 	}
 }
 
@@ -5569,7 +5592,7 @@ func (self *DeviceRemote) RemoveBlockActionOverride(overrideId *Id) {
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesEdited)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteSettingEdited)
 		} else {
 			event = true
 			eventOverridesRpc = overridesRpc
@@ -5580,7 +5603,7 @@ func (self *DeviceRemote) RemoveBlockActionOverride(overrideId *Id) {
 		save()
 	}
 	if event {
-		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteBlockActionOverridesEdited)
+		self.blockActionOverridesChanged(eventOverridesRpc, deviceRemoteSettingEdited)
 	}
 }
 
@@ -5608,7 +5631,7 @@ func (self *DeviceRemote) SetBlockActionOverrides(overrides *BlockActionOverride
 		}()
 		if success {
 			self.state.BlockActionOverrides.Unset()
-			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesSet)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteSettingSet)
 		} else {
 			event = true
 			self.state.BlockActionOverrides.Set(overridesRpc)
@@ -5618,7 +5641,7 @@ func (self *DeviceRemote) SetBlockActionOverrides(overrides *BlockActionOverride
 		save()
 	}
 	if event {
-		self.blockActionOverridesChanged(overridesRpc, deviceRemoteBlockActionOverridesSet)
+		self.blockActionOverridesChanged(overridesRpc, deviceRemoteSettingSet)
 	}
 }
 
@@ -5638,7 +5661,7 @@ func (self *DeviceRemote) GetBlockActionOverrides() *BlockActionOverrideList {
 				return nil, false
 			}
 			overridesRpc := deviceOverrides.BlockActionOverrides
-			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteBlockActionOverridesReported)
+			save = self.learnBlockActionOverridesWithLock(overridesRpc, deviceRemoteSettingReported)
 			return overridesRpc, true
 		}()
 		if success {
@@ -6070,6 +6093,7 @@ func (self *DeviceRemote) SetDnsResolverSettings(dnsResolverSettings *DnsResolve
 	dnsResolverSettings = dnsResolverSettingsAsEdited(dnsResolverSettings)
 	settingsRpc := newDnsResolverSettingsRpc(dnsResolverSettings)
 	event := false
+	var save func()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -6090,41 +6114,51 @@ func (self *DeviceRemote) SetDnsResolverSettings(dnsResolverSettings *DnsResolve
 		}()
 		if success {
 			self.state.DnsResolverSettings.Unset()
-			self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
+			save = self.learnDnsResolverSettingsWithLock(settingsRpc, deviceRemoteSettingSet)
 		} else {
 			event = true
 			self.state.DnsResolverSettings.Set(settingsRpc)
 		}
 	}()
+	if save != nil {
+		save()
+	}
 	if event {
-		self.dnsResolverSettingsChanged(settingsRpc)
+		self.dnsResolverSettingsChanged(settingsRpc, deviceRemoteSettingSet)
 	}
 }
 
 func (self *DeviceRemote) GetDnsResolverSettings() *DnsResolverSettings {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	var save func()
+	dnsResolverSettings := func() *DnsResolverSettings {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	settingsRpc, success := func() (*DnsResolverSettingsRpc, bool) {
-		if self.service == nil {
-			return nil, false
-		}
+		settingsRpc, success := func() (*DnsResolverSettingsRpc, bool) {
+			if self.service == nil {
+				return nil, false
+			}
 
-		deviceSettings, err := rpcCallNoArg[*DeviceRemoteDnsResolverSettings](self.service, "DeviceLocalRpc.GetDnsResolverSettings", self.closeService)
-		if err != nil {
-			return nil, false
+			deviceSettings, err := rpcCallNoArg[*DeviceRemoteDnsResolverSettings](self.service, "DeviceLocalRpc.GetDnsResolverSettings", self.closeService)
+			if err != nil {
+				return nil, false
+			}
+			settingsRpc := deviceSettings.DnsResolverSettings
+			save = self.learnDnsResolverSettingsWithLock(settingsRpc, deviceRemoteSettingReported)
+			return settingsRpc, true
+		}()
+		if success {
+			return settingsRpc.toDnsResolverSettings()
+		} else {
+			return self.state.DnsResolverSettings.Get(
+				self.lastKnownState.DnsResolverSettings.Get(nil),
+			).toDnsResolverSettings()
 		}
-		settingsRpc := deviceSettings.DnsResolverSettings
-		self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
-		return settingsRpc, true
 	}()
-	if success {
-		return settingsRpc.toDnsResolverSettings()
-	} else {
-		return self.state.DnsResolverSettings.Get(
-			self.lastKnownState.DnsResolverSettings.Get(nil),
-		).toDnsResolverSettings()
+	if save != nil {
+		save()
 	}
+	return dnsResolverSettings
 }
 
 func (self *DeviceRemote) AddDnsResolverSettingsChangeListener(listener DnsResolverSettingsChangeListener) Sub {
@@ -10770,6 +10804,13 @@ func (self *DeviceLocalRpc) Sync(
 			if self.deviceLocal.log.V(1).Enabled() {
 				self.deviceLocal.log.Infof("[dlrpc]sync refused dns resolver settings: %v", err)
 			}
+		} else if sameDnsResolverSettings(
+			ownDnsResolverSettings(dnsResolverSettingsAsEdited(dnsResolverSettings)),
+			self.deviceLocal.GetDnsResolverSettings(),
+		) {
+			// the device's own settings, which every remote queues from the
+			// app's copy (device_remote_saved_settings.go). Applying them again
+			// would restart a running device's resolvers on every attach.
 		} else if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("dns-resolver-settings", dnsResolverSettings)); err != nil {
 			return err
 		}
@@ -14615,7 +14656,7 @@ func (self *DeviceRemoteRpc) BlockStatsChanged(stats *DeviceRemoteBlockStats, _ 
 func (self *DeviceRemoteRpc) BlockActionOverridesChanged(event *DeviceRemoteBlockActionOverrides, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]BlockActionOverridesChanged")
 	self.dispatch(func() {
-		self.deviceRemote.blockActionOverridesChanged(event.BlockActionOverrides, deviceRemoteBlockActionOverridesReported)
+		self.deviceRemote.blockActionOverridesChanged(event.BlockActionOverrides, deviceRemoteSettingReported)
 	})
 	return nil
 }
@@ -14719,7 +14760,7 @@ func (self *DeviceRemoteRpc) ProviderTransportSettingsChanged(event *DeviceRemot
 func (self *DeviceRemoteRpc) DnsResolverSettingsChanged(event *DeviceRemoteDnsResolverSettings, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]DnsResolverSettingsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.dnsResolverSettingsChanged(event.DnsResolverSettings)
+		self.deviceRemote.dnsResolverSettingsChanged(event.DnsResolverSettings, deviceRemoteSettingReported)
 	})
 	return nil
 }
