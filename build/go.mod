@@ -17,6 +17,8 @@ require (
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
+	github.com/emersion/go-smtp v0.25.1 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -114,6 +116,12 @@ replace github.com/urnetwork/glog => ../../glog
 replace github.com/urnetwork/goidenticons => ../../goidenticons
 
 replace github.com/urnetwork/sidecar => ../../sidecar
+
+// sidecar's go-smtp fork and mox subset, which a dependency's replaces cannot carry here
+// (sidecar/third_party/*/URNETWORK.md).
+replace github.com/emersion/go-smtp => ../../sidecar/third_party/go-smtp
+
+replace github.com/mjl-/mox => ../../sidecar/third_party/mox
 
 replace gvisor.dev/gvisor => ../../gvisor
 
