@@ -2,12 +2,14 @@
 
 // What the dns screens call for the third-party presets (dns_presets.go,
 // connect ADBLOCK3RD A5, F1, F2): the picks in the screen's order, the
-// personal id check, the helpers every save starts from, and the descriptions
-// of a selection and of the resolver status. The rules live here so the apps
-// only render. Copy is localization key ids (G1), with the provider's name as
-// the argument where a key takes one; provider names, operators and
-// jurisdictions are shown as they are (G2). Excluded from the ios packet
-// tunnel extension, which only applies the stored settings.
+// personal id check and the saved id its field starts on, the helpers every
+// save starts from, and the descriptions of a selection and of the resolver
+// status. The rules live here so the apps only render. A saved personal id
+// shows in its own field alone (GetDnsPresetPersonalIdForEdit, decision 21):
+// no description carries it (D5). Copy is localization key ids (G1), with the
+// provider's name as the argument where a key takes one; provider names,
+// operators and jurisdictions are shown as they are (G2). Excluded from the
+// ios packet tunnel extension, which only applies the stored settings.
 package sdk
 
 import (
@@ -492,6 +494,24 @@ func ValidateDnsPresetPersonalId(presetId string, personalId string) (errorId st
 		return DnsPresetErrorUnknown
 	}
 	return validateDnsPresetPersonalIdOf(catalog, preset, personalId)
+}
+
+// The saved id a personal preset's id field starts on when it opens
+// (decision 21): the id in force while the settings select that preset,
+// normalized as the device applies it, so the user edits it in place. Empty
+// for nil settings, any other pick, a preset that takes no id, and a stored
+// selection that cannot apply (a hidden preset, or an id that no longer
+// validates, A7). The id shows in that field alone: the summaries, the
+// status lines and the logs never carry it (D5).
+func GetDnsPresetPersonalIdForEdit(settings *DnsResolverSettings, presetId string) string {
+	if settings == nil || settings.PresetId != presetId {
+		return ""
+	}
+	selection := resolveDnsResolverSelection(settings.PresetId, settings.PresetPersonalId)
+	if selection.preset == nil || selection.preset.personalId == nil {
+		return ""
+	}
+	return selection.personalId
 }
 
 // base with a pick selected: PresetId and PresetPersonalId set (the id

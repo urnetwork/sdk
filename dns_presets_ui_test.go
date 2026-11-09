@@ -4,8 +4,14 @@ package sdk
 // synthetic catalog of dns_presets_test.go.
 
 import (
+	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/urnetwork/connect"
@@ -311,5 +317,155 @@ func TestGetDnsPresetProvidersGroupsPresets(t *testing.T) {
 				t.Errorf("a hidden preset is listed: %s", preset.PresetId)
 			}
 		}
+	}
+}
+
+// The saved id a personal preset's field starts on (decision 21): the id in
+// force, normalized as the device applies it, for that preset's field alone;
+// empty for any other pick, a preset that takes no id, and a stored selection
+// that cannot apply (A7).
+func TestGetDnsPresetPersonalIdForEdit(t *testing.T) {
+	testingWithDnsPresetCatalog(t)
+	// saved as a screen saves a pasted dashboard url or DoT hostname
+	gamma := testingPresetSettings(t, "gamma-personal", "https://id.gamma.example/C0FFEE/Kitchen")
+	alpha := testingPresetSettings(t, "alpha-personal", "C0FFEE42.d.alpha.example")
+	for _, c := range []struct {
+		settings   *DnsResolverSettings
+		presetId   string
+		personalId string
+	}{
+		{settings: gamma, presetId: "gamma-personal", personalId: "c0ffee"},
+		{settings: alpha, presetId: "alpha-personal", personalId: "c0ffee42"},
+		// another personal preset's field starts empty
+		{settings: gamma, presetId: "alpha-personal"},
+		{settings: alpha, presetId: "gamma-personal"},
+		// picks that take no id, and no pick
+		{settings: gamma, presetId: "alpha-ads"},
+		{settings: gamma, presetId: DnsPresetIdDefault},
+		{settings: gamma, presetId: ""},
+		{settings: nil, presetId: "gamma-personal"},
+		// an id stored as typed starts as the device applies it
+		{settings: &DnsResolverSettings{PresetId: "gamma-personal", PresetPersonalId: " C0FFEE "}, presetId: "gamma-personal", personalId: "c0ffee"},
+		// a stray id beside a preset that takes none
+		{settings: &DnsResolverSettings{PresetId: "alpha-ads", PresetPersonalId: "c0ffee"}, presetId: "alpha-ads"},
+		// a stored id that no longer validates, and a preset this release
+		// never knew, apply as default (A7)
+		{settings: &DnsResolverSettings{PresetId: "gamma-personal", PresetPersonalId: "c0ffee/../x"}, presetId: "gamma-personal"},
+		{settings: &DnsResolverSettings{PresetId: "from-a-later-release", PresetPersonalId: "c0ffee"}, presetId: "from-a-later-release"},
+		// default, custom and regional settings
+		{settings: GetDefaultDnsResolverSettings(), presetId: DnsPresetIdDefault},
+		{settings: testingFilledCustomDnsResolverSettings(t), presetId: ""},
+		{settings: GetRecommendedDnsResolverSettings("cn"), presetId: "regional-cn"},
+	} {
+		if personalId := GetDnsPresetPersonalIdForEdit(c.settings, c.presetId); personalId != c.personalId {
+			presetId := ""
+			if c.settings != nil {
+				presetId = c.settings.PresetId
+			}
+			t.Errorf("the %q field on settings of %q starts on %q, want %q", c.presetId, presetId, personalId, c.personalId)
+		}
+	}
+	// reading it leaves the settings as they were
+	connect.AssertEqual(t, gamma, testingPresetSettings(t, "gamma-personal", "c0ffee"))
+}
+
+// A saved personal id shows in its own field alone (decision 21, D5): the
+// summary row, the status line, the verification line and its link, and the
+// picks the screen lists carry no part of it, for every state and
+// verification, while the field's getter gives it back.
+func TestDnsPersonalIdShowsInItsFieldAlone(t *testing.T) {
+	testingWithDnsPresetCatalog(t)
+	states := []string{
+		DnsResolverStateUnknown, DnsResolverStateOk, DnsResolverStateFailing, DnsResolverStateFailedOver,
+	}
+	verifications := []string{
+		DnsResolverVerificationNone, DnsResolverVerificationConfirmed, DnsResolverVerificationNotFiltering,
+		DnsResolverVerificationRejected, DnsResolverVerificationMalformed, DnsResolverVerificationUnconfirmed,
+	}
+	for _, c := range []struct {
+		presetId   string
+		pasted     string
+		personalId string
+	}{
+		{presetId: "gamma-personal", pasted: "https://id.gamma.example/C0FFEE/Kitchen", personalId: "c0ffee"},
+		{presetId: "alpha-personal", pasted: "C0FFEE42.d.alpha.example", personalId: "c0ffee42"},
+	} {
+		settings := testingPresetSettings(t, c.presetId, c.pasted)
+		connect.AssertEqual(t, GetDnsPresetPersonalIdForEdit(settings, c.presetId), c.personalId)
+		// the settings select the personal preset, and the summary says so
+		summary := DescribeDnsResolverSettings(settings, "")
+		connect.AssertEqual(t, []any{summary.PresetId, summary.Personal, summary.SummaryKey}, []any{c.presetId, true, "dns_summary_personal"})
+
+		shown := []any{GetDnsPicks(""), GetDnsPicks("cn"), GetDnsPreset(c.presetId), GetDnsPresetProviders()}
+		for _, exitCountryCode := range []string{"", "cn"} {
+			shown = append(shown, DescribeDnsResolverSettings(settings, exitCountryCode))
+		}
+		linked := false
+		for _, state := range states {
+			for _, verification := range verifications {
+				// the status of the selection, and of another one
+				for _, statusPresetId := range []string{c.presetId, "alpha-ads"} {
+					status := DescribeDnsResolverStatus(settings, &DnsResolverStatus{
+						State: state, Verification: verification, PresetId: statusPresetId, BlockedCount: 7,
+					})
+					linked = linked || status.VerificationUrl != ""
+					shown = append(shown, status)
+				}
+			}
+		}
+		if !linked {
+			t.Fatalf("%s: no status links the dashboard", c.presetId)
+		}
+		for _, value := range shown {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(strings.ToLower(string(encoded)), c.personalId) {
+				t.Errorf("%s: a screen's description carries the id: %s", c.presetId, encoded)
+			}
+		}
+	}
+}
+
+// The catalog and the screens' surface handle the personal id where no
+// device logger reaches, and log nothing: no logger import, no print to
+// stdout or stderr (which mobile builds route to the system log), and no log
+// field. A line they need goes through a device's logger, which
+// TestDeviceLocalDnsLogsNoPersonalIdOrCount reads (D5, decision 21).
+func TestDnsPresetFilesLogNothing(t *testing.T) {
+	fileSet := token.NewFileSet()
+	for _, path := range []string{"dns_presets.go", "dns_presets_ui.go"} {
+		file, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, spec := range file.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			switch importPath {
+			case "log", "log/slog", "github.com/urnetwork/glog":
+				t.Errorf("%s imports %s", path, importPath)
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.CallExpr:
+				if name, ok := node.Fun.(*ast.Ident); ok && (name.Name == "print" || name.Name == "println") {
+					t.Errorf("%s: %s", fileSet.Position(node.Pos()), name.Name)
+				}
+			case *ast.SelectorExpr:
+				if pkg, ok := node.X.(*ast.Ident); ok && pkg.Name == "fmt" &&
+					(strings.HasPrefix(node.Sel.Name, "Print") || strings.HasPrefix(node.Sel.Name, "Fprint")) {
+					t.Errorf("%s: fmt.%s", fileSet.Position(node.Pos()), node.Sel.Name)
+				}
+				if node.Sel.Name == "log" {
+					t.Errorf("%s: a log field", fileSet.Position(node.Pos()))
+				}
+			}
+			return true
+		})
 	}
 }

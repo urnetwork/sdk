@@ -38847,6 +38847,16 @@ inline std::optional<DnsPreset> getDnsPreset(const std::string& preset_id) {
 	}
 	return detail::parseJson<DnsPreset>(r_s->c_str());
 }
+inline std::string getDnsPresetPersonalIdForEdit(const std::optional<DnsResolverSettings>& settings, const std::string& preset_id) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_get_dns_preset_personal_id_for_edit(settings_c, preset_id.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<DnsPresetProviderList> getDnsPresetProviders() {
 	char* r_c = urnet_get_dns_preset_providers();
 	auto r_s = detail::takeStringOpt(r_c);
