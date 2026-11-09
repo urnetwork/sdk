@@ -238,12 +238,13 @@ func (self *sidecarEventDispatch) deliver(event *sidecar.SidecarEvent) {
 		return
 	}
 	self.newestGeneration = event.Generation
-	bound := newSidecarEventOf(event)
 	for _, listener := range self.listeners.Get() {
 		if self.closed.Load() {
 			return
 		}
-		// a listener's panic loses its own call, never the app or the other listeners
+		// each listener its own copy, so one that edits it changes nothing another sees; and a listener's panic loses
+		// its own call, never the app or the other listeners
+		bound := newSidecarEventOf(event)
 		trace(func() {
 			listener.SidecarEventReceived(bound)
 		})
