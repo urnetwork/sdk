@@ -210,9 +210,10 @@ func TestGoogleEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
 		LocalDohUrlsIpv4:  testing_stringList(testingGoogleEraRemoteDohUrlsIpv4...),
 	})
 	persisted := localState.GetDnsResolverSettings()
-	// the saved order of the servers the current list keeps, then the
-	// current list's new server (Cloudflare's second address)
-	want := []string{"https://9.9.9.9/dns-query", "https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"}
+	// the saved order of the servers the current list keeps, Quad9's
+	// unfiltered 9.9.9.10 in the place of its 9.9.9.9, then the current
+	// list's new server (Cloudflare's second address)
+	want := []string{"https://9.9.9.10/dns-query", "https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"}
 	if got := testingStringsOf(persisted.RemoteDohUrlsIpv4); !slices.Equal(got, want) {
 		t.Errorf("reordered old default = %v, want %v", got, want)
 	}

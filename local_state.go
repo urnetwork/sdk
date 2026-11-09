@@ -602,9 +602,10 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 const dnsResolverSettingsFallbackOptInVersion = 1
 
 // The record also carries the version of the default server lists it was written against: 1
-// once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left and
-// Cloudflare's second address joined. The dns editors save every list, so a record written
-// before a version can hold the default lists of its time carried along rather than chosen. See
+// once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left,
+// Cloudflare's second address joined and Quad9's unfiltered 9.9.9.10 took the place of its
+// filtering 9.9.9.9. The dns editors save every list, so a record written before a version can
+// hold the default lists of its time carried along rather than chosen. See
 // migrateDefaultServerLists.
 const dnsResolverSettingsDefaultServersVersion = 2
 
@@ -709,6 +710,15 @@ var dnsResolverSettingsOldDefaultServerLists = []struct {
 	},
 }
 
+// Quad9's filtering address in the old default lists, each with its unfiltered address, which
+// takes its place when such a list migrates (DefaultServersVersion 2).
+var dnsResolverSettingsReplacedDefaultServers = map[string]string{
+	"https://9.9.9.9/dns-query":       "https://9.9.9.10/dns-query",
+	"https://[2620:fe::fe]/dns-query": "https://[2620:fe::10]/dns-query",
+	"9.9.9.9":                         "9.9.9.10",
+	"2620:fe::fe":                     "2620:fe::10",
+}
+
 // The tm regional recommendation as shipped while it named Google Public DNS (connect,
 // 2026-07-10 to 2026-11-08): Turkmentelecom and Google in the remote plain v4 list, and from
 // 2026-09-11 Google's v6 address in the remote plain v6 list.
@@ -719,18 +729,20 @@ var (
 
 // Replaces each saved list that holds exactly the servers of an old default list (in any order)
 // that a record of recordVersion can carry with the current default list, keeping the saved
-// order of the servers that remain. Such a list is the old default carried along by an editor,
-// not a choice. A list a later version's sdk saved was a choice made with that version's
-// defaults in view, so an older version's default list in it is kept.
+// order of the servers that remain, with Quad9's unfiltered 9.9.9.10 in the place of its
+// filtering 9.9.9.9. Such a list is the old default carried along by an editor, not a choice. A
+// list a later version's sdk saved was a choice made with that version's defaults in view, so an
+// older version's default list in it is kept.
 //
 // The old tm recommendation, in a record from before version 1, is replaced the same way by the
 // current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
 // v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
 // the pair as the recommendation.
 //
-// Every other list loads as saved, so a user who named Google or OpenDNS themselves, alone or
-// among other servers, keeps it. That includes the old kz recommendation, which was Google
-// alone: a list of one Google address cannot be told apart from a user who typed it.
+// Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
+// themselves, alone or among other servers, keeps it. That includes the old kz recommendation,
+// which was Google alone: a list of one Google address cannot be told apart from a user who typed
+// it.
 func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordVersion int) {
 	defaults := connect.DefaultDnsResolverSettings()
 	sameServers := func(saved []string, servers []string) bool {
@@ -749,12 +761,15 @@ func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordV
 		}
 		return true
 	}
-	// the saved servers that the current list still has, in their saved order, then the current
-	// list's other servers
+	// the saved servers that the current list still has, in their saved order and with a replaced
+	// server's successor in its place, then the current list's other servers
 	migrated := func(saved []string, current []string) *StringList {
 		servers := []string{}
 		for _, server := range saved {
-			if slices.Contains(current, server) {
+			if successor, ok := dnsResolverSettingsReplacedDefaultServers[server]; ok && !slices.Contains(current, server) {
+				server = successor
+			}
+			if slices.Contains(current, server) && !slices.Contains(servers, server) {
 				servers = append(servers, server)
 			}
 		}

@@ -134,8 +134,9 @@ New, blocker-specific:
   limitation: cannot punch a hole under a blocked parent; per-user unblock arrives later
   via the BlockActionOverride path).
 - Resolver protection: subtract the well known public resolver IPs
-  (`connect.WellKnownResolverAddrs`: the known operator pairs and the defaults, Google
-  Public DNS and OpenDNS included though they are no longer defaults) from the IP tables,
+  (`connect.WellKnownResolverAddrs`: the known operator pairs and the defaults, Quad9's
+  filtering 9.9.9.9, Google Public DNS and OpenDNS included though they are no longer
+  defaults) from the IP tables,
   and the default endpoints' hostnames from the host set (mirror of `wellKnownResolverAddrs`).
 - Poison ceilings: abort if total unique hosts > 1.5M or any single feed > 3× its
   historical size; staleness warnings from list headers (anudeepND exception ~9 months).

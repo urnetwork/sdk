@@ -1,12 +1,14 @@
 package sdk
 
-// DefaultServersVersion 2: OpenDNS left the default server lists and
-// Cloudflare's second address joined them. A record written at version 1 (or
-// older) that holds exactly a version 1 default list loads with the current
-// lists, keeping the saved order of the servers that remain; every list a user
-// chose loads as saved; a version 2 record never migrates; and an sdk that
-// knows only version 1 loads a version 2 record as saved. The tests drive the
-// real record files and the DeviceLocal load path, with no network.
+// DefaultServersVersion 2: OpenDNS left the default server lists, Cloudflare's
+// second address joined them, and Quad9's unfiltered 9.9.9.10 took the place of
+// its filtering 9.9.9.9. A record written at version 1 (or older) that holds
+// exactly an old default list loads with the current lists, keeping the saved
+// order of the servers that remain with 9.9.9.10 where 9.9.9.9 was; every list
+// a user chose loads as saved, 9.9.9.9 included; a version 2 record never
+// migrates; and an sdk that knows only version 1 loads a version 2 record as
+// saved. The tests drive the real record files and the DeviceLocal load path,
+// with no network.
 
 import (
 	"encoding/json"
@@ -196,11 +198,20 @@ func TestOpenDnsEraDefaultDnsListsLoadWithoutOpenDnsOnDevice(t *testing.T) {
 				t.Errorf("%s lacks Cloudflare's second address %s", what, cloudflare)
 			}
 		}
+		for _, filteringQuad9 := range []string{"https://9.9.9.9/dns-query", "https://[2620:fe::fe]/dns-query", "9.9.9.9", "2620:fe::fe"} {
+			if slices.Contains(entries, filteringQuad9) {
+				t.Errorf("%s names Quad9's filtering %s", what, filteringQuad9)
+			}
+		}
+		if !slices.Contains(entries, "https://9.9.9.10/dns-query") {
+			t.Errorf("%s lacks Quad9's unfiltered https://9.9.9.10/dns-query", what)
+		}
 	}
 }
 
 // A version 1 default list the user reordered keeps its order for the servers
-// that remain, and the current list's new servers follow.
+// that remain, Quad9's 9.9.9.10 where its 9.9.9.9 was, and the current list's
+// new servers follow.
 func TestOpenDnsEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
 	localState := &LocalState{localStorageDir: t.TempDir()}
 	testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, &DnsResolverSettings{
@@ -208,16 +219,77 @@ func TestOpenDnsEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
 		RemoteDnsIpv4:   testing_stringList("9.9.9.9", "208.67.222.222", "1.1.1.1"),
 	})
 	persisted := localState.GetDnsResolverSettings()
-	if got, want := testingStringsOf(persisted.RemoteDnsIpv4), []string{"9.9.9.9", "1.1.1.1", "1.0.0.1"}; !slices.Equal(got, want) {
+	if got, want := testingStringsOf(persisted.RemoteDnsIpv4), []string{"9.9.9.10", "1.1.1.1", "1.0.0.1"}; !slices.Equal(got, want) {
 		t.Errorf("reordered version 1 default = %v, want %v", got, want)
 	}
 }
 
+// Every old default list, in the default order and reordered, from a version 0
+// and a version 1 record, migrates with Quad9's unfiltered address in the place
+// of its filtering one and the other servers in their saved order.
+func TestOldDefaultDnsListsPutUnfilteredQuad9InItsPlace(t *testing.T) {
+	cases := []struct {
+		name    string
+		version int
+		list    string
+		saved   []string
+		want    []string
+	}{
+		{name: "version 1 doh v4", version: 1, list: "RemoteDohUrlsIpv4",
+			saved: []string{"https://1.1.1.1/dns-query", "https://9.9.9.9/dns-query", "https://208.67.222.222/dns-query"},
+			want:  []string{"https://1.1.1.1/dns-query", "https://9.9.9.10/dns-query", "https://1.0.0.1/dns-query"}},
+		{name: "version 1 doh v6 reordered", version: 1, list: "RemoteDohUrlsIpv6",
+			saved: []string{"https://[2620:fe::fe]/dns-query", "https://[2620:119:35::35]/dns-query", "https://[2606:4700:4700::1111]/dns-query"},
+			want:  []string{"https://[2620:fe::10]/dns-query", "https://[2606:4700:4700::1111]/dns-query", "https://[2606:4700:4700::1001]/dns-query"}},
+		{name: "version 1 plain v6", version: 1, list: "RemoteDnsIpv6",
+			saved: []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"},
+			want:  []string{"2606:4700:4700::1111", "2620:fe::10", "2606:4700:4700::1001"}},
+		{name: "version 0 doh v4 reordered", version: 0, list: "RemoteDohUrlsIpv4",
+			saved: []string{"https://9.9.9.9/dns-query", "https://8.8.8.8/dns-query", "https://208.67.222.222/dns-query", "https://1.1.1.1/dns-query"},
+			want:  []string{"https://9.9.9.10/dns-query", "https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"}},
+		{name: "version 0 plain v4", version: 0, list: "RemoteDnsIpv4",
+			saved: []string{"1.1.1.1", "9.9.9.9", "8.8.8.8", "208.67.222.222"},
+			want:  []string{"1.1.1.1", "9.9.9.10", "1.0.0.1"}},
+		{name: "version 0 plain v6 reordered", version: 0, list: "RemoteDnsIpv6",
+			saved: []string{"2620:119:35::35", "2001:4860:4860::8888", "2620:fe::fe", "2606:4700:4700::1111"},
+			want:  []string{"2620:fe::10", "2606:4700:4700::1111", "2606:4700:4700::1001"}},
+	}
+	for _, c := range cases {
+		settings := &DnsResolverSettings{EnableRemoteDoh: true}
+		switch c.list {
+		case "RemoteDohUrlsIpv4":
+			settings.RemoteDohUrlsIpv4 = testing_stringList(c.saved...)
+		case "RemoteDohUrlsIpv6":
+			settings.RemoteDohUrlsIpv6 = testing_stringList(c.saved...)
+		case "RemoteDnsIpv4":
+			settings.RemoteDnsIpv4 = testing_stringList(c.saved...)
+		case "RemoteDnsIpv6":
+			settings.RemoteDnsIpv6 = testing_stringList(c.saved...)
+		}
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		switch c.version {
+		case 0:
+			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, settings)
+		case 1:
+			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, settings)
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil {
+			t.Errorf("%s: record did not load", c.name)
+			continue
+		}
+		if got := testingDnsResolverSettingsLists(persisted)[c.list]; !slices.Equal(got, c.want) {
+			t.Errorf("%s: %s loaded as %v, want %v", c.name, c.list, got, c.want)
+		}
+	}
+}
+
 // What a user chose loads as saved: OpenDNS alone, OpenDNS among other
-// servers, the version 1 defaults plus a server, a Google-era default list or
-// the old tm recommendation in a version 1 record (a version 1 sdk had already
-// migrated those, so they are choices), and the version 1 defaults in a
-// version 2 record.
+// servers, the version 1 defaults plus a server, Quad9's filtering 9.9.9.9
+// alone or with other servers outside an exact old default list, a Google-era
+// default list or the old tm recommendation in a version 1 record (a version 1
+// sdk had already migrated those, so they are choices), and the version 1
+// defaults in a version 2 record.
 func TestChosenDnsListsLoadAsSavedAfterVersion2(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -236,6 +308,17 @@ func TestChosenDnsListsLoadAsSavedAfterVersion2(t *testing.T) {
 		{name: "version 1 defaults plus a server", version: 1, settings: &DnsResolverSettings{
 			EnableRemoteDoh:   true,
 			RemoteDohUrlsIpv4: testing_stringList(append(slices.Clone(testingOpenDnsEraRemoteDohUrlsIpv4), "https://192.0.2.53/dns-query")...),
+		}},
+		{name: "quad9's filtering 9.9.9.9 alone", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList("https://9.9.9.9/dns-query"),
+			RemoteDohUrlsIpv6: testing_stringList("https://[2620:fe::fe]/dns-query"),
+			RemoteDnsIpv4:     testing_stringList("9.9.9.9"),
+		}},
+		{name: "quad9's filtering 9.9.9.9 with both cloudflare addresses", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDoh:   true,
+			RemoteDohUrlsIpv4: testing_stringList("https://1.1.1.1/dns-query", "https://9.9.9.9/dns-query", "https://1.0.0.1/dns-query"),
+			RemoteDnsIpv4:     testing_stringList("9.9.9.9", "1.1.1.1"),
 		}},
 		{name: "google-era defaults in a version 1 record", version: 1, settings: &DnsResolverSettings{
 			EnableRemoteDoh:   true,
