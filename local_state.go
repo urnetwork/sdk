@@ -549,13 +549,20 @@ func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 }
 
 func (self *LocalState) GetBlockerEnabled() bool {
+	blockerEnabled, _ := self.blockerEnabledIfSet()
+	return blockerEnabled
+}
+
+// GetBlockerEnabled plus whether one was saved: a DeviceRemote queues only a
+// saved blocker setting for its device (device_remote_saved_settings.go).
+func (self *LocalState) blockerEnabledIfSet() (bool, bool) {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	if blockerEnabledBytes, err := os.ReadFile(path); err == nil {
 		if value, err := decodeLocalPreference("blocker-enabled", blockerEnabledBytes); err == nil {
-			return value.(bool)
+			return value.(bool), true
 		}
 	}
-	return false
+	return false, false
 }
 
 // Dropped while the space is signed out (local_state_sign_in.go): a late
