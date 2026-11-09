@@ -59,12 +59,16 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /network/revoke-session":            apiRouteAccessNetwork,
 	"POST /network/revoke-other-sessions":     apiRouteAccessNetwork,
 	"GET /network/session-operations/([^/]+)": apiRouteAccessNetwork,
-	"POST /auth/network-delete":               apiRouteAccessAppAdmin,
-	"POST /auth/code-create":                  apiRouteAccessAppAdmin,
-	"POST /auth/add-auth":                     apiRouteAccessAppAdmin,
-	"POST /auth/remove-auth":                  apiRouteAccessAppAdmin,
-	"POST /auth/regenerate-seedphrase":        apiRouteAccessAppAdmin,
-	"POST /auth/generate-seedphrase":          apiRouteAccessAppAdmin,
+	// §7.4's stage 2: the server's table holds these six as Network, and its
+	// gate keeps them app admin until stage 2 is live. The sdk sends the
+	// network credential on both classes, so a device's client token never
+	// reaches them from here either way.
+	"POST /auth/network-delete":               apiRouteAccessNetwork,
+	"POST /auth/code-create":                  apiRouteAccessNetwork,
+	"POST /auth/add-auth":                     apiRouteAccessNetwork,
+	"POST /auth/remove-auth":                  apiRouteAccessNetwork,
+	"POST /auth/regenerate-seedphrase":        apiRouteAccessNetwork,
+	"POST /auth/generate-seedphrase":          apiRouteAccessNetwork,
 	"GET /network/clients":                    apiRouteAccessAppAdmin,
 	"GET /network/user":                       apiRouteAccessAppAdmin,
 	"POST /network/ranking-visibility":        apiRouteAccessAppAdmin,

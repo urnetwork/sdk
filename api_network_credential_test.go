@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -883,4 +884,44 @@ func TestApiKeyIsKeptAsTheNetworkCredential(t *testing.T) {
 		t.Fatal("no request was sent")
 	}
 	connect.AssertEqual(t, request.byJwt, apiKey)
+}
+
+// §7.4's stage 2 routes are network administration: an app holding its network
+// credential beside its device's client token reaches them with the network
+// credential, and a device that holds only a client token sends nothing there
+// (TEAM-M3-01).
+func TestStage2RoutesCarryTheNetworkCredential(t *testing.T) {
+	stage2Routes := []string{
+		"POST /auth/code-create",
+		"POST /auth/add-auth",
+		"POST /auth/remove-auth",
+		"POST /auth/regenerate-seedphrase",
+		"POST /auth/generate-seedphrase",
+		"POST /auth/network-delete",
+	}
+	for _, route := range stage2Routes {
+		method, path, _ := strings.Cut(route, " ")
+		if access := apiRouteAccessFor(method, path); access != apiRouteAccessNetwork {
+			t.Errorf("%s is class %d, not network", route, access)
+		}
+	}
+
+	ctx, api, requests := newCredentialRecordingApi(t)
+	networkJwt := credentialTestNetworkJwt(t, credentialTestNetworkId)
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+	api.SetByJwt(networkJwt)
+	installTestDeviceByJwt(t, api, nil, clientJwt, nil)
+	for _, c := range apiCredentialCases() {
+		if !slices.Contains(stage2Routes, c.route) {
+			continue
+		}
+		if err := c.call(ctx, api); errors.Is(err, ErrNetworkCredentialRequired) {
+			t.Fatalf("%s refused while the app holds its network credential", c.route)
+		}
+		request, ok := takeRecordedRequest(t, requests)
+		if !ok {
+			t.Fatalf("%s sent nothing", c.route)
+		}
+		connect.AssertEqual(t, request.byJwt, networkJwt)
+	}
 }
