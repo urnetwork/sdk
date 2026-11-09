@@ -340,7 +340,7 @@ func (self *testingDeviceRole) device(t *testing.T, adjust func(settings *Device
 	return device
 }
 
-// The device, or why it could not be built.
+// The device, or why it could not be built, through the public constructor an app calls.
 func (self *testingDeviceRole) tryDevice(adjust func(settings *DeviceLocalSettings)) (*DeviceLocal, error) {
 	settings := DefaultDeviceLocalSettings()
 	settings.DisableLogging = true
@@ -352,7 +352,7 @@ func (self *testingDeviceRole) tryDevice(adjust func(settings *DeviceLocalSettin
 	if adjust != nil {
 		adjust(settings)
 	}
-	return newDeviceLocalWithOverrides(self.space, self.clientJwt, "device-role", "test", "0", self.instanceId, settings, connect.NewId())
+	return NewDeviceLocal(self.space, self.clientJwt, "device-role", "test", "0", self.instanceId, settings)
 }
 
 // Moves device to enforcing{doc} at the vectors' pin 3 with rules.
