@@ -1002,10 +1002,10 @@ type AuthNetworkClientError struct {
 	// a plan limit refused the request and UR Pro lifts it: the network is on
 	// the free plan at its concurrent connected client limit, its hosted proxy
 	// cap or rate, or asked for a Pro-only feature. The client should prompt the
-	// user to upgrade (an agent may pay inline over x402: the same request
-	// answers it 402 with payment terms, which this sdk reads back as this
-	// refusal). With ClientLimitExceeded and without this, no upgrade lifts the
-	// limit: a Pro network at the Pro limit, or a cap.
+	// user to upgrade (an agent may pay inline over x402: a request that asks
+	// with `X-UR-X402: 1` is answered 402 with payment terms, which this sdk
+	// reads back as this refusal). With ClientLimitExceeded and without this, no
+	// upgrade lifts the limit: a Pro network at the Pro limit, or a cap.
 	UpgradeRequired bool `json:"upgrade_required,omitempty"`
 	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
 	// does not already hold in the location; nothing was created and neither
@@ -1022,9 +1022,11 @@ type AuthNetworkClientError struct {
 
 // authNetworkClientRefusalHttpPostRaw answers auth-client's 402 Payment
 // Required as the refusal it stands for. The server answers a refusal an
-// upgrade lifts with x402 payment terms to a caller it takes for an agent, and
-// servers before it read the apps' client info did so for every caller. The
-// terms' error is the refusal's message. A person cannot sign x402 terms, and
+// upgrade lifts with x402 payment terms only to a caller that asks for them
+// (`X-UR-X402: 1`, which this sdk never sends), but servers before 2026-11-10
+// quoted every caller whose client info named no app, and servers before
+// 2026-11-08 every caller. The terms' error is the refusal's message. A
+// person cannot sign x402 terms, and
 // the apps read a 402 as a failed request and showed the raw terms or a
 // generic error, so the 402 reads as the refusal with upgrade_required, the
 // same as the server's JSON body for it, and the apps show their upgrade
