@@ -333,7 +333,11 @@ func dnsPresetHostIsIp(host string) bool {
 // and AdGuard. RethinkDNS is left out: its resolver forwards to Google
 // upstream, and support inbox 8236 asked to avoid Google. Values are verbatim
 // from the providers' pages (A3), and each entry passed dnspresetcheck (F3)
-// on its checked date.
+// on its checked date: on 2026-11-09 every url and pin over IPv4 (h2, the
+// certificate for the url's host or ip, a normal name, the canary as listed,
+// no HTTPS address hints, and resolution through connect's pinned client),
+// from a host with no IPv6 route, so the IPv6 urls and pins wait for a run
+// from a dual-stack host (ADBLOCK3RD section 10).
 var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 	lowerCase := strings.ToLower
 	return newDnsPresetCatalog(
@@ -900,7 +904,13 @@ func (self *dnsPresetPersonalId) idFromUrl(input string) (string, bool) {
 		return "", false
 	}
 	templateSegments := strings.Split(strings.Trim(template.Path, "/"), "/")
-	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	// the segments as pasted: an escaped slash or anything else escaped
+	// stays inside its segment, where no id has it
+	escapedPath := u.EscapedPath()
+	if strings.Contains(escapedPath, "%") {
+		return "", false
+	}
+	segments := strings.Split(strings.Trim(escapedPath, "/"), "/")
 	idIndex := len(templateSegments) - 1
 	if len(segments) < len(templateSegments) {
 		return "", false
@@ -1005,10 +1015,11 @@ func (self *dnsPresetPersonalId) idValid(id string) bool {
 }
 
 // The DoH url of a valid id, parsed again: it must have the template's
-// scheme, host and path with the id in place, and nothing else (D4).
+// scheme, host and path with the id in place as one whole segment, and
+// nothing else (D4).
 func (self *dnsPresetPersonalId) dohUrl(id string) (string, bool) {
 	template, err := url.Parse(self.dohUrlTemplate)
-	if err != nil {
+	if err != nil || id == "" || id == "." || id == ".." {
 		return "", false
 	}
 	built := strings.Replace(self.dohUrlTemplate, dnsPresetPersonalIdPlaceholder, id, 1)
@@ -1017,6 +1028,10 @@ func (self *dnsPresetPersonalId) dohUrl(id string) (string, bool) {
 		return "", false
 	}
 	wantPath := strings.Replace(template.Path, dnsPresetPersonalIdPlaceholder, id, 1)
+	if strings.Count(wantPath, "/") != strings.Count(template.Path, "/") {
+		// the id would span segments
+		return "", false
+	}
 	if u.Scheme != template.Scheme || u.Host != template.Host || u.User != nil ||
 		u.Path != wantPath || u.EscapedPath() != wantPath ||
 		u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
