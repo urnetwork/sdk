@@ -115,15 +115,16 @@ func TestCorruptStoreIsNotAbsent(t *testing.T) {
 	restored("a file in the directory's place")
 }
 
-// Records stream both ways: writing and reading 4 MiB, a base's rows at §8.8's bound, in 4 KiB pieces allocates far
-// less than the record, so the tunnel never holds it whole (R-SDK-6).
+// Records stream both ways: writing and reading 4 MiB, a base's rows at §8.8's bound, in 4 KiB pieces allocates less
+// than half the record, so the tunnel never holds it whole (R-SDK-6). The bound is half, not a few pieces, since the
+// count is the process's and another test's goroutines may still be winding down.
 func TestRowsStreamed(t *testing.T) {
 	store, err := newSdkPostureStore(t.TempDir(), connect.NewId())
 	if err != nil {
 		t.Fatal(err)
 	}
 	const recordByteCount = 4 * 1024 * 1024
-	const boundByteCount = 1024 * 1024
+	const boundByteCount = recordByteCount / 2
 	piece := make([]byte, 4*1024)
 	for i := range piece {
 		piece[i] = byte(i)
