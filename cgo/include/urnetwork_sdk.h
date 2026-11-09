@@ -3898,6 +3898,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Group: string
  *   GroupKey: string
  *   LabelKey: string
+ *   CopyKey: string
  *   CountryCode: string
  *   Unencrypted: boolean
  *   Preset: DnsPreset | null
@@ -3923,6 +3924,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PersonalIdRequired: boolean
  *   PersonalIdExample: string
  *   PersonalIdHelpUrl: string
+ *   PersonalIdWhereKey: string
  *   PersonalIdFormatKey: string
  *   QuotaNoteKey: string
  */
@@ -3981,6 +3983,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Group: string
  *   GroupKey: string
  *   CopyKey: string
+ *   SummaryKey: string
  *   LabelKey: string
  *   CountryCode: string
  *   Personal: boolean
@@ -3997,8 +4000,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* DnsStatusSummary (json):
  *   StatusKey: string
  *   ProviderName: string
+ *   StatusDetailKey: string
  *   VerificationKey: string
  *   VerificationUrl: string
+ *   VerificationLinkKey: string
  *   ShowUseDefault: boolean
  *   ShowChangeLocation: boolean
  *   ShowBlockedCount: boolean

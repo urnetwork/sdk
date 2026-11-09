@@ -2555,9 +2555,9 @@ func (self *DeviceLocal) setUpgradeMuxSettingsWithSelection(
 		self.upgradeMux.SetSettings(settings)
 		self.upgradeMuxLiveSettings = settings
 	}
-	if selectionChanged && self.upgradeMux != nil {
+	if blockedCounter := self.dnsResolver.blockedCounter; selectionChanged && blockedCounter != nil {
 		// a Fast DNS toggle keeps the selection, and so the count
-		self.upgradeMux.ResetDnsBlockedCount()
+		blockedCounter.ResetDnsBlockedCount()
 	}
 	return selectionChanged
 }

@@ -2440,6 +2440,7 @@ struct DnsPreset {
 	bool PersonalIdRequired{};
 	std::string PersonalIdExample{};
 	std::string PersonalIdHelpUrl{};
+	std::string PersonalIdWhereKey{};
 	std::string PersonalIdFormatKey{};
 	std::string QuotaNoteKey{};
 };
@@ -2450,6 +2451,7 @@ struct DnsPick {
 	std::string Group{};
 	std::string GroupKey{};
 	std::string LabelKey{};
+	std::string CopyKey{};
 	std::string CountryCode{};
 	bool Unencrypted{};
 	std::optional<DnsPreset> Preset;
@@ -2501,6 +2503,7 @@ struct DnsSelectionSummary {
 	std::string Group{};
 	std::string GroupKey{};
 	std::string CopyKey{};
+	std::string SummaryKey{};
 	std::string LabelKey{};
 	std::string CountryCode{};
 	bool Personal{};
@@ -2517,8 +2520,10 @@ struct DnsSelectionSummary {
 struct DnsStatusSummary {
 	std::string StatusKey{};
 	std::string ProviderName{};
+	std::string StatusDetailKey{};
 	std::string VerificationKey{};
 	std::string VerificationUrl{};
+	std::string VerificationLinkKey{};
 	bool ShowUseDefault{};
 	bool ShowChangeLocation{};
 	bool ShowBlockedCount{};
@@ -10790,6 +10795,7 @@ inline void to_json(nlohmann::json& j, const DnsPreset& v) {
 	j["PersonalIdRequired"] = v.PersonalIdRequired;
 	j["PersonalIdExample"] = v.PersonalIdExample;
 	j["PersonalIdHelpUrl"] = v.PersonalIdHelpUrl;
+	j["PersonalIdWhereKey"] = v.PersonalIdWhereKey;
 	j["PersonalIdFormatKey"] = v.PersonalIdFormatKey;
 	j["QuotaNoteKey"] = v.QuotaNoteKey;
 }
@@ -10842,6 +10848,9 @@ inline void from_json(const nlohmann::json& j, DnsPreset& v) {
 	if (auto it = j.find("PersonalIdHelpUrl"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PersonalIdHelpUrl);
 	}
+	if (auto it = j.find("PersonalIdWhereKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdWhereKey);
+	}
 	if (auto it = j.find("PersonalIdFormatKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PersonalIdFormatKey);
 	}
@@ -10857,6 +10866,7 @@ inline void to_json(nlohmann::json& j, const DnsPick& v) {
 	j["Group"] = v.Group;
 	j["GroupKey"] = v.GroupKey;
 	j["LabelKey"] = v.LabelKey;
+	j["CopyKey"] = v.CopyKey;
 	j["CountryCode"] = v.CountryCode;
 	j["Unencrypted"] = v.Unencrypted;
 	if (v.Preset) {
@@ -10881,6 +10891,9 @@ inline void from_json(const nlohmann::json& j, DnsPick& v) {
 	}
 	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LabelKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
 	}
 	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
 		it->get_to(v.CountryCode);
@@ -11083,6 +11096,7 @@ inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v) {
 	j["Group"] = v.Group;
 	j["GroupKey"] = v.GroupKey;
 	j["CopyKey"] = v.CopyKey;
+	j["SummaryKey"] = v.SummaryKey;
 	j["LabelKey"] = v.LabelKey;
 	j["CountryCode"] = v.CountryCode;
 	j["Personal"] = v.Personal;
@@ -11119,6 +11133,9 @@ inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
 	}
 	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("SummaryKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SummaryKey);
 	}
 	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LabelKey);
@@ -11159,8 +11176,10 @@ inline void to_json(nlohmann::json& j, const DnsStatusSummary& v) {
 	j = nlohmann::json::object();
 	j["StatusKey"] = v.StatusKey;
 	j["ProviderName"] = v.ProviderName;
+	j["StatusDetailKey"] = v.StatusDetailKey;
 	j["VerificationKey"] = v.VerificationKey;
 	j["VerificationUrl"] = v.VerificationUrl;
+	j["VerificationLinkKey"] = v.VerificationLinkKey;
 	j["ShowUseDefault"] = v.ShowUseDefault;
 	j["ShowChangeLocation"] = v.ShowChangeLocation;
 	j["ShowBlockedCount"] = v.ShowBlockedCount;
@@ -11176,11 +11195,17 @@ inline void from_json(const nlohmann::json& j, DnsStatusSummary& v) {
 	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderName);
 	}
+	if (auto it = j.find("StatusDetailKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StatusDetailKey);
+	}
 	if (auto it = j.find("VerificationKey"); it != j.end() && !it->is_null()) {
 		it->get_to(v.VerificationKey);
 	}
 	if (auto it = j.find("VerificationUrl"); it != j.end() && !it->is_null()) {
 		it->get_to(v.VerificationUrl);
+	}
+	if (auto it = j.find("VerificationLinkKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationLinkKey);
 	}
 	if (auto it = j.find("ShowUseDefault"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ShowUseDefault);

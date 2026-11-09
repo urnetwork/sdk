@@ -119,6 +119,12 @@ func cloneDnsResolverStatus(status *DnsResolverStatus) *DnsResolverStatus {
 	return &cloned
 }
 
+// The blocked-lookups count of a live mux (connect UpgradeMux).
+type dnsBlockedCounter interface {
+	DnsBlockedCount() uint64
+	ResetDnsBlockedCount()
+}
+
 // The selection in force and the status bookkeeping of a device: its live
 // mux, the mapped state of the mux's resolver health, and the verification
 // probe's last run. Not safe for concurrent use; the device guards it with
@@ -133,6 +139,8 @@ type dnsResolverStatusTracker struct {
 	// none, and the removal of its health callback
 	upgradeMux *connect.UpgradeMux
 	healthSub  func()
+	// the live mux's blocked count, nil while there is none
+	blockedCounter dnsBlockedCounter
 
 	state        string
 	sinceTime    time.Time
@@ -173,6 +181,11 @@ func (self *dnsResolverStatusTracker) setMux(upgradeMux *connect.UpgradeMux, now
 		return false
 	}
 	self.upgradeMux = upgradeMux
+	if upgradeMux != nil {
+		self.blockedCounter = upgradeMux
+	} else {
+		self.blockedCounter = nil
+	}
 	if self.state != DnsResolverStateUnknown {
 		self.state = DnsResolverStateUnknown
 		self.sinceTime = now
@@ -415,15 +428,15 @@ func (self *DeviceLocal) AddDnsResolverStatusChangeListener(listener DnsResolver
 // GetDnsBlockedCount is this connection's blocked-lookups count (Device). Zero
 // without a mux: before a connect, after a disconnect, and on a hosted device.
 func (self *DeviceLocal) GetDnsBlockedCount() int64 {
-	upgradeMux := func() *connect.UpgradeMux {
+	blockedCounter := func() dnsBlockedCounter {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		return self.upgradeMux
+		return self.dnsResolver.blockedCounter
 	}()
-	if upgradeMux == nil {
+	if blockedCounter == nil {
 		return 0
 	}
-	count := upgradeMux.DnsBlockedCount()
+	count := blockedCounter.DnsBlockedCount()
 	if math.MaxInt64 < count {
 		return math.MaxInt64
 	}

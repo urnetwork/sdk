@@ -24,28 +24,45 @@ const (
 	DnsPickKindRegional = "regional"
 )
 
-// The localization key ids the sdk hands the screens (G1). The pill keys are
-// the existing ones the apps show today.
+// The localization key ids the sdk hands the screens, as the localization
+// store has them (localizations keys/, ADBLOCK3RD G1). A key whose text names
+// the provider takes it as {provider}, never inside the key. The ad-blocking
+// group heading, the regional explanation and the pills are keys the apps
+// already show.
 const (
-	dnsGroupKeyBlockAds      = "dns_group_block_ads"
-	dnsGroupKeyBlockMalware  = "dns_group_block_malware"
-	dnsGroupKeyFamily        = "dns_group_family"
-	dnsGroupKeyMyAccount     = "dns_group_my_account"
-	dnsGroupKeyNoFiltering   = "dns_group_no_filtering"
-	dnsProviderKeyDefault    = "dns_provider_default"
-	dnsProviderKeyCustom     = "dns_provider_custom"
-	dnsProviderKeyRegional   = "dns_provider_regional"
-	dnsVerifyKeyUnconfirmed  = "dns_verify_unconfirmed"
-	dnsVerifyKeyRejected     = "dns_verify_rejected_controld"
-	dnsVerifyKeyMalformed    = "dns_verify_malformed_adguard"
-	dnsVerifyKeyNotFiltering = "dns_verify_not_filtering"
-	dnsStatusKeyProvider     = "dns_status_provider"
-	dnsStatusKeyPersonal     = "dns_status_personal"
-	dnsStatusKeyUnreachable  = "dns_status_unreachable"
-	dnsStatusKeyPaused       = "dns_status_paused"
-	dnsStatusKeyFallback     = "dns_status_fallback"
-	dnsPillKeyRecommended    = "dns_pill_recommended"
-	dnsPillKeyDefaults       = "dns_pill_defaults"
+	dnsGroupKeyBlockAds            = "block_ads_and_trackers"
+	dnsGroupKeyBlockMalware        = "dns_group_block_malware"
+	dnsGroupKeyFamily              = "dns_group_family"
+	dnsGroupKeyMyAccount           = "dns_group_my_account"
+	dnsGroupKeyNoFiltering         = "dns_group_no_filtering"
+	dnsProviderKeyDefault          = "dns_provider_default"
+	dnsProviderKeyDefaultCopy      = "dns_provider_default_copy"
+	dnsProviderKeyCustom           = "dns_provider_custom"
+	dnsProviderKeyCustomCopy       = "dns_provider_custom_copy"
+	dnsProviderKeyRegional         = "dns_provider_regional"
+	dnsProviderKeyRegionalCopy     = "dns_recommendation_message"
+	dnsSummaryKeyDefault           = "dns_summary_default"
+	dnsSummaryKeyAdBlocking        = "dns_summary_ad_blocking"
+	dnsSummaryKeyMalwareBlocking   = "dns_summary_malware_blocking"
+	dnsSummaryKeyFamily            = "dns_summary_family"
+	dnsSummaryKeyNoFiltering       = "dns_summary_no_filtering"
+	dnsSummaryKeyPersonal          = "dns_summary_personal"
+	dnsSummaryKeyCustom            = "dns_summary_custom"
+	dnsSummaryKeyCustomUnencrypted = "dns_summary_custom_unencrypted"
+	dnsSummaryKeyRegional          = "dns_summary_regional"
+	dnsVerifyKeyUnconfirmed        = "dns_verify_unconfirmed"
+	dnsVerifyKeyRejected           = "dns_verify_rejected_controld"
+	dnsVerifyKeyMalformed          = "dns_verify_malformed_adguard"
+	dnsVerifyKeyNotFiltering       = "dns_verify_not_filtering"
+	dnsVerifyKeyDashboardLink      = "dns_personal_id_dashboard_link"
+	dnsStatusKeyProvider           = "dns_status_provider"
+	dnsStatusKeyUnreachable        = "dns_status_unreachable"
+	dnsStatusKeyUnreachableDetail  = "dns_status_unreachable_detail"
+	dnsStatusKeyPaused             = "dns_status_paused"
+	dnsStatusKeyPausedDetail       = "dns_status_paused_detail"
+	dnsStatusKeyFallback           = "dns_status_fallback"
+	dnsPillKeyRecommended          = "dns_pill_recommended"
+	dnsPillKeyDefaults             = "dns_pill_defaults"
 )
 
 // A provider of presets. Its name, operator and jurisdiction are shown as
@@ -75,10 +92,12 @@ type DnsPreset struct {
 	HelpUrl      string
 	// DnsPresetGroup*
 	Group string
-	// the group's heading key, such as dns_group_block_ads
+	// the group's heading key: block_ads_and_trackers,
+	// dns_group_block_malware, dns_group_family, dns_group_my_account or
+	// dns_group_no_filtering
 	GroupKey string
-	// the key of what it blocks, such as dns_preset_adguard_copy, with the
-	// provider's name as its argument
+	// the key of what it blocks, one of the dns_preset_copy_* keys;
+	// dns_preset_copy_personal takes {provider}
 	CopyKey   string
 	BlocksAds bool
 	// whether a failing preset falls back to URnetwork's dns through the
@@ -94,10 +113,15 @@ type DnsPreset struct {
 	// the provider's dashboard page that shows the id, also linked when the
 	// profile cannot be confirmed
 	PersonalIdHelpUrl string
-	// the key of the provider's id format message, shown with
-	// DnsPresetErrorPersonalIdInvalid
+	// the key of where the provider shows the id
+	// (dns_personal_id_where_<provider>), with {provider}
+	PersonalIdWhereKey string
+	// the key of the provider's id format message
+	// (dns_personal_id_format_<provider>), with {provider} and {example}
+	// (PersonalIdExample), shown with DnsPresetErrorPersonalIdInvalid
 	PersonalIdFormatKey string
-	// the key of the free-tier note under the field, or empty
+	// the key of the free-tier note under the field
+	// (dns_personal_id_quota_<provider>), with {provider}, or empty
 	QuotaNoteKey string
 }
 
@@ -113,9 +137,13 @@ type DnsPick struct {
 	Group    string
 	GroupKey string
 	// the label key of a default, custom or regional pick: dns_provider_default,
-	// dns_provider_custom or dns_provider_regional (with CountryCode). Empty for
-	// a preset pick, which shows its provider's name and copy.
+	// dns_provider_custom or dns_provider_regional (with {country}). Empty for
+	// a preset pick, which shows its provider's name.
 	LabelKey string
+	// the key of the pick's line under its label: a preset's CopyKey,
+	// dns_provider_default_copy, dns_provider_custom_copy, or for a regional
+	// pick dns_recommendation_message (with {country})
+	CopyKey string
 	// the country of a regional pick
 	CountryCode string
 	// a regional pick resolves unencrypted, and says so
@@ -140,6 +168,12 @@ type DnsSelectionSummary struct {
 	Group        string
 	GroupKey     string
 	CopyKey      string
+	// the summary row's key: dns_summary_default, dns_summary_custom,
+	// dns_summary_custom_unencrypted, dns_summary_regional, or for a preset
+	// by its group dns_summary_ad_blocking, dns_summary_malware_blocking,
+	// dns_summary_family, dns_summary_no_filtering or dns_summary_personal,
+	// each with {provider}
+	SummaryKey string
 	// the label key of a default, custom or regional selection, and the
 	// country of a regional one
 	LabelKey    string
@@ -172,18 +206,26 @@ type DnsSelectionSummary struct {
 // What the status line, the verification line and the blocked count show for
 // the settings in force and the device's dns resolver status (C6, C8, I3).
 type DnsStatusSummary struct {
-	// the status line's key, with ProviderName as its argument, or empty when
-	// there is no status line (no preset selected): dns_status_provider,
-	// dns_status_personal, dns_status_paused, dns_status_fallback or
-	// dns_status_unreachable
+	// the status line's key, with ProviderName as {provider}, or empty when
+	// there is no status line (no preset selected): dns_status_provider while
+	// the preset answers; dns_status_paused for an ad-blocking preset and
+	// dns_status_fallback for a no-filtering one failed over to URnetwork's
+	// dns; dns_status_unreachable for a failing preset
 	StatusKey    string
 	ProviderName string
-	// the verification line's key, or empty: dns_verify_not_filtering and
-	// dns_verify_unconfirmed take ProviderName; dns_verify_rejected_controld
-	// and dns_verify_malformed_adguard take none
+	// the line under the status line, or empty: dns_status_paused_detail
+	// under dns_status_paused, and dns_status_unreachable_detail under the
+	// dns_status_unreachable of a preset that fails closed
+	StatusDetailKey string
+	// the verification line's key, with ProviderName as {provider}, or empty:
+	// dns_verify_not_filtering, dns_verify_unconfirmed,
+	// dns_verify_rejected_controld or dns_verify_malformed_adguard
 	VerificationKey string
-	// the page an unconfirmed profile links to, the provider's dashboard
-	VerificationUrl string
+	// the page an unconfirmed profile links to, the provider's dashboard, and
+	// the link's key (dns_personal_id_dashboard_link, with {provider}); both
+	// empty for every other verification
+	VerificationUrl     string
+	VerificationLinkKey string
 	// the actions under a failing line: "Use URnetwork DNS"
 	// (dns_status_use_default, which saves DnsPresetIdDefault) and "Change
 	// location" (dns_status_change_location)
@@ -247,9 +289,20 @@ func dnsPresetGroupRank(group string) (int, string) {
 	return len(dnsPresetGroupKeys), ""
 }
 
-// The key of a preset's copy, one per preset (G1).
-func dnsPresetCopyKey(presetId string) string {
-	return "dns_preset_" + strings.ReplaceAll(presetId, "-", "_") + "_copy"
+// The summary row's key of a preset, by its group.
+func dnsPresetSummaryKey(group string) string {
+	switch group {
+	case DnsPresetGroupAdblock:
+		return dnsSummaryKeyAdBlocking
+	case DnsPresetGroupSecurity:
+		return dnsSummaryKeyMalwareBlocking
+	case DnsPresetGroupFamily:
+		return dnsSummaryKeyFamily
+	case DnsPresetGroupPersonal:
+		return dnsSummaryKeyPersonal
+	default:
+		return dnsSummaryKeyNoFiltering
+	}
 }
 
 // Whether a preset filters, so the blocked count shows (I3).
@@ -295,7 +348,7 @@ func newDnsPreset(catalog *dnsPresetCatalog, preset *dnsPreset) *DnsPreset {
 		ProviderId: preset.providerId,
 		Group:      preset.group,
 		GroupKey:   groupKey,
-		CopyKey:    dnsPresetCopyKey(preset.presetId),
+		CopyKey:    preset.copyKey,
 		BlocksAds:  preset.blocksAds,
 		Failover:   preset.failover,
 		Filtering:  dnsPresetFiltering(preset),
@@ -310,6 +363,7 @@ func newDnsPreset(catalog *dnsPresetCatalog, preset *dnsPreset) *DnsPreset {
 		exported.PersonalIdRequired = true
 		exported.PersonalIdExample = personal.example
 		exported.PersonalIdHelpUrl = personal.idHelpUrl
+		exported.PersonalIdWhereKey = personal.whereKey
 		exported.PersonalIdFormatKey = personal.formatKey
 		exported.QuotaNoteKey = personal.quotaNoteKey
 	}
@@ -380,6 +434,7 @@ func GetDnsPicks(exitCountryCode string) *DnsPickList {
 		Kind:     DnsPickKindDefault,
 		PresetId: DnsPresetIdDefault,
 		LabelKey: dnsProviderKeyDefault,
+		CopyKey:  dnsProviderKeyDefaultCopy,
 	})
 	for _, preset := range dnsPresetsInDisplayOrder(catalog) {
 		exported := newDnsPreset(catalog, preset)
@@ -388,12 +443,14 @@ func GetDnsPicks(exitCountryCode string) *DnsPickList {
 			PresetId: preset.presetId,
 			Group:    preset.group,
 			GroupKey: exported.GroupKey,
+			CopyKey:  exported.CopyKey,
 			Preset:   exported,
 		})
 	}
 	picks.Add(&DnsPick{
 		Kind:     DnsPickKindCustom,
 		LabelKey: dnsProviderKeyCustom,
+		CopyKey:  dnsProviderKeyCustomCopy,
 	})
 	countryCode := strings.ToLower(strings.TrimSpace(exitCountryCode))
 	if dnsRegionalCountryCodeValid(countryCode) && HasRegionalDnsRecommendation(countryCode) {
@@ -401,6 +458,7 @@ func GetDnsPicks(exitCountryCode string) *DnsPickList {
 			Kind:        DnsPickKindRegional,
 			PresetId:    DnsPresetIdRegionalPrefix + countryCode,
 			LabelKey:    dnsProviderKeyRegional,
+			CopyKey:     dnsProviderKeyRegionalCopy,
 			CountryCode: countryCode,
 			Unencrypted: true,
 		})
@@ -511,6 +569,11 @@ func DescribeDnsResolverSettings(settings *DnsResolverSettings, exitCountryCode 
 		summary.LabelKey = dnsProviderKeyCustom
 		summary.Unencrypted = !settings.EnableRemoteDoh && !settings.EnableLocalDoh &&
 			(settings.EnableRemoteDns || settings.EnableLocalDns)
+		if summary.Unencrypted {
+			summary.SummaryKey = dnsSummaryKeyCustomUnencrypted
+		} else {
+			summary.SummaryKey = dnsSummaryKeyCustom
+		}
 	case selection.preset != nil:
 		preset := newDnsPreset(catalog, selection.preset)
 		summary.Kind = DnsPickKindPreset
@@ -520,6 +583,7 @@ func DescribeDnsResolverSettings(settings *DnsResolverSettings, exitCountryCode 
 		summary.Group = preset.Group
 		summary.GroupKey = preset.GroupKey
 		summary.CopyKey = preset.CopyKey
+		summary.SummaryKey = dnsPresetSummaryKey(preset.Group)
 		summary.Personal = preset.PersonalIdRequired
 		summary.Failover = preset.Failover
 		summary.ShowBlockedCount = preset.Filtering
@@ -527,12 +591,14 @@ func DescribeDnsResolverSettings(settings *DnsResolverSettings, exitCountryCode 
 		summary.Kind = DnsPickKindRegional
 		summary.PresetId = settings.PresetId
 		summary.LabelKey = dnsProviderKeyRegional
+		summary.SummaryKey = dnsSummaryKeyRegional
 		summary.CountryCode = selection.countryCode
 		summary.Unencrypted = true
 	default:
 		summary.Kind = DnsPickKindDefault
 		summary.PresetId = DnsPresetIdDefault
 		summary.LabelKey = dnsProviderKeyDefault
+		summary.SummaryKey = dnsSummaryKeyDefault
 		if selection.unavailable {
 			summary.Dropped = true
 			summary.DroppedPresetId = settings.PresetId
@@ -591,19 +657,21 @@ func DescribeDnsResolverStatus(settings *DnsResolverSettings, status *DnsResolve
 			summary.StatusKey = dnsStatusKeyFallback
 		} else {
 			summary.StatusKey = dnsStatusKeyPaused
+			summary.StatusDetailKey = dnsStatusKeyPausedDetail
 		}
 		summary.ShowUseDefault = true
 		summary.ShowChangeLocation = true
 	case DnsResolverStateFailing:
 		summary.StatusKey = dnsStatusKeyUnreachable
+		if !preset.failover {
+			// a preset that fails over says nothing about staying closed
+			// while its failover has not answered yet
+			summary.StatusDetailKey = dnsStatusKeyUnreachableDetail
+		}
 		summary.ShowUseDefault = true
 		summary.ShowChangeLocation = true
 	default:
-		if preset.personalId != nil {
-			summary.StatusKey = dnsStatusKeyPersonal
-		} else {
-			summary.StatusKey = dnsStatusKeyProvider
-		}
+		summary.StatusKey = dnsStatusKeyProvider
 	}
 	switch status.Verification {
 	case DnsResolverVerificationNotFiltering:
@@ -613,6 +681,7 @@ func DescribeDnsResolverStatus(settings *DnsResolverSettings, status *DnsResolve
 		summary.VerificationKey = dnsVerifyKeyUnconfirmed
 		if preset.personalId != nil {
 			summary.VerificationUrl = preset.personalId.idHelpUrl
+			summary.VerificationLinkKey = dnsVerifyKeyDashboardLink
 		}
 	case DnsResolverVerificationRejected:
 		summary.VerificationKey = dnsVerifyKeyRejected

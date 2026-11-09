@@ -137,9 +137,12 @@ type dnsPreset struct {
 	presetId   string
 	providerId string
 	group      string
-	// whether it blocks ads; false shows "not ads" in its copy (G2) and keeps
-	// it in a Play-only catalog (O15)
+	// whether it blocks ads; false shows "not ads" in its copy and keeps it in
+	// a Play-only catalog (O15)
 	blocksAds bool
+	// the localization key of what it blocks (G1): one key per distinct text,
+	// shared by presets that block the same
+	copyKey string
 	// ip-literal presets: one url per address, the v4 and v6 lists in
 	// operator pair order. hostname presets: the one url in both lists. A
 	// personal preset's url holds the placeholder.
@@ -190,6 +193,8 @@ type dnsPresetPersonalId struct {
 	idHelpUrl string
 	// the localization key of the provider's id format message (D4, G1)
 	formatKey string
+	// the localization key of where the provider shows the id (D3, G1)
+	whereKey string
 	// the localization key of the free-tier note under the field, or empty
 	// (D3, G1)
 	quotaNoteKey string
@@ -398,6 +403,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "adguard",
 				providerId:  "adguard",
 				group:       DnsPresetGroupAdblock,
+				copyKey:     "dns_preset_copy_ads_phishing",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://dns.adguard-dns.com/dns-query"},
 				dohUrlsIpv6: []string{"https://dns.adguard-dns.com/dns-query"},
@@ -412,6 +418,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "controld-ads",
 				providerId:  "controld",
 				group:       DnsPresetGroupAdblock,
+				copyKey:     "dns_preset_copy_ads_malware",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://freedns.controld.com/p2"},
 				dohUrlsIpv6: []string{"https://freedns.controld.com/p2"},
@@ -426,6 +433,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "dns4eu-noads",
 				providerId:  "dns4eu",
 				group:       DnsPresetGroupAdblock,
+				copyKey:     "dns_preset_copy_ads_malware_phishing",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://noads.joindns4.eu/dns-query"},
 				dohUrlsIpv6: []string{"https://noads.joindns4.eu/dns-query"},
@@ -441,6 +449,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "cloudflare-security",
 				providerId:  "cloudflare",
 				group:       DnsPresetGroupSecurity,
+				copyKey:     "dns_preset_copy_malware",
 				dohUrlsIpv4: []string{"https://1.1.1.2/dns-query", "https://1.0.0.2/dns-query"},
 				dohUrlsIpv6: []string{"https://[2606:4700:4700::1112]/dns-query", "https://[2606:4700:4700::1002]/dns-query"},
 				blockAnswer: dnsPresetBlockAnswerNull,
@@ -450,6 +459,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "dns4eu-protective",
 				providerId:  "dns4eu",
 				group:       DnsPresetGroupSecurity,
+				copyKey:     "dns_preset_copy_malware_phishing",
 				dohUrlsIpv4: []string{"https://protective.joindns4.eu/dns-query"},
 				dohUrlsIpv6: []string{"https://protective.joindns4.eu/dns-query"},
 				dohPinIpv4s: []string{"86.54.11.1", "86.54.11.201"},
@@ -461,6 +471,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "quad9",
 				providerId:  "quad9",
 				group:       DnsPresetGroupSecurity,
+				copyKey:     "dns_preset_copy_malware_phishing",
 				dohUrlsIpv4: []string{"https://9.9.9.9/dns-query", "https://149.112.112.112/dns-query"},
 				dohUrlsIpv6: []string{"https://[2620:fe::fe]/dns-query", "https://[2620:fe::9]/dns-query"},
 				blockAnswer: dnsPresetBlockAnswerNxdomain,
@@ -472,6 +483,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "adguard-family",
 				providerId:  "adguard",
 				group:       DnsPresetGroupFamily,
+				copyKey:     "dns_preset_copy_ads_adult_safe_search",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://family.adguard-dns.com/dns-query"},
 				dohUrlsIpv6: []string{"https://family.adguard-dns.com/dns-query"},
@@ -485,6 +497,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "cloudflare-family",
 				providerId:  "cloudflare",
 				group:       DnsPresetGroupFamily,
+				copyKey:     "dns_preset_copy_malware_adult",
 				dohUrlsIpv4: []string{"https://1.1.1.3/dns-query", "https://1.0.0.3/dns-query"},
 				dohUrlsIpv6: []string{"https://[2606:4700:4700::1113]/dns-query", "https://[2606:4700:4700::1003]/dns-query"},
 				blockAnswer: dnsPresetBlockAnswerNull,
@@ -494,6 +507,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "controld-family",
 				providerId:  "controld",
 				group:       DnsPresetGroupFamily,
+				copyKey:     "dns_preset_copy_ads_malware_adult_drugs",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://freedns.controld.com/family"},
 				dohUrlsIpv6: []string{"https://freedns.controld.com/family"},
@@ -507,6 +521,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "dns4eu-child",
 				providerId:  "dns4eu",
 				group:       DnsPresetGroupFamily,
+				copyKey:     "dns_preset_copy_child",
 				dohUrlsIpv4: []string{"https://child.joindns4.eu/dns-query"},
 				dohUrlsIpv6: []string{"https://child.joindns4.eu/dns-query"},
 				dohPinIpv4s: []string{"86.54.11.12", "86.54.11.212"},
@@ -518,6 +533,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "dns4eu-child-noads",
 				providerId:  "dns4eu",
 				group:       DnsPresetGroupFamily,
+				copyKey:     "dns_preset_copy_child_ads",
 				blocksAds:   true,
 				dohUrlsIpv4: []string{"https://child-noads.joindns4.eu/dns-query"},
 				dohUrlsIpv6: []string{"https://child-noads.joindns4.eu/dns-query"},
@@ -532,6 +548,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "adguard-unfiltered",
 				providerId:  "adguard",
 				group:       DnsPresetGroupUnfiltered,
+				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://unfiltered.adguard-dns.com/dns-query"},
 				dohUrlsIpv6: []string{"https://unfiltered.adguard-dns.com/dns-query"},
 				dohPinIpv4s: []string{"94.140.14.140", "94.140.14.141"},
@@ -543,6 +560,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "cloudflare",
 				providerId:  "cloudflare",
 				group:       DnsPresetGroupUnfiltered,
+				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"},
 				dohUrlsIpv6: []string{"https://[2606:4700:4700::1111]/dns-query", "https://[2606:4700:4700::1001]/dns-query"},
 				failover:    true,
@@ -552,6 +570,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "controld-unfiltered",
 				providerId:  "controld",
 				group:       DnsPresetGroupUnfiltered,
+				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://freedns.controld.com/p0"},
 				dohUrlsIpv6: []string{"https://freedns.controld.com/p0"},
 				dohPinIpv4s: []string{"76.76.2.11"},
@@ -564,6 +583,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "dns4eu-unfiltered",
 				providerId:  "dns4eu",
 				group:       DnsPresetGroupUnfiltered,
+				copyKey:     "dns_preset_copy_court_orders",
 				dohUrlsIpv4: []string{"https://unfiltered.joindns4.eu/dns-query"},
 				dohUrlsIpv6: []string{"https://unfiltered.joindns4.eu/dns-query"},
 				dohPinIpv4s: []string{"86.54.11.100", "86.54.11.200"},
@@ -576,6 +596,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "adguard-personal",
 				providerId:  "adguard",
 				group:       DnsPresetGroupPersonal,
+				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://d.adguard-dns.com/dns-query/{id}"},
 				dohUrlsIpv6: []string{"https://d.adguard-dns.com/dns-query/{id}"},
 				dohPinIpv4s: []string{"94.140.14.49"},
@@ -603,6 +624,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 					unknownIdAnswer: dnsPresetUnknownIdUnfilteredOrServfail,
 					idHelpUrl:       "https://adguard-dns.io/en/dashboard/",
 					formatKey:       "dns_personal_id_format_adguard",
+					whereKey:        "dns_personal_id_where_adguard",
 					quotaNoteKey:    "dns_personal_id_quota_adguard",
 				},
 				checked: "2026-11-09",
@@ -611,6 +633,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "controld-personal",
 				providerId:  "controld",
 				group:       DnsPresetGroupPersonal,
+				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://dns.controld.com/{id}"},
 				dohUrlsIpv6: []string{"https://dns.controld.com/{id}"},
 				dohPinIpv4s: []string{"76.76.2.22"},
@@ -627,6 +650,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 					unknownIdAnswer: dnsPresetUnknownIdRefused,
 					idHelpUrl:       "https://controld.com/dashboard",
 					formatKey:       "dns_personal_id_format_controld",
+					whereKey:        "dns_personal_id_where_controld",
 				},
 				checked: "2026-11-09",
 			},
@@ -634,6 +658,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				presetId:    "nextdns-personal",
 				providerId:  "nextdns",
 				group:       DnsPresetGroupPersonal,
+				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://dns.nextdns.io/{id}"},
 				dohUrlsIpv6: []string{"https://dns.nextdns.io/{id}"},
 				dohPinIpv4s: []string{"45.90.28.0", "45.90.30.0"},
@@ -649,6 +674,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 					unknownIdAnswer: dnsPresetUnknownIdUnfiltered,
 					idHelpUrl:       "https://my.nextdns.io/",
 					formatKey:       "dns_personal_id_format_nextdns",
+					whereKey:        "dns_personal_id_where_nextdns",
 					quotaNoteKey:    "dns_personal_id_quota_nextdns",
 				},
 				checked: "2026-11-09",
