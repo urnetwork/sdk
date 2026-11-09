@@ -1084,8 +1084,9 @@ func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsR
 	if dnsResolverSettingsListsEqual(dnsResolverSettings, derived) {
 		return dnsResolverSettings
 	}
-	// an earlier release's derivation: its lists migrate to today's
-	for _, recordVersion := range []int{0, 1} {
+	// an earlier release's derivation, of any version before today's: its
+	// lists migrate to today's
+	for recordVersion := 0; recordVersion < dnsResolverSettingsDefaultServersVersion; recordVersion++ {
 		earlier := copyDnsResolverSettings(dnsResolverSettings)
 		migrateDefaultServerLists(earlier, recordVersion)
 		if dnsResolverSettingsListsEqual(earlier, derived) {

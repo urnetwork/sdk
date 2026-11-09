@@ -604,10 +604,11 @@ const dnsResolverSettingsFallbackOptInVersion = 1
 // The record also carries the version of the default server lists it was written against: 1
 // once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left,
 // Cloudflare's second address joined and Quad9's unfiltered 9.9.9.10 took the place of its
-// filtering 9.9.9.9. The dns editors save every list, so a record written before a version can
-// hold the default lists of its time carried along rather than chosen. See
-// migrateDefaultServerLists.
-const dnsResolverSettingsDefaultServersVersion = 2
+// filtering 9.9.9.9, 3 once DNS.SB joined them (2026-11-09) and the old Google-only kz
+// recommendation began to load as today's kz pick. The dns editors save every list, so a record
+// written before a version can hold the default lists of its time carried along rather than
+// chosen. See migrateDefaultServerLists and dnsResolverSettingsHoldGoogleKzRecommendation.
+const dnsResolverSettingsDefaultServersVersion = 3
 
 // The record also carries the version of the dns selection (connect ADBLOCK3RD E4): 1 once the
 // record holds PresetId and PresetPersonalId, the selection the device derives the lists from
@@ -649,6 +650,13 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 		record.EnableFallback = false
 	}
 	dnsResolverSettings := record.DnsResolverSettings
+	if dnsResolverSettingsHoldGoogleKzRecommendation(&dnsResolverSettings, record.DefaultServersVersion) {
+		// the kz recommendation of its time loads as today's kz pick, with the fallback choice and
+		// mask it had
+		dnsResolverSettings.PresetId = DnsPresetIdRegionalPrefix + "kz"
+		dnsResolverSettings.PresetPersonalId = ""
+		return ownDnsResolverSettings(&dnsResolverSettings), nil
+	}
 	if record.DefaultServersVersion < dnsResolverSettingsDefaultServersVersion {
 		migrateDefaultServerLists(&dnsResolverSettings, record.DefaultServersVersion)
 	}
@@ -713,8 +721,12 @@ func dnsResolverSettingsSelectDefault(dnsResolverSettings *DnsResolverSettings) 
 // The default server lists as shipped before each DefaultServersVersion, each with the current
 // default list that replaces it. A record written at a version below `before` can hold the list
 // as the old default: the lists that named Google Public DNS (connect, 2026-07-02 to
-// 2026-11-08) before version 1, and the lists that named OpenDNS after it (2026-11-08 until
-// version 2) before version 2. Either migrates straight to the current lists.
+// 2026-11-08) before version 1, the lists that named OpenDNS after it (2026-11-08 until version
+// 2) before version 2, and the lists of Cloudflare at both of its addresses and Quad9's
+// unfiltered 9.9.9.10 (2026-11-08 until DNS.SB joined at version 3) before version 3. Each
+// migrates straight to the current lists. Every release that changes the default lists adds its
+// old ones here: the edit rule (dnsResolverSettingsAsEdited) reads a selection's lists of an
+// earlier release as that release's derivation by this table.
 var dnsResolverSettingsOldDefaultServerLists = []struct {
 	before  int
 	servers []string
@@ -778,6 +790,34 @@ var dnsResolverSettingsOldDefaultServerLists = []struct {
 		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"},
 		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
 	},
+	{
+		before: 3,
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://9.9.9.10/dns-query",
+			"https://1.0.0.1/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		before: 3,
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2620:fe::10]/dns-query",
+			"https://[2606:4700:4700::1001]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		before:  3,
+		servers: []string{"1.1.1.1", "9.9.9.10", "1.0.0.1"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		before:  3,
+		servers: []string{"2606:4700:4700::1111", "2620:fe::10", "2606:4700:4700::1001"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
 }
 
 // Quad9's filtering address in the old default lists, each with its unfiltered address, which
@@ -804,6 +844,65 @@ var (
 	dnsResolverSettingsVersion1KzRemoteDnsIpv6 = []string{"2606:4700:4700::1111", "2620:fe::fe"}
 )
 
+// The kz regional recommendation while it named Google Public DNS alone, as an sdk applied it
+// (connect, from 2026-07-10, when an sdk first saved dns settings, to 2026-11-08): remote plain
+// dns alone, Google's 8.8.8.8 in the v4 list, from 2026-09-11 Google's v6 address in the v6
+// list, and every other list empty. Until 2026-07-10 the recommendation also turned on local
+// plain dns with Cloudflare's 1.1.1.1, but no sdk saved dns settings then, so no record holds it.
+var dnsResolverSettingsGoogleKzRecommendations = []struct {
+	remoteDnsIpv4 []string
+	remoteDnsIpv6 []string
+}{
+	{remoteDnsIpv4: []string{"8.8.8.8"}},
+	{remoteDnsIpv4: []string{"8.8.8.8"}, remoteDnsIpv6: []string{"2001:4860:4860::8888"}},
+}
+
+// The DefaultServersVersion from which an sdk loads the Google-only kz recommendation as the kz
+// pick, so a record at it holds those lists only as the user's own choice.
+const dnsResolverSettingsGoogleKzMigratedVersion = 3
+
+// Whether a record of recordVersion holds a kz recommendation of Google alone
+// (dnsResolverSettingsGoogleKzRecommendations) exactly: custom settings with its toggles, remote
+// plain dns alone, and every list, an absent list the same as an empty one, with any fallback
+// choice and mask. The owner moves these users to today's kz recommendation, which the record
+// then selects (owner decision 2026-11-09), and accepts that a user who typed exactly that list
+// moves too. Only a record from before dnsResolverSettingsGoogleKzMigratedVersion holds it as the
+// recommendation; any other list, with Google or not, loads as saved.
+func dnsResolverSettingsHoldGoogleKzRecommendation(dnsResolverSettings *DnsResolverSettings, recordVersion int) bool {
+	if dnsResolverSettingsGoogleKzMigratedVersion <= recordVersion || dnsResolverSettings.PresetId != "" {
+		return false
+	}
+	if dnsResolverSettings.EnableRemoteDoh || dnsResolverSettings.EnableLocalDoh ||
+		!dnsResolverSettings.EnableRemoteDns || dnsResolverSettings.EnableLocalDns {
+		return false
+	}
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	for _, list := range []*StringList{
+		dnsResolverSettings.RemoteDohUrlsIpv4,
+		dnsResolverSettings.RemoteDohUrlsIpv6,
+		dnsResolverSettings.LocalDohUrlsIpv4,
+		dnsResolverSettings.LocalDohUrlsIpv6,
+		dnsResolverSettings.LocalDnsIpv4,
+		dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if 0 < len(stringsOf(list)) {
+			return false
+		}
+	}
+	for _, recommendation := range dnsResolverSettingsGoogleKzRecommendations {
+		if slices.Equal(stringsOf(dnsResolverSettings.RemoteDnsIpv4), recommendation.remoteDnsIpv4) &&
+			slices.Equal(stringsOf(dnsResolverSettings.RemoteDnsIpv6), recommendation.remoteDnsIpv6) {
+			return true
+		}
+	}
+	return false
+}
+
 // Replaces each saved list that holds exactly the servers of an old default list (in any order)
 // that a record of recordVersion can carry with the current default list, keeping the saved
 // order of the servers that remain, with Quad9's unfiltered 9.9.9.10 in the place of its
@@ -821,9 +920,10 @@ var (
 // into it. The same lists in a version 0 record are the user's own choice and load as saved.
 //
 // Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
-// themselves, alone or among other servers, keeps it. That includes the old kz recommendation,
-// which was Google alone: a list of one Google address cannot be told apart from a user who typed
-// it.
+// themselves, alone or among other servers, keeps it. The old kz recommendation, Google alone, is
+// not a list this replaces: a record that holds it exactly loads as today's kz pick instead
+// (dnsResolverSettingsHoldGoogleKzRecommendation), and Google's address in any other settings
+// stays as saved.
 func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordVersion int) {
 	defaults := connect.DefaultDnsResolverSettings()
 	sameServers := func(saved []string, servers []string) bool {

@@ -211,7 +211,7 @@ func TestOpenDnsEraDefaultDnsListsLoadWithoutOpenDnsOnDevice(t *testing.T) {
 
 // A version 1 default list the user reordered keeps its order for the servers
 // that remain, Quad9's 9.9.9.10 where its 9.9.9.9 was, and the current list's
-// new servers follow.
+// new servers follow: Cloudflare's second address, then DNS.SB's two.
 func TestOpenDnsEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
 	localState := &LocalState{localStorageDir: t.TempDir()}
 	testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, &DnsResolverSettings{
@@ -219,14 +219,15 @@ func TestOpenDnsEraDefaultDnsListKeepsSavedOrder(t *testing.T) {
 		RemoteDnsIpv4:   testing_stringList("9.9.9.9", "208.67.222.222", "1.1.1.1"),
 	})
 	persisted := localState.GetDnsResolverSettings()
-	if got, want := testingStringsOf(persisted.RemoteDnsIpv4), []string{"9.9.9.10", "1.1.1.1", "1.0.0.1"}; !slices.Equal(got, want) {
+	if got, want := testingStringsOf(persisted.RemoteDnsIpv4), []string{"9.9.9.10", "1.1.1.1", "1.0.0.1", "185.222.222.222", "45.11.45.11"}; !slices.Equal(got, want) {
 		t.Errorf("reordered version 1 default = %v, want %v", got, want)
 	}
 }
 
 // Every old default list, in the default order and reordered, from a version 0
 // and a version 1 record, migrates with Quad9's unfiltered address in the place
-// of its filtering one and the other servers in their saved order.
+// of its filtering one and the other servers in their saved order, then the
+// current list's new servers: Cloudflare's second address and DNS.SB's two.
 func TestOldDefaultDnsListsPutUnfilteredQuad9InItsPlace(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -237,22 +238,25 @@ func TestOldDefaultDnsListsPutUnfilteredQuad9InItsPlace(t *testing.T) {
 	}{
 		{name: "version 1 doh v4", version: 1, list: "RemoteDohUrlsIpv4",
 			saved: []string{"https://1.1.1.1/dns-query", "https://9.9.9.9/dns-query", "https://208.67.222.222/dns-query"},
-			want:  []string{"https://1.1.1.1/dns-query", "https://9.9.9.10/dns-query", "https://1.0.0.1/dns-query"}},
+			want: []string{"https://1.1.1.1/dns-query", "https://9.9.9.10/dns-query", "https://1.0.0.1/dns-query",
+				"https://185.222.222.222/dns-query", "https://45.11.45.11/dns-query"}},
 		{name: "version 1 doh v6 reordered", version: 1, list: "RemoteDohUrlsIpv6",
 			saved: []string{"https://[2620:fe::fe]/dns-query", "https://[2620:119:35::35]/dns-query", "https://[2606:4700:4700::1111]/dns-query"},
-			want:  []string{"https://[2620:fe::10]/dns-query", "https://[2606:4700:4700::1111]/dns-query", "https://[2606:4700:4700::1001]/dns-query"}},
+			want: []string{"https://[2620:fe::10]/dns-query", "https://[2606:4700:4700::1111]/dns-query", "https://[2606:4700:4700::1001]/dns-query",
+				"https://[2a09::]/dns-query", "https://[2a11::]/dns-query"}},
 		{name: "version 1 plain v6", version: 1, list: "RemoteDnsIpv6",
 			saved: []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"},
-			want:  []string{"2606:4700:4700::1111", "2620:fe::10", "2606:4700:4700::1001"}},
+			want:  []string{"2606:4700:4700::1111", "2620:fe::10", "2606:4700:4700::1001", "2a09::", "2a11::"}},
 		{name: "version 0 doh v4 reordered", version: 0, list: "RemoteDohUrlsIpv4",
 			saved: []string{"https://9.9.9.9/dns-query", "https://8.8.8.8/dns-query", "https://208.67.222.222/dns-query", "https://1.1.1.1/dns-query"},
-			want:  []string{"https://9.9.9.10/dns-query", "https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"}},
+			want: []string{"https://9.9.9.10/dns-query", "https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query",
+				"https://185.222.222.222/dns-query", "https://45.11.45.11/dns-query"}},
 		{name: "version 0 plain v4", version: 0, list: "RemoteDnsIpv4",
 			saved: []string{"1.1.1.1", "9.9.9.9", "8.8.8.8", "208.67.222.222"},
-			want:  []string{"1.1.1.1", "9.9.9.10", "1.0.0.1"}},
+			want:  []string{"1.1.1.1", "9.9.9.10", "1.0.0.1", "185.222.222.222", "45.11.45.11"}},
 		{name: "version 0 plain v6 reordered", version: 0, list: "RemoteDnsIpv6",
 			saved: []string{"2620:119:35::35", "2001:4860:4860::8888", "2620:fe::fe", "2606:4700:4700::1111"},
-			want:  []string{"2620:fe::10", "2606:4700:4700::1111", "2606:4700:4700::1001"}},
+			want:  []string{"2620:fe::10", "2606:4700:4700::1111", "2606:4700:4700::1001", "2a09::", "2a11::"}},
 	}
 	for _, c := range cases {
 		settings := &DnsResolverSettings{EnableRemoteDoh: true}
@@ -359,8 +363,9 @@ func TestChosenDnsListsLoadAsSavedAfterVersion2(t *testing.T) {
 // An sdk that knows only version 1 migrates a record only below
 // DefaultServersVersion 1 and resets the fallback only below
 // FallbackOptInVersion 1, and reads unknown fields as absent. A record this
-// sdk writes carries version 2 of the first and version 1 of the second, so
-// that sdk (shipped at sdk 92553ef0) loads it as saved.
+// sdk writes carries version 3 of the first (since DNS.SB joined the
+// defaults) and version 1 of the second, so that sdk (shipped at sdk
+// 92553ef0) loads it as saved.
 func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 	settings := testingOpenDnsEraDefaultDnsResolverSettings()
 	data, err := encodeDnsResolverSettingsRecord(settings)
@@ -375,8 +380,8 @@ func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 	if err := json.Unmarshal(data, &version1Record); err != nil {
 		t.Fatal(err)
 	}
-	if version1Record.DefaultServersVersion != 2 || version1Record.FallbackOptInVersion != 1 {
-		t.Fatalf("record versions = default servers %d, fallback opt-in %d; want 2 and 1",
+	if version1Record.DefaultServersVersion != 3 || version1Record.FallbackOptInVersion != 1 {
+		t.Fatalf("record versions = default servers %d, fallback opt-in %d; want 3 and 1",
 			version1Record.DefaultServersVersion, version1Record.FallbackOptInVersion)
 	}
 	saved := testingDnsResolverSettingsLists(settings)
@@ -493,52 +498,9 @@ func TestVersion0RecordWithTheVersion1KzListsLoadsAsSaved(t *testing.T) {
 	}
 }
 
-// The kz recommendation before version 1 was Google alone: 8.8.8.8, and
-// 2001:4860:4860::8888 for v6 from 2026-09-11. One Google address cannot be
-// told apart from a user who typed it, so no step migrates it, and nothing
-// turns it into the version 1 kz recommendation that version 2 migrates. It
-// loads as saved from a version 0 record, and from a version 1 record that a
-// version 1 sdk, which loaded it as saved, wrote back.
-func TestOldKzRecommendationLoadsAsSaved(t *testing.T) {
-	cases := []struct {
-		name    string
-		version int
-		ipv4    []string
-		ipv6    []string
-	}{
-		{name: "version 0", version: 0, ipv4: []string{"8.8.8.8"}, ipv6: []string{"2001:4860:4860::8888"}},
-		{name: "version 0, v4 only era", version: 0, ipv4: []string{"8.8.8.8"}},
-		{name: "written back at version 1", version: 1, ipv4: []string{"8.8.8.8"}, ipv6: []string{"2001:4860:4860::8888"}},
-	}
-	for _, c := range cases {
-		recommended := &DnsResolverSettings{
-			EnableRemoteDns:       true,
-			DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
-			RemoteDnsIpv4:         testing_stringList(c.ipv4...),
-		}
-		if c.ipv6 != nil {
-			recommended.RemoteDnsIpv6 = testing_stringList(c.ipv6...)
-		}
-		localState := &LocalState{localStorageDir: t.TempDir()}
-		switch c.version {
-		case 0:
-			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
-		case 1:
-			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, recommended)
-		}
-		persisted := localState.GetDnsResolverSettings()
-		if persisted == nil {
-			t.Errorf("%s: record did not load", c.name)
-			continue
-		}
-		saved := testingDnsResolverSettingsLists(recommended)
-		for name, list := range testingDnsResolverSettingsLists(persisted) {
-			if !slices.Equal(list, saved[name]) {
-				t.Errorf("%s: %s loaded as %v, want %v as saved", c.name, name, list, saved[name])
-			}
-		}
-	}
-}
+// The kz recommendation before version 1, Google alone, no longer loads as
+// saved: the owner moved it to today's kz pick (DefaultServersVersion 3,
+// local_state_dns_default_servers_v3_test.go).
 
 // The version 1 kz lists with a server the user added, with a v6 list the user
 // changed or emptied, or in a version 2 record, are choices and load as saved.
