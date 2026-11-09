@@ -727,6 +727,13 @@ var (
 	dnsResolverSettingsGoogleTmRemoteDnsIpv6 = []string{"2001:4860:4860::8844"}
 )
 
+// The kz regional recommendation as shipped at version 1 (connect, 2026-11-08, after Google
+// Public DNS left it): Cloudflare and Quad9's filtering 9.9.9.9 in the remote plain lists.
+var (
+	dnsResolverSettingsVersion1KzRemoteDnsIpv4 = []string{"1.1.1.1", "9.9.9.9"}
+	dnsResolverSettingsVersion1KzRemoteDnsIpv6 = []string{"2606:4700:4700::1111", "2620:fe::fe"}
+)
+
 // Replaces each saved list that holds exactly the servers of an old default list (in any order)
 // that a record of recordVersion can carry with the current default list, keeping the saved
 // order of the servers that remain, with Quad9's unfiltered 9.9.9.10 in the place of its
@@ -737,7 +744,9 @@ var (
 // The old tm recommendation, in a record from before version 1, is replaced the same way by the
 // current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
 // v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
-// the pair as the recommendation.
+// the pair as the recommendation. So is the version 1 kz recommendation, in a record from
+// before version 2: remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both
+// families, which load as the current kz recommendation with 9.9.9.10 in Quad9's place.
 //
 // Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
 // themselves, alone or among other servers, keeps it. That includes the old kz recommendation,
@@ -795,6 +804,16 @@ func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordV
 			if 0 < len(savedIpv6) {
 				dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("tm"))
 			}
+		}
+	}
+
+	if recordVersion < 2 && dnsResolverSettings.RemoteDnsIpv4 != nil && dnsResolverSettings.RemoteDnsIpv6 != nil {
+		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
+		savedIpv6 := dnsResolverSettings.RemoteDnsIpv6.getAll()
+		if sameServers(savedIpv4, dnsResolverSettingsVersion1KzRemoteDnsIpv4) &&
+			sameServers(savedIpv6, dnsResolverSettingsVersion1KzRemoteDnsIpv6) {
+			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("kz"))
+			dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("kz"))
 		}
 	}
 

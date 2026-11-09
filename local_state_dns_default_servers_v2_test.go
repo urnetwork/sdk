@@ -389,3 +389,112 @@ func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 		t.Errorf("toggles read as %+v", version1Record.DnsResolverSettings)
 	}
 }
+
+// The kz recommendation as the version 1 sdk applied it: Cloudflare and
+// Quad9's filtering 9.9.9.9 in both remote plain lists. In a record below
+// version 2 it loads as the current kz recommendation, Quad9's unfiltered
+// 9.9.9.10 in its place and the saved order kept, in either order.
+func TestVersion1KzRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
+	cases := []struct {
+		name     string
+		version  int
+		ipv4     []string
+		ipv6     []string
+		wantIpv4 []string
+		wantIpv6 []string
+	}{
+		{name: "version 1", version: 1,
+			ipv4: []string{"1.1.1.1", "9.9.9.9"}, ipv6: []string{"2606:4700:4700::1111", "2620:fe::fe"},
+			wantIpv4: []string{"1.1.1.1", "9.9.9.10"}, wantIpv6: []string{"2606:4700:4700::1111", "2620:fe::10"}},
+		{name: "version 1 reordered", version: 1,
+			ipv4: []string{"9.9.9.9", "1.1.1.1"}, ipv6: []string{"2620:fe::fe", "2606:4700:4700::1111"},
+			wantIpv4: []string{"9.9.9.10", "1.1.1.1"}, wantIpv6: []string{"2620:fe::10", "2606:4700:4700::1111"}},
+		{name: "version 0", version: 0,
+			ipv4: []string{"1.1.1.1", "9.9.9.9"}, ipv6: []string{"2606:4700:4700::1111", "2620:fe::fe"},
+			wantIpv4: []string{"1.1.1.1", "9.9.9.10"}, wantIpv6: []string{"2606:4700:4700::1111", "2620:fe::10"}},
+	}
+	if kzIpv4 := connect.RegionalDnsServerIps("kz"); !slices.Equal(kzIpv4, cases[0].wantIpv4) {
+		t.Fatalf("connect's kz recommendation = %v, want %v", kzIpv4, cases[0].wantIpv4)
+	}
+	for _, c := range cases {
+		recommended := &DnsResolverSettings{
+			EnableRemoteDns:       true,
+			DnsUpgradeMaskAddress: connect.DefaultDnsUpgradeMaskAddress,
+			RemoteDohUrlsIpv4:     testing_stringList(),
+			RemoteDohUrlsIpv6:     testing_stringList(),
+			RemoteDnsIpv4:         testing_stringList(c.ipv4...),
+			RemoteDnsIpv6:         testing_stringList(c.ipv6...),
+		}
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		switch c.version {
+		case 0:
+			testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
+		case 1:
+			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, recommended)
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil || !persisted.EnableRemoteDns || persisted.EnableRemoteDoh {
+			t.Errorf("%s: kz recommendation did not load with its toggles: %+v", c.name, persisted)
+			continue
+		}
+		if got := testingStringsOf(persisted.RemoteDnsIpv4); !slices.Equal(got, c.wantIpv4) {
+			t.Errorf("%s: kz v4 = %v, want %v", c.name, got, c.wantIpv4)
+		}
+		if got := testingStringsOf(persisted.RemoteDnsIpv6); !slices.Equal(got, c.wantIpv6) {
+			t.Errorf("%s: kz v6 = %v, want %v", c.name, got, c.wantIpv6)
+		}
+	}
+}
+
+// The version 1 kz lists with a server the user added, with a v6 list the user
+// changed or emptied, or in a version 2 record, are choices and load as saved.
+func TestChangedKzRecommendationLoadsAsSaved(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings *DnsResolverSettings
+		version  int
+	}{
+		{name: "added v4 server", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("1.1.1.1", "9.9.9.9", "192.0.2.53"),
+			RemoteDnsIpv6:   testing_stringList("2606:4700:4700::1111", "2620:fe::fe"),
+		}},
+		{name: "changed v6", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("1.1.1.1", "9.9.9.9"),
+			RemoteDnsIpv6:   testing_stringList("2606:4700:4700::1111"),
+		}},
+		{name: "emptied v6", version: 1, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("1.1.1.1", "9.9.9.9"),
+			RemoteDnsIpv6:   testing_stringList(),
+		}},
+		{name: "written by this sdk", version: 2, settings: &DnsResolverSettings{
+			EnableRemoteDns: true,
+			RemoteDnsIpv4:   testing_stringList("1.1.1.1", "9.9.9.9"),
+			RemoteDnsIpv6:   testing_stringList("2606:4700:4700::1111", "2620:fe::fe"),
+		}},
+	}
+	for _, c := range cases {
+		localState := &LocalState{localStorageDir: t.TempDir()}
+		switch c.version {
+		case 1:
+			testingWriteOpenDnsEraDnsResolverSettings(t, localState.localStorageDir, c.settings)
+		case 2:
+			if err := localState.SetDnsResolverSettings(c.settings); err != nil {
+				t.Fatal(err)
+			}
+		}
+		persisted := localState.GetDnsResolverSettings()
+		if persisted == nil {
+			t.Errorf("%s: record did not load", c.name)
+			continue
+		}
+		saved := testingDnsResolverSettingsLists(c.settings)
+		for name, list := range testingDnsResolverSettingsLists(persisted) {
+			if !slices.Equal(list, saved[name]) {
+				t.Errorf("%s: %s loaded as %v, want %v as saved", c.name, name, list, saved[name])
+			}
+		}
+	}
+}
