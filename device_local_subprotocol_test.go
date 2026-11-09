@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"slices"
 	"sync"
@@ -494,4 +495,51 @@ func TestDeviceLocalSubprotocolSurface(t *testing.T) {
 	sub.Close()
 	connect.AssertEqual(t, deviceLocal.EnabledSubprotocols().Len(), 0)
 	deviceLocal.DisableSubprotocol(4000)
+}
+
+// The sidecar subprotocol's ids, 21842 to 21851, are refused to apps with their own error, on the registry and through
+// the device's surface; the ids on either side of them are not (sidecar §18.6's Rules).
+func TestAppIdsRefused(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	subprotocols := newTestDeviceLocalSubprotocols(ctx)
+	listener := newRecordingSubprotocolListener()
+	for _, c := range []struct {
+		subprotocolId int32
+		refused       bool
+	}{
+		{subprotocolId: 21841, refused: false},
+		{subprotocolId: 21842, refused: true},
+		{subprotocolId: 21846, refused: true},
+		{subprotocolId: 21851, refused: true},
+		{subprotocolId: 21852, refused: false},
+	} {
+		err := checkDeviceSubprotocolId(c.subprotocolId)
+		if c.refused != errors.Is(err, errSidecarSubprotocolId) {
+			t.Errorf("id %d: check gave %v, refused as the sidecar's %v", c.subprotocolId, err, c.refused)
+		}
+		sub, err := subprotocols.enable(c.subprotocolId, listener)
+		if c.refused {
+			if !errors.Is(err, errSidecarSubprotocolId) || sub != nil {
+				t.Errorf("id %d: enable gave %v, want the sidecar's refusal", c.subprotocolId, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("id %d: enable refused: %v", c.subprotocolId, err)
+			continue
+		}
+		sub.Close()
+	}
+	connect.AssertEqual(t, subprotocols.enabledIds(), []int32{})
+	// the network's own reserved ids keep their own error
+	if err := checkDeviceSubprotocolId(100); err == nil || errors.Is(err, errSidecarSubprotocolId) {
+		t.Errorf("a network id gave %v, want the network's refusal", err)
+	}
+	// the device's surface goes through the check, as the rpc's does (subprotocol_rpc.go)
+	deviceLocal := &DeviceLocal{subprotocols: newTestDeviceLocalSubprotocols(ctx)}
+	if _, err := deviceLocal.EnableSubprotocol(sidecarSubprotocolFirstId, listener); !errors.Is(err, errSidecarSubprotocolId) {
+		t.Errorf("the device surface enabled 21842: %v", err)
+	}
+	connect.AssertEqual(t, deviceLocal.EnabledSubprotocols().Len(), 0)
 }

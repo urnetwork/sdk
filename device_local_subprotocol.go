@@ -56,6 +56,18 @@ type SubprotocolStats struct {
 // Ids below this are the network's (connect.SubprotocolReservedLimit).
 const SubprotocolReservedLimit = int32(connect.SubprotocolReservedLimit)
 
+// The ids the sidecar subprotocol holds (sidecar §6.4): 21842, "UR", and the nine held beside it, which no app
+// enables (§18.6's Rules). Facts of the wire, sidecar's SubprotocolId and SubprotocolHeldLastId; this file is in the
+// tunnel and names no sidecar root constant, so sidecar_ios_extension_test.go holds the two equal.
+const (
+	sidecarSubprotocolFirstId = int32(0x5552)
+	sidecarSubprotocolLastId  = int32(21851)
+)
+
+// An app asked for an id the sidecar subprotocol holds. The sidecar's own registration of 21842 on the device client,
+// for its pushes, takes a private path that does not check here (SDK-M8-07).
+var errSidecarSubprotocolId = errors.New("the sidecar subprotocol holds this id, and apps may not enable it")
+
 // The device's enabled subprotocols and their listeners, keyed by id, plus
 // the connect raw callback registered per id on the attached client.
 type deviceLocalSubprotocols struct {
@@ -88,6 +100,9 @@ func checkDeviceSubprotocolId(subprotocolId int32) error {
 	}
 	if subprotocolId < SubprotocolReservedLimit {
 		return fmt.Errorf("subprotocol id %d is reserved for the network (below %d)", subprotocolId, SubprotocolReservedLimit)
+	}
+	if sidecarSubprotocolFirstId <= subprotocolId && subprotocolId <= sidecarSubprotocolLastId {
+		return fmt.Errorf("%w: %d (%d to %d)", errSidecarSubprotocolId, subprotocolId, sidecarSubprotocolFirstId, sidecarSubprotocolLastId)
 	}
 	return nil
 }
@@ -316,7 +331,8 @@ func (self *deviceLocalSubprotocols) receivedCount(subprotocolId int32) int64 {
 // --- DeviceLocal surface ---
 
 // Enables a subprotocol for listener on this device's client. Ids below
-// SubprotocolReservedLimit belong to the network and are refused.
+// SubprotocolReservedLimit belong to the network and are refused, and so are
+// 21842 to 21851, which the sidecar subprotocol holds.
 func (self *DeviceLocal) EnableSubprotocol(subprotocolId int32, listener SubprotocolListener) (Sub, error) {
 	return self.subprotocols.enable(subprotocolId, listener)
 }
