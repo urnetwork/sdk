@@ -601,11 +601,13 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 // resolves only through the tunnel); a record written at this version keeps the user's choice.
 const dnsResolverSettingsFallbackOptInVersion = 1
 
-// The record also carries the version of the default server lists it was written against. The
-// defaults named Google Public DNS until the owner removed it (2026-11-08, support inbox 8236),
-// and the dns editors save every list, so a record written before this version can hold the old
-// default lists carried along rather than chosen. See migrateGoogleDefaultServerLists.
-const dnsResolverSettingsDefaultServersVersion = 1
+// The record also carries the version of the default server lists it was written against: 1
+// once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left,
+// Cloudflare's second address joined and Quad9's unfiltered 9.9.9.10 took the place of its
+// filtering 9.9.9.9. The dns editors save every list, so a record written before a version can
+// hold the default lists of its time carried along rather than chosen. See
+// migrateDefaultServerLists.
+const dnsResolverSettingsDefaultServersVersion = 2
 
 type dnsResolverSettingsRecord struct {
 	DnsResolverSettings
@@ -633,18 +635,23 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 	}
 	dnsResolverSettings := record.DnsResolverSettings
 	if record.DefaultServersVersion < dnsResolverSettingsDefaultServersVersion {
-		migrateGoogleDefaultServerLists(&dnsResolverSettings)
+		migrateDefaultServerLists(&dnsResolverSettings, record.DefaultServersVersion)
 	}
 	return &dnsResolverSettings, nil
 }
 
-// The default server lists as shipped while they named Google Public DNS (connect, 2026-07-02
-// to 2026-11-08), each with the current default list that replaces it.
-var dnsResolverSettingsGoogleDefaultServerLists = []struct {
+// The default server lists as shipped before each DefaultServersVersion, each with the current
+// default list that replaces it. A record written at a version below `before` can hold the list
+// as the old default: the lists that named Google Public DNS (connect, 2026-07-02 to
+// 2026-11-08) before version 1, and the lists that named OpenDNS after it (2026-11-08 until
+// version 2) before version 2. Either migrates straight to the current lists.
+var dnsResolverSettingsOldDefaultServerLists = []struct {
+	before  int
 	servers []string
 	current func(defaults *connect.DnsResolverSettings) []string
 }{
 	{
+		before: 1,
 		servers: []string{
 			"https://1.1.1.1/dns-query",
 			"https://8.8.8.8/dns-query",
@@ -654,6 +661,7 @@ var dnsResolverSettingsGoogleDefaultServerLists = []struct {
 		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
 	},
 	{
+		before: 1,
 		servers: []string{
 			"https://[2606:4700:4700::1111]/dns-query",
 			"https://[2001:4860:4860::8888]/dns-query",
@@ -663,13 +671,52 @@ var dnsResolverSettingsGoogleDefaultServerLists = []struct {
 		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
 	},
 	{
+		before:  1,
 		servers: []string{"1.1.1.1", "9.9.9.9", "8.8.8.8", "208.67.222.222"},
 		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
 	},
 	{
+		before:  1,
 		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2001:4860:4860::8888", "2620:119:35::35"},
 		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
 	},
+	{
+		before: 2,
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://9.9.9.9/dns-query",
+			"https://208.67.222.222/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		before: 2,
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2620:fe::fe]/dns-query",
+			"https://[2620:119:35::35]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		before:  2,
+		servers: []string{"1.1.1.1", "9.9.9.9", "208.67.222.222"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		before:  2,
+		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
+}
+
+// Quad9's filtering address in the old default lists, each with its unfiltered address, which
+// takes its place when such a list migrates (DefaultServersVersion 2).
+var dnsResolverSettingsReplacedDefaultServers = map[string]string{
+	"https://9.9.9.9/dns-query":       "https://9.9.9.10/dns-query",
+	"https://[2620:fe::fe]/dns-query": "https://[2620:fe::10]/dns-query",
+	"9.9.9.9":                         "9.9.9.10",
+	"2620:fe::fe":                     "2620:fe::10",
 }
 
 // The tm regional recommendation as shipped while it named Google Public DNS (connect,
@@ -680,18 +727,32 @@ var (
 	dnsResolverSettingsGoogleTmRemoteDnsIpv6 = []string{"2001:4860:4860::8844"}
 )
 
+// The kz regional recommendation as shipped at version 1 (connect, 2026-11-08, after Google
+// Public DNS left it): Cloudflare and Quad9's filtering 9.9.9.9 in the remote plain lists.
+var (
+	dnsResolverSettingsVersion1KzRemoteDnsIpv4 = []string{"1.1.1.1", "9.9.9.9"}
+	dnsResolverSettingsVersion1KzRemoteDnsIpv6 = []string{"2606:4700:4700::1111", "2620:fe::fe"}
+)
+
 // Replaces each saved list that holds exactly the servers of an old default list (in any order)
-// with the current default list, keeping the saved order of the servers that remain. Such a list
-// is the old default carried along by an editor, not a choice.
+// that a record of recordVersion can carry with the current default list, keeping the saved
+// order of the servers that remain, with Quad9's unfiltered 9.9.9.10 in the place of its
+// filtering 9.9.9.9. Such a list is the old default carried along by an editor, not a choice. A
+// list a later version's sdk saved was a choice made with that version's defaults in view, so an
+// older version's default list in it is kept.
 //
-// The old tm recommendation is replaced the same way by the current one: a remote plain v4 list
-// of exactly Turkmentelecom and Google, with a remote plain v6 list that is empty or exactly
-// Google's tm address. Turkmentelecom's address is what marks the pair as the recommendation.
+// The old tm recommendation, in a record from before version 1, is replaced the same way by the
+// current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
+// v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
+// the pair as the recommendation. So is the version 1 kz recommendation, in a record from
+// before version 2: remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both
+// families, which load as the current kz recommendation with 9.9.9.10 in Quad9's place.
 //
-// Every other list loads as saved, so a user who named Google themselves, alone or among other
-// servers, keeps it. That includes the old kz recommendation, which was Google alone: a list of
-// one Google address cannot be told apart from a user who typed it.
-func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
+// Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
+// themselves, alone or among other servers, keeps it. That includes the old kz recommendation,
+// which was Google alone: a list of one Google address cannot be told apart from a user who typed
+// it.
+func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordVersion int) {
 	defaults := connect.DefaultDnsResolverSettings()
 	sameServers := func(saved []string, servers []string) bool {
 		if len(saved) != len(servers) {
@@ -709,12 +770,15 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 		}
 		return true
 	}
-	// the saved servers that the current list still has, in their saved order, then the current
-	// list's other servers
+	// the saved servers that the current list still has, in their saved order and with a replaced
+	// server's successor in its place, then the current list's other servers
 	migrated := func(saved []string, current []string) *StringList {
 		servers := []string{}
 		for _, server := range saved {
-			if slices.Contains(current, server) {
+			if successor, ok := dnsResolverSettingsReplacedDefaultServers[server]; ok && !slices.Contains(current, server) {
+				server = successor
+			}
+			if slices.Contains(current, server) && !slices.Contains(servers, server) {
 				servers = append(servers, server)
 			}
 		}
@@ -728,7 +792,7 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 		return migratedList
 	}
 
-	if dnsResolverSettings.RemoteDnsIpv4 != nil {
+	if recordVersion < 1 && dnsResolverSettings.RemoteDnsIpv4 != nil {
 		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
 		var savedIpv6 []string
 		if dnsResolverSettings.RemoteDnsIpv6 != nil {
@@ -740,6 +804,16 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 			if 0 < len(savedIpv6) {
 				dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("tm"))
 			}
+		}
+	}
+
+	if recordVersion < 2 && dnsResolverSettings.RemoteDnsIpv4 != nil && dnsResolverSettings.RemoteDnsIpv6 != nil {
+		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
+		savedIpv6 := dnsResolverSettings.RemoteDnsIpv6.getAll()
+		if sameServers(savedIpv4, dnsResolverSettingsVersion1KzRemoteDnsIpv4) &&
+			sameServers(savedIpv6, dnsResolverSettingsVersion1KzRemoteDnsIpv6) {
+			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("kz"))
+			dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("kz"))
 		}
 	}
 
@@ -757,11 +831,11 @@ func migrateGoogleDefaultServerLists(dnsResolverSettings *DnsResolverSettings) {
 			continue
 		}
 		saved := (*list).getAll()
-		for _, googleDefault := range dnsResolverSettingsGoogleDefaultServerLists {
-			if !sameServers(saved, googleDefault.servers) {
+		for _, oldDefault := range dnsResolverSettingsOldDefaultServerLists {
+			if oldDefault.before <= recordVersion || !sameServers(saved, oldDefault.servers) {
 				continue
 			}
-			*list = migrated(saved, googleDefault.current(defaults))
+			*list = migrated(saved, oldDefault.current(defaults))
 			break
 		}
 	}
