@@ -688,6 +688,11 @@ type DeviceLocalSettings struct {
 	// Constructor seams observe admission ordering without creating a client.
 	testingBeforePeerPinStoreAdmission func(*deviceLocalTransferMemory)
 	testingBeforeProviderConstruction  func()
+	// testingAfterRpcStart, when set, runs on the constructor's goroutine just
+	// after the device starts its rpc manager, the first moment a remote can
+	// call the device. A test lands a remote's call there; production never
+	// sets it.
+	testingAfterRpcStart func(deviceLocal *DeviceLocal)
 	// MemoryTargetByteCount is this device's memory target. A targeted mobile
 	// or explicitly low-profile device uses DNS 2 parts, one shared 13-part
 	// transfer/topology root with
@@ -2312,12 +2317,6 @@ func newDeviceLocalWithOverridesForPlatform(
 		deviceLocal.runContractStatsFlush()
 	})
 
-	if settings.EnableRpc {
-		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
-	} else {
-		deviceLocal.securityPolicyMonitor = newSecurityPolicyMonitor(ctx, deviceLocal, settings.Verbose)
-	}
-
 	// initial allocation: providing starts off (provide mode none), so the
 	// provider share backs the client pair until SetProvideMode enables it
 	deviceLocal.applyProvideMemorySharesWithLock(false)
@@ -2359,6 +2358,23 @@ func newDeviceLocalWithOverridesForPlatform(
 	deviceLocal.extenderReleaseUnbind = func() {}
 	if !settings.HostedIncompatible {
 		deviceLocal.extenderReleaseUnbind = networkSpace.bindExtenderRelease(api.GetByJwt)
+	}
+
+	// The rpc manager starts last. From then on a remote can call the device:
+	// on ios the app's DeviceRemote redials the listener until it answers, and
+	// its first sync sets the provide mode and the transport settings under
+	// stateLock. The setup above runs without the lock, which is safe only
+	// while no remote can call in. Started before that setup, the manager let
+	// the sync race the unlocked updateMobilePacketPerformanceModeWithLock, and
+	// the provide-off applyProvideMemorySharesWithLock(false) overwrote the
+	// shares of a provide mode the sync had set.
+	if settings.EnableRpc {
+		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
+		if settings.testingAfterRpcStart != nil {
+			settings.testingAfterRpcStart(deviceLocal)
+		}
+	} else {
+		deviceLocal.securityPolicyMonitor = newSecurityPolicyMonitor(ctx, deviceLocal, settings.Verbose)
 	}
 
 	ownedClientStrategyTransferred = true
@@ -4800,8 +4816,8 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 // of idling, and the provider pair drops to its working floor. The dns
 // share is unaffected. Applies live — queues admit against the new
 // capacities immediately (a shrunken pool admits nothing new above its new
-// total until it drains). Called under stateLock (and once single-threaded
-// at construction with the initial off state).
+// total until it drains). Called under stateLock, and once by the
+// constructor with the initial off state, before its rpc manager starts.
 func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 	_, clientShareByteCount, _, providerShareByteCount := deviceMemoryShares(self.settings)
 	if clientShareByteCount <= 0 {
@@ -4864,9 +4880,9 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 	}
 }
 
-// Must be called with stateLock, or during single-threaded construction. The
-// ACK reserve is a provider-off H1 performance spend; H3/Auto and provider-on
-// states keep the measured 1-MiB packet-root byte ceiling.
+// Must be called with stateLock, or by the constructor before its rpc manager
+// starts. The ACK reserve is a provider-off H1 performance spend; H3/Auto and
+// provider-on states keep the measured 1-MiB packet-root byte ceiling.
 func (self *DeviceLocal) updateMobilePacketPerformanceModeWithLock() {
 	h1ProviderOff := self.provideMode == ProvideModeNone &&
 		self.transportSettings != nil &&
