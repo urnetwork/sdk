@@ -395,16 +395,30 @@ func TestJwtReconciliationLapseDirection(t *testing.T) {
 		t.Error("server-free network still reports pro after load")
 	}
 
-	// a refresh that still carries the stale claim re-arms detection: the
-	// next poll fires again
+	// a refresh that left the jwt as it was (it renewed another token, or
+	// failed) does not ask again, however many polls follow: asking again for
+	// the same jwt was the Pro/jwt ping-pong (support inbox 8211)
 	vc.JwtRefreshed() // jwt unchanged: still pro=true
+	fetches := stub.fetchCount()
+	awaitCondition(t, "the background poll stopped", func() bool {
+		return fetches+3 <= stub.fetchCount()
+	})
+	select {
+	case <-recorder.signals:
+		t.Fatal("out-of-sync re-fired for the jwt it already asked about")
+	default:
+	}
+
+	// a new jwt that still carries the stale claim asks once more
+	vc.api.SetByJwt(testSubscriptionJwtIssued(t, true, 2))
+	vc.JwtRefreshed()
 	select {
 	case serverIsPro := <-recorder.signals:
 		if serverIsPro {
 			t.Error("re-fired signal must report serverIsPro = false")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("out-of-sync did not re-fire after an ineffective refresh")
+		t.Fatal("out-of-sync did not fire for a new jwt that still disagrees")
 	}
 }
 

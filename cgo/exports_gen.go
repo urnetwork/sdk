@@ -19900,6 +19900,16 @@ func urnet_new_subscription_balance_view_controller(api C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_subscription_pro_tracker
+func urnet_new_subscription_pro_tracker() C.uint64_t {
+	defer cgoGuard("urnet_new_subscription_pro_tracker")
+	r0 := sdk.NewSubscriptionProTracker()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_time_unix_milli
 func urnet_new_time_unix_milli(unixMilli C.int64_t) C.int64_t {
 	defer cgoGuard("urnet_new_time_unix_milli")
@@ -22372,6 +22382,49 @@ func urnet_subscription_balance_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_subscription_pro_tracker_balance_loaded
+func urnet_subscription_pro_tracker_balance_loaded(self C.uint64_t, serverIsPro C.bool) C.bool {
+	defer cgoGuard("urnet_subscription_pro_tracker_balance_loaded")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_balance_loaded")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.BalanceLoaded(bool(serverIsPro))
+	return C.bool(r0)
+}
+
+//export urnet_subscription_pro_tracker_get_is_pro
+func urnet_subscription_pro_tracker_get_is_pro(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_subscription_pro_tracker_get_is_pro")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_get_is_pro")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetIsPro()
+	return C.bool(r0)
+}
+
+//export urnet_subscription_pro_tracker_reset
+func urnet_subscription_pro_tracker_reset(self C.uint64_t) {
+	defer cgoGuard("urnet_subscription_pro_tracker_reset")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_reset")
+	if !ok {
+		return
+	}
+	self_.Reset()
+}
+
+//export urnet_subscription_pro_tracker_set_jwt
+func urnet_subscription_pro_tracker_set_jwt(self C.uint64_t, byJwt *C.char) C.bool {
+	defer cgoGuard("urnet_subscription_pro_tracker_set_jwt")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_set_jwt")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.SetJwt(goString(byJwt))
+	return C.bool(r0)
 }
 
 //export urnet_suggest_emoji_tag

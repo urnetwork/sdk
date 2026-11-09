@@ -1444,6 +1444,10 @@ module URnetwork
       attach_function :urnet_subscription_balance_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_subscription_balance_view_controller_start_purchase_confirmation, [:uint64], :void, blocking: true
       attach_function :urnet_subscription_balance_view_controller_stop, [:uint64], :void, blocking: true
+      attach_function :urnet_subscription_pro_tracker_balance_loaded, [:uint64, :bool], :bool, blocking: true
+      attach_function :urnet_subscription_pro_tracker_get_is_pro, [:uint64], :bool, blocking: true
+      attach_function :urnet_subscription_pro_tracker_reset, [:uint64], :void, blocking: true
+      attach_function :urnet_subscription_pro_tracker_set_jwt, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_tunnel_cancel, [:uint64], :void, blocking: true
       attach_function :urnet_tunnel_close, [:uint64], :void, blocking: true
       attach_function :urnet_tunnel_get_done, [:uint64], :bool, blocking: true
@@ -1627,6 +1631,7 @@ module URnetwork
       attach_function :urnet_new_sn_fleet_device_for_local, [:uint64, :uint64, :urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb, :urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_sn_fleet_device_for_remote, [:uint64, :uint64, :urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb, :urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_subscription_balance_view_controller, [:uint64], :uint64, blocking: true
+      attach_function :urnet_new_subscription_pro_tracker, [], :uint64, blocking: true
       attach_function :urnet_new_time_unix_milli, [:int64], :int64, blocking: true
       attach_function :urnet_new_transfer_path, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_tunnel, [], :uint64, blocking: true

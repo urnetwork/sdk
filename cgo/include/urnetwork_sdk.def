@@ -1185,6 +1185,7 @@ EXPORTS
 	urnet_new_sn_fleet_device_for_local
 	urnet_new_sn_fleet_device_for_remote
 	urnet_new_subscription_balance_view_controller
+	urnet_new_subscription_pro_tracker
 	urnet_new_time_unix_milli
 	urnet_new_transfer_path
 	urnet_new_tunnel
@@ -1404,6 +1405,10 @@ EXPORTS
 	urnet_subscription_balance_view_controller_start
 	urnet_subscription_balance_view_controller_start_purchase_confirmation
 	urnet_subscription_balance_view_controller_stop
+	urnet_subscription_pro_tracker_balance_loaded
+	urnet_subscription_pro_tracker_get_is_pro
+	urnet_subscription_pro_tracker_reset
+	urnet_subscription_pro_tracker_set_jwt
 	urnet_suggest_emoji_tag
 	urnet_transport_settings_auto_modes
 	urnet_transport_settings_enabled_transport_types

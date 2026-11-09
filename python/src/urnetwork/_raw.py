@@ -2641,6 +2641,14 @@ def bind(lib):
     lib.urnet_subscription_balance_view_controller_start_purchase_confirmation.restype = None
     lib.urnet_subscription_balance_view_controller_stop.argtypes = [c_uint64]
     lib.urnet_subscription_balance_view_controller_stop.restype = None
+    lib.urnet_subscription_pro_tracker_balance_loaded.argtypes = [c_uint64, c_bool]
+    lib.urnet_subscription_pro_tracker_balance_loaded.restype = c_bool
+    lib.urnet_subscription_pro_tracker_get_is_pro.argtypes = [c_uint64]
+    lib.urnet_subscription_pro_tracker_get_is_pro.restype = c_bool
+    lib.urnet_subscription_pro_tracker_reset.argtypes = [c_uint64]
+    lib.urnet_subscription_pro_tracker_reset.restype = None
+    lib.urnet_subscription_pro_tracker_set_jwt.argtypes = [c_uint64, c_char_p]
+    lib.urnet_subscription_pro_tracker_set_jwt.restype = c_bool
     lib.urnet_tunnel_cancel.argtypes = [c_uint64]
     lib.urnet_tunnel_cancel.restype = None
     lib.urnet_tunnel_close.argtypes = [c_uint64]
@@ -3007,6 +3015,8 @@ def bind(lib):
     lib.urnet_new_sn_fleet_device_for_remote.restype = c_uint64
     lib.urnet_new_subscription_balance_view_controller.argtypes = [c_uint64]
     lib.urnet_new_subscription_balance_view_controller.restype = c_uint64
+    lib.urnet_new_subscription_pro_tracker.argtypes = []
+    lib.urnet_new_subscription_pro_tracker.restype = c_uint64
     lib.urnet_new_time_unix_milli.argtypes = [c_int64]
     lib.urnet_new_time_unix_milli.restype = c_int64
     lib.urnet_new_transfer_path.argtypes = [c_char_p, c_char_p, c_char_p]
