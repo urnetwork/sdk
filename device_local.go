@@ -1238,7 +1238,12 @@ type DeviceLocal struct {
 	// a newer one
 	bridgeReadNumber atomic.Uint64
 
+	// the exit NAT, which egresses other clients' flows, and the device role's
+	// bridge whose hook it holds, nil while it holds none
+	// (device_sidecar_exit.go); both under `stateLock`, and they change
+	// together
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
+	remoteUserNatProviderEgressBridge deviceBridge
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
 	// A saturation rotation detaches its provider before joining it. Keep the
 	// retiring pointer in packet-stat snapshots until its final cumulative
@@ -2101,8 +2106,9 @@ func newDeviceLocalWithOverridesForPlatform(
 	}
 
 	// the restored device role's bridge joins the first send route, and its
-	// rejects and resolver replies enter the tun through the device's receive
-	bridgeOwner.attach(deviceLocal.holdBridge, deviceLocal.bridgeChanged, deviceLocal.receive)
+	// rejects and resolver replies enter the tun through the device's receive;
+	// each held bridge's hook goes on the exit NAT (device_sidecar_exit.go)
+	bridgeOwner.attach(deviceLocal.holdBridgeOnExitNat, deviceLocal.bridgeChanged, deviceLocal.receive)
 
 	// publish the initial send-route snapshot so `sendPacket` always has a
 	// non-nil snapshot to read
@@ -6527,6 +6533,11 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 		if self.transferMemory != nil {
 			localUserNatSettings.MemoryBudget = self.transferMemory.nat
 		}
+		// the held device role's hook, decided from its first flow; this NAT
+		// alone takes it, never the fallback NAT built from the same settings,
+		// which carries this device's own route-local flows
+		// (device_sidecar_exit.go)
+		localUserNatSettings.EgressHook = deviceBridgeExitHook(self.bridge)
 		localUserNat, err := connect.TryNewLocalUserNat(
 			client.Ctx(),
 			self.clientId.String(),
@@ -6539,6 +6550,7 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 			return err
 		}
 		self.remoteUserNatProviderLocalUserNat = localUserNat
+		self.remoteUserNatProviderEgressBridge = self.bridge
 	}
 	providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(
 		providerShareByteCount,
@@ -6580,6 +6592,7 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 			// must not strand its fixed claim or keep a capacity retry alive.
 			localUserNat := self.remoteUserNatProviderLocalUserNat
 			self.remoteUserNatProviderLocalUserNat = nil
+			self.remoteUserNatProviderEgressBridge = nil
 			if localUserNat != nil {
 				localUserNat.Close()
 				self.startLifecycleWorkerWithLock(func() { _ = localUserNat.CloseAndWait(context.Background()) })
@@ -6652,6 +6665,7 @@ func (self *DeviceLocal) remoteUserNatProviderSourceLifecycleSaturated(
 	localUserNat := self.remoteUserNatProviderLocalUserNat
 	self.remoteUserNatProvider = nil
 	self.remoteUserNatProviderLocalUserNat = nil
+	self.remoteUserNatProviderEgressBridge = nil
 	if self.providerPacketStatsSub != nil {
 		self.providerPacketStatsSub()
 		self.providerPacketStatsSub = nil
@@ -6700,6 +6714,7 @@ func (self *DeviceLocal) closeRemoteUserNatProviderWithLock() {
 	}
 	localUserNat := self.remoteUserNatProviderLocalUserNat
 	self.remoteUserNatProviderLocalUserNat = nil
+	self.remoteUserNatProviderEgressBridge = nil
 	provider := self.remoteUserNatProvider
 	self.remoteUserNatProvider = nil
 	if self.providerPacketStatsSub != nil {

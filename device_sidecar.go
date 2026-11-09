@@ -13,11 +13,12 @@
 //
 // The posture moves only through setBridgePending, setBridgeState and applyBridgeDeltas, which SDK-M8-07's channel
 // calls, and after each the owner holds the bridge while it is past legacy and closes it once this sidecar's own
-// sign-out wipes it back. A bridge's change callback re-reads its routes and keeps its zone on the mux.
+// sign-out wipes it back. A bridge's change callback re-reads its routes and keeps its zone on the mux. Each hold also
+// moves the bridge's hook onto the exit NAT (device_sidecar_exit.go).
 //
 // Not here yet, and closed meanwhile: the bridge has no BridgeHost and no signer until SDK-M8-08's
-// DeviceLocal.NewBridgeLink and delegations, so every link entry answers with a reject; the exit NAT's hook is
-// BRIDGE-M4-21's; the channel and the status mirror are SDK-M8-07's.
+// DeviceLocal.NewBridgeLink and delegations, so every link entry answers with a reject; the channel and the status
+// mirror are SDK-M8-07's.
 
 package sdk
 
