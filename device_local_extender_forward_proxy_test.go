@@ -4,7 +4,10 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"net"
+	"net/netip"
+	"slices"
 	"testing"
 	"time"
 
@@ -16,6 +19,12 @@ import (
 // proxy. The relay's forward dial still leaves from this host: the operator
 // proved this host's address, a proxy can't keep the client's family (A7, G2),
 // and the slot's proxy is for what the slot provides.
+//
+// The destination is a public name, since the forward refuses loopback
+// (device_local_extender_forward_guard_test.go): the strategy's control
+// records the socket the forward opens and refuses it. A socket to the
+// destination's own address is this host's dial; a dial through the proxy
+// would have opened one to the proxy instead.
 func TestExtenderForwardDialLeavesFromThisHostWhateverProxyTheStrategyNames(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -36,21 +45,6 @@ func TestExtenderForwardDialLeavesFromThisHostWhateverProxyTheStrategyNames(t *t
 		proxied <- struct{}{}
 	}()
 
-	target, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer target.Close()
-	reached := make(chan struct{}, 1)
-	go func() {
-		conn, err := target.Accept()
-		if err != nil {
-			return
-		}
-		conn.Close()
-		reached <- struct{}{}
-	}()
-
 	networkSpace := newTestProvideExtenderUrlSpace(ctx)
 	defer networkSpace.Close()
 	device, err := newDeviceLocalWithOverrides(
@@ -60,16 +54,18 @@ func TestExtenderForwardDialLeavesFromThisHostWhateverProxyTheStrategyNames(t *t
 	}
 	defer device.CloseAndWait(context.Background())
 
-	// the settings a proxy slot's space holds; a test seam that answers dials
-	// itself would take the place of the proxy, so none stays
+	destination := "public." + testProvideExtenderHost
+	sockets := &testExtenderForwardSockets{}
+	testExtenderForwardEgress(device, newTestExtenderForwardResolver(t, map[string][]netip.Addr{
+		destination: {netip.MustParseAddr("198.51.100.7")},
+	}), sockets)
+	// the settings a proxy slot's space holds
 	strategySettings := *device.provider.clientStrategySettings
 	strategySettings.ProxySettings = &connect.ProxySettings{
 		Network: "tcp",
 		Address: proxyListener.Addr().String(),
 	}
-	strategySettings.DialContextSettings = nil
 	device.provider.clientStrategySettings = &strategySettings
-	device.provider.dialContextSettings = nil
 
 	extenderSettings, err := device.provider.extenderSettings()
 	if err != nil {
@@ -77,15 +73,15 @@ func TestExtenderForwardDialLeavesFromThisHostWhateverProxyTheStrategyNames(t *t
 	}
 	dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer dialCancel()
-	conn, err := extenderSettings.DialContext(dialCtx, "tcp4", target.Addr().String())
-	if err != nil {
-		t.Fatalf("the forward dial did not reach its destination: %s", err)
+	conn, err := extenderSettings.DialContext(dialCtx, "tcp4", net.JoinHostPort(destination, "443"))
+	if conn != nil {
+		conn.Close()
 	}
-	defer conn.Close()
-	select {
-	case <-reached:
-	case <-dialCtx.Done():
-		t.Fatal("the forward dial connected, but not to its destination")
+	if !errors.Is(err, errTestExtenderForwardSocket) {
+		t.Fatalf("the forward dial did not open a socket of this host's: %v", err)
+	}
+	if connected := sockets.connected(); !slices.Equal(connected, []string{"198.51.100.7:443"}) {
+		t.Fatalf("the forward dial opened sockets to %v, want only its destination", connected)
 	}
 	select {
 	case <-proxied:

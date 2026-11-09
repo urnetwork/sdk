@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -380,6 +381,25 @@ const extenderProvideRestartFloor = 1 * time.Minute
 // How long a role must have run for its replacement to start the spread over.
 const extenderProvideRestartStableTimeout = 1 * time.Hour
 
+// The control of the relay's forward sockets, stream and datagram (G2): the
+// provider dial control, which refuses an address a destination name resolved
+// to that is not public or is this host's own (connect
+// docs/IP_SECURITY.md §2.2.4), and then the strategy's own control, if any,
+// so no other control touches a refused socket.
+func extenderForwardDialControl(
+	next func(network string, address string, c syscall.RawConn) error,
+) func(network string, address string, c syscall.RawConn) error {
+	return func(network string, address string, c syscall.RawConn) error {
+		if err := connect.ProviderDialControl(network, address, c); err != nil {
+			return err
+		}
+		if next != nil {
+			return next(network, address, c)
+		}
+		return nil
+	}
+}
+
 // What one extender role is built from (G2, G3). The provider fills it from
 // the network space and the device's own egress; a test replaces the ports,
 // the listen seams and the operator urls through
@@ -475,8 +495,13 @@ type deviceLocalExtenderSettings struct {
 	ClientStrategySettings *connect.ClientStrategySettings
 	// The forward dial of the relay (G2): the device's egress-aware dial, so
 	// the relay never enters the device's own tunnel. The extender narrows it
-	// by the client's family itself (A7).
+	// by the client's family itself (A7). The provider gives its sockets the
+	// forward's dial control (extenderForwardDialControl).
 	DialContext connect.DialContextFunction
+	// The udp dial of the datagram relay (A7), under the same control and
+	// through the same resolver as DialContext. Nil keeps the server's own
+	// dialer.
+	DialPacketContext connect.DialContextFunction
 
 	// Listen and ListenPacket, when set, bind the carriers. Tests bind
 	// ephemeral loopback sockets through them.
