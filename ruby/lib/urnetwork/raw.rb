@@ -1550,6 +1550,7 @@ module URnetwork
       attach_function :urnet_get_default_tunnel_mtu, [], :int64, blocking: true
       attach_function :urnet_get_dns_picks, [:string], :pointer, blocking: true
       attach_function :urnet_get_dns_preset, [:string], :pointer, blocking: true
+      attach_function :urnet_get_dns_preset_personal_id_for_edit, [:string, :string], :pointer, blocking: true
       attach_function :urnet_get_dns_preset_providers, [], :pointer, blocking: true
       attach_function :urnet_get_extender_color_hex, [:string], :pointer, blocking: true
       attach_function :urnet_get_extender_store_read_only, [], :bool, blocking: true

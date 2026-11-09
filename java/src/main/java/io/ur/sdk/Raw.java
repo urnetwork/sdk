@@ -1551,6 +1551,7 @@ public interface Raw extends Library {
   long urnet_get_default_tunnel_mtu();
   Pointer urnet_get_dns_picks(String a0);
   Pointer urnet_get_dns_preset(String a0);
+  Pointer urnet_get_dns_preset_personal_id_for_edit(String a0, String a1);
   Pointer urnet_get_dns_preset_providers();
   Pointer urnet_get_extender_color_hex(String a0);
   byte urnet_get_extender_store_read_only();

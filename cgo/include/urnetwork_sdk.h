@@ -2671,6 +2671,7 @@ char* urnet_get_default_tunnel_dns_address_ipv6(void);
 int64_t urnet_get_default_tunnel_mtu(void);
 char* urnet_get_dns_picks(const char* exit_country_code);
 char* urnet_get_dns_preset(const char* preset_id);
+char* urnet_get_dns_preset_personal_id_for_edit(const char* settings_json, const char* preset_id);
 char* urnet_get_dns_preset_providers(void);
 char* urnet_get_extender_color_hex(const char* ip);
 bool urnet_get_extender_store_read_only(void);

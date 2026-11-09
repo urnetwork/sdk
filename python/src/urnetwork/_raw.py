@@ -2853,6 +2853,8 @@ def bind(lib):
     lib.urnet_get_dns_picks.restype = c_void_p
     lib.urnet_get_dns_preset.argtypes = [c_char_p]
     lib.urnet_get_dns_preset.restype = c_void_p
+    lib.urnet_get_dns_preset_personal_id_for_edit.argtypes = [c_char_p, c_char_p]
+    lib.urnet_get_dns_preset_personal_id_for_edit.restype = c_void_p
     lib.urnet_get_dns_preset_providers.argtypes = []
     lib.urnet_get_dns_preset_providers.restype = c_void_p
     lib.urnet_get_extender_color_hex.argtypes = [c_char_p]

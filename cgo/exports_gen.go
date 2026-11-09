@@ -15940,6 +15940,20 @@ func urnet_get_dns_preset(presetId *C.char) *C.char {
 	return cJson(r0, "urnet_get_dns_preset")
 }
 
+//export urnet_get_dns_preset_personal_id_for_edit
+func urnet_get_dns_preset_personal_id_for_edit(settings *C.char, presetId *C.char) *C.char {
+	defer cgoGuard("urnet_get_dns_preset_personal_id_for_edit")
+	var settings_ *sdk.DnsResolverSettings
+	if settings != nil {
+		settings_ = &sdk.DnsResolverSettings{}
+		if !goJson(settings, settings_, "urnet_get_dns_preset_personal_id_for_edit") {
+			return nil
+		}
+	}
+	r0 := sdk.GetDnsPresetPersonalIdForEdit(settings_, goString(presetId))
+	return cString(string(r0))
+}
+
 //export urnet_get_dns_preset_providers
 func urnet_get_dns_preset_providers() *C.char {
 	defer cgoGuard("urnet_get_dns_preset_providers")

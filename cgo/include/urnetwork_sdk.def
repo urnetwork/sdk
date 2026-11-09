@@ -892,6 +892,7 @@ EXPORTS
 	urnet_get_default_tunnel_mtu
 	urnet_get_dns_picks
 	urnet_get_dns_preset
+	urnet_get_dns_preset_personal_id_for_edit
 	urnet_get_dns_preset_providers
 	urnet_get_extender_color_hex
 	urnet_get_extender_store_read_only
