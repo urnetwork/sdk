@@ -321,7 +321,9 @@ func TestDeviceLocalDroppedPresetAppliesDefaultUntilDismissed(t *testing.T) {
 	device.stateLock.Unlock()
 	connect.AssertEqual(t, resolver, (&DnsResolverSettings{PresetId: DnsPresetIdDefault}).toConnect())
 	summary := DescribeDnsResolverSettings(settings, "")
-	connect.AssertEqual(t, []any{summary.Kind, summary.Dropped, summary.DroppedProviderName}, []any{DnsPickKindDefault, true, "Retired DNS"})
+	connect.AssertEqual(t,
+		[]any{summary.Kind, summary.Dropped, summary.DroppedNameKey, summary.DroppedNameProvider, summary.DroppedProviderName},
+		[]any{DnsPickKindDefault, true, "dns_preset_name_ad_blocking", "Retired", "Retired DNS"})
 
 	// a Fast DNS toggle keeps the notice
 	device.SetDnsResolverSettings(DnsResolverSettingsWithFallback(settings, true))

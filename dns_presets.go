@@ -119,7 +119,11 @@ type dnsPresetProvider struct {
 	// stable: "adguard"
 	providerId string
 	name       string
-	operator   string
+	// the form of the name its presets' names begin with (dnsPreset.nameKey),
+	// where the name is longer than they need: "AdGuard" for "AdGuard DNS".
+	// Empty uses the name.
+	shortName string
+	operator  string
 	// where the operator is established and whose law applies (H2)
 	jurisdiction string
 	helpUrl      string
@@ -136,12 +140,12 @@ type dnsPreset struct {
 	// stable and stored on devices, never reused (A4): "adguard"
 	presetId   string
 	providerId string
-	// the name shown for the preset where its provider's name alone would not
-	// tell it from the provider's other presets in its group, beginning with
-	// the provider's name: DNS4EU's two family presets (owner decision
-	// 2026-11-09). Empty shows the provider's name (dnsPresetCatalog.presetName).
-	name  string
-	group string
+	// the localization key of the preset's name (dns_preset_name_*, G1), with
+	// its provider's short name as {provider}: "AdGuard Family", "Cloudflare
+	// Malware Blocking" (owner, 2026-11-09). Short and descriptive, and no two
+	// presets of the catalog show the same name (dnsPresetCatalog.presetName).
+	nameKey string
+	group   string
 	// whether it blocks ads; false shows "not ads" in its copy and keeps it in
 	// a Play-only catalog (O15)
 	blocksAds bool
@@ -205,16 +209,31 @@ type dnsPresetPersonalId struct {
 	quotaNoteKey string
 }
 
+// A preset's name as the screens show it (owner, 2026-11-09): the key of its
+// name, with the provider's short name as {provider}. The apps render it; the
+// sdk never composes it. Both empty for a preset the catalog never knew.
+type dnsPresetName struct {
+	key      string
+	provider string
+}
+
+// A preset a release dropped (A7): what its notice names.
+type dnsPresetReserved struct {
+	// the name it showed
+	name dnsPresetName
+	// its provider's name
+	providerName string
+}
+
 // The catalog: the providers, their presets, and the ids a release dropped.
 // Immutable once built.
 type dnsPresetCatalog struct {
 	providers []*dnsPresetProvider
 	presets   []*dnsPreset
-	// the ids of presets a release dropped, each with the name it showed (its
-	// own, or its provider's): kept so a device that stored one switches to
-	// "default" with a notice that names it, and so no id is ever reused (A4,
-	// A7)
-	reservedProviderNames map[string]string
+	// the presets a release dropped, by id: kept so a device that stored one
+	// switches to "default" with a notice that names it, and so no id is ever
+	// reused (A4, A7)
+	reservedPresets map[string]dnsPresetReserved
 
 	providerIdProviders map[string]*dnsPresetProvider
 	presetIdPresets     map[string]*dnsPreset
@@ -227,16 +246,16 @@ type dnsPresetCatalog struct {
 func newDnsPresetCatalog(
 	providers []*dnsPresetProvider,
 	presets []*dnsPreset,
-	reservedProviderNames map[string]string,
+	reservedPresets map[string]dnsPresetReserved,
 ) *dnsPresetCatalog {
 	catalog := &dnsPresetCatalog{
-		providers:             providers,
-		presets:               presets,
-		reservedProviderNames: reservedProviderNames,
-		providerIdProviders:   map[string]*dnsPresetProvider{},
-		presetIdPresets:       map[string]*dnsPreset{},
-		hostPins:              map[string][]string{},
-		hostProviderIds:       map[string]string{},
+		providers:           providers,
+		presets:             presets,
+		reservedPresets:     reservedPresets,
+		providerIdProviders: map[string]*dnsPresetProvider{},
+		presetIdPresets:     map[string]*dnsPreset{},
+		hostPins:            map[string][]string{},
+		hostProviderIds:     map[string]string{},
 	}
 	for _, provider := range providers {
 		catalog.providerIdProviders[provider.providerId] = provider
@@ -266,13 +285,24 @@ func (self *dnsPresetCatalog) preset(presetId string) *dnsPreset {
 	return self.presetIdPresets[presetId]
 }
 
-// The name every line shows for a preset, its row, summary, status and
-// dropped notice, as {provider}: the preset's own name, else its provider's,
-// else empty.
-func (self *dnsPresetCatalog) presetName(preset *dnsPreset) string {
-	if preset.name != "" {
-		return preset.name
+// The name of a preset, which its row shows and every line that names the
+// preset takes as {provider}: the summary, the status line, the blocked count
+// and the dropped notice (owner, 2026-11-09).
+func (self *dnsPresetCatalog) presetName(preset *dnsPreset) dnsPresetName {
+	name := dnsPresetName{key: preset.nameKey}
+	if provider := self.provider(preset.providerId); provider != nil {
+		name.provider = provider.shortName
+		if name.provider == "" {
+			name.provider = provider.name
+		}
 	}
+	return name
+}
+
+// The name of a preset's provider, which the lines that name the adblock
+// provider rather than the preset take as {provider}: the disclosure, the
+// personal id field and the verification line. Empty for an unknown provider.
+func (self *dnsPresetCatalog) providerName(preset *dnsPreset) string {
 	if provider := self.provider(preset.providerId); provider != nil {
 		return provider.name
 	}
@@ -362,9 +392,13 @@ func dnsPresetHostIsIp(host string) bool {
 // The catalog of ADBLOCK3RD A3, as the owner decided it on 2026-11-09
 // (decisions 1, 15 and 17): seven ad-blocking, malware and family one-tap
 // presets from AdGuard, Control D, Quad9 and Cloudflare, the No filtering
-// picks, DNS4EU's five variants, its two family ones named "DNS4EU Child" and
-// "DNS4EU Child, no ads" (decision 20), and the personal ids of NextDNS,
-// Control D and AdGuard. RethinkDNS is left out: its resolver forwards to Google
+// picks, DNS4EU's five variants, and the personal ids of NextDNS, Control D
+// and AdGuard. Each preset has a short, descriptive name of its own, its
+// provider's name and its purpose, "AdGuard Ad Blocking", "Cloudflare
+// Malware Blocking", "AdGuard Family", "Cloudflare No Filtering", "NextDNS
+// Personal"; DNS4EU's two family presets keep "DNS4EU Child" and "DNS4EU
+// Child, no ads" (decision 20, then per-preset names, owner, 2026-11-09).
+// RethinkDNS is left out: its resolver forwards to Google
 // upstream, and support inbox 8236 asked to avoid Google. Values are verbatim
 // from the providers' pages (A3), and each entry passed dnspresetcheck (F3)
 // on its checked date: on 2026-11-09 every url and pin over IPv4 (h2, the
@@ -379,6 +413,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				providerId:   "adguard",
 				name:         "AdGuard DNS",
+				shortName:    "AdGuard",
 				operator:     "AdGuard Software Ltd",
 				jurisdiction: "Cyprus",
 				helpUrl:      "https://adguard-dns.io/kb/public-dns/overview/",
@@ -440,6 +475,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "adguard",
 				providerId:  "adguard",
+				nameKey:     "dns_preset_name_ad_blocking",
 				group:       DnsPresetGroupAdblock,
 				copyKey:     "dns_preset_copy_ads_phishing",
 				blocksAds:   true,
@@ -455,6 +491,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "controld-ads",
 				providerId:  "controld",
+				nameKey:     "dns_preset_name_ad_blocking",
 				group:       DnsPresetGroupAdblock,
 				copyKey:     "dns_preset_copy_ads_malware",
 				blocksAds:   true,
@@ -470,6 +507,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-noads",
 				providerId:  "dns4eu",
+				nameKey:     "dns_preset_name_ad_blocking",
 				group:       DnsPresetGroupAdblock,
 				copyKey:     "dns_preset_copy_ads_malware_phishing",
 				blocksAds:   true,
@@ -486,6 +524,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "cloudflare-security",
 				providerId:  "cloudflare",
+				nameKey:     "dns_preset_name_malware_blocking",
 				group:       DnsPresetGroupSecurity,
 				copyKey:     "dns_preset_copy_malware",
 				dohUrlsIpv4: []string{"https://1.1.1.2/dns-query", "https://1.0.0.2/dns-query"},
@@ -496,6 +535,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-protective",
 				providerId:  "dns4eu",
+				nameKey:     "dns_preset_name_malware_blocking",
 				group:       DnsPresetGroupSecurity,
 				copyKey:     "dns_preset_copy_malware_phishing",
 				dohUrlsIpv4: []string{"https://protective.joindns4.eu/dns-query"},
@@ -508,6 +548,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "quad9",
 				providerId:  "quad9",
+				nameKey:     "dns_preset_name_malware_blocking",
 				group:       DnsPresetGroupSecurity,
 				copyKey:     "dns_preset_copy_malware_phishing",
 				dohUrlsIpv4: []string{"https://9.9.9.9/dns-query", "https://149.112.112.112/dns-query"},
@@ -520,6 +561,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "adguard-family",
 				providerId:  "adguard",
+				nameKey:     "dns_preset_name_family",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_ads_adult_safe_search",
 				blocksAds:   true,
@@ -534,6 +576,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "cloudflare-family",
 				providerId:  "cloudflare",
+				nameKey:     "dns_preset_name_family",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_malware_adult",
 				dohUrlsIpv4: []string{"https://1.1.1.3/dns-query", "https://1.0.0.3/dns-query"},
@@ -544,6 +587,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "controld-family",
 				providerId:  "controld",
+				nameKey:     "dns_preset_name_family",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_ads_malware_adult_drugs",
 				blocksAds:   true,
@@ -558,7 +602,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-child",
 				providerId:  "dns4eu",
-				name:        "DNS4EU Child",
+				nameKey:     "dns_preset_name_child",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_child",
 				dohUrlsIpv4: []string{"https://child.joindns4.eu/dns-query"},
@@ -571,7 +615,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-child-noads",
 				providerId:  "dns4eu",
-				name:        "DNS4EU Child, no ads",
+				nameKey:     "dns_preset_name_child_ads",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_child_ads",
 				blocksAds:   true,
@@ -587,6 +631,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "adguard-unfiltered",
 				providerId:  "adguard",
+				nameKey:     "dns_preset_name_no_filtering",
 				group:       DnsPresetGroupUnfiltered,
 				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://unfiltered.adguard-dns.com/dns-query"},
@@ -599,6 +644,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "cloudflare",
 				providerId:  "cloudflare",
+				nameKey:     "dns_preset_name_no_filtering",
 				group:       DnsPresetGroupUnfiltered,
 				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"},
@@ -609,6 +655,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "controld-unfiltered",
 				providerId:  "controld",
+				nameKey:     "dns_preset_name_no_filtering",
 				group:       DnsPresetGroupUnfiltered,
 				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://freedns.controld.com/p0"},
@@ -622,6 +669,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 				// court-ordered blocks still apply to every DNS4EU variant (A3)
 				presetId:    "dns4eu-unfiltered",
 				providerId:  "dns4eu",
+				nameKey:     "dns_preset_name_no_filtering",
 				group:       DnsPresetGroupUnfiltered,
 				copyKey:     "dns_preset_copy_court_orders",
 				dohUrlsIpv4: []string{"https://unfiltered.joindns4.eu/dns-query"},
@@ -635,6 +683,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "adguard-personal",
 				providerId:  "adguard",
+				nameKey:     "dns_preset_name_personal",
 				group:       DnsPresetGroupPersonal,
 				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://d.adguard-dns.com/dns-query/{id}"},
@@ -672,6 +721,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "controld-personal",
 				providerId:  "controld",
+				nameKey:     "dns_preset_name_personal",
 				group:       DnsPresetGroupPersonal,
 				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://dns.controld.com/{id}"},
@@ -697,6 +747,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "nextdns-personal",
 				providerId:  "nextdns",
+				nameKey:     "dns_preset_name_personal",
 				group:       DnsPresetGroupPersonal,
 				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://dns.nextdns.io/{id}"},
@@ -721,7 +772,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			},
 		},
 		// no release has dropped a preset yet
-		map[string]string{},
+		map[string]dnsPresetReserved{},
 	)
 })
 
@@ -740,8 +791,10 @@ type dnsResolverSelection struct {
 	// place (A7): a preset the catalog dropped, hid or never knew, a personal
 	// id that no longer validates, or a country with no recommendation
 	unavailable bool
-	// the name an unavailable preset showed (dnsPresetCatalog.presetName),
-	// empty when the catalog never knew it
+	// what the notice of an unavailable preset names: the name it showed
+	// (dnsPresetCatalog.presetName) and its provider's name, empty when the
+	// catalog never knew it
+	unavailableName         dnsPresetName
 	unavailableProviderName string
 }
 
@@ -773,11 +826,15 @@ func resolveDnsResolverSelection(presetId string, personalId string) dnsResolver
 				selection.preset = preset
 			}
 			if selection.unavailable {
-				selection.unavailableProviderName = catalog.presetName(preset)
+				selection.unavailableName = catalog.presetName(preset)
+				selection.unavailableProviderName = catalog.providerName(preset)
 			}
 		} else {
 			selection.unavailable = true
-			selection.unavailableProviderName = catalog.reservedProviderNames[presetId]
+			if reserved, ok := catalog.reservedPresets[presetId]; ok {
+				selection.unavailableName = reserved.name
+				selection.unavailableProviderName = reserved.providerName
+			}
 		}
 	}
 	return selection
@@ -1204,7 +1261,7 @@ func validateDnsResolverSettingsSelection(dnsResolverSettings *DnsResolverSettin
 	catalog := currentDnsPresetCatalog()
 	preset := catalog.preset(presetId)
 	if preset == nil {
-		if _, reserved := catalog.reservedProviderNames[presetId]; reserved {
+		if _, reserved := catalog.reservedPresets[presetId]; reserved {
 			return nil
 		}
 		return errDnsPresetUnknown

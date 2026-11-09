@@ -397,7 +397,7 @@ func dnsPresetIdForLog(presetId string) string {
 	if catalog.preset(presetId) != nil {
 		return presetId
 	}
-	if _, reserved := catalog.reservedProviderNames[presetId]; reserved {
+	if _, reserved := catalog.reservedPresets[presetId]; reserved {
 		return presetId
 	}
 	return "unknown"

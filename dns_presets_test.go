@@ -20,7 +20,7 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 	return newDnsPresetCatalog(
 		[]*dnsPresetProvider{
 			{
-				providerId: "alpha", name: "Alpha DNS", operator: "Alpha Operator", jurisdiction: "Exampleland",
+				providerId: "alpha", name: "Alpha DNS", shortName: "Alpha", operator: "Alpha Operator", jurisdiction: "Exampleland",
 				helpUrl: "https://help.alpha.example/", privacyUrl: "https://alpha.example/privacy",
 				termsUrl: "https://alpha.example/terms", domains: []string{"alpha.example"},
 			},
@@ -37,7 +37,7 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 		},
 		[]*dnsPreset{
 			{
-				presetId: "alpha-ads", providerId: "alpha", group: DnsPresetGroupAdblock, blocksAds: true,
+				presetId: "alpha-ads", providerId: "alpha", nameKey: "dns_preset_name_ad_blocking", group: DnsPresetGroupAdblock, blocksAds: true,
 				copyKey:     "dns_preset_copy_ads_phishing",
 				dohUrlsIpv4: []string{"https://dns.alpha.example/dns-query"},
 				dohUrlsIpv6: []string{"https://dns.alpha.example/dns-query"},
@@ -45,7 +45,7 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 				blockAnswer: dnsPresetBlockAnswerNull, canaryName: "ads.canary.example", failover: true, checked: "2026-11-09",
 			},
 			{
-				presetId: "alpha-family", providerId: "alpha", group: DnsPresetGroupFamily, blocksAds: true,
+				presetId: "alpha-family", providerId: "alpha", nameKey: "dns_preset_name_family", group: DnsPresetGroupFamily, blocksAds: true,
 				copyKey:     "dns_preset_copy_ads_adult_safe_search",
 				dohUrlsIpv4: []string{"https://family.alpha.example/dns-query"},
 				dohUrlsIpv6: []string{"https://family.alpha.example/dns-query"},
@@ -53,28 +53,28 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 				blockAnswer: dnsPresetBlockAnswerNull, canaryName: "adult.canary.example", checked: "2026-11-09",
 			},
 			{
-				presetId: "beta-security", providerId: "beta", group: DnsPresetGroupSecurity,
+				presetId: "beta-security", providerId: "beta", nameKey: "dns_preset_name_malware_blocking", group: DnsPresetGroupSecurity,
 				copyKey:     "dns_preset_copy_malware_phishing",
 				dohUrlsIpv4: []string{"https://192.0.2.10/dns-query", "https://198.51.100.10/dns-query"},
 				dohUrlsIpv6: []string{"https://[2001:db8::10]/dns-query", "https://[2001:db8:1::10]/dns-query"},
 				blockAnswer: dnsPresetBlockAnswerNxdomain, canaryName: "malware.canary.example", checked: "2026-11-09",
 			},
 			{
-				presetId: "beta-plain", providerId: "beta", group: DnsPresetGroupSecurity,
+				presetId: "beta-plain", providerId: "beta", nameKey: "dns_preset_name_malware_blocking", group: DnsPresetGroupSecurity,
 				copyKey:     "dns_preset_copy_malware",
 				dohUrlsIpv4: []string{"https://192.0.2.20/dns-query"},
 				dohUrlsIpv6: []string{"https://[2001:db8::20]/dns-query"},
 				blockAnswer: dnsPresetBlockAnswerNull, checked: "2026-11-09",
 			},
 			{
-				presetId: "beta-unfiltered", providerId: "beta", group: DnsPresetGroupUnfiltered,
+				presetId: "beta-unfiltered", providerId: "beta", nameKey: "dns_preset_name_no_filtering", group: DnsPresetGroupUnfiltered,
 				copyKey:     "dns_preset_copy_nothing",
 				dohUrlsIpv4: []string{"https://192.0.2.30/dns-query", "https://198.51.100.30/dns-query"},
 				dohUrlsIpv6: []string{"https://[2001:db8::30]/dns-query", "https://[2001:db8:1::30]/dns-query"},
 				failover:    true, checked: "2026-11-09",
 			},
 			{
-				presetId: "gamma-personal", providerId: "gamma", group: DnsPresetGroupPersonal,
+				presetId: "gamma-personal", providerId: "gamma", nameKey: "dns_preset_name_personal", group: DnsPresetGroupPersonal,
 				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://id.gamma.example/{id}"},
 				dohUrlsIpv6: []string{"https://id.gamma.example/{id}"},
@@ -95,7 +95,7 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 				checked: "2026-11-09",
 			},
 			{
-				presetId: "alpha-personal", providerId: "alpha", group: DnsPresetGroupPersonal,
+				presetId: "alpha-personal", providerId: "alpha", nameKey: "dns_preset_name_personal", group: DnsPresetGroupPersonal,
 				copyKey:     "dns_preset_copy_personal",
 				dohUrlsIpv4: []string{"https://d.alpha.example/dns-query/{id}"},
 				dohUrlsIpv6: []string{"https://d.alpha.example/dns-query/{id}"},
@@ -114,7 +114,12 @@ func testingDnsPresetCatalog() *dnsPresetCatalog {
 				checked: "2026-11-09",
 			},
 		},
-		map[string]string{"retired-preset": "Retired DNS"},
+		map[string]dnsPresetReserved{
+			"retired-preset": {
+				name:         dnsPresetName{key: "dns_preset_name_ad_blocking", provider: "Retired"},
+				providerName: "Retired DNS",
+			},
+		},
 	)
 }
 
@@ -324,7 +329,8 @@ func TestDnsPresetUnavailableSelectionsApplyDefault(t *testing.T) {
 	testingWithDnsPresetCatalog(t)
 	defaults := (&DnsResolverSettings{PresetId: DnsPresetIdDefault}).toConnect()
 	base := connect.DefaultUpgradeMuxSettings()
-	check := func(presetId string, personalId string, providerName string) {
+	// the notice names the preset as it showed, and its provider
+	check := func(presetId string, personalId string, name dnsPresetName, providerName string) {
 		t.Helper()
 		settings := &DnsResolverSettings{PresetId: presetId, PresetPersonalId: personalId, EnableFallback: true}
 		connect.AssertEqual(t, settings.toConnect(), defaults)
@@ -332,19 +338,19 @@ func TestDnsPresetUnavailableSelectionsApplyDefault(t *testing.T) {
 		if !selection.unavailable || selection.preset != nil {
 			t.Errorf("%q applies as %+v", presetId, selection)
 		}
-		connect.AssertEqual(t, selection.unavailableProviderName, providerName)
+		connect.AssertEqual(t, []any{selection.unavailableName, selection.unavailableProviderName}, []any{name, providerName})
 		dns := upgradeMuxSettingsWithDnsResolverSettings(base, settings).Dns
 		if dns.Failover != nil || dns.FallbackUntilTunnelReady {
 			t.Errorf("%q applies preset rules", presetId)
 		}
 		connect.AssertEqual(t, dns.Fallback, hostFallbackDnsResolverSettings(defaults))
 	}
-	check("retired-preset", "", "Retired DNS")
-	check("never-in-the-catalog", "", "")
-	check("gamma-personal", "not-an-id", "Gamma")
+	check("retired-preset", "", dnsPresetName{key: "dns_preset_name_ad_blocking", provider: "Retired"}, "Retired DNS")
+	check("never-in-the-catalog", "", dnsPresetName{}, "")
+	check("gamma-personal", "not-an-id", dnsPresetName{key: "dns_preset_name_personal", provider: "Gamma"}, "Gamma")
 	SetDnsPresetsHideAdBlocking(true)
-	check("alpha-ads", "", "Alpha DNS")
-	check("alpha-family", "", "Alpha DNS")
+	check("alpha-ads", "", dnsPresetName{key: "dns_preset_name_ad_blocking", provider: "Alpha"}, "Alpha DNS")
+	check("alpha-family", "", dnsPresetName{key: "dns_preset_name_family", provider: "Alpha"}, "Alpha DNS")
 	SetDnsPresetsHideAdBlocking(false)
 	if selection := resolveDnsResolverSelection("alpha-ads", ""); selection.unavailable {
 		t.Fatal("a shown preset stays unavailable")
