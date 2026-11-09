@@ -102,17 +102,20 @@ func TestSubscriptionProTrackerStartsOverForAnotherSession(t *testing.T) {
 	connect.AssertEqual(t, tracker.GetIsPro(), false)
 	connect.AssertEqual(t, tracker.BalanceLoaded(false), false)
 
-	// a sign out, then a sign in to the first network again
+	// a read that found no jwt changes nothing
 	tracker.BalanceLoaded(true)
-	connect.AssertEqual(t, tracker.SetJwt(""), true)
+	connect.AssertEqual(t, tracker.SetJwt(""), false)
+	connect.AssertEqual(t, tracker.GetIsPro(), true)
+
+	// a sign out, then a sign in to the first network again
+	tracker.Reset()
 	connect.AssertEqual(t, tracker.GetIsPro(), false)
-	tracker.SetJwt(testNetworkJwt(t, testTrackerNetworkA, false, 1))
+	connect.AssertEqual(t, tracker.SetJwt(testNetworkJwt(t, testTrackerNetworkA, false, 1)), false)
 	connect.AssertEqual(t, tracker.GetIsPro(), false)
 	// the jwt asked about in the session before asks again in this one
 	connect.AssertEqual(t, tracker.BalanceLoaded(true), true)
 
 	tracker.Reset()
-	connect.AssertEqual(t, tracker.GetIsPro(), false)
 	tracker.SetJwt(testNetworkJwt(t, testTrackerNetworkA, true, 1))
 	connect.AssertEqual(t, tracker.GetIsPro(), true)
 }

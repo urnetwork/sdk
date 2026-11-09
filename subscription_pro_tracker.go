@@ -30,8 +30,9 @@ import (
 //     changed looped as fast as the api answered (support inbox 8211). A new
 //     jwt that still disagrees asks once more.
 //
-//   - No jwt (a sign out), or a jwt of another network, starts over: the
-//     server's answer belonged to the session before.
+//   - A jwt of another network starts over, as Reset does at a sign out: the
+//     server's answer belonged to the session before. An empty jwt (a read
+//     that found none) changes nothing.
 //
 // Safe for concurrent use; an app normally calls it from its main thread.
 type SubscriptionProTracker struct {
@@ -56,18 +57,18 @@ func NewSubscriptionProTracker() *SubscriptionProTracker {
 
 // Takes the jwt the app reads its claims from, at sign in and after every jwt
 // refresh, and reports whether GetIsPro changed. Once a balance has loaded,
-// only no jwt or a jwt of another network changes it. The same jwt again
-// changes nothing, and in particular does not ask for another refresh.
+// only a jwt of another network changes it. The same jwt again, or an empty
+// one, changes nothing, and in particular does not ask for another refresh.
 func (self *SubscriptionProTracker) SetJwt(byJwt string) bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	if byJwt == self.byJwt {
+	if byJwt == "" || byJwt == self.byJwt {
 		return false
 	}
 	previousPro := self.isProWithLock()
 	jwtNetworkId := parseJwtNetworkId(byJwt)
-	if byJwt == "" || jwtNetworkId != self.jwtNetworkId {
+	if jwtNetworkId != self.jwtNetworkId {
 		self.loaded = false
 		self.serverIsPro = false
 	}
