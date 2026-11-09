@@ -124,8 +124,8 @@ func TestPresetVersionMigrationLoadsDefaultListsAsDefault(t *testing.T) {
 		{name: "OpenDNS era, version 1", write: func(t *testing.T, localStorageDir string) {
 			testingWriteOpenDnsEraDnsResolverSettings(t, localStorageDir, testingOpenDnsEraDefaultDnsResolverSettings())
 		}},
-		{name: "current defaults, version 2", write: func(t *testing.T, localStorageDir string) {
-			testingWriteVersion2DnsResolverSettings(t, localStorageDir, testingCurrentDefaultsAsSaved(true))
+		{name: "Quad9 unfiltered era, version 2", write: func(t *testing.T, localStorageDir string) {
+			testingWriteVersion2DnsResolverSettings(t, localStorageDir, testingVersion2DefaultDnsResolverSettings(true))
 		}},
 	} {
 		localState := &LocalState{localStorageDir: t.TempDir()}

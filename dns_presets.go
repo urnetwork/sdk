@@ -136,7 +136,12 @@ type dnsPreset struct {
 	// stable and stored on devices, never reused (A4): "adguard"
 	presetId   string
 	providerId string
-	group      string
+	// the name shown for the preset where its provider's name alone would not
+	// tell it from the provider's other presets in its group, beginning with
+	// the provider's name: DNS4EU's two family presets (owner decision
+	// 2026-11-09). Empty shows the provider's name (dnsPresetCatalog.presetName).
+	name  string
+	group string
 	// whether it blocks ads; false shows "not ads" in its copy and keeps it in
 	// a Play-only catalog (O15)
 	blocksAds bool
@@ -205,9 +210,10 @@ type dnsPresetPersonalId struct {
 type dnsPresetCatalog struct {
 	providers []*dnsPresetProvider
 	presets   []*dnsPreset
-	// the ids of presets a release dropped, each with its provider's name:
-	// kept so a device that stored one switches to "default" with a notice
-	// that names the provider, and so no id is ever reused (A4, A7)
+	// the ids of presets a release dropped, each with the name it showed (its
+	// own, or its provider's): kept so a device that stored one switches to
+	// "default" with a notice that names it, and so no id is ever reused (A4,
+	// A7)
 	reservedProviderNames map[string]string
 
 	providerIdProviders map[string]*dnsPresetProvider
@@ -258,6 +264,19 @@ func (self *dnsPresetCatalog) provider(providerId string) *dnsPresetProvider {
 
 func (self *dnsPresetCatalog) preset(presetId string) *dnsPreset {
 	return self.presetIdPresets[presetId]
+}
+
+// The name every line shows for a preset, its row, summary, status and
+// dropped notice, as {provider}: the preset's own name, else its provider's,
+// else empty.
+func (self *dnsPresetCatalog) presetName(preset *dnsPreset) string {
+	if preset.name != "" {
+		return preset.name
+	}
+	if provider := self.provider(preset.providerId); provider != nil {
+		return provider.name
+	}
+	return ""
 }
 
 // The provider a url or hostname names, by the catalog's DoH hosts and the
@@ -343,8 +362,9 @@ func dnsPresetHostIsIp(host string) bool {
 // The catalog of ADBLOCK3RD A3, as the owner decided it on 2026-11-09
 // (decisions 1, 15 and 17): seven ad-blocking, malware and family one-tap
 // presets from AdGuard, Control D, Quad9 and Cloudflare, the No filtering
-// picks, DNS4EU's five variants, and the personal ids of NextDNS, Control D
-// and AdGuard. RethinkDNS is left out: its resolver forwards to Google
+// picks, DNS4EU's five variants, its two family ones named "DNS4EU Child" and
+// "DNS4EU Child, no ads" (decision 20), and the personal ids of NextDNS,
+// Control D and AdGuard. RethinkDNS is left out: its resolver forwards to Google
 // upstream, and support inbox 8236 asked to avoid Google. Values are verbatim
 // from the providers' pages (A3), and each entry passed dnspresetcheck (F3)
 // on its checked date: on 2026-11-09 every url and pin over IPv4 (h2, the
@@ -538,6 +558,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-child",
 				providerId:  "dns4eu",
+				name:        "DNS4EU Child",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_child",
 				dohUrlsIpv4: []string{"https://child.joindns4.eu/dns-query"},
@@ -550,6 +571,7 @@ var builtInDnsPresetCatalog = sync.OnceValue(func() *dnsPresetCatalog {
 			{
 				presetId:    "dns4eu-child-noads",
 				providerId:  "dns4eu",
+				name:        "DNS4EU Child, no ads",
 				group:       DnsPresetGroupFamily,
 				copyKey:     "dns_preset_copy_child_ads",
 				blocksAds:   true,
@@ -718,8 +740,8 @@ type dnsResolverSelection struct {
 	// place (A7): a preset the catalog dropped, hid or never knew, a personal
 	// id that no longer validates, or a country with no recommendation
 	unavailable bool
-	// the name of the provider of an unavailable preset, empty when the
-	// catalog never knew it
+	// the name an unavailable preset showed (dnsPresetCatalog.presetName),
+	// empty when the catalog never knew it
 	unavailableProviderName string
 }
 
@@ -736,7 +758,6 @@ func resolveDnsResolverSelection(presetId string, personalId string) dnsResolver
 	default:
 		catalog := currentDnsPresetCatalog()
 		if preset := catalog.preset(presetId); preset != nil {
-			provider := catalog.provider(preset.providerId)
 			switch {
 			case dnsPresetHidden(preset):
 				selection.unavailable = true
@@ -751,8 +772,8 @@ func resolveDnsResolverSelection(presetId string, personalId string) dnsResolver
 			default:
 				selection.preset = preset
 			}
-			if selection.unavailable && provider != nil {
-				selection.unavailableProviderName = provider.name
+			if selection.unavailable {
+				selection.unavailableProviderName = catalog.presetName(preset)
 			}
 		} else {
 			selection.unavailable = true
@@ -1084,8 +1105,9 @@ func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsR
 	if dnsResolverSettingsListsEqual(dnsResolverSettings, derived) {
 		return dnsResolverSettings
 	}
-	// an earlier release's derivation: its lists migrate to today's
-	for _, recordVersion := range []int{0, 1} {
+	// an earlier release's derivation, of any version before today's: its
+	// lists migrate to today's
+	for recordVersion := 0; recordVersion < dnsResolverSettingsDefaultServersVersion; recordVersion++ {
 		earlier := copyDnsResolverSettings(dnsResolverSettings)
 		migrateDefaultServerLists(earlier, recordVersion)
 		if dnsResolverSettingsListsEqual(earlier, derived) {

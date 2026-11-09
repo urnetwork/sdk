@@ -84,8 +84,10 @@ type DnsPresetProvider struct {
 type DnsPreset struct {
 	PresetId   string
 	ProviderId string
-	// the provider's name, shown as it is: the argument of the keys that take
-	// a provider
+	// the name shown for the preset, as it is, on its row and as the argument
+	// of the keys that take a provider: its provider's name, or the preset's
+	// own where the provider has two presets in a group, "DNS4EU Child" and
+	// "DNS4EU Child, no ads" (the DnsPresetProvider keeps the provider's name)
 	ProviderName string
 	Jurisdiction string
 	PrivacyUrl   string
@@ -161,8 +163,8 @@ type DnsSelectionSummary struct {
 	// the pick to mark as selected: DnsPresetIdDefault, the preset id,
 	// "regional-<cc>", or empty for Custom
 	PresetId string
-	// the selected preset's provider, group and copy keys, empty for the
-	// other kinds
+	// the selected preset's provider, the name it shows (DnsPreset.ProviderName),
+	// and its group and copy keys, empty for the other kinds
 	ProviderId   string
 	ProviderName string
 	Group        string
@@ -344,17 +346,17 @@ func dnsPresetsInDisplayOrder(catalog *dnsPresetCatalog) []*dnsPreset {
 func newDnsPreset(catalog *dnsPresetCatalog, preset *dnsPreset) *DnsPreset {
 	_, groupKey := dnsPresetGroupRank(preset.group)
 	exported := &DnsPreset{
-		PresetId:   preset.presetId,
-		ProviderId: preset.providerId,
-		Group:      preset.group,
-		GroupKey:   groupKey,
-		CopyKey:    preset.copyKey,
-		BlocksAds:  preset.blocksAds,
-		Failover:   preset.failover,
-		Filtering:  dnsPresetFiltering(preset),
+		PresetId:     preset.presetId,
+		ProviderId:   preset.providerId,
+		ProviderName: catalog.presetName(preset),
+		Group:        preset.group,
+		GroupKey:     groupKey,
+		CopyKey:      preset.copyKey,
+		BlocksAds:    preset.blocksAds,
+		Failover:     preset.failover,
+		Filtering:    dnsPresetFiltering(preset),
 	}
 	if provider := catalog.provider(preset.providerId); provider != nil {
-		exported.ProviderName = provider.name
 		exported.Jurisdiction = provider.jurisdiction
 		exported.PrivacyUrl = provider.privacyUrl
 		exported.HelpUrl = provider.helpUrl
@@ -644,9 +646,7 @@ func DescribeDnsResolverStatus(settings *DnsResolverSettings, status *DnsResolve
 	if preset == nil {
 		return summary
 	}
-	if provider := catalog.provider(preset.providerId); provider != nil {
-		summary.ProviderName = provider.name
-	}
+	summary.ProviderName = catalog.presetName(preset)
 	if status == nil || status.PresetId != settings.PresetId {
 		status = unknownDnsResolverStatus()
 	}
