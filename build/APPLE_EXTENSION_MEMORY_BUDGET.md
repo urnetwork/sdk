@@ -125,6 +125,31 @@ The `ios_extension` binding omits app-only view-controller implementations. It
 removes 2.729 MiB from the arm64 SDK archive and about 1.3 MiB from the final
 extension executable versus the former monolithic binding.
 
+## The sidecar device role
+
+2026-11-09 (Go 1.27.3, sdk on sidecar 2421b63): the keyless device role
+(`device_sidecar.go`, sidecar §18.6) is in the extension, dark behind
+`DeviceLocalSettings.EnableBridge`. It links sidecar's `device` and
+`protocol/bridge` and nothing else of the sidecar module: not the root, not
+`protocol`, and only `protocol/bridge`'s three descriptors
+(`sidecar_ios_extension_test.go`, `TestSdkImportsTheSidecarModuleByRole`). Its
+budget is 1 MiB of growth (sidecar D-SDK-20), which sidecar's `make size`
+checks on its own probe.
+
+| Measure | Without | With | Added |
+| --- | ---: | ---: | ---: |
+| sidecar `make size`, device's and protocol/bridge's whole surface, unstripped | 37,789,784 | 38,960,600 | 1,170,816 |
+| ios/arm64 probe of `NewDeviceLocal` and the packet paths, unstripped | 48,710,896 | 49,799,440 | 1,088,544 |
+| the same probe, `-ldflags=-s -w` | 43,902,088 | 44,854,168 | 952,080 |
+
+`make size` fails its 1,048,576 B row, and the question
+`sdk-m4-02-make-size-over` holds what restores a margin; the stripped growth, the
+binary that ships, is 0.908 MiB. Of the unstripped probe's growth, device's own
+symbols are 270 KB (the posture 93 KB, links 36 KB), protocol/bridge's 80 KB,
+pclntab and runtime tables 366 KB, type data 142 KB and strings 87 KB. None of
+it was measured on a device: memory with the role on waits for surrogates
+(owner decision 100), and the tunnel builds no link until then.
+
 ## FIPS policy
 
 The extension build sets `GOFIPS140=off`. The artifact gate rejects FIPS-enabled
