@@ -3578,7 +3578,7 @@ entries:
   - name: github.com/urnetwork/sidecar
     kind: software
     origin: go
-    apps: [android, apple, windows, linux]
+    apps: [android, apple, windows, linux, web, extension]
     url: https://github.com/urnetwork/sidecar
     spdx: MIT AND MPL-2.0
     copyright: Copyright (c) 2026 BringYour, Inc.
