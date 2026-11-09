@@ -77,6 +77,27 @@ build_wasm:
 	fi
 	$(MAKE) check_wasm
 
+# Build the page Worker's sidecar.wasm (sidecar §18.10, D-SDK-19): the sidecar_http leg of the
+# sidecar root and protocol, linking no sdk or connect package, which dependency_boundary_test.go's
+# leg for cmd/sidecarwasm holds. Unstripped, as §18.10's 41,943,040 B goal and sidecar's make size
+# measure it, so no -s or -w. Like build_wasm, it takes wasm_exec.js from the building toolchain,
+# removes the previous binary before compiling, and stops at the first failed step.
+build_sidecar_wasm:
+	set -e; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	mkdir -p wasm; \
+	rm -f wasm/sidecar.wasm wasm/wasm_exec.js; \
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -tags sidecar_http -trimpath \
+		-ldflags "-X github.com/urnetwork/sidecar.Version=$${WARP_VERSION}" \
+		-o wasm/sidecar.wasm ./cmd/sidecarwasm; \
+	GOROOT="$$(go env GOROOT)"; \
+	if [ -f "$$GOROOT/lib/wasm/wasm_exec.js" ]; then \
+		cp "$$GOROOT/lib/wasm/wasm_exec.js" wasm/; \
+	else \
+		cp "$$GOROOT/misc/wasm/wasm_exec.js" wasm/; \
+	fi
+	$(MAKE) check_wasm
+
 # Verify the packaged wasm_exec.js is byte-identical to the building toolchain's
 # copy, so a committed or published glue can never skew from the wasm it loads.
 # The wasm binary itself is paired by construction (built and copied in the same
@@ -116,7 +137,7 @@ build_checked: check_generated
 	npm ci && \
 	npm run build;
 
-.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi check_types generate_lag check_lag check_generated build_checked
+.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi check_types generate_lag check_lag check_generated build_checked build_sidecar_wasm
 package: build
 	go -C ../packaging run . npm package
 check-package:

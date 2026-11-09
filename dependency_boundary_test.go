@@ -82,6 +82,7 @@ var messagingBoundaryLegs = []messagingBoundaryLeg{
 	{name: "root windows/amd64", moduleDirectory: ".", environment: []string{"GOOS=windows", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "root darwin/arm64", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=arm64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "js/wasm", moduleDirectory: "js", environment: []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: sidecarWasmLegName, moduleDirectory: "js", environment: []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"}, tags: "sidecar_http", patterns: []string{"./cmd/sidecarwasm"}, mustContain: sidecarWasmMainPath},
 	{name: "cgo linux/amd64", moduleDirectory: "cgo", environment: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "cgo windows/amd64", moduleDirectory: "cgo", environment: []string{"GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "cgo darwin/arm64", moduleDirectory: "cgo", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
@@ -587,5 +588,124 @@ func TestTheMessagingBoundaryLegsReadTheirOwnBuildConfiguration(t *testing.T) {
 		if len(findings) != len(c.want) {
 			t.Errorf("%s: %d findings for %d planted packages: %v", c.leg.name, len(findings), len(c.want), findings)
 		}
+	}
+}
+
+// The page Worker's main, sidecar.wasm (sidecar §18.10, D-SDK-19), and its leg's name.
+const (
+	sidecarWasmLegName  = "sidecar.wasm js/wasm sidecar_http"
+	sidecarWasmMainPath = "github.com/urnetwork/sdk/js/cmd/sidecarwasm"
+)
+
+// What sidecar.wasm's closure must not hold, each with why. A path is under a root as the messaging
+// matcher reads it, whole path elements. The main links the sidecar root and protocol only: connect
+// links gVisor's IP stack into every importer, so a connect-only js/wasm main is already 55.0 MB
+// unstripped, and the leg's goal is 41,943,040 B (§18.10); the sdk and sdk.wasm's main link connect;
+// and net/rpc and the template packages keep a binary's exported methods alive, which loses the
+// linker's method pruning for the whole binary (sdk/build/mobile_method_pruning_test.go).
+var sidecarWasmRefusedRoots = map[string]string{
+	"github.com/urnetwork/connect": "connect, which links gVisor",
+	"gvisor.dev/gvisor":            "gVisor's IP stack",
+	"github.com/pion/sctp":         "the sctp fork in connect's tree",
+	"github.com/urnetwork/sdk":     "this repository's sdk, which links connect",
+	"net/rpc":                      "net/rpc, which loses method pruning",
+	"text/template":                "text/template, which loses method pruning",
+	"html/template":                "html/template, which loses method pruning",
+}
+
+// Each package in a closure under a refused root, as findings. The main's own package is the one path
+// under github.com/urnetwork/sdk it may hold.
+func sidecarWasmClosureFindings(legName string, mainPath string, packages []string) []string {
+	findings := []string{}
+	for _, packagePath := range packages {
+		if packagePath == mainPath {
+			continue
+		}
+		for root, why := range sidecarWasmRefusedRoots {
+			if packagePath == root || strings.HasPrefix(packagePath, root+"/") {
+				findings = append(findings, fmt.Sprintf("%s links %s, under %s (%s)", legName, packagePath, root, why))
+			}
+		}
+	}
+	sort.Strings(findings)
+	return findings
+}
+
+// sidecar.wasm links no connect, gVisor, sdk, net/rpc or template package, so a connect import in the
+// main, or in anything it reaches, fails here as well as in sidecar's make check.
+func TestTheSidecarWasmLegLinksNoConnectOrSdk(t *testing.T) {
+	legIndex := slices.IndexFunc(messagingBoundaryLegs, func(leg messagingBoundaryLeg) bool {
+		return leg.name == sidecarWasmLegName
+	})
+	if legIndex < 0 {
+		t.Fatal("the sidecar.wasm leg is missing")
+	}
+	leg := messagingBoundaryLegs[legIndex]
+	packages, _ := messagingBoundaryLegPackages(t, ".", leg)
+	if !slices.Contains(packages, sidecarWasmMainPath) || !slices.Contains(packages, "github.com/urnetwork/sidecar") {
+		t.Fatalf("CONTROL FAILED: %s resolved %d packages, without the main or the sidecar root", leg.name, len(packages))
+	}
+	for _, finding := range sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages) {
+		t.Errorf("%s", finding)
+	}
+	t.Logf("%s: %d packages", leg.name, len(packages))
+}
+
+// The rule finds what a fixture plants behind the leg's tag: a connect import, a sdk import and
+// net/rpc with the template packages it brings, and nothing for the same main built without the tag
+// or for a package sharing only a prefix with a root.
+func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
+	fixture := t.TempDir()
+	fixtureFiles := map[string]string{
+		"core/go.mod": "module github.com/urnetwork/sdk/js\n\ngo 1.26\n\n" +
+			"require (\n\tgithub.com/urnetwork/connect v0.0.0\n\tgithub.com/urnetwork/connectx v0.0.0\n\tgithub.com/urnetwork/sdk v0.0.0\n)\n\n" +
+			"replace github.com/urnetwork/connect => ../connect\n\nreplace github.com/urnetwork/connectx => ../connectx\n\nreplace github.com/urnetwork/sdk => ../sdk\n",
+		"core/cmd/sidecarwasm/main.go":    "package main\n\nimport _ \"github.com/urnetwork/connectx\"\n\nfunc main() {}\n",
+		"core/cmd/sidecarwasm/planted.go": "//go:build sidecar_http\n\npackage main\n\nimport (\n\t_ \"github.com/urnetwork/connect/protocol\"\n\t_ \"github.com/urnetwork/sdk\"\n\t_ \"net/rpc\"\n)\n",
+		"connect/go.mod":                  "module github.com/urnetwork/connect\n\ngo 1.26\n",
+		"connect/protocol/p.go":           "package protocol\n",
+		"connectx/go.mod":                 "module github.com/urnetwork/connectx\n\ngo 1.26\n",
+		"connectx/x.go":                   "package connectx\n",
+		"sdk/go.mod":                      "module github.com/urnetwork/sdk\n\ngo 1.26\n",
+		"sdk/sdk.go":                      "package sdk\n",
+	}
+	for name, content := range fixtureFiles {
+		fixturePath := filepath.Join(fixture, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(fixturePath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fixturePath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	leg := messagingBoundaryLeg{
+		name:            "fixture",
+		moduleDirectory: "core",
+		environment:     []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"},
+		tags:            "sidecar_http",
+		patterns:        []string{"./cmd/sidecarwasm"},
+	}
+	packages, _ := messagingBoundaryLegPackages(t, fixture, leg)
+	findings := sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages)
+	// net/rpc's debug page brings both template packages with it
+	want := []string{
+		"fixture links github.com/urnetwork/connect/protocol, under github.com/urnetwork/connect (connect, which links gVisor)",
+		"fixture links github.com/urnetwork/sdk, under github.com/urnetwork/sdk (this repository's sdk, which links connect)",
+		"fixture links html/template, under html/template (html/template, which loses method pruning)",
+		"fixture links net/rpc, under net/rpc (net/rpc, which loses method pruning)",
+		"fixture links text/template, under text/template (text/template, which loses method pruning)",
+		"fixture links text/template/parse, under text/template (text/template, which loses method pruning)",
+	}
+	if !slices.Equal(findings, want) {
+		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
+	}
+
+	leg.tags = ""
+	packages, _ = messagingBoundaryLegPackages(t, fixture, leg)
+	if !slices.Contains(packages, "github.com/urnetwork/connectx") {
+		t.Fatalf("CONTROL FAILED: the untagged fixture resolved %v", packages)
+	}
+	if findings := sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages); len(findings) != 0 {
+		t.Errorf("without the tag nothing is planted, and the rule found %v", findings)
 	}
 }

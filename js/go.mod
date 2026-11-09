@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/sdk v0.0.0
+	github.com/urnetwork/sidecar v0.0.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -88,7 +89,6 @@ require (
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
-	github.com/urnetwork/sidecar v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
@@ -98,7 +98,7 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
