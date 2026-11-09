@@ -3642,6 +3642,8 @@ func (self *Api) postLogsZip(
 
 type RefreshJwtResultError struct {
 	Message string `json:"message"`
+	// A structured code a client acts on: restore_required alone so far, which is no refusal (§5.6, §19.10).
+	Code string `json:"code,omitempty"`
 }
 
 type RefreshJwtResult struct {

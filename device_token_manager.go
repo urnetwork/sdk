@@ -752,6 +752,14 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 		}
 	}
 
+	if result.Error != nil && result.Error.Code == RefreshJwtCodeRestoreRequired {
+		// a Postgres restore lost this client's binding or a registration
+		// (§5.6, §19.10): no refusal, so nothing signs out. The sidecar host
+		// posts its newest binding again and re-registers (CORE-M8-01), and the
+		// refresh retries on the usual schedule.
+		self.api.logger().Infof("[api-token]refresh answered restore_required: the token stays")
+		return apiTokenRefreshOutcome{err: ErrRefreshRestoreRequired}
+	}
 	if result.Error != nil {
 		// not an api error, but a token refresh error -- for example, the client
 		// no longer exists. A refusal in a result carries no cause.

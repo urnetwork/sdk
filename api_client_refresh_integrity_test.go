@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 )
@@ -90,5 +91,31 @@ func TestClientRefreshIntegrityCurrentNoticeClosesWithoutPublication(t *testing.
 	outcome := api.tokenManager.refreshTokenWithContext(ctx, original)
 	if outcome.err == nil || !closed || api.ctx.Err() == nil || api.GetByJwt() != original {
 		t.Fatal("unchanged invalid API was not closed independently of its credential")
+	}
+}
+
+// §5.6, §19.10: a refresh answering restore_required in its 200 is no refusal. Nothing signs out, the token stays,
+// and the outcome names the code for the sidecar host to re-register on (CORE-M8-01); a refusal with any other code,
+// or none, still signs out as before.
+func TestRestoreRequiredNotLogout(t *testing.T) {
+	ctx, api := newTestApi(t, http.NotFoundHandler())
+	original := testingRefreshableJwtWithMarker(t, "restore-required")
+	api.SetByJwt(original)
+	restoreRequired, err := json.Marshal(RefreshJwtResult{Error: &RefreshJwtResultError{Message: "restore required", Code: RefreshJwtCodeRestoreRequired}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) { return restoreRequired, nil })
+	outcome := api.tokenManager.refreshTokenWithContext(ctx, original)
+	if outcome.loggedOut || !errors.Is(outcome.err, ErrRefreshRestoreRequired) || api.GetByJwt() != original {
+		t.Fatalf("restore_required: %+v, token kept %v", outcome, api.GetByJwt() == original)
+	}
+	refused, err := json.Marshal(RefreshJwtResult{Error: &RefreshJwtResultError{Message: "the client is gone", Code: "something_else"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) { return refused, nil })
+	if outcome := api.tokenManager.refreshTokenWithContext(ctx, original); !outcome.loggedOut {
+		t.Fatalf("another refusal did not sign out: %+v", outcome)
 	}
 }

@@ -45,6 +45,14 @@ var ErrDpopSignerRequired = errors.New("a sidecar token renews and mints only wi
 // The DPoP signer refused, or returned no proof. The request was not sent.
 var ErrDpopProofFailed = errors.New("the dpop signer did not sign")
 
+// GET /auth/refresh's structured code for a client whose binding or a registration api lost to a restore (§5.6,
+// §19.10): not a refusal, and nothing signs out.
+const RefreshJwtCodeRestoreRequired = "restore_required"
+
+// A refresh answered restore_required: the token stays, the sidecar host posts its newest binding again and
+// re-registers (CORE-M8-01), and the refresh retries.
+var ErrRefreshRestoreRequired = errors.New("the refresh answered restore_required: the sidecar re-registers, and nothing signs out")
+
 // The transport of a request that carries a proof: method to requestUrl with
 // requestBodyBytes (nil for none), the bearer byJwt and the DPoP header proof.
 // A status other than 200 is a *connect.HttpStatusError, as connect's raw
