@@ -98,10 +98,19 @@ var mobileSnFleetGoOnlyIds = map[string]bool{
 // sdk.Sidecar's Go-only members (sidecar §18.5): Core hands a Go embedder the
 // sidecar package's own Sidecar, which no binding carries, and CloseAndWait is
 // the lifecycle join, whose context no binding carries either; apps call
-// Close. SDK-M8-06 adds ListenContext beside them.
+// Close. Api.SetDpopSigner is sdk/sidecar.go's install of the core's ClientKey
+// signer, Go only by §18.7, and its func parameter binds nowhere. SDK-M8-06
+// adds ListenContext beside them.
+//
+// The app interfaces of §18.7's credential rules bind whole and need no entry:
+// LocalStateSealer, its LocalStateSealKey answer and its statuses,
+// NewNetworkSpaceManagerWithLocalStateSealer,
+// NetworkSpaceValues.SessionOnlyNetworkCredential and
+// AuthNetworkClientArgs.AdminRefused (local_state_sealer_test.go).
 var mobileSidecarGoOnlyIds = map[string]bool{
 	"Sidecar.Core":         true,
 	"Sidecar.CloseAndWait": true,
+	"Api.SetDpopSigner":    true,
 }
 
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
