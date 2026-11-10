@@ -23,7 +23,13 @@ import (
 // must not arrive carrying the device's network.
 
 // An asset the server takes payment in now, and what it sells. A client never
-// offers an asset or an item the list does not name (CryptoAssetSells).
+// offers an asset or an item the list does not name (CryptoAssetSells). The
+// server lists only the assets it would quote now: one whose quotes it refuses
+// for now (a Zcash or Monero wallet scanner that lags the network) is left out
+// of the list and of SubscriptionBalanceResult.CryptoAssets, so it is never
+// offered. The server's `available` and `unavailable_reason` fields, and the
+// route's `unavailable_assets`, are for a page that shows such a coin as
+// temporarily unavailable; this sdk does not read them.
 type CryptoPaymentAsset struct {
 	// one of the CryptoAsset* values
 	Asset string `json:"asset"`
@@ -49,7 +55,8 @@ func NewCryptoPaymentAssetList() *CryptoPaymentAssetList {
 }
 
 type CryptoPaymentAssetsResult struct {
-	// the enabled assets, in no particular order (PaymentMethods orders them)
+	// the assets that can be paid with now, in no particular order
+	// (PaymentMethods orders them)
 	Assets *CryptoPaymentAssetList `json:"assets"`
 }
 
@@ -188,8 +195,8 @@ type CryptoPaymentIntentCallback connect.ApiCallback[*CryptoPaymentIntentResult]
 
 type CryptoPaymentStatusCallback connect.ApiCallback[*CryptoPaymentStatusResult]
 
-// Reads the enabled assets without a sign-in. The apps read the same list from
-// SubscriptionBalanceResult.CryptoAssets.
+// Reads the assets that can be paid with now, without a sign-in. The apps read
+// the same list from SubscriptionBalanceResult.CryptoAssets.
 func (self *Api) GetCryptoPaymentAssets(callback CryptoPaymentAssetsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithRawFunction(

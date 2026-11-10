@@ -90,7 +90,9 @@ func isCryptoAsset(asset string) bool {
 // PaymentMethods is the method row for a purchase surface: PaymentMethodCard,
 // then each coin that sells at least one of `items` (the plans or the packs
 // the surface offers), always in the order USDC, Zcash, Monero. A coin the
-// server did not list, or one this sdk does not know, is never offered.
+// server did not list, or one this sdk does not know, is never offered. The
+// server lists only the coins it would quote now, so a coin whose quotes it
+// refuses for now (its wallet scanner lagging) is not offered either.
 func PaymentMethods(assets *CryptoPaymentAssetList, items *StringList) *StringList {
 	methods := NewStringList()
 	methods.Add(PaymentMethodCard)

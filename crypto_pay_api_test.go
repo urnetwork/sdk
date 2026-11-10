@@ -140,6 +140,39 @@ func TestGetCryptoPaymentAssets(t *testing.T) {
 	connect.AssertEqual(t, stringListValues(PaymentMethods(assets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana, CryptoAssetXmr})
 }
 
+// The server's wire since 2026-11-10: every listed coin says available, and a
+// coin that is on but whose quotes are refused for now (its wallet scanner
+// lagging) is only in unavailable_assets. The sdk reads assets alone, so such
+// a coin is never offered (zec was, while every zec quote was refused).
+func TestGetCryptoPaymentAssetsNeverOffersATemporarilyUnavailableCoin(t *testing.T) {
+	api, _ := newCryptoPayTestApi(t, map[string]string{
+		"/pay/crypto/assets": `{"assets": [
+			{"asset": "usdc_solana", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 3600, "available": true},
+			{"asset": "xmr", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": true}
+		], "unavailable_assets": [
+			{"asset": "zec", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 10, "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "scanner_lagging"}
+		]}`,
+	})
+	callback, c := connect.NewBlockingApiCallback[*CryptoPaymentAssetsResult](context.Background())
+	api.GetCryptoPaymentAssets(callback)
+	r := awaitApiResult(t, c, "GetCryptoPaymentAssets never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	assets := r.Result.Assets
+	if assets == nil || assets.Len() != 2 {
+		t.Fatalf("assets = %+v", assets)
+	}
+	items := NewStringList()
+	items.Add(PlanYearly)
+	items.Add(StripeItemData1Tib)
+	connect.AssertEqual(t, stringListValues(PaymentMethods(assets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana, CryptoAssetXmr})
+	connect.AssertEqual(t, CryptoAssetSells(assets, CryptoAssetZec, PlanYearly), false)
+}
+
 // The signed-in intent carries the network's credential and the plan, never
 // a price; the answer decodes whole, the nested status included.
 func TestCreateCryptoPaymentIntent(t *testing.T) {
