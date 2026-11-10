@@ -50,6 +50,9 @@ require (
 	github.com/libp2p/go-yamux/v5 v5.1.0 // indirect
 	github.com/mimoo/StrobeGo v0.0.0-20220103164710-9a04d6ca976b // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
+	github.com/mjl-/adns v0.0.0-20260809141028-22f885debe71 // indirect
+	github.com/mjl-/flate v0.0.0-20250221133712-6372d09eb978 // indirect
+	github.com/mjl-/mox v0.0.17 // indirect
 	github.com/mr-tron/base58 v1.3.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect

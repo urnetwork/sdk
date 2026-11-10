@@ -113,6 +113,10 @@ github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1/go.mod h1:pD8Rv
 github.com/minio/sha256-simd v0.1.1-0.20190913151208-6de447530771/go.mod h1:B5e1o+1/KgNmWrSQK08Y6Z1Vb5pwIktudl0J58iy0KM=
 github.com/minio/sha256-simd v1.0.1 h1:6kaan5IFmwTNynnKKpDHe6FWHohJOHhCPchzK49dzMM=
 github.com/minio/sha256-simd v1.0.1/go.mod h1:Pz6AKMiUdngCLpeTL/RJY1M9rUuPMYujV5xJjtbRSN8=
+github.com/mjl-/adns v0.0.0-20260809141028-22f885debe71 h1:CgK2GBILUJZAEOKflC71XwVdWbUSIZ+stCdis4YWsuc=
+github.com/mjl-/adns v0.0.0-20260809141028-22f885debe71/go.mod h1:GLn2Mav4YZyQxJuIoLKUqC2HwZG0cpJ6O5R4L16aU0I=
+github.com/mjl-/flate v0.0.0-20250221133712-6372d09eb978 h1:Eg5DfI3/00URzGErujKus6a3O0kyXzF8vjoDZzH/gig=
+github.com/mjl-/flate v0.0.0-20250221133712-6372d09eb978/go.mod h1:QBkFtjai3AiQQuUu7pVh6PA06Vd3oa68E+vddf/UBOs=
 github.com/mr-tron/base58 v1.1.2/go.mod h1:BinMc/sQntlIE1frQmRFPUoPA1Zkr8VRgBdjWI2mNwc=
 github.com/mr-tron/base58 v1.3.0 h1:K6Y13R2h+dku0wOqKtecgRnBUBPrZzLZy5aIj8lCcJI=
 github.com/mr-tron/base58 v1.3.0/go.mod h1:2BuubE67DCSWwVfx37JWNG8emOC0sHEU4/HpcYgCLX8=
