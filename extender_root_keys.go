@@ -23,14 +23,18 @@ import "strings"
 // someone else's space -- accepts no record until its first hello, which is the
 // intended fail-closed behavior.
 
-// The urnetwork operator's root key. Both of its hosts are the one operator
-// signing with the one key, so the key is named once rather than repeated.
+// The urnetwork operator's root key.
 const urnetworkExtenderRootPublicKeyHex = "ee6519b0df7618cea222631c4fff0c5cafe9bd594d63424162db3bb7a1cb544a"
 
-// Hex ed25519 public keys, by space host.
+// Hex ed25519 public keys, by space host. The operator's one space host is
+// bringyour.com, where every platform service lives (sidecar DESIGN §12.4,
+// owner decision 16). ur.network carries user content only and no platform
+// space resolves under it, so it has no entry: the apps' bundled space, still
+// keyed by it, resolves under its migration host bringyour.com and takes this
+// key through that host, and a space that would resolve under the root accepts
+// no record until its first hello.
 var bundledExtenderRootPublicKeyHexes = map[string][]string{
 	"bringyour.com": {urnetworkExtenderRootPublicKeyHex},
-	"ur.network":    {urnetworkExtenderRootPublicKeyHex},
 }
 
 // The bundled keys of one host, or none. The lookup is case insensitive and

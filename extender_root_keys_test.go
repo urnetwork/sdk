@@ -18,10 +18,11 @@ import (
 // typo in the table is otherwise invisible: every record would simply fail to
 // verify until the first hello replaced the anchor.
 
-// The hosts this binary ships resolve to the operator's root key, and a host it
-// does not ship resolves to none.
+// The host this binary ships resolves to the operator's root key, and a host it
+// does not ship resolves to none, the user root included, since no platform
+// space resolves under it (sidecar DESIGN §12.4).
 func TestBundledExtenderRootPublicKeys(t *testing.T) {
-	for _, hostName := range []string{"bringyour.com", "ur.network"} {
+	for _, hostName := range []string{"bringyour.com"} {
 		rootPublicKeyHexes := bundledExtenderRootPublicKeys(hostName)
 		if !slices.Equal(rootPublicKeyHexes, []string{urnetworkExtenderRootPublicKeyHex}) {
 			t.Errorf("%s bundles %v, want the operator root key", hostName, rootPublicKeyHexes)
@@ -42,10 +43,26 @@ func TestBundledExtenderRootPublicKeys(t *testing.T) {
 		}
 	}
 
-	for _, hostName := range []string{"space.example", "ur.example", ""} {
+	for _, hostName := range []string{"space.example", "ur.example", "ur.network", "UR.NETWORK.", ""} {
 		if bundled := bundledExtenderRootPublicKeys(hostName); len(bundled) != 0 {
 			t.Errorf("%q bundles %v, want none", hostName, bundled)
 		}
+	}
+}
+
+// The apps' bundled space is still keyed by the user root, with every service
+// under its migration host: it takes the operator's key through that host. A
+// space keyed by the root with no migration host would resolve its services
+// under the root, where none lives, so it takes no key and accepts no record
+// until its first hello.
+func TestBundledSpaceKeyedByTheRootTakesTheMigrationHostKey(t *testing.T) {
+	key := NewNetworkSpaceKey("ur.network", "main")
+	migrated := ExtenderRootPublicKeys(key, &NetworkSpaceValues{MigrationHostName: "bringyour.com"})
+	if !slices.Equal(migrated, []string{urnetworkExtenderRootPublicKeyHex}) {
+		t.Errorf("the migrated space resolves %v, want the operator root key", migrated)
+	}
+	if unmigrated := ExtenderRootPublicKeys(key, &NetworkSpaceValues{}); len(unmigrated) != 0 {
+		t.Errorf("a space under the root resolves %v, want none", unmigrated)
 	}
 }
 
