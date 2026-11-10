@@ -435,3 +435,20 @@ func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 		return result, requestErr
 	}
 }
+
+// The server's 403 body when a team member's role does not permit a route that
+// administers the network or the account (server router/role_permission.go;
+// §7.5, TEAM-M6-03). The credential stays good: the API keeps it and does not
+// sign out, since only a 401 does.
+const RolePermissionRefusedMessage = "Your role in this network does not permit this route."
+
+// Whether err is the server's role refusal: a 403 whose plain text body is
+// RolePermissionRefusedMessage, through any wrapping, so an app can say the
+// call needs another role rather than another sign-in.
+func RolePermissionRefused(err error) bool {
+	var status *connect.HttpStatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusForbidden {
+		return false
+	}
+	return strings.TrimSpace(string(status.Body)) == RolePermissionRefusedMessage
+}
