@@ -44,9 +44,12 @@ type SidecarSettings struct {
 	// The components the core attaches, by name: evs, mail, sockets, bridge and tls (§5.4). A name this sdk has not
 	// bound yet is refused, never dropped.
 	Components *StringList `json:"components,omitempty"`
-	// The process's budget for this Sidecar, §6's caps and search memory inside it (§18.4): 0 keeps the core's
-	// default, and a negative value is refused. SDK-M8-01 sets it per host class.
+	// The process's budget for this Sidecar, §6's caps and search memory inside it (§18.4): 0 takes the host class's,
+	// and a negative value is refused.
 	MemoryBudgetByteCount int64 `json:"memory_budget_byte_count,omitempty"`
+	// §18.4's host class: ios, android or desktop. Empty is this build's platform's: ios and android on those, desktop
+	// everywhere else.
+	HostClass string `json:"host_class,omitempty"`
 }
 
 // The defaults: the default instance, no components, and the core's budget.

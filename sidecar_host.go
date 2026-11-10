@@ -1,7 +1,8 @@
 //go:build !ios_extension && !js
 
 // What an sdk host gives the core (§5.4's SidecarHost, §18.7): the instance's store over StateDir, the app's key store
-// through the adapter, and no token source until SDK-M8-01's Api session; the service urls of the app's NetworkSpace;
+// through the adapter, and as its token source the Api session that holds the child token once EnrollWithDevice
+// minted one in this process (sidecar_host_services.go), none otherwise; the service urls of the app's NetworkSpace;
 // and the components a SidecarSettings names, each built by the wrapper that binds it.
 //
 // Urls follow the space, as the sdk's own do: api and the platform are the space's, and auth, evs, gkm, sockets and dns
@@ -24,10 +25,14 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
-// The core's host for one local Sidecar.
+// The core's host for one local Sidecar. Safe for concurrent use.
 type sdkSidecarHost struct {
 	store    sidecar.SidecarStore
 	keyStore sidecar.SidecarKeyStore
+
+	stateLock sync.Mutex
+	// the child token's session, nil before EnrollWithDevice made one
+	session *sidecarApiSession
 }
 
 // The instance's store for the recorded network, or for none before enrollment.
@@ -40,9 +45,26 @@ func (self *sdkSidecarHost) KeyStore() sidecar.SidecarKeyStore {
 	return self.keyStore
 }
 
-// None until SDK-M8-01's Api session: the core's own refresher holds the token (D-CORE-8).
+// The child token's session while it holds a token, which the core reads at each generation's start; none
+// otherwise, and the core's own refresher holds the token (D-CORE-8).
 func (self *sdkSidecarHost) TokenSource() sidecar.SidecarTokenSource {
-	return nil
+	self.stateLock.Lock()
+	session := self.session
+	self.stateLock.Unlock()
+	if session == nil || !session.holdsToken() {
+		// an untyped nil, so the core sees no source at all
+		return nil
+	}
+	return session
+}
+
+// Puts session in place as the host's, answering the one it replaces, nil for none.
+func (self *sdkSidecarHost) swapSession(session *sidecarApiSession) *sidecarApiSession {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	previous := self.session
+	self.session = session
+	return previous
 }
 
 // Sets every service url of settings from networkSpace: its api and platform urls, and the other services by the

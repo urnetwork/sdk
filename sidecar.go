@@ -6,8 +6,9 @@
 // exported call runs under trace, since a panic that crosses gobind exits the app (R-SDK-5).
 //
 // The shell is dark (plan-SDK-small-readings #10): §18.17 lands SignEdgeLogin and the directory's seams on it at M6,
-// and M8 adds the hosts' calls (SDK-M8-01's EnrollWithDevice, Unlock and state; the wrappers' GetEvs and its
-// siblings). NewSidecarLocal opens the instance under StateDir with the app's key store and runs the core on it,
+// and M8 adds the hosts' calls (SDK-M8-01's EnrollWithDevice, Unlock, GetState and SetPushToken in sidecar_enroll.go,
+// sidecar_state.go and sidecar_push.go, over the host services of sidecar_host_services.go and the host class of
+// sidecar_host_class.go; the wrappers' GetEvs and its siblings). NewSidecarLocal opens the instance under StateDir with the app's key store and runs the core on it,
 // opening U by the key store's wrap as `ur daemon` does at start: a store that answers Locked or Failed creates
 // nothing and leaves the core Locked until it can answer (D-SDK-15, §5.9's table).
 //
@@ -32,6 +33,8 @@ import (
 type sidecarRemote interface {
 	// The daemon's sidecar_id, nil before it has one.
 	sidecarId() *Id
+	// The daemon's state and its reason (§18.5's State), as GetState names them.
+	state() (state string, reason string)
 	// Ends the control session.
 	close()
 }
@@ -44,6 +47,20 @@ type sidecarLocalOptions struct {
 	backend sidecar.SidecarStoreBackend
 	// Nil: defaultSidecarEventSettings.
 	eventSettings *sidecarEventSettings
+	// Nil: the core scans this host's stores for a readable network credential (D-TRUST-3), as an app's does. A test
+	// sets what the scan finds, so the build machine's own app state never decides it.
+	hostCredentialStores func() []sidecar.SidecarHostCredentialStore
+}
+
+// A host whose credential scan a test set (sidecarLocalOptions.hostCredentialStores).
+type sdkSidecarScannedHost struct {
+	*sdkSidecarHost
+	stores func() []sidecar.SidecarHostCredentialStore
+}
+
+// What the test set. See sidecar.SidecarHostCredentialScanner.
+func (self *sdkSidecarScannedHost) HostCredentialStores() []sidecar.SidecarHostCredentialStore {
+	return self.stores()
 }
 
 // One network's sidecar. Safe for concurrent use.
@@ -53,6 +70,10 @@ type Sidecar struct {
 	settings       *SidecarSettings
 	presenceSigner SidecarPresenceSigner
 	events         *sidecarEventDispatch
+	// the local backend's host, whose token source EnrollWithDevice fills; nil on the remote one
+	host *sdkSidecarHost
+	// §18.4's host class
+	hostClass *sidecarHostClass
 	// closed once Close's teardown has finished
 	closeDone chan struct{}
 
@@ -97,8 +118,9 @@ func newSidecarLocal(
 
 	coreSettings := sidecar.DefaultSidecarSettings()
 	coreSettings.Instance = settings.Instance
-	if 0 < settings.MemoryBudgetByteCount {
-		coreSettings.MemoryBudgetByteCount = settings.MemoryBudgetByteCount
+	hostClass, err := applySidecarHostClass(settings, coreSettings)
+	if err != nil {
+		return nil, err
 	}
 	if err := applySidecarServiceUrls(networkSpace, coreSettings); err != nil {
 		return nil, err
@@ -131,7 +153,12 @@ func newSidecarLocal(
 		// one network a Sidecar until several networks land (CORE-M6-01)
 		networkId = &records[0].NetworkId
 	}
-	local, err := sidecar.NewSidecar(cancelCtx, &sdkSidecarHost{store: instance.Store(networkId), keyStore: keyStoreAdapter}, nil, coreSettings)
+	host := &sdkSidecarHost{store: instance.Store(networkId), keyStore: keyStoreAdapter}
+	var coreHost sidecar.SidecarHost = host
+	if options.hostCredentialStores != nil {
+		coreHost = &sdkSidecarScannedHost{sdkSidecarHost: host, stores: options.hostCredentialStores}
+	}
+	local, err := sidecar.NewSidecar(cancelCtx, coreHost, nil, coreSettings)
 	if err != nil {
 		instance.Close()
 		cancel()
@@ -148,6 +175,8 @@ func newSidecarLocal(
 		settings:       settings,
 		presenceSigner: presenceSigner,
 		events:         newSidecarEventDispatch(cancelCtx, eventSettings),
+		host:           host,
+		hostClass:      hostClass,
 		closeDone:      make(chan struct{}),
 		local:          local,
 		instance:       instance,
@@ -190,6 +219,10 @@ func checkedSidecarSettings(settings *SidecarSettings, needsStateDir bool) (*Sid
 		StateDir:              settings.StateDir,
 		Components:            NewStringList(),
 		MemoryBudgetByteCount: settings.MemoryBudgetByteCount,
+		HostClass:             settings.HostClass,
+	}
+	if _, err := sidecarHostClassOf(settings.HostClass); err != nil {
+		return nil, err
 	}
 	instance, err := sidecar.SidecarInstanceName(settings.Instance)
 	if err != nil {
@@ -305,6 +338,12 @@ func (self *Sidecar) Close() {
 			// the instance outlives the run loop, which seals its last writes through it
 			local.CloseAndWait(context.Background())
 			instance.Close()
+			// the child token's session goes once no generation can read it
+			if self.host != nil {
+				if session := self.host.swapSession(nil); session != nil {
+					session.close()
+				}
+			}
 			self.cancel()
 		}()
 	})
