@@ -150,6 +150,104 @@
       ]
     },
     {
+      "name": "the server's wire marks every listed coin available: offered as before",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600,
+          "available": true
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "usdc_solana",
+        "zec",
+        "xmr"
+      ]
+    },
+    {
+      "name": "a coin whose quotes the server refuses for now is not in the list, so it is not offered (zec on 2026-11-10)",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600,
+          "available": true
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ],
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        }
+      ],
+      "items": [
+        "yearly",
+        "data_1tib"
+      ],
+      "expected": [
+        "card",
+        "usdc_solana",
+        "xmr"
+      ]
+    },
+    {
       "name": "monthly is card only, even when a list names it",
       "assets": [
         {

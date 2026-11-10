@@ -62,7 +62,11 @@ type AssetList = readonly (CryptoPaymentAsset | null | undefined)[] | null | und
  * The method row for a purchase surface: card, then each coin that sells at
  * least one of `items` (the plans or the packs the surface offers), always in
  * the order USDC, Zcash, Monero. A coin the server did not list, or one this
- * sdk does not know, is never offered.
+ * sdk does not know, is never offered. The server lists only the coins it
+ * would quote now, so a coin whose quotes it refuses for now (its wallet
+ * scanner lagging) is not offered either: that one is in the route's
+ * `unavailable_assets`, which a page may show as temporarily unavailable and
+ * never passes here as `assets`.
  */
 export function paymentMethods(assets: AssetList, items: readonly string[] | null | undefined): string[] {
   const methods: string[] = [PAYMENT_METHOD_CARD];
