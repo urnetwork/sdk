@@ -1073,9 +1073,9 @@ func TestBridgeRebuiltWithTheClient(t *testing.T) {
 }
 
 // Only this sidecar's own sign-out takes the device role back to legacy: through the vectors' script the device stays
-// held through a revocation, a verified base with no document, which moves it to the allow-all, and a state on that
-// base, and at its own SidecarRevoke the bridge is dropped from the send route and the mux, closed, and the posture
-// wiped.
+// held through a revocation, a verified base with no document, which opens nothing between states (DESIGN-DETAILS
+// 4.3's OnlyJudgedOpens), and a state on that base, which moves it to the allow-all, and at its own SidecarRevoke the
+// bridge is dropped from the send route and the mux, closed, and the posture wiped.
 func TestOwnSignOutDropsTheBridge(t *testing.T) {
 	role := newTestingDeviceRole(t)
 	device := role.device(t, nil)
@@ -1088,7 +1088,7 @@ func TestOwnSignOutDropsTheBridge(t *testing.T) {
 		want sidecardevice.PostureState
 	}{
 		{name: "a covered revocation", call: func() error { return device.applyBridgeDeltas(role.vectors.log(4, 4)) }, want: sidecardevice.PostureEnforcingDocument},
-		{name: "a base with no document", call: func() error { return device.applyBridgeDeltas(role.vectors.log(5, 5)) }, want: sidecardevice.PostureEnforcingNoDocument},
+		{name: "a base with no document", call: func() error { return device.applyBridgeDeltas(role.vectors.log(5, 5)) }, want: sidecardevice.PostureEnforcingDocument},
 		{name: "a state on it", call: func() error {
 			return device.setBridgeState(role.vectors.state(t, 6, testingBridgeRules()), role.vectors.log(6, 6))
 		}, want: sidecardevice.PostureEnforcingNoDocument},

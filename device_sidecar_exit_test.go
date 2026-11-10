@@ -713,11 +713,18 @@ func TestExitNatProviderFlowsUnderTheSdkTable(t *testing.T) {
 		map[netip.Addr]connect.EgressVerdict{public: connect.EgressVerdictDeny})
 	dialer.await(t, netip.AddrPortFrom(public, 5353))
 
-	// a covered revocation of another sidecar, then a verified base with no document
+	// a covered revocation of another sidecar, then a verified base with no document, which opens nothing between
+	// states, and the state on it, which alone moves the role to the allow-all (DESIGN-DETAILS 4.3's OnlyJudgedOpens)
 	for _, n := range []uint64{4, 5} {
 		if err := device.applyBridgeDeltas(role.vectors.log(n, n)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if status, err := device.bridgeStatus(); err != nil || status.State != sidecardevice.PostureEnforcingDocument {
+		t.Fatalf("the device role is %v (%v) on a base between states, want enforcing_doc", status.State, err)
+	}
+	if err := device.setBridgeState(role.vectors.state(t, 6, testingExitRules()), role.vectors.log(6, 6)); err != nil {
+		t.Fatal(err)
 	}
 	if status, err := device.bridgeStatus(); err != nil || status.State != sidecardevice.PostureEnforcingNoDocument {
 		t.Fatalf("the device role is %v (%v), want enforcing_nodoc", status.State, err)
