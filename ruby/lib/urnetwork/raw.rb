@@ -110,6 +110,9 @@ module URnetwork
       callback :urnet_list_api_keys_cb, [:pointer, :string, :string], :void
       callback :urnet_local_override_app_ids_cb, [:pointer], :void
       callback :urnet_local_state_save_cb, [:pointer, :uint64], :void
+      callback :urnet_local_state_sealer_delete_seal_key_cb, [:pointer, :string], :int64
+      callback :urnet_local_state_sealer_get_seal_key_cb, [:pointer, :string], :pointer
+      callback :urnet_local_state_sealer_put_seal_key_cb, [:pointer, :string, :string], :int64
       callback :urnet_location_match_cb, [:pointer], :void
       callback :urnet_network_block_location_cb, [:pointer, :string, :string], :void
       callback :urnet_network_check_cb, [:pointer, :string, :string], :void
@@ -1573,6 +1576,7 @@ module URnetwork
       attach_function :urnet_new_network_space_manager, [:string], :uint64, blocking: true
       attach_function :urnet_new_network_space_manager_no_storage, [], :uint64, blocking: true
       attach_function :urnet_new_network_space_manager_with_api_alt, [:string, :bool], :uint64, blocking: true
+      attach_function :urnet_new_network_space_manager_with_local_state_sealer, [:string, :bool, :urnet_local_state_sealer_delete_seal_key_cb, :urnet_local_state_sealer_get_seal_key_cb, :urnet_local_state_sealer_put_seal_key_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_offer_card_tapped_event, [:string], :pointer, blocking: true
       attach_function :urnet_new_offer_cta_tapped_event, [:string, :string], :pointer, blocking: true
       attach_function :urnet_new_offer_declined_event, [:string, :int64], :pointer, blocking: true

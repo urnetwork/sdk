@@ -1740,6 +1740,48 @@ func (self *cAdapterLocalStateSaveListener) LocalStateSaved(result *sdk.DeviceLo
 	C.urnet_invoke_local_state_save(self.cbLocalStateSaved, self.userData, result_)
 }
 
+type cAdapterLocalStateSealer struct {
+	cbDeleteSealKey C.urnet_local_state_sealer_delete_seal_key_cb
+	cbGetSealKey    C.urnet_local_state_sealer_get_seal_key_cb
+	cbPutSealKey    C.urnet_local_state_sealer_put_seal_key_cb
+	userData        unsafe.Pointer
+}
+
+func (self *cAdapterLocalStateSealer) DeleteSealKey(name string) int32 {
+	defer cgoGuard("urnet_local_state_sealer_delete_seal_key_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_local_state_sealer_delete_seal_key(self.cbDeleteSealKey, self.userData, name_)
+	cStringFree(name_)
+	return int32(int64(r0_))
+}
+
+func (self *cAdapterLocalStateSealer) GetSealKey(name string) *sdk.LocalStateSealKey {
+	defer cgoGuard("urnet_local_state_sealer_get_seal_key_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_local_state_sealer_get_seal_key(self.cbGetSealKey, self.userData, name_)
+	cStringFree(name_)
+	if r0_ == nil {
+		return nil
+	}
+	r0 := &sdk.LocalStateSealKey{}
+	ok := goJson(r0_, r0, "urnet_local_state_sealer_get_seal_key_cb")
+	urnet_free_string(r0_)
+	if !ok {
+		return nil
+	}
+	return r0
+}
+
+func (self *cAdapterLocalStateSealer) PutSealKey(name string, keyBase64 string) int32 {
+	defer cgoGuard("urnet_local_state_sealer_put_seal_key_cb")
+	name_ := cString(string(name))
+	keyBase64_ := cString(string(keyBase64))
+	r0_ := C.urnet_invoke_local_state_sealer_put_seal_key(self.cbPutSealKey, self.userData, name_, keyBase64_)
+	cStringFree(name_)
+	cStringFree(keyBase64_)
+	return int32(int64(r0_))
+}
+
 type cAdapterLocationMatchListener struct {
 	cbLocationMatchChanged C.urnet_location_match_cb
 	userData               unsafe.Pointer
@@ -19132,6 +19174,20 @@ func urnet_new_network_space_manager_no_storage() C.uint64_t {
 func urnet_new_network_space_manager_with_api_alt(storagePath *C.char, apiAltEnabled C.bool) C.uint64_t {
 	defer cgoGuard("urnet_new_network_space_manager_with_api_alt")
 	r0 := sdk.NewNetworkSpaceManagerWithApiAlt(goString(storagePath), bool(apiAltEnabled))
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_network_space_manager_with_local_state_sealer
+func urnet_new_network_space_manager_with_local_state_sealer(storagePath *C.char, apiAltEnabled C.bool, sealer_delete_seal_key C.urnet_local_state_sealer_delete_seal_key_cb, sealer_get_seal_key C.urnet_local_state_sealer_get_seal_key_cb, sealer_put_seal_key C.urnet_local_state_sealer_put_seal_key_cb, sealer_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_new_network_space_manager_with_local_state_sealer")
+	var sealer_ sdk.LocalStateSealer
+	if sealer_delete_seal_key != nil {
+		sealer_ = &cAdapterLocalStateSealer{cbDeleteSealKey: sealer_delete_seal_key, cbGetSealKey: sealer_get_seal_key, cbPutSealKey: sealer_put_seal_key, userData: sealer_user_data}
+	}
+	r0 := sdk.NewNetworkSpaceManagerWithLocalStateSealer(goString(storagePath), bool(apiAltEnabled), sealer_)
 	if r0 == nil {
 		return 0
 	}

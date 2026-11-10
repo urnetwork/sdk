@@ -1374,6 +1374,47 @@ func (g *gen) callback(named *types.Named) (*callbackInfo, error) {
 					"\t}",
 					fmt.Sprintf("\treturn %s", g.convertPrimitive(results.At(0).Type(), "r0")),
 				)
+			case kindJson:
+				// an app's answer of a data type, such as a keystore's status
+				// with its value (LocalStateSealer.GetSealKey): json in a
+				// library-allocated copy, as a string result crosses, which go
+				// decodes and frees. NULL, or json that does not decode, is
+				// nil for a pointer and the zero value otherwise, which a
+				// status-returning answer reads as its zero status, Failed.
+				if rInfo.named == nil {
+					return nil, fmt.Errorf("%s.%s: unsupported result %s", name, m.Name(), results.At(0).Type().String())
+				}
+				g.recordDataType(rInfo.t)
+				cRet = "char*"
+				adapterRet = " " + g.goType(results.At(0).Type())
+				pre = append(pre, "\tr0_ := "+invoke)
+				if rInfo.pointer {
+					ret = append(ret,
+						"\tif r0_ == nil {",
+						"\t\treturn nil",
+						"\t}",
+						fmt.Sprintf("\tr0 := &%s{}", g.goType(rInfo.named)),
+						fmt.Sprintf("\tok := goJson(r0_, r0, %q)", typedefName),
+						"\turnet_free_string(r0_)",
+						"\tif !ok {",
+						"\t\treturn nil",
+						"\t}",
+						"\treturn r0",
+					)
+				} else {
+					ret = append(ret,
+						fmt.Sprintf("\tvar r0 %s", g.goType(rInfo.named)),
+						"\tif r0_ == nil {",
+						"\t\treturn r0",
+						"\t}",
+						fmt.Sprintf("\tok := goJson(r0_, &r0, %q)", typedefName),
+						"\turnet_free_string(r0_)",
+						"\tif !ok {",
+						fmt.Sprintf("\t\treturn %s{}", g.goType(rInfo.named)),
+						"\t}",
+						"\treturn r0",
+					)
+				}
 			default:
 				return nil, fmt.Errorf("%s.%s: unsupported result %s", name, m.Name(), results.At(0).Type().String())
 			}

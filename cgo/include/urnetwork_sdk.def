@@ -1134,6 +1134,7 @@ EXPORTS
 	urnet_new_network_space_manager
 	urnet_new_network_space_manager_no_storage
 	urnet_new_network_space_manager_with_api_alt
+	urnet_new_network_space_manager_with_local_state_sealer
 	urnet_new_offer_card_tapped_event
 	urnet_new_offer_cta_tapped_event
 	urnet_new_offer_declined_event

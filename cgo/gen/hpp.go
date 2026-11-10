@@ -1005,6 +1005,11 @@ func (g *gen) cppCallbackRet(cm *callbackMethod) string {
 		return "int64_t"
 	case kindString:
 		return "std::string"
+	case kindJson:
+		if cm.result.pointer {
+			return "std::optional<" + g.cppJsonType(cm.result.t) + ">"
+		}
+		return g.cppJsonType(cm.result.t)
 	}
 	return "void"
 }
@@ -1014,9 +1019,10 @@ func (g *gen) cppCallbackRet(cm *callbackMethod) string {
 // library-allocated char* (see detail::dupCString). Emitting the c++ type for the
 // trampoline produced a function that could not convert to its own typedef --
 // uncompilable, and invisible until a c++ consumer actually built the wrapper
-// for a string-returning callback (the windows client, on FlowOwnerLookup).
+// for a string-returning callback (the windows client, on FlowOwnerLookup). A
+// data type's result crosses the same way, as its json.
 func (g *gen) cCallbackRet(cm *callbackMethod) string {
-	if cm.result != nil && cm.result.kind == kindString {
+	if cm.result != nil && (cm.result.kind == kindString || cm.result.kind == kindJson) {
 		return "char*"
 	}
 	return g.cppCallbackRet(cm)
@@ -1095,11 +1101,19 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 		invokeName := trampolineName(cm)
 		argList := strings.Join(args, ", ")
 
+		// a data type's answer is held as v and crosses as its json, r, so
+		// every char* trampoline ends in the one library-allocated copy
+		jsonResult := cm.result != nil && cm.result.kind == kindJson
+		answer := "r"
+		if jsonResult {
+			answer = "v"
+		}
+
 		emitTramp := func(variant string, oneshot bool) {
 			fmt.Fprintf(b, "inline %s %s_%s(%s) {\n", cRet, variant, invokeName, cSig)
 			fmt.Fprintf(b, "\tauto* f = static_cast<%s*>(user_data);\n", info.ifaceName)
 			if ret != "void" {
-				fmt.Fprintf(b, "\t%s r{};\n", ret)
+				fmt.Fprintf(b, "\t%s %s{};\n", ret, answer)
 			}
 			b.WriteString("\ttry {\n")
 			for _, c := range conv {
@@ -1108,7 +1122,7 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 			}
 			assign := ""
 			if ret != "void" {
-				assign = "r = "
+				assign = answer + " = "
 			}
 			if len(info.methods) == 1 {
 				fmt.Fprintf(b, "\t\t%s(*f)(%s);\n", assign, argList)
@@ -1121,12 +1135,22 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 				b.WriteString("\tdelete f;\n")
 			}
 			if ret != "void" {
-				if cRet != ret {
+				switch {
+				case jsonResult && cm.result.pointer:
+					// a data type's result crosses as its json, a library-allocated
+					// copy that go decodes and frees; none crosses as NULL
+					b.WriteString("\tif (!v) {\n\t\treturn nullptr;\n\t}\n")
+					b.WriteString("\tstd::string r = nlohmann::json(*v).dump();\n")
+					b.WriteString("\treturn dupCString(r);\n")
+				case jsonResult:
+					b.WriteString("\tstd::string r = nlohmann::json(v).dump();\n")
+					b.WriteString("\treturn dupCString(r);\n")
+				case cRet != ret:
 					// a string result crosses as a library-allocated copy
 					// (urnet_copy_string) that go takes ownership of and
 					// frees (urnet_free_string)
 					b.WriteString("\treturn dupCString(r);\n")
-				} else {
+				default:
 					b.WriteString("\treturn r;\n")
 				}
 			}

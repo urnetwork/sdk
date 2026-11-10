@@ -109,6 +109,9 @@ pub type urnet_jwt_refresh_cb = Option<unsafe extern "C" fn(*mut c_void, *const 
 pub type urnet_list_api_keys_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_local_override_app_ids_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_local_state_save_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
+pub type urnet_local_state_sealer_delete_seal_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> i64>;
+pub type urnet_local_state_sealer_get_seal_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>;
+pub type urnet_local_state_sealer_put_seal_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> i64>;
 pub type urnet_location_match_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_network_block_location_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_network_check_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -1574,6 +1577,7 @@ pub struct Raw {
     pub urnet_new_network_space_manager: unsafe extern "C" fn(*const c_char) -> u64,
     pub urnet_new_network_space_manager_no_storage: unsafe extern "C" fn() -> u64,
     pub urnet_new_network_space_manager_with_api_alt: unsafe extern "C" fn(*const c_char, bool) -> u64,
+    pub urnet_new_network_space_manager_with_local_state_sealer: unsafe extern "C" fn(*const c_char, bool, urnet_local_state_sealer_delete_seal_key_cb, urnet_local_state_sealer_get_seal_key_cb, urnet_local_state_sealer_put_seal_key_cb, *mut c_void) -> u64,
     pub urnet_new_offer_card_tapped_event: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_new_offer_cta_tapped_event: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
     pub urnet_new_offer_declined_event: unsafe extern "C" fn(*const c_char, i64) -> *mut c_char,
@@ -3005,6 +3009,7 @@ impl Raw {
             urnet_new_network_space_manager: unsafe { *library.get(b"urnet_new_network_space_manager\0")? },
             urnet_new_network_space_manager_no_storage: unsafe { *library.get(b"urnet_new_network_space_manager_no_storage\0")? },
             urnet_new_network_space_manager_with_api_alt: unsafe { *library.get(b"urnet_new_network_space_manager_with_api_alt\0")? },
+            urnet_new_network_space_manager_with_local_state_sealer: unsafe { *library.get(b"urnet_new_network_space_manager_with_local_state_sealer\0")? },
             urnet_new_offer_card_tapped_event: unsafe { *library.get(b"urnet_new_offer_card_tapped_event\0")? },
             urnet_new_offer_cta_tapped_event: unsafe { *library.get(b"urnet_new_offer_cta_tapped_event\0")? },
             urnet_new_offer_declined_event: unsafe { *library.get(b"urnet_new_offer_declined_event\0")? },

@@ -376,6 +376,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LICENSE_KIND_DATA "data"
 #define URNET_LICENSE_KIND_FONT "font"
 #define URNET_LICENSE_KIND_SOFTWARE "software"
+#define URNET_LOCAL_STATE_SEALER_FAILED 0
+#define URNET_LOCAL_STATE_SEALER_LOCKED 4
+#define URNET_LOCAL_STATE_SEALER_OK 1
+#define URNET_LOCAL_STATE_SEAL_KEY_ABSENT 3
+#define URNET_LOCAL_STATE_SEAL_KEY_FAILED 0
+#define URNET_LOCAL_STATE_SEAL_KEY_LOCKED 4
+#define URNET_LOCAL_STATE_SEAL_KEY_PRESENT 2
 #define URNET_LOCAL_STORAGE_DIRECTORY_PERMISSIONS 448
 #define URNET_LOCAL_STORAGE_FILE_PERMISSIONS 384
 #define URNET_LOCATIONS_ERROR "LOCATIONS_ERROR"
@@ -502,6 +509,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_REPORT_STATUS_WRONG_NETWORK "wrong_network"
 #define URNET_RANK_MODE_QUALITY "quality"
 #define URNET_RANK_MODE_SPEED "speed"
+#define URNET_REFRESH_JWT_CODE_RESTORE_REQUIRED "restore_required"
+#define URNET_ROLE_PERMISSION_REFUSED_MESSAGE "Your role in this network does not permit this route."
 #define URNET_ROUTING_TIER_FULL 2
 #define URNET_ROUTING_TIER_LIGHT 1
 #define URNET_ROUTING_TIER_OFF 0
@@ -892,6 +901,10 @@ typedef void (*urnet_list_api_keys_cb)(void* user_data, const char* result_json,
 typedef void (*urnet_local_override_app_ids_cb)(void* user_data);
 /* LocalStateSaveListener */
 typedef void (*urnet_local_state_save_cb)(void* user_data, uint64_t result);
+/* LocalStateSealer */
+typedef int64_t (*urnet_local_state_sealer_delete_seal_key_cb)(void* user_data, const char* name);
+typedef char* (*urnet_local_state_sealer_get_seal_key_cb)(void* user_data, const char* name);
+typedef int64_t (*urnet_local_state_sealer_put_seal_key_cb)(void* user_data, const char* name, const char* key_base64);
 /* LocationMatchListener */
 typedef void (*urnet_location_match_cb)(void* user_data);
 /* NetworkBlockLocationCallback */
@@ -2646,6 +2659,7 @@ char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
 uint64_t urnet_new_network_space_manager_no_storage(void);
 uint64_t urnet_new_network_space_manager_with_api_alt(const char* storage_path, bool api_alt_enabled);
+uint64_t urnet_new_network_space_manager_with_local_state_sealer(const char* storage_path, bool api_alt_enabled, urnet_local_state_sealer_delete_seal_key_cb sealer_delete_seal_key, urnet_local_state_sealer_get_seal_key_cb sealer_get_seal_key, urnet_local_state_sealer_put_seal_key_cb sealer_put_seal_key, void* sealer_user_data);
 char* urnet_new_offer_card_tapped_event(const char* plan);
 char* urnet_new_offer_cta_tapped_event(const char* plan, const char* store);
 char* urnet_new_offer_declined_event(const char* control, int64_t elapsed_ms);
@@ -2962,6 +2976,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   time_zone?: string
  *   locale?: string
  *   provide_intent?: boolean
+ *   admin_refused?: boolean
  */
 
 /* AuthNetworkClientError (json):
@@ -2976,6 +2991,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   client_id?: string (uuid) | null
  *   proxy_config_result: ProxyConfigResult | null
  *   error?: AuthNetworkClientError | null
+ *   admin_refused?: boolean
  */
 
 /* AuthPasswordResetArgs (json):
@@ -4287,6 +4303,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: ApiError | null
  */
 
+/* LocalStateSealKey (json):
+ *   status: number
+ *   key_base64?: string
+ */
+
 /* LocationCoordinates (json):
  *   lat: number
  *   lon: number
@@ -4594,6 +4615,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   control_doh_urls_ipv4?: string[]
  *   control_doh_urls_ipv6?: string[]
  *   ingress_country_code?: string
+ *   session_only_network_credential?: boolean
  */
 
 /* NetworkUnblockLocationArgs (json):
@@ -5106,6 +5128,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* RefreshJwtResultError (json):
  *   message: string
+ *   code?: string
  */
 
 /* RegenerateSeedphraseArgs (json):

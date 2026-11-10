@@ -427,6 +427,13 @@ inline constexpr const char* LicenseAppWindows = "windows";
 inline constexpr const char* LicenseKindData = "data";
 inline constexpr const char* LicenseKindFont = "font";
 inline constexpr const char* LicenseKindSoftware = "software";
+inline constexpr int64_t LocalStateSealKeyAbsent = 3;
+inline constexpr int64_t LocalStateSealKeyFailed = 0;
+inline constexpr int64_t LocalStateSealKeyLocked = 4;
+inline constexpr int64_t LocalStateSealKeyPresent = 2;
+inline constexpr int64_t LocalStateSealerFailed = 0;
+inline constexpr int64_t LocalStateSealerLocked = 4;
+inline constexpr int64_t LocalStateSealerOk = 1;
 inline constexpr int64_t LocalStorageDirectoryPermissions = 448;
 inline constexpr int64_t LocalStorageFilePermissions = 384;
 inline constexpr const char* LocationMatchCountry = "country";
@@ -553,6 +560,8 @@ inline constexpr const char* PurchaseReportStatusPending = "pending";
 inline constexpr const char* PurchaseReportStatusWrongNetwork = "wrong_network";
 inline constexpr const char* RankModeQuality = "quality";
 inline constexpr const char* RankModeSpeed = "speed";
+inline constexpr const char* RefreshJwtCodeRestoreRequired = "restore_required";
+inline constexpr const char* RolePermissionRefusedMessage = "Your role in this network does not permit this route.";
 inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
@@ -990,6 +999,7 @@ struct LeaderboardError;
 struct LeaderboardResult;
 struct LicenseInfo;
 struct ListApiKeysResult;
+struct LocalStateSealKey;
 struct LocationDeviceResult;
 struct LocationGroupResult;
 struct LocationMatch;
@@ -1558,6 +1568,7 @@ struct AuthNetworkClientArgs {
 	std::optional<std::string> time_zone;
 	std::optional<std::string> locale;
 	std::optional<bool> provide_intent;
+	std::optional<bool> admin_refused;
 };
 
 struct AuthNetworkClientError {
@@ -1622,6 +1633,7 @@ struct AuthNetworkClientResult {
 	std::optional<std::string> client_id;
 	std::optional<ProxyConfigResult> proxy_config_result;
 	std::optional<AuthNetworkClientError> error;
+	std::optional<bool> admin_refused;
 };
 
 struct AuthPasswordResetArgs {
@@ -2872,6 +2884,11 @@ struct ListApiKeysResult {
 	std::optional<ApiError> error;
 };
 
+struct LocalStateSealKey {
+	int32_t status{};
+	std::optional<std::string> key_base64;
+};
+
 struct LocationDeviceResult {
 	std::optional<std::string> client_id;
 	std::string device_name{};
@@ -3181,6 +3198,7 @@ struct NetworkSpaceValues {
 	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
 	std::optional<std::string> ingress_country_code;
+	std::optional<bool> session_only_network_credential;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -3524,6 +3542,7 @@ struct RedeemedBalanceCode {
 
 struct RefreshJwtResultError {
 	std::string message{};
+	std::optional<std::string> code;
 };
 
 struct RefreshJwtResult {
@@ -5056,6 +5075,8 @@ inline void to_json(nlohmann::json& j, const LicenseInfo& v);
 inline void from_json(const nlohmann::json& j, LicenseInfo& v);
 inline void to_json(nlohmann::json& j, const ListApiKeysResult& v);
 inline void from_json(const nlohmann::json& j, ListApiKeysResult& v);
+inline void to_json(nlohmann::json& j, const LocalStateSealKey& v);
+inline void from_json(const nlohmann::json& j, LocalStateSealKey& v);
 inline void to_json(nlohmann::json& j, const LocationDeviceResult& v);
 inline void from_json(const nlohmann::json& j, LocationDeviceResult& v);
 inline void to_json(nlohmann::json& j, const LocationGroupResult& v);
@@ -6892,6 +6913,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientArgs& v) {
 	if (v.provide_intent) {
 		j["provide_intent"] = *v.provide_intent;
 	}
+	if (v.admin_refused) {
+		j["admin_refused"] = *v.admin_refused;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 	if (!j.is_object()) {
@@ -6942,6 +6966,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.provide_intent = std::move(tmp);
+	}
+	if (auto it = j.find("admin_refused"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.admin_refused = std::move(tmp);
 	}
 }
 
@@ -7284,6 +7313,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientResult& v) {
 	if (v.error) {
 		j["error"] = *v.error;
 	}
+	if (v.admin_refused) {
+		j["admin_refused"] = *v.admin_refused;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 	if (!j.is_object()) {
@@ -7308,6 +7340,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 		AuthNetworkClientError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+	if (auto it = j.find("admin_refused"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.admin_refused = std::move(tmp);
 	}
 }
 
@@ -12795,6 +12832,27 @@ inline void from_json(const nlohmann::json& j, ListApiKeysResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const LocalStateSealKey& v) {
+	j = nlohmann::json::object();
+	j["status"] = v.status;
+	if (v.key_base64) {
+		j["key_base64"] = *v.key_base64;
+	}
+}
+inline void from_json(const nlohmann::json& j, LocalStateSealKey& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("key_base64"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.key_base64 = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const LocationDeviceResult& v) {
 	j = nlohmann::json::object();
 	if (v.client_id) {
@@ -14268,6 +14326,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.ingress_country_code) {
 		j["ingress_country_code"] = *v.ingress_country_code;
 	}
+	if (v.session_only_network_credential) {
+		j["session_only_network_credential"] = *v.session_only_network_credential;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 	if (!j.is_object()) {
@@ -14397,6 +14458,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.ingress_country_code = std::move(tmp);
+	}
+	if (auto it = j.find("session_only_network_credential"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.session_only_network_credential = std::move(tmp);
 	}
 }
 
@@ -16023,6 +16089,9 @@ inline void from_json(const nlohmann::json& j, RedeemedBalanceCode& v) {
 inline void to_json(nlohmann::json& j, const RefreshJwtResultError& v) {
 	j = nlohmann::json::object();
 	j["message"] = v.message;
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 }
 inline void from_json(const nlohmann::json& j, RefreshJwtResultError& v) {
 	if (!j.is_object()) {
@@ -16030,6 +16099,11 @@ inline void from_json(const nlohmann::json& j, RefreshJwtResultError& v) {
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 }
 
@@ -21337,6 +21411,11 @@ using JwtRefreshListener = std::function<void(std::string jwt)>;
 using ListApiKeysCallback = std::function<void(std::optional<ListApiKeysResult> result, std::optional<std::string> err_param)>;
 using LocalOverrideAppIdsListener = std::function<void()>;
 using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;
+struct LocalStateSealer {
+	std::function<int64_t(std::string name)> delete_seal_key;
+	std::function<std::optional<LocalStateSealKey>(std::string name)> get_seal_key;
+	std::function<int64_t(std::string name, std::string key_base64)> put_seal_key;
+};
 using LocationMatchListener = std::function<void()>;
 using NetworkBlockLocationCallback = std::function<void(std::optional<NetworkBlockLocationResult> result, std::optional<std::string> err_param)>;
 using NetworkCheckCallback = std::function<void(std::optional<NetworkCheckResult> result, std::optional<std::string> err_param)>;
@@ -26135,6 +26214,50 @@ inline void oneshot_local_state_save(void* user_data, uint64_t result) {
 	} catch (...) {
 	}
 	delete f;
+}
+
+inline int64_t retained_local_state_sealer_delete_seal_key(void* user_data, const char* name) {
+	auto* f = static_cast<LocalStateSealer*>(user_data);
+	int64_t r{};
+	try {
+		if (f->delete_seal_key) {
+			r = f->delete_seal_key(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline char* retained_local_state_sealer_get_seal_key(void* user_data, const char* name) {
+	auto* f = static_cast<LocalStateSealer*>(user_data);
+	std::optional<LocalStateSealKey> v{};
+	try {
+		if (f->get_seal_key) {
+			v = f->get_seal_key(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	if (!v) {
+		return nullptr;
+	}
+	std::string r = nlohmann::json(*v).dump();
+	return dupCString(r);
+}
+inline int64_t retained_local_state_sealer_put_seal_key(void* user_data, const char* name, const char* key_base64) {
+	auto* f = static_cast<LocalStateSealer*>(user_data);
+	int64_t r{};
+	try {
+		if (f->put_seal_key) {
+			r = f->put_seal_key(std::string(name ? name : ""), std::string(key_base64 ? key_base64 : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
 }
 
 inline void retained_location_match(void* user_data) {
@@ -38159,6 +38282,17 @@ inline NetworkSpaceManager newNetworkSpaceManagerNoStorage() {
 }
 inline NetworkSpaceManager newNetworkSpaceManagerWithApiAlt(const std::string& storage_path, bool api_alt_enabled) {
 	NetworkSpaceManager r(urnet_new_network_space_manager_with_api_alt(storage_path.c_str(), api_alt_enabled));
+	return r;
+}
+inline NetworkSpaceManager newNetworkSpaceManagerWithLocalStateSealer(const std::string& storage_path, bool api_alt_enabled, LocalStateSealer sealer) {
+	std::shared_ptr<LocalStateSealer> sealer_fn;
+	if ((static_cast<bool>(sealer.delete_seal_key) || static_cast<bool>(sealer.get_seal_key) || static_cast<bool>(sealer.put_seal_key))) {
+		sealer_fn = std::make_shared<LocalStateSealer>(std::move(sealer));
+	}
+	NetworkSpaceManager r(urnet_new_network_space_manager_with_local_state_sealer(storage_path.c_str(), api_alt_enabled, sealer_fn ? &detail::retained_local_state_sealer_delete_seal_key : nullptr, sealer_fn ? &detail::retained_local_state_sealer_get_seal_key : nullptr, sealer_fn ? &detail::retained_local_state_sealer_put_seal_key : nullptr, sealer_fn.get()));
+	if (sealer_fn) {
+		r.retain(sealer_fn);
+	}
 	return r;
 }
 inline std::optional<ClientEvent> newOfferCardTappedEvent(const std::string& plan) {

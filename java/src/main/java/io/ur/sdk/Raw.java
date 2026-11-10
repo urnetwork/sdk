@@ -111,6 +111,9 @@ public interface Raw extends Library {
   interface urnet_list_api_keys_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_local_override_app_ids_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_local_state_save_cb extends Callback { void invoke(Pointer a0, long a1); }
+  interface urnet_local_state_sealer_delete_seal_key_cb extends Callback { long invoke(Pointer a0, String a1); }
+  interface urnet_local_state_sealer_get_seal_key_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_local_state_sealer_put_seal_key_cb extends Callback { long invoke(Pointer a0, String a1, String a2); }
   interface urnet_location_match_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_network_block_location_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_network_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -1574,6 +1577,7 @@ public interface Raw extends Library {
   long urnet_new_network_space_manager(String a0);
   long urnet_new_network_space_manager_no_storage();
   long urnet_new_network_space_manager_with_api_alt(String a0, byte a1);
+  long urnet_new_network_space_manager_with_local_state_sealer(String a0, byte a1, urnet_local_state_sealer_delete_seal_key_cb a2, urnet_local_state_sealer_get_seal_key_cb a3, urnet_local_state_sealer_put_seal_key_cb a4, Pointer a5);
   Pointer urnet_new_offer_card_tapped_event(String a0);
   Pointer urnet_new_offer_cta_tapped_event(String a0, String a1);
   Pointer urnet_new_offer_declined_event(String a0, long a1);

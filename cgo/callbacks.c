@@ -437,6 +437,18 @@ void urnet_invoke_local_state_save(urnet_local_state_save_cb cb, void* user_data
 	cb(user_data, result);
 }
 
+int64_t urnet_invoke_local_state_sealer_delete_seal_key(urnet_local_state_sealer_delete_seal_key_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+char* urnet_invoke_local_state_sealer_get_seal_key(urnet_local_state_sealer_get_seal_key_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+int64_t urnet_invoke_local_state_sealer_put_seal_key(urnet_local_state_sealer_put_seal_key_cb cb, void* user_data, const char* name, const char* key_base64) {
+	return cb(user_data, name, key_base64);
+}
+
 void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data) {
 	cb(user_data);
 }
