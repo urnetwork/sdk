@@ -9261,6 +9261,48 @@ func urnet_create_payment_reference() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_crypto_asset_decimals
+func urnet_crypto_asset_decimals(asset *C.char) C.int64_t {
+	defer cgoGuard("urnet_crypto_asset_decimals")
+	r0 := sdk.CryptoAssetDecimals(goString(asset))
+	return C.int64_t(r0)
+}
+
+//export urnet_crypto_asset_icon_key
+func urnet_crypto_asset_icon_key(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_icon_key")
+	r0 := sdk.CryptoAssetIconKey(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_asset_label
+func urnet_crypto_asset_label(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_label")
+	r0 := sdk.CryptoAssetLabel(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_asset_label_key
+func urnet_crypto_asset_label_key(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_label_key")
+	r0 := sdk.CryptoAssetLabelKey(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_asset_market
+func urnet_crypto_asset_market(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_market")
+	r0 := sdk.CryptoAssetMarket(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_asset_quote_decimals
+func urnet_crypto_asset_quote_decimals(asset *C.char) C.int64_t {
+	defer cgoGuard("urnet_crypto_asset_quote_decimals")
+	r0 := sdk.CryptoAssetQuoteDecimals(goString(asset))
+	return C.int64_t(r0)
+}
+
 //export urnet_crypto_asset_sells
 func urnet_crypto_asset_sells(assets *C.char, asset *C.char, item *C.char) C.bool {
 	defer cgoGuard("urnet_crypto_asset_sells")
@@ -9401,6 +9443,58 @@ func urnet_crypto_invoice_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_crypto_payment_qr_text
+func urnet_crypto_payment_qr_text(asset *C.char, uri *C.char, address *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_qr_text")
+	r0 := sdk.CryptoPaymentQrText(goString(asset), goString(uri), goString(address))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_payment_tab_id
+func urnet_crypto_payment_tab_id(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_tab_id")
+	r0 := sdk.CryptoPaymentTabId(goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_payment_tabs
+func urnet_crypto_payment_tabs(assets *C.char, unavailableAssets *C.char, items *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_tabs")
+	var assets_ *sdk.CryptoPaymentAssetList
+	if assets != nil {
+		assets_ = &sdk.CryptoPaymentAssetList{}
+		if !goJson(assets, assets_, "urnet_crypto_payment_tabs") {
+			return nil
+		}
+	}
+	var unavailableAssets_ *sdk.CryptoPaymentAssetList
+	if unavailableAssets != nil {
+		unavailableAssets_ = &sdk.CryptoPaymentAssetList{}
+		if !goJson(unavailableAssets, unavailableAssets_, "urnet_crypto_payment_tabs") {
+			return nil
+		}
+	}
+	var items_ *sdk.StringList
+	if items != nil {
+		items_ = &sdk.StringList{}
+		if !goJson(items, items_, "urnet_crypto_payment_tabs") {
+			return nil
+		}
+	}
+	r0 := sdk.CryptoPaymentTabs(assets_, unavailableAssets_, items_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_crypto_payment_tabs")
+}
+
+//export urnet_crypto_payment_uri_scheme
+func urnet_crypto_payment_uri_scheme(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_uri_scheme")
+	r0 := sdk.CryptoPaymentUriScheme(goString(asset))
+	return cString(string(r0))
 }
 
 //export urnet_crypto_term_notice_due

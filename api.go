@@ -1981,9 +1981,9 @@ type SubscriptionBalanceResult struct {
 
 	// ----- crypto payments (crypto_pay_api.go) -----
 	// CryptoAssets are the coins the network can pay in now and what each
-	// sells (PaymentMethods): never one whose quotes the server refuses for
-	// now. nil when there is none, and from an older server, so no crypto
-	// method is offered then.
+	// sells (PaymentMethods, CryptoPaymentTabs): never one whose quotes the
+	// server refuses for now, which the tabs grey out. nil when there is none,
+	// and from an older server, so no crypto method is offered then.
 	CryptoAssets *CryptoPaymentAssetList `json:"crypto_assets,omitempty"`
 	// CryptoTerm is the network's latest one-time crypto credit whose grace
 	// has not ended, for the renewal notice (CryptoTermNoticeDue); nil when

@@ -1507,8 +1507,18 @@ module URnetwork
       attach_function :urnet_connect_link_url, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_copy_dns_resolver_settings, [:string], :pointer, blocking: true
       attach_function :urnet_create_payment_reference, [], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_decimals, [:string], :int64, blocking: true
+      attach_function :urnet_crypto_asset_icon_key, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_label, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_label_key, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_market, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_quote_decimals, [:string], :int64, blocking: true
       attach_function :urnet_crypto_asset_sells, [:string, :string, :string], :bool, blocking: true
       attach_function :urnet_crypto_asset_ticker, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_qr_text, [:string, :string, :string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_tab_id, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_tabs, [:string, :string, :string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_uri_scheme, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_term_notice_due, [:string], :bool, blocking: true
       attach_function :urnet_crypto_wallet_suggestions, [:string], :pointer, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true

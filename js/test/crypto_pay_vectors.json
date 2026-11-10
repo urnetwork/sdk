@@ -1,9 +1,13 @@
 {
-  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived.",
+  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived. The coins of mmm/BTCPAY.md §17 (tao, btc, eth, sol) joined on 2026-11-10: cryptoAssets pins every coin's facts (ticker, label and its localization key, icon key, decimals, quote decimals, market, uri scheme, tab), cryptoPaymentQrText what an invoice's QR code encodes, cryptoPaymentTabLayout the payment widget's tabs and their coins in order, and cryptoPaymentTabs which tabs a surface shows and which of their coins are available (every other coin of a shown tab has its label greyed with Temporarily unavailable; no icon is ever dimmed). ltc stands for a coin this sdk does not know.",
   "addresses": {
     "xmr": "8BSyntheticXmrSubaddressFixture",
     "zec": "u1syntheticzcashunifiedaddressfixture",
-    "usdc_solana": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ"
+    "usdc_solana": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+    "sol": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+    "tao": "5SyntheticTaoSs58AddressFixture",
+    "btc": "bc1qsyntheticbitcoinaddressfixture",
+    "eth": "0xSyntheticEthereumAddressFixture"
   },
   "paymentMethods": [
     {
@@ -306,10 +310,111 @@
       ]
     },
     {
-      "name": "an asset this sdk does not know is never offered",
+      "name": "bitcoin is offered once the server lists it (before 2026-11-10 the sdk did not know it)",
       "assets": [
         {
           "asset": "btc",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "btc"
+      ]
+    },
+    {
+      "name": "every coin, in the order USDC, Zcash, Monero, TAO, Bitcoin, ETH, SOL whatever the server's order",
+      "assets": [
+        {
+          "asset": "sol",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "eth",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "tao",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 10,
+          "quote_ttl_seconds": 1800,
+          "available": true
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly"
+          ],
+          "confirmations_required": 1,
+          "quote_ttl_seconds": 3600,
+          "available": true
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        "card",
+        "usdc_solana",
+        "zec",
+        "xmr",
+        "tao",
+        "btc",
+        "eth",
+        "sol"
+      ]
+    },
+    {
+      "name": "an asset this sdk does not know is never offered",
+      "assets": [
+        {
+          "asset": "ltc",
           "plans": [
             "yearly"
           ],
@@ -516,6 +621,59 @@
       ],
       "asset": "btc",
       "item": "yearly",
+      "expected": true
+    },
+    {
+      "assets": [
+        {
+          "asset": "ltc",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "asset": "ltc",
+      "item": "yearly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "tao",
+          "plans": [
+            "monthly",
+            "yearly"
+          ]
+        }
+      ],
+      "asset": "tao",
+      "item": "monthly",
+      "expected": false
+    },
+    {
+      "assets": [
+        {
+          "asset": "sol",
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "asset": "sol",
+      "item": "data_1tib",
+      "expected": true
+    },
+    {
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "asset": "sol",
+      "item": "yearly",
       "expected": false
     },
     {
@@ -597,6 +755,31 @@
     {
       "method": "btc",
       "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "tao",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "eth",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "sol",
+      "plan": "monthly",
+      "expected": false
+    },
+    {
+      "method": "eth",
+      "plan": "yearly",
+      "expected": true
+    },
+    {
+      "method": "ltc",
+      "plan": "monthly",
       "expected": true
     },
     {
@@ -619,6 +802,22 @@
       "expected": "XMR"
     },
     {
+      "asset": "tao",
+      "expected": "TAO"
+    },
+    {
+      "asset": "btc",
+      "expected": "BTC"
+    },
+    {
+      "asset": "eth",
+      "expected": "ETH"
+    },
+    {
+      "asset": "sol",
+      "expected": "SOL"
+    },
+    {
       "asset": "card",
       "expected": ""
     },
@@ -628,6 +827,10 @@
     },
     {
       "asset": "XMR",
+      "expected": ""
+    },
+    {
+      "asset": "ltc",
       "expected": ""
     }
   ],
@@ -658,6 +861,33 @@
         "Phantom",
         "Solflare"
       ]
+    },
+    {
+      "asset": "sol",
+      "expected": [
+        "Phantom",
+        "Solflare"
+      ]
+    },
+    {
+      "asset": "tao",
+      "expected": [
+        "btcli",
+        "Talisman",
+        "Nova",
+        "SubWallet",
+        "Polkadot.js",
+        "Ledger",
+        "Tangem"
+      ]
+    },
+    {
+      "asset": "btc",
+      "expected": []
+    },
+    {
+      "asset": "eth",
+      "expected": []
     },
     {
       "asset": "card",
@@ -804,9 +1034,9 @@
     },
     {
       "name": "an asset this sdk does not know",
-      "asset": "btc",
-      "uri": "bitcoin:bc1synthetic?amount=1",
-      "address": "bc1synthetic",
+      "asset": "ltc",
+      "uri": "litecoin:ltc1synthetic?amount=1",
+      "address": "ltc1synthetic",
       "expected": false
     },
     {
@@ -884,6 +1114,363 @@
       "asset": "usdc_solana",
       "uri": "monero:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?tx_amount=1",
       "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link without spl-token would ask for the amount in SOL",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link without a query names no token",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link naming another token",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=SyntheticOtherMint11111111111111111111111111&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link naming a second token",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&spl-token=SyntheticOtherMint11111111111111111111111111",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link naming its token in capitals, which a wallet does not read",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&SPL-TOKEN=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a usdc link naming another token in capitals beside its own",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&Spl-Token=SyntheticOtherMint11111111111111111111111111",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a percent-encoded spl-token name reads as the name",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl%2Dtoken=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "a percent-encoded mint reads as the mint",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1%76&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "a malformed escape in the mint",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v%zz",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a malformed escape in a solana parameter name",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&%zz=1",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "native sol, as the server builds it: solana pay without spl-token",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "native sol without a query",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "a sol link naming a token would send the token",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a sol link naming a token in capitals",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&SPL-TOKEN=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a sol link naming a token percent-encoded",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&spl%2Dtoken=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a sol link with a second reference: references are not funds",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&reference=SyntheticSecondReference1111111111111111111",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": true
+    },
+    {
+      "name": "a sol link to another address",
+      "asset": "sol",
+      "uri": "solana:SyntheticOtherSolanaAddress1111111111111111?amount=0.482913&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a malformed escape in a sol parameter name",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&%zz=1",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "a sol invoice with a bitcoin uri",
+      "asset": "sol",
+      "uri": "bitcoin:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=1",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": false
+    },
+    {
+      "name": "bitcoin, as the server builds it: BIP 21 with the amount in BTC",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "bitcoin without a query",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "the bitcoin scheme compares without case",
+      "asset": "btc",
+      "uri": "BITCOIN:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "a bitcoin parameter name compares without case",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?AMOUNT=0.00054321&Label=URnetwork",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": true
+    },
+    {
+      "name": "a lightning invoice beside the address would pay what the invoice does not show",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&lightning=lnbc1syntheticinvoice",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a lightning invoice in capitals",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&LIGHTNING=LNBC1SYNTHETICINVOICE",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a percent-encoded lightning parameter",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?%6Cightning=lnbc1syntheticinvoice",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a bolt12 offer",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?lno=lno1syntheticoffer",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "another segwit address as a parameter",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&bc=bc1qsyntheticotheraddress",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a silent payment address",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?sp=sp1qsyntheticsilentpayment",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a payjoin endpoint",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&pj=https%3A%2F%2Fpayjoin.example%2Fpj",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a required parameter this sdk does not know",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&req-somethingnew=1",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a second bitcoin amount",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&amount=1",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "an empty bitcoin parameter",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "the bitcoin address in a parameter instead of the path",
+      "asset": "btc",
+      "uri": "bitcoin:?bc=bc1qsyntheticbitcoinaddressfixture&amount=0.00054321",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "the bitcoin address is matched byte for byte",
+      "asset": "btc",
+      "uri": "bitcoin:BC1QSYNTHETICBITCOINADDRESSFIXTURE?amount=0.00054321",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "a bitcoin invoice with a monero uri",
+      "asset": "btc",
+      "uri": "monero:bc1qsyntheticbitcoinaddressfixture?tx_amount=1",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": false
+    },
+    {
+      "name": "ethereum, as the server builds it: EIP 681 on mainnet with the value in wei",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": true
+    },
+    {
+      "name": "ethereum without a value",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": true
+    },
+    {
+      "name": "the ethereum scheme compares without case",
+      "asset": "eth",
+      "uri": "Ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": true
+    },
+    {
+      "name": "an ethereum parameter name compares without case",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1?VALUE=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": true
+    },
+    {
+      "name": "ethereum without a chain id would pay on whatever chain the wallet is on",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "ethereum on another chain",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@8453?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an ethereum chain id in hex",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@0x1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an ethereum function call",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1/transfer?address=0xSyntheticOtherEthereumAddress&uint256=1",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "the ethereum pay- prefix",
+      "asset": "eth",
+      "uri": "ethereum:pay-0xSyntheticEthereumAddressFixture@1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a gas limit beside the value",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000&gasLimit=21000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "a second ethereum value",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000&value=1",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "the ethereum address is matched byte for byte",
+      "asset": "eth",
+      "uri": "ethereum:0xsyntheticethereumaddressfixture@1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "an eth invoice with a solana uri",
+      "asset": "eth",
+      "uri": "solana:0xSyntheticEthereumAddressFixture@1?amount=1",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": false
+    },
+    {
+      "name": "tao has no payment uri",
+      "asset": "tao",
+      "uri": "bittensor:5SyntheticTaoSs58AddressFixture?amount=1",
+      "address": "5SyntheticTaoSs58AddressFixture",
+      "expected": false
+    },
+    {
+      "name": "tao has no payment uri, whatever the scheme",
+      "asset": "tao",
+      "uri": "substrate:5SyntheticTaoSs58AddressFixture",
+      "address": "5SyntheticTaoSs58AddressFixture",
       "expected": false
     }
   ],
@@ -1013,6 +1600,935 @@
       },
       "now": "2026-10-20T00:00:00Z",
       "expected": false
+    }
+  ],
+  "cryptoAssets": [
+    {
+      "asset": "usdc_solana",
+      "ticker": "USDC",
+      "label": "USDC on Solana",
+      "label_key": "pay_method_usdc_solana",
+      "icon_key": "coin_usdc",
+      "decimals": 6,
+      "quote_decimals": 6,
+      "market": "solana",
+      "uri_scheme": "solana",
+      "tab_id": "usdc_solana"
+    },
+    {
+      "asset": "zec",
+      "ticker": "ZEC",
+      "label": "Zcash",
+      "label_key": "pay_method_zcash",
+      "icon_key": "coin_zec",
+      "decimals": 8,
+      "quote_decimals": 6,
+      "market": "zcash",
+      "uri_scheme": "zcash",
+      "tab_id": "zec"
+    },
+    {
+      "asset": "xmr",
+      "ticker": "XMR",
+      "label": "Monero",
+      "label_key": "pay_method_monero",
+      "icon_key": "coin_xmr",
+      "decimals": 12,
+      "quote_decimals": 6,
+      "market": "monero",
+      "uri_scheme": "monero",
+      "tab_id": "xmr"
+    },
+    {
+      "asset": "tao",
+      "ticker": "TAO",
+      "label": "TAO",
+      "label_key": "pay_method_tao",
+      "icon_key": "coin_tao",
+      "decimals": 9,
+      "quote_decimals": 6,
+      "market": "bittensor",
+      "uri_scheme": "",
+      "tab_id": "more_coins"
+    },
+    {
+      "asset": "btc",
+      "ticker": "BTC",
+      "label": "Bitcoin",
+      "label_key": "pay_method_bitcoin",
+      "icon_key": "coin_btc",
+      "decimals": 8,
+      "quote_decimals": 8,
+      "market": "bitcoin",
+      "uri_scheme": "bitcoin",
+      "tab_id": "more_coins"
+    },
+    {
+      "asset": "eth",
+      "ticker": "ETH",
+      "label": "ETH",
+      "label_key": "pay_method_eth",
+      "icon_key": "coin_eth",
+      "decimals": 18,
+      "quote_decimals": 6,
+      "market": "ethereum",
+      "uri_scheme": "ethereum",
+      "tab_id": "more_coins"
+    },
+    {
+      "asset": "sol",
+      "ticker": "SOL",
+      "label": "SOL",
+      "label_key": "pay_method_sol",
+      "icon_key": "coin_sol",
+      "decimals": 9,
+      "quote_decimals": 6,
+      "market": "solana",
+      "uri_scheme": "solana",
+      "tab_id": "more_coins"
+    },
+    {
+      "asset": "card",
+      "ticker": "",
+      "label": "",
+      "label_key": "",
+      "icon_key": "",
+      "decimals": 0,
+      "quote_decimals": 0,
+      "market": "",
+      "uri_scheme": "",
+      "tab_id": ""
+    },
+    {
+      "asset": "",
+      "ticker": "",
+      "label": "",
+      "label_key": "",
+      "icon_key": "",
+      "decimals": 0,
+      "quote_decimals": 0,
+      "market": "",
+      "uri_scheme": "",
+      "tab_id": ""
+    },
+    {
+      "asset": "ltc",
+      "ticker": "",
+      "label": "",
+      "label_key": "",
+      "icon_key": "",
+      "decimals": 0,
+      "quote_decimals": 0,
+      "market": "",
+      "uri_scheme": "",
+      "tab_id": ""
+    },
+    {
+      "asset": "BTC",
+      "ticker": "",
+      "label": "",
+      "label_key": "",
+      "icon_key": "",
+      "decimals": 0,
+      "quote_decimals": 0,
+      "market": "",
+      "uri_scheme": "",
+      "tab_id": ""
+    },
+    {
+      "asset": "more_coins",
+      "ticker": "",
+      "label": "",
+      "label_key": "",
+      "icon_key": "",
+      "decimals": 0,
+      "quote_decimals": 0,
+      "market": "",
+      "uri_scheme": "",
+      "tab_id": ""
+    }
+  ],
+  "cryptoPaymentQrText": [
+    {
+      "name": "a uri that passes the check is the QR code",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressFixture?tx_amount=0.072387&tx_description=URnetwork%20Pro%20yearly",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": "monero:8BSyntheticXmrSubaddressFixture?tx_amount=0.072387&tx_description=URnetwork%20Pro%20yearly"
+    },
+    {
+      "name": "a uri that fails the check gets no QR code",
+      "asset": "xmr",
+      "uri": "monero:8BSyntheticXmrSubaddressOther?tx_amount=0.072387",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": ""
+    },
+    {
+      "name": "a coin with a payment uri gets no QR code without one",
+      "asset": "xmr",
+      "uri": "",
+      "address": "8BSyntheticXmrSubaddressFixture",
+      "expected": ""
+    },
+    {
+      "name": "bitcoin's uri",
+      "asset": "btc",
+      "uri": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "bc1qsyntheticbitcoinaddressfixture",
+      "expected": "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&label=URnetwork&message=URnetwork%20Pro%20yearly"
+    },
+    {
+      "name": "ethereum's uri",
+      "asset": "eth",
+      "uri": "ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000",
+      "address": "0xSyntheticEthereumAddressFixture",
+      "expected": "ethereum:0xSyntheticEthereumAddressFixture@1?value=19559000000000000"
+    },
+    {
+      "name": "native sol's uri",
+      "asset": "sol",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&label=URnetwork&message=URnetwork%20Pro%20yearly",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=0.482913&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy&label=URnetwork&message=URnetwork%20Pro%20yearly"
+    },
+    {
+      "name": "a usdc link without spl-token gets no QR code",
+      "asset": "usdc_solana",
+      "uri": "solana:4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ?amount=40.001234&reference=7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy",
+      "address": "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ",
+      "expected": ""
+    },
+    {
+      "name": "tao has no payment uri: the QR code is the address alone",
+      "asset": "tao",
+      "uri": "",
+      "address": "5SyntheticTaoSs58AddressFixture",
+      "expected": "5SyntheticTaoSs58AddressFixture"
+    },
+    {
+      "name": "tao's QR code is the address alone, even beside a uri from the server",
+      "asset": "tao",
+      "uri": "bittensor:5SyntheticTaoSs58AddressFixture?amount=1",
+      "address": "5SyntheticTaoSs58AddressFixture",
+      "expected": "5SyntheticTaoSs58AddressFixture"
+    },
+    {
+      "name": "tao without an address",
+      "asset": "tao",
+      "uri": "",
+      "address": "",
+      "expected": ""
+    },
+    {
+      "name": "a tao address with a space gets no QR code",
+      "asset": "tao",
+      "uri": "",
+      "address": "5SyntheticTao Ss58AddressFixture",
+      "expected": ""
+    },
+    {
+      "name": "a tao address outside ascii gets no QR code",
+      "asset": "tao",
+      "uri": "",
+      "address": "5SyntheticTaoSs58AddressFixturé",
+      "expected": ""
+    },
+    {
+      "name": "a coin this sdk does not know",
+      "asset": "ltc",
+      "uri": "",
+      "address": "ltc1synthetic",
+      "expected": ""
+    },
+    {
+      "name": "card has no QR code",
+      "asset": "card",
+      "uri": "",
+      "address": "5SyntheticTaoSs58AddressFixture",
+      "expected": ""
+    }
+  ],
+  "cryptoPaymentTabLayout": [
+    {
+      "id": "usdc_solana",
+      "label": "USDC on Solana",
+      "label_key": "pay_method_usdc_solana",
+      "icon_keys": [
+        "coin_usdc"
+      ],
+      "coins": [
+        {
+          "asset": "usdc_solana",
+          "label": "USDC on Solana",
+          "label_key": "pay_method_usdc_solana",
+          "icon_key": "coin_usdc"
+        }
+      ]
+    },
+    {
+      "id": "zec",
+      "label": "Zcash",
+      "label_key": "pay_method_zcash",
+      "icon_keys": [
+        "coin_zec"
+      ],
+      "coins": [
+        {
+          "asset": "zec",
+          "label": "Zcash",
+          "label_key": "pay_method_zcash",
+          "icon_key": "coin_zec"
+        }
+      ]
+    },
+    {
+      "id": "xmr",
+      "label": "Monero",
+      "label_key": "pay_method_monero",
+      "icon_keys": [
+        "coin_xmr"
+      ],
+      "coins": [
+        {
+          "asset": "xmr",
+          "label": "Monero",
+          "label_key": "pay_method_monero",
+          "icon_key": "coin_xmr"
+        }
+      ]
+    },
+    {
+      "id": "more_coins",
+      "label": "More coins",
+      "label_key": "pay_method_more_coins",
+      "icon_keys": [
+        "coin_tao",
+        "coin_btc",
+        "coin_eth",
+        "coin_sol"
+      ],
+      "coins": [
+        {
+          "asset": "tao",
+          "label": "TAO",
+          "label_key": "pay_method_tao",
+          "icon_key": "coin_tao"
+        },
+        {
+          "asset": "btc",
+          "label": "Bitcoin",
+          "label_key": "pay_method_bitcoin",
+          "icon_key": "coin_btc"
+        },
+        {
+          "asset": "eth",
+          "label": "ETH",
+          "label_key": "pay_method_eth",
+          "icon_key": "coin_eth"
+        },
+        {
+          "asset": "sol",
+          "label": "SOL",
+          "label_key": "pay_method_sol",
+          "icon_key": "coin_sol"
+        }
+      ]
+    }
+  ],
+  "cryptoPaymentTabs": [
+    {
+      "name": "nothing listed: no coin selector, and the surface shows card alone",
+      "assets": null,
+      "unavailable_assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": []
+    },
+    {
+      "name": "a server before the new coins: the three main tabs, and no More coins",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": true,
+          "available_coins": [
+            "usdc_solana"
+          ]
+        },
+        {
+          "id": "zec",
+          "available": true,
+          "available_coins": [
+            "zec"
+          ]
+        },
+        {
+          "id": "xmr",
+          "available": true,
+          "available_coins": [
+            "xmr"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "every coin can be paid with, whatever the server's order",
+      "assets": [
+        {
+          "asset": "sol",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "eth",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "tao",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": true,
+          "available_coins": [
+            "usdc_solana"
+          ]
+        },
+        {
+          "id": "zec",
+          "available": true,
+          "available_coins": [
+            "zec"
+          ]
+        },
+        {
+          "id": "xmr",
+          "available": true,
+          "available_coins": [
+            "xmr"
+          ]
+        },
+        {
+          "id": "more_coins",
+          "available": true,
+          "available_coins": [
+            "tao",
+            "btc",
+            "eth",
+            "sol"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the balance lists only the coins that can be paid with now: the others stay in their place, greyed",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ]
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ]
+        },
+        {
+          "asset": "tao",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ]
+        },
+        {
+          "asset": "sol",
+          "plans": [
+            "yearly",
+            "yearly_onboarding"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "yearly_onboarding"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": true,
+          "available_coins": [
+            "usdc_solana"
+          ]
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": true,
+          "available_coins": [
+            "xmr"
+          ]
+        },
+        {
+          "id": "more_coins",
+          "available": true,
+          "available_coins": [
+            "tao",
+            "sol"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the route's unavailable coins are greyed, and keep More coins there with every coin greyed",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "plans": [
+            "yearly"
+          ],
+          "items": [
+            "data_1tib"
+          ],
+          "available": true
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ],
+          "available": true
+        }
+      ],
+      "unavailable_assets": [
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ],
+          "available": false,
+          "unavailable_reason": "scanner_lagging"
+        },
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ],
+          "available": false,
+          "unavailable_reason": "network_height_unknown"
+        },
+        {
+          "asset": "eth",
+          "items": [
+            "data_1tib"
+          ],
+          "available": false,
+          "unavailable_reason": "network_height_unknown"
+        }
+      ],
+      "items": [
+        "yearly",
+        "data_1tib"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": true,
+          "available_coins": [
+            "usdc_solana"
+          ]
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": true,
+          "available_coins": [
+            "xmr"
+          ]
+        },
+        {
+          "id": "more_coins",
+          "available": false,
+          "available_coins": []
+        }
+      ]
+    },
+    {
+      "name": "only unavailable coins: the selector shows, every coin greyed",
+      "assets": [],
+      "unavailable_assets": [
+        {
+          "asset": "zec",
+          "plans": [
+            "yearly"
+          ],
+          "available": false,
+          "unavailable_reason": "scanner_lagging"
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": false,
+          "available_coins": []
+        }
+      ]
+    },
+    {
+      "name": "a coin that sells none of the surface's items is greyed, and does not bring More coins",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "items": [
+            "data_1tib"
+          ]
+        },
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "btc",
+          "items": [
+            "data_10tib"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": true,
+          "available_coins": [
+            "xmr"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "data packs on the buy-data page",
+      "assets": [
+        {
+          "asset": "usdc_solana",
+          "items": [
+            "data_1tib",
+            "data_10tib"
+          ]
+        },
+        {
+          "asset": "sol",
+          "items": [
+            "data_1tib"
+          ]
+        }
+      ],
+      "unavailable_assets": [
+        {
+          "asset": "tao",
+          "items": [
+            "data_1tib"
+          ],
+          "available": false,
+          "unavailable_reason": "scanner_lagging"
+        }
+      ],
+      "items": [
+        "data_1tib",
+        "data_10tib"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": true,
+          "available_coins": [
+            "usdc_solana"
+          ]
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "more_coins",
+          "available": true,
+          "available_coins": [
+            "sol"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a null entry is skipped, and SOL alone brings More coins",
+      "assets": [
+        null,
+        {
+          "asset": "sol",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "more_coins",
+          "available": true,
+          "available_coins": [
+            "sol"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a coin in both lists can be paid with",
+      "assets": [
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": [
+        {
+          "asset": "btc",
+          "plans": [
+            "yearly"
+          ],
+          "available": false,
+          "unavailable_reason": "scanner_lagging"
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": [
+        {
+          "id": "usdc_solana",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "zec",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "xmr",
+          "available": false,
+          "available_coins": []
+        },
+        {
+          "id": "more_coins",
+          "available": true,
+          "available_coins": [
+            "btc"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "monthly is card only: no coin selector",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "monthly",
+            "yearly"
+          ]
+        },
+        {
+          "asset": "tao",
+          "plans": [
+            "monthly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [
+        "monthly"
+      ],
+      "expected": []
+    },
+    {
+      "name": "a coin this sdk does not know is never shown",
+      "assets": [
+        {
+          "asset": "ltc",
+          "plans": [
+            "yearly"
+          ]
+        },
+        {
+          "asset": "XMR",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": [
+        {
+          "asset": "ltc",
+          "plans": [
+            "yearly"
+          ],
+          "available": false
+        }
+      ],
+      "items": [
+        "yearly"
+      ],
+      "expected": []
+    },
+    {
+      "name": "items not given: no coin selector",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": null,
+      "expected": []
+    },
+    {
+      "name": "no items: no coin selector",
+      "assets": [
+        {
+          "asset": "xmr",
+          "plans": [
+            "yearly"
+          ]
+        }
+      ],
+      "unavailable_assets": null,
+      "items": [],
+      "expected": []
     }
   ],
   "invoiceDismiss": [

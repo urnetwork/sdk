@@ -376,6 +376,12 @@ EXPORTS
 	urnet_copy_dns_resolver_settings
 	urnet_copy_string
 	urnet_create_payment_reference
+	urnet_crypto_asset_decimals
+	urnet_crypto_asset_icon_key
+	urnet_crypto_asset_label
+	urnet_crypto_asset_label_key
+	urnet_crypto_asset_market
+	urnet_crypto_asset_quote_decimals
 	urnet_crypto_asset_sells
 	urnet_crypto_asset_ticker
 	urnet_crypto_invoice_view_controller_add_crypto_invoice_listener
@@ -389,6 +395,10 @@ EXPORTS
 	urnet_crypto_invoice_view_controller_start
 	urnet_crypto_invoice_view_controller_start_invoice
 	urnet_crypto_invoice_view_controller_stop
+	urnet_crypto_payment_qr_text
+	urnet_crypto_payment_tab_id
+	urnet_crypto_payment_tabs
+	urnet_crypto_payment_uri_scheme
 	urnet_crypto_term_notice_due
 	urnet_crypto_wallet_suggestions
 	urnet_decode_base58
