@@ -717,17 +717,18 @@ func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 	}
 }
 
-// The sidecar module (sidecar §18.10's Imports, D-SDK-20, R-SDK-4), file by file on every leg: in the root package a
-// sidecar-role file, sidecar*.go, may import the sidecar root, protocol, protocol/bridge and device, and carries
-// !ios_extension, since the tunnel links neither the root nor protocol; a device file, device_sidecar*.go, imports only
-// device and protocol/bridge, untagged, since the tunnel links it; no other file of a package this repository builds
-// imports a sidecar package, the page Worker's main aside, which its own leg holds to the root and protocol
-// (TestTheSidecarWasmLegLinksNoConnectOrSdk). On the ios_extension leg a file that imports the root or protocol is
-// refused whatever its name. A rule read from the files each leg compiles, so a file's build constraints are what the
-// leg makes of them.
+// The sidecar module (sidecar §18.10's Imports, D-SDK-20, R-SDK-4, DESIGN-DETAILS 4.2.3), file by file on every leg: in
+// the root package a sidecar-role file, sidecar*.go, may import the sidecar root, protocol, protocol/bridge and device,
+// and carries !ios_extension, since the tunnel runs forwarding alone; a forwarding file, device_sidecar*.go, imports
+// device, protocol/bridge and the sidecar root, whose forwarding files it names, untagged, since the tunnel links it; no
+// other file of a package this repository builds imports a sidecar package, the page Worker's main aside, which its own
+// leg holds to the root and protocol (TestTheSidecarWasmLegLinksNoConnectOrSdk). On the ios_extension leg a sidecar-role
+// file is refused whatever it imports, and every sidecar root or protocol file the leg compiles is on the sidecar
+// module's ios_extension leg list. A rule read from the files each leg compiles, so a file's build constraints are what
+// the leg makes of them.
 const sidecarImportModulePath = "github.com/urnetwork/sidecar"
 
-// What a sidecar-role file and a device file may import of the sidecar module.
+// What a sidecar-role file and a forwarding file may import of the sidecar module.
 var (
 	sidecarImportRoleAllowed = []string{
 		sidecarImportModulePath,
@@ -736,10 +737,96 @@ var (
 		sidecarImportModulePath + "/device",
 	}
 	sidecarImportDeviceAllowed = []string{
+		sidecarImportModulePath,
 		sidecarImportModulePath + "/device",
 		sidecarImportModulePath + "/protocol/bridge",
 	}
 )
+
+// The sidecar module's ios_extension leg list, by path from that module (DESIGN-DETAILS 4.2.3): the root and protocol
+// files the iOS extension may link, which sidecar's make check holds on its own extension legs.
+const sidecarIosExtensionLegListPath = "check/testdata/ios_extension_leg.txt"
+
+// The list, read from the sidecar module the module in moduleDirectory builds against. A list this cannot read fails
+// the test: a rule that read no list has not passed.
+func sidecarIosExtensionLegList(t *testing.T, moduleDirectory string) map[string]bool {
+	t.Helper()
+	command := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", sidecarImportModulePath)
+	command.Dir = moduleDirectory
+	command.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+	output, err := command.Output()
+	if err != nil {
+		stderr := ""
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		t.Fatalf("finding the sidecar module from %s: %v\n%s", moduleDirectory, err, stderr)
+	}
+	listPath := filepath.Join(strings.TrimSpace(string(output)), filepath.FromSlash(sidecarIosExtensionLegListPath))
+	data, err := os.ReadFile(listPath)
+	if err != nil {
+		t.Fatalf("the sidecar module's ios_extension leg list does not read, so nothing holds the extension to it: %v", err)
+	}
+	files := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			files[line] = true
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("%s names no file", listPath)
+	}
+	return files
+}
+
+// Each sidecar root or protocol file a build compiles that the list does not name, and how many such files it
+// compiled, read from go list -deps in directory with the build's environment and arguments, its patterns last.
+func sidecarIosExtensionFileFindings(t *testing.T, name string, directory string, environment []string, arguments []string, list map[string]bool) ([]string, int) {
+	t.Helper()
+	command := exec.Command("go", slices.Concat([]string{"list", "-deps", "-json=ImportPath,GoFiles,CgoFiles"}, arguments)...)
+	command.Dir = directory
+	command.Env = environment
+	output, err := command.Output()
+	if err != nil {
+		stderr := ""
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		t.Fatalf("%s: go list %s in %s: %v\n%s", name, strings.Join(arguments, " "), directory, err, stderr)
+	}
+	findings := []string{}
+	compiled := 0
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for decoder.More() {
+		var listed struct {
+			ImportPath string
+			GoFiles    []string
+			CgoFiles   []string
+		}
+		if err := decoder.Decode(&listed); err != nil {
+			t.Fatalf("%s: reading go list: %v", name, err)
+		}
+		prefix := ""
+		switch listed.ImportPath {
+		case sidecarImportModulePath:
+		case sidecarImportModulePath + "/protocol":
+			prefix = "protocol/"
+		default:
+			continue
+		}
+		for _, goFile := range slices.Concat(listed.GoFiles, listed.CgoFiles) {
+			compiled += 1
+			if !list[prefix+goFile] {
+				findings = append(findings, fmt.Sprintf("%s compiles the sidecar module's %s%s, which its ios_extension leg list does not name", name, prefix, goFile))
+			}
+		}
+	}
+	sort.Strings(findings)
+	return findings, compiled
+}
 
 // Whether a package path is this repository's, its external tests included.
 func sidecarImportRepositoryPackage(packagePath string) bool {
@@ -853,8 +940,8 @@ func sidecarImportFindings(t *testing.T, repositoryRoot string, leg messagingBou
 				continue
 			}
 			switch {
-			case extension && (importPath == sidecarImportModulePath || importPath == sidecarImportModulePath+"/protocol"):
-				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and the iOS extension links no sidecar root or protocol", leg.name, relative, importPath))
+			case extension && kind == "role":
+				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and a sidecar-role file carries !ios_extension, since the iOS extension runs forwarding alone", leg.name, relative, importPath))
 			case kind == "other":
 				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module", leg.name, relative, importPath))
 			case !slices.Contains(allowed, importPath):
@@ -863,6 +950,17 @@ func sidecarImportFindings(t *testing.T, repositoryRoot string, leg messagingBou
 				allowedCounts[kind] += 1
 			}
 		}
+	}
+	if extension {
+		moduleDirectory := filepath.Join(repositoryRoot, filepath.FromSlash(leg.moduleDirectory))
+		arguments := []string{}
+		if leg.tags != "" {
+			arguments = append(arguments, "-tags", leg.tags)
+		}
+		environment := append(append(os.Environ(), "GOFLAGS=", "GOWORK=off"), leg.environment...)
+		listFindings, _ := sidecarIosExtensionFileFindings(t, leg.name, moduleDirectory, environment, append(arguments, leg.patterns...),
+			sidecarIosExtensionLegList(t, moduleDirectory))
+		findings = append(findings, listFindings...)
 	}
 	sort.Strings(findings)
 	return findings, allowedCounts
@@ -892,28 +990,33 @@ func TestSdkImportsTheSidecarModuleByRole(t *testing.T) {
 	}
 }
 
-// The rule finds what a fixture plants and nothing else: on a host leg a device file importing the root, another file
-// importing device, and a sidecar-role file importing mcp; on the extension leg also an untagged sidecar-role file
-// importing the root, while the tagged one is left out; on a test leg also a test file importing sidecartest.
+// The rule finds what a fixture plants and nothing else: on a host leg a forwarding file importing protocol, another
+// file importing device, and a sidecar-role file importing mcp, while a forwarding file importing the root passes; on
+// the extension leg also an untagged sidecar-role file, while the tagged one is left out, and a sidecar root file the
+// list does not name, while a tagged one is left out; on a test leg also a test file importing sidecartest.
 func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 	fixture := t.TempDir()
 	fixtureFiles := map[string]string{
 		"core/go.mod": "module github.com/urnetwork/sdk\n\ngo 1.26\n\nrequire github.com/urnetwork/sidecar v0.0.0\n\n" +
 			"replace github.com/urnetwork/sidecar => ../sidecar\n",
-		"core/sidecar_role.go":         "//go:build !ios_extension\n\npackage sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar\"\n\t_ \"github.com/urnetwork/sidecar/protocol\"\n)\n",
-		"core/sidecar_untagged.go":     "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
-		"core/sidecar_mcp.go":          "//go:build !ios_extension\n\npackage sdk\n\nimport _ \"github.com/urnetwork/sidecar/mcp\"\n",
-		"core/device_sidecar.go":       "package sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar/device\"\n\t_ \"github.com/urnetwork/sidecar/protocol/bridge\"\n)\n",
-		"core/device_sidecar_root.go":  "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
-		"core/other.go":                "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/device\"\n",
-		"core/core_test.go":            "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest\"\n",
-		"sidecar/go.mod":               "module github.com/urnetwork/sidecar\n\ngo 1.26\n",
-		"sidecar/sidecar.go":           "package sidecar\n",
-		"sidecar/protocol/p.go":        "package protocol\n",
-		"sidecar/protocol/bridge/b.go": "package bridge\n",
-		"sidecar/device/d.go":          "package device\n",
-		"sidecar/mcp/m.go":             "package mcp\n",
-		"sidecar/sidecartest/s.go":     "package sidecartest\n",
+		"core/sidecar_role.go":                         "//go:build !ios_extension\n\npackage sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar\"\n\t_ \"github.com/urnetwork/sidecar/protocol\"\n)\n",
+		"core/sidecar_untagged.go":                     "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
+		"core/sidecar_mcp.go":                          "//go:build !ios_extension\n\npackage sdk\n\nimport _ \"github.com/urnetwork/sidecar/mcp\"\n",
+		"core/device_sidecar.go":                       "package sdk\n\nimport (\n\t_ \"github.com/urnetwork/sidecar/device\"\n\t_ \"github.com/urnetwork/sidecar/protocol/bridge\"\n)\n",
+		"core/device_sidecar_root.go":                  "package sdk\n\nimport _ \"github.com/urnetwork/sidecar\"\n",
+		"core/device_sidecar_proto.go":                 "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/protocol\"\n",
+		"core/other.go":                                "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/device\"\n",
+		"core/core_test.go":                            "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest\"\n",
+		"sidecar/go.mod":                               "module github.com/urnetwork/sidecar\n\ngo 1.26\n",
+		"sidecar/sidecar.go":                           "package sidecar\n",
+		"sidecar/planted.go":                           "package sidecar\n",
+		"sidecar/tagged.go":                            "//go:build !ios_extension\n\npackage sidecar\n",
+		"sidecar/check/testdata/ios_extension_leg.txt": "# the fixture's list\nprotocol/p.go\nsidecar.go\n",
+		"sidecar/protocol/p.go":                        "package protocol\n",
+		"sidecar/protocol/bridge/b.go":                 "package bridge\n",
+		"sidecar/device/d.go":                          "package device\n",
+		"sidecar/mcp/m.go":                             "package mcp\n",
+		"sidecar/sidecartest/s.go":                     "package sidecartest\n",
 	}
 	for name, content := range fixtureFiles {
 		fixturePath := filepath.Join(fixture, filepath.FromSlash(name))
@@ -925,7 +1028,7 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		}
 	}
 	host := []string{
-		"host: core/device_sidecar_root.go imports github.com/urnetwork/sidecar, which a device file may not",
+		"host: core/device_sidecar_proto.go imports github.com/urnetwork/sidecar/protocol, which a device file may not",
 		"host: core/other.go imports github.com/urnetwork/sidecar/device, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
 		"host: core/sidecar_mcp.go imports github.com/urnetwork/sidecar/mcp, which a role file may not",
 	}
@@ -940,9 +1043,10 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		{
 			leg: messagingBoundaryLeg{name: "extension", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, tags: "ios_extension"},
 			want: []string{
-				"extension: core/device_sidecar_root.go imports github.com/urnetwork/sidecar, and the iOS extension links no sidecar root or protocol",
+				"extension: core/device_sidecar_proto.go imports github.com/urnetwork/sidecar/protocol, which a device file may not",
 				"extension: core/other.go imports github.com/urnetwork/sidecar/device, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
-				"extension: core/sidecar_untagged.go imports github.com/urnetwork/sidecar, and the iOS extension links no sidecar root or protocol",
+				"extension: core/sidecar_untagged.go imports github.com/urnetwork/sidecar, and a sidecar-role file carries !ios_extension, since the iOS extension runs forwarding alone",
+				"extension compiles the sidecar module's planted.go, which its ios_extension leg list does not name",
 			},
 		},
 		{
@@ -960,8 +1064,8 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		if !slices.Equal(findings, want) {
 			t.Errorf("%s (test=%v): findings\n%s\nwant\n%s", c.leg.name, c.leg.test, strings.Join(findings, "\n"), strings.Join(want, "\n"))
 		}
-		if allowedCounts["device"] != 2 {
-			t.Errorf("%s: %d device imports allowed, want 2", c.leg.name, allowedCounts["device"])
+		if allowedCounts["device"] != 3 {
+			t.Errorf("%s: %d device imports allowed, want 3", c.leg.name, allowedCounts["device"])
 		}
 	}
 }

@@ -1,12 +1,13 @@
 //go:build !ios_extension && !js
 
-// §22.5's §18 row for the iOS extension (sidecar §18.10, D-SDK-20, Q-SDK-5): the extension links the device role,
-// sidecar/device over protocol/bridge, and none of the sidecar root or protocol, whose init functions and descriptors
-// would land in the jetsam-bound tunnel. A program built with the extension's tags, sdk_mobile_bind and
-// ios_extension, imports the sdk and reads protoregistry.GlobalFiles: of the sidecar module's descriptors only
-// protocol/bridge's auth.proto, bridge.proto and signed.proto are registered, and its symbol table names nothing of
-// the root or protocol package, so no root init is linked. The program runs on this host, since an ios binary cannot;
-// the ios/arm64 leg's own closure is TestSdkImportsTheSidecarModuleByRole's and TestBindingsLinkNoMcpOrCli's.
+// §22.5's §18 row for the iOS extension (sidecar §18.10, D-SDK-20, Q-SDK-5, DESIGN-DETAILS 4.2.3): the extension links
+// the forwarding role, sidecar/device over protocol/bridge, and of the sidecar root and protocol only the files on the
+// sidecar module's ios_extension leg list, which the module tags every other file out of, so no other init function or
+// descriptor lands in the jetsam-bound tunnel. A program built with the extension's tags, sdk_mobile_bind and
+// ios_extension, imports the sdk and reads protoregistry.GlobalFiles: of the sidecar module's descriptors it registers
+// protocol/bridge's, and of protocol's only those whose generated file is on the list; and every sidecar root or protocol
+// file its build compiles is on the list. The program runs on this host, since an ios binary cannot; the ios/arm64 leg's
+// own closure is TestSdkImportsTheSidecarModuleByRole's and TestBindingsLinkNoMcpOrCli's.
 package sdk
 
 import (
@@ -22,11 +23,21 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
-// The descriptors the device role brings to the extension, by their registered paths, sorted.
+// The descriptors the device role brings to the extension, by their registered paths, sorted: protocol/bridge's, which
+// it links whole.
 var iosExtensionSidecarDescriptorPaths = []string{
 	"protocol/bridge/auth.proto",
 	"protocol/bridge/bridge.proto",
 	"protocol/bridge/signed.proto",
+}
+
+// True for a sidecar descriptor the extension may register: protocol/bridge's, or one of protocol's whose generated
+// file the list names.
+func iosExtensionAllowsDescriptor(list map[string]bool, descriptorPath string) bool {
+	if strings.HasPrefix(descriptorPath, "protocol/bridge/") {
+		return true
+	}
+	return strings.HasPrefix(descriptorPath, "protocol/") && list[strings.TrimSuffix(descriptorPath, ".proto")+".pb.go"]
 }
 
 // The probe: prints each registered file whose proto package is the sidecar module's.
@@ -52,11 +63,16 @@ func main() {
 }
 `
 
+// The environment the probe builds in: this host's, with no flags or workspace of the caller's.
+func testingIosExtensionEnvironment() []string {
+	return append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+}
+
 // Runs go with arguments in this module, failing the test with what go said.
 func testingIosExtensionGo(t *testing.T, arguments ...string) []byte {
 	t.Helper()
 	command := exec.Command("go", arguments...)
-	command.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+	command.Env = testingIosExtensionEnvironment()
 	output, err := command.Output()
 	if err != nil {
 		stderr := ""
@@ -69,8 +85,8 @@ func testingIosExtensionGo(t *testing.T, arguments ...string) []byte {
 	return output
 }
 
-// The extension registers protocol/bridge's three descriptors and no other of the sidecar module's, and links no
-// function, type or init of the root or protocol, while it does link the device role.
+// The extension registers protocol/bridge's descriptors and, of protocol's, only the list's, and compiles no sidecar
+// root or protocol file the list does not name, while it does link the device role.
 func TestIosExtensionRegistersOnlyBridgeDescriptors(t *testing.T) {
 	directory := t.TempDir()
 	probePath := filepath.Join(directory, "main.go")
@@ -102,21 +118,29 @@ func TestIosExtensionRegistersOnlyBridgeDescriptors(t *testing.T) {
 	}
 	registered := strings.Fields(string(output))
 	slices.Sort(registered)
-	if !slices.Equal(registered, iosExtensionSidecarDescriptorPaths) {
-		t.Fatalf("the extension registers %v of the sidecar module's descriptors, want only %v", registered, iosExtensionSidecarDescriptorPaths)
+	list := sidecarIosExtensionLegList(t, moduleDirectory)
+	for _, descriptorPath := range registered {
+		if !iosExtensionAllowsDescriptor(list, descriptorPath) {
+			t.Errorf("the extension registers %s, whose generated file is not on the sidecar module's ios_extension leg list", descriptorPath)
+		}
 	}
+	for _, descriptorPath := range iosExtensionSidecarDescriptorPaths {
+		if !slices.Contains(registered, descriptorPath) {
+			t.Errorf("CONTROL FAILED: the extension does not register %s, so the device role is not linked (it registers %v)", descriptorPath, registered)
+		}
+	}
+
+	findings, compiled := sidecarIosExtensionFileFindings(t, "the extension probe", moduleDirectory, testingIosExtensionEnvironment(),
+		[]string{"-overlay=" + overlayPath, "-tags", "sdk_mobile_bind,ios_extension", "./sidecariosextensionprobe"}, list)
+	for _, finding := range findings {
+		t.Errorf("%s", finding)
+	}
+	t.Logf("the extension probe registers %v and compiles %d sidecar root and protocol files, each on the list", registered, compiled)
 
 	linksDevice := false
 	for _, line := range strings.Split(string(testingIosExtensionGo(t, "tool", "nm", binaryPath)), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		symbol := fields[len(fields)-1]
-		if strings.Contains(symbol, "github.com/urnetwork/sidecar.") || strings.Contains(symbol, "github.com/urnetwork/sidecar/protocol.") {
-			t.Errorf("the extension links %s", symbol)
-		}
-		if strings.Contains(symbol, "github.com/urnetwork/sidecar/device.") {
+		if len(fields) != 0 && strings.Contains(fields[len(fields)-1], sidecarImportModulePath+"/device.") {
 			linksDevice = true
 		}
 	}
