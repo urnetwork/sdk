@@ -464,6 +464,7 @@ test("start shows the quote and saves it", async () => {
   assert.equal(state.amount, "0.072387");
   assert.equal(state.amountAtomic, "72387000000");
   assert.equal(state.uri, XMR_URI);
+  assert.equal(state.qrText, XMR_URI);
   assert.equal(state.memo, "");
   assert.equal(state.priceUsd, 40);
   assert.equal(state.rateUsd, 555.36);
@@ -561,7 +562,124 @@ test("a uri that does not pay the address is never shown", async () => {
   assert.equal(state.phase, CRYPTO_INVOICE_PHASE_OPEN);
   assert.equal(state.address, XMR_ADDRESS);
   assert.equal(state.uri, "");
+  assert.equal(state.qrText, "");
   assert.equal(harness.saved()!.uri, "");
+});
+
+const TAO_ADDRESS = "5SyntheticTaoSs58AddressFixture";
+
+// The pending status of the tao invoice below, for an amount.
+function testTaoStatus(amount: string, amountAtomic: string, expiresAt: number): CryptoPaymentStatusResult {
+  return {
+    intent_id: INTENT_ID,
+    asset: "tao",
+    plan: "yearly",
+    delivery: "account",
+    status: "pending",
+    amount,
+    amount_atomic: amountAtomic,
+    received: "0",
+    received_atomic: "0",
+    remaining: amount,
+    remaining_atomic: amountAtomic,
+    confirmations: 0,
+    confirmations_required: 1,
+    expires_at: rfc3339(expiresAt),
+  };
+}
+
+// The server's tao yearly invoice, quoted at now. TAO has no payment uri.
+function testTaoIntent(now: number): CryptoPaymentIntentResult {
+  const expiresAt = now + QUOTE_TTL;
+  return {
+    intent_id: INTENT_ID,
+    status_token: STATUS_TOKEN,
+    asset: "tao",
+    plan: "yearly",
+    delivery: "account",
+    tier: "standard",
+    price_usd: 40,
+    regular_price_usd: 40,
+    rate_usd: 217.47,
+    address: TAO_ADDRESS,
+    amount: "0.185774",
+    amount_atomic: "185774000",
+    quoted_at: rfc3339(now),
+    expires_at: rfc3339(expiresAt),
+    confirmations_required: 1,
+    status: testTaoStatus("0.185774", "185774000", expiresAt),
+  };
+}
+
+// TAO has no payment uri: the invoice shows the address and the amount, and a
+// QR code of the address alone, which a quote changed elsewhere does not take
+// away (it names no amount). A uri the server sends anyway is never shown or
+// opened.
+test("a tao invoice's QR code is the address alone", async () => {
+  const harness = new Harness();
+  harness.client.intent = { result: testTaoIntent(harness.clock.now()) };
+  harness.client.status = { result: testTaoStatus("0.185774", "185774000", harness.clock.now() + QUOTE_TTL) };
+  harness.invoice.setActive(true);
+  await harness.invoice.startInvoice({ asset: "tao", plan: "yearly" });
+  let state = harness.invoice.getState();
+  assert.equal(state.phase, CRYPTO_INVOICE_PHASE_OPEN);
+  assert.equal(state.ticker, "TAO");
+  assert.equal(state.address, TAO_ADDRESS);
+  assert.equal(state.amount, "0.185774");
+  assert.equal(state.uri, "");
+  assert.equal(state.qrText, TAO_ADDRESS);
+
+  // another device requoted it
+  harness.client.status = { result: testTaoStatus("0.184411", "184411000", harness.clock.now() + QUOTE_TTL) };
+  await harness.clock.advance(5 * SECOND);
+  state = harness.invoice.getState();
+  assert.equal(state.amount, "0.184411");
+  assert.equal(state.qrText, TAO_ADDRESS);
+
+  // resumed after a reload
+  const reloaded = harness.newInvoice();
+  assert.equal(reloaded.resume(), true, "the tao invoice did not resume");
+  state = reloaded.getState();
+  assert.equal(state.uri, "");
+  assert.equal(state.qrText, TAO_ADDRESS);
+
+  const withUri = new Harness();
+  const intent = testTaoIntent(withUri.clock.now());
+  intent.uri = `bittensor:${TAO_ADDRESS}?amount=0.185774`;
+  withUri.client.intent = { result: intent };
+  await withUri.invoice.startInvoice({ asset: "tao", plan: "yearly" });
+  state = withUri.invoice.getState();
+  assert.equal(state.uri, "");
+  assert.equal(state.qrText, TAO_ADDRESS);
+  assert.equal(withUri.saved()!.uri, "");
+});
+
+// The QR code of a coin with a payment uri is the uri, and goes with it: a
+// bitcoin invoice shows its BIP 21 uri, and a usdc invoice whose uri names no
+// token (it would ask for SOL) shows neither a uri nor a QR code.
+test("the QR code is the checked uri", async () => {
+  const harness = new Harness();
+  const intent = testIntent(harness.clock.now());
+  const btcUri = "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&label=URnetwork&message=URnetwork%20Pro%20yearly";
+  Object.assign(intent, { asset: "btc", address: "bc1qsyntheticbitcoinaddressfixture", amount: "0.00054321", amount_atomic: "54321", uri: btcUri });
+  Object.assign(intent.status!, { asset: "btc", amount: "0.00054321", amount_atomic: "54321" });
+  harness.client.intent = { result: intent };
+  await harness.invoice.startInvoice({ asset: "btc", plan: "yearly" });
+  let state = harness.invoice.getState();
+  assert.equal(state.ticker, "BTC");
+  assert.equal(state.uri, btcUri);
+  assert.equal(state.qrText, btcUri);
+
+  const usdc = new Harness();
+  const codeIntent = testCodeIntent(INTENT_ID, STATUS_TOKEN, usdc.clock.now());
+  codeIntent.uri = `solana:${USDC_ADDRESS}?amount=40.001234&reference=${USDC_MEMO}`;
+  usdc.client.intent = { result: codeIntent };
+  await usdc.invoice.startDataInvoice({ asset: "usdc_solana", itemId: "data_1tib" });
+  state = usdc.invoice.getState();
+  assert.equal(state.phase, CRYPTO_INVOICE_PHASE_OPEN);
+  assert.equal(state.address, USDC_ADDRESS);
+  assert.equal(state.uri, "");
+  assert.equal(state.qrText, "");
 });
 
 // ---- polling -----------------------------------------------------------------
@@ -1059,6 +1177,7 @@ test("a quote changed elsewhere drops the uri", async () => {
   assert.equal(state.amount, "0.071111");
   assert.equal(state.amountAtomic, "71111000000");
   assert.equal(state.uri, "");
+  assert.equal(state.qrText, "");
   assert.equal(state.address, XMR_ADDRESS);
   assert.equal(state.expiresAt, requoted.expires_at);
   assert.equal(state.secondsLeft, 1915);
@@ -1079,7 +1198,7 @@ test("the payment method is remembered", () => {
   // read again after a reload; a method the sdk does not know is ignored
   const reloaded = harness.newInvoice();
   assert.equal(reloaded.getPaymentMethod(), "xmr");
-  reloaded.setPaymentMethod("btc");
+  reloaded.setPaymentMethod("ltc");
   assert.equal(reloaded.getPaymentMethod(), "xmr");
   reloaded.setPaymentMethod("card");
   assert.equal(harness.invoice.getPaymentMethod(), "card");
@@ -1088,12 +1207,25 @@ test("the payment method is remembered", () => {
   assert.equal(harness.storage!.getItem(`urnPaymentMethod.${NETWORK_ID}`), null);
 
   // a value written by something else that is not a method reads as none
-  harness.storage!.setItem(`urnPaymentMethod.${NETWORK_ID}`, '"btc"');
+  harness.storage!.setItem(`urnPaymentMethod.${NETWORK_ID}`, '"ltc"');
   assert.equal(reloaded.getPaymentMethod(), "");
 
   const memory = new Harness(null);
   memory.invoice.setPaymentMethod("zec");
   assert.equal(memory.invoice.getPaymentMethod(), "zec");
+});
+
+// The coins of "More coins" are methods like the others: before 2026-11-10 a
+// remembered btc read as none, and choosing it was ignored.
+test("the payment method remembers the more coins", () => {
+  const harness = new Harness();
+  for (const asset of ["tao", "btc", "eth", "sol"]) {
+    harness.invoice.setPaymentMethod(asset);
+    assert.equal(harness.invoice.getPaymentMethod(), asset);
+    assert.equal(harness.newInvoice().getPaymentMethod(), asset, `${asset} after a reload`);
+  }
+  harness.storage!.setItem(`urnPaymentMethod.${NETWORK_ID}`, '"btc"');
+  assert.equal(harness.newInvoice().getPaymentMethod(), "btc");
 });
 
 // ---- lifecycle -----------------------------------------------------------------
