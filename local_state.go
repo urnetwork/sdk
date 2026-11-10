@@ -34,7 +34,10 @@ type LocalState struct {
 	cancel context.CancelFunc
 
 	localStorageDir string
-	authStateLock   sync.Mutex
+	// What .auth_state keeps and whether it is sealed (local_state_seal.go).
+	// Set at construction.
+	authSettings  localAuthSettings
+	authStateLock sync.Mutex
 	// Serializes this process's reads and writes of `.extender_network_keys`
 	// (local_state_extender.go), whose write replaces the whole document.
 	extenderNetworkKeysLock sync.Mutex
@@ -202,6 +205,12 @@ func (self *LocalState) SetByClientJwtForInstance(byJwt string, instanceId *Id) 
 }
 
 func newLocalState(ctx context.Context, localStorageHome string) *LocalState {
+	return newLocalStateWithAuthSettings(ctx, localStorageHome, localAuthSettings{})
+}
+
+// A local state whose .auth_state follows authSettings (local_state_seal.go)
+// from its first read, which migrates the file.
+func newLocalStateWithAuthSettings(ctx context.Context, localStorageHome string, authSettings localAuthSettings) *LocalState {
 	// FIXME local storage dir is always a sub dir of the passed dir
 	// localStorageHome/.by
 	localStorageDir := filepath.Join(localStorageHome, ".by")
@@ -215,6 +224,7 @@ func newLocalState(ctx context.Context, localStorageHome string) *LocalState {
 		ctx:                     cancelCtx,
 		cancel:                  cancel,
 		localStorageDir:         localStorageDir,
+		authSettings:            authSettings,
 		providerPriorsRetention: providerPriorsStaleAfter,
 	}
 	// Best-effort eager migration. Reads remain compatible with legacy state if
@@ -1262,10 +1272,13 @@ func keptAcrossSignOut(name string) bool {
 // Removes every entry of the storage directory but the ones a sign-out keeps,
 // and leaves the directory in place. A directory that cannot be listed is
 // removed whole, as before, kept files included: they are a cache. This is a
-// sign-out, so it first closes the sign-in fence (local_state_sign_in.go).
-// Called with authStateLock held.
+// sign-out, so it first closes the sign-in fence (local_state_sign_in.go). A
+// sealed .auth_state's key goes from the app's keystore once the file is gone
+// (local_state_seal.go). Called with authStateLock held.
 func (self *LocalState) removeAccountStateWithLock() error {
 	self.signOutWithLock()
+	sealKeyId := self.sealedAuthStateKeyIdLocked()
+	defer self.deleteAuthStateSealKeyLocked(sealKeyId)
 	entries, err := os.ReadDir(self.localStorageDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.Join(
@@ -1327,9 +1340,16 @@ type AsyncLocalState struct {
 }
 
 func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
+	return newAsyncLocalState(localStorageHome, localAuthSettings{})
+}
+
+// An async local state whose .auth_state follows authSettings
+// (local_state_seal.go): a network space's, from its values and its manager's
+// sealer.
+func newAsyncLocalState(localStorageHome string, authSettings localAuthSettings) *AsyncLocalState {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 
-	localState := newLocalState(cancelCtx, localStorageHome)
+	localState := newLocalStateWithAuthSettings(cancelCtx, localStorageHome, authSettings)
 
 	asyncLocalState := &AsyncLocalState{
 		ctx:        cancelCtx,

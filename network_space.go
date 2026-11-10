@@ -155,6 +155,19 @@ type NetworkSpaceValues struct {
 	// platform; the egress (tunnel) dns never reads it. Applied in place like
 	// the bootstrap DoH servers.
 	IngressCountryCode string `json:"ingress_country_code,omitempty"`
+
+	// The network credential is kept for the session only (§18.7's network
+	// credential paragraph, D-SDK-11; local_state_seal.go): the space's
+	// .auth_state drops its by_jwt once a device client exists, the Api keeps
+	// the network credential in memory and renews it there, and after a
+	// restart a call that administers the network or the account fails with
+	// ErrNetworkCredentialRequired before it is sent, which is the app's cue
+	// to sign in again for it. A client token alone keeps the person signed
+	// in. False, the default, keeps today's file, so mobile apps and shipped
+	// desktops change nothing until a release turns it on; a release that does
+	// also mints its device clients AuthNetworkClientArgs.AdminRefused. Read
+	// when the space is built.
+	SessionOnlyNetworkCredential bool `json:"session_only_network_credential,omitempty"`
 }
 
 // The configured manual hosts of a space, trimmed and without the blanks a ui
@@ -658,11 +671,13 @@ func newNetworkSpaceWithConnectSettings(
 	connectSettings *connect.ConnectSettings,
 	hostedIncompatible bool,
 ) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettingsAndApiAlt(ctx, key, values, storagePath, connectSettings, hostedIncompatible, true)
+	return newNetworkSpaceWithConnectSettingsAndApiAlt(ctx, key, values, storagePath, connectSettings, hostedIncompatible, true, nil)
 }
 
 // Applies the owning manager's immutable api-alt policy before the strategy
 // constructs any dialer. Platform carriers and ordinary dns keep their settings.
+// The space's .auth_state follows its values' credential rules, sealed by
+// localStateSealer when the manager has one (local_state_seal.go).
 func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	ctx context.Context,
 	key NetworkSpaceKey,
@@ -671,6 +686,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	connectSettings *connect.ConnectSettings,
 	hostedIncompatible bool,
 	apiAltEnabled bool,
+	localStateSealer LocalStateSealer,
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -732,7 +748,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 
 	var asyncLocalState *AsyncLocalState
 	if storagePath != "" {
-		asyncLocalState = NewAsyncLocalState(storagePath)
+		asyncLocalState = newAsyncLocalState(storagePath, newLocalAuthSettings(values.SessionOnlyNetworkCredential, localStateSealer))
 	}
 
 	// the directory is built before the strategy so the strategy's extender
@@ -1914,6 +1930,9 @@ type NetworkSpaceManager struct {
 	// Immutable for this manager, including restored and replacement spaces.
 	// It is never persisted or shared with another manager.
 	apiAltDisabled bool
+	// The app's sealer of every space's .auth_state (local_state_seal.go), nil
+	// for the 0600 files. Immutable, and never persisted.
+	localStateSealer LocalStateSealer
 
 	stateLock          sync.Mutex
 	networkSpaces      map[NetworkSpaceKey]*NetworkSpace
@@ -1996,13 +2015,27 @@ func NewNetworkSpaceManagerWithApiAlt(storagePath string, apiAltEnabled bool) *N
 	return newNetworkSpaceManagerWithContextAndApiAlt(context.Background(), storagePath, apiAltEnabled)
 }
 
+// Constructs all spaces with each one's .auth_state sealed under a key in the
+// app's OS keystore (§18.7, D-SDK-11; local_state_seal.go), so a same-user
+// agent that reads the file reads no credential. Every process that opens the
+// same storage needs a sealer over the same keystore: a sealed file opens
+// under no other, and a process with none refuses it rather than reading
+// anything. A nil sealer is NewNetworkSpaceManagerWithApiAlt.
+func NewNetworkSpaceManagerWithLocalStateSealer(storagePath string, apiAltEnabled bool, sealer LocalStateSealer) *NetworkSpaceManager {
+	return newNetworkSpaceManagerWithContextAndOptions(context.Background(), storagePath, apiAltEnabled, sealer)
+}
+
 // Keeps the production default for context-owned callers.
 func newNetworkSpaceManagerWithContext(ctx context.Context, storagePath string) *NetworkSpaceManager {
 	return newNetworkSpaceManagerWithContextAndApiAlt(ctx, storagePath, true)
 }
 
-// Copies policy before loading even the first persisted space.
 func newNetworkSpaceManagerWithContextAndApiAlt(ctx context.Context, storagePath string, apiAltEnabled bool) *NetworkSpaceManager {
+	return newNetworkSpaceManagerWithContextAndOptions(ctx, storagePath, apiAltEnabled, nil)
+}
+
+// Copies policy, and the sealer, before loading even the first persisted space.
+func newNetworkSpaceManagerWithContextAndOptions(ctx context.Context, storagePath string, apiAltEnabled bool, localStateSealer LocalStateSealer) *NetworkSpaceManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	networkSpaceManager := &NetworkSpaceManager{
@@ -2010,6 +2043,7 @@ func newNetworkSpaceManagerWithContextAndApiAlt(ctx context.Context, storagePath
 		cancel:                            cancel,
 		storagePath:                       storagePath,
 		apiAltDisabled:                    !apiAltEnabled,
+		localStateSealer:                  localStateSealer,
 		networkSpaces:                     map[NetworkSpaceKey]*NetworkSpace{},
 		activeNetworkSpace:                nil,
 		networkSpacesChangeListeners:      connect.NewCallbackList[NetworkSpacesChangeListener](),
@@ -2022,7 +2056,7 @@ func newNetworkSpaceManagerWithContextAndApiAlt(ctx context.Context, storagePath
 // Every restore, update, migration and failed-migration reopen uses the same
 // immutable policy before constructing the space's strategy.
 func (self *NetworkSpaceManager) newNetworkSpace(key NetworkSpaceKey, values NetworkSpaceValues, storagePath string) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettingsAndApiAlt(self.ctx, key, values, storagePath, newNetworkSpaceConnectSettings(), false, !self.apiAltDisabled)
+	return newNetworkSpaceWithConnectSettingsAndApiAlt(self.ctx, key, values, storagePath, newNetworkSpaceConnectSettings(), false, !self.apiAltDisabled, self.localStateSealer)
 }
 
 func (self *NetworkSpaceManager) store() error {

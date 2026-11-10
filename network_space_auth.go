@@ -219,11 +219,15 @@ func (self *NetworkSpace) authSnapshotCurrentWithLock(snapshot *LocalAuthStateSn
 // (keptAcrossSignOut). Clear routing before auth, so interruption does not
 // erase the account boundary while an old private-peer destination remains.
 // Errors can leave partial effects; publishers stay retired in every case, and
-// the sign-in fence (local_state_sign_in.go) is closed before any removal.
+// the sign-in fence (local_state_sign_in.go) is closed before any removal. A
+// sealed .auth_state's key goes from the app's keystore only once the file is
+// gone (local_state_seal.go).
 func (self *LocalState) resetPreservingKeysWithLock(entries []os.DirEntry) error {
 	self.deviceAuthOwner = nil
 	self.deviceAuthGeneration += 1
 	self.signOutWithLock()
+	sealKeyId := self.sealedAuthStateKeyIdLocked()
+	defer self.deleteAuthStateSealKeyLocked(sealKeyId)
 	var resetErr error
 	remove := func(name string) {
 		resetErr = errors.Join(resetErr, localStorageStageError("remove local state during conditional cleanup", os.RemoveAll(filepath.Join(self.localStorageDir, name))))

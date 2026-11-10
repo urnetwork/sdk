@@ -32,6 +32,7 @@ export interface NetworkSpaceValues {
   control_doh_urls_ipv4?: string[];
   control_doh_urls_ipv6?: string[];
   ingress_country_code?: string;
+  session_only_network_credential?: boolean;
 }
 
 export interface ExportNetworkSpace {
@@ -600,6 +601,7 @@ export interface AuthNetworkClientResult {
   client_id?: string | null;
   proxy_config_result: ProxyConfigResult | null;
   error?: AuthNetworkClientError | null;
+  admin_refused?: boolean;
 }
 
 export interface ProviderSpec {
@@ -627,6 +629,7 @@ export interface AuthNetworkClientArgs {
   time_zone?: string;
   locale?: string;
   provide_intent?: boolean;
+  admin_refused?: boolean;
 }
 
 export interface ProxyConfig {

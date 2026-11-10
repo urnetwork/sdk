@@ -42,8 +42,14 @@ type Api struct {
 	networkByJwt string
 	// the LocalState that stores networkByJwt beside the device's client
 	// token, where its renewal persists it (api_network_credential_renewal.go);
-	// nil when no LocalState backs it, and then it is not renewed
+	// nil when no LocalState backs it, and then it is not renewed unless
+	// networkByJwtSessionOnly
 	networkByJwtStore *LocalState
+	// networkByJwt is the session's alone: the device started from a
+	// LocalState that keeps no network credential beside its client token
+	// (NetworkSpaceValues.SessionOnlyNetworkCredential), so it is renewed in
+	// memory and never written back
+	networkByJwtSessionOnly bool
 	// changes whenever networkByJwt or its LocalState changes other than by a
 	// renewal of it
 	networkByJwtGeneration uint64
@@ -319,6 +325,7 @@ func (self *Api) rejectByJwt(rejectedByJwt string, cause string, expectedGenerat
 	self.byJwt = ""
 	self.networkByJwt = ""
 	self.networkByJwtStore = nil
+	self.networkByJwtSessionOnly = false
 	self.networkCredentialChangedWithLock()
 	self.rejectedByJwt = rejectedByJwt
 	self.authLogoutCause = self.trustedRejectionCauseWithLock(rejectedByJwt, cause)
@@ -994,6 +1001,15 @@ type AuthNetworkClientArgs struct {
 	// provides: that device declares intent on its connections and stays a
 	// network peer. Ignored with ClientId or SourceClientId.
 	ProvideIntent bool `json:"provide_intent,omitempty"`
+
+	// Mints a device client the server refuses on every route that
+	// administers the network or the account (§7.4's admin_refused mark, kept
+	// for life and inherited by the client's children), so its token, which
+	// same-user agents can read, administers nothing (§18.7, D-SDK-11, I-6). A
+	// desktop release sets it with NetworkSpaceValues.SessionOnlyNetworkCredential;
+	// false, the default, mints today's client. An app's device client never
+	// asks for strict_exp (owner decision 131), so this carries none.
+	AdminRefused bool `json:"admin_refused,omitempty"`
 }
 
 type AuthNetworkClientResult struct {
@@ -1001,6 +1017,11 @@ type AuthNetworkClientResult struct {
 	ClientId          *Id                     `json:"client_id,omitempty"`
 	ProxyConfigResult *ProxyConfigResult      `json:"proxy_config_result"`
 	Error             *AuthNetworkClientError `json:"error,omitempty"`
+	// The client carries the admin_refused mark: what an app that asked for
+	// AdminRefused checks before it keeps the client. A server without the
+	// mark answers false, and refuses the request rather than minting a
+	// client without it (§7.4).
+	AdminRefused bool `json:"admin_refused,omitempty"`
 }
 
 type AuthNetworkClientError struct {

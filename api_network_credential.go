@@ -248,6 +248,7 @@ func (self *Api) setLoginNetworkByJwtWithLock(byJwt string) {
 		self.networkByJwt = ""
 	}
 	self.networkByJwtStore = nil
+	self.networkByJwtSessionOnly = false
 	self.networkByJwtRejected = ""
 	self.networkCredentialChangedWithLock()
 }
@@ -259,12 +260,16 @@ func (self *Api) setLoginNetworkByJwtWithLock(byJwt string) {
 // device's client is dropped rather than sent for it, and one the server
 // rejected is not adopted again. The LocalState backs the kept credential, and
 // renews it, when it stores exactly that token beside the device's client
-// token (api_network_credential_renewal.go). Reports whether the kept
-// credential or its LocalState changed. Callers hold authMutationLock, the
-// LocalState auth lock and mutex.
+// token (api_network_credential_renewal.go). A LocalState that keeps the
+// network credential for the session only (SessionOnlyNetworkCredential)
+// backs none: the credential the API holds is renewed in memory and never
+// written back, and after a relaunch there is none to adopt. Reports whether
+// the kept credential or its backing changed. Callers hold authMutationLock,
+// the LocalState auth lock and mutex.
 func (self *Api) keepNetworkByJwtForDeviceWithLock(prepared *deviceAuthStartup, deviceByJwt string) bool {
 	networkByJwt := self.networkByJwt
 	networkByJwtStore := self.networkByJwtStore
+	networkByJwtSessionOnly := self.networkByJwtSessionOnly
 	if !sameNetworkOrUnknown(self.networkByJwt, deviceByJwt) {
 		self.networkByJwt = ""
 	}
@@ -278,11 +283,16 @@ func (self *Api) keepNetworkByJwtForDeviceWithLock(prepared *deviceAuthStartup, 
 		}
 	}
 	self.networkByJwtStore = nil
-	if prepared.localState != nil && self.networkByJwt != "" &&
-		prepared.state.ByJwt == self.networkByJwt && credentialNamesClient(deviceByJwt) {
-		self.networkByJwtStore = prepared.localState
+	self.networkByJwtSessionOnly = false
+	if prepared.localState != nil && self.networkByJwt != "" && credentialNamesClient(deviceByJwt) {
+		if prepared.localState.sessionOnlyNetworkCredential() {
+			self.networkByJwtSessionOnly = true
+		} else if prepared.state.ByJwt == self.networkByJwt {
+			self.networkByJwtStore = prepared.localState
+		}
 	}
-	if self.networkByJwt == networkByJwt && self.networkByJwtStore == networkByJwtStore {
+	if self.networkByJwt == networkByJwt && self.networkByJwtStore == networkByJwtStore &&
+		self.networkByJwtSessionOnly == networkByJwtSessionOnly {
 		return false
 	}
 	self.networkCredentialChangedWithLock()

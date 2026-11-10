@@ -16,6 +16,12 @@ package sdk
 // API that no LocalState backs never renews: ur.io's account host (ur.io renews
 // its own token and sets it), a headless backend, and a hosted device's
 // session API, which keeps no network credential.
+//
+// One exception: a device started from a LocalState that keeps the network
+// credential for the session only (NetworkSpaceValues.SessionOnlyNetworkCredential,
+// §18.7, D-SDK-11). The API renews the credential it holds in memory, for as
+// long as the session lasts, and writes nothing back: the file a same-user
+// agent can read never holds it beside the device client.
 
 import (
 	"context"
@@ -180,7 +186,8 @@ func refusedNetworkRenewal(err error) bool {
 }
 
 // networkRenewalTarget is the kept network credential that one renewal reads
-// and renews.
+// and renews. store is nil for a session's credential, which is renewed in
+// memory only.
 type networkRenewalTarget struct {
 	byJwt      string
 	generation uint64
@@ -188,11 +195,12 @@ type networkRenewalTarget struct {
 }
 
 // currentNetworkRenewalTarget is the network credential to renew, if any: a
-// network token that LocalState backs, whose renewal has not stopped.
+// network token that LocalState backs, or the session's own, whose renewal has
+// not stopped.
 func (self *Api) currentNetworkRenewalTarget() (networkRenewalTarget, bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	if self.networkByJwtStore == nil || self.networkRenewalHalted || !renewableNetworkCredential(self.networkByJwt) {
+	if (self.networkByJwtStore == nil && !self.networkByJwtSessionOnly) || self.networkRenewalHalted || !renewableNetworkCredential(self.networkByJwt) {
 		return networkRenewalTarget{}, false
 	}
 	return networkRenewalTarget{
@@ -208,6 +216,7 @@ func (self *Api) isNetworkRenewalTargetWithLock(target networkRenewalTarget) boo
 	return self.networkByJwt == target.byJwt &&
 		self.networkByJwtGeneration == target.generation &&
 		self.networkByJwtStore == target.store &&
+		(target.store != nil || self.networkByJwtSessionOnly) &&
 		!self.networkRenewalHalted
 }
 
@@ -217,16 +226,25 @@ func (self *Api) isNetworkRenewalTargetWithLock(target networkRenewalTarget) boo
 // that came first wins and the renewal is discarded. When the LocalState
 // already stores a later token of the same sign-in, the API keeps that one
 // instead. When it stores another sign-in, or none, renewal stops: the
-// credential stays until the app replaces it. Returns the credential kept.
+// credential stays until the app replaces it. A session's credential, whose
+// target has no LocalState, is kept in memory and written nowhere. Returns the
+// credential kept.
 func (self *Api) commitNetworkRenewal(target networkRenewalTarget, renewedByJwt string) (keptByJwt string, committed bool, err error) {
 	self.authMutationLock.Lock()
 	defer self.authMutationLock.Unlock()
 
 	self.mutex.Lock()
 	current := self.isNetworkRenewalTargetWithLock(target)
+	if current && target.store == nil {
+		// the session's own: no LocalState holds it, and none is written
+		self.networkByJwt = renewedByJwt
+	}
 	self.mutex.Unlock()
 	if !current {
 		return "", false, nil
+	}
+	if target.store == nil {
+		return renewedByJwt, true, nil
 	}
 
 	storedByJwt, accepted, err := target.store.replaceNetworkByJwt(target.byJwt, renewedByJwt)

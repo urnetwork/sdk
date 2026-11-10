@@ -30,6 +30,8 @@ type persistedLocalAuthState struct {
 	Generation uint64 `json:"generation"`
 	// ByJwt is the admin/login credential; ByClientJwt is the separately
 	// derived provider client credential. Client refresh must never merge them.
+	// Under SessionOnlyNetworkCredential ByJwt is kept only until a device
+	// client exists (local_state_seal.go); the key stays either way.
 	ByJwt       string `json:"by_jwt"`
 	ByClientJwt string `json:"by_client_jwt"`
 	InstanceId  string `json:"instance_id"`
@@ -63,8 +65,13 @@ func (self *LocalState) loadAuthState() (persistedLocalAuthState, error) {
 
 // loadAuthStateLocked prefers the atomic envelope. Legacy files are consulted
 // only when the envelope is genuinely absent; a corrupt/unknown envelope must
-// never fall back to older credentials that may describe a different device.
-// Caller holds authStateLock.
+// never fall back to older credentials that may describe a different device,
+// and neither may a sealed one this local state cannot open
+// (local_state_seal.go). An envelope that this local state's credential rules
+// would keep otherwise, one holding a network credential beside a device
+// client under SessionOnlyNetworkCredential or a plaintext one with a sealer
+// installed, is rewritten as they keep it, best effort, and what this returns
+// is what the file holds. Caller holds authStateLock.
 func (self *LocalState) loadAuthStateLocked() (persistedLocalAuthState, error) {
 	path := self.authStatePath()
 	info, err := os.Lstat(path)
@@ -75,6 +82,14 @@ func (self *LocalState) loadAuthStateLocked() (persistedLocalAuthState, error) {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return persistedLocalAuthState{}, readErr
+		}
+		sealed := isSealedLocalAuthState(data)
+		if sealed {
+			// a locked or failed sealer, or none, leaves the file as it is
+			data, readErr = self.unsealAuthStateLocked(data)
+			if readErr != nil {
+				return persistedLocalAuthState{}, readErr
+			}
 		}
 		var state persistedLocalAuthState
 		if decodeErr := json.Unmarshal(data, &state); decodeErr != nil {
@@ -90,6 +105,19 @@ func (self *LocalState) loadAuthStateLocked() (persistedLocalAuthState, error) {
 			return persistedLocalAuthState{}, chmodErr
 		}
 		self.cleanupAuthStateTempsLocked()
+		// The credential rules' migration. It is not a sign-in or a sign-out:
+		// the fence stays as it is (local_state_sign_in.go). A failed rewrite,
+		// such as a locked sealer's, keeps the file, and the next read tries
+		// again.
+		persisted := self.persistedAuthState(state)
+		if persisted != state {
+			persisted.Generation += 1
+		}
+		if persisted != state || (self.authSettings.sealer != nil && !sealed) {
+			if writeErr := self.writeAuthStateFileLocked(persisted); writeErr == nil {
+				return persisted, nil
+			}
+		}
 		return state, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -106,11 +134,12 @@ func (self *LocalState) loadAuthStateLocked() (persistedLocalAuthState, error) {
 
 	// A temporarily read-only filesystem must not turn a valid legacy login
 	// into a logout. Return the coherent legacy snapshot and retry migration on
-	// the next mutation/read; once the envelope commits, legacy files are erased.
+	// the next mutation/read; once the envelope commits, legacy files are erased
+	// and what it holds, under the credential rules, is the state.
 	if writeErr := self.writeAuthStateLocked(legacy); writeErr != nil {
 		return legacy, nil
 	}
-	return legacy, nil
+	return self.persistedAuthState(legacy), nil
 }
 
 // loadLegacyAuthStateLocked snapshots the three files written by pre-envelope
@@ -209,17 +238,38 @@ func (self *LocalState) updateAuthStateWithLock(
 	return nil
 }
 
-// writeAuthStateLocked performs the complete durable transaction: create in
-// the destination directory, restrict permissions before writing secrets,
-// fsync the bytes, atomically replace the authoritative name, then fsync the
-// directory where supported. Caller holds authStateLock.
-func (self *LocalState) writeAuthStateLocked(state persistedLocalAuthState) (returnErr error) {
+// writeAuthStateLocked commits state as the credential rules keep it
+// (persistedAuthState): with the network credential kept for the session
+// only, never a by_jwt beside a device client, whatever the caller's state
+// holds. A stored credential signs the space in. Caller holds authStateLock.
+func (self *LocalState) writeAuthStateLocked(state persistedLocalAuthState) error {
+	state = self.persistedAuthState(state)
+	if err := self.writeAuthStateFileLocked(state); err != nil {
+		return err
+	}
+	// A stored credential signs the space in again (local_state_sign_in.go).
+	self.signInStoredWithLock(state)
+	return nil
+}
+
+// writeAuthStateFileLocked performs the complete durable transaction: seal
+// the envelope when a sealer is installed, which fails before anything is
+// written while it is locked, create in the destination directory, restrict
+// permissions before writing secrets, fsync the bytes, atomically replace the
+// authoritative name, then fsync the directory where supported. It writes
+// state as given. Caller holds authStateLock.
+func (self *LocalState) writeAuthStateFileLocked(state persistedLocalAuthState) (returnErr error) {
 	if err := state.validate(); err != nil {
 		return err
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err
+	}
+	if self.authSettings.sealer != nil {
+		if data, err = self.sealAuthStateLocked(data); err != nil {
+			return err
+		}
 	}
 	if len(data) == 0 || localAuthStateMaxBytes < len(data) {
 		return errors.New("auth state exceeds size limit")
@@ -268,8 +318,6 @@ func (self *LocalState) writeAuthStateLocked(state persistedLocalAuthState) (ret
 
 	self.removeLegacyAuthStateLocked()
 	self.cleanupAuthStateTempsLocked()
-	// A stored credential signs the space in again (local_state_sign_in.go).
-	self.signInStoredWithLock(state)
 	return nil
 }
 
