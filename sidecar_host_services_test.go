@@ -187,6 +187,11 @@ func TestStaleLogoutEventDropped(t *testing.T) {
 	if len(logouts) != 1 || logouts[0] != first {
 		t.Fatalf("the current rejection: %d logouts", len(logouts))
 	}
+	// a session whose token a rejection cleared is no source for a later generation, and takes no signer
+	signer, _ := dpopTestSigner(t)
+	if session.holdsToken() || session.SetDpopSigner(sidecar.SidecarDpopSigner(signer)) == nil {
+		t.Fatal("a session whose token was rejected still offers it")
+	}
 	// a re-pair installs the next child; the first rejection's event, released late, names nothing current
 	session.install(testSidecarChildToken(t, credentialTestNetworkId, credentialTestClientId, 1))
 	session.api.authLogoutEvent(generation, "")

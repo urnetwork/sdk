@@ -66,11 +66,15 @@ func (self *sidecarApiSession) install(byJwt string) {
 	self.api.SetByJwt(byJwt)
 }
 
-// Whether the session holds a token.
+// Whether the session holds a token: one it was given, which its Api still presents, so a session whose token a
+// confirmed rejection cleared is no source for a later generation.
 func (self *sidecarApiSession) holdsToken() bool {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	return self.byJwt != "" && !self.closed
+	held := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.byJwt != "" && !self.closed
+	}()
+	return held && self.api.GetByJwt() != ""
 }
 
 // The child's token now. See sidecar.SidecarTokenSource.
@@ -94,6 +98,9 @@ func (self *sidecarApiSession) AddByJwtCallback(callback func(byJwt string)) fun
 func (self *sidecarApiSession) SetDpopSigner(signer sidecar.SidecarDpopSigner) error {
 	if signer == nil {
 		return errors.New("a sidecar's session refreshes only with a signer")
+	}
+	if self.api.GetByJwt() == "" {
+		return errSidecarSessionEmpty
 	}
 	start := false
 	err := func() error {
