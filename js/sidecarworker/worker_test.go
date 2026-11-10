@@ -1,4 +1,4 @@
-//go:build !sidecar_http
+//go:build !sidecar_http && !js
 
 package sidecarworker
 

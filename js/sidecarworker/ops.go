@@ -1,3 +1,5 @@
+//go:build sidecar_http || !js
+
 // The page Worker's requests and its operations (§18.8's messages row): a request names one operation and its
 // fields, every one of them checked here before anything is read, so a request the frame let through that this
 // Worker would not take still answers invalid and reaches no seam.

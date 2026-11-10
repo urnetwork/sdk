@@ -1,3 +1,5 @@
+//go:build sidecar_http || !js
+
 // What a page Worker answers (§18.8's messages row): a Reply with a view, or a refusal's code and that code's fixed
 // message. Every view is this package's own struct, filled field by field from what the root verified, so nothing a
 // root struct holds beside them, a record's salt and Signed bytes, a token, a key, reaches a page by being passed

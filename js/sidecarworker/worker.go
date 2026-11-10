@@ -1,3 +1,5 @@
+//go:build sidecar_http || !js
+
 // The page Worker's logic (§18.8, §18.10; D-SDK-18, D-SDK-19): one network's read_only sidecar answering the requests
 // of the ur.io pages that frame its key origin, each naming one operation with a correlation id, with plaintext views
 // only. It names no syscall/js, so it builds and tests natively on sidecartest as well as inside sidecar.wasm, whose
