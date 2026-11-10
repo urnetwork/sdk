@@ -119,6 +119,32 @@ entries:
     spdx: Apache-2.0
     text_file: texts/Material-Design-Icons.txt
 
+  # The coin marks of the crypto payment widget's "More coins" tab (mmm
+  # BTCPAY.md section 17.6): each project's own mark in one colour, which
+  # ur.io and the native apps carry as one vector path on a 24x24 box
+  # (coin_tao, coin_btc, coin_eth, coin_sol). The ETH diamond is CC BY 4.0,
+  # so it needs this credit; the Bitcoin logo is public domain, and the file
+  # it is drawn from is bitcoin.org's, under MIT. The Solana logomark and the
+  # Bittensor logo are trademarks shown under their owners' brand guidelines,
+  # with no license text or credit to publish, so they have no entry.
+  - name: ETH diamond
+    kind: software
+    origin: vendored
+    apps: [android, apple, windows, linux, web]
+    url: https://ethereum.org/en/assets/
+    spdx: CC-BY-4.0
+    notice: '"ETH diamond (gray)" by the Ethereum Foundation (ethereum.org), licensed under CC BY 4.0. Changed: its five facets are filled in one flat colour and it is fitted to a 24x24 box.'
+    text_file: texts/CC-BY-4.0.txt
+  - name: Bitcoin logo
+    kind: software
+    origin: vendored
+    apps: [android, apple, windows, linux, web]
+    url: https://bitcoin.org
+    spdx: MIT
+    copyright: Copyright (c) 2009-2026 Bitcoin.org
+    notice: 'The Bitcoin logo, made by bitboy, is in the public domain. The app draws it in one colour from bitcoin.org''s img/icons/logotop.svg, which bitcoin.org publishes under the MIT License.'
+    text_file: texts/MIT.txt
+
   # Windows: vendored and vcpkg C/C++ libraries (windows/app/THIRD-PARTY-NOTICES.txt)
   - name: Wintun
     version: 0.14.1
