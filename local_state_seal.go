@@ -65,7 +65,8 @@ const (
 // The app's keystore for the key that seals .auth_state: an app-only OS keystore, such as the data protection
 // keychain with an access group of the app's alone, so a same-user agent reads neither the key nor, through the
 // file, a credential. Never throws across the binding: each call answers once, with a status. Called on Go
-// threads, possibly several at once.
+// threads, possibly several at once, and, in this draft, while the local state holds its auth lock, so a call must
+// answer without waiting on the person and must not call back into the sdk.
 type LocalStateSealer interface {
 	// Keeps the key under name, replacing any earlier one: LocalStateSealerOk, LocalStateSealerLocked or
 	// LocalStateSealerFailed.
