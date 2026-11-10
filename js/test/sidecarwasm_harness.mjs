@@ -18,7 +18,13 @@ go.exit = (code) => {
 const {instance} = await WebAssembly.instantiate(readFileSync(wasmPath), go.importObject);
 await go.run(instance);
 // a binary that stopped without exiting deadlocked: every goroutine waits on something the loop will never bring
-process.exitCode = exitCode ?? 3;
 if (exitCode === null) {
   console.error("sidecarwasm harness: the program stopped without exiting");
 }
+// A binary that exited may leave the timers of goroutines it never joined, an opened Sidecar's among them, which
+// would hold Node's loop open until each fires and then throw into an exited program: once both streams have
+// flushed what the binary wrote, the harness exits with its code.
+const flushed = (stream) => new Promise((resolve) => stream.write("", resolve));
+await flushed(process.stdout);
+await flushed(process.stderr);
+process.exit(exitCode ?? 3);

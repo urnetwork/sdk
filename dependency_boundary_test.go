@@ -598,8 +598,14 @@ const (
 	sidecarWasmMainPath = "github.com/urnetwork/sdk/js/cmd/sidecarwasm"
 )
 
+// The page Worker's logic (SDK-M4-04), which the main links: a package of this module that names no sdk or connect
+// package itself, which the rest of the closure rule holds, so it is the one other path under
+// github.com/urnetwork/sdk the leg may hold.
+const sidecarWasmWorkerPath = "github.com/urnetwork/sdk/js/sidecarworker"
+
 // What sidecar.wasm's closure must not hold, each with why. A path is under a root as the messaging
-// matcher reads it, whole path elements. The main links the sidecar root and protocol only: connect
+// matcher reads it, whole path elements. The main links the sidecar root, protocol and the Worker's
+// logic only: connect
 // links gVisor's IP stack into every importer, so a connect-only js/wasm main is already 55.0 MB
 // unstripped, and the leg's goal is 41,943,040 B (§18.10); the sdk and sdk.wasm's main link connect;
 // and net/rpc and the template packages keep a binary's exported methods alive, which loses the
@@ -614,12 +620,12 @@ var sidecarWasmRefusedRoots = map[string]string{
 	"html/template":                "html/template, which loses method pruning",
 }
 
-// Each package in a closure under a refused root, as findings. The main's own package is the one path
-// under github.com/urnetwork/sdk it may hold.
+// Each package in a closure under a refused root, as findings. The main's own package and the Worker's
+// logic are the paths under github.com/urnetwork/sdk it may hold.
 func sidecarWasmClosureFindings(legName string, mainPath string, packages []string) []string {
 	findings := []string{}
 	for _, packagePath := range packages {
-		if packagePath == mainPath {
+		if packagePath == mainPath || packagePath == sidecarWasmWorkerPath {
 			continue
 		}
 		for root, why := range sidecarWasmRefusedRoots {
