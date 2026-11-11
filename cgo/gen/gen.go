@@ -100,6 +100,8 @@ var behavioralTypes = map[string]bool{
 	"SnFleetDevice": true,
 	// the client limit notice's episode state: private fields and methods
 	"ClientLimitNoticeTracker": true,
+	// the Pro features notice's episode state: private fields and methods
+	"ProFeaturesNoticeTracker": true,
 	// the balance's Pro and jwt refresh decision: lock-guarded private state
 	"SubscriptionProTracker": true,
 
@@ -127,6 +129,7 @@ var behavioralTypes = map[string]bool{
 	"ReferralCodeViewController":          true,
 	"PointsLeaderboardViewController":     true,
 	"ProviderStatusViewController":        true,
+	"ProFeaturesViewController":           true,
 	"WalletViewController":                true,
 }
 
