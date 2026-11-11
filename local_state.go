@@ -859,9 +859,10 @@ var dnsResolverSettingsReplacedDefaultServers = map[string]string{
 // alone, with these servers (connect net_http_doh_regional.go). An sdk before the presets applied
 // one as custom lists, and a preset-aware sdk below version 4 loaded and saved those as Custom.
 // From 2026-07-10, when an sdk first saved dns settings, to 2026-11-11 ir named Shecan and
-// 403.online's private 10.202.10.10, and tr TTNET and Turkcell Superonline. tm named
-// Turkmentelecom and Google until 2026-11-08, from 2026-09-11 with Google's v6 address, then
-// Turkmentelecom alone until 2026-11-11, when tm lost its recommendation. A record whose
+// 403.online's private 10.202.10.10, and tr TTNET and Turkcell Superonline; since then tr has no
+// recommendation, as DoH works in Turkey. tm named Turkmentelecom and Google until 2026-11-08,
+// from 2026-09-11 with Google's v6 address, then Turkmentelecom alone until 2026-11-11, when tm
+// lost its recommendation too. A record whose
 // DefaultServersVersion is in [since, before) can hold one as the recommendation; in a record of
 // any other version the same lists are the user's own choice.
 var dnsResolverSettingsEarlierRegionalRecommendations = []struct {

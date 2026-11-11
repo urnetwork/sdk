@@ -2,9 +2,9 @@ package sdk
 
 // DefaultServersVersion 4: connect changed the ir, tr and tm regional
 // recommendations on 2026-11-11. ir names Shecan and Electro instead of
-// Shecan and 403.online's private 10.202.10.10, tr Cloudflare and Quad9
-// instead of TTNET's and Turkcell Superonline's resolvers, which answer only
-// their own customers, and tm has none. A record below version 4 that holds an
+// Shecan and 403.online's private 10.202.10.10; tr, whose TTNET and Turkcell
+// Superonline resolvers answer only their own customers and where DoH works,
+// has none; and tm has none. A record below version 4 that holds an
 // earlier recommendation exactly as Custom, which an sdk before the presets
 // applied and a preset-aware sdk kept, loads as its country's pick; an app's
 // copy of a regional pick with an earlier derivation seeds the app's own
@@ -113,16 +113,19 @@ func testingTodaysRegionalPick(countryCode string, enableFallback bool) *testing
 
 // Each earlier ir, tr and tm recommendation, in either order, in a record of
 // every version that can hold it as the recommendation, loads as today's pick
-// of its country with the fallback choice and mask it had: ir and tr with
-// today's lists, and tm, which has no recommendation, with URnetwork's default
-// and its summary saying the pick dropped out. Before version 4 they loaded as
-// Custom with the servers that cannot answer an exit.
+// of its country with the fallback choice and mask it had: ir with today's
+// list, and tr and tm, which have no recommendation, with URnetwork's default
+// and the summary saying the pick dropped out, never with remote plain dns on
+// and no server. Before version 4 they loaded as Custom with the servers that
+// cannot answer an exit.
 func TestEarlierRegionalRecommendationsLoadAsTodaysPick(t *testing.T) {
 	if got := connect.RegionalDnsServerIps("ir"); !slices.Equal(got, []string{"178.22.122.100", "78.157.42.100"}) {
 		t.Fatalf("connect's ir recommendation = %v", got)
 	}
-	if got := connect.RegionalDnsServerIps("tr"); !slices.Equal(got, []string{"1.1.1.1", "9.9.9.10"}) {
-		t.Fatalf("connect's tr recommendation = %v", got)
+	for _, countryCode := range []string{"tr", "tm"} {
+		if got := connect.RegionalDnsResolverSettings(countryCode); got != nil {
+			t.Fatalf("connect recommends %+v for %s, want none", got, countryCode)
+		}
 	}
 	for _, recommendation := range testingEarlierRegionalRecommendations {
 		for _, version := range recommendation.versions {
@@ -140,10 +143,13 @@ func TestEarlierRegionalRecommendationsLoadAsTodaysPick(t *testing.T) {
 						t.Errorf("%s, version %d writer %d, fallback %t: loaded as %+v, want today's pick %+v", name, version, i, enableFallback, got, want)
 					}
 					testingErrorGoogleDns(t, name, loaded)
+					if loaded.EnableRemoteDns && len(testingStringsOf(loaded.RemoteDnsIpv4)) == 0 && len(testingStringsOf(loaded.RemoteDnsIpv6)) == 0 {
+						t.Errorf("%s, version %d: loaded with remote plain dns on and no server", name, version)
+					}
 					summary := DescribeDnsResolverSettings(loaded, recommendation.countryCode)
-					if recommendation.countryCode == "tm" {
-						if summary.Kind != DnsPickKindDefault || !summary.Dropped || summary.DroppedPresetId != "regional-tm" {
-							t.Errorf("%s, version %d: summary = %+v, want the default with the tm pick dropped", name, version, summary)
+					if connect.RegionalDnsResolverSettings(recommendation.countryCode) == nil {
+						if summary.Kind != DnsPickKindDefault || !summary.Dropped || summary.DroppedPresetId != DnsPresetIdRegionalPrefix+recommendation.countryCode {
+							t.Errorf("%s, version %d: summary = %+v, want the default with the %s pick dropped", name, version, summary, recommendation.countryCode)
 						}
 					} else if summary.Kind != DnsPickKindRegional || summary.PresetId != DnsPresetIdRegionalPrefix+recommendation.countryCode {
 						t.Errorf("%s, version %d: summary = %+v, want the %s pick", name, version, summary, recommendation.countryCode)
@@ -155,9 +161,11 @@ func TestEarlierRegionalRecommendationsLoadAsTodaysPick(t *testing.T) {
 }
 
 // The composed path: the device loads a record that holds tr's earlier
-// recommendation and installs today's tr pick, with neither TTNET's nor
-// Superonline's resolver in the tunnel resolver.
-func TestEarlierTrRecommendationLoadsAsTheTrPickOnDevice(t *testing.T) {
+// recommendation as the tr pick, which applies URnetwork's default, as tr has
+// no recommendation: the tunnel resolver is the default one, with remote DoH
+// on and neither TTNET's nor Superonline's resolver, not remote plain dns
+// with no server.
+func TestEarlierTrRecommendationLoadsAsTheDefaultOnDevice(t *testing.T) {
 	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
 	fixture.seedDistinctLogin(t)
 	localState := fixture.networkSpace.GetAsyncLocalState().GetLocalState()
@@ -174,10 +182,13 @@ func TestEarlierTrRecommendationLoadsAsTheTrPickOnDevice(t *testing.T) {
 		defer device.stateLock.Unlock()
 		resolver = device.upgradeMuxSettings.Dns.Resolver
 	}()
-	connect.AssertEqual(t, resolver.EnableRemoteDns, true)
-	connect.AssertEqual(t, resolver.RemoteDnsIpv4, connect.RegionalDnsServerIps("tr"))
-	connect.AssertEqual(t, resolver.RemoteDnsIpv6, connect.RegionalDnsServerIpv6s("tr"))
-	for _, entry := range slices.Concat(resolver.RemoteDnsIpv4, resolver.RemoteDnsIpv6) {
+	defaults := defaultDnsResolver()
+	connect.AssertEqual(t, resolver.EnableRemoteDoh, defaults.EnableRemoteDoh)
+	connect.AssertEqual(t, resolver.EnableRemoteDns, defaults.EnableRemoteDns)
+	connect.AssertEqual(t, resolver.RemoteDohUrlsIpv4, defaults.RemoteDohUrlsIpv4)
+	connect.AssertEqual(t, resolver.RemoteDnsIpv4, defaults.RemoteDnsIpv4)
+	connect.AssertEqual(t, resolver.RemoteDnsIpv6, defaults.RemoteDnsIpv6)
+	for _, entry := range slices.Concat(resolver.RemoteDnsIpv4, resolver.RemoteDnsIpv6, resolver.LocalDnsIpv4, resolver.LocalDnsIpv6) {
 		if entry == "195.175.39.39" || entry == "212.252.114.8" {
 			t.Errorf("the device resolver names an isp resolver: %s", entry)
 		}
@@ -307,40 +318,41 @@ func TestEarlierRegionalListsOtherwiseLoadAsSaved(t *testing.T) {
 // What the sdk shows the apps follows connect's recommendations of
 // 2026-11-11: the regional server list, the recommendation and its pick, and
 // the connection regions with their plain fallback servers name ir's Shecan
-// and Electro and tr's Cloudflare and Quad9, tm has none and is no connection
-// region, and no view names a server that cannot answer an exit.
+// and Electro, tr and tm have none and are no connection region, and no view
+// names a server that cannot answer an exit.
 func TestRegionalDnsViewsShowTodaysRecommendations(t *testing.T) {
 	unable := []string{"10.202.10.10", "195.175.39.39", "195.175.39.40", "212.252.114.8", "217.174.238.141"}
 	servers := GetRegionalDnsServers()
 	for i := range servers.Len() {
 		server := servers.Get(i)
-		if server.CountryCode == "tm" {
-			t.Errorf("the regional servers name tm's %s %s", server.Name, server.Ipv4)
+		if server.CountryCode == "tr" || server.CountryCode == "tm" {
+			t.Errorf("the regional servers name %s's %s %s", server.CountryCode, server.Name, server.Ipv4)
 		}
 		if slices.Contains(unable, server.Ipv4) {
 			t.Errorf("the regional servers name %s %s %s, which cannot answer an exit", server.CountryCode, server.Name, server.Ipv4)
 		}
 	}
-	for countryCode, want := range map[string]bool{"ir": true, "tr": true, "tm": false} {
+	for countryCode, want := range map[string]bool{"ir": true, "tr": false, "tm": false} {
 		if got := HasRegionalDnsRecommendation(countryCode); got != want {
 			t.Errorf("%s has a recommendation: %t, want %t", countryCode, got, want)
 		}
 	}
-	if recommended := GetRecommendedDnsResolverSettings("tm"); recommended != nil {
-		t.Errorf("tm recommendation = %+v, want none", recommended)
+	for _, countryCode := range []string{"tr", "tm"} {
+		if recommended := GetRecommendedDnsResolverSettings(countryCode); recommended != nil {
+			t.Errorf("%s recommendation = %+v, want none", countryCode, recommended)
+		}
+		if slices.Contains(IngressCountryCodes().getAll(), countryCode) {
+			t.Errorf("%s is a connection region: %v", countryCode, IngressCountryCodes().getAll())
+		}
 	}
-	tr := GetRecommendedDnsResolverSettings("tr")
-	if tr == nil || tr.PresetId != "regional-tr" || !tr.EnableRemoteDns || tr.EnableRemoteDoh {
-		t.Fatalf("tr recommendation = %+v, want the tr pick with remote plain dns", tr)
+	ir := GetRecommendedDnsResolverSettings("ir")
+	if ir == nil || ir.PresetId != "regional-ir" || !ir.EnableRemoteDns || ir.EnableRemoteDoh {
+		t.Fatalf("ir recommendation = %+v, want the ir pick with remote plain dns", ir)
 	}
-	connect.AssertEqual(t, testingStringsOf(tr.RemoteDnsIpv4), []string{"1.1.1.1", "9.9.9.10"})
-	connect.AssertEqual(t, testingStringsOf(tr.RemoteDnsIpv6), []string{"2606:4700:4700::1111", "2620:fe::10"})
-	if slices.Contains(IngressCountryCodes().getAll(), "tm") {
-		t.Errorf("tm is a connection region: %v", IngressCountryCodes().getAll())
-	}
+	connect.AssertEqual(t, testingStringsOf(ir.RemoteDnsIpv4), []string{"178.22.122.100", "78.157.42.100"})
 	for countryCode, want := range map[string][]string{
 		"ir": {"178.22.122.100", "78.157.42.100"},
-		"tr": {"1.1.1.1", "9.9.9.10", "2606:4700:4700::1111", "2620:fe::10"},
+		"tr": {},
 		"tm": {},
 	} {
 		if got := IngressPlainDnsServers(countryCode).getAll(); !slices.Equal(got, want) {
