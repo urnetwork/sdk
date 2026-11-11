@@ -304,9 +304,20 @@ inline constexpr const char* ControlDohErrorHttpsRequired = "control_doh_error_h
 inline constexpr const char* ControlDohErrorIpRequired = "control_doh_error_ip_required";
 inline constexpr const char* ControlDohErrorTooMany = "control_doh_error_too_many";
 inline constexpr const char* ControlDohErrorUrlInvalid = "control_doh_error_url_invalid";
+inline constexpr const char* CryptoAssetBtc = "btc";
+inline constexpr const char* CryptoAssetEth = "eth";
+inline constexpr const char* CryptoAssetSol = "sol";
+inline constexpr const char* CryptoAssetTao = "tao";
 inline constexpr const char* CryptoAssetUsdcSolana = "usdc_solana";
 inline constexpr const char* CryptoAssetXmr = "xmr";
 inline constexpr const char* CryptoAssetZec = "zec";
+inline constexpr const char* CryptoIconKeyBtc = "coin_btc";
+inline constexpr const char* CryptoIconKeyEth = "coin_eth";
+inline constexpr const char* CryptoIconKeySol = "coin_sol";
+inline constexpr const char* CryptoIconKeyTao = "coin_tao";
+inline constexpr const char* CryptoIconKeyUsdc = "coin_usdc";
+inline constexpr const char* CryptoIconKeyXmr = "coin_xmr";
+inline constexpr const char* CryptoIconKeyZec = "coin_zec";
 inline constexpr const char* CryptoInvoicePhaseFailed = "failed";
 inline constexpr const char* CryptoInvoicePhaseNone = "none";
 inline constexpr const char* CryptoInvoicePhaseOpen = "open";
@@ -322,6 +333,7 @@ inline constexpr const char* CryptoPaymentStatusPending = "pending";
 inline constexpr const char* CryptoPaymentStatusReview = "review";
 inline constexpr const char* CryptoPaymentStatusSeen = "seen";
 inline constexpr const char* CryptoPaymentStatusUnknown = "unknown";
+inline constexpr const char* CryptoPaymentTabMoreCoins = "more_coins";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
@@ -380,6 +392,9 @@ inline constexpr const char* EventPurchaseFailed = "purchase.failed";
 inline constexpr const char* EventPurchaseStarted = "purchase.started";
 inline constexpr const char* EventSignupOptoutChanged = "signup.optout_changed";
 inline constexpr const char* EventStoreApple = "apple";
+inline constexpr const char* EventStoreBitcoin = "bitcoin";
+inline constexpr const char* EventStoreBittensor = "bittensor";
+inline constexpr const char* EventStoreEthereum = "ethereum";
 inline constexpr const char* EventStoreMonero = "monero";
 inline constexpr const char* EventStorePlay = "play";
 inline constexpr const char* EventStoreSolana = "solana";
@@ -955,10 +970,12 @@ struct CreateDataCryptoPaymentIntentArgs;
 struct CryptoInvoiceState;
 struct CryptoPaymentAsset;
 struct CryptoPaymentAssetsResult;
+struct CryptoPaymentCoin;
 struct CryptoPaymentError;
 struct CryptoPaymentStatusResult;
 struct CryptoPaymentIntentResult;
 struct CryptoPaymentStatusArgs;
+struct CryptoPaymentTab;
 struct CryptoTerm;
 struct DeleteApiKeyArgs;
 struct DeleteApiKeyResult;
@@ -1284,6 +1301,8 @@ using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using CryptoPaymentAssetList = std::vector<CryptoPaymentAsset>;
+using CryptoPaymentCoinList = std::vector<CryptoPaymentCoin>;
+using CryptoPaymentTabList = std::vector<CryptoPaymentTab>;
 using DestinationExitList = std::vector<DestinationExit>;
 using DnsPickList = std::vector<DnsPick>;
 using DnsPresetList = std::vector<DnsPreset>;
@@ -2185,6 +2204,7 @@ struct CryptoInvoiceState {
 	std::string amount_atomic{};
 	std::string ticker{};
 	std::string uri{};
+	std::string qr_text{};
 	std::string memo{};
 	double price_usd{};
 	double rate_usd{};
@@ -2212,6 +2232,15 @@ struct CryptoPaymentAsset {
 
 struct CryptoPaymentAssetsResult {
 	std::optional<CryptoPaymentAssetList> assets;
+	std::optional<CryptoPaymentAssetList> unavailable_assets;
+};
+
+struct CryptoPaymentCoin {
+	std::string asset{};
+	std::string label{};
+	std::string label_key{};
+	std::string icon_key{};
+	bool available{};
 };
 
 struct CryptoPaymentError {
@@ -2270,6 +2299,15 @@ struct CryptoPaymentIntentResult {
 struct CryptoPaymentStatusArgs {
 	std::string intent_id{};
 	std::string status_token{};
+};
+
+struct CryptoPaymentTab {
+	std::string id{};
+	std::string label{};
+	std::string label_key{};
+	std::optional<StringList> icon_keys;
+	std::optional<CryptoPaymentCoinList> coins;
+	bool available{};
 };
 
 struct CryptoTerm {
@@ -5093,6 +5131,8 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentCoin& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentCoin& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentError& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentError& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v);
@@ -5101,6 +5141,8 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentStatusArgs& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v);
 inline void to_json(nlohmann::json& j, const CryptoTerm& v);
 inline void from_json(const nlohmann::json& j, CryptoTerm& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyArgs& v);
@@ -9648,6 +9690,7 @@ inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j["amount_atomic"] = v.amount_atomic;
 	j["ticker"] = v.ticker;
 	j["uri"] = v.uri;
+	j["qr_text"] = v.qr_text;
 	j["memo"] = v.memo;
 	j["price_usd"] = v.price_usd;
 	j["rate_usd"] = v.rate_usd;
@@ -9703,6 +9746,9 @@ inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
 	}
 	if (auto it = j.find("uri"); it != j.end() && !it->is_null()) {
 		it->get_to(v.uri);
+	}
+	if (auto it = j.find("qr_text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.qr_text);
 	}
 	if (auto it = j.find("memo"); it != j.end() && !it->is_null()) {
 		it->get_to(v.memo);
@@ -9793,6 +9839,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v) {
 	if (v.assets) {
 		j["assets"] = *v.assets;
 	}
+	if (v.unavailable_assets) {
+		j["unavailable_assets"] = *v.unavailable_assets;
+	}
 }
 inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v) {
 	if (!j.is_object()) {
@@ -9802,6 +9851,40 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v) {
 		CryptoPaymentAssetList tmp{};
 		it->get_to(tmp);
 		v.assets = std::move(tmp);
+	}
+	if (auto it = j.find("unavailable_assets"); it != j.end() && !it->is_null()) {
+		CryptoPaymentAssetList tmp{};
+		it->get_to(tmp);
+		v.unavailable_assets = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentCoin& v) {
+	j = nlohmann::json::object();
+	j["asset"] = v.asset;
+	j["label"] = v.label;
+	j["label_key"] = v.label_key;
+	j["icon_key"] = v.icon_key;
+	j["available"] = v.available;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentCoin& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("label_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label_key);
+	}
+	if (auto it = j.find("icon_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.icon_key);
+	}
+	if (auto it = j.find("available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.available);
 	}
 }
 
@@ -10182,6 +10265,47 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v) {
 	}
 	if (auto it = j.find("status_token"); it != j.end() && !it->is_null()) {
 		it->get_to(v.status_token);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v) {
+	j = nlohmann::json::object();
+	j["id"] = v.id;
+	j["label"] = v.label;
+	j["label_key"] = v.label_key;
+	if (v.icon_keys) {
+		j["icon_keys"] = *v.icon_keys;
+	}
+	if (v.coins) {
+		j["coins"] = *v.coins;
+	}
+	j["available"] = v.available;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.id);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("label_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label_key);
+	}
+	if (auto it = j.find("icon_keys"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.icon_keys = std::move(tmp);
+	}
+	if (auto it = j.find("coins"); it != j.end() && !it->is_null()) {
+		CryptoPaymentCoinList tmp{};
+		it->get_to(tmp);
+		v.coins = std::move(tmp);
+	}
+	if (auto it = j.find("available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.available);
 	}
 }
 
@@ -38539,6 +38663,30 @@ inline std::string createPaymentReference() {
 	char* r_c = urnet_create_payment_reference();
 	return detail::takeString(r_c);
 }
+inline int64_t cryptoAssetDecimals(const std::string& asset) {
+	int64_t r = urnet_crypto_asset_decimals(asset.c_str());
+	return r;
+}
+inline std::string cryptoAssetIconKey(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_icon_key(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetLabel(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_label(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetLabelKey(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_label_key(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetMarket(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_market(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline int64_t cryptoAssetQuoteDecimals(const std::string& asset) {
+	int64_t r = urnet_crypto_asset_quote_decimals(asset.c_str());
+	return r;
+}
 inline bool cryptoAssetSells(const std::optional<CryptoPaymentAssetList>& assets, const std::string& asset, const std::string& item) {
 	std::string assets_json;
 	const char* assets_c = nullptr;
@@ -38551,6 +38699,44 @@ inline bool cryptoAssetSells(const std::optional<CryptoPaymentAssetList>& assets
 }
 inline std::string cryptoAssetTicker(const std::string& asset) {
 	char* r_c = urnet_crypto_asset_ticker(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoPaymentQrText(const std::string& asset, const std::string& uri, const std::string& address) {
+	char* r_c = urnet_crypto_payment_qr_text(asset.c_str(), uri.c_str(), address.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoPaymentTabId(const std::string& asset) {
+	char* r_c = urnet_crypto_payment_tab_id(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::optional<CryptoPaymentTabList> cryptoPaymentTabs(const std::optional<CryptoPaymentAssetList>& assets, const std::optional<CryptoPaymentAssetList>& unavailable_assets, const std::optional<StringList>& items) {
+	std::string assets_json;
+	const char* assets_c = nullptr;
+	if (assets) {
+		assets_json = nlohmann::json(*assets).dump();
+		assets_c = assets_json.c_str();
+	}
+	std::string unavailable_assets_json;
+	const char* unavailable_assets_c = nullptr;
+	if (unavailable_assets) {
+		unavailable_assets_json = nlohmann::json(*unavailable_assets).dump();
+		unavailable_assets_c = unavailable_assets_json.c_str();
+	}
+	std::string items_json;
+	const char* items_c = nullptr;
+	if (items) {
+		items_json = nlohmann::json(*items).dump();
+		items_c = items_json.c_str();
+	}
+	char* r_c = urnet_crypto_payment_tabs(assets_c, unavailable_assets_c, items_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<CryptoPaymentTabList>(r_s->c_str());
+}
+inline std::string cryptoPaymentUriScheme(const std::string& asset) {
+	char* r_c = urnet_crypto_payment_uri_scheme(asset.c_str());
 	return detail::takeString(r_c);
 }
 inline bool cryptoTermNoticeDue(const std::optional<CryptoTerm>& term) {

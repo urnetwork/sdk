@@ -91,12 +91,15 @@ type CryptoInvoiceState struct {
 	AmountAtomic string `json:"amount_atomic"`
 	// the coin's ticker, CryptoAssetTicker(Asset)
 	Ticker string `json:"ticker"`
-	// the server's payment uri, for the QR code and "Open in wallet". Empty
-	// when it does not pass CheckCryptoPaymentUri against Address, or when a
-	// quote changed elsewhere and the uri no longer pays the amount: show the
-	// address and the amount to send by hand then.
+	// the server's payment uri, for "Open in wallet". Empty when it does not
+	// pass CheckCryptoPaymentUri against Address, when a quote changed
+	// elsewhere and the uri no longer pays the amount, and for TAO, which has
+	// none: show the address and the amount to send by hand then.
 	Uri string `json:"uri"`
-	// usdc_solana only: the memo for a transfer sent by hand
+	// what the QR code encodes (CryptoPaymentQrText): Uri, or for TAO the
+	// address alone; empty when there is no QR code to show
+	QrText string `json:"qr_text"`
+	// usdc_solana and sol only: the memo for a transfer sent by hand
 	Memo     string  `json:"memo"`
 	PriceUsd float64 `json:"price_usd"`
 	RateUsd  float64 `json:"rate_usd"`
@@ -872,6 +875,8 @@ func (self *CryptoInvoiceViewController) GetState() *CryptoInvoiceState {
 	if state.Phase == CryptoInvoicePhaseOpen {
 		state.SecondsLeft = cryptoInvoiceSecondsLeft(self.expiresAt, self.nowFunc())
 	}
+	// follows Uri and Address wherever they change
+	state.QrText = CryptoPaymentQrText(state.Asset, state.Uri, state.Address)
 	return &state
 }
 

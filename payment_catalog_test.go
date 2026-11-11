@@ -72,6 +72,12 @@ func TestClassifySubscriptionStore(t *testing.T) {
 		{"Solana", SubscriptionStoreCrypto},
 		{"monero", SubscriptionStoreCrypto},
 		{"zcash", SubscriptionStoreCrypto},
+		// TAO, Bitcoin and ETH's markets (SOL's is solana), "other" before
+		// 2026-11-10
+		{"bittensor", SubscriptionStoreCrypto},
+		{"bitcoin", SubscriptionStoreCrypto},
+		{"Bitcoin", SubscriptionStoreCrypto},
+		{"ethereum", SubscriptionStoreCrypto},
 		// unknown but non-empty
 		{"coinbase", SubscriptionStoreOther},
 		{"manual", SubscriptionStoreOther},
@@ -82,6 +88,18 @@ func TestClassifySubscriptionStore(t *testing.T) {
 	for _, c := range cases {
 		if got := ClassifySubscriptionStore(c.store); got != c.expected {
 			t.Errorf("ClassifySubscriptionStore(%q) = %q, want %q", c.store, got, c.expected)
+		}
+	}
+}
+
+// A credit in any coin this sdk knows is on its coin's market, which is one
+// time: a coin added without its market in the crypto family would offer a
+// manage link for a payment that never renews.
+func TestClassifySubscriptionStoreKnowsEveryCoinsMarket(t *testing.T) {
+	for _, asset := range cryptoAssetOrder {
+		market := CryptoAssetMarket(asset)
+		if got := ClassifySubscriptionStore(market); got != SubscriptionStoreCrypto {
+			t.Errorf("the market %q of %q classifies as %q, want %q", market, asset, got, SubscriptionStoreCrypto)
 		}
 	}
 }

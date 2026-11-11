@@ -253,9 +253,20 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONTROL_DOH_ERROR_IP_REQUIRED "control_doh_error_ip_required"
 #define URNET_CONTROL_DOH_ERROR_TOO_MANY "control_doh_error_too_many"
 #define URNET_CONTROL_DOH_ERROR_URL_INVALID "control_doh_error_url_invalid"
+#define URNET_CRYPTO_ASSET_BTC "btc"
+#define URNET_CRYPTO_ASSET_ETH "eth"
+#define URNET_CRYPTO_ASSET_SOL "sol"
+#define URNET_CRYPTO_ASSET_TAO "tao"
 #define URNET_CRYPTO_ASSET_USDC_SOLANA "usdc_solana"
 #define URNET_CRYPTO_ASSET_XMR "xmr"
 #define URNET_CRYPTO_ASSET_ZEC "zec"
+#define URNET_CRYPTO_ICON_KEY_BTC "coin_btc"
+#define URNET_CRYPTO_ICON_KEY_ETH "coin_eth"
+#define URNET_CRYPTO_ICON_KEY_SOL "coin_sol"
+#define URNET_CRYPTO_ICON_KEY_TAO "coin_tao"
+#define URNET_CRYPTO_ICON_KEY_USDC "coin_usdc"
+#define URNET_CRYPTO_ICON_KEY_XMR "coin_xmr"
+#define URNET_CRYPTO_ICON_KEY_ZEC "coin_zec"
 #define URNET_CRYPTO_INVOICE_PHASE_FAILED "failed"
 #define URNET_CRYPTO_INVOICE_PHASE_NONE "none"
 #define URNET_CRYPTO_INVOICE_PHASE_OPEN "open"
@@ -271,6 +282,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CRYPTO_PAYMENT_STATUS_REVIEW "review"
 #define URNET_CRYPTO_PAYMENT_STATUS_SEEN "seen"
 #define URNET_CRYPTO_PAYMENT_STATUS_UNKNOWN "unknown"
+#define URNET_CRYPTO_PAYMENT_TAB_MORE_COINS "more_coins"
 #define URNET_DEFAULT_TUNNEL_DNS_ADDRESS_IPV6 "2001:db8::65:49:70:65"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
 #define URNET_DEVICE_RPC_VERSION 3
@@ -329,6 +341,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EVENT_PURCHASE_STARTED "purchase.started"
 #define URNET_EVENT_SIGNUP_OPTOUT_CHANGED "signup.optout_changed"
 #define URNET_EVENT_STORE_APPLE "apple"
+#define URNET_EVENT_STORE_BITCOIN "bitcoin"
+#define URNET_EVENT_STORE_BITTENSOR "bittensor"
+#define URNET_EVENT_STORE_ETHEREUM "ethereum"
 #define URNET_EVENT_STORE_MONERO "monero"
 #define URNET_EVENT_STORE_PLAY "play"
 #define URNET_EVENT_STORE_SOLANA "solana"
@@ -2631,8 +2646,18 @@ char* urnet_compute_price_equivalent(double yearly_amount, double monthly_amount
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_copy_dns_resolver_settings(const char* settings_json);
 char* urnet_create_payment_reference(void);
+int64_t urnet_crypto_asset_decimals(const char* asset);
+char* urnet_crypto_asset_icon_key(const char* asset);
+char* urnet_crypto_asset_label(const char* asset);
+char* urnet_crypto_asset_label_key(const char* asset);
+char* urnet_crypto_asset_market(const char* asset);
+int64_t urnet_crypto_asset_quote_decimals(const char* asset);
 bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const char* item);
 char* urnet_crypto_asset_ticker(const char* asset);
+char* urnet_crypto_payment_qr_text(const char* asset, const char* uri, const char* address);
+char* urnet_crypto_payment_tab_id(const char* asset);
+char* urnet_crypto_payment_tabs(const char* assets_json, const char* unavailable_assets_json, const char* items_json);
+char* urnet_crypto_payment_uri_scheme(const char* asset);
 bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
 char* urnet_default_device_local_settings(void);
@@ -3650,6 +3675,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   amount_atomic: string
  *   ticker: string
  *   uri: string
+ *   qr_text: string
  *   memo: string
  *   price_usd: number
  *   rate_usd: number
@@ -3681,6 +3707,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* CryptoPaymentAssetsResult (json):
  *   assets: CryptoPaymentAssetList | null
+ *   unavailable_assets?: CryptoPaymentAssetList | null
+ */
+
+/* CryptoPaymentCoin (json):
+ *   asset: string
+ *   label: string
+ *   label_key: string
+ *   icon_key: string
+ *   available: boolean
+ */
+
+/* CryptoPaymentCoinList (json):
+ *   = CryptoPaymentCoin | null[]
  */
 
 /* CryptoPaymentError (json):
@@ -3739,6 +3778,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   credited_at?: string
  *   balance_code?: string
  *   error?: CryptoPaymentError | null
+ */
+
+/* CryptoPaymentTab (json):
+ *   id: string
+ *   label: string
+ *   label_key: string
+ *   icon_keys: StringList | null
+ *   coins: CryptoPaymentCoinList | null
+ *   available: boolean
+ */
+
+/* CryptoPaymentTabList (json):
+ *   = CryptoPaymentTab | null[]
  */
 
 /* CryptoTerm (json):
