@@ -1608,6 +1608,7 @@ module URnetwork
       attach_function :urnet_new_bittensor_wallet_session, [:string, :string, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_client_event_queue, [:uint64, :string, :string, :string], :uint64, blocking: true
       attach_function :urnet_new_client_info, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_new_client_info_with_distribution, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_client_limit_notice_tracker, [], :uint64, blocking: true
       attach_function :urnet_new_connect_first_event, [], :pointer, blocking: true
       attach_function :urnet_new_crypto_invoice_view_controller, [:uint64, :string], :uint64, blocking: true

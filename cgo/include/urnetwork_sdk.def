@@ -1162,6 +1162,7 @@ EXPORTS
 	urnet_new_bittensor_wallet_session
 	urnet_new_client_event_queue
 	urnet_new_client_info
+	urnet_new_client_info_with_distribution
 	urnet_new_client_limit_notice_tracker
 	urnet_new_connect_first_event
 	urnet_new_crypto_invoice_view_controller

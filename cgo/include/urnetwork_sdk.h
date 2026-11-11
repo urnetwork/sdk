@@ -233,6 +233,19 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CHECKOUT_BRIDGE_ERROR_UNAVAILABLE "checkout_unavailable"
 #define URNET_CHECKOUT_BRIDGE_URL "https://ur.io/checkout"
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
+#define URNET_CLIENT_DISTRIBUTION_ANDROID_DIRECT "android_direct"
+#define URNET_CLIENT_DISTRIBUTION_APP_STORE "app_store"
+#define URNET_CLIENT_DISTRIBUTION_ETHOS_DAPP "ethos_dapp"
+#define URNET_CLIENT_DISTRIBUTION_EXTENSION_CHROME "extension_chrome"
+#define URNET_CLIENT_DISTRIBUTION_EXTENSION_FIREFOX "extension_firefox"
+#define URNET_CLIENT_DISTRIBUTION_LINUX "linux"
+#define URNET_CLIENT_DISTRIBUTION_LINUX_APPIMAGE "linux_appimage"
+#define URNET_CLIENT_DISTRIBUTION_LINUX_FLATPAK "linux_flatpak"
+#define URNET_CLIENT_DISTRIBUTION_MAC_DIRECT "mac_direct"
+#define URNET_CLIENT_DISTRIBUTION_PLAY "play"
+#define URNET_CLIENT_DISTRIBUTION_SOLANA_DAPP "solana_dapp"
+#define URNET_CLIENT_DISTRIBUTION_WEB "web"
+#define URNET_CLIENT_DISTRIBUTION_WINDOWS "windows"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
 #define URNET_CLIENT_EVENT_MAX_ATTEMPTS 3
 #define URNET_CLIENT_LIMIT_NOTICE_NONE ""
@@ -2750,6 +2763,7 @@ uint64_t urnet_new_bittensor_local_key_flow(uint64_t api, const char* network_id
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_client_info(const char* device_type, const char* app_version);
+char* urnet_new_client_info_with_distribution(const char* device_type, const char* app_version, const char* distribution);
 uint64_t urnet_new_client_limit_notice_tracker(void);
 char* urnet_new_connect_first_event(void);
 uint64_t urnet_new_crypto_invoice_view_controller(uint64_t api, const char* storage_dir);
@@ -3489,6 +3503,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   device_type: string
  *   app_version: string
  *   sdk_version?: string
+ *   distribution?: string
  */
 
 /* ClientLimitStatus (json):

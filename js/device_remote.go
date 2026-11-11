@@ -626,8 +626,10 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 			device.CloseLocationsViewController(vc)
 		})
 	})
+	// setClientInfo(deviceType, appVersion, distribution?): a page that names
+	// no distribution reports it unknown
 	m["setClientInfo"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		device.GetApi().SetClientInfo(sdk.NewClientInfo(stringArg(args, 0), stringArg(args, 1)))
+		device.GetApi().SetClientInfo(sdk.NewClientInfoWithDistribution(stringArg(args, 0), stringArg(args, 1), stringArg(args, 2)))
 		return js.Null()
 	})
 	m["openClientSessionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {

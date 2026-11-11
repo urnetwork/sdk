@@ -1609,6 +1609,7 @@ public interface Raw extends Library {
   long urnet_new_bittensor_wallet_session(String a0, String a1, String a2, String a3, PointerByReference a4);
   long urnet_new_client_event_queue(long a0, String a1, String a2, String a3);
   Pointer urnet_new_client_info(String a0, String a1);
+  Pointer urnet_new_client_info_with_distribution(String a0, String a1, String a2);
   long urnet_new_client_limit_notice_tracker();
   Pointer urnet_new_connect_first_event();
   long urnet_new_crypto_invoice_view_controller(long a0, String a1);

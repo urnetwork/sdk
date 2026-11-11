@@ -2,6 +2,7 @@ import type { ClientSessionSnapshot, SessionSignOutResult, SnNetworkConsentChall
 export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
 import type { SocketDevice } from "./socket";
 import type { SubprotocolDevice } from "./subprotocol";
+import type { ClientDistribution } from "./client_info";
 
 /**
  * Configuration for proxy behavior
@@ -446,8 +447,12 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
   openClientSessionViewController(): ClientSessionViewController;
-  /** Supply display metadata before connecting or making account requests. */
-  setClientInfo(deviceType: string, appVersion: string): void;
+  /**
+   * Supply the client info before connecting or making account requests: the
+   * device type, the app's version and, when the build knows it, its
+   * distribution. Without one the distribution is unknown.
+   */
+  setClientInfo(deviceType: string, appVersion: string, distribution?: ClientDistribution): void;
   openPointsLeaderboardViewController(): PointsLeaderboardViewController;
   openPeerViewController(): PeerViewController;
   openProviderLocationsViewController(): ProviderLocationsViewController;
@@ -1334,8 +1339,12 @@ export interface AccountHost {
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
   openClientSessionViewController(): ClientSessionViewController;
-  /** Supply display metadata before connecting or making account requests. */
-  setClientInfo(deviceType: string, appVersion: string): void;
+  /**
+   * Supply the client info before connecting or making account requests: the
+   * device type, the app's version and, when the build knows it, its
+   * distribution. Without one the distribution is unknown.
+   */
+  setClientInfo(deviceType: string, appVersion: string, distribution?: ClientDistribution): void;
   openAccountPreferencesViewController(): AccountPreferencesViewController;
   openNetworkUserViewController(): NetworkUserViewController;
   openFeedbackViewController(): FeedbackViewController;

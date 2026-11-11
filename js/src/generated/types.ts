@@ -224,6 +224,7 @@ export interface ClientInfo {
   device_type: string;
   app_version: string;
   sdk_version?: string;
+  distribution?: string;
 }
 
 export interface GetPointsLeaderboardArgs {
