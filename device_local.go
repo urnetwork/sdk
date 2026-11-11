@@ -405,6 +405,8 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 	return &DeviceLocalSettings{
 		MemoryTargetByteCount:       memoryTargetByteCount,
 		LowMemoryProfile:            lowMemoryProfile,
+		defaultH1ReceiveCount:       clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
+		hasDefaultH1ReceiveCount:    true,
 		ProviderSendBorrowByteCount: 0,
 		// a strict window hands a drained slot to its replacement instead of
 		// building candidates its hard max refuses (see the field)
@@ -682,6 +684,10 @@ type DeviceLocalSettings struct {
 	// or changes the process Go limit/message pools. Zero target still opts
 	// out of per-device sizing; actual mobile hosts retain their policy.
 	LowMemoryProfile bool
+	// Preserve constructor provenance when a caller overrides the target.
+	// A different H1 count is an explicit caller cap, including zero.
+	defaultH1ReceiveCount    int
+	hasDefaultH1ReceiveCount bool
 
 	// Extra retained-send permission, in bytes, while providing under a device
 	// transfer root. Non-positive disables; positive requests are capped at the
@@ -4734,15 +4740,11 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		resendQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 3, 7), 1024*1024))
 	}
 	if receiveQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget; receiveQueueBudget != nil {
-		receiveQueueBudget.SetTotalByteCount(
-			mobileReceiveQueueBudgetForPlatform(
-				self.settings.MemoryTargetByteCount,
-				clientPairByteCount,
-				mobileRuntime() || self.transferMemory != nil,
-			),
-		)
+		mobile := mobileRuntime() || self.transferMemory != nil
+		logicalReceiveBytes := mobileReceiveQueueBudgetForPlatform(self.settings.MemoryTargetByteCount, clientPairByteCount, mobile)
+		receiveQueueBudget.SetTotalByteCount(deviceLocalPhysicalReceiveBytes(logicalReceiveBytes, self.settings.MemoryTargetByteCount, mobile))
 		if recovery := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget; recovery != nil {
-			recovery.SetTotalByteCount(receiveQueueBudget.TotalByteCount())
+			recovery.SetTotalByteCount(logicalReceiveBytes)
 		}
 	}
 	if packQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget; packQueueBudget != nil {
@@ -5324,6 +5326,7 @@ func (self *DeviceLocal) applyDestination(
 							self.settings.MemoryTargetByteCount,
 							self.settings.LowMemoryProfile,
 						)
+						copyDeviceLocalReceiveSizingToWindow(clientSettings.ReceiveBufferSettings, self.settings)
 						applyMobileH1PerformanceClientSettingsForPlatform(
 							clientSettings,
 							self.settings.MemoryTargetByteCount,
@@ -5989,9 +5992,16 @@ func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress b
 				self.settings.SendTimeout,
 			)
 			self.localFallbackEgressPacketCount.Add(int64(sentPacketCount))
-			if sentPacketCount == len(packets) {
-				self.localFallbackEgressByteCount.Add(int64(packetByteCount))
+			if sentPacketCount != len(packets) {
+				// LocalUserNat consumes every root and reports an accepted prefix.
+				// The caller still owns these slice headers; only their lengths
+				// are read after transfer, never the pooled packet bytes.
+				packetByteCount = 0
+				for _, packet := range packets[:sentPacketCount] {
+					packetByteCount += len(packet)
+				}
 			}
+			self.localFallbackEgressByteCount.Add(int64(packetByteCount))
 			return sentPacketCount
 		}
 	}

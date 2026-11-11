@@ -248,6 +248,14 @@ func newDeviceLocalProviderWithOverrides(
 		mobileRuntime() || transferMemory != nil,
 		targetMode == connect.TransportModeH1,
 	)
+	if providerMemoryTargetByteCount > 0 && deviceLocalReceiveBackingEnabled(deviceMemoryTargetByteCount, mobileRuntime() || transferMemory != nil) {
+		// A distinct provider RX owner keeps its existing H1 policy. The
+		// enlarged consumer handoff is not authority to resize this role.
+		clientSettings.ReceiveBufferSettings.H1SequenceBufferSize = min(
+			clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
+			mobileTargetScaledCount(mobileH1ReceiveSequenceBufferMaxCount, deviceMemoryTargetByteCount),
+		)
+	}
 	// the provider always enables the e2e encryption sessions: the responder
 	// serves plain and e2e peers seamlessly (a session only forms when an
 	// initiator starts a handshake), and every enabled provider grows the
@@ -594,6 +602,8 @@ func configureDeviceLocalProviderMemory(
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
 	// A provider's distinct RX parent cannot inherit the consumer-only child.
 	clientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget = nil
+	clientSettings.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleNumerator = 0
+	clientSettings.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleDenominator = 0
 
 	// Public P2P connections admit against a dedicated phone-sized pool, not
 	// the active transfer receive queue (which is legitimately full precisely

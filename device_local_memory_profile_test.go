@@ -17,6 +17,7 @@ func lowMemorySettingsSnapshot(settings *DeviceLocalSettings) []int64 {
 		int64(send.SequenceBufferSize), int64(send.AckBufferSize), send.ResendQueueMaxByteCount,
 		send.ResendQueueBudget.TotalByteCount(), int64(receive.SequenceBufferSize),
 		int64(receive.H1SequenceBufferSize), receive.SequenceBufferByteCount, receive.H1SequenceBufferByteCount,
+		int64(receive.AdvertisedReceiveWindowBudgetScaleNumerator), int64(receive.AdvertisedReceiveWindowBudgetScaleDenominator),
 		receive.ReceiveQueueBudget.TotalByteCount(), receive.PackQueueBudget.TotalByteCount(),
 		webRtc.ReceiveBufferSize, webRtc.MemoryBudget.TotalByteCount(),
 	}
@@ -77,8 +78,8 @@ func TestLowMemoryProfileDefaultsAndAndroid64RemainDistinct(t *testing.T) {
 		hostedDevice.memorySampler != nil || hostedDevice.mobilePacketPressure != nil {
 		t.Fatal("per-device profile changed actual-platform sampling/packet pressure selection")
 	}
-	if androidDevice.settings.ReceiveBufferSettings.H1SequenceBufferSize != 170 ||
-		hostedDevice.settings.ReceiveBufferSettings.H1SequenceBufferSize != 85 ||
+	if androidDevice.settings.ReceiveBufferSettings.H1SequenceBufferSize != 512 ||
+		hostedDevice.settings.ReceiveBufferSettings.H1SequenceBufferSize != 256 ||
 		androidDevice.settings.ReceiveBufferSettings.PackQueueBudget.TotalByteCount() <=
 			hostedDevice.settings.ReceiveBufferSettings.PackQueueBudget.TotalByteCount() {
 		t.Fatal("Android64 lost its existing larger scaled handoff capacity")
@@ -123,7 +124,8 @@ func TestLowMemoryProfileDestinationGenerationsAndCustomProfile(t *testing.T) {
 			client.SendBufferSettings.ResendQueueBudget != device.settings.SendBufferSettings.ResendQueueBudget ||
 			!client.SendBufferSettings.ResendQueueRetainedByteAccounting ||
 			!client.ReceiveBufferSettings.ReceiveQueueRetainedByteAccounting ||
-			client.ReceiveBufferSettings.H1SequenceBufferSize != 85 ||
+			client.ReceiveBufferSettings.H1SequenceBufferSize != 256 ||
+			client.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleNumerator != 2 || client.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleDenominator != 7 ||
 			client.SendBufferSettings.LogicalDataLaneCount != 10 {
 			t.Fatal("reconnect factory escaped its low-profile owner policy")
 		}
