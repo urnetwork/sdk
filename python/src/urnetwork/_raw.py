@@ -1200,6 +1200,8 @@ def bind(lib):
     lib.urnet_device_get_provide_enabled.restype = c_bool
     lib.urnet_device_get_provide_extender.argtypes = [c_uint64]
     lib.urnet_device_get_provide_extender.restype = c_bool
+    lib.urnet_device_get_provide_extender_port_mapping.argtypes = [c_uint64]
+    lib.urnet_device_get_provide_extender_port_mapping.restype = c_bool
     lib.urnet_device_get_provide_mode.argtypes = [c_uint64]
     lib.urnet_device_get_provide_mode.restype = c_int64
     lib.urnet_device_get_provide_network_mode.argtypes = [c_uint64]
@@ -1302,6 +1304,8 @@ def bind(lib):
     lib.urnet_device_set_provide_control_mode.restype = None
     lib.urnet_device_set_provide_extender.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_provide_extender.restype = None
+    lib.urnet_device_set_provide_extender_port_mapping.argtypes = [c_uint64, c_bool]
+    lib.urnet_device_set_provide_extender_port_mapping.restype = None
     lib.urnet_device_set_provide_mode.argtypes = [c_uint64, c_int64]
     lib.urnet_device_set_provide_mode.restype = None
     lib.urnet_device_set_provide_network_mode.argtypes = [c_uint64, c_char_p]

@@ -724,6 +724,7 @@ module URnetwork
       attach_function :urnet_device_get_provide_control_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_provide_extender, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_get_provide_extender_port_mapping, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_provide_mode, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_provide_network_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_paused, [:uint64], :bool, blocking: true
@@ -775,6 +776,7 @@ module URnetwork
       attach_function :urnet_device_set_performance_profile, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_control_mode, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_extender, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_device_set_provide_extender_port_mapping, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_provide_mode, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_device_set_provide_network_mode, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_paused, [:uint64, :bool], :void, blocking: true

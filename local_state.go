@@ -85,6 +85,15 @@ type LocalState struct {
 	provideExtenderStored bool
 	provideExtender       bool
 
+	// The provider extender's router port mapping setting, read from
+	// `.provide_extender_port_mapping` once and cached after (connect
+	// EXTENDER.md S8), and whether the space stores one at all. Guarded by
+	// provideExtenderPortMappingLock as the setting above is.
+	provideExtenderPortMappingLock   sync.Mutex
+	provideExtenderPortMappingLoaded bool
+	provideExtenderPortMappingStored bool
+	provideExtenderPortMapping       bool
+
 	// The lag.dev measurements setting, read from `.measurements_enabled` once
 	// and cached after (lag.dev/PLAN.md C4), and whether the space stores one
 	// at all. Guarded by measurementsEnabledLock as the setting above is.

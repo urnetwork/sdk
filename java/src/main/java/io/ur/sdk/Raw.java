@@ -725,6 +725,7 @@ public interface Raw extends Library {
   Pointer urnet_device_get_provide_control_mode(long a0);
   byte urnet_device_get_provide_enabled(long a0);
   byte urnet_device_get_provide_extender(long a0);
+  byte urnet_device_get_provide_extender_port_mapping(long a0);
   long urnet_device_get_provide_mode(long a0);
   Pointer urnet_device_get_provide_network_mode(long a0);
   byte urnet_device_get_provide_paused(long a0);
@@ -776,6 +777,7 @@ public interface Raw extends Library {
   void urnet_device_set_performance_profile(long a0, String a1);
   void urnet_device_set_provide_control_mode(long a0, String a1);
   void urnet_device_set_provide_extender(long a0, byte a1);
+  void urnet_device_set_provide_extender_port_mapping(long a0, byte a1);
   void urnet_device_set_provide_mode(long a0, long a1);
   void urnet_device_set_provide_network_mode(long a0, String a1);
   void urnet_device_set_provide_paused(long a0, byte a1);

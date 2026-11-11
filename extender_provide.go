@@ -168,9 +168,44 @@ type ExtenderProvideStatus struct {
 	// connection.
 	LimitedBySubnetsCount int
 	LimitedBySourceCount  int
+	// The router port mapping of the role (connect EXTENDER.md S8), one of the
+	// ExtenderPortMapping values below; empty while the role is not running.
+	PortMapping string
+	// How the router mapped: "pcp", "nat-pmp" or "upnp". Empty while nothing
+	// is mapped.
+	PortMappingMethod string
+	// The router's own external address as the router said it, empty when it
+	// did not say.
+	PortMappingExternalIp string
+	// The external port the router forwards to each carrier, which the
+	// activation offers in place of the bound port: tcp 443, udp 443 and udp
+	// 4053, each 0 while the router does not forward it.
+	PortMappingTcpPort int
+	PortMappingUdpPort int
+	PortMappingDnsPort int
+	// Why nothing is mapped, or why a udp carrier is not, in the router's
+	// words where it gave some; empty otherwise.
+	PortMappingError string
 	// Connections open over every carrier right now.
 	ConnectionCount int
 }
+
+// The states of the router port mapping in the status (connect EXTENDER.md S8),
+// as plain strings for every binding.
+const (
+	// The setting is off: the role asks the router for nothing.
+	ExtenderPortMappingOff = "off"
+	// This device has a public ipv4 address, so there is nothing to map.
+	ExtenderPortMappingNotNeeded = "not_needed"
+	// The router's first answer is awaited.
+	ExtenderPortMappingMapping = "mapping"
+	// The router forwards the tcp carrier, and the udp carriers its ports
+	// name.
+	ExtenderPortMappingMapped = "mapped"
+	// Nothing is mapped. PortMappingError says why, and the role asks the
+	// router again on a backoff of five minutes to an hour.
+	ExtenderPortMappingFailed = "failed"
+)
 
 type ExtenderProvideStatusChangeListener interface {
 	ExtenderProvideStatusChanged(status *ExtenderProvideStatus)
@@ -218,10 +253,24 @@ type extenderProvideState struct {
 	LastPeerPingTime      int64
 	LimitedBySubnetsCount int
 	LimitedBySourceCount  int
+	PortMapping           string
+	PortMappingMethod     string
+	PortMappingExternalIp string
+	PortMappingTcpPort    int
+	PortMappingUdpPort    int
+	PortMappingDnsPort    int
+	PortMappingError      string
 }
 
 func (self extenderProvideState) status(connectionCount int) *ExtenderProvideStatus {
 	return &ExtenderProvideStatus{
+		PortMapping:           self.PortMapping,
+		PortMappingMethod:     self.PortMappingMethod,
+		PortMappingExternalIp: self.PortMappingExternalIp,
+		PortMappingTcpPort:    self.PortMappingTcpPort,
+		PortMappingUdpPort:    self.PortMappingUdpPort,
+		PortMappingDnsPort:    self.PortMappingDnsPort,
+		PortMappingError:      self.PortMappingError,
 		Enabled:               self.Enabled,
 		Listening:             self.Listening,
 		ListenError:           self.ListenError,
@@ -434,6 +483,17 @@ type deviceLocalExtenderSettings struct {
 	// (DeviceLocalSettings.ProvideExtenderDnsPrivilegedPort), off on every app
 	// and on in the sn miner. A failed 53 bind leaves the carrier on DnsPort.
 	DnsPrivilegedPort bool
+	// PortMapping asks the router to forward the carriers that bound to this
+	// device (connect EXTENDER.md S8). The provider fills it from the device's
+	// setting (DeviceLocal.GetProvideExtenderPortMapping), off on every app
+	// until its user turns it on and on in the sn miner.
+	PortMapping bool
+	// When set, replaces the probe of whether this device has a public ipv4
+	// address, which needs no mapping (connect.FamilyPublic). Tests pin it.
+	PortMappingPublicAddress func() bool
+	// The longest the first activation waits for the router's first answer.
+	// Zero takes extenderPortMapWaitTimeout.
+	PortMapWaitTimeout time.Duration
 	// When set, replaces time.After as the wait between attempts to bind tcp
 	// 443 while another process holds it (G2). Tests fire the retry through
 	// it, and hold the role without a sleep.
@@ -635,6 +695,64 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 	}
 	self.log.Infof("[device]provide extender = %t\n", provideExtender)
 	self.updateExtenderProvide()
+}
+
+// The router port mapping setting of this device (connect EXTENDER.md S8):
+// whether the provider extender role asks the router, by PCP, NAT-PMP or UPnP,
+// to forward its own ports -- tcp 443, udp 443 and udp 4053 -- to this device,
+// which opens those ports on the router. The value the space's local state
+// stores; else, on a space that keeps no local state, the value
+// SetProvideExtenderPortMapping set for the life of this device; else the
+// device default, DeviceLocalSettings.DefaultProvideExtenderPortMapping, off on
+// every app and on in the sn miner (owner, 2026-11-11).
+func (self *DeviceLocal) GetProvideExtenderPortMapping() bool {
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		if portMapping, stored := asyncLocalState.GetLocalState().getStoredProvideExtenderPortMapping(); stored {
+			return portMapping
+		}
+		return self.settings.DefaultProvideExtenderPortMapping
+	}
+	portMapping, set := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.provideExtenderPortMapping, self.provideExtenderPortMappingSet
+	}()
+	if set {
+		return portMapping
+	}
+	return self.settings.DefaultProvideExtenderPortMapping
+}
+
+// Sets the router port mapping setting and applies it at once (S8): stored in
+// the space's local state, which keeps it across restarts, or held by this
+// device for its life on a space that keeps no local state. A running role is
+// replaced by one that maps or does not, so turning the setting off removes
+// what the router forwards to this device. A hosted device never runs the role
+// (G1), so the setter is guarded there as SetProvideExtender is.
+func (self *DeviceLocal) SetProvideExtenderPortMapping(portMapping bool) {
+	if self.hostedIncompatibleGuarded("SetProvideExtenderPortMapping") {
+		return
+	}
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		if err := asyncLocalState.GetLocalState().setProvideExtenderPortMapping(portMapping); err != nil {
+			self.log.Infof("[device]provide extender port mapping err = %s\n", err)
+		}
+	} else {
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.provideExtenderPortMapping = portMapping
+			self.provideExtenderPortMappingSet = true
+		}()
+	}
+	self.log.Infof("[device]provide extender port mapping = %t\n", portMapping)
+	self.stateLock.Lock()
+	provider := self.provider
+	self.stateLock.Unlock()
+	if provider != nil {
+		provider.setExtenderPortMapping(portMapping)
+	}
+	self.extenderProvideMonitor.NotifyAll()
 }
 
 // The lag.dev measurements setting of this device (lag.dev/PLAN.md C4,

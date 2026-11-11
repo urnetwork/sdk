@@ -1679,6 +1679,65 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	}
 }
 
+// GetProvideExtenderPortMapping reads the router port mapping setting through
+// to the local device, which owns the space it is stored in (connect
+// EXTENDER.md S8). A device that cannot be reached, or one too old to answer,
+// reads the value queued for it, else the last value read, else off -- the
+// apps' default, so an app never shows a port opened that it cannot confirm.
+func (self *DeviceRemote) GetProvideExtenderPortMapping() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service != nil {
+		portMapping, err := rpcCallNoArgAllowMissingMethod[bool](
+			self.service,
+			"DeviceLocalRpc.GetProvideExtenderPortMapping",
+			self.closeService,
+		)
+		if err == nil {
+			self.lastKnownState.ProvideExtenderPortMapping.Set(portMapping)
+			return portMapping
+		}
+	}
+	return self.state.ProvideExtenderPortMapping.Get(self.lastKnownState.ProvideExtenderPortMapping.Get(false))
+}
+
+// SetProvideExtenderPortMapping writes the setting through to the local device,
+// which persists it and applies it at once (S8). While the device process
+// cannot be reached the value is queued and replayed at the next sync, as the
+// provider extender setting is. A device process too old to have the setter
+// drops the write instead of queueing it: it maps nothing, and a queued value
+// would replay on every reconnect. A hosted device never runs the role (G1), so
+// the setter is guarded there as SetProvideExtender is.
+func (self *DeviceRemote) SetProvideExtenderPortMapping(portMapping bool) {
+	if self.hostedIncompatibleGuarded("SetProvideExtenderPortMapping") {
+		return
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		self.state.ProvideExtenderPortMapping.Set(portMapping)
+		return
+	}
+	err := rpcCallVoidAllowMissingMethod(
+		self.service,
+		"DeviceLocalRpc.SetProvideExtenderPortMapping",
+		portMapping,
+		self.closeService,
+	)
+	switch {
+	case err == nil:
+		self.state.ProvideExtenderPortMapping.Unset()
+		self.lastKnownState.ProvideExtenderPortMapping.Set(portMapping)
+	case rpcMissingMethodError(err):
+		self.state.ProvideExtenderPortMapping.Unset()
+		self.log.Infof("[dr]provide extender port mapping dropped: the device process has no setter")
+	default:
+		self.state.ProvideExtenderPortMapping.Set(portMapping)
+	}
+}
+
 // GetMeasurementsEnabled reads the setting through to the local device, which
 // owns the space it is stored in (lag.dev/PLAN.md C4). A device that cannot be
 // reached, or one too old to answer, reads the value queued for it, else the
@@ -7662,6 +7721,9 @@ type DeviceRemoteState struct {
 	// the lag.dev measurements setting (lag.dev/PLAN.md C4), stored beside the
 	// provider extender setting and queued as it is
 	MeasurementsEnabled deviceRemoteValue[bool]
+	// the router port mapping setting (connect EXTENDER.md S8), stored beside
+	// the provider extender setting and queued as it is
+	ProvideExtenderPortMapping deviceRemoteValue[bool]
 	// the id of a reset of the extender state (EXTENDER.md E7) queued for the
 	// device process, a one-shot command applied during sync; a newer reset
 	// replaces an older one, which it covers
@@ -7744,6 +7806,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
 	self.ProvideExtender.Merge(update.ProvideExtender)
 	self.MeasurementsEnabled.Merge(update.MeasurementsEnabled)
+	self.ProvideExtenderPortMapping.Merge(update.ProvideExtenderPortMapping)
 	self.ExtenderReset.Merge(update.ExtenderReset)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
@@ -7793,6 +7856,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.ProvideNetworkMode.IsSet ||
 		self.ProvideExtender.IsSet ||
 		self.MeasurementsEnabled.IsSet ||
+		self.ProvideExtenderPortMapping.IsSet ||
 		self.ExtenderReset.IsSet ||
 		self.ProvidePaused.IsSet ||
 		self.Offline.IsSet ||
@@ -10494,6 +10558,7 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.ProvideNetworkMode.Set(self.deviceLocal.GetProvideNetworkMode())
 	state.ProvideExtender.Set(self.deviceLocal.GetProvideExtender())
 	state.MeasurementsEnabled.Set(self.deviceLocal.GetMeasurementsEnabled())
+	state.ProvideExtenderPortMapping.Set(self.deviceLocal.GetProvideExtenderPortMapping())
 	state.ProvidePaused.Set(self.deviceLocal.GetProvidePaused())
 	state.Offline.Set(self.deviceLocal.GetOffline())
 	state.VpnInterfaceWhileOffline.Set(self.deviceLocal.GetVpnInterfaceWhileOffline())
@@ -10701,6 +10766,10 @@ func (self *DeviceLocalRpc) Sync(
 	// the lag.dev measurements setting is its own file too (lag.dev/PLAN.md C4)
 	if state.MeasurementsEnabled.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetMeasurementsEnabled(state.MeasurementsEnabled.Value)
+	}
+	// and so is the router port mapping setting (connect EXTENDER.md S8)
+	if state.ProvideExtenderPortMapping.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetProvideExtenderPortMapping(state.ProvideExtenderPortMapping.Value)
 	}
 	// a reset the app made while this process could not be reached (E7)
 	if state.ExtenderReset.IsSet && !hostedIncompatible {
@@ -13163,6 +13232,19 @@ func (self *DeviceLocalRpc) SetMeasurementsEnabled(measurementsEnabled bool, _ R
 		return nil
 	}
 	self.deviceLocal.SetMeasurementsEnabled(measurementsEnabled)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProvideExtenderPortMapping(_ RpcNoArg, portMapping *bool) error {
+	*portMapping = self.deviceLocal.GetProvideExtenderPortMapping()
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetProvideExtenderPortMapping(portMapping bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideExtenderPortMapping") {
+		return nil
+	}
+	self.deviceLocal.SetProvideExtenderPortMapping(portMapping)
 	return nil
 }
 

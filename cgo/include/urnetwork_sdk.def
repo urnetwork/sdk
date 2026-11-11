@@ -520,6 +520,7 @@ EXPORTS
 	urnet_device_get_provide_control_mode
 	urnet_device_get_provide_enabled
 	urnet_device_get_provide_extender
+	urnet_device_get_provide_extender_port_mapping
 	urnet_device_get_provide_mode
 	urnet_device_get_provide_network_mode
 	urnet_device_get_provide_paused
@@ -828,6 +829,7 @@ EXPORTS
 	urnet_device_set_performance_profile
 	urnet_device_set_provide_control_mode
 	urnet_device_set_provide_extender
+	urnet_device_set_provide_extender_port_mapping
 	urnet_device_set_provide_mode
 	urnet_device_set_provide_network_mode
 	urnet_device_set_provide_paused

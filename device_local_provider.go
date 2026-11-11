@@ -87,6 +87,10 @@ type deviceLocalProvider struct {
 	// the device's lag.dev measurements setting, which the role reads as it
 	// starts (lag.dev/PLAN.md C4)
 	extenderMeasurementsEnabled func() bool
+	// extenderPortMapping, when set, is the device's router port mapping
+	// setting, read as each role starts (connect EXTENDER.md S8). A change
+	// replaces a running role (setExtenderPortMapping). Nil maps nothing.
+	extenderPortMapping func() bool
 
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings seeds the direct-only strategies of the
@@ -1798,6 +1802,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ActivatorState:         self.extenderActivatorState,
 	}
 	settings.MeasurementsEnabled = self.extenderMeasurementsEnabled
+	settings.PortMapping = self.extenderPortMapping != nil && self.extenderPortMapping()
 	if self.extenderSettingsConfigure != nil {
 		self.extenderSettingsConfigure(settings)
 	}
@@ -1818,6 +1823,33 @@ func (self *deviceLocalProvider) setExtenderMeasurementsEnabled(measurementsEnab
 	}()
 	if extender != nil {
 		extender.setMeasurementsEnabled(measurementsEnabled)
+	}
+}
+
+// Applies the router port mapping setting to the running role (connect
+// EXTENDER.md S8): a role that maps otherwise than the setting now says is
+// replaced at once, which removes what its router forwards when the setting
+// turns off, and asks the router when it turns on. The new role starts as a new
+// process does, every family due, since a family the operator refused for want
+// of a reachable port is what the setting changes. Taken with the role's start
+// and stop, so a role being built reads the setting once it stands.
+func (self *deviceLocalProvider) setExtenderPortMapping(portMapping bool) {
+	self.extenderLock.Lock()
+	defer self.extenderLock.Unlock()
+	current, closed := func() (*deviceLocalExtender, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.extender, self.closed
+	}()
+	if closed || current == nil || current.portMappingEnabled() == portMapping {
+		return
+	}
+	self.setExtenderEnabledWithLock(false)
+	self.extenderActivatorState = nil
+	self.setExtenderEnabledWithLock(true)
+	// the watch of the status holds the old role's channel (F3)
+	if self.extenderRoleChanged != nil {
+		self.extenderRoleChanged()
 	}
 }
 

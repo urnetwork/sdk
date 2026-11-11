@@ -176,6 +176,59 @@ func (self *LocalState) SetProvideExtender(provideExtender bool) error {
 	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
 }
 
+// The provider extender's router port mapping setting (connect EXTENDER.md S8):
+// whether the role asks the router to forward its ports to this device. A file
+// that is not there is a user who never set it, and the device default applies
+// (DeviceLocalSettings.DefaultProvideExtenderPortMapping, off on every app and
+// on in the sn miner).
+const provideExtenderPortMappingFileName = ".provide_extender_port_mapping"
+
+// The stored port mapping setting, and whether the space stores one at all.
+// Read from its file once and cached after, as the provider extender setting
+// is: every writer goes through setProvideExtenderPortMapping. Only an explicit
+// true or false is a stored value, so a missing, unreadable or corrupt file
+// never opens a port on the router that nobody chose to.
+func (self *LocalState) getStoredProvideExtenderPortMapping() (portMapping bool, stored bool) {
+	self.provideExtenderPortMappingLock.Lock()
+	defer self.provideExtenderPortMappingLock.Unlock()
+	if !self.provideExtenderPortMappingLoaded {
+		self.provideExtenderPortMapping, self.provideExtenderPortMappingStored = func() (bool, bool) {
+			stateBytes, err := os.ReadFile(filepath.Join(self.localStorageDir, provideExtenderPortMappingFileName))
+			if err != nil {
+				return false, false
+			}
+			switch strings.TrimSpace(string(stateBytes)) {
+			case "true":
+				return true, true
+			case "false":
+				return false, true
+			default:
+				return false, false
+			}
+		}()
+		self.provideExtenderPortMappingLoaded = true
+	}
+	return self.provideExtenderPortMapping, self.provideExtenderPortMappingStored
+}
+
+// Persists the port mapping setting. The cache takes the value whether or not
+// the write succeeds, so the setting applies for the session either way, and
+// the write error is returned for the caller to log.
+func (self *LocalState) setProvideExtenderPortMapping(portMapping bool) error {
+	self.provideExtenderPortMappingLock.Lock()
+	defer self.provideExtenderPortMappingLock.Unlock()
+	self.provideExtenderPortMapping = portMapping
+	self.provideExtenderPortMappingStored = true
+	self.provideExtenderPortMappingLoaded = true
+
+	path := filepath.Join(self.localStorageDir, provideExtenderPortMappingFileName)
+	value := "false"
+	if portMapping {
+		value = "true"
+	}
+	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
+}
+
 // The lag.dev measurements setting (lag.dev/PLAN.md C4, decision 18): whether
 // the provider extender role serves the measurement API. A file that is not
 // there is an owner that never opted out, and measurement is on.

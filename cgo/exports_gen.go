@@ -11070,6 +11070,17 @@ func urnet_device_get_provide_extender(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_get_provide_extender_port_mapping
+func urnet_device_get_provide_extender_port_mapping(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_provide_extender_port_mapping")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provide_extender_port_mapping")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProvideExtenderPortMapping()
+	return C.bool(r0)
+}
+
 //export urnet_device_get_provide_mode
 func urnet_device_get_provide_mode(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_device_get_provide_mode")
@@ -11728,6 +11739,16 @@ func urnet_device_set_provide_extender(self C.uint64_t, provideExtender C.bool) 
 		return
 	}
 	self_.SetProvideExtender(bool(provideExtender))
+}
+
+//export urnet_device_set_provide_extender_port_mapping
+func urnet_device_set_provide_extender_port_mapping(self C.uint64_t, portMapping C.bool) {
+	defer cgoGuard("urnet_device_set_provide_extender_port_mapping")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_provide_extender_port_mapping")
+	if !ok {
+		return
+	}
+	self_.SetProvideExtenderPortMapping(bool(portMapping))
 }
 
 //export urnet_device_set_provide_mode
