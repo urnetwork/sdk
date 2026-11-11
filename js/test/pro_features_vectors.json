@@ -1,0 +1,169 @@
+{
+  "_comment": "Shared vectors for the Pro features in use notice: a network without Pro whose hosted proxies hold SOCKS or WireGuard (pro.yml puts both in Pro). sdk/pro_features_status_test.go (Go) and js/test/pro_features.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. status: result is the GET /network/proxies answer as the server sends it (plan: the network holds Pro now, read live, and whether enforce_features is on; each proxy's pro_features: the Pro-only features it holds credentials for), null for no answer, and want is ProFeaturesStatus. A server before the plan sends none, and has no prompt. tracker: each step is update (with the status's prompt), dismiss (the user closed the main screen's notice) or reset (sign out), with the action the tracker returns (post: show and alert; update: show or replace without alerting; remove: withdraw; empty: leave it) and the prompt it shows after the step (empty: none). Client ids are synthetic.",
+  "status": [
+    {
+      "name": "free, enforcement off, a proxy holding SOCKS: the upgrade",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy"] }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "upgrade", "socks_proxy_count": 1, "wireguard_proxy_count": 0, "plan_known": true, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "free, enforcement off, a SOCKS and WireGuard proxy and one with neither",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy", "wireguard_proxy"] },
+          { "client_id": "0194b1c0-0000-7000-8000-000000000002" }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "upgrade", "socks_proxy_count": 1, "wireguard_proxy_count": 1, "plan_known": true, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "free, enforcement off, WireGuard alone",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["wireguard_proxy"] }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "upgrade", "socks_proxy_count": 0, "wireguard_proxy_count": 1, "plan_known": true, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "free, enforcement on: what stopped",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy", "wireguard_proxy"] },
+          { "client_id": "0194b1c0-0000-7000-8000-000000000002", "pro_features": ["socks_proxy"] }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": true }
+      },
+      "want": { "prompt": "stopped", "socks_proxy_count": 2, "wireguard_proxy_count": 1, "plan_known": true, "pro": false, "pro_features_enforced": true }
+    },
+    {
+      "name": "Pro, enforcement off: nothing to say",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy", "wireguard_proxy"] }
+        ],
+        "plan": { "pro": true, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 1, "wireguard_proxy_count": 1, "plan_known": true, "pro": true, "pro_features_enforced": false }
+    },
+    {
+      "name": "Pro, enforcement on: nothing to say",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy"] }
+        ],
+        "plan": { "pro": true, "pro_features_enforced": true }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 1, "wireguard_proxy_count": 0, "plan_known": true, "pro": true, "pro_features_enforced": true }
+    },
+    {
+      "name": "free with no proxies",
+      "result": {
+        "clients": [],
+        "plan": { "pro": false, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 0, "wireguard_proxy_count": 0, "plan_known": true, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "free, enforcement on, proxies issued under it hold neither",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001" },
+          { "client_id": "0194b1c0-0000-7000-8000-000000000002", "pro_features": [] }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": true }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 0, "wireguard_proxy_count": 0, "plan_known": true, "pro": false, "pro_features_enforced": true }
+    },
+    {
+      "name": "a server before the plan: no prompt, whatever the proxies hold",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["socks_proxy"] }
+        ]
+      },
+      "want": { "prompt": "", "socks_proxy_count": 1, "wireguard_proxy_count": 0, "plan_known": false, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "a feature that is not SOCKS or WireGuard counts for neither",
+      "result": {
+        "clients": [
+          { "client_id": "0194b1c0-0000-7000-8000-000000000001", "pro_features": ["unique_exit"] }
+        ],
+        "plan": { "pro": false, "pro_features_enforced": false }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 0, "wireguard_proxy_count": 0, "plan_known": true, "pro": false, "pro_features_enforced": false }
+    },
+    {
+      "name": "a list with no clients field",
+      "result": {
+        "plan": { "pro": false, "pro_features_enforced": true }
+      },
+      "want": { "prompt": "", "socks_proxy_count": 0, "wireguard_proxy_count": 0, "plan_known": true, "pro": false, "pro_features_enforced": true }
+    },
+    {
+      "name": "no answer",
+      "result": null,
+      "want": { "prompt": "", "socks_proxy_count": 0, "wireguard_proxy_count": 0, "plan_known": false, "pro": false, "pro_features_enforced": false }
+    }
+  ],
+  "tracker": [
+    {
+      "name": "alerts once per sign-in; enforcement turning on replaces it in place; a notice that returns shows quietly",
+      "steps": [
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" },
+        { "op": "update", "prompt": "upgrade", "action": "", "shown": "upgrade" },
+        { "op": "update", "prompt": "stopped", "action": "update", "shown": "stopped" },
+        { "op": "update", "prompt": "", "action": "remove", "shown": "" },
+        { "op": "update", "prompt": "", "action": "", "shown": "" },
+        { "op": "update", "prompt": "stopped", "action": "update", "shown": "stopped" }
+      ]
+    },
+    {
+      "name": "a dismissal holds while the prompt stays; a new prompt shows again, quietly",
+      "steps": [
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" },
+        { "op": "dismiss", "action": "remove", "shown": "" },
+        { "op": "update", "prompt": "upgrade", "action": "", "shown": "" },
+        { "op": "update", "prompt": "stopped", "action": "update", "shown": "stopped" },
+        { "op": "dismiss", "action": "remove", "shown": "" },
+        { "op": "update", "prompt": "stopped", "action": "", "shown": "" }
+      ]
+    },
+    {
+      "name": "a dismissed prompt that ends and returns shows again",
+      "steps": [
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" },
+        { "op": "dismiss", "action": "remove", "shown": "" },
+        { "op": "update", "prompt": "", "action": "", "shown": "" },
+        { "op": "update", "prompt": "upgrade", "action": "update", "shown": "upgrade" }
+      ]
+    },
+    {
+      "name": "sign out withdraws it, clears a dismissal, and the next sign-in alerts again",
+      "steps": [
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" },
+        { "op": "reset", "action": "remove", "shown": "" },
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" },
+        { "op": "dismiss", "action": "remove", "shown": "" },
+        { "op": "reset", "action": "", "shown": "" },
+        { "op": "update", "prompt": "upgrade", "action": "post", "shown": "upgrade" }
+      ]
+    },
+    {
+      "name": "nothing showing: nothing to withdraw",
+      "steps": [
+        { "op": "dismiss", "action": "", "shown": "" },
+        { "op": "reset", "action": "", "shown": "" },
+        { "op": "update", "prompt": "", "action": "", "shown": "" }
+      ]
+    }
+  ]
+}
