@@ -87,7 +87,17 @@ func TestDeviceLocalTransferHierarchyProfilesAndOwnership(t *testing.T) {
 			connect.AssertEqual(t, memory.nat.TotalByteCount(), providerShare/2)
 			// Existing target-scaled queue sizes remain independent leaves.
 			connect.AssertEqual(t, client.SendBufferSettings.ResendQueueBudget.TotalByteCount(), max(clientShare*3/7, 1024*1024))
-			connect.AssertEqual(t, client.ReceiveBufferSettings.ReceiveQueueBudget.TotalByteCount(), mobileReceiveQueueBudgetForPlatform(device.settings.MemoryTargetByteCount, clientShare, true))
+			logicalReceive := mobileReceiveQueueBudgetForPlatform(device.settings.MemoryTargetByteCount, clientShare, true)
+			physicalReceive := logicalReceive
+			if targetMiB == 32 {
+				physicalReceive = 7340032
+			} else if targetMiB == 64 {
+				physicalReceive = 14680064
+			}
+			connect.AssertEqual(t, client.ReceiveBufferSettings.ReceiveQueueBudget.TotalByteCount(), physicalReceive)
+			connect.AssertEqual(t, client.ReceiveBufferSettings.ReceiveHeadRecoveryBudget.TotalByteCount(), logicalReceive)
+			connect.AssertEqual(t, provider.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleNumerator, uint8(0))
+			connect.AssertEqual(t, provider.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleDenominator, uint8(0))
 			connect.AssertEqual(t, client.ReceiveBufferSettings.PackQueueBudget.TotalByteCount(), mobilePackQueueBudgetByteCountForTarget(clientShare, device.settings.MemoryTargetByteCount))
 		})
 	}

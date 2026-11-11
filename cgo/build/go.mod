@@ -1,4 +1,4 @@
 // Native build and diagnostic artifacts are outside the source package tree.
 module github.com/urnetwork/sdk/cgo/build
 
-go 1.27.3
+go 1.27.4
