@@ -677,26 +677,17 @@ func CryptoPaidAsset(market string, asset string) string {
 }
 
 // CryptoWalletSuggestions are the wallets the invoice names as working for a
-// coin ("Wallets that work: ..."), in the order to show them. Every Zcash one
-// sends to a shielded address; the TAO ones are Bittensor's own list; the
-// Bitcoin and ETH ones (the owner's, 2026-11-11) are wallets and hardware
-// wallets that send on the coin's own network. The names are product names,
-// never translated. Empty for anything else, which shows no line.
+// coin ("Wallets that work: ..."), in the order to show them. Only TAO names
+// any: Bittensor's own list, product names, never translated. The owner,
+// 2026-11-11: "we do not need to suggest btc or eth wallets. for other coins
+// besides tao we don't need to suggest wallets". So USDC on Solana, Zcash,
+// Monero, SOL, Bitcoin and ETH are empty, as is anything else, and an empty
+// list shows no line.
 func CryptoWalletSuggestions(asset string) *StringList {
 	wallets := NewStringList()
 	switch asset {
-	case CryptoAssetXmr:
-		wallets.addAll("Cake", "Feather", "Monerujo", "Stack", "Unstoppable")
-	case CryptoAssetZec:
-		wallets.addAll("Zodl", "Cake", "Zingo", "Zkool", "Vizor")
-	case CryptoAssetUsdcSolana, CryptoAssetSol:
-		wallets.addAll("Phantom", "Solflare")
 	case CryptoAssetTao:
 		wallets.addAll("btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem")
-	case CryptoAssetBtc:
-		wallets.addAll("Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor")
-	case CryptoAssetEth:
-		wallets.addAll("MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor")
 	}
 	return wallets
 }
