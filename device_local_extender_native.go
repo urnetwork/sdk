@@ -47,6 +47,15 @@ import (
 // one exits. Udp 443, udp 4053 and, when the device opts in, udp 53 are
 // optional: each that fails to bind disables that carrier alone.
 //
+// With the peer-to-peer webrtc carrier (connect/EXTENDER.md S, S8; C2a) tcp
+// 443 is no longer required: when the device has a client to signal through
+// and the carrier is on, which it is by default, a role that cannot bind the
+// port runs on the carrier and the udp carriers, reports the tcp bind failure
+// beside any other, offers the carrier to the activation, and is accepted on
+// the webrtc test alone, which is how a host behind nat extends. The port is
+// tried again only by the role's next start, not every
+// extenderProvideTcpRetryTimeout as the off role tries it.
+//
 // The parts are the ones connectctl's standalone extender wires (G4): the
 // in-process gossip listener and the feed server behind the reserved services
 // (A8), the space's node rebuilt in the extender role (D2), the extender
@@ -163,6 +172,16 @@ type deviceLocalExtender struct {
 	// the tcp carrier camouflage (EXTENDER.md P7), nil unless the role's settings
 	// ask for it; built in the constructor and never replaced
 	camouflage *extender.ExtenderCamouflageRole
+	// the peer-to-peer webrtc carrier the role answers offers on, and the
+	// manager its answerer is installed on (connect/EXTENDER.md S8); nil while
+	// the carrier is unavailable. Built by startServing, read by Close after
+	// joining the loop.
+	webRtcCarrier  *connect.WebRtcExtenderCarrier
+	webRtcManager  *connect.WebRtcManager
+	webRtcAnswerer connect.WebRtcExtenderOfferAnswerer
+	// the role started on the webrtc carrier without tcp 443, so a tcp carrier
+	// that is not serving is no port it lost. Set before the loop starts.
+	startedOnWebRtc bool
 	// the camouflage's standing as last logged, read and written by the loop alone
 	camouflageStanding string
 	// the lag.dev measurement key and certificate (lag.dev/PLAN.md C4), nil
@@ -270,9 +289,20 @@ func newDeviceLocalExtender(
 		wakeMonitor:         connect.NewMonitor(),
 	}
 
-	// tcp 443 first, the one port an extender requires (G2)
+	// tcp 443 first, the one port an extender requires without the webrtc
+	// carrier (G2). With the carrier the role runs without the port, which is
+	// then one more bind the server reports failing (C2a): an extender behind
+	// nat is accepted on the webrtc test alone
 	if tcpListener, err := self.listenTcp(); err == nil {
 		self.startServing(tcpListener)
+	} else if self.webRtcAvailable() {
+		self.log.Infof(
+			"[extender]provide tcp %d unavailable, the role runs on the webrtc carrier = %s\n",
+			self.settings.TcpPort,
+			err,
+		)
+		self.startedOnWebRtc = true
+		self.startServing(nil)
 	} else {
 		self.publishTcpUnavailable(err)
 	}
@@ -327,11 +357,13 @@ func newExtenderProvideCamouflage(settings *deviceLocalExtenderSettings) (*exten
 }
 
 // Builds and starts what the role serves with, on the tcp 443 listener it
-// already holds (G2): the direct strategy, the gossip listener and feed
-// server, the space's node in the extender role, the server on the held tcp
-// listener and the optional udp carriers, the ping reporter and the peer
-// pinger, and the directory's cap on active records. Runs once, before
-// anything that reads these parts starts.
+// already holds (G2), or with none when it runs on the webrtc carrier
+// without the port: the direct strategy, the gossip listener and feed server,
+// the space's node in the extender role, the server on the held tcp listener
+// and the optional udp carriers, the webrtc carrier's answerer on the
+// device's client, the ping reporter and the peer pinger, and the directory's
+// cap on active records. Runs once, before anything that reads these parts
+// starts.
 func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 	settings := self.settings
 
@@ -388,6 +420,19 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		defer self.stateLock.Unlock()
 		self.server = server
 	}()
+	// the webrtc carrier (S8): offers that reach this device's client through
+	// the exchange signaling are answered by the server from here, and the
+	// server lists the carrier for the activation to offer (serverSettings)
+	if manager := self.signalingManager(); manager != nil && self.settings.WebRtcCarrier {
+		webRtcSettings := self.settings.WebRtcSettings
+		if webRtcSettings == nil {
+			webRtcSettings = connect.DefaultWebRtcExtenderSettings()
+		}
+		self.webRtcCarrier = connect.NewWebRtcExtenderCarrier(self.ctx, webRtcSettings, nil)
+		self.webRtcManager = manager
+		self.webRtcAnswerer = self.webRtcCarrier.Answerer(server)
+		manager.SetExtenderCarrierAnswerer(self.webRtcAnswerer)
+	}
 	// what this role's tcp camouflage comes to goes in the space's report, while the
 	// space's cohort control has the report on
 	settings.NetworkSpace.setExtenderCamouflageReportSource(server)
@@ -526,6 +571,20 @@ func (self *deviceLocalExtender) publishTcpUnavailable(err error) {
 	self.statusMonitor.Set(state)
 }
 
+// Whether the role serves the webrtc carrier (S8): the setting is on and the
+// device has a manager to signal through.
+func (self *deviceLocalExtender) webRtcAvailable() bool {
+	return self.settings.WebRtcCarrier && self.signalingManager() != nil
+}
+
+// The manager the carrier's offers arrive on, nil on a device with none.
+func (self *deviceLocalExtender) signalingManager() *connect.WebRtcManager {
+	if self.settings.SignalingManager == nil {
+		return nil
+	}
+	return self.settings.SignalingManager()
+}
+
 // The server, nil while the role waits for tcp 443.
 func (self *deviceLocalExtender) currentServer() *extender.ExtenderServer {
 	self.stateLock.Lock()
@@ -609,8 +668,12 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.DnsPrivilegedPort = self.settings.DnsPrivilegedPort
 	settings.DialContext = self.settings.DialContext
 	settings.DialPacketContext = self.settings.DialPacketContext
+	// the webrtc carrier is served through the signaling, nothing bound, and
+	// keeps the server up when no socket carrier binds (S8, G2)
+	settings.WebRtcCarrier = self.webRtcAvailable()
 	// the tcp carrier is the listener the role already holds (G2); every
-	// other bind goes through the configured seam
+	// other bind goes through the configured seam, the tcp one included when
+	// the role runs on the webrtc carrier without it
 	listen := self.settings.Listen
 	tcpListenAddress := extenderTcpListenAddress(self.settings.TcpPort)
 	settings.Listen = func(network string, address string) (net.Listener, error) {
@@ -944,8 +1007,10 @@ func (self *deviceLocalExtender) run() {
 	// hear, and a port that stays lost, or a server that ended, which nothing
 	// here can bring back, means asking the provider for a new role. The role
 	// bound tcp before its server started, so a first read that finds it gone is
-	// a port already lost, which arms the wait like any other.
-	tcpServing := true
+	// a port already lost, which arms the wait like any other. A role that
+	// started on the webrtc carrier never held the port, so it has none to lose
+	// (S8): only its next start tries the port again.
+	tcpServing := !self.startedOnWebRtc
 	serverDone := self.server.Done()
 	var restartAfter <-chan time.Time
 	for {
@@ -1003,9 +1068,17 @@ func (self *deviceLocalExtender) run() {
 	}
 }
 
-// Whether the tcp carrier is serving, the one port an extender requires (G2).
+// Whether the tcp carrier is serving, the one port an extender requires (G2)
+// without the webrtc carrier.
 func (self *deviceLocalExtender) tcpCarrierServing() bool {
 	return slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp)
+}
+
+// Whether a required carrier is serving (C2a): tcp, or the webrtc carrier.
+func (self *deviceLocalExtender) requiredCarrierServing() bool {
+	carriers := self.server.Carriers()
+	return slices.Contains(carriers, connect.ExtenderCarrierTcp) ||
+		slices.Contains(carriers, connect.ExtenderCarrierWebRtc)
 }
 
 // What the status says of a role whose loop failed, until its replacement.
@@ -1285,10 +1358,11 @@ func (self *deviceLocalExtender) publish() {
 func (self *deviceLocalExtender) state() extenderProvideState {
 	listenErrors := self.server.ListenErrors()
 	state := extenderProvideState{
-		Enabled:     true,
-		Listening:   self.tcpCarrierServing(),
-		ListenError: extenderListenErrorText(listenErrors),
-		DnsPorts:    extenderDnsPortsText(self.server.DnsPorts()),
+		Enabled:       true,
+		Listening:     self.requiredCarrierServing(),
+		ListenError:   extenderListenErrorText(listenErrors),
+		WebRtcCarrier: slices.Contains(self.server.Carriers(), connect.ExtenderCarrierWebRtc),
+		DnsPorts:      extenderDnsPortsText(self.server.DnsPorts()),
 	}
 	// a server gone for good has lost its carriers to no error of theirs
 	if !state.Listening && state.ListenError == "" {
@@ -1463,6 +1537,14 @@ func (self *deviceLocalExtender) Close() {
 		self.peerPinger.Close()
 		self.pingReporter.Close()
 		self.settings.NetworkSpace.clearExtenderCamouflageReportSource(self.currentServer())
+		// the carrier stops answering before the server it answered with goes,
+		// and leaves alone an answerer a successor installed
+		if self.webRtcManager != nil {
+			self.webRtcManager.RemoveExtenderCarrierAnswerer(self.webRtcAnswerer)
+		}
+		if self.webRtcCarrier != nil {
+			self.webRtcCarrier.Close()
+		}
 		self.currentServer().CloseAndWait()
 		// a server closed before it bound never took the tcp listener
 		self.heldTcpListener.release()

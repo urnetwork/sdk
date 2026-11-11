@@ -70,6 +70,9 @@ type deviceLocalProvider struct {
 	// whether the extender role also binds its dns carrier on 53, the
 	// device's ProvideExtenderDnsPrivilegedPort (L2)
 	extenderDnsPrivilegedPort bool
+	// whether the extender role serves the peer-to-peer webrtc carrier, the
+	// device's ProvideExtenderWebRtc (connect/EXTENDER.md S8)
+	extenderWebRtc bool
 	// extenderRoleChanged, when set, is called after a role asked to be replaced
 	// and has been, which the device's watch of the status must hear of (F3)
 	extenderRoleChanged func()
@@ -402,6 +405,9 @@ func newDeviceLocalProviderWithOverrides(
 	// the platform asks the client to migrate its transport when the resident
 	// is draining (make-before-break, CONNECTDRAIN2.md §3.3)
 	client.AddReceiveCallback(provider.handleControlFrames)
+	// the device's webrtc extender dials signal through this client's exchange
+	// connection (connect/EXTENDER.md S8), which opens the space's gate
+	networkSpace.setExtenderWebRtcDialClient(client.WebRtcManager(), client.ClientId())
 	return provider, nil
 }
 
@@ -1381,6 +1387,9 @@ func (self *deviceLocalProvider) Close() {
 			platformTransport.Close()
 		}
 		if self.client != nil {
+			// no webrtc extender dial signals through a client that is closing
+			// (connect/EXTENDER.md S8); another device's client stays
+			self.networkSpace.clearExtenderWebRtcDialClient(self.client.WebRtcManager())
 			self.client.Close()
 		}
 		if self.localUserNat != nil {
@@ -1783,6 +1792,8 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		UdpPort:                connect.ExtenderQuicPort,
 		DnsPort:                connect.ExtenderDnsPort,
 		DnsPrivilegedPort:      self.extenderDnsPrivilegedPort,
+		WebRtcCarrier:          self.extenderWebRtc,
+		SignalingManager:       self.signalingManager,
 		DnsTld:                 connect.DefaultExtenderDnsTld,
 		ApiUrlV4:               networkSpace.GetApiUrlV4(),
 		ApiUrlV6:               networkSpace.GetApiUrlV6(),
@@ -1802,6 +1813,17 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		self.extenderSettingsConfigure(settings)
 	}
 	return settings, nil
+}
+
+// The manager the extender role's webrtc carrier answers offers on: this
+// provider's client's, which is the client the activation is posted under and
+// so the client the operator names in the record as the rendezvous
+// (connect/EXTENDER.md S8). Nil while there is no client.
+func (self *deviceLocalProvider) signalingManager() *connect.WebRtcManager {
+	if client := self.Client(); client != nil {
+		return client.WebRtcManager()
+	}
+	return nil
 }
 
 // Applies the measurements setting to the running role at once

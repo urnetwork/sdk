@@ -283,6 +283,11 @@ type NetworkSpace struct {
 	// url-only space, which names its endpoints outright and has nothing to
 	// discover.
 	extenderDirectory *connect.ExtenderDirectory
+	// The dial side of the peer-to-peer webrtc extender carrier (EXTENDER.md
+	// S8): the client the device signals its dials through, which opens the
+	// directory's webrtc gate while one is set. Nil without a directory, and
+	// for a hosted space, whose devices dial no webrtc extender.
+	extenderWebRtcDial *connect.WebRtcExtenderDialSignaling
 	// The refresh loop that fills the directory (E3). Nil for a space whose
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
@@ -739,6 +744,17 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	// dialers come from it (E2)
 	extenderDirectory := newSpaceExtenderDirectory(cancelCtx, &key, &values, asyncLocalState, clientStrategySettings.Log)
 	clientStrategySettings.ExtenderDirectory = extenderDirectory
+	// the webrtc carrier's dial side is on the strategy's settings before the
+	// strategy copies them (S8); a hosted space dials no webrtc extender
+	var extenderWebRtcDial *connect.WebRtcExtenderDialSignaling
+	if !hostedIncompatible {
+		extenderWebRtcDial = newSpaceExtenderWebRtcDial(
+			cancelCtx,
+			extenderDirectory,
+			&clientStrategySettings.ConnectSettings,
+			clientStrategySettings.Log,
+		)
+	}
 
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
 
@@ -771,6 +787,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 		api:                           api,
 		log:                           clientStrategySettings.ConnectSettings.Log,
 		extenderDirectory:             extenderDirectory,
+		extenderWebRtcDial:            extenderWebRtcDial,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
@@ -808,6 +825,49 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	networkSpace.startExtenderCamouflageReport()
 	networkSpace.startExtenderSeed()
 	return networkSpace
+}
+
+// The dial side of the peer-to-peer webrtc extender carrier for a space
+// (EXTENDER.md S8): a carrier on connectSettings, which the space's strategy
+// is built from, whose resolver signals each dial through the client the
+// device sets (setExtenderWebRtcDialClient) to the rendezvous id the
+// extender's verified record carries. The signaling opens the directory's
+// webrtc gate only while a client is set, so the carrier is a second path of
+// a device with an exchange connection and never its first contact. Nil
+// without a directory.
+func newSpaceExtenderWebRtcDial(
+	ctx context.Context,
+	directory *connect.ExtenderDirectory,
+	connectSettings *connect.ConnectSettings,
+	log connect.Logger,
+) *connect.WebRtcExtenderDialSignaling {
+	if directory == nil {
+		return nil
+	}
+	signaling := connect.NewWebRtcExtenderDialSignaling(directory)
+	webRtcSettings := connect.DefaultWebRtcExtenderSettings()
+	webRtcSettings.Log = log
+	connectSettings.WebRtcExtenderCarrier = connect.NewWebRtcExtenderCarrier(ctx, webRtcSettings, signaling.Resolve)
+	return signaling
+}
+
+// Sets the client this device's webrtc extender dials signal through: its
+// provider client, whose exchange connection reaches the extenders' clients
+// (EXTENDER.md S8). A space without the dial side ignores it.
+func (self *NetworkSpace) setExtenderWebRtcDialClient(manager *connect.WebRtcManager, clientId connect.Id) {
+	if self == nil || self.extenderWebRtcDial == nil {
+		return
+	}
+	self.extenderWebRtcDial.SetClient(manager, clientId)
+}
+
+// Forgets the client a closing device signaled its webrtc extender dials
+// through, unless another device has set its own since.
+func (self *NetworkSpace) clearExtenderWebRtcDialClient(manager *connect.WebRtcManager) {
+	if self == nil || self.extenderWebRtcDial == nil {
+		return
+	}
+	self.extenderWebRtcDial.ClearClient(manager)
 }
 
 // The space's extender directory (E1, F1). It persists under the space's own
@@ -1403,6 +1463,9 @@ func NewNetworkSpaceWithUrls(
 	if extenderDirectory != nil {
 		copiedSettings.ExtenderDirectory = extenderDirectory
 	}
+	// the webrtc carrier's dial side, on the copy the strategy is built from
+	// (S8)
+	extenderWebRtcDial := newSpaceExtenderWebRtcDial(cancelCtx, extenderDirectory, &copiedSettings.ConnectSettings, log)
 	if altUrl != "" {
 		copiedSettings.AltUrl = altUrl
 	}
@@ -1429,6 +1492,7 @@ func NewNetworkSpaceWithUrls(
 		api:                           api,
 		log:                           log,
 		extenderDirectory:             extenderDirectory,
+		extenderWebRtcDial:            extenderWebRtcDial,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
@@ -1852,6 +1916,12 @@ func (self *NetworkSpace) close() {
 		// the seed bootstrap applies to the directory and writes its store, so
 		// it is joined before both close
 		self.closeExtenderSeed()
+		// the strategy dials through the carrier, which the context above
+		// already ends; closing it joins a dial in flight and releases its
+		// peer connection factory
+		if carrier := self.clientStrategySettings.ConnectSettings.WebRtcExtenderCarrier; carrier != nil && self.extenderWebRtcDial != nil {
+			carrier.Close()
+		}
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Close()
 		}

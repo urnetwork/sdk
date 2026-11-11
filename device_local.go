@@ -455,6 +455,9 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// every app binds the extender's dns carrier on 4053 alone; the sn
 		// miner opts in to 53 (L2)
 		ProvideExtenderDnsPrivilegedPort: false,
+		// the peer-to-peer webrtc carrier, so a host behind nat extends
+		// (EXTENDER.md S8)
+		ProvideExtenderWebRtc: true,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -811,6 +814,16 @@ type DeviceLocalSettings struct {
 	// ports on every extender whatever this is. A plain boolean, so gomobile
 	// binds it and the c abi settings json carries it.
 	ProvideExtenderDnsPrivilegedPort bool
+	// ProvideExtenderWebRtc serves the provider extender role's peer-to-peer
+	// webrtc carrier (EXTENDER.md S, S8; C2a): offers that reach this device's
+	// client through the exchange signaling are answered with the extender
+	// server, the activation offers the carrier, and a role that cannot bind
+	// tcp 443 runs on the carrier instead of staying off (G2), which is how a
+	// host behind nat extends. On by default (owner, 2026-11-11), on every
+	// platform that carries the role; an embedder turns it off to keep the
+	// role on public tcp alone. A plain boolean, so gomobile binds it and the
+	// c abi settings json carries it.
+	ProvideExtenderWebRtc bool
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -2247,6 +2260,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		// after this device exists, so its device setting and the test seam
 		// are installed here (G2, L2)
 		provider.extenderDnsPrivilegedPort = settings.ProvideExtenderDnsPrivilegedPort
+		provider.extenderWebRtc = settings.ProvideExtenderWebRtc
 		provider.extenderSettingsConfigure = settings.providerExtenderSettings
 		provider.extenderRoleChanged = func() {
 			deviceLocal.extenderProvideMonitor.NotifyAll()

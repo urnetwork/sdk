@@ -102,7 +102,8 @@ type ExtenderProvideStatus struct {
 	// prefixes the localized case label (N3, N5).
 	Reason string
 	// True while the role is running: this build carries it, the setting is on,
-	// the device is providing, and the role holds tcp 443 (TcpUnavailableError).
+	// the device is providing, and the role holds tcp 443 (TcpUnavailableError)
+	// or serves the webrtc carrier in its stead (WebRtcCarrier).
 	Enabled bool
 	// Why the role could not start while it was asked to: the space has no
 	// extender directory or no identity. Empty while the role runs or was not
@@ -115,12 +116,21 @@ type ExtenderProvideStatus struct {
 	// tried again every few minutes, the role starting the moment it holds the
 	// port. On a host with several provider processes the first to take the
 	// port serves the extender and the others report this. Empty while the role
-	// holds the port or is not asked to run.
+	// holds the port or is not asked to run -- and empty while the role runs on
+	// the webrtc carrier without the port (G2, C2a), when the tcp bind failure
+	// is in ListenError like any other carrier's.
 	TcpUnavailableError string
-	// True while the tcp carrier is serving, the one port an extender requires
-	// (G2). A role that lost it reports false, with what ended it in ListenError
-	// and no family activated, while it binds the port again.
+	// True while a required carrier is serving (G2, C2a): the tcp carrier, or
+	// the peer-to-peer webrtc carrier of a role without tcp 443. A role that
+	// lost it reports false, with what ended it in ListenError and no family
+	// activated, while it binds the port again.
 	Listening bool
+	// True while the role serves the peer-to-peer webrtc carrier
+	// (connect/EXTENDER.md S, S8): the device setting is on
+	// (DeviceLocalSettings.ProvideExtenderWebRtc) and the device has a client
+	// to signal through, so the operator and the clients reach this extender
+	// without a public tcp port.
+	WebRtcCarrier bool
 	// The carriers that failed to bind or were lost, as "<carrier>: <error>"
 	// joined by "; ". Empty when every configured carrier is serving.
 	ListenError string
@@ -202,6 +212,7 @@ type extenderProvideState struct {
 	Listening             bool
 	ListenError           string
 	TcpUnavailableError   string
+	WebRtcCarrier         bool
 	ActivatedV4           bool
 	ActivatedV6           bool
 	Ipv4                  string
@@ -226,6 +237,7 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 		Listening:             self.Listening,
 		ListenError:           self.ListenError,
 		TcpUnavailableError:   self.TcpUnavailableError,
+		WebRtcCarrier:         self.WebRtcCarrier,
 		ActivatedV4:           self.ActivatedV4,
 		ActivatedV6:           self.ActivatedV6,
 		Ipv4:                  self.Ipv4,
@@ -438,6 +450,26 @@ type deviceLocalExtenderSettings struct {
 	// 443 while another process holds it (G2). Tests fire the retry through
 	// it, and hold the role without a sleep.
 	TcpRetryAfter func(wait time.Duration) <-chan time.Time
+
+	// WebRtcCarrier serves the peer-to-peer webrtc carrier beside the socket
+	// carriers (connect/EXTENDER.md S, S8; C2a): the role answers the offers
+	// that reach this device's client through the exchange signaling, and the
+	// activation offers the carrier. With it the role runs without tcp 443,
+	// which is then one more bind failure in the status rather than the role
+	// being off (G2); without it, or without a signaling manager, tcp 443
+	// stays the one port the role requires. The provider fills it from the
+	// device setting (DeviceLocalSettings.ProvideExtenderWebRtc), on by
+	// default.
+	WebRtcCarrier bool
+	// SignalingManager, when set, answers the manager of the client this
+	// device signals through, which is where the carrier's offers arrive and
+	// the client the operator names in the record as the rendezvous. Nil, or a
+	// nil answer, is a device with no signaling path, on which the carrier is
+	// unavailable whatever WebRtcCarrier says.
+	SignalingManager func() *connect.WebRtcManager
+	// The peer connection settings of the carrier. Nil takes
+	// connect.DefaultWebRtcExtenderSettings.
+	WebRtcSettings *connect.WebRtcSettings
 
 	// Asks the provider to replace this role with a new one, which is how a role
 	// whose server ended, or whose tcp carrier stayed lost, comes back (G2). The
