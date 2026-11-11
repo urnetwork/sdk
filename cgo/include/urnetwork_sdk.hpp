@@ -551,6 +551,18 @@ inline constexpr const char* PriceTierSourceDefault = "default";
 inline constexpr const char* PriceTierSourceIp = "ip";
 inline constexpr const char* PriceTierSourceStorefront = "storefront";
 inline constexpr const char* PriceTierStandard = "standard";
+inline constexpr const char* ProFeatureSocksProxy = "socks_proxy";
+inline constexpr const char* ProFeatureWireguardProxy = "wireguard_proxy";
+inline constexpr const char* ProFeaturesErrorLoadFailed = "load_failed";
+inline constexpr const char* ProFeaturesErrorNone = "";
+inline constexpr const char* ProFeaturesErrorSignInRequired = "sign_in_required";
+inline constexpr const char* ProFeaturesNoticeNone = "";
+inline constexpr const char* ProFeaturesNoticePost = "post";
+inline constexpr const char* ProFeaturesNoticeRemove = "remove";
+inline constexpr const char* ProFeaturesNoticeUpdate = "update";
+inline constexpr const char* ProFeaturesPromptNone = "";
+inline constexpr const char* ProFeaturesPromptStopped = "stopped";
+inline constexpr const char* ProFeaturesPromptUpgrade = "upgrade";
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
 inline constexpr const char* ProvideControlModeManual = "manual";
@@ -854,6 +866,8 @@ class PacketBatch;
 class PeerViewController;
 class PointsLeaderboardViewController;
 class PostQuantumIdentityViewController;
+class ProFeaturesNoticeTracker;
+class ProFeaturesViewController;
 class ProvideViewController;
 class ProviderLocationsViewController;
 class ProviderStatusViewController;
@@ -1078,6 +1092,7 @@ struct LocationGroupResult;
 struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
+struct ProFeaturesStatus;
 struct ManageDevicesSnapshot;
 struct ManagedDevice;
 struct MemoryStats;
@@ -1091,6 +1106,7 @@ struct NetworkCheckResult;
 struct NetworkClientConnection;
 struct ProxyClient;
 struct NetworkClientInfo;
+struct NetworkProxiesPlan;
 struct NetworkClientsResult;
 struct NetworkCreateArgs;
 struct NetworkCreateResultError;
@@ -1129,6 +1145,7 @@ struct PointsLeaderboardResult;
 struct PointsLeaderboardScrollLabelParts;
 struct PriceEquivalent;
 struct PriceTier;
+struct ProFeaturesSnapshot;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
@@ -3160,6 +3177,15 @@ struct LogFileInfo {
 	int64_t ModifiedMillis{};
 };
 
+struct ProFeaturesStatus {
+	std::string Prompt{};
+	int64_t SocksProxyCount{};
+	int64_t WireguardProxyCount{};
+	bool PlanKnown{};
+	bool Pro{};
+	bool ProFeaturesEnforced{};
+};
+
 struct ManageDevicesSnapshot {
 	std::optional<ManagedDeviceList> Devices;
 	bool Loaded{};
@@ -3167,6 +3193,7 @@ struct ManageDevicesSnapshot {
 	std::optional<std::string> RemovingClientId;
 	std::string ErrorId{};
 	int64_t AddRetryCount{};
+	std::optional<ProFeaturesStatus> ProFeatures;
 };
 
 struct ManagedDevice {
@@ -3311,10 +3338,17 @@ struct NetworkClientInfo {
 	std::optional<ProxyClient> proxy_client;
 	std::optional<ProxyExit> exit;
 	std::optional<NetworkClientConnectionList> connections;
+	std::optional<StringList> pro_features;
+};
+
+struct NetworkProxiesPlan {
+	bool pro{};
+	bool pro_features_enforced{};
 };
 
 struct NetworkClientsResult {
 	std::optional<NetworkClientInfoList> clients;
+	std::optional<NetworkProxiesPlan> plan;
 };
 
 struct NetworkCreateArgs {
@@ -3632,6 +3666,14 @@ struct PriceTier {
 	std::string currency{};
 	std::string source{};
 	bool estimate{};
+};
+
+struct ProFeaturesSnapshot {
+	std::optional<ProFeaturesStatus> Status;
+	std::string MainPrompt{};
+	bool Loaded{};
+	bool Loading{};
+	std::string ErrorId{};
 };
 
 struct ProbeResult {
@@ -5354,6 +5396,8 @@ inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
+inline void to_json(nlohmann::json& j, const ProFeaturesStatus& v);
+inline void from_json(const nlohmann::json& j, ProFeaturesStatus& v);
 inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v);
 inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v);
 inline void to_json(nlohmann::json& j, const ManagedDevice& v);
@@ -5380,6 +5424,8 @@ inline void to_json(nlohmann::json& j, const ProxyClient& v);
 inline void from_json(const nlohmann::json& j, ProxyClient& v);
 inline void to_json(nlohmann::json& j, const NetworkClientInfo& v);
 inline void from_json(const nlohmann::json& j, NetworkClientInfo& v);
+inline void to_json(nlohmann::json& j, const NetworkProxiesPlan& v);
+inline void from_json(const nlohmann::json& j, NetworkProxiesPlan& v);
 inline void to_json(nlohmann::json& j, const NetworkClientsResult& v);
 inline void from_json(const nlohmann::json& j, NetworkClientsResult& v);
 inline void to_json(nlohmann::json& j, const NetworkCreateArgs& v);
@@ -5456,6 +5502,8 @@ inline void to_json(nlohmann::json& j, const PriceEquivalent& v);
 inline void from_json(const nlohmann::json& j, PriceEquivalent& v);
 inline void to_json(nlohmann::json& j, const PriceTier& v);
 inline void from_json(const nlohmann::json& j, PriceTier& v);
+inline void to_json(nlohmann::json& j, const ProFeaturesSnapshot& v);
+inline void from_json(const nlohmann::json& j, ProFeaturesSnapshot& v);
 inline void to_json(nlohmann::json& j, const ProbeResult& v);
 inline void from_json(const nlohmann::json& j, ProbeResult& v);
 inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
@@ -13922,6 +13970,39 @@ inline void from_json(const nlohmann::json& j, LogFileInfo& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProFeaturesStatus& v) {
+	j = nlohmann::json::object();
+	j["Prompt"] = v.Prompt;
+	j["SocksProxyCount"] = v.SocksProxyCount;
+	j["WireguardProxyCount"] = v.WireguardProxyCount;
+	j["PlanKnown"] = v.PlanKnown;
+	j["Pro"] = v.Pro;
+	j["ProFeaturesEnforced"] = v.ProFeaturesEnforced;
+}
+inline void from_json(const nlohmann::json& j, ProFeaturesStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Prompt);
+	}
+	if (auto it = j.find("SocksProxyCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SocksProxyCount);
+	}
+	if (auto it = j.find("WireguardProxyCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WireguardProxyCount);
+	}
+	if (auto it = j.find("PlanKnown"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlanKnown);
+	}
+	if (auto it = j.find("Pro"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Pro);
+	}
+	if (auto it = j.find("ProFeaturesEnforced"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProFeaturesEnforced);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v) {
 	j = nlohmann::json::object();
 	if (v.Devices) {
@@ -13934,6 +14015,9 @@ inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v) {
 	}
 	j["ErrorId"] = v.ErrorId;
 	j["AddRetryCount"] = v.AddRetryCount;
+	if (v.ProFeatures) {
+		j["ProFeatures"] = *v.ProFeatures;
+	}
 }
 inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v) {
 	if (!j.is_object()) {
@@ -13960,6 +14044,11 @@ inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v) {
 	}
 	if (auto it = j.find("AddRetryCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.AddRetryCount);
+	}
+	if (auto it = j.find("ProFeatures"); it != j.end() && !it->is_null()) {
+		ProFeaturesStatus tmp{};
+		it->get_to(tmp);
+		v.ProFeatures = std::move(tmp);
 	}
 }
 
@@ -14525,6 +14614,9 @@ inline void to_json(nlohmann::json& j, const NetworkClientInfo& v) {
 	if (v.connections) {
 		j["connections"] = *v.connections;
 	}
+	if (v.pro_features) {
+		j["pro_features"] = *v.pro_features;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkClientInfo& v) {
 	if (!j.is_object()) {
@@ -14597,12 +14689,37 @@ inline void from_json(const nlohmann::json& j, NetworkClientInfo& v) {
 		it->get_to(tmp);
 		v.connections = std::move(tmp);
 	}
+	if (auto it = j.find("pro_features"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.pro_features = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const NetworkProxiesPlan& v) {
+	j = nlohmann::json::object();
+	j["pro"] = v.pro;
+	j["pro_features_enforced"] = v.pro_features_enforced;
+}
+inline void from_json(const nlohmann::json& j, NetworkProxiesPlan& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("pro"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pro);
+	}
+	if (auto it = j.find("pro_features_enforced"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pro_features_enforced);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const NetworkClientsResult& v) {
 	j = nlohmann::json::object();
 	if (v.clients) {
 		j["clients"] = *v.clients;
+	}
+	if (v.plan) {
+		j["plan"] = *v.plan;
 	}
 }
 inline void from_json(const nlohmann::json& j, NetworkClientsResult& v) {
@@ -14613,6 +14730,11 @@ inline void from_json(const nlohmann::json& j, NetworkClientsResult& v) {
 		NetworkClientInfoList tmp{};
 		it->get_to(tmp);
 		v.clients = std::move(tmp);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		NetworkProxiesPlan tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
 	}
 }
 
@@ -16234,6 +16356,39 @@ inline void from_json(const nlohmann::json& j, PriceTier& v) {
 	}
 	if (auto it = j.find("estimate"); it != j.end() && !it->is_null()) {
 		it->get_to(v.estimate);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProFeaturesSnapshot& v) {
+	j = nlohmann::json::object();
+	if (v.Status) {
+		j["Status"] = *v.Status;
+	}
+	j["MainPrompt"] = v.MainPrompt;
+	j["Loaded"] = v.Loaded;
+	j["Loading"] = v.Loading;
+	j["ErrorId"] = v.ErrorId;
+}
+inline void from_json(const nlohmann::json& j, ProFeaturesSnapshot& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Status"); it != j.end() && !it->is_null()) {
+		ProFeaturesStatus tmp{};
+		it->get_to(tmp);
+		v.Status = std::move(tmp);
+	}
+	if (auto it = j.find("MainPrompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MainPrompt);
+	}
+	if (auto it = j.find("Loaded"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loaded);
+	}
+	if (auto it = j.find("Loading"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loading);
+	}
+	if (auto it = j.find("ErrorId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorId);
 	}
 }
 
@@ -22375,6 +22530,7 @@ using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
 using PointsLeaderboardListener = std::function<void()>;
 using PostQuantumIdentityListener = std::function<void()>;
+using ProFeaturesListener = std::function<void(std::optional<ProFeaturesSnapshot> snapshot)>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
 using ProvideControlModeChangeListener = std::function<void(std::string provide_control_mode)>;
 using ProvideModeChangeListener = std::function<void(int64_t provide_mode)>;
@@ -22788,6 +22944,7 @@ public:
 	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
 	ClientSessionViewController openClientSessionViewController() const;
 	ManageDevicesViewController openManageDevicesViewController() const;
+	ProFeaturesViewController openProFeaturesViewController() const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -23892,6 +24049,29 @@ public:
 	std::optional<ProviderIdentityList> getProviderIdentities() const;
 	std::string getPublicIdentityKeyHash() const;
 	void providerIdentitiesChanged() const;
+	void start() const;
+	void stop() const;
+};
+
+class ProFeaturesNoticeTracker final : public detail::Handle {
+public:
+	ProFeaturesNoticeTracker() = default;
+	explicit ProFeaturesNoticeTracker(uint64_t h) : detail::Handle(h) {}
+	std::string dismiss() const;
+	std::string getShownPrompt() const;
+	std::string reset() const;
+	std::string update(const std::optional<ProFeaturesStatus>& status) const;
+};
+
+class ProFeaturesViewController final : public detail::Handle {
+public:
+	ProFeaturesViewController() = default;
+	explicit ProFeaturesViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addProFeaturesListener(ProFeaturesListener listener) const;
+	void close() const;
+	void dismissMainNotice() const;
+	std::optional<ProFeaturesSnapshot> getSnapshot() const;
+	void refresh() const;
 	void start() const;
 	void stop() const;
 };
@@ -28001,6 +28181,34 @@ inline void oneshot_post_quantum_identity(void* user_data) {
 	auto* f = static_cast<PostQuantumIdentityListener*>(user_data);
 	try {
 		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_pro_features(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ProFeaturesListener*>(user_data);
+	try {
+		std::optional<ProFeaturesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ProFeaturesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_pro_features(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ProFeaturesListener*>(user_data);
+	try {
+		std::optional<ProFeaturesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ProFeaturesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -32868,6 +33076,10 @@ inline ManageDevicesViewController Api::openManageDevicesViewController() const 
 	ManageDevicesViewController r(urnet_api_open_manage_devices_view_controller(handle()));
 	return r;
 }
+inline ProFeaturesViewController Api::openProFeaturesViewController() const {
+	ProFeaturesViewController r(urnet_api_open_pro_features_view_controller(handle()));
+	return r;
+}
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -37720,6 +37932,62 @@ inline void PostQuantumIdentityViewController::start() const {
 inline void PostQuantumIdentityViewController::stop() const {
 	urnet_post_quantum_identity_view_controller_stop(handle());
 }
+inline std::string ProFeaturesNoticeTracker::dismiss() const {
+	char* r_c = urnet_pro_features_notice_tracker_dismiss(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ProFeaturesNoticeTracker::getShownPrompt() const {
+	char* r_c = urnet_pro_features_notice_tracker_get_shown_prompt(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ProFeaturesNoticeTracker::reset() const {
+	char* r_c = urnet_pro_features_notice_tracker_reset(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ProFeaturesNoticeTracker::update(const std::optional<ProFeaturesStatus>& status) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_pro_features_notice_tracker_update(handle(), status_c);
+	return detail::takeString(r_c);
+}
+inline Sub ProFeaturesViewController::addProFeaturesListener(ProFeaturesListener listener) const {
+	std::shared_ptr<ProFeaturesListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProFeaturesListener>(std::move(listener));
+	}
+	Sub r(urnet_pro_features_view_controller_add_pro_features_listener(handle(), listener_fn ? &detail::retained_pro_features : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ProFeaturesViewController::close() const {
+	urnet_pro_features_view_controller_close(handle());
+}
+inline void ProFeaturesViewController::dismissMainNotice() const {
+	urnet_pro_features_view_controller_dismiss_main_notice(handle());
+}
+inline std::optional<ProFeaturesSnapshot> ProFeaturesViewController::getSnapshot() const {
+	char* r_c = urnet_pro_features_view_controller_get_snapshot(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProFeaturesSnapshot>(r_s->c_str());
+}
+inline void ProFeaturesViewController::refresh() const {
+	urnet_pro_features_view_controller_refresh(handle());
+}
+inline void ProFeaturesViewController::start() const {
+	urnet_pro_features_view_controller_start(handle());
+}
+inline void ProFeaturesViewController::stop() const {
+	urnet_pro_features_view_controller_stop(handle());
+}
 inline void ProvideViewController::close() const {
 	urnet_provide_view_controller_close(handle());
 }
@@ -39706,6 +39974,10 @@ inline DeviceRemote newPlatformDeviceRemote(const NetworkSpace& network_space, c
 	}
 	return r;
 }
+inline ProFeaturesNoticeTracker newProFeaturesNoticeTracker() {
+	ProFeaturesNoticeTracker r(urnet_new_pro_features_notice_tracker());
+	return r;
+}
 inline ProxyDevice newProxyDeviceWithDefaults(const std::optional<ProxyConfig>& proxy_config, SetupNewDeviceCallback setup_new_device_callback) {
 	std::string proxy_config_json;
 	const char* proxy_config_c = nullptr;
@@ -40016,6 +40288,20 @@ inline std::optional<PointsLeaderboardScrollLabelParts> pointsLeaderboardScrollL
 inline int64_t pointsToNanoPoints(double points) {
 	int64_t r = urnet_points_to_nano_points(points);
 	return r;
+}
+inline std::optional<ProFeaturesStatus> proFeaturesStatusFor(const std::optional<NetworkClientsResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* r_c = urnet_pro_features_status_for(result_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProFeaturesStatus>(r_s->c_str());
 }
 inline std::string publicIdentityKeyHash(const uint8_t* public_key, int32_t public_key_len) {
 	char* r_c = urnet_public_identity_key_hash(public_key, public_key_len);
