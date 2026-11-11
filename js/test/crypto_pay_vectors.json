@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived. The coins of mmm/BTCPAY.md §17 (tao, btc, eth, sol) joined on 2026-11-10: cryptoAssets pins every coin's facts (ticker, label and its localization key, icon key, decimals, quote decimals, market, uri scheme, tab), cryptoPaymentQrText what an invoice's QR code encodes, cryptoPaymentTabLayout the payment widget's tabs and their coins in order, and cryptoPaymentTabs which tabs a surface shows and which of their coins are available (every other coin of a shown tab has its label greyed with Temporarily unavailable; no icon is ever dimmed). ltc stands for a coin this sdk does not know. Crypto wave 3 (2026-11-11) moved the rules every app kept a copy of into the sdk: cryptoAssets pins each coin's invoice lines (network line, network-only warning, no-payment-link note, each with the store's English) and the product its purchase events name; cryptoPaymentTabCoin the coin a tap on a tab chooses (the coin last chosen in the tab, else the remembered method's, else the first that can be paid with); cryptoPaymentShowsMemo when the memo shows (only when the server sent one); cryptoPaymentSteps the status steps and how a skipped step is drawn (done, a done confirming step at its full count); cryptoPaidAsset the coin a paid year is named by (the server's asset, never the market, which USDC and SOL share).",
+  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived. The coins of mmm/BTCPAY.md §17 (tao, btc, eth, sol) joined on 2026-11-10: cryptoAssets pins every coin's facts (ticker, label and its localization key, icon key, decimals, quote decimals, market, uri scheme, tab), cryptoPaymentQrText what an invoice's QR code encodes, cryptoPaymentTabLayout the payment widget's tabs and their coins in order, and cryptoPaymentTabs which tabs a surface shows and which of their coins are available (every other coin of a shown tab has its label greyed with Temporarily unavailable; no icon is ever dimmed). ltc stands for a coin this sdk does not know. Crypto wave 3 (2026-11-11) moved the rules every app kept a copy of into the sdk: cryptoAssets pins each coin's invoice lines (network line, network-only warning, no-payment-link note, each with the store's English) and the product its purchase events name; cryptoPaymentTabCoin the coin a tap on a tab chooses (the coin last chosen in the tab, else the remembered method's, else the first that can be paid with); cryptoPaymentShowsMemo when the memo shows (only when the server sent one); cryptoPaymentSteps the status steps and how a skipped step is drawn (done, a done confirming step at its full count); cryptoPaidAsset the coin a paid year is named by (the server's asset, never the market, which USDC and SOL share). cryptoWalletSuggestions names Bitcoin's and ETH's wallets since 2026-11-11 (the owner's lists), where both were empty and their invoices showed no wallets line.",
   "addresses": {
     "xmr": "8BSyntheticXmrSubaddressFixture",
     "zec": "u1syntheticzcashunifiedaddressfixture",
@@ -883,11 +883,23 @@
     },
     {
       "asset": "btc",
-      "expected": []
+      "expected": [
+        "Sparrow",
+        "BlueWallet",
+        "Electrum",
+        "Ledger",
+        "Trezor"
+      ]
     },
     {
       "asset": "eth",
-      "expected": []
+      "expected": [
+        "MetaMask",
+        "Rabby",
+        "Coinbase Wallet",
+        "Ledger",
+        "Trezor"
+      ]
     },
     {
       "asset": "card",

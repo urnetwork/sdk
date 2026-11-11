@@ -608,8 +608,10 @@ export function cryptoPaidAsset(market: string | null | undefined, asset: string
 /**
  * The wallets the invoice names as working for a coin ("Wallets that work:
  * …"), in the order to show them. Every Zcash one sends to a shielded address;
- * the TAO ones are Bittensor's own list. Empty for anything else, and for
- * Bitcoin and ETH, which most wallets send.
+ * the TAO ones are Bittensor's own list; the Bitcoin and ETH ones (the
+ * owner's, 2026-11-11) are wallets and hardware wallets that send on the
+ * coin's own network. The names are product names, never translated. Empty
+ * for anything else, which shows no line.
  */
 export function cryptoWalletSuggestions(asset: string): string[] {
   switch (asset) {
@@ -622,6 +624,10 @@ export function cryptoWalletSuggestions(asset: string): string[] {
       return ["Phantom", "Solflare"];
     case CRYPTO_ASSET_TAO:
       return ["btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem"];
+    case CRYPTO_ASSET_BTC:
+      return ["Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor"];
+    case CRYPTO_ASSET_ETH:
+      return ["MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor"];
     default:
       return [];
   }
