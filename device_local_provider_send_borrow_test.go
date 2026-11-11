@@ -306,8 +306,8 @@ func TestProviderSendBorrowCustomParentsRemainOrdinary(t *testing.T) {
 	}
 }
 
-// Simultaneous client leaves retain every pre-existing ceiling. Their shared
-// parent and root determine contention, not a synthetic Pack-only donor.
+// Simultaneous client work retains every leaf ceiling. Physical RX permission
+// overlaps its siblings; their maxima are not simultaneous reservations.
 func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 	for _, row := range providerSendBorrowCases() {
 		settings := DefaultLowMemoryDeviceLocalSettings()
@@ -317,9 +317,23 @@ func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 		d.applyProvideMemorySharesWithLock(true)
 		client := &d.settings.ClientSettings
 		_, selected := deviceLocalDestinationWebRtcSettings(client.WebRtcSettings, true)
-		for _, leaf := range []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, client.ReceiveBufferSettings.ReceiveQueueBudget,
+		rx := client.ReceiveBufferSettings.ReceiveQueueBudget
+		receiveHeld := ByteCount(2 * 1024 * 1024)
+		physicalReceive := ByteCount(7 * 1024 * 1024)
+		if row.target == 64*1024*1024 {
+			receiveHeld = 4 * 1024 * 1024
+			physicalReceive = 14 * 1024 * 1024
+		}
+		if rx.TotalByteCount() != physicalReceive {
+			t.Fatalf("%s physical receive permission changed", row.name)
+		}
+		for _, leaf := range []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, rx,
 			client.ReceiveBufferSettings.PackQueueBudget, client.WebRtcSettings.MemoryBudget, selected, m.peerKeyPins} {
-			f.reserve(leaf, leaf.TotalByteCount())
+			held := leaf.TotalByteCount()
+			if leaf == rx {
+				held = receiveHeld
+			}
+			f.reserve(leaf, held)
 		}
 		send, receive := d.provider.transferBudgets()
 		f.reserve(receive, row.receive)
@@ -329,6 +343,14 @@ func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 			t.Fatalf("%s existing client leaves lost baseline provider send", row.name)
 		}
 		f.reserve(send, available)
+		before := m.root.StatsWithDescendants(m.client, rx)
+		if rx.TryReserve(physicalReceive - receiveHeld) {
+			rx.Release(physicalReceive - receiveHeld)
+			t.Fatalf("%s overlapping physical RX permission escaped the shared parent/root", row.name)
+		}
+		if after := m.root.StatsWithDescendants(m.client, rx); !reflect.DeepEqual(before, after) {
+			t.Fatalf("%s refused RX ownership changed hierarchy balances", row.name)
+		}
 		if send.TryReserve(1) {
 			t.Fatalf("%s provider escaped its leaf/root bound", row.name)
 		}

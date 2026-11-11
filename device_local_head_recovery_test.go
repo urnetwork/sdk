@@ -12,40 +12,45 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// Both requested mobile profiles keep their original root/ordinary-RX caps,
-// share one child across cloned clients, and preserve live owners on a shrink.
+// Both mobile profiles preserve logical head credit and independently funded
+// physical RX backing under one root, including cloned clients and role changes.
 func TestDeviceLocalConsumerHeadRecoveryProfilesAndGenerationOverlap(t *testing.T) {
-	for _, target := range []ByteCount{32 * 1024 * 1024, 64 * 1024 * 1024} {
-		device, provider := transferMemoryTestDevice(t, target)
+	for _, row := range []struct {
+		target, logicalOff, physicalOff, logicalOn, physicalOn ByteCount
+	}{
+		{target: 32 * 1024 * 1024, logicalOff: 2181038, physicalOff: 7633633, logicalOn: 2 * 1024 * 1024, physicalOn: 7 * 1024 * 1024},
+		{target: 64 * 1024 * 1024, logicalOff: 4362076, physicalOff: 15267266, logicalOn: 4 * 1024 * 1024, physicalOn: 14 * 1024 * 1024},
+	} {
+		device, provider := transferMemoryTestDevice(t, row.target)
 		memory := device.transferMemory
 		receive := device.settings.ClientSettings.ReceiveBufferSettings
 		recovery, rx := receive.ReceiveHeadRecoveryBudget, receive.ReceiveQueueBudget
 		pack := receive.PackQueueBudget
 		_, clientShare, _, providerShare := deviceMemoryShares(device.settings)
 		if recovery == nil || recovery != memory.headRecovery || recovery.Parent() != rx.Parent() || recovery.Parent() != memory.client ||
-			recovery == rx || recovery.TotalByteCount() != rx.TotalByteCount() || memory.root.TotalByteCount() != clientShare+providerShare ||
+			recovery == rx || recovery.TotalByteCount() != row.logicalOff || rx.TotalByteCount() != row.physicalOff || memory.root.TotalByteCount() != clientShare+providerShare ||
 			recovery.UsedByteCount() != 0 || memory.root.UsedByteCount() != 0 || provider.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != nil ||
 			pack == nil || pack == rx || pack == recovery || pack.Parent() != memory.client || provider.ReceiveBufferSettings.PackQueueBudget != pack {
-			t.Fatalf("%d profile did not create one empty consumer-only child under the unchanged hierarchy", target)
+			t.Fatalf("%d profile did not preserve logical head credit and physical RX backing under the unchanged hierarchy", row.target)
 		}
 		cloneA := newDeviceClientSettings(&device.settings.ClientSettings, "", nil)
 		cloneB := newDeviceClientSettings(&device.settings.ClientSettings, "", nil)
 		if cloneA.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery || cloneB.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery {
 			t.Fatal("client generations acquired independent recovery partitions")
 		}
-		beforeRoot, beforeRx := memory.root.TotalByteCount(), rx.TotalByteCount()
+		beforeRoot, beforeRx, beforeHead := memory.root.TotalByteCount(), rx.TotalByteCount(), recovery.TotalByteCount()
 		if !recovery.TryReserve(1024) {
 			t.Fatal("head ownership setup")
 		}
 		device.applyProvideMemorySharesWithLock(true)
 		if memory.root.TotalByteCount() != beforeRoot || recovery != receive.ReceiveHeadRecoveryBudget ||
-			recovery.TotalByteCount() != rx.TotalByteCount() || recovery.UsedByteCount() != 1024 || memory.root.UsedByteCount() != 1024 {
+			recovery.TotalByteCount() != row.logicalOn || rx.TotalByteCount() != row.physicalOn || recovery.UsedByteCount() != 1024 || memory.root.UsedByteCount() != 1024 {
 			recovery.Release(1024)
 			t.Fatal("role change replaced, lost or double-counted a live head owner")
 		}
 		recovery.Release(1024)
 		device.applyProvideMemorySharesWithLock(false)
-		if rx.TotalByteCount() != beforeRx || recovery.TotalByteCount() != beforeRx {
+		if rx.TotalByteCount() != beforeRx || recovery.TotalByteCount() != beforeHead {
 			t.Fatal("role round trip changed the ordinary or recovery ceiling")
 		}
 		competitor := connect.NewTransferMemoryBudgetWithParent(beforeRoot, memory.client)
@@ -159,7 +164,7 @@ func TestDeviceLocalConsumerHeadRecoveryDefaultWindowGenerations(t *testing.T) {
 		client := generator.NewClientSettings()
 		if client.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery || client.ReceiveBufferSettings.ReceiveQueueBudget != rx ||
 			client.ReceiveBufferSettings.PackQueueBudget != pack || recovery.Parent() != device.transferMemory.client ||
-			pack == rx || pack == recovery || pack.Parent() != recovery.Parent() || recovery.TotalByteCount() != rx.TotalByteCount() {
+			pack == rx || pack == recovery || pack.Parent() != recovery.Parent() || recovery.TotalByteCount() != 2181038 || rx.TotalByteCount() != 7633633 {
 			t.Fatal("default window settings lost the shared consumer recovery or Pack partition")
 		}
 		previous = generator

@@ -263,6 +263,7 @@ func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T)
 	for _, cancelBeforeRelease := range []bool{false, true} {
 		device, _ := providerMemoryTestDevice(t, 20*1024*1024)
 		memory := device.transferMemory
+		natBytes := providerMemoryTestNatFixedByteCount(t, device)
 		held := memory.root.TotalByteCount()
 		connect.AssertEqual(t, memory.client.TryReserve(held), true)
 		defer func() { memory.client.Release(held) }()
@@ -280,7 +281,7 @@ func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T)
 			device.cancel()
 		} else {
 			// Wake on enough real capacity, not an enlarged nominal child.
-			const constructorBytes = providerMemoryTestNatByteCount + providerMemoryTestProviderByteCount + providerMemoryTestStatsByteCount
+			constructorBytes := natBytes + providerMemoryTestProviderByteCount + providerMemoryTestStatsByteCount
 			memory.client.Release(constructorBytes)
 			held -= constructorBytes
 		}
