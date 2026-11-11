@@ -307,7 +307,11 @@ func TestProviderSendBorrowCustomParentsRemainOrdinary(t *testing.T) {
 }
 
 // Simultaneous client leaves retain every pre-existing ceiling. Their shared
-// parent and root determine contention, not a synthetic Pack-only donor.
+// parent and root determine contention, not a synthetic Pack-only donor. These
+// profiles back RX with physical bytes, 7/2 of its logical grant, so the leaf
+// ceilings together exceed their parent: a client that fills every leaf as far
+// as admission allows holds its whole parent, and the provider keeps exactly
+// its baseline send. Only client bytes that drain fund the loan.
 func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 	for _, row := range providerSendBorrowCases() {
 		settings := DefaultLowMemoryDeviceLocalSettings()
@@ -317,26 +321,40 @@ func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 		d.applyProvideMemorySharesWithLock(true)
 		client := &d.settings.ClientSettings
 		_, selected := deviceLocalDestinationWebRtcSettings(client.WebRtcSettings, true)
-		for _, leaf := range []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, client.ReceiveBufferSettings.ReceiveQueueBudget,
-			client.ReceiveBufferSettings.PackQueueBudget, client.WebRtcSettings.MemoryBudget, selected, m.peerKeyPins} {
-			f.reserve(leaf, leaf.TotalByteCount())
+		rx := client.ReceiveBufferSettings.ReceiveQueueBudget
+		leaves := []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, rx,
+			client.ReceiveBufferSettings.PackQueueBudget, client.WebRtcSettings.MemoryBudget, selected, m.peerKeyPins}
+		ceilings := ByteCount(0)
+		for _, leaf := range leaves {
+			ceilings += leaf.TotalByteCount()
+		}
+		if ceilings <= row.client {
+			t.Fatalf("%s client leaf ceilings %d no longer overlap their %d parent", row.name, ceilings, row.client)
+		}
+		for _, leaf := range leaves {
+			if bytes := min(leaf.TotalByteCount(), leaf.Available()); 0 < bytes {
+				f.reserve(leaf, bytes)
+			}
+		}
+		if m.client.UsedByteCount() != row.client || m.client.Available() != 0 {
+			t.Fatalf("%s busy client leaves did not reach their shared parent: used=%d", row.name, m.client.UsedByteCount())
 		}
 		send, receive := d.provider.transferBudgets()
 		f.reserve(receive, row.receive)
 		f.reserve(m.nat, row.nat)
 		available := min(send.TotalByteCount(), m.root.Available())
-		if available < row.send {
-			t.Fatalf("%s existing client leaves lost baseline provider send", row.name)
+		if available != row.send {
+			t.Fatalf("%s busy client leaves left provider send %d, want its baseline %d", row.name, available, row.send)
 		}
 		f.reserve(send, available)
 		if send.TryReserve(1) {
 			t.Fatalf("%s provider escaped its leaf/root bound", row.name)
 		}
-		if row.target == 32*1024*1024 && available >= 2*row.send {
-			t.Fatal("32MiB contention case did not reach root pressure")
-		}
-		if row.target == 64*1024*1024 && available != 2*row.send {
-			t.Fatal("64MiB literal leaf case lost its available loan")
+		// RX, not Pack, returns the bytes: whichever client leaf drains funds the loan.
+		f.release(rx, row.send)
+		f.reserve(send, row.send)
+		if send.UsedByteCount() != 2*row.send || send.TryReserve(1) || m.root.Available() != 0 {
+			t.Fatalf("%s drained client leaf did not fund exactly the provider loan", row.name)
 		}
 	}
 }
