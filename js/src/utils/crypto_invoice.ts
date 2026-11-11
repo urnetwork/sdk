@@ -125,6 +125,22 @@ export interface CryptoInvoiceState {
    * is off does not shorten or lengthen it.
    */
   readonly secondsLeft: number;
+  /**
+   * How long past `expiresAt` a payment sent within the quote may confirm and
+   * still be credited at its price: the server's confirmation_grace_seconds,
+   * 10800 for Bitcoin (mmm/BTCPAY.md §16.8), 0 for every other coin.
+   */
+  readonly confirmationGraceSeconds: number;
+  /**
+   * The quote ended with nothing received, but a payment sent within it may
+   * not be confirmed yet and is still credited at its price: phase open,
+   * status pending, `secondsLeft` 0, and the grace not over. Show the coin's
+   * awaiting line (cryptoAssetLinesFor(asset).awaitingConfirmationNoteKey) in
+   * place of the expired copy, and no Refresh quote (the server refuses a
+   * requote in the grace); Pay another way stays. False for every coin
+   * without a grace.
+   */
+  readonly awaitingConfirmation: boolean;
   /** the server's status; "" for a resumed invoice until its first poll answers */
   readonly status: string;
   readonly reviewReason: string;
@@ -234,6 +250,8 @@ interface CryptoInvoiceRecord {
   quoted_at: string;
   expires_at: string;
   received_at: string;
+  /** the coin's confirmation grace after expires_at, as the server gave it */
+  confirmation_grace_seconds: number;
   /** balance-code invoices only: the last status and the code once paid */
   status: string;
   balance_code: string;
@@ -263,6 +281,8 @@ function emptyState(phase: string): MutableState {
     rateUsd: 0,
     expiresAt: "",
     secondsLeft: 0,
+    confirmationGraceSeconds: 0,
+    awaitingConfirmation: false,
     status: "",
     reviewReason: "",
     received: "",
@@ -298,6 +318,7 @@ function emptyRecord(): CryptoInvoiceRecord {
     quoted_at: "",
     expires_at: "",
     received_at: "",
+    confirmation_grace_seconds: 0,
     status: "",
     balance_code: "",
     hidden: false,
@@ -342,7 +363,7 @@ function parseRecord(text: string | null): CryptoInvoiceRecord | null {
     if (v !== undefined && typeof v !== "string") return null;
     record[field] = v ?? "";
   }
-  for (const field of ["price_usd", "rate_usd"] as const) {
+  for (const field of ["price_usd", "rate_usd", "confirmation_grace_seconds"] as const) {
     const v = raw[field];
     if (v !== undefined && typeof v !== "number") return null;
     record[field] = v ?? 0;
@@ -357,6 +378,7 @@ function recordsEqual(a: CryptoInvoiceRecord, b: CryptoInvoiceRecord): boolean {
     RECORD_STRING_FIELDS.every((field) => a[field] === b[field]) &&
     a.price_usd === b.price_usd &&
     a.rate_usd === b.rate_usd &&
+    a.confirmation_grace_seconds === b.confirmation_grace_seconds &&
     a.hidden === b.hidden
   );
 }
@@ -643,7 +665,9 @@ export class CryptoInvoice {
    * pending or expired). A poll in flight is dropped, since it answers for the
    * old quote, and the new quote is polled at once. `refreshing` is true while
    * it is in flight; a failure leaves the invoice as it was, with `errorCode`
-   * set. Anything else is ignored.
+   * set. Anything else is ignored, `awaitingConfirmation` included: a payment
+   * sent within the quote may still be unconfirmed, and the server refuses a
+   * requote until the grace is over.
    */
   requote(): Promise<void> {
     const record = this.record;
@@ -652,7 +676,8 @@ export class CryptoInvoice {
       this.state.phase !== CRYPTO_INVOICE_PHASE_OPEN ||
       !record ||
       this.state.refreshing ||
-      (this.state.status !== CRYPTO_PAYMENT_STATUS_PENDING && this.state.status !== CRYPTO_PAYMENT_STATUS_EXPIRED)
+      (this.state.status !== CRYPTO_PAYMENT_STATUS_PENDING && this.state.status !== CRYPTO_PAYMENT_STATUS_EXPIRED) ||
+      this.awaitingConfirmationAt(this.clock.now())
     ) {
       return Promise.resolve();
     }
@@ -676,8 +701,9 @@ export class CryptoInvoice {
    * Closes the invoice ("Pay another way"); closing the panel is close(),
    * never this. An account or network invoice with nothing received is
    * dropped: nothing is lost, the data goes to the network anyway. Once money
-   * arrived it is only put away: an account invoice comes back at the next
-   * resume(), and one bought without a sign-in is hidden. A balance-code
+   * arrived, or may be on its way unseen (`awaitingConfirmation`), it is only
+   * put away: an account invoice comes back at the next resume(), and one
+   * bought without a sign-in is hidden. A balance-code
    * invoice is dropped only when it is paid and its code was shown; before
    * that it is only hidden, since its status lags the payment (USDC goes from
    * pending straight to paid, and a late payment credits while it reads
@@ -693,7 +719,7 @@ export class CryptoInvoice {
           this.record.hidden = true;
           this.saveRecord();
         }
-      } else if (!mayHaveReceived(this.state.status)) {
+      } else if (!mayHaveReceived(this.state.status) && !this.awaitingConfirmationAt(this.clock.now())) {
         this.clearRecord();
       } else if (ownedByBrowser(this.record)) {
         this.record.hidden = true;
@@ -937,6 +963,8 @@ export class CryptoInvoice {
       memo: record.memo,
       priceUsd: record.price_usd,
       rateUsd: record.rate_usd,
+      // a resumed Bitcoin invoice knows its grace before its first poll
+      confirmationGraceSeconds: record.confirmation_grace_seconds,
     };
     if (isCode(record) && record.status === CRYPTO_PAYMENT_STATUS_PAID) {
       this.state.phase = CRYPTO_INVOICE_PHASE_PAID;
@@ -977,6 +1005,8 @@ export class CryptoInvoice {
     if (result.confirmations_required && 0 < result.confirmations_required) {
       this.state.confirmationsRequired = result.confirmations_required;
     }
+    // the quote's own grace: Bitcoin's, or none
+    this.state.confirmationGraceSeconds = Math.max(0, result.confirmation_grace_seconds ?? 0);
     this.state.errorCode = "";
     this.state.errorMessage = "";
     this.setUri(result.uri ?? "");
@@ -1032,6 +1062,9 @@ export class CryptoInvoice {
     this.state.confirmations = status.confirmations ?? 0;
     if (status.confirmations_required && 0 < status.confirmations_required) {
       this.state.confirmationsRequired = status.confirmations_required;
+    }
+    if (status.confirmation_grace_seconds && 0 < status.confirmation_grace_seconds) {
+      this.state.confirmationGraceSeconds = status.confirmation_grace_seconds;
     }
     this.state.balanceCode = status.balance_code ?? "";
     if (status.delivery && !this.state.delivery) {
@@ -1089,6 +1122,7 @@ export class CryptoInvoice {
       price_usd: this.state.priceUsd,
       rate_usd: this.state.rateUsd,
       expires_at: this.state.expiresAt,
+      confirmation_grace_seconds: this.state.confirmationGraceSeconds,
     };
     if (isCode(record)) {
       record.status = this.state.status;
@@ -1190,6 +1224,14 @@ export class CryptoInvoice {
         next = this.nextTickAt;
       }
     }
+    // the wait for a confirmation ends with the grace, on the quote's clock,
+    // whatever the polls say meanwhile
+    const awaiting = this.awaitingConfirmationAt(now);
+    if (awaiting !== this.snapshot.awaitingConfirmation) ticked = true;
+    if (awaiting) {
+      const graceEnd = this.expiresAtMs! + this.state.confirmationGraceSeconds * 1000;
+      if (next === null || graceEnd < next) next = graceEnd;
+    }
 
     if (next !== null) {
       this.timer = this.clock.setTimeout(() => {
@@ -1214,9 +1256,30 @@ export class CryptoInvoice {
     }
   }
 
+  /**
+   * The quote ended with nothing received, and a payment sent within it may
+   * still be confirmed and credited at its price: open and pending, the
+   * countdown at 0, and the coin's confirmation grace (Bitcoin's) not over in
+   * the quote's own clock. The server keeps such an invoice pending through the
+   * grace and says expired after it.
+   */
+  private awaitingConfirmationAt(now: number): boolean {
+    if (
+      this.state.phase !== CRYPTO_INVOICE_PHASE_OPEN ||
+      this.state.status !== CRYPTO_PAYMENT_STATUS_PENDING ||
+      this.state.confirmationGraceSeconds <= 0 ||
+      this.expiresAtMs === null
+    ) {
+      return false;
+    }
+    if (0 < secondsLeftAt(this.expiresAtMs, now)) return false;
+    return now < this.expiresAtMs + this.state.confirmationGraceSeconds * 1000;
+  }
+
   private buildSnapshot(): CryptoInvoiceState {
-    const secondsLeft =
-      this.state.phase === CRYPTO_INVOICE_PHASE_OPEN ? secondsLeftAt(this.expiresAtMs, this.clock.now()) : 0;
+    const now = this.clock.now();
+    const secondsLeft = this.state.phase === CRYPTO_INVOICE_PHASE_OPEN ? secondsLeftAt(this.expiresAtMs, now) : 0;
+    const awaitingConfirmation = this.awaitingConfirmationAt(now);
     // follows uri and address wherever they change
     const qrText = cryptoPaymentQrText(this.state.asset, this.state.uri, this.state.address);
     // follows the status and its counts
@@ -1225,7 +1288,7 @@ export class CryptoInvoice {
         (step) => Object.freeze(step),
       ),
     );
-    return Object.freeze({ ...this.state, secondsLeft, qrText, steps });
+    return Object.freeze({ ...this.state, secondsLeft, awaitingConfirmation, qrText, steps });
   }
 
   private notify(): void {

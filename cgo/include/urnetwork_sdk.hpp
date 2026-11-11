@@ -2235,6 +2235,10 @@ struct CryptoAssetLines {
 	std::string network_warning_key{};
 	std::string no_payment_link_note{};
 	std::string no_payment_link_note_key{};
+	std::string confirmation_note{};
+	std::string confirmation_note_key{};
+	std::string awaiting_confirmation_note{};
+	std::string awaiting_confirmation_note_key{};
 };
 
 struct CryptoInvoiceState {
@@ -2256,6 +2260,8 @@ struct CryptoInvoiceState {
 	double rate_usd{};
 	std::string expires_at{};
 	int64_t seconds_left{};
+	int64_t confirmation_grace_seconds{};
+	bool awaiting_confirmation{};
 	std::string status{};
 	std::string review_reason{};
 	std::string received{};
@@ -2275,6 +2281,7 @@ struct CryptoPaymentAsset {
 	std::optional<StringList> items;
 	int64_t confirmations_required{};
 	int64_t quote_ttl_seconds{};
+	std::optional<int64_t> confirmation_grace_seconds;
 };
 
 struct CryptoPaymentAssetsResult {
@@ -2313,6 +2320,7 @@ struct CryptoPaymentStatusResult {
 	int64_t confirmations{};
 	int64_t confirmations_required{};
 	std::optional<std::string> expires_at;
+	std::optional<int64_t> confirmation_grace_seconds;
 	std::optional<std::string> credited_at;
 	std::optional<std::string> balance_code;
 	std::optional<CryptoPaymentError> error;
@@ -2338,6 +2346,7 @@ struct CryptoPaymentIntentResult {
 	std::optional<std::string> uri;
 	std::optional<std::string> quoted_at;
 	std::optional<std::string> expires_at;
+	std::optional<int64_t> confirmation_grace_seconds;
 	std::optional<int64_t> confirmations_required;
 	std::optional<CryptoPaymentStatusResult> status;
 	std::optional<CryptoPaymentError> error;
@@ -9783,6 +9792,10 @@ inline void to_json(nlohmann::json& j, const CryptoAssetLines& v) {
 	j["network_warning_key"] = v.network_warning_key;
 	j["no_payment_link_note"] = v.no_payment_link_note;
 	j["no_payment_link_note_key"] = v.no_payment_link_note_key;
+	j["confirmation_note"] = v.confirmation_note;
+	j["confirmation_note_key"] = v.confirmation_note_key;
+	j["awaiting_confirmation_note"] = v.awaiting_confirmation_note;
+	j["awaiting_confirmation_note_key"] = v.awaiting_confirmation_note_key;
 }
 inline void from_json(const nlohmann::json& j, CryptoAssetLines& v) {
 	if (!j.is_object()) {
@@ -9806,6 +9819,18 @@ inline void from_json(const nlohmann::json& j, CryptoAssetLines& v) {
 	if (auto it = j.find("no_payment_link_note_key"); it != j.end() && !it->is_null()) {
 		it->get_to(v.no_payment_link_note_key);
 	}
+	if (auto it = j.find("confirmation_note"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_note);
+	}
+	if (auto it = j.find("confirmation_note_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_note_key);
+	}
+	if (auto it = j.find("awaiting_confirmation_note"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation_note);
+	}
+	if (auto it = j.find("awaiting_confirmation_note_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation_note_key);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
@@ -9828,6 +9853,8 @@ inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j["rate_usd"] = v.rate_usd;
 	j["expires_at"] = v.expires_at;
 	j["seconds_left"] = v.seconds_left;
+	j["confirmation_grace_seconds"] = v.confirmation_grace_seconds;
+	j["awaiting_confirmation"] = v.awaiting_confirmation;
 	j["status"] = v.status;
 	j["review_reason"] = v.review_reason;
 	j["received"] = v.received;
@@ -9900,6 +9927,12 @@ inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
 	if (auto it = j.find("seconds_left"); it != j.end() && !it->is_null()) {
 		it->get_to(v.seconds_left);
 	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_grace_seconds);
+	}
+	if (auto it = j.find("awaiting_confirmation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation);
+	}
 	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
 		it->get_to(v.status);
 	}
@@ -9948,6 +9981,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v) {
 	}
 	j["confirmations_required"] = v.confirmations_required;
 	j["quote_ttl_seconds"] = v.quote_ttl_seconds;
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
+	}
 }
 inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v) {
 	if (!j.is_object()) {
@@ -9971,6 +10007,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v) {
 	}
 	if (auto it = j.find("quote_ttl_seconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.quote_ttl_seconds);
+	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
 	}
 }
 
@@ -10096,6 +10137,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v) {
 	if (v.expires_at) {
 		j["expires_at"] = *v.expires_at;
 	}
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
+	}
 	if (v.credited_at) {
 		j["credited_at"] = *v.credited_at;
 	}
@@ -10189,6 +10233,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentStatusResult& v) {
 		it->get_to(tmp);
 		v.expires_at = std::move(tmp);
 	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
+	}
 	if (auto it = j.find("credited_at"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
 		it->get_to(tmp);
@@ -10264,6 +10313,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v) {
 	}
 	if (v.expires_at) {
 		j["expires_at"] = *v.expires_at;
+	}
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
 	}
 	if (v.confirmations_required) {
 		j["confirmations_required"] = *v.confirmations_required;
@@ -10373,6 +10425,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.expires_at = std::move(tmp);
+	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
 	}
 	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
 		int64_t tmp{};

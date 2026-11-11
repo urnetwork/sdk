@@ -110,6 +110,18 @@ type CryptoInvoiceState struct {
 	// quote's own duration from when the quote arrived, so a device clock
 	// that is off does not shorten or lengthen it.
 	SecondsLeft int `json:"seconds_left"`
+	// how long past ExpiresAt a payment sent within the quote may confirm and
+	// still be credited at its price: the server's
+	// confirmation_grace_seconds, 10800 for Bitcoin (mmm/BTCPAY.md §16.8), 0
+	// for every other coin
+	ConfirmationGraceSeconds int `json:"confirmation_grace_seconds"`
+	// the quote ended with nothing received, but a payment sent within it may
+	// not be confirmed yet and is still credited at its price: phase open,
+	// status pending, SecondsLeft 0, and the grace not over. Show the coin's
+	// awaiting line (CryptoAssetLines.AwaitingConfirmationNoteKey) in place of
+	// the expired copy, and no Refresh quote (the server refuses a requote in
+	// the grace); Pay another way stays. False for every coin without a grace.
+	AwaitingConfirmation bool `json:"awaiting_confirmation"`
 	// the server's CryptoPaymentStatus* value; "" for a resumed invoice
 	// until its first status poll answers
 	Status       string `json:"status"`
@@ -169,6 +181,8 @@ type cryptoInvoiceRecord struct {
 	QuotedAt   string `json:"quoted_at,omitempty"`
 	ExpiresAt  string `json:"expires_at,omitempty"`
 	ReceivedAt string `json:"received_at,omitempty"`
+	// the coin's confirmation grace after ExpiresAt, as the server gave it
+	ConfirmationGraceSeconds int `json:"confirmation_grace_seconds,omitempty"`
 
 	// balance-code invoices only: the last status and the code once paid
 	Status      string `json:"status,omitempty"`
@@ -782,7 +796,9 @@ func cryptoInvoiceRecordTooOld(record *cryptoInvoiceRecord, now time.Time) bool 
 // later expiry for USDC. A poll in flight is dropped, since it answers for the
 // old quote, and the new quote is polled at once. Refreshing is true while it
 // is in flight; a failure leaves the invoice as it was, with ErrorCode set.
-// Anything else is ignored.
+// Anything else is ignored, AwaitingConfirmation included: a payment sent
+// within the quote may still be unconfirmed, and the server refuses a
+// requote until the grace is over.
 func (self *CryptoInvoiceViewController) Requote() {
 	var generation int
 	var args *CryptoPaymentStatusArgs
@@ -795,6 +811,9 @@ func (self *CryptoInvoiceViewController) Requote() {
 		switch self.state.Status {
 		case CryptoPaymentStatusPending, CryptoPaymentStatusExpired:
 		default:
+			return
+		}
+		if self.awaitingConfirmationLocked(self.nowFunc()) {
 			return
 		}
 		self.state.Refreshing = true
@@ -822,8 +841,9 @@ func (self *CryptoInvoiceViewController) Requote() {
 // Closes the invoice ("Pay another way"); closing the screen is Stop and
 // Close, never this. An account or network invoice with nothing received is
 // dropped: nothing is lost, the data goes to the network anyway. Once money
-// arrived it is only put away: an account invoice comes back at the next
-// Resume, and one bought without a sign-in is hidden. A balance-code invoice
+// arrived, or may be on its way unseen (AwaitingConfirmation), it is only put
+// away: an account invoice comes back at the next Resume, and one bought
+// without a sign-in is hidden. A balance-code invoice
 // is dropped only when it is paid and its code was shown; before that it is
 // only hidden, since its status lags the payment (USDC goes from pending
 // straight to paid, and a late payment credits while it reads expired) and a
@@ -845,7 +865,7 @@ func (self *CryptoInvoiceViewController) Dismiss() {
 					self.record.Hidden = true
 					self.saveRecordLocked()
 				}
-			case !cryptoInvoiceMayHaveReceived(self.state.Status):
+			case !cryptoInvoiceMayHaveReceived(self.state.Status) && !self.awaitingConfirmationLocked(self.nowFunc()):
 				self.clearRecordLocked()
 			case self.record.ownedByDevice():
 				self.record.Hidden = true
@@ -873,13 +893,32 @@ func cryptoInvoiceMayHaveReceived(status string) bool {
 	}
 }
 
-// A snapshot of the invoice, with SecondsLeft as of now.
+// The quote ended with nothing received, and a payment sent within it may
+// still be confirmed and credited at its price: open and pending, the
+// countdown at 0, and the coin's confirmation grace (Bitcoin's) not over in
+// the quote's own clock. The server keeps such an invoice pending through the
+// grace and says expired after it. Caller holds stateLock.
+func (self *CryptoInvoiceViewController) awaitingConfirmationLocked(now time.Time) bool {
+	if self.state.Phase != CryptoInvoicePhaseOpen || self.state.Status != CryptoPaymentStatusPending ||
+		self.state.ConfirmationGraceSeconds <= 0 || self.expiresAt.IsZero() {
+		return false
+	}
+	if 0 < cryptoInvoiceSecondsLeft(self.expiresAt, now) {
+		return false
+	}
+	return now.Before(self.expiresAt.Add(time.Duration(self.state.ConfirmationGraceSeconds) * time.Second))
+}
+
+// A snapshot of the invoice, with SecondsLeft and AwaitingConfirmation as of
+// now.
 func (self *CryptoInvoiceViewController) GetState() *CryptoInvoiceState {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	state := self.state
 	if state.Phase == CryptoInvoicePhaseOpen {
-		state.SecondsLeft = cryptoInvoiceSecondsLeft(self.expiresAt, self.nowFunc())
+		now := self.nowFunc()
+		state.SecondsLeft = cryptoInvoiceSecondsLeft(self.expiresAt, now)
+		state.AwaitingConfirmation = self.awaitingConfirmationLocked(now)
 	}
 	// follows Uri and Address wherever they change
 	state.QrText = CryptoPaymentQrText(state.Asset, state.Uri, state.Address)
@@ -1119,6 +1158,8 @@ func (self *CryptoInvoiceViewController) showRecordLocked(record *cryptoInvoiceR
 		Memo:         record.Memo,
 		PriceUsd:     record.PriceUsd,
 		RateUsd:      record.RateUsd,
+		// a resumed Bitcoin invoice knows its grace before its first poll
+		ConfirmationGraceSeconds: record.ConfirmationGraceSeconds,
 	}
 	if record.isCode() && record.Status == CryptoPaymentStatusPaid {
 		self.state.Phase = CryptoInvoicePhasePaid
@@ -1176,6 +1217,8 @@ func (self *CryptoInvoiceViewController) applyQuoteLocked(result *CryptoPaymentI
 	if 0 < result.ConfirmationsRequired {
 		self.state.ConfirmationsRequired = result.ConfirmationsRequired
 	}
+	// the quote's own grace: Bitcoin's, or none
+	self.state.ConfirmationGraceSeconds = max(0, result.ConfirmationGraceSeconds)
 	self.state.ErrorCode = ""
 	self.state.ErrorMessage = ""
 	self.setUriLocked(result.Uri)
@@ -1244,6 +1287,9 @@ func (self *CryptoInvoiceViewController) applyStatusLocked(status *CryptoPayment
 	if 0 < status.ConfirmationsRequired {
 		self.state.ConfirmationsRequired = status.ConfirmationsRequired
 	}
+	if 0 < status.ConfirmationGraceSeconds {
+		self.state.ConfirmationGraceSeconds = status.ConfirmationGraceSeconds
+	}
 	self.state.BalanceCode = status.BalanceCode
 	if status.Delivery != "" && self.state.Delivery == "" {
 		self.state.Delivery = status.Delivery
@@ -1303,6 +1349,7 @@ func (self *CryptoInvoiceViewController) saveRecordLocked() {
 	record.PriceUsd = self.state.PriceUsd
 	record.RateUsd = self.state.RateUsd
 	record.ExpiresAt = self.state.ExpiresAt
+	record.ConfirmationGraceSeconds = self.state.ConfirmationGraceSeconds
 	if record.isCode() {
 		record.Status = self.state.Status
 		record.BalanceCode = self.state.BalanceCode

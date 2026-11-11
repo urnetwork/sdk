@@ -121,23 +121,27 @@ type cryptoPaymentTabLayoutVector struct {
 
 // One coin's facts, as every surface reads them.
 type cryptoAssetVector struct {
-	Asset                string `json:"asset"`
-	Ticker               string `json:"ticker"`
-	Label                string `json:"label"`
-	LabelKey             string `json:"label_key"`
-	IconKey              string `json:"icon_key"`
-	Decimals             int    `json:"decimals"`
-	QuoteDecimals        int    `json:"quote_decimals"`
-	Market               string `json:"market"`
-	UriScheme            string `json:"uri_scheme"`
-	TabId                string `json:"tab_id"`
-	NetworkLine          string `json:"network_line"`
-	NetworkLineKey       string `json:"network_line_key"`
-	NetworkWarning       string `json:"network_warning"`
-	NetworkWarningKey    string `json:"network_warning_key"`
-	NoPaymentLinkNote    string `json:"no_payment_link_note"`
-	NoPaymentLinkNoteKey string `json:"no_payment_link_note_key"`
-	EventProduct         string `json:"event_product"`
+	Asset                       string `json:"asset"`
+	Ticker                      string `json:"ticker"`
+	Label                       string `json:"label"`
+	LabelKey                    string `json:"label_key"`
+	IconKey                     string `json:"icon_key"`
+	Decimals                    int    `json:"decimals"`
+	QuoteDecimals               int    `json:"quote_decimals"`
+	Market                      string `json:"market"`
+	UriScheme                   string `json:"uri_scheme"`
+	TabId                       string `json:"tab_id"`
+	NetworkLine                 string `json:"network_line"`
+	NetworkLineKey              string `json:"network_line_key"`
+	NetworkWarning              string `json:"network_warning"`
+	NetworkWarningKey           string `json:"network_warning_key"`
+	NoPaymentLinkNote           string `json:"no_payment_link_note"`
+	NoPaymentLinkNoteKey        string `json:"no_payment_link_note_key"`
+	ConfirmationNote            string `json:"confirmation_note"`
+	ConfirmationNoteKey         string `json:"confirmation_note_key"`
+	AwaitingConfirmationNote    string `json:"awaiting_confirmation_note"`
+	AwaitingConfirmationNoteKey string `json:"awaiting_confirmation_note_key"`
+	EventProduct                string `json:"event_product"`
 }
 
 func loadCryptoPayVectors(t *testing.T) *cryptoPayVectors {
@@ -333,23 +337,27 @@ func TestCryptoAssets(t *testing.T) {
 			t.Fatalf("CryptoAssetLinesFor(%q) is nil; the bindings need lines", asset)
 		}
 		got := cryptoAssetVector{
-			Asset:                asset,
-			Ticker:               CryptoAssetTicker(asset),
-			Label:                CryptoAssetLabel(asset),
-			LabelKey:             CryptoAssetLabelKey(asset),
-			IconKey:              CryptoAssetIconKey(asset),
-			Decimals:             CryptoAssetDecimals(asset),
-			QuoteDecimals:        CryptoAssetQuoteDecimals(asset),
-			Market:               CryptoAssetMarket(asset),
-			UriScheme:            CryptoPaymentUriScheme(asset),
-			TabId:                CryptoPaymentTabId(asset),
-			NetworkLine:          lines.NetworkLine,
-			NetworkLineKey:       lines.NetworkLineKey,
-			NetworkWarning:       lines.NetworkWarning,
-			NetworkWarningKey:    lines.NetworkWarningKey,
-			NoPaymentLinkNote:    lines.NoPaymentLinkNote,
-			NoPaymentLinkNoteKey: lines.NoPaymentLinkNoteKey,
-			EventProduct:         CryptoPaymentEventProduct(asset),
+			Asset:                       asset,
+			Ticker:                      CryptoAssetTicker(asset),
+			Label:                       CryptoAssetLabel(asset),
+			LabelKey:                    CryptoAssetLabelKey(asset),
+			IconKey:                     CryptoAssetIconKey(asset),
+			Decimals:                    CryptoAssetDecimals(asset),
+			QuoteDecimals:               CryptoAssetQuoteDecimals(asset),
+			Market:                      CryptoAssetMarket(asset),
+			UriScheme:                   CryptoPaymentUriScheme(asset),
+			TabId:                       CryptoPaymentTabId(asset),
+			NetworkLine:                 lines.NetworkLine,
+			NetworkLineKey:              lines.NetworkLineKey,
+			NetworkWarning:              lines.NetworkWarning,
+			NetworkWarningKey:           lines.NetworkWarningKey,
+			NoPaymentLinkNote:           lines.NoPaymentLinkNote,
+			NoPaymentLinkNoteKey:        lines.NoPaymentLinkNoteKey,
+			ConfirmationNote:            lines.ConfirmationNote,
+			ConfirmationNoteKey:         lines.ConfirmationNoteKey,
+			AwaitingConfirmationNote:    lines.AwaitingConfirmationNote,
+			AwaitingConfirmationNoteKey: lines.AwaitingConfirmationNoteKey,
+			EventProduct:                CryptoPaymentEventProduct(asset),
 		}
 		if got != vector {
 			t.Errorf("the facts of %q are %+v, want %+v", asset, got, vector)
@@ -392,11 +400,14 @@ func TestCryptoAssetLinesAreTheStoresEnglish(t *testing.T) {
 		if lines.NetworkLineKey == "" {
 			t.Errorf("%s has no network line", asset)
 		}
-		for key, english := range map[string]string{
-			lines.NetworkLineKey:       lines.NetworkLine,
-			lines.NetworkWarningKey:    lines.NetworkWarning,
-			lines.NoPaymentLinkNoteKey: lines.NoPaymentLinkNote,
+		for _, pair := range [][2]string{
+			{lines.NetworkLineKey, lines.NetworkLine},
+			{lines.NetworkWarningKey, lines.NetworkWarning},
+			{lines.NoPaymentLinkNoteKey, lines.NoPaymentLinkNote},
+			{lines.ConfirmationNoteKey, lines.ConfirmationNote},
+			{lines.AwaitingConfirmationNoteKey, lines.AwaitingConfirmationNote},
 		} {
+			key, english := pair[0], pair[1]
 			if key == "" {
 				connect.AssertEqual(t, english, "")
 				continue
@@ -407,8 +418,9 @@ func TestCryptoAssetLinesAreTheStoresEnglish(t *testing.T) {
 			}
 		}
 	}
-	// 7 network lines, 5 warnings (none for Zcash and Monero), 1 note (TAO)
-	connect.AssertEqual(t, pairs, 13)
+	// 7 network lines, 5 warnings (none for Zcash and Monero), 1 note (TAO),
+	// Bitcoin's 2 confirmation lines
+	connect.AssertEqual(t, pairs, 15)
 }
 
 // The coin a tap on a tab chooses: the coin last chosen in the tab, else the
@@ -528,7 +540,9 @@ func TestCryptoAssetLinesAndStepsJson(t *testing.T) {
 		"network_warning": "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
 		"network_warning_key": "crypto_invoice_tao_network_only",
 		"no_payment_link_note": "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
-		"no_payment_link_note_key": "crypto_invoice_tao_no_payment_link"
+		"no_payment_link_note_key": "crypto_invoice_tao_no_payment_link",
+		"confirmation_note": "", "confirmation_note_key": "",
+		"awaiting_confirmation_note": "", "awaiting_confirmation_note_key": ""
 	}`)
 	data, err = json.Marshal(CryptoAssetLinesFor("ltc"))
 	if err != nil {
@@ -536,7 +550,23 @@ func TestCryptoAssetLinesAndStepsJson(t *testing.T) {
 	}
 	requireJsonEqual(t, string(data), `{
 		"network_line": "", "network_line_key": "", "network_warning": "", "network_warning_key": "",
-		"no_payment_link_note": "", "no_payment_link_note_key": ""
+		"no_payment_link_note": "", "no_payment_link_note_key": "",
+		"confirmation_note": "", "confirmation_note_key": "",
+		"awaiting_confirmation_note": "", "awaiting_confirmation_note_key": ""
+	}`)
+	data, err = json.Marshal(CryptoAssetLinesFor(CryptoAssetBtc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireJsonEqual(t, string(data), `{
+		"network_line": "Bitcoin network", "network_line_key": "crypto_network_bitcoin",
+		"network_warning": "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
+		"network_warning_key": "crypto_invoice_bitcoin_network_only",
+		"no_payment_link_note": "", "no_payment_link_note_key": "",
+		"confirmation_note": "Bitcoin payments can take up to 3 hours to confirm. A payment sent before the quote expires is credited at this price.",
+		"confirmation_note_key": "crypto_invoice_bitcoin_confirmation_time",
+		"awaiting_confirmation_note": "This quote expired. A payment you sent before it expired is credited at this price once it confirms, which can take up to 3 hours. If you didn't send one, pay another way.",
+		"awaiting_confirmation_note_key": "crypto_invoice_bitcoin_awaiting_confirmation"
 	}`)
 	data, err = json.Marshal(CryptoPaymentSteps(CryptoAssetSol, CryptoPaymentStatusPaid, 1, 1))
 	if err != nil {
