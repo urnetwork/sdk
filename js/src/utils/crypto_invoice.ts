@@ -53,7 +53,9 @@ import {
   checkCryptoPaymentUri,
   cryptoAssetTicker,
   cryptoPaymentQrText,
+  cryptoPaymentSteps,
 } from "./crypto_pay";
+import type { CryptoPaymentStep } from "./crypto_pay";
 import { parseRfc3339 } from "./rfc3339";
 
 // The invoice's phases (`CryptoInvoiceState.phase`).
@@ -111,7 +113,7 @@ export interface CryptoInvoiceState {
   readonly uri: string;
   /** what the QR code encodes (cryptoPaymentQrText): `uri`, or for TAO the address alone; empty when there is no QR code to show */
   readonly qrText: string;
-  /** usdc_solana and sol only: the memo for a transfer sent by hand */
+  /** the memo for a transfer sent by hand, which only USDC on Solana has; shown, with Copy, only when cryptoPaymentShowsMemo says so */
   readonly memo: string;
   readonly priceUsd: number;
   readonly rateUsd: number;
@@ -131,6 +133,13 @@ export interface CryptoInvoiceState {
   readonly remaining: string;
   readonly confirmations: number;
   readonly confirmationsRequired: number;
+  /**
+   * The status steps at `status`, each with how it is drawn
+   * (cryptoPaymentSteps): two for USDC, four for every other coin, a step the
+   * payment skipped drawn done. Empty while there are none to show (no status
+   * yet, review, unknown).
+   */
+  readonly steps: readonly CryptoPaymentStep[];
   /** the balance code a paid invoice bought, for delivery "code" */
   readonly balanceCode: string;
   /** a requote is in flight */
@@ -260,6 +269,7 @@ function emptyState(phase: string): MutableState {
     remaining: "",
     confirmations: 0,
     confirmationsRequired: 0,
+    steps: [],
     balanceCode: "",
     refreshing: false,
     errorCode: "",
@@ -1209,7 +1219,13 @@ export class CryptoInvoice {
       this.state.phase === CRYPTO_INVOICE_PHASE_OPEN ? secondsLeftAt(this.expiresAtMs, this.clock.now()) : 0;
     // follows uri and address wherever they change
     const qrText = cryptoPaymentQrText(this.state.asset, this.state.uri, this.state.address);
-    return Object.freeze({ ...this.state, secondsLeft, qrText });
+    // follows the status and its counts
+    const steps = Object.freeze(
+      cryptoPaymentSteps(this.state.asset, this.state.status, this.state.confirmations, this.state.confirmationsRequired).map(
+        (step) => Object.freeze(step),
+      ),
+    );
+    return Object.freeze({ ...this.state, secondsLeft, qrText, steps });
   }
 
   private notify(): void {

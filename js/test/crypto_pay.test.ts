@@ -33,6 +33,9 @@ const {
   CRYPTO_PAYMENT_STATUS_REVIEW,
   CRYPTO_PAYMENT_STATUS_SEEN,
   CRYPTO_PAYMENT_STATUS_UNKNOWN,
+  CRYPTO_PAYMENT_STEP_CURRENT,
+  CRYPTO_PAYMENT_STEP_DONE,
+  CRYPTO_PAYMENT_STEP_UPCOMING,
   CRYPTO_PAYMENT_TAB_MORE_COINS,
   EVENT_STORE_BITCOIN,
   EVENT_STORE_BITTENSOR,
@@ -49,11 +52,17 @@ const {
   cryptoAssetIconKey,
   cryptoAssetLabel,
   cryptoAssetLabelKey,
+  cryptoAssetLinesFor,
   cryptoAssetMarket,
   cryptoAssetQuoteDecimals,
   cryptoAssetSells,
   cryptoAssetTicker,
+  cryptoPaidAsset,
+  cryptoPaymentEventProduct,
   cryptoPaymentQrText,
+  cryptoPaymentShowsMemo,
+  cryptoPaymentSteps,
+  cryptoPaymentTabCoin,
   cryptoPaymentTabId,
   cryptoPaymentTabs,
   cryptoPaymentUriScheme,
@@ -94,6 +103,9 @@ test("crypto pay constants", () => {
       CRYPTO_PAYMENT_STATUS_EXPIRED,
       CRYPTO_PAYMENT_STATUS_REVIEW,
       CRYPTO_PAYMENT_STATUS_UNKNOWN,
+      CRYPTO_PAYMENT_STEP_DONE,
+      CRYPTO_PAYMENT_STEP_CURRENT,
+      CRYPTO_PAYMENT_STEP_UPCOMING,
       CRYPTO_PAYMENT_DELIVERY_ACCOUNT,
       CRYPTO_PAYMENT_DELIVERY_NETWORK,
       CRYPTO_PAYMENT_DELIVERY_CODE,
@@ -131,6 +143,9 @@ test("crypto pay constants", () => {
       CRYPTO_PAYMENT_STATUS_EXPIRED: "expired",
       CRYPTO_PAYMENT_STATUS_REVIEW: "review",
       CRYPTO_PAYMENT_STATUS_UNKNOWN: "unknown",
+      CRYPTO_PAYMENT_STEP_DONE: "done",
+      CRYPTO_PAYMENT_STEP_CURRENT: "current",
+      CRYPTO_PAYMENT_STEP_UPCOMING: "upcoming",
       CRYPTO_PAYMENT_DELIVERY_ACCOUNT: "account",
       CRYPTO_PAYMENT_DELIVERY_NETWORK: "network",
       CRYPTO_PAYMENT_DELIVERY_CODE: "code",
@@ -162,7 +177,13 @@ test("the twins are exported from the package's utils", () => {
     "cryptoPaymentUriScheme",
     "cryptoPaymentTabs",
     "cryptoPaymentTabId",
+    "cryptoPaymentTabCoin",
+    "cryptoAssetLinesFor",
     "cryptoPaymentQrText",
+    "cryptoPaymentShowsMemo",
+    "cryptoPaymentSteps",
+    "cryptoPaymentEventProduct",
+    "cryptoPaidAsset",
     "cryptoWalletSuggestions",
     "checkCryptoPaymentUri",
     "cryptoTermNoticeDue",
@@ -237,6 +258,7 @@ test("cryptoTermNoticeDue reads the clock by default", () => {
 test("cryptoAssets", () => {
   for (const vector of vectors.cryptoAssets) {
     const asset = vector.asset;
+    const lines = cryptoAssetLinesFor(asset);
     assert.deepEqual(
       {
         asset,
@@ -249,12 +271,111 @@ test("cryptoAssets", () => {
         market: cryptoAssetMarket(asset),
         uri_scheme: cryptoPaymentUriScheme(asset),
         tab_id: cryptoPaymentTabId(asset),
+        network_line: lines.networkLine,
+        network_line_key: lines.networkLineKey,
+        network_warning: lines.networkWarning,
+        network_warning_key: lines.networkWarningKey,
+        no_payment_link_note: lines.noPaymentLinkNote,
+        no_payment_link_note_key: lines.noPaymentLinkNoteKey,
+        event_product: cryptoPaymentEventProduct(asset),
       },
       vector,
       `the facts of ${JSON.stringify(asset)}`,
     );
   }
 });
+
+test("cryptoAssetLinesFor hands out a copy, all six lines", () => {
+  const lines = cryptoAssetLinesFor(CRYPTO_ASSET_TAO);
+  assert.deepEqual(Object.keys(lines).sort(), [
+    "networkLine",
+    "networkLineKey",
+    "networkWarning",
+    "networkWarningKey",
+    "noPaymentLinkNote",
+    "noPaymentLinkNoteKey",
+  ]);
+  (lines as { networkLine: string }).networkLine = "changed";
+  assert.equal(cryptoAssetLinesFor(CRYPTO_ASSET_TAO).networkLine, "Bittensor network");
+  assert.deepEqual(Object.values(cryptoAssetLinesFor("ltc")), ["", "", "", "", "", ""]);
+});
+
+// The coin a tap on a tab chooses: the coin last chosen in the tab, else the
+// remembered method's, else the tab's first that can be paid with.
+for (const vector of vectors.cryptoPaymentTabCoin) {
+  test(`cryptoPaymentTabCoin: ${vector.name}`, () => {
+    assert.equal(cryptoPaymentTabCoin(vector.tab, vector.last_chosen, vector.remembered), vector.expected);
+  });
+}
+
+// Over the tabs cryptoPaymentTabs lays out, a surface that keeps the coin last
+// chosen per tab gets that coin back on More coins after choosing another tab
+// in between; one that kept only the last coin chosen anywhere fell back to TAO.
+test("cryptoPaymentTabCoin keeps the coin chosen in the tab", () => {
+  const assets = [CRYPTO_ASSET_USDC_SOLANA, CRYPTO_ASSET_TAO, CRYPTO_ASSET_BTC, CRYPTO_ASSET_ETH, CRYPTO_ASSET_SOL].map((asset) => ({
+    asset,
+    plans: ["yearly"],
+  }));
+  const tabs = cryptoPaymentTabs(assets, null, ["yearly"]);
+  const tab = (id: string) => tabs.find((candidate) => candidate.id === id)!;
+  const lastChosen = new Map<string, string>();
+  let remembered = CRYPTO_ASSET_USDC_SOLANA;
+  const choose = (asset: string) => {
+    lastChosen.set(cryptoPaymentTabId(asset), asset);
+    remembered = asset;
+  };
+  const tap = (id: string) => {
+    const asset = cryptoPaymentTabCoin(tab(id), lastChosen.get(id) ?? "", remembered);
+    if (asset) choose(asset);
+    return asset;
+  };
+  assert.equal(tap(CRYPTO_PAYMENT_TAB_MORE_COINS), CRYPTO_ASSET_TAO);
+  choose(CRYPTO_ASSET_BTC);
+  assert.equal(tap(CRYPTO_ASSET_USDC_SOLANA), CRYPTO_ASSET_USDC_SOLANA);
+  assert.equal(tap(CRYPTO_PAYMENT_TAB_MORE_COINS), CRYPTO_ASSET_BTC);
+  assert.equal(cryptoPaymentTabCoin(tab(CRYPTO_PAYMENT_TAB_MORE_COINS), CRYPTO_ASSET_USDC_SOLANA, CRYPTO_ASSET_USDC_SOLANA), CRYPTO_ASSET_TAO);
+});
+
+// The memo shows only when the server sent one, whatever the coin.
+for (const vector of vectors.cryptoPaymentShowsMemo) {
+  test(`cryptoPaymentShowsMemo: ${vector.name}`, () => {
+    assert.equal(cryptoPaymentShowsMemo(vector.asset, vector.memo), vector.expected);
+  });
+}
+
+// Each coin's status steps at each status, a skipped step drawn done. The
+// vectors spell the steps as the Go twin's json does.
+for (const vector of vectors.cryptoPaymentSteps) {
+  test(`cryptoPaymentSteps: ${vector.name}`, () => {
+    assert.deepEqual(
+      cryptoPaymentSteps(vector.asset, vector.status, vector.confirmations, vector.confirmations_required),
+      vector.expected.map((step: { status: string; progress: string; confirmations: number; confirmations_required: number }) => ({
+        status: step.status,
+        progress: step.progress,
+        confirmations: step.confirmations,
+        confirmationsRequired: step.confirmations_required,
+      })),
+    );
+  });
+}
+
+test("cryptoPaymentSteps draws a skipped step done", () => {
+  assert.deepEqual(
+    cryptoPaymentSteps(CRYPTO_ASSET_SOL, CRYPTO_PAYMENT_STATUS_PAID, 1, 1).map((step) => step.progress),
+    [CRYPTO_PAYMENT_STEP_DONE, CRYPTO_PAYMENT_STEP_DONE, CRYPTO_PAYMENT_STEP_DONE, CRYPTO_PAYMENT_STEP_DONE],
+  );
+  assert.deepEqual(
+    cryptoPaymentSteps(CRYPTO_ASSET_BTC, CRYPTO_PAYMENT_STATUS_SEEN, 0, 1).map((step) => step.progress),
+    [CRYPTO_PAYMENT_STEP_DONE, CRYPTO_PAYMENT_STEP_CURRENT, CRYPTO_PAYMENT_STEP_UPCOMING, CRYPTO_PAYMENT_STEP_UPCOMING],
+  );
+});
+
+// The coin a paid year is named by: the server's asset, never its market.
+for (const vector of vectors.cryptoPaidAsset) {
+  test(`cryptoPaidAsset: ${vector.name}`, () => {
+    assert.equal(cryptoPaidAsset(vector.market, vector.asset), vector.expected);
+  });
+}
 
 // The vectors and the sdk name the same coins: every coin the method row can
 // offer has its facts in the vectors, in the row's order.
@@ -385,6 +506,10 @@ test("every vector set is read", () => {
     "cryptoPaymentQrText",
     "cryptoPaymentTabLayout",
     "cryptoPaymentTabs",
+    "cryptoPaymentTabCoin",
+    "cryptoPaymentShowsMemo",
+    "cryptoPaymentSteps",
+    "cryptoPaidAsset",
   ]) {
     assert.ok(Array.isArray(vectors[name]) && 0 < vectors[name].length, `no ${name} vectors`);
   }

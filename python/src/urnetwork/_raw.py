@@ -2775,6 +2775,8 @@ def bind(lib):
     lib.urnet_crypto_asset_label.restype = c_void_p
     lib.urnet_crypto_asset_label_key.argtypes = [c_char_p]
     lib.urnet_crypto_asset_label_key.restype = c_void_p
+    lib.urnet_crypto_asset_lines_for.argtypes = [c_char_p]
+    lib.urnet_crypto_asset_lines_for.restype = c_void_p
     lib.urnet_crypto_asset_market.argtypes = [c_char_p]
     lib.urnet_crypto_asset_market.restype = c_void_p
     lib.urnet_crypto_asset_quote_decimals.argtypes = [c_char_p]
@@ -2783,8 +2785,18 @@ def bind(lib):
     lib.urnet_crypto_asset_sells.restype = c_bool
     lib.urnet_crypto_asset_ticker.argtypes = [c_char_p]
     lib.urnet_crypto_asset_ticker.restype = c_void_p
+    lib.urnet_crypto_paid_asset.argtypes = [c_char_p, c_char_p]
+    lib.urnet_crypto_paid_asset.restype = c_void_p
+    lib.urnet_crypto_payment_event_product.argtypes = [c_char_p]
+    lib.urnet_crypto_payment_event_product.restype = c_void_p
     lib.urnet_crypto_payment_qr_text.argtypes = [c_char_p, c_char_p, c_char_p]
     lib.urnet_crypto_payment_qr_text.restype = c_void_p
+    lib.urnet_crypto_payment_shows_memo.argtypes = [c_char_p, c_char_p]
+    lib.urnet_crypto_payment_shows_memo.restype = c_bool
+    lib.urnet_crypto_payment_steps.argtypes = [c_char_p, c_char_p, c_int64, c_int64]
+    lib.urnet_crypto_payment_steps.restype = c_void_p
+    lib.urnet_crypto_payment_tab_coin.argtypes = [c_char_p, c_char_p, c_char_p]
+    lib.urnet_crypto_payment_tab_coin.restype = c_void_p
     lib.urnet_crypto_payment_tab_id.argtypes = [c_char_p]
     lib.urnet_crypto_payment_tab_id.restype = c_void_p
     lib.urnet_crypto_payment_tabs.argtypes = [c_char_p, c_char_p, c_char_p]

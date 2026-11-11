@@ -1985,6 +1985,13 @@ type SubscriptionBalanceResult struct {
 	// server refuses for now, which the tabs grey out. nil when there is none,
 	// and from an older server, so no crypto method is offered then.
 	CryptoAssets *CryptoPaymentAssetList `json:"crypto_assets,omitempty"`
+	// CryptoUnavailableAssets are the coins that are on but cannot be quoted
+	// now (GET /pay/crypto/assets' unavailable_assets), each with its
+	// unavailable_reason: never offered, and passed beside CryptoAssets to
+	// CryptoPaymentTabs, which shows them greyed out ("Temporarily
+	// unavailable") instead of leaving them out. nil when there is none, and
+	// from a server before 2026-11-10.
+	CryptoUnavailableAssets *CryptoPaymentAssetList `json:"crypto_unavailable_assets,omitempty"`
 	// CryptoTerm is the network's latest one-time crypto credit whose grace
 	// has not ended, for the renewal notice (CryptoTermNoticeDue); nil when
 	// there is none.

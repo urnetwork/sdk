@@ -433,8 +433,69 @@ func TestSubscriptionBalanceDecodesCryptoFields(t *testing.T) {
 		"open_transfer_byte_count": 0, "pending_payout_usd_nano_cents": 0, "update_time": "", "onboarding_offer": null}`), &older); err != nil {
 		t.Fatal(err)
 	}
-	if older.CryptoAssets != nil || older.CryptoTerm != nil {
-		t.Fatalf("an older answer gave crypto fields: %+v %+v", older.CryptoAssets, older.CryptoTerm)
+	if older.CryptoAssets != nil || older.CryptoUnavailableAssets != nil || older.CryptoTerm != nil {
+		t.Fatalf("an older answer gave crypto fields: %+v %+v %+v", older.CryptoAssets, older.CryptoUnavailableAssets, older.CryptoTerm)
 	}
 	connect.AssertEqual(t, stringListValues(PaymentMethods(older.CryptoAssets, NewStringList())), []string{PaymentMethodCard})
+}
+
+// The balance's crypto_unavailable_assets decode, so an app that reads the
+// balance greys a coin the server cannot quote now instead of dropping it
+// (BTCPAY §17.6, "Temporarily unavailable"): with TAO, Bitcoin, ETH and SOL
+// all waiting, More coins stays, greyed, with its four marks. Before the
+// balance result had the field, the apps passed nil and More coins vanished.
+// The term names its coin: a SOL year shares the solana market with USDC.
+func TestSubscriptionBalanceDecodesTheUnavailableCoinsAndTheTermCoin(t *testing.T) {
+	var result SubscriptionBalanceResult
+	if err := json.Unmarshal([]byte(`{
+		"start_balance_byte_count": 0, "balance_byte_count": 0, "open_transfer_byte_count": 0,
+		"pending_payout_usd_nano_cents": 0, "update_time": "2026-11-11T00:00:00Z", "onboarding_offer": null,
+		"crypto_assets": [
+			{"asset": "usdc_solana", "plans": ["yearly"], "items": ["data_1tib"], "confirmations_required": 1,
+			 "quote_ttl_seconds": 3600, "available": true}
+		],
+		"crypto_unavailable_assets": [
+			{"asset": "tao", "plans": ["yearly"], "items": ["data_1tib"], "confirmations_required": 1,
+			 "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "scanner_lagging"},
+			{"asset": "btc", "plans": ["yearly"], "items": ["data_1tib"], "confirmations_required": 1,
+			 "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "network_height_unknown"},
+			{"asset": "eth", "plans": ["yearly"], "items": ["data_1tib"], "confirmations_required": 1,
+			 "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "network_height_unknown"},
+			{"asset": "sol", "plans": ["yearly"], "items": ["data_1tib"], "confirmations_required": 1,
+			 "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "scanner_lagging"}
+		],
+		"crypto_term": {"market": "solana", "asset": "sol", "term_end_time": "2027-10-20T18:00:00Z",
+			"grace_end_time": "2027-11-19T18:00:00Z"}
+	}`), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.CryptoUnavailableAssets == nil || result.CryptoUnavailableAssets.Len() != 4 {
+		t.Fatalf("crypto unavailable assets = %+v", result.CryptoUnavailableAssets)
+	}
+	connect.AssertEqual(t, result.CryptoUnavailableAssets.Get(3).Asset, CryptoAssetSol)
+	items := NewStringList()
+	items.Add(PlanYearly)
+	tabs := CryptoPaymentTabs(result.CryptoAssets, result.CryptoUnavailableAssets, items)
+	ids := []string{}
+	for i := 0; i < tabs.Len(); i += 1 {
+		ids = append(ids, tabs.Get(i).Id)
+	}
+	connect.AssertEqual(t, ids, []string{CryptoAssetUsdcSolana, CryptoAssetZec, CryptoAssetXmr, CryptoPaymentTabMoreCoins})
+	moreCoins := tabs.Get(3)
+	connect.AssertEqual(t, moreCoins.Available, false)
+	connect.AssertEqual(t, stringListValues(moreCoins.IconKeys), []string{CryptoIconKeyTao, CryptoIconKeyBtc, CryptoIconKeyEth, CryptoIconKeySol})
+	for i := 0; i < moreCoins.Coins.Len(); i += 1 {
+		connect.AssertEqual(t, moreCoins.Coins.Get(i).Available, false)
+	}
+	// none of them can be chosen, and none is offered
+	connect.AssertEqual(t, CryptoPaymentTabCoin(moreCoins, CryptoAssetBtc, CryptoAssetSol), "")
+	connect.AssertEqual(t, stringListValues(PaymentMethods(result.CryptoAssets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana})
+	// without the second list, as the apps read the balance before, More coins vanishes
+	connect.AssertEqual(t, CryptoPaymentTabs(result.CryptoAssets, nil, items).Len(), 3)
+
+	if result.CryptoTerm == nil || result.CryptoTerm.Asset != CryptoAssetSol || result.CryptoTerm.Market != "solana" {
+		t.Fatalf("crypto term = %+v", result.CryptoTerm)
+	}
+	connect.AssertEqual(t, CryptoPaidAsset(result.CryptoTerm.Market, result.CryptoTerm.Asset), CryptoAssetSol)
+	connect.AssertEqual(t, CryptoAssetLabel(CryptoPaidAsset(result.CryptoTerm.Market, result.CryptoTerm.Asset)), "SOL")
 }

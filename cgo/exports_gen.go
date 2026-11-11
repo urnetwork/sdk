@@ -9289,6 +9289,16 @@ func urnet_crypto_asset_label_key(asset *C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_crypto_asset_lines_for
+func urnet_crypto_asset_lines_for(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_asset_lines_for")
+	r0 := sdk.CryptoAssetLinesFor(goString(asset))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_crypto_asset_lines_for")
+}
+
 //export urnet_crypto_asset_market
 func urnet_crypto_asset_market(asset *C.char) *C.char {
 	defer cgoGuard("urnet_crypto_asset_market")
@@ -9445,10 +9455,55 @@ func urnet_crypto_invoice_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_crypto_paid_asset
+func urnet_crypto_paid_asset(market *C.char, asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_paid_asset")
+	r0 := sdk.CryptoPaidAsset(goString(market), goString(asset))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_payment_event_product
+func urnet_crypto_payment_event_product(asset *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_event_product")
+	r0 := sdk.CryptoPaymentEventProduct(goString(asset))
+	return cString(string(r0))
+}
+
 //export urnet_crypto_payment_qr_text
 func urnet_crypto_payment_qr_text(asset *C.char, uri *C.char, address *C.char) *C.char {
 	defer cgoGuard("urnet_crypto_payment_qr_text")
 	r0 := sdk.CryptoPaymentQrText(goString(asset), goString(uri), goString(address))
+	return cString(string(r0))
+}
+
+//export urnet_crypto_payment_shows_memo
+func urnet_crypto_payment_shows_memo(asset *C.char, memo *C.char) C.bool {
+	defer cgoGuard("urnet_crypto_payment_shows_memo")
+	r0 := sdk.CryptoPaymentShowsMemo(goString(asset), goString(memo))
+	return C.bool(r0)
+}
+
+//export urnet_crypto_payment_steps
+func urnet_crypto_payment_steps(asset *C.char, status *C.char, confirmations C.int64_t, confirmationsRequired C.int64_t) *C.char {
+	defer cgoGuard("urnet_crypto_payment_steps")
+	r0 := sdk.CryptoPaymentSteps(goString(asset), goString(status), int(int64(confirmations)), int(int64(confirmationsRequired)))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_crypto_payment_steps")
+}
+
+//export urnet_crypto_payment_tab_coin
+func urnet_crypto_payment_tab_coin(tab *C.char, lastChosen *C.char, remembered *C.char) *C.char {
+	defer cgoGuard("urnet_crypto_payment_tab_coin")
+	var tab_ *sdk.CryptoPaymentTab
+	if tab != nil {
+		tab_ = &sdk.CryptoPaymentTab{}
+		if !goJson(tab, tab_, "urnet_crypto_payment_tab_coin") {
+			return nil
+		}
+	}
+	r0 := sdk.CryptoPaymentTabCoin(tab_, goString(lastChosen), goString(remembered))
 	return cString(string(r0))
 }
 
