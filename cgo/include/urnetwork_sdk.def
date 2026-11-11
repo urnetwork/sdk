@@ -92,6 +92,7 @@ EXPORTS
 	urnet_api_onboarding_feedback_token
 	urnet_api_onboarding_offer_issue
 	urnet_api_open_client_session_view_controller
+	urnet_api_open_manage_devices_view_controller
 	urnet_api_redeem_balance_code
 	urnet_api_refresh_jwt
 	urnet_api_refresh_jwt_sync
@@ -266,6 +267,8 @@ EXPORTS
 	urnet_client_event_queue_pending_count
 	urnet_client_event_queue_set_app_version
 	urnet_client_event_queue_set_locale
+	urnet_client_limit_notice_tracker_reset
+	urnet_client_limit_notice_tracker_update
 	urnet_client_refresh_integrity_notice_close_api_if_current
 	urnet_client_session_action_get_error
 	urnet_client_session_action_get_loading
@@ -370,8 +373,16 @@ EXPORTS
 	urnet_contract_view_controller_set_window_duration_seconds
 	urnet_contract_view_controller_start
 	urnet_contract_view_controller_stop
+	urnet_copy_dns_resolver_settings
 	urnet_copy_string
 	urnet_create_payment_reference
+	urnet_crypto_asset_decimals
+	urnet_crypto_asset_icon_key
+	urnet_crypto_asset_label
+	urnet_crypto_asset_label_key
+	urnet_crypto_asset_lines_for
+	urnet_crypto_asset_market
+	urnet_crypto_asset_quote_decimals
 	urnet_crypto_asset_sells
 	urnet_crypto_asset_ticker
 	urnet_crypto_invoice_view_controller_add_crypto_invoice_listener
@@ -385,6 +396,15 @@ EXPORTS
 	urnet_crypto_invoice_view_controller_start
 	urnet_crypto_invoice_view_controller_start_invoice
 	urnet_crypto_invoice_view_controller_stop
+	urnet_crypto_paid_asset
+	urnet_crypto_payment_event_product
+	urnet_crypto_payment_qr_text
+	urnet_crypto_payment_shows_memo
+	urnet_crypto_payment_steps
+	urnet_crypto_payment_tab_coin
+	urnet_crypto_payment_tab_id
+	urnet_crypto_payment_tabs
+	urnet_crypto_payment_uri_scheme
 	urnet_crypto_term_notice_due
 	urnet_crypto_wallet_suggestions
 	urnet_decode_base58
@@ -398,6 +418,8 @@ EXPORTS
 	urnet_default_transport_mode_priority
 	urnet_default_transport_settings
 	urnet_default_tunnel_dns_setting
+	urnet_describe_dns_resolver_settings
+	urnet_describe_dns_resolver_status
 	urnet_device_add_allow_foreground_change_listener
 	urnet_device_add_auth_logout_listener
 	urnet_device_add_block_action_override
@@ -415,6 +437,7 @@ EXPORTS
 	urnet_device_add_contract_status_change_listener
 	urnet_device_add_default_location_change_listener
 	urnet_device_add_dns_resolver_settings_change_listener
+	urnet_device_add_dns_resolver_status_change_listener
 	urnet_device_add_egress_contract_details_change_listener
 	urnet_device_add_egress_contract_stats_change_listener
 	urnet_device_add_extender_provide_status_change_listener
@@ -472,7 +495,9 @@ EXPORTS
 	urnet_device_get_control_ip_family_policy
 	urnet_device_get_control_ip_family_status
 	urnet_device_get_default_location
+	urnet_device_get_dns_blocked_count
 	urnet_device_get_dns_resolver_settings
+	urnet_device_get_dns_resolver_status
 	urnet_device_get_done
 	urnet_device_get_egress_contract_details
 	urnet_device_get_egress_contract_stats
@@ -535,6 +560,7 @@ EXPORTS
 	urnet_device_local_close_crypto_invoice_view_controller
 	urnet_device_local_close_devices_view_controller
 	urnet_device_local_close_locations_view_controller
+	urnet_device_local_close_manage_devices_view_controller
 	urnet_device_local_close_peer_view_controller
 	urnet_device_local_close_points_leaderboard_view_controller
 	urnet_device_local_close_post_quantum_identity_view_controller
@@ -605,6 +631,7 @@ EXPORTS
 	urnet_device_local_open_extender_view_controller
 	urnet_device_local_open_feedback_view_controller
 	urnet_device_local_open_locations_view_controller
+	urnet_device_local_open_manage_devices_view_controller
 	urnet_device_local_open_network_user_view_controller
 	urnet_device_local_open_peer_view_controller
 	urnet_device_local_open_points_leaderboard_view_controller
@@ -697,6 +724,7 @@ EXPORTS
 	urnet_device_remote_close_crypto_invoice_view_controller
 	urnet_device_remote_close_devices_view_controller
 	urnet_device_remote_close_locations_view_controller
+	urnet_device_remote_close_manage_devices_view_controller
 	urnet_device_remote_close_peer_view_controller
 	urnet_device_remote_close_points_leaderboard_view_controller
 	urnet_device_remote_close_post_quantum_identity_view_controller
@@ -733,6 +761,7 @@ EXPORTS
 	urnet_device_remote_open_extender_view_controller
 	urnet_device_remote_open_feedback_view_controller
 	urnet_device_remote_open_locations_view_controller
+	urnet_device_remote_open_manage_devices_view_controller
 	urnet_device_remote_open_network_user_view_controller
 	urnet_device_remote_open_peer_view_controller
 	urnet_device_remote_open_points_leaderboard_view_controller
@@ -775,6 +804,8 @@ EXPORTS
 	urnet_device_remove_connected_provider
 	urnet_device_remove_destination
 	urnet_device_reset_extenders
+	urnet_device_retry_client_limit
+	urnet_device_retry_client_limit_after_change
 	urnet_device_rpc_key_material_get_client_cert_pem
 	urnet_device_rpc_key_material_get_client_pem
 	urnet_device_rpc_key_material_get_server_cert_pem
@@ -820,6 +851,9 @@ EXPORTS
 	urnet_devices_view_controller_close
 	urnet_devices_view_controller_start
 	urnet_devices_view_controller_stop
+	urnet_dns_resolver_settings_as_custom
+	urnet_dns_resolver_settings_with_fallback
+	urnet_dns_resolver_settings_with_preset
 	urnet_encode_base58
 	urnet_encrypt_data
 	urnet_evm_mirror_ss58
@@ -872,6 +906,10 @@ EXPORTS
 	urnet_get_default_tunnel_dns_address_ipv4
 	urnet_get_default_tunnel_dns_address_ipv6
 	urnet_get_default_tunnel_mtu
+	urnet_get_dns_picks
+	urnet_get_dns_preset
+	urnet_get_dns_preset_personal_id_for_edit
+	urnet_get_dns_preset_providers
 	urnet_get_extender_color_hex
 	urnet_get_extender_store_read_only
 	urnet_get_filtered_locations_from_result
@@ -999,6 +1037,14 @@ EXPORTS
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start
 	urnet_login_view_controller_stop
+	urnet_manage_devices_view_controller_add_manage_devices_listener
+	urnet_manage_devices_view_controller_close
+	urnet_manage_devices_view_controller_get_can_manage
+	urnet_manage_devices_view_controller_get_snapshot
+	urnet_manage_devices_view_controller_refresh
+	urnet_manage_devices_view_controller_remove_device
+	urnet_manage_devices_view_controller_start
+	urnet_manage_devices_view_controller_stop
 	urnet_memory_classes_json_for_diag
 	urnet_monthly_equivalent_amount
 	urnet_nano_cents_to_usd
@@ -1116,6 +1162,7 @@ EXPORTS
 	urnet_new_bittensor_wallet_session
 	urnet_new_client_event_queue
 	urnet_new_client_info
+	urnet_new_client_limit_notice_tracker
 	urnet_new_connect_first_event
 	urnet_new_crypto_invoice_view_controller
 	urnet_new_device_local
@@ -1147,12 +1194,14 @@ EXPORTS
 	urnet_new_purchase_completed_event
 	urnet_new_purchase_failed_event
 	urnet_new_purchase_started_event
+	urnet_new_sign_in_manage_devices_view_controller
 	urnet_new_signup_optout_changed_event
 	urnet_new_sn_chain_settings
 	urnet_new_sn_fleet_claim
 	urnet_new_sn_fleet_device_for_local
 	urnet_new_sn_fleet_device_for_remote
 	urnet_new_subscription_balance_view_controller
+	urnet_new_subscription_pro_tracker
 	urnet_new_time_unix_milli
 	urnet_new_transfer_path
 	urnet_new_tunnel
@@ -1163,6 +1212,7 @@ EXPORTS
 	urnet_normal_env_name
 	urnet_normal_extender_gossip_mode
 	urnet_normalize_bittensor_signature
+	urnet_normalize_dns_preset_personal_id
 	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
@@ -1295,6 +1345,7 @@ EXPORTS
 	urnet_session_sign_out_result_get_revocation_confirmed
 	urnet_set_control_ip_family_policy
 	urnet_set_device_rpc_h1_plus_enabled
+	urnet_set_dns_presets_hide_ad_blocking
 	urnet_set_egress_interface_index
 	urnet_set_extender_network_client_enabled
 	urnet_set_extender_store_read_only
@@ -1370,6 +1421,10 @@ EXPORTS
 	urnet_subscription_balance_view_controller_start
 	urnet_subscription_balance_view_controller_start_purchase_confirmation
 	urnet_subscription_balance_view_controller_stop
+	urnet_subscription_pro_tracker_balance_loaded
+	urnet_subscription_pro_tracker_get_is_pro
+	urnet_subscription_pro_tracker_reset
+	urnet_subscription_pro_tracker_set_jwt
 	urnet_suggest_emoji_tag
 	urnet_transport_settings_auto_modes
 	urnet_transport_settings_enabled_transport_types
@@ -1383,6 +1438,7 @@ EXPORTS
 	urnet_upload_logs_inventory
 	urnet_usd_to_nano_cents
 	urnet_validate_control_doh_url
+	urnet_validate_dns_preset_personal_id
 	urnet_validate_emoji_tag
 	urnet_validate_ss58
 	urnet_validate_vless_settings

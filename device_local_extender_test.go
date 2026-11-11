@@ -448,6 +448,9 @@ type testProvideExtenderFixtureOptions struct {
 	// runs once the space and the operator exist and before the device
 	// provides, so the role's first post already meets what it set
 	prepare func(fixture *testProvideExtenderFixture)
+	// runs once the device exists and before it provides, so the role is
+	// built from what it set on the device's provider
+	beforeProvide func(device *DeviceLocal)
 }
 
 func newTestProvideExtenderFixtureWithOptions(
@@ -548,6 +551,9 @@ func newTestProvideExtenderFixtureWithOptions(
 	device.AddExtenderProvideStatusChangeListener(
 		&testProvideExtenderStatusListener{fixture: fixture})
 
+	if options.beforeProvide != nil {
+		options.beforeProvide(device)
+	}
 	// providing is what the role follows (G2)
 	device.SetProvideMode(ProvideModePublic)
 	return fixture

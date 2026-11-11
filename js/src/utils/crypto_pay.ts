@@ -11,6 +11,17 @@
  * names its own price, address or payment uri. The server quotes the invoice
  * and builds its uri; the client only checks the uri against the address it
  * shows (checkCryptoPaymentUri) before it renders or opens it.
+ *
+ * The coins sit in the payment widget's tabs (cryptoPaymentTabs): USDC on
+ * Solana, Zcash and Monero each have a tab of their own, and TAO, Bitcoin, ETH
+ * and SOL share the "More coins" tab (mmm/BTCPAY.md §17.6). Every coin's facts
+ * (its ticker, label, mark, decimals, market, uri scheme and the lines its
+ * invoice shows) are in one table, which every function here reads. So are
+ * the rules every surface once kept a copy of: the coin a tap on a tab
+ * chooses (cryptoPaymentTabCoin), when the memo shows (cryptoPaymentShowsMemo),
+ * the status steps (cryptoPaymentSteps), the product the purchase events name
+ * (cryptoPaymentEventProduct) and the coin a paid year is named by
+ * (cryptoPaidAsset).
  */
 
 import type { CryptoPaymentAsset, CryptoTerm } from "../generated/openapi";
@@ -20,9 +31,32 @@ import { parseRfc3339 } from "./rfc3339";
 export const CRYPTO_ASSET_USDC_SOLANA = "usdc_solana";
 export const CRYPTO_ASSET_ZEC = "zec";
 export const CRYPTO_ASSET_XMR = "xmr";
+/** TAO, on Bittensor */
+export const CRYPTO_ASSET_TAO = "tao";
+export const CRYPTO_ASSET_BTC = "btc";
+export const CRYPTO_ASSET_ETH = "eth";
+/** native SOL */
+export const CRYPTO_ASSET_SOL = "sol";
 
 /** The fiat method: Stripe on every surface outside an app store. */
 export const PAYMENT_METHOD_CARD = "card";
+
+/** The payment widget's tab of several coins: TAO, Bitcoin, ETH and SOL. A tab of one coin has that coin's asset as its id. */
+export const CRYPTO_PAYMENT_TAB_MORE_COINS = "more_coins";
+
+/**
+ * The coins' marks (`iconKey`): each project's official mark in a single
+ * color, which every app bundles under this name (coin_btc.svg on the web, an
+ * Android drawable coin_btc). USDC on Solana shows the USDC mark, and SOL the
+ * Solana mark.
+ */
+export const CRYPTO_ICON_KEY_USDC = "coin_usdc";
+export const CRYPTO_ICON_KEY_ZEC = "coin_zec";
+export const CRYPTO_ICON_KEY_XMR = "coin_xmr";
+export const CRYPTO_ICON_KEY_TAO = "coin_tao";
+export const CRYPTO_ICON_KEY_BTC = "coin_btc";
+export const CRYPTO_ICON_KEY_ETH = "coin_eth";
+export const CRYPTO_ICON_KEY_SOL = "coin_sol";
 
 /** An invoice's state (the status route's `status`), first match wins. */
 export const CRYPTO_PAYMENT_STATUS_PENDING = "pending";
@@ -32,6 +66,15 @@ export const CRYPTO_PAYMENT_STATUS_PAID = "paid";
 export const CRYPTO_PAYMENT_STATUS_EXPIRED = "expired";
 export const CRYPTO_PAYMENT_STATUS_REVIEW = "review";
 export const CRYPTO_PAYMENT_STATUS_UNKNOWN = "unknown";
+
+// How one of an invoice's status steps is drawn (`CryptoPaymentStep.progress`).
+
+/** the payment is past it, whether the server reported the step or the payment skipped it */
+export const CRYPTO_PAYMENT_STEP_DONE = "done";
+/** where the payment is now */
+export const CRYPTO_PAYMENT_STEP_CURRENT = "current";
+/** not reached yet */
+export const CRYPTO_PAYMENT_STEP_UPCOMING = "upcoming";
 
 /** Where a paid invoice goes. */
 export const CRYPTO_PAYMENT_DELIVERY_ACCOUNT = "account";
@@ -43,17 +86,216 @@ export const PURCHASE_ERROR_CODE_ASSET_UNAVAILABLE = "asset_unavailable";
 export const PURCHASE_ERROR_CODE_QUOTE_EXPIRED = "quote_expired";
 export const PURCHASE_ERROR_CODE_UNDERPAID = "underpaid";
 
-/** The stores a crypto purchase's events name (purchase.*, offer.cta.tapped); USDC's is "solana". */
+/** The stores a crypto purchase's events name (purchase.*, offer.cta.tapped): its coin's market (cryptoAssetMarket). */
+export const EVENT_STORE_SOLANA = "solana";
 export const EVENT_STORE_ZCASH = "zcash";
 export const EVENT_STORE_MONERO = "monero";
+export const EVENT_STORE_BITTENSOR = "bittensor";
+export const EVENT_STORE_BITCOIN = "bitcoin";
+export const EVENT_STORE_ETHEREUM = "ethereum";
 
-/** The coins in the order every surface shows them, after Card. The order of the server's list means nothing. */
-const CRYPTO_ASSET_ORDER = [CRYPTO_ASSET_USDC_SOLANA, CRYPTO_ASSET_ZEC, CRYPTO_ASSET_XMR] as const;
+/** the USDC mint on Solana mainnet, the only token a usdc_solana uri may name */
+const SOLANA_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+/** One coin's facts, the same on every surface. */
+interface CryptoCoin {
+  /** shown beside an amount ("0.072387 XMR") */
+  readonly ticker: string;
+  /** the label in English, and its string id in the shared localizations (localizations/keys) */
+  readonly label: string;
+  readonly labelKey: string;
+  /** the coin's mark (CRYPTO_ICON_KEY_*) */
+  readonly iconKey: string;
+  /** the atomic unit's decimals: amount_atomic is the amount times 10^decimals */
+  readonly decimals: number;
+  /** the decimals the server quotes an amount to (it rounds amounts up) */
+  readonly quoteDecimals: number;
+  /** the subscription market a credit in the coin renews on, which is also the store its purchase events name */
+  readonly market: string;
+  /** the scheme of its payment uri, "" for a coin without one: its invoice shows the address, the amount and a QR code of the address alone */
+  readonly uriScheme: string;
+  /** the lines its invoice shows (cryptoAssetLinesFor), each English the store's byte for byte */
+  readonly lines: CryptoAssetLines;
+}
+
+/** No line: a coin without a warning, or without a note. */
+const NO_LINES = { networkWarning: "", networkWarningKey: "", noPaymentLinkNote: "", noPaymentLinkNoteKey: "" } as const;
+
+/** The coins this sdk knows, by asset (mmm/BTCPAY.md §17.7 for the four added on 2026-11-10). A coin missing here is never offered and never shown. */
+const CRYPTO_ASSET_COINS: ReadonlyMap<string, CryptoCoin> = new Map<string, CryptoCoin>([
+  [
+    CRYPTO_ASSET_USDC_SOLANA,
+    {
+      ticker: "USDC",
+      label: "USDC on Solana",
+      labelKey: "pay_method_usdc_solana",
+      iconKey: CRYPTO_ICON_KEY_USDC,
+      decimals: 6,
+      quoteDecimals: 6,
+      market: "solana",
+      uriScheme: "solana",
+      lines: {
+        ...NO_LINES,
+        networkLine: "USDC on Solana",
+        networkLineKey: "crypto_network_usdc",
+        networkWarning: "Send USDC on the Solana network only. USDC sent on any other network will not arrive.",
+        networkWarningKey: "usdc_solana_network_only",
+      },
+    },
+  ],
+  [
+    CRYPTO_ASSET_ZEC,
+    {
+      ticker: "ZEC",
+      label: "Zcash",
+      labelKey: "pay_method_zcash",
+      iconKey: CRYPTO_ICON_KEY_ZEC,
+      decimals: 8,
+      quoteDecimals: 6,
+      market: "zcash",
+      uriScheme: "zcash",
+      lines: { ...NO_LINES, networkLine: "Zcash, shielded", networkLineKey: "crypto_network_zcash" },
+    },
+  ],
+  [
+    CRYPTO_ASSET_XMR,
+    {
+      ticker: "XMR",
+      label: "Monero",
+      labelKey: "pay_method_monero",
+      iconKey: CRYPTO_ICON_KEY_XMR,
+      decimals: 12,
+      quoteDecimals: 6,
+      market: "monero",
+      uriScheme: "monero",
+      lines: { ...NO_LINES, networkLine: "Monero", networkLineKey: "crypto_network_monero" },
+    },
+  ],
+  [
+    CRYPTO_ASSET_TAO,
+    {
+      ticker: "TAO",
+      label: "TAO",
+      labelKey: "pay_method_tao",
+      iconKey: CRYPTO_ICON_KEY_TAO,
+      decimals: 9,
+      quoteDecimals: 6,
+      market: "bittensor",
+      // TAO has no payment uri standard
+      uriScheme: "",
+      lines: {
+        networkLine: "Bittensor network",
+        networkLineKey: "crypto_network_tao",
+        networkWarning: "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
+        networkWarningKey: "crypto_invoice_tao_network_only",
+        noPaymentLinkNote: "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
+        noPaymentLinkNoteKey: "crypto_invoice_tao_no_payment_link",
+      },
+    },
+  ],
+  [
+    CRYPTO_ASSET_BTC,
+    {
+      ticker: "BTC",
+      label: "Bitcoin",
+      labelKey: "pay_method_bitcoin",
+      iconKey: CRYPTO_ICON_KEY_BTC,
+      decimals: 8,
+      quoteDecimals: 8,
+      market: "bitcoin",
+      uriScheme: "bitcoin",
+      lines: {
+        ...NO_LINES,
+        networkLine: "Bitcoin network",
+        networkLineKey: "crypto_network_bitcoin",
+        networkWarning: "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
+        networkWarningKey: "crypto_invoice_bitcoin_network_only",
+      },
+    },
+  ],
+  [
+    CRYPTO_ASSET_ETH,
+    {
+      ticker: "ETH",
+      label: "ETH",
+      labelKey: "pay_method_eth",
+      iconKey: CRYPTO_ICON_KEY_ETH,
+      decimals: 18,
+      quoteDecimals: 6,
+      market: "ethereum",
+      uriScheme: "ethereum",
+      lines: {
+        ...NO_LINES,
+        networkLine: "Ethereum mainnet",
+        networkLineKey: "crypto_network_eth",
+        networkWarning:
+          "Send only ETH on Ethereum mainnet to this address. Tokens and ETH on other networks, such as Base or Arbitrum, won't be credited.",
+        networkWarningKey: "crypto_invoice_eth_network_only",
+      },
+    },
+  ],
+  [
+    CRYPTO_ASSET_SOL,
+    {
+      ticker: "SOL",
+      label: "SOL",
+      labelKey: "pay_method_sol",
+      iconKey: CRYPTO_ICON_KEY_SOL,
+      decimals: 9,
+      quoteDecimals: 6,
+      market: "solana",
+      uriScheme: "solana",
+      lines: {
+        ...NO_LINES,
+        networkLine: "Solana (native SOL)",
+        networkLineKey: "crypto_network_sol",
+        networkWarning: "Send only SOL on the Solana network to this address. Tokens, including USDC, won't be credited.",
+        networkWarningKey: "crypto_invoice_sol_network_only",
+      },
+    },
+  ],
+]);
+
+/** One tab of the payment widget's coin selector. */
+interface CryptoPaymentTabLayout {
+  readonly id: string;
+  readonly label: string;
+  readonly labelKey: string;
+  /** its coins, in the order its sub-selector shows them */
+  readonly assets: readonly string[];
+  /** shown only while the server lists one of its coins; a tab of one coin is shown whenever the selector is */
+  readonly listedOnly: boolean;
+}
+
+const singleCoinTab = (asset: string): CryptoPaymentTabLayout => ({
+  id: asset,
+  label: CRYPTO_ASSET_COINS.get(asset)!.label,
+  labelKey: CRYPTO_ASSET_COINS.get(asset)!.labelKey,
+  assets: [asset],
+  listedOnly: false,
+});
+
+/** The selector's tabs in order: the three main coins, then "More coins". */
+const CRYPTO_PAYMENT_TAB_LAYOUTS: readonly CryptoPaymentTabLayout[] = [
+  singleCoinTab(CRYPTO_ASSET_USDC_SOLANA),
+  singleCoinTab(CRYPTO_ASSET_ZEC),
+  singleCoinTab(CRYPTO_ASSET_XMR),
+  {
+    id: CRYPTO_PAYMENT_TAB_MORE_COINS,
+    label: "More coins",
+    labelKey: "pay_method_more_coins",
+    assets: [CRYPTO_ASSET_TAO, CRYPTO_ASSET_BTC, CRYPTO_ASSET_ETH, CRYPTO_ASSET_SOL],
+    listedOnly: true,
+  },
+];
+
+/** The coins in the order every surface shows them, after Card: the tabs' coins in the tabs' order. The order of the server's list means nothing. */
+const CRYPTO_ASSET_ORDER: readonly string[] = CRYPTO_PAYMENT_TAB_LAYOUTS.flatMap((layout) => layout.assets);
 
 const PLAN_MONTHLY = "monthly";
 
 function isCryptoAsset(asset: string): boolean {
-  return (CRYPTO_ASSET_ORDER as readonly string[]).includes(asset);
+  return CRYPTO_ASSET_COINS.has(asset);
 }
 
 type AssetList = readonly (CryptoPaymentAsset | null | undefined)[] | null | undefined;
@@ -61,8 +303,12 @@ type AssetList = readonly (CryptoPaymentAsset | null | undefined)[] | null | und
 /**
  * The method row for a purchase surface: card, then each coin that sells at
  * least one of `items` (the plans or the packs the surface offers), always in
- * the order USDC, Zcash, Monero. A coin the server did not list, or one this
- * sdk does not know, is never offered.
+ * the order USDC, Zcash, Monero, TAO, Bitcoin, ETH, SOL. A coin the server did
+ * not list, or one this sdk does not know, is never offered. The server lists
+ * only the coins it would quote now, so a coin whose quotes it refuses for now
+ * (its wallet scanner lagging) is not offered either: that one is in the
+ * route's `unavailable_assets`, which cryptoPaymentTabs shows greyed out and
+ * which is never passed here as `assets`.
  */
 export function paymentMethods(assets: AssetList, items: readonly string[] | null | undefined): string[] {
   const methods: string[] = [PAYMENT_METHOD_CARD];
@@ -98,23 +344,274 @@ export function paymentMethodAllowsPlan(method: string, plan: string): boolean {
   return !(isCryptoAsset(method) && plan === PLAN_MONTHLY);
 }
 
+/** A coin in the payment widget. */
+export interface CryptoPaymentCoin {
+  /** one of the CRYPTO_ASSET_* values */
+  readonly asset: string;
+  /** "USDC on Solana", "Zcash", "Monero", "TAO", "Bitcoin", "ETH" or "SOL", in English (cryptoAssetLabel) */
+  readonly label: string;
+  /** the label's string id in the shared localizations (cryptoAssetLabelKey) */
+  readonly labelKey: string;
+  /**
+   * The coin's mark, one of the CRYPTO_ICON_KEY_* values. A mark is never
+   * dimmed (Solana's and Bittensor's brand rules allow theirs only in black or
+   * white, at full contrast), whatever `available` says.
+   */
+  readonly iconKey: string;
+  /**
+   * The server lists the coin as payable now, for one of the surface's items.
+   * An unavailable coin stays in its place and cannot be chosen: its label is
+   * greyed, with "Temporarily unavailable" (pay_method_unavailable) beside it,
+   * and its mark is unchanged.
+   */
+  readonly available: boolean;
+}
+
+/** A tab of the payment widget's coin selector: one coin, or the "More coins" tab, which opens a sub-selector of its coins. */
+export interface CryptoPaymentTab {
+  /** the asset of a tab with one coin, or CRYPTO_PAYMENT_TAB_MORE_COINS */
+  readonly id: string;
+  /** in English: the coin's label, or "More coins" */
+  readonly label: string;
+  /** the label's string id in the shared localizations */
+  readonly labelKey: string;
+  /**
+   * The marks the tab shows, in order, each at full contrast: its coin's, or
+   * the four of "More coins" as separate marks with space between them, never
+   * merged into one badge.
+   */
+  readonly iconKeys: readonly string[];
+  /** its coins, in order: one, or TAO, Bitcoin, ETH and SOL. Each says whether it can be paid with now. */
+  readonly coins: readonly CryptoPaymentCoin[];
+  /** at least one of its coins is available; a tab with none cannot be chosen, and its label is greyed as an unavailable coin's is */
+  readonly available: boolean;
+}
+
+/**
+ * The payment widget's coin selector for a purchase surface that sells
+ * `items` (as for paymentMethods), in order: USDC on Solana, Zcash, Monero,
+ * then "More coins" with TAO, Bitcoin, ETH and SOL. Card stays the method
+ * row's own first choice (paymentMethods).
+ *
+ * `assets` are the coins the server would quote now: the balance's
+ * `crypto_assets`, or GET /pay/crypto/assets' `assets`. `unavailableAssets`
+ * are the coins that are on but cannot be quoted now: the balance's
+ * `crypto_unavailable_assets`, or the route's `unavailable_assets`. Pass the
+ * two lists of the same answer; null for a server that sends no second list.
+ * A coin is available when `assets` names it as selling one of `items`. The
+ * coins' per-coin `available` flags say the same thing, by the server's
+ * contract, and are not read.
+ *
+ * - With no coin of either list selling one of the items, there is nothing to
+ *   choose: the list is empty, and the surface shows card alone, as it did
+ *   before crypto.
+ * - Otherwise the three main tabs are always there, and "More coins" is there
+ *   while either list names one of its coins (a server that predates them
+ *   names none).
+ * - Every coin of a tab is shown in its place, never hidden. A coin that
+ *   cannot be paid with now, for these items, has `available` false: its label
+ *   is greyed and says "Temporarily unavailable", and its mark, on its tab and
+ *   in the sub-selector, is unchanged. A coin left out of `assets` only greys
+ *   out while `unavailableAssets` names it; otherwise its tab, and More coins
+ *   with all four of its coins, would vanish instead.
+ */
+export function cryptoPaymentTabs(
+  assets: AssetList,
+  unavailableAssets: AssetList,
+  items: readonly string[] | null | undefined,
+): CryptoPaymentTab[] {
+  if (!items) return [];
+  const sells = (list: AssetList, asset: string) => items.some((item) => cryptoAssetSells(list, asset, item));
+  const listed = (asset: string) => sells(assets, asset) || sells(unavailableAssets, asset);
+  if (!CRYPTO_ASSET_ORDER.some(listed)) return [];
+  const tabs: CryptoPaymentTab[] = [];
+  for (const layout of CRYPTO_PAYMENT_TAB_LAYOUTS) {
+    if (layout.listedOnly && !layout.assets.some(listed)) continue;
+    const coins: CryptoPaymentCoin[] = [];
+    const iconKeys: string[] = [];
+    for (const asset of layout.assets) {
+      const coin = CRYPTO_ASSET_COINS.get(asset)!;
+      coins.push({ asset, label: coin.label, labelKey: coin.labelKey, iconKey: coin.iconKey, available: sells(assets, asset) });
+      iconKeys.push(coin.iconKey);
+    }
+    tabs.push({
+      id: layout.id,
+      label: layout.label,
+      labelKey: layout.labelKey,
+      iconKeys,
+      coins,
+      available: coins.some((coin) => coin.available),
+    });
+  }
+  return tabs;
+}
+
+/**
+ * The id of the tab a coin sits in: the asset itself for USDC on Solana,
+ * Zcash and Monero, CRYPTO_PAYMENT_TAB_MORE_COINS for TAO, Bitcoin, ETH and
+ * SOL, and "" for anything else. A remembered method selects this tab.
+ */
+export function cryptoPaymentTabId(asset: string): string {
+  return CRYPTO_PAYMENT_TAB_LAYOUTS.find((layout) => layout.assets.includes(asset))?.id ?? "";
+}
+
+/**
+ * The coin a tap on `tab` chooses (one of the tabs of cryptoPaymentTabs; a tab
+ * of several coins, More coins, opens its list with this coin chosen), in this
+ * order:
+ *
+ * - `lastChosen`, the coin last chosen in this tab while the surface was up,
+ *   when it can be paid with now. A surface keeps it per tab: choosing a coin
+ *   of another tab since does not replace it, so a tap back on More coins
+ *   finds the coin that was chosen there;
+ * - else `remembered`, the method remembered on the device (the invoice's
+ *   payment method), when it is one of the tab's coins that can be paid with
+ *   now;
+ * - else the tab's first coin that can be paid with now (TAO first in More
+ *   coins).
+ *
+ * "" for a tab none of whose coins can be paid with now, which cannot be
+ * chosen. A coin of another tab, card, "" or an asset this sdk does not know
+ * never matches `lastChosen` or `remembered`.
+ */
+export function cryptoPaymentTabCoin(tab: CryptoPaymentTab | null | undefined, lastChosen: string, remembered: string): string {
+  const choosable = (tab?.coins ?? [])
+    .filter((coin) => !!coin && coin.available && isCryptoAsset(coin.asset))
+    .map((coin) => coin.asset);
+  for (const asset of [lastChosen, remembered]) {
+    if (choosable.includes(asset)) return asset;
+  }
+  return choosable[0] ?? "";
+}
+
 /** The ticker shown beside an amount ("0.072387 XMR"), "" for anything else. */
 export function cryptoAssetTicker(asset: string): string {
-  switch (asset) {
-    case CRYPTO_ASSET_USDC_SOLANA:
-      return "USDC";
-    case CRYPTO_ASSET_ZEC:
-      return "ZEC";
-    case CRYPTO_ASSET_XMR:
-      return "XMR";
-    default:
-      return "";
-  }
+  return CRYPTO_ASSET_COINS.get(asset)?.ticker ?? "";
+}
+
+/** The coin's label in English ("USDC on Solana", "Bitcoin"), "" for anything else. The label of USDC always names its chain. */
+export function cryptoAssetLabel(asset: string): string {
+  return CRYPTO_ASSET_COINS.get(asset)?.label ?? "";
+}
+
+/** The string id of the coin's label in the shared localizations (localizations/keys), "" for anything else. */
+export function cryptoAssetLabelKey(asset: string): string {
+  return CRYPTO_ASSET_COINS.get(asset)?.labelKey ?? "";
+}
+
+/** The coin's mark, one of the CRYPTO_ICON_KEY_* values, "" for anything else. */
+export function cryptoAssetIconKey(asset: string): string {
+  return CRYPTO_ASSET_COINS.get(asset)?.iconKey ?? "";
+}
+
+/**
+ * A coin's own lines on its invoice and in the More coins list (mmm/BTCPAY.md
+ * §17.6), each in English beside its string id in the shared localizations
+ * (localizations/keys). A surface shows its own string for the id, and the
+ * English when it has none: a coin is never shown with another coin's line. A
+ * line whose id is "" is one the coin does not have, and is not shown.
+ */
+export interface CryptoAssetLines {
+  /**
+   * The network the coin is sent on: the invoice's first line, and the line
+   * under the coin in the More coins list. "USDC on Solana"
+   * (crypto_network_usdc), "Zcash, shielded", "Monero", "Bittensor network",
+   * "Bitcoin network", "Ethereum mainnet", "Solana (native SOL)".
+   */
+  readonly networkLine: string;
+  readonly networkLineKey: string;
+  /**
+   * Shown with the address: only this coin, sent on this network, is credited
+   * (usdc_solana_network_only, crypto_invoice_tao_network_only, …). None for
+   * Zcash and Monero, which have one network and no tokens.
+   */
+  readonly networkWarning: string;
+  readonly networkWarningKey: string;
+  /**
+   * A coin without a payment link (TAO): the note under its QR code, which
+   * holds the address alone, saying the amount is entered by hand
+   * (crypto_invoice_tao_no_payment_link). None for every other coin.
+   */
+  readonly noPaymentLinkNote: string;
+  readonly noPaymentLinkNoteKey: string;
+}
+
+/** The coin's lines (CryptoAssetLines); every one empty for anything else. */
+export function cryptoAssetLinesFor(asset: string): CryptoAssetLines {
+  return { ...(CRYPTO_ASSET_COINS.get(asset)?.lines ?? { ...NO_LINES, networkLine: "", networkLineKey: "" }) };
+}
+
+/**
+ * The decimals of the coin's atomic unit (`amount_atomic` is the amount times
+ * 10^decimals): 6 for USDC, 8 for Zcash and Bitcoin, 12 for Monero, 9 for TAO
+ * and SOL, 18 for ETH. 0 for anything else.
+ */
+export function cryptoAssetDecimals(asset: string): number {
+  return CRYPTO_ASSET_COINS.get(asset)?.decimals ?? 0;
+}
+
+/** The decimals the server quotes the coin's amounts to, rounding up: 8 for Bitcoin, 6 for every other coin. 0 for anything else. */
+export function cryptoAssetQuoteDecimals(asset: string): number {
+  return CRYPTO_ASSET_COINS.get(asset)?.quoteDecimals ?? 0;
+}
+
+/**
+ * The subscription market a credit in the coin renews on (`crypto_term.market`,
+ * a subscription's store), which is also the store its purchase events name:
+ * "solana" for USDC and SOL, "zcash", "monero", "bittensor" for TAO, "bitcoin"
+ * and "ethereum". "" for anything else.
+ */
+export function cryptoAssetMarket(asset: string): string {
+  return CRYPTO_ASSET_COINS.get(asset)?.market ?? "";
+}
+
+/**
+ * The scheme of the coin's payment uri: "solana" (Solana Pay) for USDC and
+ * SOL, "zcash" (ZIP 321), "monero", "bitcoin" (BIP 21) and "ethereum" (EIP
+ * 681). "" for TAO, which has no payment uri, and for anything else. A uri is
+ * this scheme and a colon; checkCryptoPaymentUri is the whole check a surface
+ * runs before it draws or opens one, the scheme's included.
+ */
+export function cryptoPaymentUriScheme(asset: string): string {
+  return CRYPTO_ASSET_COINS.get(asset)?.uriScheme ?? "";
+}
+
+/**
+ * The product a coin's Pro purchase events name (purchase.*): the year of Pro
+ * by the coin's ticker, lowercased: "pro_yearly_usdc", "pro_yearly_zec",
+ * "pro_yearly_xmr", "pro_yearly_tao", "pro_yearly_btc", "pro_yearly_eth" and
+ * "pro_yearly_sol", the welcome offer's year included (its plan says yearly).
+ * The store is the coin's market (cryptoAssetMarket), which USDC and SOL
+ * share, so the product is what tells their purchases apart. "" for anything
+ * else. The server takes any product token and none of its rollups or
+ * dashboards read it.
+ */
+export function cryptoPaymentEventProduct(asset: string): string {
+  const ticker = cryptoAssetTicker(asset);
+  return ticker ? `pro_yearly_${ticker.toLowerCase()}` : "";
+}
+
+/**
+ * The coin a one-time crypto year was paid with, which Manage subscription
+ * names ("Paid with SOL."): `asset`, the server's word (a subscription's
+ * `crypto_asset` in GET /subscription/details, `crypto_term.asset`), when it is
+ * a coin of `market`; else the market's coin as a server before native SOL had
+ * it: USDC on Solana for "solana", then Zcash, Monero, TAO, Bitcoin and ETH for
+ * theirs. Never the market alone: USDC and SOL share "solana", so a SOL year
+ * named by its market would read "USDC on Solana". "" for any other market.
+ */
+export function cryptoPaidAsset(market: string | null | undefined, asset: string | null | undefined): string {
+  if (asset && isCryptoAsset(asset) && cryptoAssetMarket(asset) === market) return asset;
+  return CRYPTO_ASSET_ORDER.find((coin) => cryptoAssetMarket(coin) === market) ?? "";
 }
 
 /**
  * The wallets the invoice names as working for a coin ("Wallets that work:
- * …"), in the order to show them. Every Zcash one sends to a shielded address.
+ * …"), in the order to show them. Every Zcash one sends to a shielded address;
+ * the TAO ones are Bittensor's own list; the Bitcoin and ETH ones (the
+ * owner's, 2026-11-11) are wallets and hardware wallets that send on the
+ * coin's own network. The names are product names, never translated. Empty
+ * for anything else, which shows no line.
  */
 export function cryptoWalletSuggestions(asset: string): string[] {
   switch (asset) {
@@ -123,23 +620,116 @@ export function cryptoWalletSuggestions(asset: string): string[] {
     case CRYPTO_ASSET_ZEC:
       return ["Zodl", "Cake", "Zingo", "Zkool", "Vizor"];
     case CRYPTO_ASSET_USDC_SOLANA:
+    case CRYPTO_ASSET_SOL:
       return ["Phantom", "Solflare"];
+    case CRYPTO_ASSET_TAO:
+      return ["btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem"];
+    case CRYPTO_ASSET_BTC:
+      return ["Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor"];
+    case CRYPTO_ASSET_ETH:
+      return ["MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor"];
     default:
       return [];
   }
 }
 
-function cryptoPaymentUriScheme(asset: string): string {
-  switch (asset) {
-    case CRYPTO_ASSET_USDC_SOLANA:
-      return "solana";
-    case CRYPTO_ASSET_ZEC:
-      return "zcash";
-    case CRYPTO_ASSET_XMR:
-      return "monero";
+/**
+ * Whether an invoice shows its memo, with Copy, for a transfer sent by hand:
+ * only when the server sent one. The server sends a memo for USDC on Solana
+ * alone (its Solana Pay reference, since every USDC invoice pays the one
+ * merchant address) and "" for every other coin, SOL included: a SOL invoice
+ * has an address of its own, and its reference rides in its payment uri. So a
+ * coin never shows an empty memo row, and no surface decides by coin. False
+ * for a coin this sdk does not know. The invoice shows it only while payable,
+ * as it does the amount.
+ */
+export function cryptoPaymentShowsMemo(asset: string, memo: string | null | undefined): boolean {
+  return isCryptoAsset(asset) && !!memo;
+}
+
+/** One of an invoice's status steps (cryptoPaymentSteps). */
+export interface CryptoPaymentStep {
+  /**
+   * The status the step stands for, with its line: pending
+   * (crypto_status_waiting, "Waiting for your payment"), seen
+   * (crypto_status_seen, "Payment seen"), confirming (crypto_status_confirming,
+   * "Confirming: {count} of {required}") or paid (crypto_status_paid, "Paid.
+   * Thank you!").
+   */
+  readonly status: string;
+  /** one of the CRYPTO_PAYMENT_STEP_* values */
+  readonly progress: string;
+  /** the confirming step's {count} and {required}; 0 for every other step */
+  readonly confirmations: number;
+  readonly confirmationsRequired: number;
+}
+
+/**
+ * The status steps an invoice in `asset` shows at `status`, in order, each
+ * with how it is drawn (an invoice's state carries its own as `steps`).
+ *
+ * USDC on Solana has two steps, pending and paid: its server sees confirmed
+ * transfers only, so it waits until it is paid. Every other coin has four:
+ * pending, seen (part of the amount arrived), confirming (the whole amount
+ * arrived and collects its confirmations) and paid. The confirming step is
+ * listed only while the confirmations required are known (more than 0).
+ *
+ * A payment may skip steps: a whole payment never reports seen, and SOL, TAO
+ * and ETH, which the server sees only once final, usually go from pending
+ * straight to paid. A step the payment is past is drawn done
+ * (CRYPTO_PAYMENT_STEP_DONE), whether the server reported it or not; once paid
+ * every step is done. A done confirming step reads its full count ({required}
+ * of {required}), the current one the payment's confirmations (at most
+ * {required}), an upcoming one 0.
+ *
+ * Pending and expired (nothing received) are at the first step. No steps for
+ * any other status: "" (a resumed invoice before its first poll), review (the
+ * review copy stands instead), unknown, or a status this sdk does not know;
+ * and none for an asset this sdk does not know. Whether a surface shows the
+ * steps of an expired quote is the surface's.
+ */
+export function cryptoPaymentSteps(asset: string, status: string, confirmations: number, confirmationsRequired: number): CryptoPaymentStep[] {
+  if (!isCryptoAsset(asset)) return [];
+  const statuses =
+    asset === CRYPTO_ASSET_USDC_SOLANA
+      ? [CRYPTO_PAYMENT_STATUS_PENDING, CRYPTO_PAYMENT_STATUS_PAID]
+      : [
+          CRYPTO_PAYMENT_STATUS_PENDING,
+          CRYPTO_PAYMENT_STATUS_SEEN,
+          ...(0 < confirmationsRequired ? [CRYPTO_PAYMENT_STATUS_CONFIRMING] : []),
+          CRYPTO_PAYMENT_STATUS_PAID,
+        ];
+  let current: number;
+  switch (status) {
+    case CRYPTO_PAYMENT_STATUS_PENDING:
+    case CRYPTO_PAYMENT_STATUS_EXPIRED:
+      current = 0;
+      break;
+    case CRYPTO_PAYMENT_STATUS_SEEN:
+    case CRYPTO_PAYMENT_STATUS_CONFIRMING:
+    case CRYPTO_PAYMENT_STATUS_PAID:
+      current = statuses.indexOf(status);
+      // confirming with no confirming step listed: past what arrived, short of paid
+      if (current < 0) current = statuses.length - 2;
+      break;
     default:
-      return "";
+      return [];
   }
+  const paid = status === CRYPTO_PAYMENT_STATUS_PAID;
+  return statuses.map((stepStatus, i) => {
+    const progress =
+      paid || i < current ? CRYPTO_PAYMENT_STEP_DONE : i === current ? CRYPTO_PAYMENT_STEP_CURRENT : CRYPTO_PAYMENT_STEP_UPCOMING;
+    if (stepStatus !== CRYPTO_PAYMENT_STATUS_CONFIRMING) {
+      return { status: stepStatus, progress, confirmations: 0, confirmationsRequired: 0 };
+    }
+    const count =
+      progress === CRYPTO_PAYMENT_STEP_DONE
+        ? confirmationsRequired
+        : progress === CRYPTO_PAYMENT_STEP_CURRENT
+          ? Math.min(Math.max(confirmations, 0), confirmationsRequired)
+          : 0;
+    return { status: stepStatus, progress, confirmations: count, confirmationsRequired };
+  });
 }
 
 const isHex = (code: number) =>
@@ -162,18 +752,44 @@ function percentDecode(value: string): string | null {
   return out;
 }
 
+/** A uri query's parameter, its name percent-decoded. */
+interface CryptoPaymentUriParam {
+  readonly name: string;
+  /** the name with ASCII letters lowercased, and nothing else changed, so both twins compare names the same way */
+  readonly lowerName: string;
+  readonly rawValue: string;
+}
+
 /**
  * Whether `uri` is a payment uri of `asset`'s coin that pays exactly
  * `address`, the address the invoice shows. Refuse to render or open a uri
  * that fails it: the QR code and "Open in wallet" must never pay somewhere
- * other than the address on screen.
+ * other than the address on screen, nor in another coin.
  *
- * The uri is the server's `<scheme>:<address>?<query>` (Solana Pay, ZIP 321
- * or the Monero uri scheme). The scheme must be the coin's, compared without
+ * The uri is the server's `<scheme>:<address>?<query>`, with the coin's scheme
+ * (cryptoPaymentUriScheme). The scheme must be the coin's, compared without
  * case; the address between the colon and the query must be `address`
  * exactly; and the uri must be plain printable ascii with no fragment, as the
- * server's percent-encoded uris are. A Zcash uri must not name a second
- * recipient (ZIP 321's `address.1=…`), which a wallet would pay too.
+ * server's percent-encoded uris are. TAO has no payment uri, so a TAO uri
+ * always fails. Monero puts a second recipient in the path, which the exact
+ * address match already refuses, and its query is not read. For every other
+ * coin the query's parameter names are percent-decoded (a malformed escape
+ * fails the uri) and compare with their ASCII letters lowercased:
+ *
+ * - Zcash (ZIP 321) must not name a second recipient (`address.1=…`), which a
+ *   wallet would pay too.
+ * - USDC on Solana (Solana Pay) must name the USDC mint as its one
+ *   `spl-token`: without it, a wallet would send the amount in SOL.
+ * - SOL (Solana Pay) must name no `spl-token`, which would send a token
+ *   instead. Its `reference` keys, like USDC's, are not funds and are not
+ *   checked here.
+ * - Bitcoin (BIP 21) may carry `amount` (in BTC), `label` and `message`, each
+ *   once, and nothing else: a `lightning` invoice, another address (BIP 321's
+ *   `bc`, `sp`, `lno`) or a `req-` parameter would pay something the invoice
+ *   does not show.
+ * - ETH (EIP 681) names Ethereum mainnet after the address (`<address>@1`),
+ *   with no function call, and may carry `value` (in wei) once and nothing
+ *   else.
  */
 export function checkCryptoPaymentUri(asset: string, uri: string, address: string): boolean {
   const scheme = cryptoPaymentUriScheme(asset);
@@ -186,19 +802,69 @@ export function checkCryptoPaymentUri(asset: string, uri: string, address: strin
   if (colon < 0 || uri.slice(0, colon).toLowerCase() !== scheme) return false;
   const rest = uri.slice(colon + 1);
   const question = rest.indexOf("?");
-  const uriAddress = question < 0 ? rest : rest.slice(0, question);
+  const uriTarget = question < 0 ? rest : rest.slice(0, question);
   const query = question < 0 ? "" : rest.slice(question + 1);
-  if (uriAddress !== address) return false;
-  if (asset === CRYPTO_ASSET_ZEC && query !== "") {
+  // an ethereum uri names its chain id after the address, 1 for mainnet
+  const target = asset === CRYPTO_ASSET_ETH ? `${address}@1` : address;
+  if (uriTarget !== target) return false;
+  if (asset === CRYPTO_ASSET_XMR) return true;
+  // the query split at `&`, each parameter at its first `=`
+  const params: CryptoPaymentUriParam[] = [];
+  if (query !== "") {
     for (const param of query.split("&")) {
       const equals = param.indexOf("=");
       const name = percentDecode(equals < 0 ? param : param.slice(0, equals));
       if (name === null) return false;
-      const lower = name.toLowerCase();
-      if (lower === "address" || lower.startsWith("address.")) return false;
+      params.push({
+        name,
+        lowerName: name.replace(/[A-Z]/g, (c) => c.toLowerCase()),
+        rawValue: equals < 0 ? "" : param.slice(equals + 1),
+      });
     }
   }
-  return true;
+  // every parameter's name is one of `names`, and none comes twice
+  const onlyOnce = (...names: string[]) => {
+    const seen = new Set<string>();
+    for (const param of params) {
+      if (!names.includes(param.lowerName) || seen.has(param.lowerName)) return false;
+      seen.add(param.lowerName);
+    }
+    return true;
+  };
+  const splTokens = () => params.filter((param) => param.lowerName === "spl-token");
+  switch (asset) {
+    case CRYPTO_ASSET_ZEC:
+      return !params.some((param) => param.lowerName === "address" || param.lowerName.startsWith("address."));
+    case CRYPTO_ASSET_USDC_SOLANA: {
+      const matches = splTokens();
+      return matches.length === 1 && matches[0].name === "spl-token" && percentDecode(matches[0].rawValue) === SOLANA_USDC_MINT;
+    }
+    case CRYPTO_ASSET_SOL:
+      return splTokens().length === 0;
+    case CRYPTO_ASSET_BTC:
+      return onlyOnce("amount", "label", "message");
+    case CRYPTO_ASSET_ETH:
+      return onlyOnce("value");
+    default:
+      return true;
+  }
+}
+
+/**
+ * The text an invoice's QR code encodes: `uri` when it passes
+ * checkCryptoPaymentUri, the bare `address` for a coin without a payment uri
+ * (TAO, whose wallets scan an address alone), and "" for anything else, when
+ * the invoice shows no QR code and the address and the amount are sent by
+ * hand. An address that is not plain printable ascii gets no QR code either.
+ */
+export function cryptoPaymentQrText(asset: string, uri: string, address: string): string {
+  if (checkCryptoPaymentUri(asset, uri, address)) return uri;
+  if (!isCryptoAsset(asset) || cryptoPaymentUriScheme(asset) !== "" || !address) return "";
+  for (let i = 0; i < address.length; i++) {
+    const code = address.charCodeAt(i);
+    if (code <= 0x20 || 0x7e < code) return "";
+  }
+  return address;
 }
 
 /**

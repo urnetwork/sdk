@@ -91,12 +91,16 @@ type CryptoInvoiceState struct {
 	AmountAtomic string `json:"amount_atomic"`
 	// the coin's ticker, CryptoAssetTicker(Asset)
 	Ticker string `json:"ticker"`
-	// the server's payment uri, for the QR code and "Open in wallet". Empty
-	// when it does not pass CheckCryptoPaymentUri against Address, or when a
-	// quote changed elsewhere and the uri no longer pays the amount: show the
-	// address and the amount to send by hand then.
+	// the server's payment uri, for "Open in wallet". Empty when it does not
+	// pass CheckCryptoPaymentUri against Address, when a quote changed
+	// elsewhere and the uri no longer pays the amount, and for TAO, which has
+	// none: show the address and the amount to send by hand then.
 	Uri string `json:"uri"`
-	// usdc_solana only: the memo for a transfer sent by hand
+	// what the QR code encodes (CryptoPaymentQrText): Uri, or for TAO the
+	// address alone; empty when there is no QR code to show
+	QrText string `json:"qr_text"`
+	// the memo for a transfer sent by hand, which only USDC on Solana has;
+	// shown, with Copy, only when CryptoPaymentShowsMemo says so
 	Memo     string  `json:"memo"`
 	PriceUsd float64 `json:"price_usd"`
 	RateUsd  float64 `json:"rate_usd"`
@@ -115,6 +119,11 @@ type CryptoInvoiceState struct {
 	Remaining             string `json:"remaining"`
 	Confirmations         int    `json:"confirmations"`
 	ConfirmationsRequired int    `json:"confirmations_required"`
+	// the status steps at Status, each with how it is drawn
+	// (CryptoPaymentSteps): two for USDC, four for every other coin, a step
+	// the payment skipped drawn done. Empty while there are none to show
+	// (no status yet, review, unknown); never nil.
+	Steps *CryptoPaymentStepList `json:"steps"`
 	// the balance code a paid invoice bought, for delivery "code"
 	BalanceCode string `json:"balance_code"`
 	// a requote is in flight
@@ -872,6 +881,10 @@ func (self *CryptoInvoiceViewController) GetState() *CryptoInvoiceState {
 	if state.Phase == CryptoInvoicePhaseOpen {
 		state.SecondsLeft = cryptoInvoiceSecondsLeft(self.expiresAt, self.nowFunc())
 	}
+	// follows Uri and Address wherever they change
+	state.QrText = CryptoPaymentQrText(state.Asset, state.Uri, state.Address)
+	// follows the status and its counts
+	state.Steps = CryptoPaymentSteps(state.Asset, state.Status, state.Confirmations, state.ConfirmationsRequired)
 	return &state
 }
 

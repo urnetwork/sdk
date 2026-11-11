@@ -6,9 +6,10 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// Crypto invoices: Pro and data packs paid in USDC on Solana, Zcash or Monero
-// (connect/api/bringyour.yml, /pay/crypto/*). The server builds every quote,
-// address and payment uri; a client shows them and polls the invoice's status.
+// Crypto invoices: Pro and data packs paid in USDC on Solana, Zcash, Monero,
+// TAO, Bitcoin, ETH or SOL (connect/api/bringyour.yml, /pay/crypto/*). The
+// server builds every quote, address and payment uri; a client shows them and
+// polls the invoice's status.
 // The pure rules (which methods to offer, uri checks, tickers) are in
 // crypto_pay.go, and the invoice state machine every app renders is
 // CryptoInvoiceViewController.
@@ -23,7 +24,15 @@ import (
 // must not arrive carrying the device's network.
 
 // An asset the server takes payment in now, and what it sells. A client never
-// offers an asset or an item the list does not name (CryptoAssetSells).
+// offers an asset or an item the list does not name (CryptoAssetSells). The
+// server lists only the assets it would quote now: one whose quotes it refuses
+// for now (a wallet scanner that lags the network, a Coinbase coin with no
+// address yet) is left out of the list and of
+// SubscriptionBalanceResult.CryptoAssets, so it is never offered. The route
+// lists it in `unavailable_assets` instead, and the balance in
+// CryptoUnavailableAssets, which CryptoPaymentTabs shows greyed out. Which list
+// a coin is in is what this sdk reads; the server's per-coin `available` and
+// `unavailable_reason` say the same, and are not read.
 type CryptoPaymentAsset struct {
 	// one of the CryptoAsset* values
 	Asset string `json:"asset"`
@@ -49,8 +58,13 @@ func NewCryptoPaymentAssetList() *CryptoPaymentAssetList {
 }
 
 type CryptoPaymentAssetsResult struct {
-	// the enabled assets, in no particular order (PaymentMethods orders them)
+	// the assets that can be paid with now, in no particular order
+	// (PaymentMethods and CryptoPaymentTabs order them)
 	Assets *CryptoPaymentAssetList `json:"assets"`
+	// the assets that are on but whose quotes the server refuses for now:
+	// never offered, and greyed out by CryptoPaymentTabs. Absent from a server
+	// before 2026-11-10.
+	UnavailableAssets *CryptoPaymentAssetList `json:"unavailable_assets,omitempty"`
 }
 
 // The network's latest one-time crypto credit whose grace has not ended
@@ -58,8 +72,14 @@ type CryptoPaymentAssetsResult struct {
 // an app shows its renewal notice while TermEndTime <= now < GraceEndTime, and
 // never before (CryptoTermNoticeDue).
 type CryptoTerm struct {
-	// the subscription market: "solana", "monero" or "zcash"
+	// the subscription market of the coin it was paid in (CryptoAssetMarket):
+	// "solana", "monero", "zcash", "bittensor", "bitcoin" or "ethereum"
 	Market string `json:"market"`
+	// the coin it was paid in: one of the CryptoAsset* values. USDC and native
+	// SOL share the solana market, and this tells them apart for the whole
+	// term. "" from a server before 2026-11-10; name the coin with
+	// CryptoPaidAsset(Market, Asset), never by the market.
+	Asset string `json:"asset"`
 	// when the paid term ends and the grace begins, RFC 3339
 	TermEndTime string `json:"term_end_time"`
 	// when the grace ends, and Pro with it, RFC 3339
@@ -165,15 +185,17 @@ type CryptoPaymentIntentResult struct {
 	RateUsd float64 `json:"rate_usd,omitempty"`
 	// the invoice's own receive address
 	Address string `json:"address,omitempty"`
-	// the exact amount to send. Zcash and Monero amounts are rounded up to 6
-	// decimals; a USDC amount carries its unique 6-decimal suffix, so show and
-	// pay every decimal.
+	// the exact amount to send, rounded up to the coin's quote decimals
+	// (CryptoAssetQuoteDecimals); a USDC amount carries its unique 6-decimal
+	// suffix, so show and pay every decimal.
 	Amount       string `json:"amount,omitempty"`
 	AmountAtomic string `json:"amount_atomic,omitempty"`
-	// usdc_solana only: the reference, for a transfer sent by hand
+	// usdc_solana only: the Solana Pay reference, for a transfer sent by hand;
+	// "" for every other coin, SOL included (CryptoPaymentShowsMemo)
 	Memo string `json:"memo,omitempty"`
 	// the payment uri the server built. Show it as a QR code and open it in a
-	// wallet only when CheckCryptoPaymentUri passes; never build one.
+	// wallet only when CheckCryptoPaymentUri passes; never build one. A TAO
+	// invoice has none: its QR code is the address alone (CryptoPaymentQrText).
 	Uri                   string                     `json:"uri,omitempty"`
 	QuotedAt              string                     `json:"quoted_at,omitempty"`
 	ExpiresAt             string                     `json:"expires_at,omitempty"`
@@ -188,8 +210,9 @@ type CryptoPaymentIntentCallback connect.ApiCallback[*CryptoPaymentIntentResult]
 
 type CryptoPaymentStatusCallback connect.ApiCallback[*CryptoPaymentStatusResult]
 
-// Reads the enabled assets without a sign-in. The apps read the same list from
-// SubscriptionBalanceResult.CryptoAssets.
+// Reads the assets that can be paid with now, and the ones that are on but
+// cannot be quoted now, without a sign-in. The apps read the same two lists
+// from SubscriptionBalanceResult.CryptoAssets and CryptoUnavailableAssets.
 func (self *Api) GetCryptoPaymentAssets(callback CryptoPaymentAssetsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithRawFunction(

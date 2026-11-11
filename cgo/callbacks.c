@@ -269,6 +269,10 @@ void urnet_invoke_dns_resolver_settings_change(urnet_dns_resolver_settings_chang
 	cb(user_data, dns_resolver_settings_json);
 }
 
+void urnet_invoke_dns_resolver_status_change(urnet_dns_resolver_status_change_cb cb, void* user_data, const char* dns_resolver_status_json) {
+	cb(user_data, dns_resolver_status_json);
+}
+
 void urnet_invoke_extender_provide_status_change(urnet_extender_provide_status_change_cb cb, void* user_data, const char* status_json) {
 	cb(user_data, status_json);
 }
@@ -438,6 +442,14 @@ void urnet_invoke_local_state_save(urnet_local_state_save_cb cb, void* user_data
 }
 
 void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+void urnet_invoke_manage_devices(urnet_manage_devices_cb cb, void* user_data, const char* snapshot_json) {
+	cb(user_data, snapshot_json);
+}
+
+void urnet_invoke_manage_devices_sign_in_retry(urnet_manage_devices_sign_in_retry_cb cb, void* user_data) {
 	cb(user_data);
 }
 

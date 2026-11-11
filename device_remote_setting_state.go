@@ -404,17 +404,24 @@ func (self *DeviceRemote) routeLocalReported(routeLocal bool) {
 	}
 }
 
-// The device's report of the blocker (reverse rpc).
+// The device's report of the blocker (reverse rpc). A report kept as last
+// known is also saved for the next remote (device_remote_saved_settings.go).
 func (self *DeviceRemote) blockerEnabledReported(blockerEnabled bool) {
+	var save func()
 	deliver := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		// a report made while a write is pending is neither kept nor saved
+		save = self.learnBlockerEnabledWithLock(blockerEnabled, deviceRemoteSettingReported)
 		return self.settingsTold.blockerEnabled.reportWithLock(
 			blockerEnabled,
 			self.state.BlockerEnabled.IsSet,
 			&self.lastKnownState.BlockerEnabled,
 		)
 	}()
+	if save != nil {
+		save()
+	}
 	if deliver {
 		self.deliverBlockerEnabled()
 	}

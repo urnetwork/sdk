@@ -999,20 +999,72 @@ type AuthNetworkClientResult struct {
 type AuthNetworkClientError struct {
 	// can be a hard limit or a rate limit
 	ClientLimitExceeded bool `json:"client_limit_exceeded"`
-	// the network is at its PLAN's limit for concurrent connected clients, rather
-	// than a hard cap. The client should prompt the user to upgrade (or, for an
-	// agent, pay inline over x402 -- the same request answers 402 with payment
-	// terms). Distinct from ClientLimitExceeded, which no upgrade can lift.
+	// a plan limit refused the request and UR Pro lifts it: the network is on
+	// the free plan at its concurrent connected client limit, its hosted proxy
+	// cap or rate, or asked for a Pro-only feature. The client should prompt the
+	// user to upgrade (an agent may pay inline over x402: a request that asks
+	// with `X-UR-X402: 1` is answered 402 with payment terms, which this sdk
+	// reads back as this refusal). With ClientLimitExceeded and without this, no
+	// upgrade lifts the limit: a Pro network at the Pro limit, or a cap.
 	UpgradeRequired bool `json:"upgrade_required,omitempty"`
 	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
 	// does not already hold in the location; nothing was created and neither
 	// the cap nor the creation rate was spent
 	NoUniqueSupply bool   `json:"no_unique_supply,omitempty"`
 	Message        string `json:"message"`
+	// What an app offers for this refusal, set by the sdk from the fields
+	// above and never sent by the server (client_limit_status.go):
+	// ClientLimitPromptUpgrade with UpgradeRequired,
+	// ClientLimitPromptRemoveClient for a client limit no upgrade lifts, and
+	// ClientLimitPromptNone for any other refusal.
+	ClientLimitPrompt string `json:"client_limit_prompt,omitempty"`
+}
+
+// authNetworkClientRefusalHttpPostRaw answers auth-client's 402 Payment
+// Required as the refusal it stands for. The server answers a refusal an
+// upgrade lifts with x402 payment terms only to a caller that asks for them
+// (`X-UR-X402: 1`, which this sdk never sends), but servers before 2026-11-10
+// quoted every caller whose client info named no app, and servers before
+// 2026-11-08 every caller. The terms' error is the refusal's message. A
+// person cannot sign x402 terms, and
+// the apps read a 402 as a failed request and showed the raw terms or a
+// generic error, so the 402 reads as the refusal with upgrade_required, the
+// same as the server's JSON body for it, and the apps show their upgrade
+// prompt. Every other answer passes through.
+func authNetworkClientRefusalHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) connect.HttpPostRawFunction {
+	return func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+		bodyBytes, err := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		var statusError *connect.HttpStatusError
+		if err == nil || !errors.As(err, &statusError) || !statusError.PaymentRequired() {
+			return bodyBytes, err
+		}
+		var terms struct {
+			Error string `json:"error"`
+		}
+		// terms that do not parse still mean an upgrade lifts the refusal
+		_ = json.Unmarshal(statusError.Body, &terms)
+		return json.Marshal(&AuthNetworkClientResult{
+			Error: &AuthNetworkClientError{
+				UpgradeRequired: true,
+				Message:         terms.Error,
+			},
+		})
+	}
+}
+
+// withAuthNetworkClientPrompt sets the prompt of a refused auth-client, so
+// every app reads the same decision (clientLimitPromptForRefusal).
+func withAuthNetworkClientPrompt(result *AuthNetworkClientResult) *AuthNetworkClientResult {
+	if result != nil && result.Error != nil {
+		result.Error.ClientLimitPrompt = clientLimitPromptForRefusal(result.Error)
+	}
+	return result
 }
 
 // Registers with the invoking sign-in, retaining its credential generation
 // even when a later login uses equal token bytes before the goroutine runs.
+// A refusal carries its ClientLimitPrompt, and a 402 reads as the refusal it
+// stands for (authNetworkClientRefusalHttpPostRaw).
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
 	byJwt, networkGeneration := func() (string, uint64) {
 		self.mutex.Lock()
@@ -1022,12 +1074,14 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 	request := func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(networkGeneration),
+			authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw(networkGeneration)),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
 			byJwt,
 			&AuthNetworkClientResult{},
-			callback,
+			connect.NewApiCallback(func(result *AuthNetworkClientResult, err error) {
+				callback.Result(withAuthNetworkClientPrompt(result), err)
+			}),
 		)
 	}
 	if self.authNetworkClientLaunch != nil {
@@ -1043,15 +1097,16 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 //
 //gomobile:noexport
 func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
-	return connect.HttpPostWithRawFunction(
+	result, err := connect.HttpPostWithRawFunction(
 		ctx,
-		self.getHttpPostRaw(),
+		authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw()),
 		fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 		authNetworkClient,
 		self.GetByJwt(),
 		&AuthNetworkClientResult{},
 		connect.NewNoopApiCallback[*AuthNetworkClientResult](),
 	)
+	return withAuthNetworkClientPrompt(result), err
 }
 
 // AuthNetworkClientSync uses the API lifetime as its bound.
@@ -1926,9 +1981,17 @@ type SubscriptionBalanceResult struct {
 
 	// ----- crypto payments (crypto_pay_api.go) -----
 	// CryptoAssets are the coins the network can pay in now and what each
-	// sells (PaymentMethods). nil when none is enabled, and from an older
-	// server, so no crypto method is offered then.
+	// sells (PaymentMethods, CryptoPaymentTabs): never one whose quotes the
+	// server refuses for now, which the tabs grey out. nil when there is none,
+	// and from an older server, so no crypto method is offered then.
 	CryptoAssets *CryptoPaymentAssetList `json:"crypto_assets,omitempty"`
+	// CryptoUnavailableAssets are the coins that are on but cannot be quoted
+	// now (GET /pay/crypto/assets' unavailable_assets), each with its
+	// unavailable_reason: never offered, and passed beside CryptoAssets to
+	// CryptoPaymentTabs, which shows them greyed out ("Temporarily
+	// unavailable") instead of leaving them out. nil when there is none, and
+	// from a server before 2026-11-10.
+	CryptoUnavailableAssets *CryptoPaymentAssetList `json:"crypto_unavailable_assets,omitempty"`
 	// CryptoTerm is the network's latest one-time crypto credit whose grace
 	// has not ended, for the renewal notice (CryptoTermNoticeDue); nil when
 	// there is none.

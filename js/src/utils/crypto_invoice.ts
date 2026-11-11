@@ -52,7 +52,10 @@ import {
   PAYMENT_METHOD_CARD,
   checkCryptoPaymentUri,
   cryptoAssetTicker,
+  cryptoPaymentQrText,
+  cryptoPaymentSteps,
 } from "./crypto_pay";
+import type { CryptoPaymentStep } from "./crypto_pay";
 import { parseRfc3339 } from "./rfc3339";
 
 // The invoice's phases (`CryptoInvoiceState.phase`).
@@ -102,13 +105,15 @@ export interface CryptoInvoiceState {
   readonly amountAtomic: string;
   readonly ticker: string;
   /**
-   * The server's payment uri, for the QR code and "Open in wallet". Empty when
-   * it does not pass checkCryptoPaymentUri against `address`, or when the quote
-   * changed elsewhere and the uri no longer pays the amount: show the address
-   * and the amount to send by hand then.
+   * The server's payment uri, for "Open in wallet". Empty when it does not
+   * pass checkCryptoPaymentUri against `address`, when the quote changed
+   * elsewhere and the uri no longer pays the amount, and for TAO, which has
+   * none: show the address and the amount to send by hand then.
    */
   readonly uri: string;
-  /** usdc_solana only: the memo for a transfer sent by hand */
+  /** what the QR code encodes (cryptoPaymentQrText): `uri`, or for TAO the address alone; empty when there is no QR code to show */
+  readonly qrText: string;
+  /** the memo for a transfer sent by hand, which only USDC on Solana has; shown, with Copy, only when cryptoPaymentShowsMemo says so */
   readonly memo: string;
   readonly priceUsd: number;
   readonly rateUsd: number;
@@ -128,6 +133,13 @@ export interface CryptoInvoiceState {
   readonly remaining: string;
   readonly confirmations: number;
   readonly confirmationsRequired: number;
+  /**
+   * The status steps at `status`, each with how it is drawn
+   * (cryptoPaymentSteps): two for USDC, four for every other coin, a step the
+   * payment skipped drawn done. Empty while there are none to show (no status
+   * yet, review, unknown).
+   */
+  readonly steps: readonly CryptoPaymentStep[];
   /** the balance code a paid invoice bought, for delivery "code" */
   readonly balanceCode: string;
   /** a requote is in flight */
@@ -245,6 +257,7 @@ function emptyState(phase: string): MutableState {
     amountAtomic: "",
     ticker: "",
     uri: "",
+    qrText: "",
     memo: "",
     priceUsd: 0,
     rateUsd: 0,
@@ -256,6 +269,7 @@ function emptyState(phase: string): MutableState {
     remaining: "",
     confirmations: 0,
     confirmationsRequired: 0,
+    steps: [],
     balanceCode: "",
     refreshing: false,
     errorCode: "",
@@ -1203,7 +1217,15 @@ export class CryptoInvoice {
   private buildSnapshot(): CryptoInvoiceState {
     const secondsLeft =
       this.state.phase === CRYPTO_INVOICE_PHASE_OPEN ? secondsLeftAt(this.expiresAtMs, this.clock.now()) : 0;
-    return Object.freeze({ ...this.state, secondsLeft });
+    // follows uri and address wherever they change
+    const qrText = cryptoPaymentQrText(this.state.asset, this.state.uri, this.state.address);
+    // follows the status and its counts
+    const steps = Object.freeze(
+      cryptoPaymentSteps(this.state.asset, this.state.status, this.state.confirmations, this.state.confirmationsRequired).map(
+        (step) => Object.freeze(step),
+      ),
+    );
+    return Object.freeze({ ...this.state, secondsLeft, qrText, steps });
   }
 
   private notify(): void {

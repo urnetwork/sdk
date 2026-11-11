@@ -49,8 +49,10 @@ type SubscriptionBalanceChangeListener interface {
 // both go stale in the token). The PLATFORM owns the actual refresh -- it
 // calls Api.RefreshJwt (or its own auth flow), installs the new jwt, and then
 // calls JwtRefreshed() on the controller so the claim tracking advances. The
-// controller only owns the detection, and fires once per disagreement (again
-// after JwtRefreshed if the refreshed claim still disagrees).
+// controller only owns the detection, and fires once per jwt
+// (SubscriptionProTracker): again only after JwtRefreshed brought a new jwt
+// whose claim still disagrees. A refresh that left the jwt as it was (it
+// renewed another token, or failed) does not fire again.
 type SubscriptionJwtOutOfSyncListener interface {
 	// serverIsPro is the server's side of the disagreement (the source of
 	// truth): true on an upgrade the jwt missed, false on a lapse.
@@ -171,8 +173,10 @@ func (self *confirmationBudgetTracker) expiredAt(now time.Time) bool {
 //
 //   - Jwt reconciliation: the jwt's `pro` claim is baked in at issue time and
 //     goes stale on BOTH an upgrade and a lapse. When it disagrees with the
-//     server, the controller fires SubscriptionJwtOutOfSyncListener; the
-//     platform refreshes the jwt and reports back via JwtRefreshed.
+//     server, the controller fires SubscriptionJwtOutOfSyncListener, once per
+//     jwt; the platform refreshes the jwt and reports back via JwtRefreshed.
+//     The decision is SubscriptionProTracker's, which the apps that read the
+//     balance themselves use too.
 //
 //   - The polling state machine: idle / background (default 30 s, stops once
 //     the network is a supporter with a positive balance and no pending transfers) / confirmation
@@ -238,10 +242,10 @@ type SubscriptionBalanceViewController struct {
 	currentSubscription *Subscription
 	subscriptions       *SubscriptionList
 
-	// jwt claim tracking
-	jwtPro              bool
-	jwtGuest            bool
-	jwtRefreshRequested bool
+	// jwt claim tracking: Pro and the refresh decision, and the guest_mode
+	// claim
+	proTracker *SubscriptionProTracker
+	jwtGuest   bool
 
 	balanceListeners      *connect.CallbackList[SubscriptionBalanceChangeListener]
 	jwtListeners          *connect.CallbackList[SubscriptionJwtOutOfSyncListener]
@@ -281,6 +285,7 @@ func newSubscriptionBalanceViewControllerWithoutRun(ctx context.Context, api *Ap
 		foreground:            true,
 		confirmationState:     PurchaseConfirmationStateIdle,
 		subscriptions:         NewSubscriptionList(),
+		proTracker:            NewSubscriptionProTracker(),
 		balanceListeners:      connect.NewCallbackList[SubscriptionBalanceChangeListener](),
 		jwtListeners:          connect.NewCallbackList[SubscriptionJwtOutOfSyncListener](),
 		confirmationListeners: connect.NewCallbackList[PurchaseConfirmationListener](),
@@ -348,9 +353,8 @@ func (self *SubscriptionBalanceViewController) Stop() {
 	self.serverGuest = false
 	self.currentSubscription = nil
 	self.subscriptions = NewSubscriptionList()
-	self.jwtPro = false
+	self.proTracker.Reset()
 	self.jwtGuest = false
-	self.jwtRefreshRequested = false
 	self.stateLock.Unlock()
 
 	if confirmationChanged {
@@ -525,15 +529,14 @@ func (self *SubscriptionBalanceViewController) GetConfirmationBudgetRemainingMil
 
 // JwtRefreshed tells the controller the platform installed a (freshly
 // refreshed) jwt on the Api, so the claim tracking advances from the real new
-// token. If the refreshed claim STILL disagrees with the server, the next
-// poll fires SubscriptionJwtOutOfSyncListener again.
+// token. If the jwt changed and its claim STILL disagrees with the server, the
+// next poll fires SubscriptionJwtOutOfSyncListener again; the same jwt does
+// not fire again. Pro stays the server's once a balance has loaded.
 func (self *SubscriptionBalanceViewController) JwtRefreshed() {
 	self.stateLock.Lock()
-	previousPro := self.jwtPro
 	previousGuest := self.jwtGuest
-	self.applyJwtClaimsLocked()
-	self.jwtRefreshRequested = false
-	changed := (!self.loaded && previousPro != self.jwtPro) || previousGuest != self.jwtGuest
+	proChanged := self.applyJwtClaimsLocked()
+	changed := proChanged || previousGuest != self.jwtGuest
 	self.stateLock.Unlock()
 
 	if changed {
@@ -541,11 +544,12 @@ func (self *SubscriptionBalanceViewController) JwtRefreshed() {
 	}
 }
 
-// caller must hold stateLock
-func (self *SubscriptionBalanceViewController) applyJwtClaimsLocked() {
-	pro, guest := parseJwtProGuestClaims(self.api.GetByJwt())
-	self.jwtPro = pro
-	self.jwtGuest = guest
+// Reads the claims of the Api's jwt, and reports whether Pro changed (only
+// before a balance has loaded). caller must hold stateLock
+func (self *SubscriptionBalanceViewController) applyJwtClaimsLocked() bool {
+	byJwt := self.api.GetByJwt()
+	_, self.jwtGuest = parseJwtProGuestClaims(byJwt)
+	return self.proTracker.SetJwt(byJwt)
 }
 
 func parseJwtProGuestClaims(byJwt string) (pro bool, guest bool) {
@@ -577,10 +581,7 @@ func (self *SubscriptionBalanceViewController) GetIsPro() bool {
 
 // caller must hold stateLock
 func (self *SubscriptionBalanceViewController) isProLocked() bool {
-	if self.loaded {
-		return self.serverIsPro
-	}
-	return self.jwtPro
+	return self.proTracker.GetIsPro()
 }
 
 // GetIsGuest reports a legacy guest network, one with no login method: the
@@ -977,12 +978,9 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 	serverIsPro = result.CurrentSubscription != nil
 	self.serverIsPro = serverIsPro
 
-	// jwt reconciliation, both directions; fire once per disagreement (the
-	// request flag clears when the platform reports JwtRefreshed)
-	if serverIsPro != self.jwtPro && !self.jwtRefreshRequested {
-		self.jwtRefreshRequested = true
-		jwtDisagrees = true
-	}
+	// jwt reconciliation, both directions: one refresh per jwt, asked again
+	// only once JwtRefreshed brings another jwt that still disagrees
+	jwtDisagrees = self.proTracker.BalanceLoaded(serverIsPro)
 
 	if self.confirming && self.purchaseConfirmedLocked() {
 		self.confirming = false

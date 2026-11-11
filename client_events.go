@@ -64,14 +64,19 @@ const (
 )
 
 // Stores (purchase.* store, offer.cta.tapped store). A crypto purchase names
-// its coin's market: EventStoreSolana for USDC, EventStoreZcash, EventStoreMonero.
+// its coin's market (CryptoAssetMarket): EventStoreSolana for USDC and SOL,
+// EventStoreZcash, EventStoreMonero, EventStoreBittensor for TAO,
+// EventStoreBitcoin and EventStoreEthereum.
 const (
-	EventStoreApple  = "apple"
-	EventStorePlay   = "play"
-	EventStoreStripe = "stripe"
-	EventStoreSolana = "solana"
-	EventStoreZcash  = "zcash"
-	EventStoreMonero = "monero"
+	EventStoreApple     = "apple"
+	EventStorePlay      = "play"
+	EventStoreStripe    = "stripe"
+	EventStoreSolana    = "solana"
+	EventStoreZcash     = "zcash"
+	EventStoreMonero    = "monero"
+	EventStoreBittensor = "bittensor"
+	EventStoreBitcoin   = "bitcoin"
+	EventStoreEthereum  = "ethereum"
 )
 
 // Decline controls (offer.declined control).

@@ -26,6 +26,9 @@ type ViewControllerManager interface {
 	OpenProvideViewController() *ProvideViewController
 
 	OpenDevicesViewController() *DevicesViewController
+	// the network's devices, to free a slot of the client limit for this
+	// device and to manage them (manage_devices_view_controller.go)
+	OpenManageDevicesViewController() *ManageDevicesViewController
 	OpenClientSessionViewController() *ClientSessionViewController
 
 	OpenPeerViewController() *PeerViewController
@@ -134,6 +137,12 @@ func (self *viewControllerManager) OpenProvideViewController() *ProvideViewContr
 
 func (self *viewControllerManager) OpenDevicesViewController() *DevicesViewController {
 	vc := newDevicesViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenManageDevicesViewController() *ManageDevicesViewController {
+	vc := newManageDevicesViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

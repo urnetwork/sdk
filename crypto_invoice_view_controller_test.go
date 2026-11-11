@@ -396,6 +396,7 @@ func TestCryptoInvoiceStartShowsTheQuoteAndSavesIt(t *testing.T) {
 	connect.AssertEqual(t, state.Amount, "0.072387")
 	connect.AssertEqual(t, state.AmountAtomic, "72387000000")
 	connect.AssertEqual(t, state.Uri, cryptoPayTestXmrUri)
+	connect.AssertEqual(t, state.QrText, cryptoPayTestXmrUri)
 	connect.AssertEqual(t, state.Memo, "")
 	connect.AssertEqual(t, state.PriceUsd, 40.0)
 	connect.AssertEqual(t, state.RateUsd, 555.36)
@@ -511,7 +512,201 @@ func TestCryptoInvoiceRefusesAUriThatDoesNotPayTheAddress(t *testing.T) {
 	connect.AssertEqual(t, state.Phase, CryptoInvoicePhaseOpen)
 	connect.AssertEqual(t, state.Address, cryptoPayTestXmrAddress)
 	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, "")
 	connect.AssertEqual(t, harness.saved().Uri, "")
+}
+
+const cryptoInvoiceTestTaoAddress = "5SyntheticTaoSs58AddressFixture"
+
+// The server's tao yearly invoice, quoted at now. TAO has no payment uri.
+func cryptoInvoiceTestTaoIntent(now time.Time) *CryptoPaymentIntentResult {
+	expiresAt := now.Add(cryptoInvoiceTestQuoteTtl)
+	return &CryptoPaymentIntentResult{
+		IntentId:              cryptoPayTestIntentId,
+		StatusToken:           cryptoPayTestStatusToken,
+		Asset:                 CryptoAssetTao,
+		Plan:                  PlanYearly,
+		Delivery:              CryptoPaymentDeliveryAccount,
+		Tier:                  "standard",
+		PriceUsd:              40,
+		RegularPriceUsd:       40,
+		RateUsd:               217.47,
+		Address:               cryptoInvoiceTestTaoAddress,
+		Amount:                "0.185774",
+		AmountAtomic:          "185774000",
+		QuotedAt:              cryptoInvoiceTestTime(now),
+		ExpiresAt:             cryptoInvoiceTestTime(expiresAt),
+		ConfirmationsRequired: 1,
+		Status:                cryptoInvoiceTestTaoStatus("0.185774", "185774000", expiresAt),
+	}
+}
+
+// The pending status of the tao invoice above, for an amount.
+func cryptoInvoiceTestTaoStatus(amount string, amountAtomic string, expiresAt time.Time) *CryptoPaymentStatusResult {
+	return &CryptoPaymentStatusResult{
+		IntentId:              cryptoPayTestIntentId,
+		Asset:                 CryptoAssetTao,
+		Plan:                  PlanYearly,
+		Delivery:              CryptoPaymentDeliveryAccount,
+		Status:                CryptoPaymentStatusPending,
+		Amount:                amount,
+		AmountAtomic:          amountAtomic,
+		Received:              "0",
+		ReceivedAtomic:        "0",
+		Remaining:             amount,
+		RemainingAtomic:       amountAtomic,
+		ConfirmationsRequired: 1,
+		ExpiresAt:             cryptoInvoiceTestTime(expiresAt),
+	}
+}
+
+// TAO has no payment uri: the invoice shows the address and the amount, and a
+// QR code of the address alone, which a quote changed elsewhere does not
+// take away (it names no amount). A uri the server sends anyway is never
+// shown or opened.
+func TestCryptoInvoiceTaoQrCodeIsTheAddressAlone(t *testing.T) {
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	harness.api.intentResult = cryptoInvoiceTestTaoIntent(harness.clock.now)
+	harness.api.statusResult = harness.api.intentResult.Status
+	harness.vc.Start()
+	harness.vc.step()
+	harness.vc.StartInvoice(CryptoAssetTao, PlanYearly, "", "")
+	harness.vc.step()
+	state := harness.vc.GetState()
+	connect.AssertEqual(t, state.Phase, CryptoInvoicePhaseOpen)
+	connect.AssertEqual(t, state.Ticker, "TAO")
+	connect.AssertEqual(t, state.Address, cryptoInvoiceTestTaoAddress)
+	connect.AssertEqual(t, state.Amount, "0.185774")
+	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, cryptoInvoiceTestTaoAddress)
+
+	// another device requoted it
+	harness.api.statusResult = cryptoInvoiceTestTaoStatus("0.184411", "184411000", harness.clock.now.Add(cryptoInvoiceTestQuoteTtl))
+	harness.advance(5 * time.Second)
+	state = harness.vc.GetState()
+	connect.AssertEqual(t, state.Amount, "0.184411")
+	connect.AssertEqual(t, state.QrText, cryptoInvoiceTestTaoAddress)
+
+	// resumed after a relaunch
+	resumed := harness.newController()
+	if !resumed.Resume() {
+		t.Fatal("the tao invoice did not resume")
+	}
+	state = resumed.GetState()
+	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, cryptoInvoiceTestTaoAddress)
+
+	withUri := newCryptoInvoiceHarness(t, t.TempDir())
+	intent := cryptoInvoiceTestTaoIntent(withUri.clock.now)
+	intent.Uri = "bittensor:" + cryptoInvoiceTestTaoAddress + "?amount=0.185774"
+	withUri.api.intentResult = intent
+	withUri.vc.StartInvoice(CryptoAssetTao, PlanYearly, "", "")
+	state = withUri.vc.GetState()
+	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, cryptoInvoiceTestTaoAddress)
+	connect.AssertEqual(t, withUri.saved().Uri, "")
+}
+
+// The state's steps follow its status, as CryptoPaymentSteps draws them: a TAO
+// invoice the server sees only once final goes from pending straight to paid,
+// and every step it skipped is drawn done, confirming at its full count; a
+// resumed invoice has none until its first poll answers. TAO has no memo
+// (the server sends ""), so its invoice shows no memo row; USDC's reference
+// shows.
+func TestCryptoInvoiceStepsFollowTheStatus(t *testing.T) {
+	steps := func(state *CryptoInvoiceState) []CryptoPaymentStep {
+		if state.Steps == nil {
+			t.Fatal("no step list; the bindings need an empty one")
+		}
+		out := []CryptoPaymentStep{}
+		for i := 0; i < state.Steps.Len(); i += 1 {
+			out = append(out, *state.Steps.Get(i))
+		}
+		return out
+	}
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	harness.api.intentResult = cryptoInvoiceTestTaoIntent(harness.clock.now)
+	harness.api.statusResult = harness.api.intentResult.Status
+	harness.vc.Start()
+	harness.vc.step()
+	harness.vc.StartInvoice(CryptoAssetTao, PlanYearly, "", "")
+	harness.vc.step()
+	state := harness.vc.GetState()
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepCurrent},
+		{Status: CryptoPaymentStatusSeen, Progress: CryptoPaymentStepUpcoming},
+		{Status: CryptoPaymentStatusConfirming, Progress: CryptoPaymentStepUpcoming, ConfirmationsRequired: 1},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepUpcoming},
+	})
+	connect.AssertEqual(t, state.Memo, "")
+	connect.AssertEqual(t, CryptoPaymentShowsMemo(state.Asset, state.Memo), false)
+
+	// resumed after a relaunch: no status, no steps
+	resumed := harness.newController()
+	if !resumed.Resume() {
+		t.Fatal("the tao invoice did not resume")
+	}
+	state = resumed.GetState()
+	connect.AssertEqual(t, state.Status, "")
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{})
+
+	// final, and paid in one poll
+	paid := cryptoInvoiceTestTaoStatus("0.185774", "185774000", harness.clock.now.Add(cryptoInvoiceTestQuoteTtl))
+	paid.Status = CryptoPaymentStatusPaid
+	paid.Received, paid.ReceivedAtomic = paid.Amount, paid.AmountAtomic
+	paid.Remaining, paid.RemainingAtomic = "0", "0"
+	harness.api.statusResult = paid
+	harness.advance(5 * time.Second)
+	state = harness.vc.GetState()
+	connect.AssertEqual(t, state.Phase, CryptoInvoicePhasePaid)
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepDone},
+		{Status: CryptoPaymentStatusSeen, Progress: CryptoPaymentStepDone},
+		{Status: CryptoPaymentStatusConfirming, Progress: CryptoPaymentStepDone, Confirmations: 1, ConfirmationsRequired: 1},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepDone},
+	})
+
+	usdc := newCryptoInvoiceHarness(t, t.TempDir())
+	usdc.api.intentResult = cryptoInvoiceTestCodeIntent(cryptoPayTestIntentId, cryptoPayTestStatusToken, usdc.clock.now)
+	usdc.vc.StartInvoice(CryptoAssetUsdcSolana, "", StripeItemData1Tib, "")
+	state = usdc.vc.GetState()
+	connect.AssertEqual(t, state.Memo, cryptoInvoiceTestUsdcMemo)
+	connect.AssertEqual(t, CryptoPaymentShowsMemo(state.Asset, state.Memo), true)
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepCurrent},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepUpcoming},
+	})
+}
+
+// The QR code of a coin with a payment uri is the uri, and goes with it: a
+// bitcoin invoice shows its BIP 21 uri, and a usdc invoice whose uri names no
+// token (it would ask for SOL) shows neither a uri nor a QR code.
+func TestCryptoInvoiceQrCodeIsTheCheckedUri(t *testing.T) {
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	intent := cryptoInvoiceTestIntent(harness.clock.now)
+	intent.Asset = CryptoAssetBtc
+	intent.Address = "bc1qsyntheticbitcoinaddressfixture"
+	intent.Amount, intent.AmountAtomic = "0.00054321", "54321"
+	intent.Uri = "bitcoin:bc1qsyntheticbitcoinaddressfixture?amount=0.00054321&label=URnetwork&message=URnetwork%20Pro%20yearly"
+	intent.Status.Asset = CryptoAssetBtc
+	intent.Status.Amount, intent.Status.AmountAtomic = intent.Amount, intent.AmountAtomic
+	harness.api.intentResult = intent
+	harness.vc.StartInvoice(CryptoAssetBtc, PlanYearly, "", "")
+	state := harness.vc.GetState()
+	connect.AssertEqual(t, state.Ticker, "BTC")
+	connect.AssertEqual(t, state.Uri, intent.Uri)
+	connect.AssertEqual(t, state.QrText, intent.Uri)
+
+	usdc := newCryptoInvoiceHarness(t, t.TempDir())
+	codeIntent := cryptoInvoiceTestCodeIntent(cryptoPayTestIntentId, cryptoPayTestStatusToken, usdc.clock.now)
+	codeIntent.Uri = "solana:" + cryptoInvoiceTestUsdcAddress + "?amount=40.001234&reference=" + cryptoInvoiceTestUsdcMemo
+	usdc.api.intentResult = codeIntent
+	usdc.vc.StartInvoice(CryptoAssetUsdcSolana, "", StripeItemData1Tib, "")
+	state = usdc.vc.GetState()
+	connect.AssertEqual(t, state.Phase, CryptoInvoicePhaseOpen)
+	connect.AssertEqual(t, state.Address, cryptoInvoiceTestUsdcAddress)
+	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, "")
 }
 
 // ---- polling -----------------------------------------------------------------
@@ -1035,6 +1230,7 @@ func TestCryptoInvoiceAQuoteChangedElsewhereDropsTheUri(t *testing.T) {
 	connect.AssertEqual(t, state.Amount, "0.071111")
 	connect.AssertEqual(t, state.AmountAtomic, "71111000000")
 	connect.AssertEqual(t, state.Uri, "")
+	connect.AssertEqual(t, state.QrText, "")
 	connect.AssertEqual(t, state.Address, cryptoPayTestXmrAddress)
 	connect.AssertEqual(t, state.ExpiresAt, requoted.ExpiresAt)
 	connect.AssertEqual(t, state.SecondsLeft, 1915)
@@ -1065,7 +1261,7 @@ func TestCryptoInvoicePaymentMethodIsRememberedPerDevice(t *testing.T) {
 	// read again after a relaunch; a method the sdk does not know is ignored
 	relaunched := harness.newController()
 	connect.AssertEqual(t, relaunched.GetPaymentMethod(), CryptoAssetXmr)
-	relaunched.SetPaymentMethod("btc")
+	relaunched.SetPaymentMethod("ltc")
 	connect.AssertEqual(t, relaunched.GetPaymentMethod(), CryptoAssetXmr)
 	relaunched.SetPaymentMethod(PaymentMethodCard)
 	connect.AssertEqual(t, harness.vc.GetPaymentMethod(), PaymentMethodCard)
@@ -1076,7 +1272,7 @@ func TestCryptoInvoicePaymentMethodIsRememberedPerDevice(t *testing.T) {
 	}
 
 	// a file written by something else that is not a method reads as none
-	if err := os.WriteFile(path, []byte(`"btc"`), LocalStorageFilePermissions); err != nil {
+	if err := os.WriteFile(path, []byte(`"ltc"`), LocalStorageFilePermissions); err != nil {
 		t.Fatal(err)
 	}
 	connect.AssertEqual(t, relaunched.GetPaymentMethod(), "")
@@ -1084,6 +1280,26 @@ func TestCryptoInvoicePaymentMethodIsRememberedPerDevice(t *testing.T) {
 	memory := newCryptoInvoiceHarness(t, "")
 	memory.vc.SetPaymentMethod(CryptoAssetZec)
 	connect.AssertEqual(t, memory.vc.GetPaymentMethod(), CryptoAssetZec)
+}
+
+// The coins of "More coins" are methods like the others: before 2026-11-10 a
+// remembered btc read as none, and choosing it was ignored.
+func TestCryptoInvoicePaymentMethodRemembersTheMoreCoins(t *testing.T) {
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	for _, asset := range []string{CryptoAssetTao, CryptoAssetBtc, CryptoAssetEth, CryptoAssetSol} {
+		harness.vc.SetPaymentMethod(asset)
+		if got := harness.vc.GetPaymentMethod(); got != asset {
+			t.Errorf("SetPaymentMethod(%q) then GetPaymentMethod() = %q", asset, got)
+		}
+		if got := harness.newController().GetPaymentMethod(); got != asset {
+			t.Errorf("after a relaunch, GetPaymentMethod() = %q, want %q", got, asset)
+		}
+	}
+	path := filepath.Join(harness.dir, cryptoPaymentMethodFileName)
+	if err := os.WriteFile(path, []byte(`"btc"`), LocalStorageFilePermissions); err != nil {
+		t.Fatal(err)
+	}
+	connect.AssertEqual(t, harness.newController().GetPaymentMethod(), CryptoAssetBtc)
 }
 
 // A directory that cannot be written costs the saving, never the invoice.
