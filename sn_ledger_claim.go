@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -25,13 +26,26 @@ import (
 // hold the limit × the price, and is signed with the gas key and sent to the
 // chain endpoint. vault2 pays the leaf's coldkey whoever sends the claim, and
 // its Claimed event says how much.
+//
+// A coldkey has an account in each of an operator's pools, its pool and its
+// capture the flag pool (sn CAPTURETHEFLAG.md §10). One claim claims them all.
+// Two or more accounts whose preflight passes are claimed in one transaction
+// through the release claim batcher, STClaimBatcher (sn VERSION2-FINAL.md
+// §10.2), which calls vault2's claim for each with a gas cap and reports each
+// outcome; vault2 still pays each leaf's coldkey and emits its Claimed event.
+// A single account is claimed alone, as are all of them without a batcher whose
+// code is the release batcher's. An account is never in two transactions of one
+// claim, unless a mined batch provably did not attempt it.
 
 // SnLedgerClaimCallback receives the progress of SnLedgerClaim. Failed
 // messages start with an SnErrorCode* value followed by ": detail".
 // SnErrorCodeAlreadyClaimed means another claim paid the account first,
 // which is success for the account: the apps refresh. A failure that is not
 // about one account (no wallet, v2 claims not configured, the ledger or the
-// chain unreachable, nothing to claim) comes with noId and index 0.
+// chain unreachable, nothing to claim) comes with noId and index 0. A pool
+// whose ledger could not be read comes with its noId, index 0 and
+// SnErrorCodeLedgerUnavailable: its account is unknown, and the other pools are
+// claimed. The accounts of a batch are each Sent with the batch's txHash.
 type SnLedgerClaimCallback interface {
 	Sent(noId int64, index int64, txHash string)
 	Confirmed(noId int64, index int64, txHash string, amountRao int64)
@@ -39,24 +53,59 @@ type SnLedgerClaimCallback interface {
 	Done()
 }
 
-// SnLedgerUnsignedTx is a v2 claim transaction for an external signer.
+// SnLedgerUnsignedTx is a v2 claim transaction for an external signer: one
+// account's claim to vault2, or, with Batch, one claim of several accounts
+// through the claim batcher. Items lists the accounts it claims.
 type SnLedgerUnsignedTx struct {
+	// the account's; 0 for a batch, whose accounts are its Items
 	NoId      int64 `json:"no_id"`
 	Index     int64 `json:"index"`
 	RootIndex int64 `json:"root_index"`
 	ChainId   int64 `json:"chain_id"`
-	// Vault2Address, lowercase 0x
+	// Vault2Address, or ClaimBatcherAddress for a batch, lowercase 0x
 	To string `json:"to"`
-	// 0x calldata of claim(noId, rootIndex, (index, coldkey, cumulative), proof)
+	// 0x calldata of claim(noId, rootIndex, (index, coldkey, cumulative),
+	// proof), or of claimMany(vault2, claims, gasPerClaim) for a batch
 	Data string `json:"data"`
 	// decimal wei, always "0"
 	Value string `json:"value"`
-	// what the claim pays now: the cumulative less vault2's claimed
+	// what the claim pays now: the cumulatives less vault2's claimed
 	AmountRao int64 `json:"amount_rao"`
-	// the gas limit to sign with, snLedgerClaimGasFloor (2,600,000): a
-	// signer's own estimate follows vault2's staking-hotkey list, which third
-	// parties can lengthen before the claim is included
+	// the gas limit to sign with. A claim alone takes snLedgerClaimGasFloor
+	// (2,600,000): a signer's own estimate follows vault2's staking-hotkey
+	// list, which third parties can lengthen before the claim is included. A
+	// batch takes the least limit at which the batcher attempts every item,
+	// with a fifth more: a signer's estimate finds a lower limit, at which
+	// the batcher skips items
 	Gas int64 `json:"gas"`
+	// Vault2Address, whose Claimed events say what each account was paid
+	Vault string `json:"vault"`
+	// To is the claim batcher
+	Batch bool `json:"batch"`
+	// the accounts the transaction claims, in order
+	Items *SnLedgerClaimItemList `json:"items"`
+}
+
+// SnLedgerClaimItem is one account an SnLedgerUnsignedTx claims.
+type SnLedgerClaimItem struct {
+	NoId      int64 `json:"no_id"`
+	Index     int64 `json:"index"`
+	RootIndex int64 `json:"root_index"`
+	// SnLedgerPoolKind*
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	// what the claim pays the account now
+	AmountRao int64 `json:"amount_rao"`
+}
+
+type SnLedgerClaimItemList struct {
+	exportedList[*SnLedgerClaimItem]
+}
+
+func NewSnLedgerClaimItemList() *SnLedgerClaimItemList {
+	return &SnLedgerClaimItemList{
+		exportedList: *newExportedList[*SnLedgerClaimItem](),
+	}
 }
 
 type SnLedgerUnsignedTxList struct {
@@ -87,6 +136,28 @@ const snLedgerNothingToClaim = SnErrorCodeNotClaimable + ": no settlement v2 acc
 // hold the limit × the price.
 const snLedgerClaimGasFloor uint64 = 2_600_000
 
+// The batch limits of sn's claim tools (miner/onchain/v2_batch.go): at most
+// snLedgerBatchMaxClaims accounts in a batch, and at most the gas a
+// transaction may name (R-7: the normal dispatch class's extrinsic weight
+// limit, 13/15 of the block's gas limit less 1,500, and at most 64,998,500),
+// less snLedgerBatchGasMargin. A batch's limit is sized to within
+// snLedgerBatchTolerance of the least at which the batcher attempts every
+// item.
+const (
+	snLedgerBatchMaxClaims        = 32
+	snLedgerBatchMaxGas    uint64 = 64_998_500
+	snLedgerBatchGasMargin uint64 = 10_000
+	snLedgerBatchTolerance uint64 = 10_000
+)
+
+// snLedgerBatchCeiling is the most gas a batch names when the latest block
+// reports blockGasLimit.
+func snLedgerBatchCeiling(blockGasLimit uint64) uint64 {
+	normal := blockGasLimit/15*13 + blockGasLimit%15*13/15
+	takes := min(snLedgerBatchMaxGas, normal-min(normal, 1_500))
+	return takes - min(takes, snLedgerBatchGasMargin)
+}
+
 // The node's message for a refused precompile call:
 // evm error: Other("dispatch execution failed: <Error>").
 var snRuntimeRefusalRe = regexp.MustCompile(`dispatch execution failed: (\w+)`)
@@ -109,10 +180,13 @@ func (self *SnChainSettings) validateLedgerClaims() error {
 }
 
 type snLedgerClaimEngine struct {
-	settings    *SnChainSettings
-	client      *evm.Client
-	chainId     *big.Int
-	vault2      [20]byte
+	settings *SnChainSettings
+	client   *evm.Client
+	chainId  *big.Int
+	vault2   [20]byte
+	// the claim batcher; without one every account is claimed alone
+	batcher     [20]byte
+	hasBatcher  bool
 	coldkey     [32]byte
 	coldkeySs58 string
 	baseUrl     string
@@ -126,9 +200,26 @@ type snLedgerClaimPlan struct {
 	noId      int64
 	index     int64
 	rootIndex int64
+	kind      string
+	label     string
+	// the verified cumulative and proof, which a batch item claims with
+	cumulative *big.Int
+	proof      []merkle.LedgerNode
 	// the claim calldata
 	data   []byte
 	amount int64
+}
+
+// item is the plan as a claim batcher item.
+func (self *snLedgerClaimPlan) item(coldkey [32]byte) *evm.LedgerClaim {
+	return &evm.LedgerClaim{
+		NoId:       uint64(self.noId),
+		RootIndex:  uint64(self.rootIndex),
+		Index:      uint64(self.index),
+		Coldkey:    coldkey,
+		Cumulative: self.cumulative,
+		Proof:      self.proof,
+	}
 }
 
 // newSnLedgerClaimEngine reads the ledger from baseUrl, else the settings'
@@ -143,6 +234,8 @@ func newSnLedgerClaimEngine(settings *SnChainSettings, coldkeySs58 string, baseU
 		return nil, newSnError(SnErrorCodeInvalidAddress, err.Error())
 	}
 	vault2, _ := settings.vault2()
+	// a batcher address that does not parse batches nothing
+	batcher, hasBatcher, _ := settings.claimBatcher()
 	if baseUrl == "" {
 		baseUrl = settings.ArtifactBaseUrl
 	}
@@ -151,6 +244,8 @@ func newSnLedgerClaimEngine(settings *SnChainSettings, coldkeySs58 string, baseU
 		client:      settings.chainClient(),
 		chainId:     big.NewInt(settings.ChainId),
 		vault2:      vault2,
+		batcher:     batcher,
+		hasBatcher:  hasBatcher,
 		coldkey:     coldkey,
 		coldkeySs58: coldkeySs58,
 		baseUrl:     baseUrl,
@@ -164,17 +259,21 @@ func (self *snLedgerClaimEngine) vault2Hex() string {
 
 // plans reads the coldkey's accounts and returns, in the ledger's order,
 // those a claim pays now (rule 1). Each account refused on the way is
-// reported to fail. An account only in the pending root is skipped, and so
-// is one with nothing claimable in vault2 unless the ledger showed it with
-// something claimable: then another claim paid it first.
+// reported to fail, and so is each pool whose ledger could not be read, with
+// index 0. An account only in the pending root is skipped, and so is one with
+// nothing claimable in vault2 unless the ledger showed it with something
+// claimable: then another claim paid it first.
 func (self *snLedgerClaimEngine) plans(ctx context.Context, fail func(noId int64, index int64, message string)) ([]*snLedgerClaimPlan, *SnError) {
-	entries, snErr := snReadLedger(ctx, self.fetch, self.baseUrl, self.coldkeySs58)
+	read, snErr := snReadLedger(ctx, self.fetch, self.baseUrl, self.coldkeySs58)
 	if snErr != nil {
 		return nil, snErr
 	}
+	for _, unavailable := range read.unavailable {
+		fail(unavailable.NoId, 0, fmt.Sprintf("%s: the ledger of %s (pool %d) could not be read", SnErrorCodeLedgerUnavailable, unavailable.Label, unavailable.NoId))
+	}
 	var finalized []*snLedgerEntry
 	var datas [][]byte
-	for _, entry := range entries {
+	for _, entry := range read.entries {
 		account := entry.account
 		switch {
 		case entry.rootIndex < 0:
@@ -230,11 +329,15 @@ func (self *snLedgerClaimEngine) plans(ctx context.Context, fail func(noId int64
 			continue
 		}
 		plans = append(plans, &snLedgerClaimPlan{
-			noId:      account.NoId,
-			index:     account.Index,
-			rootIndex: entry.rootIndex,
-			data:      data,
-			amount:    account.FinalizedRao - claimed.Int64(),
+			noId:       account.NoId,
+			index:      account.Index,
+			rootIndex:  entry.rootIndex,
+			kind:       account.Kind,
+			label:      account.Label,
+			cumulative: cumulative,
+			proof:      entry.proof,
+			data:       data,
+			amount:     account.FinalizedRao - claimed.Int64(),
 		})
 	}
 	return plans, nil
@@ -253,13 +356,14 @@ func (self *snLedgerClaimEngine) refusal(ctx context.Context, plan *snLedgerClai
 		return snFailMessage(err)
 	}
 	if len(rpcErr.RevertData()) == 0 && (rpcErr.Code == 3 || strings.Contains(strings.ToLower(rpcErr.Message), "revert")) {
-		reason := self.runtimeRefusal(ctx, plan)
-		if reason == "AmountTooLow" {
-			return SnErrorCodeNotClaimable + ": AmountTooLow: the claim is below the runtime's transfer floor"
-		}
-		return SnErrorCodeClaimFailed + ": " + reason
+		return self.runtimeRefusalMessage(ctx, plan)
 	}
-	switch reason := rpcErr.Reason(); reason {
+	return snLedgerVaultRefusal(rpcErr.Reason())
+}
+
+// snLedgerVaultRefusal is the message of vault2's refusal named reason.
+func snLedgerVaultRefusal(reason string) string {
+	switch reason {
 	case "NothingToClaim":
 		return SnErrorCodeAlreadyClaimed + ": NothingToClaim: another claim paid this account first"
 	case "InvalidProof", "UnknownRoot":
@@ -267,6 +371,28 @@ func (self *snLedgerClaimEngine) refusal(ctx context.Context, plan *snLedgerClai
 	default:
 		return SnErrorCodeClaimFailed + ": " + reason
 	}
+}
+
+// runtimeRefusalMessage is the message of the staking precompile refusing
+// the plan's transfer: its transfer floor is not_claimable, any other refusal
+// claim_failed.
+func (self *snLedgerClaimEngine) runtimeRefusalMessage(ctx context.Context, plan *snLedgerClaimPlan) string {
+	reason := self.runtimeRefusal(ctx, plan)
+	if reason == "AmountTooLow" {
+		return SnErrorCodeNotClaimable + ": AmountTooLow: the claim is below the runtime's transfer floor"
+	}
+	return SnErrorCodeClaimFailed + ": " + reason
+}
+
+// batchRefusal names why the batcher's call of the plan's claim reverted,
+// from the first four bytes of its revert data: vault2's refusals as a claim
+// alone reads them, and a zero selector, a call that ran out of its gas cap
+// as one the runtime refuses does, by simulating the transfer.
+func (self *snLedgerClaimEngine) batchRefusal(ctx context.Context, plan *snLedgerClaimPlan, selector [4]byte) string {
+	if selector == ([4]byte{}) {
+		return self.runtimeRefusalMessage(ctx, plan)
+	}
+	return snLedgerVaultRefusal(evm.DecodeRevert(selector[:]))
 }
 
 // runtimeRefusal simulates vault2's transfer of the plan's amount to the
@@ -365,7 +491,171 @@ func (self *snLedgerClaimEngine) send(ctx context.Context, key *secp.PrivateKey,
 	callback.Confirmed(plan.noId, plan.index, txHash, amount)
 }
 
-// claim sends one claim per account that has something to claim, in turn.
+// batcherVerified reports whether the configured batcher's code is the
+// release claim batcher's. Any other code, or none, means claims go alone.
+func (self *snLedgerClaimEngine) batcherVerified(ctx context.Context) bool {
+	if !self.hasBatcher {
+		return false
+	}
+	code, err := self.client.Code(ctx, self.batcher)
+	return err == nil && 0 < len(code) && evm.Keccak256(code) == evm.ClaimBatcherRuntimeHash
+}
+
+// sizeBatch sizes a batch of plans for from to send through the batcher, as
+// sn's onchain.SizeClaimBatch does: how many of them, from the first and at
+// most snLedgerBatchMaxClaims, a transaction attempts at the most gas a batch
+// names (the others wait to be claimed alone), the calldata claiming those, and
+// the gas limit: the least within snLedgerBatchTolerance at which an eth_call
+// attempts them all, with a fifth more, up to that most. The batcher attempts
+// only the items its gas left covers, so a batch succeeds at any gas limit and
+// eth_estimateGas cannot size it. from is the zero address for an external
+// signer: neither the batcher nor vault2's claim depends on the sender.
+func (self *snLedgerClaimEngine) sizeBatch(ctx context.Context, from [20]byte, plans []*snLedgerClaimPlan, gasPerClaim uint64) (int, []byte, uint64, error) {
+	blockGasLimit, err := self.client.LatestGasLimit(ctx)
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("block gas limit: %w", err)
+	}
+	ceiling := snLedgerBatchCeiling(blockGasLimit)
+	plans = plans[:min(len(plans), snLedgerBatchMaxClaims)]
+	pack := func(plans []*snLedgerClaimPlan) ([]byte, error) {
+		items := make([]*evm.LedgerClaim, len(plans))
+		for i, plan := range plans {
+			items[i] = plan.item(self.coldkey)
+		}
+		return evm.PackClaimMany(self.vault2, items, gasPerClaim)
+	}
+	attempted := func(data []byte, gas uint64) (uint64, error) {
+		ret, err := self.client.EthCallGas(ctx, from, self.batcher, data, gas)
+		if err != nil {
+			return 0, err
+		}
+		return evm.DecodeClaimManyAttempted(ret)
+	}
+	data, err := pack(plans)
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	fit, err := attempted(data, ceiling)
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("batch preflight at %d gas: %w", ceiling, err)
+	}
+	if fit == 0 || uint64(len(plans)) < fit {
+		return 0, nil, 0, fmt.Errorf("a batch of %d claims attempts %d at %d gas", len(plans), fit, ceiling)
+	}
+	if fit < uint64(len(plans)) {
+		if data, err = pack(plans[:fit]); err != nil {
+			return 0, nil, 0, err
+		}
+	}
+	low, high := uint64(0), ceiling
+	for snLedgerBatchTolerance < high-low {
+		middle := low + (high-low)/2
+		count, err := attempted(data, middle)
+		if ctx.Err() != nil {
+			return 0, nil, 0, ctx.Err()
+		}
+		if err == nil && count == fit {
+			high = middle
+		} else {
+			low = middle
+		}
+	}
+	return int(fit), data, min(high+high/5, ceiling), nil
+}
+
+// sendBatch claims two or more plans in one batcher transaction from the gas
+// key, and returns the plans to claim alone instead. A plan whose preflight
+// vault2 refuses is reported failed and left out. Every passing plan is
+// returned when the batch is not sent: no release batcher, fewer than two
+// passing, a batch that cannot be sized, or a gas key that cannot pay for the
+// batch, which a claim alone may still afford. Once the batch is sent its
+// accounts are claimed only by it, except those its mined receipt shows it
+// did not attempt, which are returned.
+func (self *snLedgerClaimEngine) sendBatch(ctx context.Context, key *secp.PrivateKey, plans []*snLedgerClaimPlan, callback SnLedgerClaimCallback) []*snLedgerClaimPlan {
+	if len(plans) < 2 || !self.batcherVerified(ctx) {
+		return plans
+	}
+	from := evm.AddressOf(key)
+	gasPerClaim := snLedgerClaimGasFloor
+	var passing []*snLedgerClaimPlan
+	for _, plan := range plans {
+		if _, err := self.client.EthCallFrom(ctx, from, self.vault2, plan.data); err != nil {
+			callback.Failed(plan.noId, plan.index, self.refusal(ctx, plan, err))
+			continue
+		}
+		estimate, err := self.client.EstimateGas(ctx, from, self.vault2, plan.data, nil)
+		if err != nil {
+			callback.Failed(plan.noId, plan.index, self.refusal(ctx, plan, err))
+			continue
+		}
+		// each item's cap covers its own estimate, as sn's claim tools give it
+		gasPerClaim = max(gasPerClaim, estimate)
+		passing = append(passing, plan)
+	}
+	if len(passing) < 2 {
+		return passing
+	}
+	count, data, gas, err := self.sizeBatch(ctx, from, passing, gasPerClaim)
+	if err != nil || count < 2 {
+		return passing
+	}
+	batch, alone := passing[:count], passing[count:]
+	balance, err := self.client.Balance(ctx, from)
+	if err != nil {
+		return passing
+	}
+	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.batcher, data, gas)
+	if err != nil || balance.Cmp(maxCost) < 0 {
+		return passing
+	}
+	failAll := func(message string) {
+		for _, plan := range batch {
+			callback.Failed(plan.noId, plan.index, message)
+		}
+	}
+	txHash, err := self.client.SendRawTransaction(ctx, raw)
+	if err != nil {
+		// it may have reached the chain: none of its accounts is claimed again
+		failAll(snFailMessage(err))
+		return alone
+	}
+	for _, plan := range batch {
+		callback.Sent(plan.noId, plan.index, txHash)
+	}
+	receipt, err := self.client.WaitReceipt(ctx, txHash, snClaimReceiptPoll, snClaimReceiptTimeout)
+	if err != nil {
+		failAll(SnErrorCodeClaimFailed + ": " + err.Error())
+		return alone
+	}
+	if !receipt.Status {
+		failAll(SnErrorCodeClaimFailed + ": the batch transaction reverted")
+		return alone
+	}
+	// vault2's Claimed event says what each account was paid, and the
+	// batcher's events why an account was not
+	outcomes, outcomesErr := evm.ClaimBatchOutcomes(receipt, self.batcher, len(batch))
+	var notAttempted []*snLedgerClaimPlan
+	for i, plan := range batch {
+		if amount, ok := self.claimedAmount(receipt, plan); ok {
+			callback.Confirmed(plan.noId, plan.index, txHash, amount)
+			continue
+		}
+		switch {
+		case outcomesErr != nil:
+			callback.Failed(plan.noId, plan.index, SnErrorCodeClaimFailed+": the batch transaction has no Claimed event for this account, and its batcher events do not say why: "+outcomesErr.Error())
+		case outcomes[i].Outcome == evm.ClaimBatchNotAttempted:
+			notAttempted = append(notAttempted, plan)
+		case outcomes[i].Outcome == evm.ClaimBatchRefused:
+			callback.Failed(plan.noId, plan.index, self.batchRefusal(ctx, plan, outcomes[i].Selector))
+		default:
+			callback.Failed(plan.noId, plan.index, SnErrorCodeClaimFailed+": the batch transaction has no Claimed event for this account")
+		}
+	}
+	return append(notAttempted, alone...)
+}
+
+// claim claims every account that has something to claim: two or more in one
+// batch when they can be, and each other alone, in turn.
 func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey, callback SnLedgerClaimCallback) {
 	refused := false
 	planCtx, cancel := context.WithTimeout(ctx, snClaimsTimeout)
@@ -380,6 +670,11 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 	case len(plans) == 0 && !refused:
 		callback.Failed(0, 0, snLedgerNothingToClaim)
 	}
+	if 2 <= len(plans) {
+		batchCtx, cancel := context.WithTimeout(ctx, snClaimTimeout)
+		plans = self.sendBatch(batchCtx, key, plans, callback)
+		cancel()
+	}
 	for _, plan := range plans {
 		sendCtx, cancel := context.WithTimeout(ctx, snClaimTimeout)
 		self.send(sendCtx, key, plan, callback)
@@ -387,10 +682,65 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 	}
 }
 
-// unsignedTxs builds a claim transaction for each account a claim pays now
-// whose preflight passes, for an external signer, each with
-// snLedgerClaimGasFloor as its gas limit. With none the error is the first
-// account's refusal, else that there is nothing to claim.
+// unsignedTx is the plan's claim alone.
+func (self *snLedgerClaimEngine) unsignedTx(plan *snLedgerClaimPlan) *SnLedgerUnsignedTx {
+	items := NewSnLedgerClaimItemList()
+	items.Add(plan.claimItem())
+	return &SnLedgerUnsignedTx{
+		NoId:      plan.noId,
+		Index:     plan.index,
+		RootIndex: plan.rootIndex,
+		ChainId:   self.settings.ChainId,
+		To:        self.vault2Hex(),
+		Data:      "0x" + hex.EncodeToString(plan.data),
+		Value:     "0",
+		AmountRao: plan.amount,
+		Gas:       int64(snLedgerClaimGasFloor),
+		Vault:     self.vault2Hex(),
+		Items:     items,
+	}
+}
+
+// batchTx is the plans' claim through the batcher, with its calldata and its
+// sized gas limit.
+func (self *snLedgerClaimEngine) batchTx(plans []*snLedgerClaimPlan, data []byte, gas uint64) *SnLedgerUnsignedTx {
+	items := NewSnLedgerClaimItemList()
+	amount := int64(0)
+	for _, plan := range plans {
+		items.Add(plan.claimItem())
+		amount += plan.amount
+	}
+	return &SnLedgerUnsignedTx{
+		ChainId:   self.settings.ChainId,
+		To:        "0x" + hex.EncodeToString(self.batcher[:]),
+		Data:      "0x" + hex.EncodeToString(data),
+		Value:     "0",
+		AmountRao: amount,
+		Gas:       int64(gas),
+		Vault:     self.vault2Hex(),
+		Batch:     true,
+		Items:     items,
+	}
+}
+
+func (self *snLedgerClaimPlan) claimItem() *SnLedgerClaimItem {
+	return &SnLedgerClaimItem{
+		NoId:      self.noId,
+		Index:     self.index,
+		RootIndex: self.rootIndex,
+		Kind:      self.kind,
+		Label:     self.label,
+		AmountRao: self.amount,
+	}
+}
+
+// unsignedTxs builds the transactions for an external signer to send, in
+// order, that claim every account a claim pays now whose preflight passes:
+// one batch of two or more through the release batcher when they can be, and
+// each other alone, with snLedgerClaimGasFloor as its gas limit. An account is
+// in one transaction only. With none the error is the first refusal (a pool
+// whose ledger could not be read among them), else that there is nothing to
+// claim.
 func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsignedTxList, error) {
 	reason := ""
 	refuse := func(noId int64, index int64, message string) {
@@ -402,24 +752,25 @@ func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsi
 	if snErr != nil {
 		return nil, errors.New(snErr.Code + ": " + snErr.Message)
 	}
-	list := NewSnLedgerUnsignedTxList()
+	var passing []*snLedgerClaimPlan
 	for _, plan := range plans {
 		// the signer is not known; vault2's claim does not depend on it
 		if _, err := self.client.EthCall(ctx, self.vault2, plan.data); err != nil {
 			refuse(plan.noId, plan.index, self.refusal(ctx, plan, err))
 			continue
 		}
-		list.Add(&SnLedgerUnsignedTx{
-			NoId:      plan.noId,
-			Index:     plan.index,
-			RootIndex: plan.rootIndex,
-			ChainId:   self.settings.ChainId,
-			To:        self.vault2Hex(),
-			Data:      "0x" + hex.EncodeToString(plan.data),
-			Value:     "0",
-			AmountRao: plan.amount,
-			Gas:       int64(snLedgerClaimGasFloor),
-		})
+		passing = append(passing, plan)
+	}
+	list := NewSnLedgerUnsignedTxList()
+	if 2 <= len(passing) && self.batcherVerified(ctx) {
+		count, data, gas, err := self.sizeBatch(ctx, [20]byte{}, passing, snLedgerClaimGasFloor)
+		if err == nil && 2 <= count {
+			list.Add(self.batchTx(passing[:count], data, gas))
+			passing = passing[count:]
+		}
+	}
+	for _, plan := range passing {
+		list.Add(self.unsignedTx(plan))
 	}
 	if list.Len() == 0 {
 		if reason == "" {
@@ -446,8 +797,9 @@ func (self *snDevice) snLedgerClaimEngine() (*snLedgerClaimEngine, *SnError) {
 }
 
 // SnLedgerClaim claims every finalized v2 account of the connected coldkey
-// that has something to claim, one transaction per account in turn, signed
-// with the device gas key; then Done.
+// that has something to claim, in every pool: two or more in one batcher
+// transaction when they can be, else one transaction per account in turn,
+// signed with the device gas key; then Done.
 func (self *snDevice) SnLedgerClaim(callback SnLedgerClaimCallback) {
 	go connect.HandleError(func() {
 		defer callback.Done()
@@ -493,4 +845,186 @@ func SnLedgerClaimTransactionsFor(settings *SnChainSettings, coldkeySs58 string)
 	ctx, cancel := context.WithTimeout(context.Background(), snClaimsTimeout)
 	defer cancel()
 	return engine.unsignedTxs(ctx)
+}
+
+// What a mined transaction of SnLedgerClaimTransactionsFor did for one of its
+// accounts.
+const (
+	// vault2 paid it, AmountRao
+	SnLedgerClaimOutcomeConfirmed = "confirmed"
+	// vault2 did not pay it: Message is "<SnErrorCode*>: detail", and
+	// SnErrorCodeAlreadyClaimed is success for the account
+	SnLedgerClaimOutcomeFailed = "failed"
+	// the batch ran short of gas before it: it is claimable as before, and the
+	// transactions are built again to claim it
+	SnLedgerClaimOutcomeNotAttempted = "not_attempted"
+)
+
+// SnLedgerClaimOutcome is one account's outcome in a mined claim transaction.
+type SnLedgerClaimOutcome struct {
+	NoId  int64 `json:"no_id"`
+	Index int64 `json:"index"`
+	// SnLedgerClaimOutcome*
+	Status string `json:"status"`
+	// what vault2's Claimed event paid, for confirmed
+	AmountRao int64  `json:"amount_rao"`
+	Message   string `json:"message,omitempty"`
+}
+
+type SnLedgerClaimOutcomeList struct {
+	exportedList[*SnLedgerClaimOutcome]
+}
+
+func NewSnLedgerClaimOutcomeList() *SnLedgerClaimOutcomeList {
+	return &SnLedgerClaimOutcomeList{
+		exportedList: *newExportedList[*SnLedgerClaimOutcome](),
+	}
+}
+
+// A transaction receipt as JSON-RPC, ethers or viem give it: status is
+// "0x1"/"0x0", 1/0, true/false or "success"/"reverted", or any of them as text.
+type snReceiptJson struct {
+	Status json.RawMessage `json:"status"`
+	Logs   []struct {
+		Address string   `json:"address"`
+		Topics  []string `json:"topics"`
+		Data    string   `json:"data"`
+	} `json:"logs"`
+}
+
+// snParseReceipt reads a receipt's status and the logs whose address, topics
+// and data parse.
+func snParseReceipt(receiptJson string) (*evm.Receipt, error) {
+	var answer snReceiptJson
+	if err := json.Unmarshal([]byte(receiptJson), &answer); err != nil {
+		return nil, fmt.Errorf("the receipt does not parse: %w", err)
+	}
+	receipt := &evm.Receipt{}
+	var status any
+	if err := json.Unmarshal(answer.Status, &status); err != nil {
+		return nil, errors.New("the receipt has no status")
+	}
+	switch v := status.(type) {
+	case bool:
+		receipt.Status = v
+	case float64:
+		if v != 0 && v != 1 {
+			return nil, fmt.Errorf("the receipt's status %v is not 0 or 1", v)
+		}
+		receipt.Status = v == 1
+	case string:
+		switch status := strings.ToLower(strings.TrimSpace(v)); status {
+		case "success", "true":
+			receipt.Status = true
+		case "reverted", "false":
+		default:
+			// a quantity, "0x1" or "0x0"
+			n, err := evm.ParseUint256(status)
+			if err != nil || !n.IsUint64() || 1 < n.Uint64() {
+				return nil, fmt.Errorf("the receipt's status %q is not a status", v)
+			}
+			receipt.Status = n.Uint64() == 1
+		}
+	default:
+		return nil, errors.New("the receipt has no status")
+	}
+	for _, l := range answer.Logs {
+		log := &evm.Log{}
+		address, err := evm.ParseAddress(l.Address)
+		data, dataErr := evm.ParseHexBytes(l.Data)
+		for _, topic := range l.Topics {
+			hash, topicErr := evm.ParseHash32(topic)
+			err = errors.Join(err, topicErr)
+			log.Topics = append(log.Topics, hash)
+		}
+		if err == nil && dataErr == nil {
+			log.Address, log.Data = address, data
+			receipt.Logs = append(receipt.Logs, log)
+		}
+	}
+	return receipt, nil
+}
+
+// snClaimedIn is the amount of vault2's Claimed event for account (noId,
+// index) in the receipt. A receipt's Claimed events are those of its own
+// transaction's claims, so the pool and index name the account.
+func snClaimedIn(receipt *evm.Receipt, vault2 [20]byte, noId int64, index int64) (int64, bool) {
+	for _, log := range receipt.Logs {
+		event, ok := evm.DecodeLedgerClaimed(log)
+		if ok && log.Address == vault2 && event.NoId.Cmp(big.NewInt(noId)) == 0 &&
+			event.Index.Cmp(big.NewInt(index)) == 0 && event.Amount.IsInt64() {
+			return event.Amount.Int64(), true
+		}
+	}
+	return 0, false
+}
+
+// snLedgerBatchRefusalOf names why the batcher's call of an item's claim
+// reverted, from the first four bytes of its revert data, without the chain:
+// a zero selector is a call that ran out of its gas cap, as one the staking
+// precompile refuses does.
+func snLedgerBatchRefusalOf(selector [4]byte) string {
+	if selector == ([4]byte{}) {
+		return SnErrorCodeClaimFailed + ": the staking precompile refused the transfer"
+	}
+	return snLedgerVaultRefusal(evm.DecodeRevert(selector[:]))
+}
+
+// SnLedgerClaimOutcomesOf reads what a mined transaction of
+// SnLedgerClaimTransactionsFor did for each account it claims, in its Items'
+// order: vault2's Claimed event confirms an account with the amount paid, and
+// for a batch the batcher's events say why an account was not paid, or that it
+// was not attempted. receiptJson is the transaction's receipt as JSON-RPC,
+// ethers or viem give it. Pure: a page reads the receipt with its own wallet.
+func SnLedgerClaimOutcomesOf(tx *SnLedgerUnsignedTx, receiptJson string) (*SnLedgerClaimOutcomeList, error) {
+	if tx == nil || tx.Items == nil || tx.Items.Len() == 0 {
+		return nil, errors.New("the transaction names no account")
+	}
+	vaultHex := tx.Vault
+	if vaultHex == "" && !tx.Batch {
+		vaultHex = tx.To
+	}
+	vault2, err := evm.ParseAddress(vaultHex)
+	if err != nil {
+		return nil, fmt.Errorf("vault: %w", err)
+	}
+	receipt, err := snParseReceipt(receiptJson)
+	if err != nil {
+		return nil, err
+	}
+	items := tx.Items.getAll()
+	var batchOutcomes []*evm.ClaimBatchEvent
+	var batchErr error
+	if tx.Batch {
+		batcher, err := evm.ParseAddress(tx.To)
+		if err != nil {
+			return nil, fmt.Errorf("batcher: %w", err)
+		}
+		batchOutcomes, batchErr = evm.ClaimBatchOutcomes(receipt, batcher, len(items))
+	}
+	outcomes := NewSnLedgerClaimOutcomeList()
+	for i, item := range items {
+		outcome := &SnLedgerClaimOutcome{NoId: item.NoId, Index: item.Index, Status: SnLedgerClaimOutcomeFailed}
+		amount, paid := snClaimedIn(receipt, vault2, item.NoId, item.Index)
+		switch {
+		case !receipt.Status && tx.Batch:
+			outcome.Message = SnErrorCodeClaimFailed + ": the batch transaction reverted"
+		case !receipt.Status:
+			outcome.Message = SnErrorCodeClaimFailed + ": the claim transaction reverted"
+		case paid:
+			outcome.Status, outcome.AmountRao = SnLedgerClaimOutcomeConfirmed, amount
+		case !tx.Batch:
+			outcome.Message = SnErrorCodeClaimFailed + ": the claim transaction has no Claimed event for this account"
+		case batchErr != nil:
+			outcome.Message = SnErrorCodeClaimFailed + ": the batch transaction has no Claimed event for this account, and its batcher events do not say why: " + batchErr.Error()
+		case batchOutcomes[i].Outcome == evm.ClaimBatchNotAttempted:
+			outcome.Status = SnLedgerClaimOutcomeNotAttempted
+		case batchOutcomes[i].Outcome == evm.ClaimBatchRefused:
+			outcome.Message = snLedgerBatchRefusalOf(batchOutcomes[i].Selector)
+		default:
+			outcome.Message = SnErrorCodeClaimFailed + ": the batch transaction has no Claimed event for this account"
+		}
+		outcomes.Add(outcome)
+	}
+	return outcomes, nil
 }
