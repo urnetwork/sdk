@@ -1143,10 +1143,14 @@ func (self *dnsPresetPersonalId) dohUrl(id string) (string, bool) {
 // Lists are not edited when they are a derivation of the selection, today's
 // or an earlier release's: an app seeds a device from a copy it kept, whose
 // lists are those of the release that wrote it. An earlier release's default
-// lists and regional recommendations are the ones the default server list
-// migration knows (migrateDefaultServerLists); a release that changes them
-// adds the old ones there, as it must for custom records anyway. A bare
-// selection, with no list and no toggle, is not an edit either.
+// lists are the ones the default server list migration knows
+// (migrateDefaultServerLists), and its regional recommendations the ones
+// dnsResolverSettingsEarlierRegionalRecommendations lists, the ones that
+// migration does not replace; a release that changes them adds the old ones
+// there, as it must for custom records anyway. A regional selection of a
+// country that no longer has a recommendation keeps its selection with an
+// earlier derivation, and applies URnetwork's default with its notice (A7). A
+// bare selection, with no list and no toggle, is not an edit either.
 func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
 	if dnsResolverSettings == nil {
 		return nil
@@ -1160,6 +1164,11 @@ func dnsResolverSettingsAsEdited(dnsResolverSettings *DnsResolverSettings) *DnsR
 	}
 	derived := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
 	if dnsResolverSettingsListsEqual(dnsResolverSettings, derived) {
+		return dnsResolverSettings
+	}
+	if countryCode, ok := strings.CutPrefix(presetId, DnsPresetIdRegionalPrefix); ok &&
+		dnsResolverSettingsHoldEarlierRegionalDerivation(dnsResolverSettings, countryCode) {
+		// an earlier release's recommendation of the selection's country
 		return dnsResolverSettings
 	}
 	// an earlier release's derivation, of any version before today's: its

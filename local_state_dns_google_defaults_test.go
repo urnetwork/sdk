@@ -297,11 +297,17 @@ func TestV4OnlyGoogleEraRecordKeepsEmptyV6Lists(t *testing.T) {
 
 // The tm recommendation as an older sdk applied it: Turkmentelecom and Google
 // in the remote plain v4 list, and Google's tm v6 address (none before
-// 2026-09-11). Turkmentelecom's address marks it as the recommendation, so it
-// loads as the current tm recommendation, in either order and either era.
-func TestGoogleEraTmRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
-	tmIpv4 := connect.RegionalDnsServerIps("tm")
-	tmIpv6 := connect.RegionalDnsServerIpv6s("tm")
+// 2026-09-11). Held exactly, in either order and either era, it loads as the
+// tm pick ("regional-tm"). tm has no recommendation since 2026-11-11, so the
+// pick applies URnetwork's default, with neither Google nor Turkmentelecom,
+// and its summary says the selection dropped out. Until then the record
+// loaded with the current tm list as Custom, which with no tm list left
+// remote plain dns on with no server.
+func TestGoogleEraTmRecommendationLoadsAsTheTmPick(t *testing.T) {
+	if tm := connect.RegionalDnsResolverSettings("tm"); tm != nil {
+		t.Fatalf("connect recommends %+v for tm, want none", tm)
+	}
+	defaults := testingDnsResolverSettingsLists(dnsResolverSettingsFromConnect(defaultDnsResolver()))
 	cases := []struct {
 		name  string
 		ipv4  []string
@@ -324,16 +330,25 @@ func TestGoogleEraTmRecommendationLoadsAsCurrentRecommendation(t *testing.T) {
 		}
 		testingWriteGoogleEraDnsResolverSettings(t, localState.localStorageDir, recommended)
 		persisted := localState.GetDnsResolverSettings()
-		if persisted == nil || !persisted.EnableRemoteDns {
-			t.Errorf("%s: old tm recommendation did not load: %+v", c.name, persisted)
+		if persisted == nil {
+			t.Errorf("%s: old tm recommendation did not load", c.name)
 			continue
 		}
 		testingErrorGoogleDns(t, "old tm recommendation "+c.name, persisted)
-		if got := testingStringsOf(persisted.RemoteDnsIpv4); !slices.Equal(got, tmIpv4) {
-			t.Errorf("%s: tm v4 = %v, want the current recommendation %v", c.name, got, tmIpv4)
+		if persisted.PresetId != "regional-tm" {
+			t.Errorf("%s: selection = %q, want the tm pick", c.name, persisted.PresetId)
 		}
-		if got := testingStringsOf(persisted.RemoteDnsIpv6); !slices.Equal(got, tmIpv6) && !(len(got) == 0 && len(tmIpv6) == 0) {
-			t.Errorf("%s: tm v6 = %v, want the current recommendation %v", c.name, got, tmIpv6)
+		if !persisted.EnableRemoteDoh || persisted.EnableRemoteDns {
+			t.Errorf("%s: toggles = %+v, want the default's", c.name, persisted)
+		}
+		for name, list := range testingDnsResolverSettingsLists(persisted) {
+			if !slices.Equal(list, defaults[name]) {
+				t.Errorf("%s: %s = %v, want the default %v", c.name, name, list, defaults[name])
+			}
+		}
+		summary := DescribeDnsResolverSettings(persisted, "tm")
+		if summary.Kind != DnsPickKindDefault || !summary.Dropped || summary.DroppedPresetId != "regional-tm" {
+			t.Errorf("%s: summary = %+v, want the default with the tm pick dropped", c.name, summary)
 		}
 	}
 }
