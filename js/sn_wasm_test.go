@@ -4,6 +4,9 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
 	"syscall/js"
 	"testing"
 
@@ -169,5 +172,155 @@ func TestSnLedgerUnsignedTxsWasm(t *testing.T) {
 	}
 	if empty := jsSnLedgerUnsignedTxs(sdk.NewSnLedgerUnsignedTxList()); empty.Length() != 0 {
 		t.Fatalf("empty %v", empty)
+	}
+}
+
+const testCtfVault2 = "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
+
+const testCtfBatcher = "0x14174e7c5671ce1499aef9c68d74bebffa58c41a"
+
+// Capture the flag: the site sees each v2 account's pool kind and label, and
+// each pool whose ledger could not be read, which it shows as unavailable
+// beside the others.
+func TestSnLedgerAccountsResultWasmPools(t *testing.T) {
+	accounts := sdk.NewSnLedgerAccountList()
+	accounts.Add(&sdk.SnLedgerAccount{Vault: testCtfVault2, NoId: 1, Kind: sdk.SnLedgerPoolKindPool, Label: "Pool 1", Index: 6, FinalizedRao: 9, ClaimableRao: 9})
+	unavailable := sdk.NewSnLedgerUnavailablePoolList()
+	unavailable.Add(&sdk.SnLedgerUnavailablePool{Vault: testCtfVault2, NoId: 4294967297, Kind: sdk.SnLedgerPoolKindCtf, Label: "Capture the flag"})
+	result := jsSnLedgerAccountsResult(&sdk.SnLedgerAccountsResult{Accounts: accounts, UnavailablePools: unavailable, Partial: true})
+	account := result.Get("Accounts").Index(0)
+	if account.Get("Kind").String() != "pool" || account.Get("Label").String() != "Pool 1" || !result.Get("Partial").Bool() || result.Get("UnavailablePools").Length() != 1 {
+		t.Fatalf("result %v", jsonOf(t, result))
+	}
+	pool := result.Get("UnavailablePools").Index(0)
+	if pool.Get("NoId").Float() != 4294967297 || pool.Get("Kind").String() != "ctf" || pool.Get("Label").String() != "Capture the flag" || pool.Get("Vault").String() != testCtfVault2 {
+		t.Fatalf("unavailable %v", jsonOf(t, pool))
+	}
+	whole := jsSnLedgerAccountsResult(&sdk.SnLedgerAccountsResult{Accounts: accounts})
+	if whole.Get("Partial").Bool() || whole.Get("UnavailablePools").Length() != 0 {
+		t.Fatalf("whole %v", jsonOf(t, whole))
+	}
+}
+
+// The claim batcher is in the site's settings, pinned on mainnet, and read back
+// under any key casing.
+func TestSnChainSettingsWasmClaimBatcherAddress(t *testing.T) {
+	if got := jsSnChainSettings(sdk.DefaultSnChainSettings()).Get("ClaimBatcherAddress").String(); got != testCtfBatcher {
+		t.Fatalf("default batcher %q", got)
+	}
+	batcher := "0xb400000000000000000000000000000000000002"
+	for _, key := range []string{"ClaimBatcherAddress", "claimBatcherAddress", "claim_batcher_address"} {
+		settings, err := parseSnChainSettings(js.ValueOf(map[string]any{key: batcher}))
+		if err != nil || settings.ClaimBatcherAddress != batcher {
+			t.Fatalf("%s: %+v, %v", key, settings, err)
+		}
+	}
+}
+
+// testCtfBatchTx is a batch of a pool's and a capture the flag pool's claims, as
+// URnetworkSnLedgerClaimTransactionsFor answers it.
+func testCtfBatchTx() js.Value {
+	items := sdk.NewSnLedgerClaimItemList()
+	items.Add(&sdk.SnLedgerClaimItem{NoId: 1, Index: 2, RootIndex: 1, Kind: sdk.SnLedgerPoolKindPool, Label: "Pool 1", AmountRao: 700})
+	items.Add(&sdk.SnLedgerClaimItem{NoId: 4294967297, Index: 1, RootIndex: 0, Kind: sdk.SnLedgerPoolKindCtf, Label: "Capture the flag", AmountRao: 48_025_660})
+	txs := sdk.NewSnLedgerUnsignedTxList()
+	txs.Add(&sdk.SnLedgerUnsignedTx{ChainId: 964, To: testCtfBatcher, Data: "0xd77e363f", Value: "0", AmountRao: 48_026_360, Gas: 3_500_000, Vault: testCtfVault2, Batch: true, Items: items})
+	return jsSnLedgerUnsignedTxs(txs).Index(0)
+}
+
+// A batch transaction reaches the site with the accounts it claims.
+func TestSnLedgerUnsignedTxsWasmBatch(t *testing.T) {
+	tx := testCtfBatchTx()
+	if !tx.Get("Batch").Bool() || tx.Get("Vault").String() != testCtfVault2 || tx.Get("To").String() != testCtfBatcher || tx.Get("NoId").Float() != 0 || tx.Get("Items").Length() != 2 {
+		t.Fatalf("batch %v", jsonOf(t, tx))
+	}
+	item := tx.Get("Items").Index(1)
+	if item.Get("NoId").Float() != 4294967297 || item.Get("Kind").String() != "ctf" || item.Get("Label").String() != "Capture the flag" || item.Get("AmountRao").Float() != 48_025_660 || item.Get("RootIndex").Float() != 0 {
+		t.Fatalf("item %v", jsonOf(t, item))
+	}
+}
+
+func testWordHex(v uint64) string {
+	return fmt.Sprintf("%064x", v)
+}
+
+// testClaimedLog is vault2's Claimed event for account (noId, index) paying
+// amount, as a wallet's receipt lists it.
+func testClaimedLog(noId uint64, index uint64, amount uint64) map[string]any {
+	return map[string]any{
+		"address": testCtfVault2,
+		"topics": []any{
+			"0xea86c1b3284a090510a2098141252236197ab9664d20cf7a6d43ea767453bc2b",
+			"0x" + testWordHex(noId), "0x" + testWordHex(index), "0x" + strings.Repeat("01", 32),
+		},
+		"data": "0x" + testWordHex(0) + testWordHex(amount) + testWordHex(amount) + strings.Repeat("0", 24) + testCtfBatcher[2:],
+	}
+}
+
+func testBatcherLog(topic string, words ...string) map[string]any {
+	return map[string]any{"address": testCtfBatcher, "topics": []any{topic}, "data": "0x" + strings.Join(words, "")}
+}
+
+// What a mined batch did for each account, from the receipt as viem and ethers
+// give it: viem's bigints never reach JSON.stringify.
+func TestSnLedgerClaimOutcomesWasm(t *testing.T) {
+	outcomes := snExport(t, "URnetworkSnLedgerClaimOutcomes")
+	logs := []any{
+		testClaimedLog(1, 2, 700),
+		testBatcherLog("0xb0727183796e52c5bb00a257c1eb36d8e94dbee5d6d87e259287e3372ae39ace", testWordHex(0), testWordHex(700)),
+		testBatcherLog("0xf869308b71c9a01aff5b8d5408027b38b9076abea371ee96b2c875d292caf693", testWordHex(1), "969bf728"+strings.Repeat("0", 56)),
+	}
+	viem := js.ValueOf(map[string]any{"status": "success", "logs": logs})
+	viem.Set("gasUsed", js.Global().Get("BigInt").Invoke(3_000_000))
+	viem.Get("logs").Index(0).Set("blockNumber", js.Global().Get("BigInt").Invoke(17))
+	ethers := js.ValueOf(map[string]any{"status": 1, "logs": logs})
+	for name, receipt := range map[string]js.Value{"viem": viem, "ethers": ethers} {
+		value, rejected := awaitApiPromise(t, outcomes.Invoke(testCtfBatchTx(), receipt))
+		if !rejected.IsUndefined() {
+			t.Fatalf("%s: rejected %v", name, rejected)
+		}
+		var got []map[string]any
+		if err := json.Unmarshal([]byte(js.Global().Get("JSON").Call("stringify", value).String()), &got); err != nil || len(got) != 2 {
+			t.Fatalf("%s: outcomes %v, %v", name, got, err)
+		}
+		wantFields(t, name, got[0], map[string]any{"no_id": float64(1), "index": float64(2), "status": "confirmed", "amount_rao": float64(700)})
+		wantFields(t, name, got[1], map[string]any{"no_id": float64(4294967297), "index": float64(1), "status": "failed", "message": "already_claimed: NothingToClaim: another claim paid this account first"})
+	}
+	// a tx in the page's camelCase reads too, and without a receipt it rejects
+	camel := jsonValue(`{"noId":0,"to":"` + testCtfBatcher + `","vault":"` + testCtfVault2 + `","batch":true,"items":[{"noId":1,"index":2}]}`)
+	if _, rejected := awaitApiPromise(t, outcomes.Invoke(camel, ethers)); !rejected.IsUndefined() {
+		t.Fatalf("camelCase rejected %v", rejected)
+	}
+	for name, args := range map[string][]any{"no receipt": {testCtfBatchTx()}, "no transaction": {}, "a receipt without a status": {testCtfBatchTx(), js.ValueOf(map[string]any{"logs": []any{}})}} {
+		if _, rejected := awaitApiPromise(t, outcomes.Invoke(args...)); rejected.IsUndefined() {
+			t.Fatalf("%s: resolved", name)
+		}
+	}
+}
+
+// A client's capture the flag wins from the route's json, as an object or its
+// text, and a refused answer as unavailable.
+func TestSnCtfClientOfWasm(t *testing.T) {
+	ctfClientOf := snExport(t, "URnetworkSnCtfClientOf")
+	answer := `{"as_of":"2026-12-11T22:24:12Z","client_id":"c","epochs":[{"epoch":9,"drawn":true,"root_status":"pending",` +
+		`"providers":{"candidate":true,"reason":null,"country":"is","unit_family":4,"presence":{"present":664,"required":336,"samples":672,"excused":0},"units_in_draw":2,` +
+		`"won":true,"rank":1,"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.028815396","rao":28815396},"pending":false,` +
+		`"coldkey":"0xff05d4de50cdc2b6d6aca7b376cfdb00f65c4243f6799c4eaca182e877faf619","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd"},` +
+		`"extenders":{"candidate":false,"reason":"not_in_role","country":null,"unit_family":null,"presence":null,"units_in_draw":null,` +
+		`"won":false,"rank":null,"slot":null,"pot_share":null,"pending":false,"coldkey":null,"coldkey_ss58":null}}]}`
+	for name, input := range map[string]js.Value{"object": jsonValue(answer), "text": js.ValueOf(answer)} {
+		result := jsonOf(t, ctfClientOf.Invoke(input))
+		latest, ok := result["latest_win"].(map[string]any)
+		if !ok || result["error"] != nil {
+			t.Fatalf("%s: %v", name, result)
+		}
+		wantFields(t, name, latest, map[string]any{"epoch": float64(9), "role": "provider", "country": "is", "rank": float64(1), "amount_rao": float64(76_841_056), "root_status": "pending"})
+	}
+	result := jsonOf(t, ctfClientOf.Invoke(jsonValue(`{"epochs":[]}`)))
+	if errorOf, ok := result["error"].(map[string]any); !ok || errorOf["code"] != sdk.SnErrorCodeCtfUnavailable || result["latest_win"] != nil {
+		t.Fatalf("refused %v", result)
+	}
+	if result = jsonOf(t, ctfClientOf.Invoke()); result["error"] == nil {
+		t.Fatalf("no answer %v", result)
 	}
 }

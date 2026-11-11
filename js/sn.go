@@ -16,8 +16,9 @@ import (
 // DeviceLocal: it reads a coldkey's entitlements straight from the chain
 // with explicit settings and signs claims with the reader's injected EVM
 // wallet, so only the settings, the claims scan, the v2 accounts, the v1 and
-// v2 unsigned transactions and the local address check are exposed, with the
-// claim relay's status and Claim now over what the page reads
+// v2 unsigned transactions, what a mined v2 claim did, and the local address
+// check are exposed, with the claim relay's status and Claim now, and a
+// client's capture the flag wins, over what the page reads
 // (sn_claim_relay.go).
 
 func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
@@ -49,17 +50,18 @@ func jsSnChainSettings(settings *sdk.SnChainSettings) js.Value {
 		urls = append(urls, list.Get(i))
 	}
 	return js.ValueOf(map[string]any{
-		"RpcUrls":            urls,
-		"ChainId":            settings.ChainId,
-		"VaultAddress":       settings.VaultAddress,
-		"Vault2Address":      settings.Vault2Address,
-		"CoordinatorAddress": settings.CoordinatorAddress,
-		"NoId":               settings.NoId,
-		"Netuid":             settings.Netuid,
-		"ExplorerTxUrl":      settings.ExplorerTxUrl,
-		"ArtifactBaseUrl":    settings.ArtifactBaseUrl,
-		"TxType":             settings.TxType,
-		"LookbackEpochs":     settings.LookbackEpochs,
+		"RpcUrls":             urls,
+		"ChainId":             settings.ChainId,
+		"VaultAddress":        settings.VaultAddress,
+		"Vault2Address":       settings.Vault2Address,
+		"ClaimBatcherAddress": settings.ClaimBatcherAddress,
+		"CoordinatorAddress":  settings.CoordinatorAddress,
+		"NoId":                settings.NoId,
+		"Netuid":              settings.Netuid,
+		"ExplorerTxUrl":       settings.ExplorerTxUrl,
+		"ArtifactBaseUrl":     settings.ArtifactBaseUrl,
+		"TxType":              settings.TxType,
+		"LookbackEpochs":      settings.LookbackEpochs,
 	})
 }
 
@@ -117,6 +119,7 @@ func parseSnChainSettings(v js.Value) (*sdk.SnChainSettings, error) {
 	overrides.ChainId = num("chainid")
 	overrides.VaultAddress = str("vaultaddress")
 	overrides.Vault2Address = str("vault2address")
+	overrides.ClaimBatcherAddress = str("claimbatcheraddress")
 	overrides.CoordinatorAddress = str("coordinatoraddress")
 	overrides.NoId = str("noid")
 	overrides.Netuid = num("netuid")
@@ -202,8 +205,10 @@ func jsSnClaimsResult(result *sdk.SnClaimsResult) js.Value {
 	})
 }
 
-// The v2 accounts as a page reads them, with the Go field names. An Error
-// means the balances are unavailable, never zero.
+// The v2 accounts as a page reads them, with the Go field names: one per pool
+// read, with its kind and label, and each pool that could not be read in
+// UnavailablePools, which the page shows as unavailable. An Error means the
+// balances are unavailable, never zero.
 func jsSnLedgerAccountsResult(result *sdk.SnLedgerAccountsResult) js.Value {
 	accounts := []any{}
 	if result.Accounts != nil {
@@ -212,6 +217,8 @@ func jsSnLedgerAccountsResult(result *sdk.SnLedgerAccountsResult) js.Value {
 			accounts = append(accounts, map[string]any{
 				"Vault":        a.Vault,
 				"NoId":         a.NoId,
+				"Kind":         a.Kind,
+				"Label":        a.Label,
 				"Index":        a.Index,
 				"FinalizedRao": a.FinalizedRao,
 				"ClaimableRao": a.ClaimableRao,
@@ -221,10 +228,24 @@ func jsSnLedgerAccountsResult(result *sdk.SnLedgerAccountsResult) js.Value {
 			})
 		}
 	}
+	unavailable := []any{}
+	if result.UnavailablePools != nil {
+		for i := 0; i < result.UnavailablePools.Len(); i++ {
+			pool := result.UnavailablePools.Get(i)
+			unavailable = append(unavailable, map[string]any{
+				"Vault": pool.Vault,
+				"NoId":  pool.NoId,
+				"Kind":  pool.Kind,
+				"Label": pool.Label,
+			})
+		}
+	}
 	return js.ValueOf(map[string]any{
-		"Accounts":    accounts,
-		"ColdkeySs58": result.ColdkeySs58,
-		"Error":       jsSnError(result.Error),
+		"Accounts":         accounts,
+		"UnavailablePools": unavailable,
+		"Partial":          result.Partial,
+		"ColdkeySs58":      result.ColdkeySs58,
+		"Error":            jsSnError(result.Error),
 	})
 }
 
@@ -359,14 +380,18 @@ func jsSnUnsignedTxs(txs *sdk.SnUnsignedTxList) js.Value {
 	return js.ValueOf(out)
 }
 
-// URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao, Gas}]>
+// URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao, Gas, Vault, Batch, Items}]>
 //
-// One v2 claim transaction per account with something to claim, to the
-// settings' Vault2Address, for the reader's wallet to send with Gas as its
-// gas limit: a wallet's own estimate follows vault2's staking-hotkey list,
-// which third parties can lengthen before the claim is included. It rejects
-// with "<code>: <detail>" when there is none: already_claimed, not_claimable,
-// proof_mismatch, chain_not_configured (no Vault2Address), ledger_unavailable.
+// The v2 claim transactions for the reader's wallet to send, in order, each
+// with Gas as its gas limit: with two or more accounts to claim (a pool and the
+// capture the flag pool), one batch to the settings' ClaimBatcherAddress
+// (Batch, NoId 0, Items the accounts); else one claim per account to the
+// settings' Vault2Address, whose Gas covers vault2's staking-hotkey list, which
+// third parties can lengthen before the claim is included. Items lists the
+// accounts a transaction claims: [{NoId, Index, RootIndex, Kind, Label,
+// AmountRao}]. It rejects with "<code>: <detail>" when there is none:
+// already_claimed, not_claimable, proof_mismatch, chain_not_configured (no
+// Vault2Address), ledger_unavailable.
 func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
 		if len(args) < 2 || args[1].Type() != js.TypeString {
@@ -392,6 +417,20 @@ func jsSnLedgerUnsignedTxs(txs *sdk.SnLedgerUnsignedTxList) js.Value {
 	out := []any{}
 	for i := 0; i < txs.Len(); i++ {
 		tx := txs.Get(i)
+		items := []any{}
+		if tx.Items != nil {
+			for j := 0; j < tx.Items.Len(); j++ {
+				item := tx.Items.Get(j)
+				items = append(items, map[string]any{
+					"NoId":      item.NoId,
+					"Index":     item.Index,
+					"RootIndex": item.RootIndex,
+					"Kind":      item.Kind,
+					"Label":     item.Label,
+					"AmountRao": item.AmountRao,
+				})
+			}
+		}
 		out = append(out, map[string]any{
 			"NoId":      tx.NoId,
 			"Index":     tx.Index,
@@ -402,9 +441,115 @@ func jsSnLedgerUnsignedTxs(txs *sdk.SnLedgerUnsignedTxList) js.Value {
 			"Value":     tx.Value,
 			"AmountRao": tx.AmountRao,
 			"Gas":       tx.Gas,
+			"Vault":     tx.Vault,
+			"Batch":     tx.Batch,
+			"Items":     items,
 		})
 	}
 	return js.ValueOf(out)
+}
+
+// URnetworkSnLedgerClaimOutcomes(tx, receipt) -> Promise<[{no_id, index, status, amount_rao, message}]>
+//
+// What a mined transaction of URnetworkSnLedgerClaimTransactionsFor did for
+// each account it claims, in its Items' order: status "confirmed" with the
+// amount_rao vault2's Claimed event paid, "failed" with the sdk's "<code>:
+// <detail>" message (already_claimed is success for the account), or
+// "not_attempted", for an account a batch ran short of gas before, which the
+// page claims again with the transactions built anew. tx is the entry as the
+// export gave it, in any key casing; receipt is the wallet's receipt (JSON-RPC,
+// ethers or viem), of which only status and logs are read. It rejects when
+// either cannot be read.
+func SnLedgerClaimOutcomes(this js.Value, args []js.Value) any {
+	var txRaw []byte
+	var txErr error
+	if 0 < len(args) {
+		txRaw, txErr = jsSnakeJson(args[0])
+	}
+	receiptJson, receiptErr := jsReceiptJson(firstJsArg(args[min(1, len(args)):]))
+	return jsPromise(func(resolve func(any), reject func(error)) {
+		switch {
+		case txErr != nil || txRaw == nil:
+			reject(errors.New("the transaction is required"))
+			return
+		case receiptErr != nil:
+			reject(receiptErr)
+			return
+		}
+		var tx sdk.SnLedgerUnsignedTx
+		if err := json.Unmarshal(txRaw, &tx); err != nil {
+			reject(err)
+			return
+		}
+		outcomes, err := sdk.SnLedgerClaimOutcomesOf(&tx, receiptJson)
+		if err != nil {
+			reject(err)
+			return
+		}
+		resolve(jsJson(outcomes))
+	})
+}
+
+// jsReceiptJson is a wallet's receipt as json of its status and logs only, so
+// the bigints of ethers and viem receipts never reach JSON.stringify.
+func jsReceiptJson(receipt js.Value) (receiptJson string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			receiptJson, err = "", jsThrownError(r)
+		}
+	}()
+	if receipt.Type() != js.TypeObject {
+		return "", errors.New("the receipt is required")
+	}
+	// "0x1", 1, 1n, true or "success", as text, which the sdk reads
+	status := js.Global().Get("String").Invoke(receipt.Get("status")).String()
+	logs := []any{}
+	if list := receipt.Get("logs"); list.Type() == js.TypeObject && list.Get("length").Type() == js.TypeNumber {
+		for i := 0; i < list.Get("length").Int(); i++ {
+			log := list.Index(i)
+			if log.Type() != js.TypeObject {
+				continue
+			}
+			topics := []any{}
+			if t := log.Get("topics"); t.Type() == js.TypeObject && t.Get("length").Type() == js.TypeNumber {
+				for j := 0; j < t.Get("length").Int(); j++ {
+					topics = append(topics, jsString(t.Index(j)))
+				}
+			}
+			logs = append(logs, map[string]any{"address": jsString(log.Get("address")), "topics": topics, "data": jsString(log.Get("data"))})
+		}
+	}
+	raw, err := json.Marshal(map[string]any{"status": status, "logs": logs})
+	return string(raw), err
+}
+
+func jsString(v js.Value) string {
+	if v.Type() == js.TypeString {
+		return v.String()
+	}
+	return ""
+}
+
+// URnetworkSnCtfClientOf(answer) -> { client_id, as_of_millis, epochs, wins, latest_win, error }
+//
+// A client's capture the flag status and wins from GET /sn/ctf/client's json,
+// which the page read with its own client token (an object or its json text).
+// latest_win is the "flag captured" line's, null without a win; with an error
+// the status is unavailable, never "no wins". Synchronous, and no request
+// leaves the wasm.
+func SnCtfClientOf(this js.Value, args []js.Value) any {
+	answer := ""
+	if 0 < len(args) {
+		switch args[0].Type() {
+		case js.TypeString:
+			answer = args[0].String()
+		default:
+			if raw, err := jsSnakeJson(args[0]); err == nil && raw != nil {
+				answer = string(raw)
+			}
+		}
+	}
+	return jsJson(sdk.SnCtfClientOf(answer))
 }
 
 // URnetworkSnGasBalanceFor(settings, address) -> Promise<{Address, Wei, Tao, Error}>
@@ -459,9 +604,12 @@ func registerSnExports() {
 	js.Global().Set("URnetworkSnLedgerAccountsFor", js.FuncOf(SnLedgerAccountsFor))
 	js.Global().Set("URnetworkSnClaimTransactionsFor", js.FuncOf(SnClaimTransactionsFor))
 	js.Global().Set("URnetworkSnLedgerClaimTransactionsFor", js.FuncOf(SnLedgerClaimTransactionsFor))
+	js.Global().Set("URnetworkSnLedgerClaimOutcomes", js.FuncOf(SnLedgerClaimOutcomes))
 	js.Global().Set("URnetworkSnGasBalanceFor", js.FuncOf(SnGasBalanceFor))
 	js.Global().Set("URnetworkFormatAlpha", js.FuncOf(FormatAlpha))
 	// the claim relay over what the page reads (sn_claim_relay.go)
 	js.Global().Set("URnetworkSnClaimStatusOf", js.FuncOf(SnClaimStatusOf))
 	js.Global().Set("URnetworkSnClaimNow", js.FuncOf(SnClaimNow))
+	// capture the flag over what the page reads
+	js.Global().Set("URnetworkSnCtfClientOf", js.FuncOf(SnCtfClientOf))
 }
