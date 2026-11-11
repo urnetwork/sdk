@@ -30,8 +30,8 @@ type ClientInfo struct {
 // The server tells the App Store Mac from the direct-download Mac by it
 // alone: the two builds send the same device type, spec and version.
 const (
-	// the App Store builds for iOS, iPadOS and macOS, and their TestFlight
-	// builds (device types ios and macos)
+	// the App Store builds for iOS, iPadOS and macOS, their beta builds
+	// included (device types ios and macos)
 	ClientDistributionAppStore = connect.ClientDistributionAppStore
 	// the direct-download macOS build: the Developer ID DMG, DIRECT_DOWNLOAD
 	ClientDistributionMacDirect = connect.ClientDistributionMacDirect
