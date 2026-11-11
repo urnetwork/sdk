@@ -1512,11 +1512,17 @@ public interface Raw extends Library {
   Pointer urnet_crypto_asset_icon_key(String a0);
   Pointer urnet_crypto_asset_label(String a0);
   Pointer urnet_crypto_asset_label_key(String a0);
+  Pointer urnet_crypto_asset_lines_for(String a0);
   Pointer urnet_crypto_asset_market(String a0);
   long urnet_crypto_asset_quote_decimals(String a0);
   byte urnet_crypto_asset_sells(String a0, String a1, String a2);
   Pointer urnet_crypto_asset_ticker(String a0);
+  Pointer urnet_crypto_paid_asset(String a0, String a1);
+  Pointer urnet_crypto_payment_event_product(String a0);
   Pointer urnet_crypto_payment_qr_text(String a0, String a1, String a2);
+  byte urnet_crypto_payment_shows_memo(String a0, String a1);
+  Pointer urnet_crypto_payment_steps(String a0, String a1, long a2, long a3);
+  Pointer urnet_crypto_payment_tab_coin(String a0, String a1, String a2);
   Pointer urnet_crypto_payment_tab_id(String a0);
   Pointer urnet_crypto_payment_tabs(String a0, String a1, String a2);
   Pointer urnet_crypto_payment_uri_scheme(String a0);

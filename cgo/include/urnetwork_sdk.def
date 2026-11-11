@@ -380,6 +380,7 @@ EXPORTS
 	urnet_crypto_asset_icon_key
 	urnet_crypto_asset_label
 	urnet_crypto_asset_label_key
+	urnet_crypto_asset_lines_for
 	urnet_crypto_asset_market
 	urnet_crypto_asset_quote_decimals
 	urnet_crypto_asset_sells
@@ -395,7 +396,12 @@ EXPORTS
 	urnet_crypto_invoice_view_controller_start
 	urnet_crypto_invoice_view_controller_start_invoice
 	urnet_crypto_invoice_view_controller_stop
+	urnet_crypto_paid_asset
+	urnet_crypto_payment_event_product
 	urnet_crypto_payment_qr_text
+	urnet_crypto_payment_shows_memo
+	urnet_crypto_payment_steps
+	urnet_crypto_payment_tab_coin
 	urnet_crypto_payment_tab_id
 	urnet_crypto_payment_tabs
 	urnet_crypto_payment_uri_scheme

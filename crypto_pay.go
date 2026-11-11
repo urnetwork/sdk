@@ -23,8 +23,13 @@ import (
 // The coins sit in the payment widget's tabs (CryptoPaymentTabs): USDC on
 // Solana, Zcash and Monero each have a tab of their own, and TAO, Bitcoin, ETH
 // and SOL share the "More coins" tab (mmm/BTCPAY.md §17.6). Every coin's
-// facts (its ticker, label, mark, decimals, market and uri scheme) are in one
-// table, cryptoAssetCoins, which every function here reads.
+// facts (its ticker, label, mark, decimals, market, uri scheme and the lines
+// its invoice shows) are in one table, cryptoAssetCoins, which every function
+// here reads. So are the rules every app once kept a copy of: the coin a tap
+// on a tab chooses (CryptoPaymentTabCoin), when the memo shows
+// (CryptoPaymentShowsMemo), the status steps (CryptoPaymentSteps), the
+// product the purchase events name (CryptoPaymentEventProduct) and the coin a
+// paid year is named by (CryptoPaidAsset).
 
 // The coins (the `asset` of every crypto payment route). Each is also the
 // payment method of its coin; PaymentMethodCard is the other.
@@ -81,6 +86,17 @@ const (
 	CryptoPaymentStatusUnknown = "unknown"
 )
 
+// How one of an invoice's status steps is drawn (CryptoPaymentStep.Progress).
+const (
+	// the payment is past it, whether the server reported the step or the
+	// payment skipped it
+	CryptoPaymentStepDone = "done"
+	// where the payment is now
+	CryptoPaymentStepCurrent = "current"
+	// not reached yet
+	CryptoPaymentStepUpcoming = "upcoming"
+)
+
 // Where a paid invoice goes (CryptoPaymentIntentResult.Delivery).
 const (
 	// the signed-in network
@@ -125,40 +141,57 @@ type cryptoCoin struct {
 	// the scheme of its payment uri, "" for a coin without one: its invoice
 	// shows the address and the amount, and a QR code of the address alone
 	uriScheme string
+	// the lines its invoice shows, each in English with its string id
+	// (CryptoAssetLines): every English is the store's English byte for byte,
+	// which an app that looks a line up by its English needs
+	networkLine          string
+	networkLineKey       string
+	networkWarning       string
+	networkWarningKey    string
+	noPaymentLinkNote    string
+	noPaymentLinkNoteKey string
 }
 
 // The coins this sdk knows, by asset (mmm/BTCPAY.md §17.7 for the four added
 // on 2026-11-10). A coin missing here is never offered and never shown.
 var cryptoAssetCoins = map[string]cryptoCoin{
 	CryptoAssetUsdcSolana: {
-		ticker:        "USDC",
-		label:         "USDC on Solana",
-		labelKey:      "pay_method_usdc_solana",
-		iconKey:       CryptoIconKeyUsdc,
-		decimals:      6,
-		quoteDecimals: 6,
-		market:        "solana",
-		uriScheme:     "solana",
+		ticker:            "USDC",
+		label:             "USDC on Solana",
+		labelKey:          "pay_method_usdc_solana",
+		iconKey:           CryptoIconKeyUsdc,
+		decimals:          6,
+		quoteDecimals:     6,
+		market:            "solana",
+		uriScheme:         "solana",
+		networkLine:       "USDC on Solana",
+		networkLineKey:    "crypto_network_usdc",
+		networkWarning:    "Send USDC on the Solana network only. USDC sent on any other network will not arrive.",
+		networkWarningKey: "usdc_solana_network_only",
 	},
 	CryptoAssetZec: {
-		ticker:        "ZEC",
-		label:         "Zcash",
-		labelKey:      "pay_method_zcash",
-		iconKey:       CryptoIconKeyZec,
-		decimals:      8,
-		quoteDecimals: 6,
-		market:        "zcash",
-		uriScheme:     "zcash",
+		ticker:         "ZEC",
+		label:          "Zcash",
+		labelKey:       "pay_method_zcash",
+		iconKey:        CryptoIconKeyZec,
+		decimals:       8,
+		quoteDecimals:  6,
+		market:         "zcash",
+		uriScheme:      "zcash",
+		networkLine:    "Zcash, shielded",
+		networkLineKey: "crypto_network_zcash",
 	},
 	CryptoAssetXmr: {
-		ticker:        "XMR",
-		label:         "Monero",
-		labelKey:      "pay_method_monero",
-		iconKey:       CryptoIconKeyXmr,
-		decimals:      12,
-		quoteDecimals: 6,
-		market:        "monero",
-		uriScheme:     "monero",
+		ticker:         "XMR",
+		label:          "Monero",
+		labelKey:       "pay_method_monero",
+		iconKey:        CryptoIconKeyXmr,
+		decimals:       12,
+		quoteDecimals:  6,
+		market:         "monero",
+		uriScheme:      "monero",
+		networkLine:    "Monero",
+		networkLineKey: "crypto_network_monero",
 	},
 	CryptoAssetTao: {
 		ticker:        "TAO",
@@ -169,37 +202,55 @@ var cryptoAssetCoins = map[string]cryptoCoin{
 		quoteDecimals: 6,
 		market:        "bittensor",
 		// TAO has no payment uri standard
-		uriScheme: "",
+		uriScheme:            "",
+		networkLine:          "Bittensor network",
+		networkLineKey:       "crypto_network_tao",
+		networkWarning:       "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
+		networkWarningKey:    "crypto_invoice_tao_network_only",
+		noPaymentLinkNote:    "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
+		noPaymentLinkNoteKey: "crypto_invoice_tao_no_payment_link",
 	},
 	CryptoAssetBtc: {
-		ticker:        "BTC",
-		label:         "Bitcoin",
-		labelKey:      "pay_method_bitcoin",
-		iconKey:       CryptoIconKeyBtc,
-		decimals:      8,
-		quoteDecimals: 8,
-		market:        "bitcoin",
-		uriScheme:     "bitcoin",
+		ticker:            "BTC",
+		label:             "Bitcoin",
+		labelKey:          "pay_method_bitcoin",
+		iconKey:           CryptoIconKeyBtc,
+		decimals:          8,
+		quoteDecimals:     8,
+		market:            "bitcoin",
+		uriScheme:         "bitcoin",
+		networkLine:       "Bitcoin network",
+		networkLineKey:    "crypto_network_bitcoin",
+		networkWarning:    "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
+		networkWarningKey: "crypto_invoice_bitcoin_network_only",
 	},
 	CryptoAssetEth: {
-		ticker:        "ETH",
-		label:         "ETH",
-		labelKey:      "pay_method_eth",
-		iconKey:       CryptoIconKeyEth,
-		decimals:      18,
-		quoteDecimals: 6,
-		market:        "ethereum",
-		uriScheme:     "ethereum",
+		ticker:            "ETH",
+		label:             "ETH",
+		labelKey:          "pay_method_eth",
+		iconKey:           CryptoIconKeyEth,
+		decimals:          18,
+		quoteDecimals:     6,
+		market:            "ethereum",
+		uriScheme:         "ethereum",
+		networkLine:       "Ethereum mainnet",
+		networkLineKey:    "crypto_network_eth",
+		networkWarning:    "Send only ETH on Ethereum mainnet to this address. Tokens and ETH on other networks, such as Base or Arbitrum, won't be credited.",
+		networkWarningKey: "crypto_invoice_eth_network_only",
 	},
 	CryptoAssetSol: {
-		ticker:        "SOL",
-		label:         "SOL",
-		labelKey:      "pay_method_sol",
-		iconKey:       CryptoIconKeySol,
-		decimals:      9,
-		quoteDecimals: 6,
-		market:        "solana",
-		uriScheme:     "solana",
+		ticker:            "SOL",
+		label:             "SOL",
+		labelKey:          "pay_method_sol",
+		iconKey:           CryptoIconKeySol,
+		decimals:          9,
+		quoteDecimals:     6,
+		market:            "solana",
+		uriScheme:         "solana",
+		networkLine:       "Solana (native SOL)",
+		networkLineKey:    "crypto_network_sol",
+		networkWarning:    "Send only SOL on the Solana network to this address. Tokens, including USDC, won't be credited.",
+		networkWarningKey: "crypto_invoice_sol_network_only",
 	},
 }
 
@@ -379,12 +430,12 @@ func NewCryptoPaymentTabList() *CryptoPaymentTabList {
 //
 // `assets` are the coins the server would quote now: the balance's
 // SubscriptionBalanceResult.CryptoAssets, or CryptoPaymentAssetsResult.Assets.
-// `unavailableAssets` are the coins that are on but cannot be quoted now:
-// CryptoPaymentAssetsResult.UnavailableAssets, or nil where the surface reads
-// the balance, which lists only the coins that can be paid with now. A coin is
-// available when `assets` names it as selling one of `items`. The coins'
-// per-coin `available` flags say the same thing, by the server's contract, and
-// are not read.
+// `unavailableAssets` are the coins that are on but cannot be quoted now: the
+// balance's SubscriptionBalanceResult.CryptoUnavailableAssets, or
+// CryptoPaymentAssetsResult.UnavailableAssets. Pass the two lists of the same
+// answer; nil for a server that sends no second list. A coin is available when
+// `assets` names it as selling one of `items`. The coins' per-coin `available`
+// flags say the same thing, by the server's contract, and are not read.
 //
 //   - With no coin of either list selling one of the items, there is nothing
 //     to choose: the list is empty, and the surface shows Card alone, as it did
@@ -395,7 +446,9 @@ func NewCryptoPaymentTabList() *CryptoPaymentTabList {
 //   - Every coin of a tab is shown in its place, never hidden. A coin that
 //     cannot be paid with now, for these items, has Available false: its label
 //     is greyed and says "Temporarily unavailable", and its mark, on its tab
-//     and in the sub-selector, is unchanged.
+//     and in the sub-selector, is unchanged. A coin left out of `assets` only
+//     greys out while `unavailableAssets` names it; otherwise its tab, and
+//     More coins with all four of its coins, would vanish instead.
 func CryptoPaymentTabs(assets *CryptoPaymentAssetList, unavailableAssets *CryptoPaymentAssetList, items *StringList) *CryptoPaymentTabList {
 	tabs := NewCryptoPaymentTabList()
 	if items == nil {
@@ -459,6 +512,43 @@ func CryptoPaymentTabId(asset string) string {
 	return ""
 }
 
+// The coin a tap on `tab` chooses (one of the tabs of CryptoPaymentTabs; a tab
+// of several coins, More coins, opens its list with this coin chosen), in this
+// order:
+//   - `lastChosen`, the coin last chosen in this tab while the surface was
+//     up, when it can be paid with now. A surface keeps it per tab: choosing a
+//     coin of another tab since does not replace it, so a tap back on More
+//     coins finds the coin that was chosen there;
+//   - else `remembered`, the method remembered on the device
+//     (CryptoInvoiceViewController.GetPaymentMethod), when it is one of the
+//     tab's coins that can be paid with now;
+//   - else the tab's first coin that can be paid with now (TAO first in More
+//     coins).
+//
+// "" for a tab none of whose coins can be paid with now, which cannot be
+// chosen. A coin of another tab, Card, "" or an asset this sdk does not know
+// never matches `lastChosen` or `remembered`.
+func CryptoPaymentTabCoin(tab *CryptoPaymentTab, lastChosen string, remembered string) string {
+	if tab == nil || tab.Coins == nil {
+		return ""
+	}
+	choosable := []string{}
+	for _, coin := range tab.Coins.values {
+		if coin != nil && coin.Available && isCryptoAsset(coin.Asset) {
+			choosable = append(choosable, coin.Asset)
+		}
+	}
+	for _, asset := range []string{lastChosen, remembered} {
+		if slices.Contains(choosable, asset) {
+			return asset
+		}
+	}
+	if len(choosable) == 0 {
+		return ""
+	}
+	return choosable[0]
+}
+
 // CryptoAssetTicker is the ticker shown beside an amount ("0.072387 XMR"), ""
 // for anything else.
 func CryptoAssetTicker(asset string) string {
@@ -480,6 +570,44 @@ func CryptoAssetLabelKey(asset string) string {
 // The coin's mark, one of the CryptoIconKey* values, "" for anything else.
 func CryptoAssetIconKey(asset string) string {
 	return cryptoAssetCoins[asset].iconKey
+}
+
+// A coin's own lines on its invoice and in the More coins list (mmm/BTCPAY.md
+// §17.6), each in English beside its string id in the shared localizations
+// (localizations/keys). An app shows its own string for the id, and the
+// English when it has none: a coin is never shown with another coin's line.
+// A line whose id is "" is one the coin does not have, and is not shown.
+type CryptoAssetLines struct {
+	// the network the coin is sent on: the invoice's first line, and the line
+	// under the coin in the More coins list. "USDC on Solana"
+	// (crypto_network_usdc), "Zcash, shielded", "Monero", "Bittensor
+	// network", "Bitcoin network", "Ethereum mainnet", "Solana (native SOL)".
+	NetworkLine    string `json:"network_line"`
+	NetworkLineKey string `json:"network_line_key"`
+	// shown with the address: only this coin, sent on this network, is
+	// credited (usdc_solana_network_only, crypto_invoice_tao_network_only,
+	// ...). None for Zcash and Monero, which have one network and no tokens.
+	NetworkWarning    string `json:"network_warning"`
+	NetworkWarningKey string `json:"network_warning_key"`
+	// a coin without a payment link (TAO): the note under its QR code, which
+	// holds the address alone, saying the amount is entered by hand
+	// (crypto_invoice_tao_no_payment_link). None for every other coin.
+	NoPaymentLinkNote    string `json:"no_payment_link_note"`
+	NoPaymentLinkNoteKey string `json:"no_payment_link_note_key"`
+}
+
+// The coin's lines (CryptoAssetLines); every one empty for anything else.
+// Never nil.
+func CryptoAssetLinesFor(asset string) *CryptoAssetLines {
+	coin := cryptoAssetCoins[asset]
+	return &CryptoAssetLines{
+		NetworkLine:          coin.networkLine,
+		NetworkLineKey:       coin.networkLineKey,
+		NetworkWarning:       coin.networkWarning,
+		NetworkWarningKey:    coin.networkWarningKey,
+		NoPaymentLinkNote:    coin.noPaymentLinkNote,
+		NoPaymentLinkNoteKey: coin.noPaymentLinkNoteKey,
+	}
 }
 
 // The decimals of the coin's atomic unit (an invoice's AmountAtomic is its
@@ -505,15 +633,55 @@ func CryptoAssetMarket(asset string) string {
 
 // The scheme of the coin's payment uri: "solana" (Solana Pay) for USDC and
 // SOL, "zcash" (ZIP 321), "monero", "bitcoin" (BIP 21) and "ethereum" (EIP
-// 681). "" for TAO, which has no payment uri, and for anything else.
+// 681). "" for TAO, which has no payment uri, and for anything else. A uri is
+// this scheme and a colon; CheckCryptoPaymentUri is the whole check an app
+// runs before it draws or opens one, the scheme's included.
 func CryptoPaymentUriScheme(asset string) string {
 	return cryptoAssetCoins[asset].uriScheme
 }
 
+// The product a coin's Pro purchase events name (NewPurchase*Event,
+// purchase.*): the year of Pro by the coin's ticker, lowercased:
+// "pro_yearly_usdc", "pro_yearly_zec", "pro_yearly_xmr", "pro_yearly_tao",
+// "pro_yearly_btc", "pro_yearly_eth" and "pro_yearly_sol", the welcome
+// offer's year included (its plan says yearly). The store is the coin's
+// market (CryptoAssetMarket), which USDC and SOL share, so the product is
+// what tells their purchases apart. "" for anything else. The server takes
+// any product token and none of its rollups or dashboards read it.
+func CryptoPaymentEventProduct(asset string) string {
+	ticker := CryptoAssetTicker(asset)
+	if ticker == "" {
+		return ""
+	}
+	return "pro_yearly_" + strings.ToLower(ticker)
+}
+
+// The coin a one-time crypto year was paid with, which Manage subscription
+// names ("Paid with SOL."): `asset`, the server's word (a subscription's
+// crypto_asset in GET /subscription/details, CryptoTerm.Asset), when it is a
+// coin of `market`; else the market's coin as a server before native SOL had
+// it: USDC on Solana for "solana", then Zcash, Monero, TAO, Bitcoin and ETH
+// for theirs. Never the market alone: USDC and SOL share "solana", so a SOL
+// year named by its market would read "USDC on Solana". "" for any other
+// market.
+func CryptoPaidAsset(market string, asset string) string {
+	if isCryptoAsset(asset) && CryptoAssetMarket(asset) == market {
+		return asset
+	}
+	for _, coin := range cryptoAssetOrder {
+		if CryptoAssetMarket(coin) == market {
+			return coin
+		}
+	}
+	return ""
+}
+
 // CryptoWalletSuggestions are the wallets the invoice names as working for a
 // coin ("Wallets that work: ..."), in the order to show them. Every Zcash one
-// sends to a shielded address; the TAO ones are Bittensor's own list. Empty
-// for anything else, and for Bitcoin and ETH, which most wallets send.
+// sends to a shielded address; the TAO ones are Bittensor's own list; the
+// Bitcoin and ETH ones (the owner's, 2026-11-11) are wallets and hardware
+// wallets that send on the coin's own network. The names are product names,
+// never translated. Empty for anything else, which shows no line.
 func CryptoWalletSuggestions(asset string) *StringList {
 	wallets := NewStringList()
 	switch asset {
@@ -525,8 +693,126 @@ func CryptoWalletSuggestions(asset string) *StringList {
 		wallets.addAll("Phantom", "Solflare")
 	case CryptoAssetTao:
 		wallets.addAll("btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem")
+	case CryptoAssetBtc:
+		wallets.addAll("Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor")
+	case CryptoAssetEth:
+		wallets.addAll("MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor")
 	}
 	return wallets
+}
+
+// Whether an invoice shows its memo, with Copy, for a transfer sent by hand:
+// only when the server sent one. The server sends a memo for USDC on Solana
+// alone (its Solana Pay reference, since every USDC invoice pays the one
+// merchant address) and "" for every other coin, SOL included: a SOL invoice
+// has an address of its own, and its reference rides in its payment uri. So
+// a coin never shows an empty memo row, and no app decides by coin. False for
+// a coin this sdk does not know. The invoice shows it only while payable, as
+// it does the amount.
+func CryptoPaymentShowsMemo(asset string, memo string) bool {
+	return isCryptoAsset(asset) && memo != ""
+}
+
+// One of an invoice's status steps (CryptoPaymentSteps).
+type CryptoPaymentStep struct {
+	// the status the step stands for, with its line: CryptoPaymentStatusPending
+	// (crypto_status_waiting, "Waiting for your payment"),
+	// CryptoPaymentStatusSeen (crypto_status_seen, "Payment seen"),
+	// CryptoPaymentStatusConfirming (crypto_status_confirming, "Confirming:
+	// {count} of {required}") or CryptoPaymentStatusPaid (crypto_status_paid,
+	// "Paid. Thank you!")
+	Status string `json:"status"`
+	// one of the CryptoPaymentStep* values
+	Progress string `json:"progress"`
+	// the confirming step's {count} and {required}; 0 for every other step
+	Confirmations         int `json:"confirmations"`
+	ConfirmationsRequired int `json:"confirmations_required"`
+}
+
+type CryptoPaymentStepList struct {
+	exportedList[*CryptoPaymentStep]
+}
+
+func NewCryptoPaymentStepList() *CryptoPaymentStepList {
+	return &CryptoPaymentStepList{
+		exportedList: *newExportedList[*CryptoPaymentStep](),
+	}
+}
+
+// The status steps an invoice in `asset` shows at `status`, in order, each
+// with how it is drawn (CryptoInvoiceState.Steps reads the invoice's own).
+//
+// USDC on Solana has two steps, pending and paid: its server sees confirmed
+// transfers only, so it waits until it is paid. Every other coin has four:
+// pending, seen (part of the amount arrived), confirming (the whole amount
+// arrived and collects its confirmations) and paid. The confirming step is
+// listed only while the confirmations required are known (more than 0).
+//
+// A payment may skip steps: a whole payment never reports seen, and SOL, TAO
+// and ETH, which the server sees only once final, usually go from pending
+// straight to paid. A step the payment is past is drawn done
+// (CryptoPaymentStepDone), whether the server reported it or not; once paid
+// every step is done. A done confirming step reads its full count ({required}
+// of {required}), the current one the payment's confirmations (at most
+// {required}), an upcoming one 0.
+//
+// Pending and expired (nothing received) are at the first step. No steps for
+// any other status: "" (a resumed invoice before its first poll), review (the
+// review copy stands instead), unknown, or a status this sdk does not know;
+// and none for an asset this sdk does not know. Whether a surface shows the
+// steps of an expired quote is the surface's.
+func CryptoPaymentSteps(asset string, status string, confirmations int, confirmationsRequired int) *CryptoPaymentStepList {
+	steps := NewCryptoPaymentStepList()
+	if !isCryptoAsset(asset) {
+		return steps
+	}
+	statuses := []string{CryptoPaymentStatusPending, CryptoPaymentStatusPaid}
+	if asset != CryptoAssetUsdcSolana {
+		statuses = []string{CryptoPaymentStatusPending, CryptoPaymentStatusSeen}
+		if 0 < confirmationsRequired {
+			statuses = append(statuses, CryptoPaymentStatusConfirming)
+		}
+		statuses = append(statuses, CryptoPaymentStatusPaid)
+	}
+	var current int
+	switch status {
+	case CryptoPaymentStatusPending, CryptoPaymentStatusExpired:
+		current = 0
+	case CryptoPaymentStatusSeen, CryptoPaymentStatusConfirming, CryptoPaymentStatusPaid:
+		current = slices.Index(statuses, status)
+		if current < 0 {
+			// confirming with no confirming step listed: past what arrived,
+			// short of paid
+			current = len(statuses) - 2
+		}
+	default:
+		return steps
+	}
+	paid := status == CryptoPaymentStatusPaid
+	for i, stepStatus := range statuses {
+		step := &CryptoPaymentStep{
+			Status: stepStatus,
+		}
+		switch {
+		case paid || i < current:
+			step.Progress = CryptoPaymentStepDone
+		case i == current:
+			step.Progress = CryptoPaymentStepCurrent
+		default:
+			step.Progress = CryptoPaymentStepUpcoming
+		}
+		if stepStatus == CryptoPaymentStatusConfirming {
+			step.ConfirmationsRequired = confirmationsRequired
+			switch step.Progress {
+			case CryptoPaymentStepDone:
+				step.Confirmations = confirmationsRequired
+			case CryptoPaymentStepCurrent:
+				step.Confirmations = min(max(confirmations, 0), confirmationsRequired)
+			}
+		}
+		steps.Add(step)
+	}
+	return steps
 }
 
 // A uri query's parameter, its name percent-decoded.
@@ -542,7 +828,8 @@ type cryptoPaymentUriParam struct {
 // coin that pays exactly `address`, the address the invoice shows. An app
 // refuses to render or open a uri that fails it: the QR code and the "Open in
 // wallet" button must never pay somewhere other than the address on screen,
-// nor in another coin.
+// nor in another coin. It is the whole gate: an app keeps no scheme list or
+// pre-check of its own.
 //
 // The uri is the server's `<scheme>:<address>?<query>`, with the coin's
 // scheme (CryptoPaymentUriScheme). The scheme compares without case, as RFC

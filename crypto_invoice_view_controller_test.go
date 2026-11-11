@@ -607,6 +607,77 @@ func TestCryptoInvoiceTaoQrCodeIsTheAddressAlone(t *testing.T) {
 	connect.AssertEqual(t, withUri.saved().Uri, "")
 }
 
+// The state's steps follow its status, as CryptoPaymentSteps draws them: a TAO
+// invoice the server sees only once final goes from pending straight to paid,
+// and every step it skipped is drawn done, confirming at its full count; a
+// resumed invoice has none until its first poll answers. TAO has no memo
+// (the server sends ""), so its invoice shows no memo row; USDC's reference
+// shows.
+func TestCryptoInvoiceStepsFollowTheStatus(t *testing.T) {
+	steps := func(state *CryptoInvoiceState) []CryptoPaymentStep {
+		if state.Steps == nil {
+			t.Fatal("no step list; the bindings need an empty one")
+		}
+		out := []CryptoPaymentStep{}
+		for i := 0; i < state.Steps.Len(); i += 1 {
+			out = append(out, *state.Steps.Get(i))
+		}
+		return out
+	}
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	harness.api.intentResult = cryptoInvoiceTestTaoIntent(harness.clock.now)
+	harness.api.statusResult = harness.api.intentResult.Status
+	harness.vc.Start()
+	harness.vc.step()
+	harness.vc.StartInvoice(CryptoAssetTao, PlanYearly, "", "")
+	harness.vc.step()
+	state := harness.vc.GetState()
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepCurrent},
+		{Status: CryptoPaymentStatusSeen, Progress: CryptoPaymentStepUpcoming},
+		{Status: CryptoPaymentStatusConfirming, Progress: CryptoPaymentStepUpcoming, ConfirmationsRequired: 1},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepUpcoming},
+	})
+	connect.AssertEqual(t, state.Memo, "")
+	connect.AssertEqual(t, CryptoPaymentShowsMemo(state.Asset, state.Memo), false)
+
+	// resumed after a relaunch: no status, no steps
+	resumed := harness.newController()
+	if !resumed.Resume() {
+		t.Fatal("the tao invoice did not resume")
+	}
+	state = resumed.GetState()
+	connect.AssertEqual(t, state.Status, "")
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{})
+
+	// final, and paid in one poll
+	paid := cryptoInvoiceTestTaoStatus("0.185774", "185774000", harness.clock.now.Add(cryptoInvoiceTestQuoteTtl))
+	paid.Status = CryptoPaymentStatusPaid
+	paid.Received, paid.ReceivedAtomic = paid.Amount, paid.AmountAtomic
+	paid.Remaining, paid.RemainingAtomic = "0", "0"
+	harness.api.statusResult = paid
+	harness.advance(5 * time.Second)
+	state = harness.vc.GetState()
+	connect.AssertEqual(t, state.Phase, CryptoInvoicePhasePaid)
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepDone},
+		{Status: CryptoPaymentStatusSeen, Progress: CryptoPaymentStepDone},
+		{Status: CryptoPaymentStatusConfirming, Progress: CryptoPaymentStepDone, Confirmations: 1, ConfirmationsRequired: 1},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepDone},
+	})
+
+	usdc := newCryptoInvoiceHarness(t, t.TempDir())
+	usdc.api.intentResult = cryptoInvoiceTestCodeIntent(cryptoPayTestIntentId, cryptoPayTestStatusToken, usdc.clock.now)
+	usdc.vc.StartInvoice(CryptoAssetUsdcSolana, "", StripeItemData1Tib, "")
+	state = usdc.vc.GetState()
+	connect.AssertEqual(t, state.Memo, cryptoInvoiceTestUsdcMemo)
+	connect.AssertEqual(t, CryptoPaymentShowsMemo(state.Asset, state.Memo), true)
+	connect.AssertEqual(t, steps(state), []CryptoPaymentStep{
+		{Status: CryptoPaymentStatusPending, Progress: CryptoPaymentStepCurrent},
+		{Status: CryptoPaymentStatusPaid, Progress: CryptoPaymentStepUpcoming},
+	})
+}
+
 // The QR code of a coin with a payment uri is the uri, and goes with it: a
 // bitcoin invoice shows its BIP 21 uri, and a usdc invoice whose uri names no
 // token (it would ask for SOL) shows neither a uri nor a QR code.
