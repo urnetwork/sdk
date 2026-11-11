@@ -48,12 +48,14 @@ func TestMobileProfilesSpendTargetInSharedOwners(t *testing.T) {
 					share = client
 				}
 				want := max(target/16, share/10) // target-scaled floor or available client share
-				if r.ReceiveQueueBudget.TotalByteCount() != want || r.PackQueueBudget.TotalByteCount() != want {
-					t.Fatalf("active=%t target=%d receive/Pack did not scale: %d/%d, want %d", active, target,
-						r.ReceiveQueueBudget.TotalByteCount(), r.PackQueueBudget.TotalByteCount(), want)
+				physical := (7*want + 1) / 2
+				if r.ReceiveQueueBudget.TotalByteCount() != physical || r.PackQueueBudget.TotalByteCount() != want || r.ReceiveHeadRecoveryBudget.TotalByteCount() != want ||
+					r.AdvertisedReceiveWindowBudgetScaleNumerator != 2 || r.AdvertisedReceiveWindowBudgetScaleDenominator != 7 {
+					t.Fatalf("active=%t target=%d physical RX/Head/Pack did not preserve distinct units: %d/%d/%d, want %d/%d/%d", active, target,
+						r.ReceiveQueueBudget.TotalByteCount(), r.ReceiveHeadRecoveryBudget.TotalByteCount(), r.PackQueueBudget.TotalByteCount(), physical, want, want)
 				}
 				if r.ReceiveQueueMaxByteCount < want {
-					t.Fatalf("sequence advertisement undercuts shared receive budget: %d < %d", r.ReceiveQueueMaxByteCount, want)
+					t.Fatalf("sequence advertisement undercuts the unchanged logical grant: %d < %d", r.ReceiveQueueMaxByteCount, want)
 				}
 			}
 			packet, large := messagePoolMemoryTargetsForPlatform(target, true)
