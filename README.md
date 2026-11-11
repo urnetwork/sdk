@@ -33,11 +33,11 @@ If you're seeing an error similar to `go: error reading go.mod: missing module d
 
 # Go setup
 
-Use the official Go 1.27.3 distribution for your host platform. Confirm the selected compiler before building the SDK:
+Use the official Go 1.27.4 distribution for your host platform. Confirm the selected compiler before building the SDK:
 
 ```sh
 go version
-# go version go1.27.3 <host OS>/<host architecture>
+# go version go1.27.4 <host OS>/<host architecture>
 ```
 
 Use the mobile tools pinned by the build recipes.
