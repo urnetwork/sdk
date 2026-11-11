@@ -106,6 +106,12 @@ func (self *DeviceLocal) SnClaimNow(coldkeySs58 string, callback SnClaimNowCallb
 	self.snDevice().SnClaimNow(coldkeySs58, callback)
 }
 
+// capture the flag
+
+func (self *DeviceLocal) SnCtfClient(callback SnCtfClientCallback) {
+	self.snDevice().SnCtfClient(callback)
+}
+
 // head spot
 
 func (self *DeviceLocal) GetSnClientKey() string {
@@ -206,6 +212,12 @@ func (self *DeviceRemote) SnClaimStatus(callback SnClaimStatusCallback) {
 
 func (self *DeviceRemote) SnClaimNow(coldkeySs58 string, callback SnClaimNowCallback) {
 	self.snDevice().SnClaimNow(coldkeySs58, callback)
+}
+
+// capture the flag
+
+func (self *DeviceRemote) SnCtfClient(callback SnCtfClientCallback) {
+	self.snDevice().SnCtfClient(callback)
 }
 
 // GetSnClientKey asks the DeviceLocal for the client public key; "" when
