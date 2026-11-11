@@ -85,6 +85,8 @@ test("provider status declarations match WASM runtime keys", () => {
     "getProviderConnected",
     "getClientLimitStatus",
     "addClientLimitStatusChangeListener",
+    "retryClientLimit",
+    "retryClientLimitAfterChange",
     "getProviderPacketStats",
     "addProviderPacketStatsChangeListener",
     "getProviderEgressContractDetails",
@@ -98,6 +100,7 @@ test("provider status declarations match WASM runtime keys", () => {
 
   for (const field of [
     "retryTime",
+    "prompt",
     "contractId",
     "contractUsedByteCount",
     "contractByteCount",
@@ -403,4 +406,39 @@ test("logout cause declarations match WASM runtime keys", () => {
   assert.match(source("../device_remote.go"), /m\["getAuthLogoutCause"\] = js\.FuncOf\([\s\S]*?device\.GetAuthLogoutCause\(\)/);
   const sessionError = source("../src/generated/types.ts").match(/export interface ClientSessionError \{[\s\S]*?\n}/)?.[0] || "";
   assert.match(sessionError, /\bsession_revoked: boolean;/);
+});
+
+// The dns resolver surface (ADBLOCK3RD E3, C5, I3): the selection the device
+// derives the lists from, the resolver status and the blocked-lookups count,
+// declared in TypeScript as the WASM bindings in device_remote.go map them.
+test("dns resolver declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const deviceRuntime = source("../device_remote.go");
+
+  for (const method of [
+    "getDnsResolverSettings",
+    "setDnsResolverSettings",
+    "getDefaultDnsResolverSettings",
+    "addDnsResolverSettingsChangeListener",
+    "getDnsResolverStatus",
+    "addDnsResolverStatusChangeListener",
+    "getDnsBlockedCount",
+  ]) {
+    assert.match(declarations, new RegExp(`\\b${method}\\s*\\(`), method);
+    assert.match(deviceRuntime, new RegExp(`m\\["${method}"\\]`), method);
+  }
+
+  const settings = declarations.match(/export interface DnsResolverSettings\b[\s\S]*?\n}/)?.[0] || "";
+  for (const field of ["presetId", "presetPersonalId"]) {
+    assert.match(settings, new RegExp(`\\b${field}\\s*:`), field);
+    assert.match(deviceRuntime, new RegExp(`"${field}"\\s*:`), field);
+    // the page's object is read back with the same key
+    assert.match(deviceRuntime, new RegExp(`str\\("${field}"\\)`), field);
+  }
+
+  const status = declarations.match(/export interface DnsResolverStatus\b[\s\S]*?\n}/)?.[0] || "";
+  for (const field of ["state", "verification", "presetId", "sinceTime", "blockedCount"]) {
+    assert.match(status, new RegExp(`\\b${field}\\s*:`), field);
+    assert.match(deviceRuntime, new RegExp(`"${field}"\\s*:\\s*`), field);
+  }
 });

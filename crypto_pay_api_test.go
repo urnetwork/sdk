@@ -140,6 +140,95 @@ func TestGetCryptoPaymentAssets(t *testing.T) {
 	connect.AssertEqual(t, stringListValues(PaymentMethods(assets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana, CryptoAssetXmr})
 }
 
+// The server's wire since 2026-11-10: every listed coin says available, and a
+// coin that is on but whose quotes are refused for now (its wallet scanner
+// lagging) is only in unavailable_assets. The sdk reads assets alone, so such
+// a coin is never offered (zec was, while every zec quote was refused).
+func TestGetCryptoPaymentAssetsNeverOffersATemporarilyUnavailableCoin(t *testing.T) {
+	api, _ := newCryptoPayTestApi(t, map[string]string{
+		"/pay/crypto/assets": `{"assets": [
+			{"asset": "usdc_solana", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 3600, "available": true},
+			{"asset": "xmr", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": true}
+		], "unavailable_assets": [
+			{"asset": "zec", "plans": ["yearly", "yearly_onboarding"], "items": ["data_1tib", "data_10tib"],
+			 "confirmations_required": 10, "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "scanner_lagging"}
+		]}`,
+	})
+	callback, c := connect.NewBlockingApiCallback[*CryptoPaymentAssetsResult](context.Background())
+	api.GetCryptoPaymentAssets(callback)
+	r := awaitApiResult(t, c, "GetCryptoPaymentAssets never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	assets := r.Result.Assets
+	if assets == nil || assets.Len() != 2 {
+		t.Fatalf("assets = %+v", assets)
+	}
+	items := NewStringList()
+	items.Add(PlanYearly)
+	items.Add(StripeItemData1Tib)
+	connect.AssertEqual(t, stringListValues(PaymentMethods(assets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana, CryptoAssetXmr})
+	connect.AssertEqual(t, CryptoAssetSells(assets, CryptoAssetZec, PlanYearly), false)
+}
+
+// The route's unavailable_assets decode, so an app that reads the route shows
+// those coins greyed in their tabs, as ur.io does: zec lagging, and Bitcoin
+// and ETH waiting for their chain source, beside TAO and SOL that can be paid
+// with.
+func TestGetCryptoPaymentAssetsReadsTheUnavailableCoins(t *testing.T) {
+	api, _ := newCryptoPayTestApi(t, map[string]string{
+		"/pay/crypto/assets": `{"assets": [
+			{"asset": "usdc_solana", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 3600, "available": true},
+			{"asset": "tao", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": true},
+			{"asset": "sol", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": true}
+		], "unavailable_assets": [
+			{"asset": "zec", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 10, "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "scanner_lagging"},
+			{"asset": "btc", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "network_height_unknown"},
+			{"asset": "eth", "plans": ["yearly"], "items": ["data_1tib"],
+			 "confirmations_required": 1, "quote_ttl_seconds": 1800, "available": false, "unavailable_reason": "network_height_unknown"}
+		]}`,
+	})
+	callback, c := connect.NewBlockingApiCallback[*CryptoPaymentAssetsResult](context.Background())
+	api.GetCryptoPaymentAssets(callback)
+	r := awaitApiResult(t, c, "GetCryptoPaymentAssets never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if r.Result.UnavailableAssets == nil || r.Result.UnavailableAssets.Len() != 3 {
+		t.Fatalf("unavailable assets = %+v", r.Result.UnavailableAssets)
+	}
+	connect.AssertEqual(t, r.Result.UnavailableAssets.Get(1).Asset, CryptoAssetBtc)
+	items := NewStringList()
+	items.Add(PlanYearly)
+	connect.AssertEqual(t, stringListValues(PaymentMethods(r.Result.Assets, items)), []string{PaymentMethodCard, CryptoAssetUsdcSolana, CryptoAssetTao, CryptoAssetSol})
+
+	tabs := CryptoPaymentTabs(r.Result.Assets, r.Result.UnavailableAssets, items)
+	ids := []string{}
+	for i := 0; i < tabs.Len(); i += 1 {
+		ids = append(ids, tabs.Get(i).Id)
+	}
+	connect.AssertEqual(t, ids, []string{CryptoAssetUsdcSolana, CryptoAssetZec, CryptoAssetXmr, CryptoPaymentTabMoreCoins})
+	connect.AssertEqual(t, tabs.Get(1).Available, false)
+	moreCoins := tabs.Get(3)
+	connect.AssertEqual(t, moreCoins.Available, true)
+	// the four marks, whatever can be paid with
+	connect.AssertEqual(t, stringListValues(moreCoins.IconKeys), []string{CryptoIconKeyTao, CryptoIconKeyBtc, CryptoIconKeyEth, CryptoIconKeySol})
+	available := []string{}
+	for i := 0; i < moreCoins.Coins.Len(); i += 1 {
+		if coin := moreCoins.Coins.Get(i); coin.Available {
+			available = append(available, coin.Asset)
+		}
+	}
+	connect.AssertEqual(t, available, []string{CryptoAssetTao, CryptoAssetSol})
+}
+
 // The signed-in intent carries the network's credential and the plan, never
 // a price; the answer decodes whole, the nested status included.
 func TestCreateCryptoPaymentIntent(t *testing.T) {

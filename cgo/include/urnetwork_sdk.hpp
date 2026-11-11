@@ -286,6 +286,13 @@ inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
 inline constexpr int64_t ClientEventMaxAttempts = 3;
+inline constexpr const char* ClientLimitNoticeNone = "";
+inline constexpr const char* ClientLimitNoticePost = "post";
+inline constexpr const char* ClientLimitNoticeRemove = "remove";
+inline constexpr const char* ClientLimitNoticeUpdate = "update";
+inline constexpr const char* ClientLimitPromptNone = "";
+inline constexpr const char* ClientLimitPromptRemoveClient = "remove_client";
+inline constexpr const char* ClientLimitPromptUpgrade = "upgrade";
 inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
 inline constexpr const char* ClientLimitStatusNone = "";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
@@ -297,9 +304,20 @@ inline constexpr const char* ControlDohErrorHttpsRequired = "control_doh_error_h
 inline constexpr const char* ControlDohErrorIpRequired = "control_doh_error_ip_required";
 inline constexpr const char* ControlDohErrorTooMany = "control_doh_error_too_many";
 inline constexpr const char* ControlDohErrorUrlInvalid = "control_doh_error_url_invalid";
+inline constexpr const char* CryptoAssetBtc = "btc";
+inline constexpr const char* CryptoAssetEth = "eth";
+inline constexpr const char* CryptoAssetSol = "sol";
+inline constexpr const char* CryptoAssetTao = "tao";
 inline constexpr const char* CryptoAssetUsdcSolana = "usdc_solana";
 inline constexpr const char* CryptoAssetXmr = "xmr";
 inline constexpr const char* CryptoAssetZec = "zec";
+inline constexpr const char* CryptoIconKeyBtc = "coin_btc";
+inline constexpr const char* CryptoIconKeyEth = "coin_eth";
+inline constexpr const char* CryptoIconKeySol = "coin_sol";
+inline constexpr const char* CryptoIconKeyTao = "coin_tao";
+inline constexpr const char* CryptoIconKeyUsdc = "coin_usdc";
+inline constexpr const char* CryptoIconKeyXmr = "coin_xmr";
+inline constexpr const char* CryptoIconKeyZec = "coin_zec";
 inline constexpr const char* CryptoInvoicePhaseFailed = "failed";
 inline constexpr const char* CryptoInvoicePhaseNone = "none";
 inline constexpr const char* CryptoInvoicePhaseOpen = "open";
@@ -315,12 +333,39 @@ inline constexpr const char* CryptoPaymentStatusPending = "pending";
 inline constexpr const char* CryptoPaymentStatusReview = "review";
 inline constexpr const char* CryptoPaymentStatusSeen = "seen";
 inline constexpr const char* CryptoPaymentStatusUnknown = "unknown";
+inline constexpr const char* CryptoPaymentTabMoreCoins = "more_coins";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
+inline constexpr const char* DnsPickKindCustom = "custom";
+inline constexpr const char* DnsPickKindDefault = "default";
+inline constexpr const char* DnsPickKindPreset = "preset";
+inline constexpr const char* DnsPickKindRegional = "regional";
+inline constexpr const char* DnsPresetErrorPersonalIdInvalid = "dns_preset_error_personal_id_invalid";
+inline constexpr const char* DnsPresetErrorPersonalIdNotAccepted = "dns_preset_error_personal_id_not_accepted";
+inline constexpr const char* DnsPresetErrorPersonalIdOtherProvider = "dns_preset_error_personal_id_other_provider";
+inline constexpr const char* DnsPresetErrorPersonalIdRequired = "dns_preset_error_personal_id_required";
+inline constexpr const char* DnsPresetErrorUnknown = "dns_preset_error_unknown";
+inline constexpr const char* DnsPresetGroupAdblock = "adblock";
+inline constexpr const char* DnsPresetGroupFamily = "family";
+inline constexpr const char* DnsPresetGroupPersonal = "personal";
+inline constexpr const char* DnsPresetGroupSecurity = "security";
+inline constexpr const char* DnsPresetGroupUnfiltered = "unfiltered";
+inline constexpr const char* DnsPresetIdDefault = "default";
+inline constexpr const char* DnsPresetIdRegionalPrefix = "regional-";
+inline constexpr const char* DnsResolverStateFailedOver = "failedOver";
+inline constexpr const char* DnsResolverStateFailing = "failing";
+inline constexpr const char* DnsResolverStateOk = "ok";
+inline constexpr const char* DnsResolverStateUnknown = "unknown";
+inline constexpr const char* DnsResolverVerificationConfirmed = "confirmed";
+inline constexpr const char* DnsResolverVerificationMalformed = "malformed";
+inline constexpr const char* DnsResolverVerificationNone = "none";
+inline constexpr const char* DnsResolverVerificationNotFiltering = "notFiltering";
+inline constexpr const char* DnsResolverVerificationRejected = "rejected";
+inline constexpr const char* DnsResolverVerificationUnconfirmed = "unconfirmed";
 inline constexpr int64_t EmojiTagMaxCount = 6;
 inline constexpr const char* EmojiTagReasonEmpty = "empty";
 inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
@@ -347,6 +392,9 @@ inline constexpr const char* EventPurchaseFailed = "purchase.failed";
 inline constexpr const char* EventPurchaseStarted = "purchase.started";
 inline constexpr const char* EventSignupOptoutChanged = "signup.optout_changed";
 inline constexpr const char* EventStoreApple = "apple";
+inline constexpr const char* EventStoreBitcoin = "bitcoin";
+inline constexpr const char* EventStoreBittensor = "bittensor";
+inline constexpr const char* EventStoreEthereum = "ethereum";
 inline constexpr const char* EventStoreMonero = "monero";
 inline constexpr const char* EventStorePlay = "play";
 inline constexpr const char* EventStoreSolana = "solana";
@@ -443,6 +491,12 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr int64_t LowMemoryDeviceTargetByteCount = 33554432;
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr const char* ManageDevicesErrorLoadFailed = "load_failed";
+inline constexpr const char* ManageDevicesErrorNone = "";
+inline constexpr const char* ManageDevicesErrorRemoveFailed = "remove_failed";
+inline constexpr const char* ManageDevicesErrorSignInRequired = "sign_in_required";
+inline constexpr const char* ManagedDeviceKindDevice = "device";
+inline constexpr const char* ManagedDeviceKindProxy = "proxy";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
@@ -524,6 +578,18 @@ inline constexpr const char* ProviderStatusReasonReliabilityLow = "reliability_l
 inline constexpr const char* ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up";
 inline constexpr const char* ProviderStatusReasonSlow = "slow";
 inline constexpr const char* ProviderStatusReasonSpeedTestMissing = "speed_test_missing";
+inline constexpr const char* ProxyExitStateAssigned = "assigned";
+inline constexpr const char* ProxyExitStateNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonCap = "cap";
+inline constexpr const char* ProxyExitStateReasonCollision = "collision";
+inline constexpr const char* ProxyExitStateReasonManual = "manual";
+inline constexpr const char* ProxyExitStateReasonNoSupply = "no_supply";
+inline constexpr const char* ProxyExitStateReasonOffline = "offline";
+inline constexpr const char* ProxyExitStateReasonUnreachable = "unreachable";
+inline constexpr const char* ProxyExitStateReasonVerdict = "verdict";
+inline constexpr const char* ProxyExitStateReplacing = "replacing";
+inline constexpr const char* ProxyUniqueExitReplaceAuto = "auto";
+inline constexpr const char* ProxyUniqueExitReplaceManual = "manual";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
@@ -730,6 +796,7 @@ class BittensorLocalKeyFlow;
 class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
+class ClientLimitNoticeTracker;
 class ClientRefreshIntegrityNotice;
 class ClientSessionAction;
 class ClientSessionActionList;
@@ -758,6 +825,7 @@ class LocalStateLocationReadResult;
 class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
+class ManageDevicesViewController;
 class NetworkNameValidationViewController;
 class NetworkSessionInfo;
 class NetworkSessionInfoList;
@@ -782,6 +850,7 @@ class SnFleetClaim;
 class SnFleetDevice;
 class Socket;
 class SubscriptionBalanceViewController;
+class SubscriptionProTracker;
 class Tunnel;
 class WalletViewController;
 class WebsocketDeviceRpcDialer;
@@ -830,6 +899,7 @@ struct ProxyConfig;
 struct AuthNetworkClientArgs;
 struct AuthNetworkClientError;
 struct ProxyAuthResult;
+struct ProxyExit;
 struct WgConfig;
 struct ProxyConfigResult;
 struct AuthNetworkClientResult;
@@ -900,10 +970,12 @@ struct CreateDataCryptoPaymentIntentArgs;
 struct CryptoInvoiceState;
 struct CryptoPaymentAsset;
 struct CryptoPaymentAssetsResult;
+struct CryptoPaymentCoin;
 struct CryptoPaymentError;
 struct CryptoPaymentStatusResult;
 struct CryptoPaymentIntentResult;
 struct CryptoPaymentStatusArgs;
+struct CryptoPaymentTab;
 struct CryptoTerm;
 struct DeleteApiKeyArgs;
 struct DeleteApiKeyResult;
@@ -914,7 +986,13 @@ struct DeviceRemoteAddress;
 struct DeviceSetNameArgs;
 struct DeviceSetNameError;
 struct DeviceSetNameResult;
+struct DnsPreset;
+struct DnsPick;
+struct DnsPresetProvider;
 struct DnsResolverSettings;
+struct DnsResolverStatus;
+struct DnsSelectionSummary;
+struct DnsStatusSummary;
 struct EmojiTagValidation;
 struct Exit;
 struct ExperimentAssignment;
@@ -982,6 +1060,8 @@ struct LocationGroupResult;
 struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
+struct ManageDevicesSnapshot;
+struct ManagedDevice;
 struct MemoryStats;
 struct MemoryTeardownObservation;
 struct NetExtender;
@@ -1068,6 +1148,9 @@ struct RemoveWalletError;
 struct RemoveWalletResult;
 struct RevokeNetworkSessionArgs;
 struct RevokeOtherNetworkSessionsArgs;
+struct RotateProxyExitArgs;
+struct RotateProxyExitError;
+struct RotateProxyExitResult;
 struct SetEmojiTagArgs;
 struct SetEmojiTagError;
 struct SetEmojiTagResult;
@@ -1218,7 +1301,12 @@ using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using CryptoPaymentAssetList = std::vector<CryptoPaymentAsset>;
+using CryptoPaymentCoinList = std::vector<CryptoPaymentCoin>;
+using CryptoPaymentTabList = std::vector<CryptoPaymentTab>;
 using DestinationExitList = std::vector<DestinationExit>;
+using DnsPickList = std::vector<DnsPick>;
+using DnsPresetList = std::vector<DnsPreset>;
+using DnsPresetProviderList = std::vector<DnsPresetProvider>;
 using ExitList = std::vector<Exit>;
 using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
 using ExtenderInfoList = std::vector<ExtenderInfo>;
@@ -1233,6 +1321,7 @@ using LocationDeviceResultList = std::vector<LocationDeviceResult>;
 using LocationGroupResultList = std::vector<LocationGroupResult>;
 using LocationResultList = std::vector<LocationResult>;
 using LogFileInfoList = std::vector<LogFileInfo>;
+using ManagedDeviceList = std::vector<ManagedDevice>;
 using MultiHopIdList = std::vector<IdList>;
 using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
 using NetworkClientInfoList = std::vector<NetworkClientInfo>;
@@ -1526,6 +1615,8 @@ struct ProxyConfig {
 	bool http_require_auth{};
 	bool https_require_auth{};
 	bool enable_wg{};
+	std::optional<bool> unique_exit;
+	std::optional<std::string> unique_exit_replace;
 	std::optional<ProxyDeviceState> initial_device_state;
 };
 
@@ -1545,12 +1636,25 @@ struct AuthNetworkClientArgs {
 struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
 	std::optional<bool> upgrade_required;
+	std::optional<bool> no_unique_supply;
 	std::string message{};
+	std::optional<std::string> client_limit_prompt;
 };
 
 struct ProxyAuthResult {
 	std::string username{};
 	std::string password{};
+};
+
+struct ProxyExit {
+	std::optional<std::string> exit_id;
+	std::optional<std::string> country_code;
+	std::optional<std::string> region;
+	std::optional<std::string> city;
+	std::optional<std::string> exit_since;
+	std::string state{};
+	std::optional<std::string> state_reason;
+	std::string replace_mode{};
 };
 
 struct WgConfig {
@@ -1582,6 +1686,7 @@ struct ProxyConfigResult {
 	std::optional<int64_t> api_port;
 	std::optional<std::string> auth_token;
 	std::optional<WgConfig> wg_config;
+	std::optional<ProxyExit> exit;
 	std::optional<ProxyAuthResult> http_proxy_auth;
 	std::optional<ProxyAuthResult> socks_proxy_auth;
 };
@@ -1958,6 +2063,7 @@ struct ClientInfo {
 struct ClientLimitStatus {
 	std::string Status{};
 	int64_t RetryTime{};
+	std::string Prompt{};
 };
 
 struct ConnectedProviderLocation {
@@ -2098,6 +2204,7 @@ struct CryptoInvoiceState {
 	std::string amount_atomic{};
 	std::string ticker{};
 	std::string uri{};
+	std::string qr_text{};
 	std::string memo{};
 	double price_usd{};
 	double rate_usd{};
@@ -2125,6 +2232,15 @@ struct CryptoPaymentAsset {
 
 struct CryptoPaymentAssetsResult {
 	std::optional<CryptoPaymentAssetList> assets;
+	std::optional<CryptoPaymentAssetList> unavailable_assets;
+};
+
+struct CryptoPaymentCoin {
+	std::string asset{};
+	std::string label{};
+	std::string label_key{};
+	std::string icon_key{};
+	bool available{};
 };
 
 struct CryptoPaymentError {
@@ -2185,6 +2301,15 @@ struct CryptoPaymentStatusArgs {
 	std::string status_token{};
 };
 
+struct CryptoPaymentTab {
+	std::string id{};
+	std::string label{};
+	std::string label_key{};
+	std::optional<StringList> icon_keys;
+	std::optional<CryptoPaymentCoinList> coins;
+	bool available{};
+};
+
 struct CryptoTerm {
 	std::string market{};
 	std::string term_end_time{};
@@ -2219,10 +2344,18 @@ struct DeviceLocalMemoryUsage {
 	int64_t DnsByteCount{};
 	int64_t ClientSendByteCount{};
 	int64_t ClientReceiveByteCount{};
+	int64_t ClientReceiveHeadRecoveryBudgetByteCount{};
+	int64_t ClientReceiveHeadRecoveryUsedByteCount{};
+	int64_t ClientReceiveHeadRecoveryReservedByteCount{};
+	int64_t ClientReceiveHeadRecoveryReleasedByteCount{};
 	int64_t PackQueueUsedByteCount{};
 	int64_t PackQueueCapacityByteCount{};
 	int64_t ProviderSendByteCount{};
 	int64_t ProviderReceiveByteCount{};
+	int64_t ProviderReceiveHeadRecoveryBudgetByteCount{};
+	int64_t ProviderReceiveHeadRecoveryUsedByteCount{};
+	int64_t ProviderReceiveHeadRecoveryReservedByteCount{};
+	int64_t ProviderReceiveHeadRecoveryReleasedByteCount{};
 	int64_t TransferRootBudgetByteCount{};
 	int64_t TransferRootUsedByteCount{};
 	int64_t TransferRootReservedByteCount{};
@@ -2260,6 +2393,7 @@ struct DeviceLocalMemoryUsage {
 struct DeviceLocalSettings {
 	int64_t MemoryTargetByteCount{};
 	bool LowMemoryProfile{};
+	int64_t ProviderSendBorrowByteCount{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
 	int64_t NetContractStatusDuration{};
@@ -2298,6 +2432,11 @@ struct DeviceLocalSettings {
 	int64_t TransportDelayBadDownQueueDelay{};
 	double TransportDelayQualityStep{};
 	double TransportDelayQualityHysteresis{};
+	int64_t TransportDelayGoodConnectStall{};
+	int64_t TransportDelayBadConnectStall{};
+	int64_t TransportDelayPromptConnectTimeout{};
+	int64_t ClientLimitRetryMinInterval{};
+	int64_t DnsResolverVerifyMinInterval{};
 	bool StrictWindowHandover{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -2324,7 +2463,55 @@ struct DeviceSetNameResult {
 	std::optional<DeviceSetNameError> error;
 };
 
+struct DnsPreset {
+	std::string PresetId{};
+	std::string ProviderId{};
+	std::string NameKey{};
+	std::string NameProvider{};
+	std::string ProviderName{};
+	std::string Jurisdiction{};
+	std::string PrivacyUrl{};
+	std::string HelpUrl{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string CopyKey{};
+	bool BlocksAds{};
+	bool Failover{};
+	bool Filtering{};
+	bool PersonalIdRequired{};
+	std::string PersonalIdExample{};
+	std::string PersonalIdHelpUrl{};
+	std::string PersonalIdWhereKey{};
+	std::string PersonalIdFormatKey{};
+	std::string QuotaNoteKey{};
+};
+
+struct DnsPick {
+	std::string Kind{};
+	std::string PresetId{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string LabelKey{};
+	std::string CopyKey{};
+	std::string CountryCode{};
+	bool Unencrypted{};
+	std::optional<DnsPreset> Preset;
+};
+
+struct DnsPresetProvider {
+	std::string ProviderId{};
+	std::string Name{};
+	std::string Operator{};
+	std::string Jurisdiction{};
+	std::string HelpUrl{};
+	std::string PrivacyUrl{};
+	std::string TermsUrl{};
+	std::optional<DnsPresetList> Presets;
+};
+
 struct DnsResolverSettings {
+	std::string PresetId{};
+	std::string PresetPersonalId{};
 	bool EnableRemoteDoh{};
 	bool EnableLocalDoh{};
 	bool EnableRemoteDns{};
@@ -2339,6 +2526,55 @@ struct DnsResolverSettings {
 	std::optional<StringList> RemoteDnsIpv6;
 	std::optional<StringList> LocalDnsIpv4;
 	std::optional<StringList> LocalDnsIpv6;
+};
+
+struct DnsResolverStatus {
+	std::string State{};
+	std::string Verification{};
+	std::string PresetId{};
+	int64_t SinceTime{};
+	int64_t BlockedCount{};
+};
+
+struct DnsSelectionSummary {
+	std::string Kind{};
+	std::string PresetId{};
+	std::string ProviderId{};
+	std::string ProviderName{};
+	std::string NameKey{};
+	std::string NameProvider{};
+	std::string Group{};
+	std::string GroupKey{};
+	std::string CopyKey{};
+	std::string SummaryKey{};
+	std::string LabelKey{};
+	std::string CountryCode{};
+	bool Personal{};
+	bool Unencrypted{};
+	bool Failover{};
+	bool ShowBlockedCount{};
+	bool Dropped{};
+	std::string DroppedPresetId{};
+	std::string DroppedNameKey{};
+	std::string DroppedNameProvider{};
+	std::string DroppedProviderName{};
+	std::string PillKey{};
+	std::string PillCountryCode{};
+};
+
+struct DnsStatusSummary {
+	std::string StatusKey{};
+	std::string NameKey{};
+	std::string NameProvider{};
+	std::string ProviderName{};
+	std::string StatusDetailKey{};
+	std::string VerificationKey{};
+	std::string VerificationUrl{};
+	std::string VerificationLinkKey{};
+	bool ShowUseDefault{};
+	bool ShowChangeLocation{};
+	bool ShowBlockedCount{};
+	int64_t BlockedCount{};
 };
 
 struct EmojiTagValidation {
@@ -2886,6 +3122,25 @@ struct LogFileInfo {
 	int64_t ModifiedMillis{};
 };
 
+struct ManageDevicesSnapshot {
+	std::optional<ManagedDeviceList> Devices;
+	bool Loaded{};
+	bool Loading{};
+	std::optional<std::string> RemovingClientId;
+	std::string ErrorId{};
+	int64_t AddRetryCount{};
+};
+
+struct ManagedDevice {
+	std::optional<std::string> ClientId;
+	std::string Kind{};
+	std::string Name{};
+	std::string Spec{};
+	bool ThisDevice{};
+	bool Connected{};
+	int64_t LastSeenTime{};
+};
+
 struct MemoryStats {
 	int64_t HeapLiveByteCount{};
 	int64_t HeapGoalByteCount{};
@@ -3016,6 +3271,7 @@ struct NetworkClientInfo {
 	std::optional<std::string> principal;
 	int64_t provide_mode{};
 	std::optional<ProxyClient> proxy_client;
+	std::optional<ProxyExit> exit;
 	std::optional<NetworkClientConnectionList> connections;
 };
 
@@ -3570,9 +3826,11 @@ struct ReliabilitySettings {
 	bool PerformanceAwareAffinity{};
 	int32_t MaxStickyFlowsPerExit{};
 	int64_t StickyFlowIdleTimeoutMillis{};
+	bool ScoredAffinityDonor{};
 	bool QuarantineGroupFollow{};
 	int64_t GroupFollowWindowMillis{};
 	int64_t UplinkStalenessGateMillis{};
+	int64_t UplinkStalenessMaxHoldMillis{};
 	bool SoftVerdictDemote{};
 	int32_t RemovalBudgetCount{};
 	int64_t RemovalBudgetWindowMillis{};
@@ -3588,6 +3846,8 @@ struct ReliabilitySettings {
 	int64_t SharedFateWindowMillis{};
 	int32_t EvaluationPoolMultiple{};
 	int64_t FormationPollTimeoutMillis{};
+	int64_t WindowOutcomeDeadlineMillis{};
+	int64_t WindowOutcomeRebuildDeadlineMillis{};
 	bool BusyProbe{};
 	int64_t BusyProbeBudgetMillis{};
 	int64_t SchedulerPauseToleranceMillis{};
@@ -3598,7 +3858,9 @@ struct ReliabilitySettings {
 	double PlacementHysteresisPct{};
 	int32_t PlacementDemoteConsecutive{};
 	bool RewardInstrumentation{};
+	bool LightClassifier{};
 	bool QuarantineDampening{};
+	int64_t QuarantineReentryRampMillis{};
 };
 
 struct RemoveAuthArgs {
@@ -3641,6 +3903,21 @@ struct RevokeNetworkSessionArgs {
 
 struct RevokeOtherNetworkSessionsArgs {
 	std::optional<std::string> operation_id;
+};
+
+struct RotateProxyExitArgs {
+	std::optional<std::string> client_id;
+};
+
+struct RotateProxyExitError {
+	std::optional<bool> no_unique_supply;
+	std::optional<bool> rate_limited;
+	std::string message{};
+};
+
+struct RotateProxyExitResult {
+	std::optional<ProxyExit> exit;
+	std::optional<RotateProxyExitError> error;
 };
 
 struct SetEmojiTagArgs {
@@ -4712,6 +4989,8 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v);
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v);
 inline void to_json(nlohmann::json& j, const ProxyAuthResult& v);
 inline void from_json(const nlohmann::json& j, ProxyAuthResult& v);
+inline void to_json(nlohmann::json& j, const ProxyExit& v);
+inline void from_json(const nlohmann::json& j, ProxyExit& v);
 inline void to_json(nlohmann::json& j, const WgConfig& v);
 inline void from_json(const nlohmann::json& j, WgConfig& v);
 inline void to_json(nlohmann::json& j, const ProxyConfigResult& v);
@@ -4852,6 +5131,8 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentCoin& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentCoin& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentError& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentError& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v);
@@ -4860,6 +5141,8 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentStatusArgs& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v);
 inline void to_json(nlohmann::json& j, const CryptoTerm& v);
 inline void from_json(const nlohmann::json& j, CryptoTerm& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyArgs& v);
@@ -4880,8 +5163,20 @@ inline void to_json(nlohmann::json& j, const DeviceSetNameError& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameError& v);
 inline void to_json(nlohmann::json& j, const DeviceSetNameResult& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v);
+inline void to_json(nlohmann::json& j, const DnsPreset& v);
+inline void from_json(const nlohmann::json& j, DnsPreset& v);
+inline void to_json(nlohmann::json& j, const DnsPick& v);
+inline void from_json(const nlohmann::json& j, DnsPick& v);
+inline void to_json(nlohmann::json& j, const DnsPresetProvider& v);
+inline void from_json(const nlohmann::json& j, DnsPresetProvider& v);
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v);
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v);
+inline void to_json(nlohmann::json& j, const DnsResolverStatus& v);
+inline void from_json(const nlohmann::json& j, DnsResolverStatus& v);
+inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v);
+inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v);
+inline void to_json(nlohmann::json& j, const DnsStatusSummary& v);
+inline void from_json(const nlohmann::json& j, DnsStatusSummary& v);
 inline void to_json(nlohmann::json& j, const EmojiTagValidation& v);
 inline void from_json(const nlohmann::json& j, EmojiTagValidation& v);
 inline void to_json(nlohmann::json& j, const Exit& v);
@@ -5016,6 +5311,10 @@ inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
+inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v);
+inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v);
+inline void to_json(nlohmann::json& j, const ManagedDevice& v);
+inline void from_json(const nlohmann::json& j, ManagedDevice& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
@@ -5188,6 +5487,12 @@ inline void to_json(nlohmann::json& j, const RevokeNetworkSessionArgs& v);
 inline void from_json(const nlohmann::json& j, RevokeNetworkSessionArgs& v);
 inline void to_json(nlohmann::json& j, const RevokeOtherNetworkSessionsArgs& v);
 inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitArgs& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v);
+inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v);
+inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v);
 inline void from_json(const nlohmann::json& j, SetEmojiTagArgs& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagError& v);
@@ -6756,6 +7061,12 @@ inline void to_json(nlohmann::json& j, const ProxyConfig& v) {
 	j["http_require_auth"] = v.http_require_auth;
 	j["https_require_auth"] = v.https_require_auth;
 	j["enable_wg"] = v.enable_wg;
+	if (v.unique_exit) {
+		j["unique_exit"] = *v.unique_exit;
+	}
+	if (v.unique_exit_replace) {
+		j["unique_exit_replace"] = *v.unique_exit_replace;
+	}
 	if (v.initial_device_state) {
 		j["initial_device_state"] = *v.initial_device_state;
 	}
@@ -6784,6 +7095,16 @@ inline void from_json(const nlohmann::json& j, ProxyConfig& v) {
 	}
 	if (auto it = j.find("enable_wg"); it != j.end() && !it->is_null()) {
 		it->get_to(v.enable_wg);
+	}
+	if (auto it = j.find("unique_exit"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.unique_exit = std::move(tmp);
+	}
+	if (auto it = j.find("unique_exit_replace"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.unique_exit_replace = std::move(tmp);
 	}
 	if (auto it = j.find("initial_device_state"); it != j.end() && !it->is_null()) {
 		ProxyDeviceState tmp{};
@@ -6879,7 +7200,13 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	if (v.upgrade_required) {
 		j["upgrade_required"] = *v.upgrade_required;
 	}
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
 	j["message"] = v.message;
+	if (v.client_limit_prompt) {
+		j["client_limit_prompt"] = *v.client_limit_prompt;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	if (!j.is_object()) {
@@ -6893,8 +7220,18 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 		it->get_to(tmp);
 		v.upgrade_required = std::move(tmp);
 	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
+	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
+	}
+	if (auto it = j.find("client_limit_prompt"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_limit_prompt = std::move(tmp);
 	}
 }
 
@@ -6912,6 +7249,71 @@ inline void from_json(const nlohmann::json& j, ProxyAuthResult& v) {
 	}
 	if (auto it = j.find("password"); it != j.end() && !it->is_null()) {
 		it->get_to(v.password);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProxyExit& v) {
+	j = nlohmann::json::object();
+	if (v.exit_id) {
+		j["exit_id"] = *v.exit_id;
+	}
+	if (v.country_code) {
+		j["country_code"] = *v.country_code;
+	}
+	if (v.region) {
+		j["region"] = *v.region;
+	}
+	if (v.city) {
+		j["city"] = *v.city;
+	}
+	if (v.exit_since) {
+		j["exit_since"] = *v.exit_since;
+	}
+	j["state"] = v.state;
+	if (v.state_reason) {
+		j["state_reason"] = *v.state_reason;
+	}
+	j["replace_mode"] = v.replace_mode;
+}
+inline void from_json(const nlohmann::json& j, ProxyExit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("exit_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.exit_id = std::move(tmp);
+	}
+	if (auto it = j.find("country_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.country_code = std::move(tmp);
+	}
+	if (auto it = j.find("region"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.region = std::move(tmp);
+	}
+	if (auto it = j.find("city"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.city = std::move(tmp);
+	}
+	if (auto it = j.find("exit_since"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.exit_since = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("state_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state_reason = std::move(tmp);
+	}
+	if (auto it = j.find("replace_mode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.replace_mode);
 	}
 }
 
@@ -7002,6 +7404,9 @@ inline void to_json(nlohmann::json& j, const ProxyConfigResult& v) {
 	}
 	if (v.wg_config) {
 		j["wg_config"] = *v.wg_config;
+	}
+	if (v.exit) {
+		j["exit"] = *v.exit;
 	}
 	if (v.http_proxy_auth) {
 		j["http_proxy_auth"] = *v.http_proxy_auth;
@@ -7104,6 +7509,11 @@ inline void from_json(const nlohmann::json& j, ProxyConfigResult& v) {
 		WgConfig tmp{};
 		it->get_to(tmp);
 		v.wg_config = std::move(tmp);
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("http_proxy_auth"); it != j.end() && !it->is_null()) {
 		ProxyAuthResult tmp{};
@@ -8726,6 +9136,7 @@ inline void to_json(nlohmann::json& j, const ClientLimitStatus& v) {
 	j = nlohmann::json::object();
 	j["Status"] = v.Status;
 	j["RetryTime"] = v.RetryTime;
+	j["Prompt"] = v.Prompt;
 }
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	if (!j.is_object()) {
@@ -8736,6 +9147,9 @@ inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	}
 	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RetryTime);
+	}
+	if (auto it = j.find("Prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Prompt);
 	}
 }
 
@@ -9276,6 +9690,7 @@ inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j["amount_atomic"] = v.amount_atomic;
 	j["ticker"] = v.ticker;
 	j["uri"] = v.uri;
+	j["qr_text"] = v.qr_text;
 	j["memo"] = v.memo;
 	j["price_usd"] = v.price_usd;
 	j["rate_usd"] = v.rate_usd;
@@ -9331,6 +9746,9 @@ inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
 	}
 	if (auto it = j.find("uri"); it != j.end() && !it->is_null()) {
 		it->get_to(v.uri);
+	}
+	if (auto it = j.find("qr_text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.qr_text);
 	}
 	if (auto it = j.find("memo"); it != j.end() && !it->is_null()) {
 		it->get_to(v.memo);
@@ -9421,6 +9839,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAssetsResult& v) {
 	if (v.assets) {
 		j["assets"] = *v.assets;
 	}
+	if (v.unavailable_assets) {
+		j["unavailable_assets"] = *v.unavailable_assets;
+	}
 }
 inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v) {
 	if (!j.is_object()) {
@@ -9430,6 +9851,40 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentAssetsResult& v) {
 		CryptoPaymentAssetList tmp{};
 		it->get_to(tmp);
 		v.assets = std::move(tmp);
+	}
+	if (auto it = j.find("unavailable_assets"); it != j.end() && !it->is_null()) {
+		CryptoPaymentAssetList tmp{};
+		it->get_to(tmp);
+		v.unavailable_assets = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const CryptoPaymentCoin& v) {
+	j = nlohmann::json::object();
+	j["asset"] = v.asset;
+	j["label"] = v.label;
+	j["label_key"] = v.label_key;
+	j["icon_key"] = v.icon_key;
+	j["available"] = v.available;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentCoin& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("label_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label_key);
+	}
+	if (auto it = j.find("icon_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.icon_key);
+	}
+	if (auto it = j.find("available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.available);
 	}
 }
 
@@ -9813,6 +10268,47 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v) {
+	j = nlohmann::json::object();
+	j["id"] = v.id;
+	j["label"] = v.label;
+	j["label_key"] = v.label_key;
+	if (v.icon_keys) {
+		j["icon_keys"] = *v.icon_keys;
+	}
+	if (v.coins) {
+		j["coins"] = *v.coins;
+	}
+	j["available"] = v.available;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.id);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("label_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label_key);
+	}
+	if (auto it = j.find("icon_keys"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.icon_keys = std::move(tmp);
+	}
+	if (auto it = j.find("coins"); it != j.end() && !it->is_null()) {
+		CryptoPaymentCoinList tmp{};
+		it->get_to(tmp);
+		v.coins = std::move(tmp);
+	}
+	if (auto it = j.find("available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.available);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const CryptoTerm& v) {
 	j = nlohmann::json::object();
 	j["market"] = v.market;
@@ -9908,10 +10404,18 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["DnsByteCount"] = v.DnsByteCount;
 	j["ClientSendByteCount"] = v.ClientSendByteCount;
 	j["ClientReceiveByteCount"] = v.ClientReceiveByteCount;
+	j["ClientReceiveHeadRecoveryBudgetByteCount"] = v.ClientReceiveHeadRecoveryBudgetByteCount;
+	j["ClientReceiveHeadRecoveryUsedByteCount"] = v.ClientReceiveHeadRecoveryUsedByteCount;
+	j["ClientReceiveHeadRecoveryReservedByteCount"] = v.ClientReceiveHeadRecoveryReservedByteCount;
+	j["ClientReceiveHeadRecoveryReleasedByteCount"] = v.ClientReceiveHeadRecoveryReleasedByteCount;
 	j["PackQueueUsedByteCount"] = v.PackQueueUsedByteCount;
 	j["PackQueueCapacityByteCount"] = v.PackQueueCapacityByteCount;
 	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
 	j["ProviderReceiveByteCount"] = v.ProviderReceiveByteCount;
+	j["ProviderReceiveHeadRecoveryBudgetByteCount"] = v.ProviderReceiveHeadRecoveryBudgetByteCount;
+	j["ProviderReceiveHeadRecoveryUsedByteCount"] = v.ProviderReceiveHeadRecoveryUsedByteCount;
+	j["ProviderReceiveHeadRecoveryReservedByteCount"] = v.ProviderReceiveHeadRecoveryReservedByteCount;
+	j["ProviderReceiveHeadRecoveryReleasedByteCount"] = v.ProviderReceiveHeadRecoveryReleasedByteCount;
 	j["TransferRootBudgetByteCount"] = v.TransferRootBudgetByteCount;
 	j["TransferRootUsedByteCount"] = v.TransferRootUsedByteCount;
 	j["TransferRootReservedByteCount"] = v.TransferRootReservedByteCount;
@@ -9988,6 +10492,18 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	if (auto it = j.find("ClientReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClientReceiveByteCount);
 	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryBudgetByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryUsedByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryReservedByteCount);
+	}
+	if (auto it = j.find("ClientReceiveHeadRecoveryReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveHeadRecoveryReleasedByteCount);
+	}
 	if (auto it = j.find("PackQueueUsedByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PackQueueUsedByteCount);
 	}
@@ -9999,6 +10515,18 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("ProviderReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderReceiveByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryBudgetByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryUsedByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryReservedByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveHeadRecoveryReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveHeadRecoveryReleasedByteCount);
 	}
 	if (auto it = j.find("TransferRootBudgetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransferRootBudgetByteCount);
@@ -10102,6 +10630,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
 	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
 	j["LowMemoryProfile"] = v.LowMemoryProfile;
+	j["ProviderSendBorrowByteCount"] = v.ProviderSendBorrowByteCount;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
 	j["NetContractStatusDuration"] = v.NetContractStatusDuration;
@@ -10140,6 +10669,11 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["TransportDelayBadDownQueueDelay"] = v.TransportDelayBadDownQueueDelay;
 	j["TransportDelayQualityStep"] = v.TransportDelayQualityStep;
 	j["TransportDelayQualityHysteresis"] = v.TransportDelayQualityHysteresis;
+	j["TransportDelayGoodConnectStall"] = v.TransportDelayGoodConnectStall;
+	j["TransportDelayBadConnectStall"] = v.TransportDelayBadConnectStall;
+	j["TransportDelayPromptConnectTimeout"] = v.TransportDelayPromptConnectTimeout;
+	j["ClientLimitRetryMinInterval"] = v.ClientLimitRetryMinInterval;
+	j["DnsResolverVerifyMinInterval"] = v.DnsResolverVerifyMinInterval;
 	j["StrictWindowHandover"] = v.StrictWindowHandover;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -10156,6 +10690,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("LowMemoryProfile"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LowMemoryProfile);
+	}
+	if (auto it = j.find("ProviderSendBorrowByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderSendBorrowByteCount);
 	}
 	if (auto it = j.find("SendTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SendTimeout);
@@ -10271,6 +10808,21 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (auto it = j.find("TransportDelayQualityHysteresis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportDelayQualityHysteresis);
 	}
+	if (auto it = j.find("TransportDelayGoodConnectStall"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayGoodConnectStall);
+	}
+	if (auto it = j.find("TransportDelayBadConnectStall"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayBadConnectStall);
+	}
+	if (auto it = j.find("TransportDelayPromptConnectTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransportDelayPromptConnectTimeout);
+	}
+	if (auto it = j.find("ClientLimitRetryMinInterval"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientLimitRetryMinInterval);
+	}
+	if (auto it = j.find("DnsResolverVerifyMinInterval"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsResolverVerifyMinInterval);
+	}
 	if (auto it = j.find("StrictWindowHandover"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StrictWindowHandover);
 	}
@@ -10359,8 +10911,193 @@ inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const DnsPreset& v) {
+	j = nlohmann::json::object();
+	j["PresetId"] = v.PresetId;
+	j["ProviderId"] = v.ProviderId;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
+	j["ProviderName"] = v.ProviderName;
+	j["Jurisdiction"] = v.Jurisdiction;
+	j["PrivacyUrl"] = v.PrivacyUrl;
+	j["HelpUrl"] = v.HelpUrl;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["CopyKey"] = v.CopyKey;
+	j["BlocksAds"] = v.BlocksAds;
+	j["Failover"] = v.Failover;
+	j["Filtering"] = v.Filtering;
+	j["PersonalIdRequired"] = v.PersonalIdRequired;
+	j["PersonalIdExample"] = v.PersonalIdExample;
+	j["PersonalIdHelpUrl"] = v.PersonalIdHelpUrl;
+	j["PersonalIdWhereKey"] = v.PersonalIdWhereKey;
+	j["PersonalIdFormatKey"] = v.PersonalIdFormatKey;
+	j["QuotaNoteKey"] = v.QuotaNoteKey;
+}
+inline void from_json(const nlohmann::json& j, DnsPreset& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("Jurisdiction"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Jurisdiction);
+	}
+	if (auto it = j.find("PrivacyUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PrivacyUrl);
+	}
+	if (auto it = j.find("HelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HelpUrl);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("BlocksAds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlocksAds);
+	}
+	if (auto it = j.find("Failover"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failover);
+	}
+	if (auto it = j.find("Filtering"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Filtering);
+	}
+	if (auto it = j.find("PersonalIdRequired"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdRequired);
+	}
+	if (auto it = j.find("PersonalIdExample"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdExample);
+	}
+	if (auto it = j.find("PersonalIdHelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdHelpUrl);
+	}
+	if (auto it = j.find("PersonalIdWhereKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdWhereKey);
+	}
+	if (auto it = j.find("PersonalIdFormatKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PersonalIdFormatKey);
+	}
+	if (auto it = j.find("QuotaNoteKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuotaNoteKey);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsPick& v) {
+	j = nlohmann::json::object();
+	j["Kind"] = v.Kind;
+	j["PresetId"] = v.PresetId;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["LabelKey"] = v.LabelKey;
+	j["CopyKey"] = v.CopyKey;
+	j["CountryCode"] = v.CountryCode;
+	j["Unencrypted"] = v.Unencrypted;
+	if (v.Preset) {
+		j["Preset"] = *v.Preset;
+	}
+}
+inline void from_json(const nlohmann::json& j, DnsPick& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LabelKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("Unencrypted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Unencrypted);
+	}
+	if (auto it = j.find("Preset"); it != j.end() && !it->is_null()) {
+		DnsPreset tmp{};
+		it->get_to(tmp);
+		v.Preset = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsPresetProvider& v) {
+	j = nlohmann::json::object();
+	j["ProviderId"] = v.ProviderId;
+	j["Name"] = v.Name;
+	j["Operator"] = v.Operator;
+	j["Jurisdiction"] = v.Jurisdiction;
+	j["HelpUrl"] = v.HelpUrl;
+	j["PrivacyUrl"] = v.PrivacyUrl;
+	j["TermsUrl"] = v.TermsUrl;
+	if (v.Presets) {
+		j["Presets"] = *v.Presets;
+	}
+}
+inline void from_json(const nlohmann::json& j, DnsPresetProvider& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Operator"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Operator);
+	}
+	if (auto it = j.find("Jurisdiction"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Jurisdiction);
+	}
+	if (auto it = j.find("HelpUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HelpUrl);
+	}
+	if (auto it = j.find("PrivacyUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PrivacyUrl);
+	}
+	if (auto it = j.find("TermsUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TermsUrl);
+	}
+	if (auto it = j.find("Presets"); it != j.end() && !it->is_null()) {
+		DnsPresetList tmp{};
+		it->get_to(tmp);
+		v.Presets = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v) {
 	j = nlohmann::json::object();
+	j["PresetId"] = v.PresetId;
+	j["PresetPersonalId"] = v.PresetPersonalId;
 	j["EnableRemoteDoh"] = v.EnableRemoteDoh;
 	j["EnableLocalDoh"] = v.EnableLocalDoh;
 	j["EnableRemoteDns"] = v.EnableRemoteDns;
@@ -10395,6 +11132,12 @@ inline void to_json(nlohmann::json& j, const DnsResolverSettings& v) {
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("PresetPersonalId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetPersonalId);
 	}
 	if (auto it = j.find("EnableRemoteDoh"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRemoteDoh);
@@ -10453,6 +11196,193 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.LocalDnsIpv6 = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsResolverStatus& v) {
+	j = nlohmann::json::object();
+	j["State"] = v.State;
+	j["Verification"] = v.Verification;
+	j["PresetId"] = v.PresetId;
+	j["SinceTime"] = v.SinceTime;
+	j["BlockedCount"] = v.BlockedCount;
+}
+inline void from_json(const nlohmann::json& j, DnsResolverStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.State);
+	}
+	if (auto it = j.find("Verification"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Verification);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("SinceTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SinceTime);
+	}
+	if (auto it = j.find("BlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlockedCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsSelectionSummary& v) {
+	j = nlohmann::json::object();
+	j["Kind"] = v.Kind;
+	j["PresetId"] = v.PresetId;
+	j["ProviderId"] = v.ProviderId;
+	j["ProviderName"] = v.ProviderName;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
+	j["Group"] = v.Group;
+	j["GroupKey"] = v.GroupKey;
+	j["CopyKey"] = v.CopyKey;
+	j["SummaryKey"] = v.SummaryKey;
+	j["LabelKey"] = v.LabelKey;
+	j["CountryCode"] = v.CountryCode;
+	j["Personal"] = v.Personal;
+	j["Unencrypted"] = v.Unencrypted;
+	j["Failover"] = v.Failover;
+	j["ShowBlockedCount"] = v.ShowBlockedCount;
+	j["Dropped"] = v.Dropped;
+	j["DroppedPresetId"] = v.DroppedPresetId;
+	j["DroppedNameKey"] = v.DroppedNameKey;
+	j["DroppedNameProvider"] = v.DroppedNameProvider;
+	j["DroppedProviderName"] = v.DroppedProviderName;
+	j["PillKey"] = v.PillKey;
+	j["PillCountryCode"] = v.PillCountryCode;
+}
+inline void from_json(const nlohmann::json& j, DnsSelectionSummary& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("PresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PresetId);
+	}
+	if (auto it = j.find("ProviderId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderId);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
+	}
+	if (auto it = j.find("Group"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Group);
+	}
+	if (auto it = j.find("GroupKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupKey);
+	}
+	if (auto it = j.find("CopyKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CopyKey);
+	}
+	if (auto it = j.find("SummaryKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SummaryKey);
+	}
+	if (auto it = j.find("LabelKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LabelKey);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("Personal"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Personal);
+	}
+	if (auto it = j.find("Unencrypted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Unencrypted);
+	}
+	if (auto it = j.find("Failover"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failover);
+	}
+	if (auto it = j.find("ShowBlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowBlockedCount);
+	}
+	if (auto it = j.find("Dropped"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Dropped);
+	}
+	if (auto it = j.find("DroppedPresetId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedPresetId);
+	}
+	if (auto it = j.find("DroppedNameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedNameKey);
+	}
+	if (auto it = j.find("DroppedNameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedNameProvider);
+	}
+	if (auto it = j.find("DroppedProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedProviderName);
+	}
+	if (auto it = j.find("PillKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PillKey);
+	}
+	if (auto it = j.find("PillCountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PillCountryCode);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const DnsStatusSummary& v) {
+	j = nlohmann::json::object();
+	j["StatusKey"] = v.StatusKey;
+	j["NameKey"] = v.NameKey;
+	j["NameProvider"] = v.NameProvider;
+	j["ProviderName"] = v.ProviderName;
+	j["StatusDetailKey"] = v.StatusDetailKey;
+	j["VerificationKey"] = v.VerificationKey;
+	j["VerificationUrl"] = v.VerificationUrl;
+	j["VerificationLinkKey"] = v.VerificationLinkKey;
+	j["ShowUseDefault"] = v.ShowUseDefault;
+	j["ShowChangeLocation"] = v.ShowChangeLocation;
+	j["ShowBlockedCount"] = v.ShowBlockedCount;
+	j["BlockedCount"] = v.BlockedCount;
+}
+inline void from_json(const nlohmann::json& j, DnsStatusSummary& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("StatusKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StatusKey);
+	}
+	if (auto it = j.find("NameKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameKey);
+	}
+	if (auto it = j.find("NameProvider"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NameProvider);
+	}
+	if (auto it = j.find("ProviderName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderName);
+	}
+	if (auto it = j.find("StatusDetailKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StatusDetailKey);
+	}
+	if (auto it = j.find("VerificationKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationKey);
+	}
+	if (auto it = j.find("VerificationUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationUrl);
+	}
+	if (auto it = j.find("VerificationLinkKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerificationLinkKey);
+	}
+	if (auto it = j.find("ShowUseDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowUseDefault);
+	}
+	if (auto it = j.find("ShowChangeLocation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowChangeLocation);
+	}
+	if (auto it = j.find("ShowBlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ShowBlockedCount);
+	}
+	if (auto it = j.find("BlockedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlockedCount);
 	}
 }
 
@@ -12871,6 +13801,88 @@ inline void from_json(const nlohmann::json& j, LogFileInfo& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v) {
+	j = nlohmann::json::object();
+	if (v.Devices) {
+		j["Devices"] = *v.Devices;
+	}
+	j["Loaded"] = v.Loaded;
+	j["Loading"] = v.Loading;
+	if (v.RemovingClientId) {
+		j["RemovingClientId"] = *v.RemovingClientId;
+	}
+	j["ErrorId"] = v.ErrorId;
+	j["AddRetryCount"] = v.AddRetryCount;
+}
+inline void from_json(const nlohmann::json& j, ManageDevicesSnapshot& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Devices"); it != j.end() && !it->is_null()) {
+		ManagedDeviceList tmp{};
+		it->get_to(tmp);
+		v.Devices = std::move(tmp);
+	}
+	if (auto it = j.find("Loaded"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loaded);
+	}
+	if (auto it = j.find("Loading"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Loading);
+	}
+	if (auto it = j.find("RemovingClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.RemovingClientId = std::move(tmp);
+	}
+	if (auto it = j.find("ErrorId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorId);
+	}
+	if (auto it = j.find("AddRetryCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AddRetryCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ManagedDevice& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["Kind"] = v.Kind;
+	j["Name"] = v.Name;
+	j["Spec"] = v.Spec;
+	j["ThisDevice"] = v.ThisDevice;
+	j["Connected"] = v.Connected;
+	j["LastSeenTime"] = v.LastSeenTime;
+}
+inline void from_json(const nlohmann::json& j, ManagedDevice& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Spec"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Spec);
+	}
+	if (auto it = j.find("ThisDevice"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ThisDevice);
+	}
+	if (auto it = j.find("Connected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Connected);
+	}
+	if (auto it = j.find("LastSeenTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSeenTime);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const MemoryStats& v) {
 	j = nlohmann::json::object();
 	j["HeapLiveByteCount"] = v.HeapLiveByteCount;
@@ -13386,6 +14398,9 @@ inline void to_json(nlohmann::json& j, const NetworkClientInfo& v) {
 	if (v.proxy_client) {
 		j["proxy_client"] = *v.proxy_client;
 	}
+	if (v.exit) {
+		j["exit"] = *v.exit;
+	}
 	if (v.connections) {
 		j["connections"] = *v.connections;
 	}
@@ -13450,6 +14465,11 @@ inline void from_json(const nlohmann::json& j, NetworkClientInfo& v) {
 		ProxyClient tmp{};
 		it->get_to(tmp);
 		v.proxy_client = std::move(tmp);
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
 	}
 	if (auto it = j.find("connections"); it != j.end() && !it->is_null()) {
 		NetworkClientConnectionList tmp{};
@@ -16128,9 +17148,11 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["PerformanceAwareAffinity"] = v.PerformanceAwareAffinity;
 	j["MaxStickyFlowsPerExit"] = v.MaxStickyFlowsPerExit;
 	j["StickyFlowIdleTimeoutMillis"] = v.StickyFlowIdleTimeoutMillis;
+	j["ScoredAffinityDonor"] = v.ScoredAffinityDonor;
 	j["QuarantineGroupFollow"] = v.QuarantineGroupFollow;
 	j["GroupFollowWindowMillis"] = v.GroupFollowWindowMillis;
 	j["UplinkStalenessGateMillis"] = v.UplinkStalenessGateMillis;
+	j["UplinkStalenessMaxHoldMillis"] = v.UplinkStalenessMaxHoldMillis;
 	j["SoftVerdictDemote"] = v.SoftVerdictDemote;
 	j["RemovalBudgetCount"] = v.RemovalBudgetCount;
 	j["RemovalBudgetWindowMillis"] = v.RemovalBudgetWindowMillis;
@@ -16146,6 +17168,8 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["SharedFateWindowMillis"] = v.SharedFateWindowMillis;
 	j["EvaluationPoolMultiple"] = v.EvaluationPoolMultiple;
 	j["FormationPollTimeoutMillis"] = v.FormationPollTimeoutMillis;
+	j["WindowOutcomeDeadlineMillis"] = v.WindowOutcomeDeadlineMillis;
+	j["WindowOutcomeRebuildDeadlineMillis"] = v.WindowOutcomeRebuildDeadlineMillis;
 	j["BusyProbe"] = v.BusyProbe;
 	j["BusyProbeBudgetMillis"] = v.BusyProbeBudgetMillis;
 	j["SchedulerPauseToleranceMillis"] = v.SchedulerPauseToleranceMillis;
@@ -16156,7 +17180,9 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["PlacementHysteresisPct"] = v.PlacementHysteresisPct;
 	j["PlacementDemoteConsecutive"] = v.PlacementDemoteConsecutive;
 	j["RewardInstrumentation"] = v.RewardInstrumentation;
+	j["LightClassifier"] = v.LightClassifier;
 	j["QuarantineDampening"] = v.QuarantineDampening;
+	j["QuarantineReentryRampMillis"] = v.QuarantineReentryRampMillis;
 }
 inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (!j.is_object()) {
@@ -16210,6 +17236,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("StickyFlowIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StickyFlowIdleTimeoutMillis);
 	}
+	if (auto it = j.find("ScoredAffinityDonor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ScoredAffinityDonor);
+	}
 	if (auto it = j.find("QuarantineGroupFollow"); it != j.end() && !it->is_null()) {
 		it->get_to(v.QuarantineGroupFollow);
 	}
@@ -16218,6 +17247,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("UplinkStalenessGateMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.UplinkStalenessGateMillis);
+	}
+	if (auto it = j.find("UplinkStalenessMaxHoldMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UplinkStalenessMaxHoldMillis);
 	}
 	if (auto it = j.find("SoftVerdictDemote"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SoftVerdictDemote);
@@ -16264,6 +17296,12 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("FormationPollTimeoutMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.FormationPollTimeoutMillis);
 	}
+	if (auto it = j.find("WindowOutcomeDeadlineMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowOutcomeDeadlineMillis);
+	}
+	if (auto it = j.find("WindowOutcomeRebuildDeadlineMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowOutcomeRebuildDeadlineMillis);
+	}
 	if (auto it = j.find("BusyProbe"); it != j.end() && !it->is_null()) {
 		it->get_to(v.BusyProbe);
 	}
@@ -16294,8 +17332,14 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (auto it = j.find("RewardInstrumentation"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RewardInstrumentation);
 	}
+	if (auto it = j.find("LightClassifier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LightClassifier);
+	}
 	if (auto it = j.find("QuarantineDampening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.QuarantineDampening);
+	}
+	if (auto it = j.find("QuarantineReentryRampMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineReentryRampMillis);
 	}
 }
 
@@ -16462,6 +17506,77 @@ inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v
 		std::string tmp{};
 		it->get_to(tmp);
 		v.operation_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitArgs& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitError& v) {
+	j = nlohmann::json::object();
+	if (v.no_unique_supply) {
+		j["no_unique_supply"] = *v.no_unique_supply;
+	}
+	if (v.rate_limited) {
+		j["rate_limited"] = *v.rate_limited;
+	}
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_unique_supply"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.no_unique_supply = std::move(tmp);
+	}
+	if (auto it = j.find("rate_limited"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.rate_limited = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RotateProxyExitResult& v) {
+	j = nlohmann::json::object();
+	if (v.exit) {
+		j["exit"] = *v.exit;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, RotateProxyExitResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("exit"); it != j.end() && !it->is_null()) {
+		ProxyExit tmp{};
+		it->get_to(tmp);
+		v.exit = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		RotateProxyExitError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -21060,6 +22175,7 @@ using DeviceConfigurationChangedListener = std::function<void()>;
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
+using DnsResolverStatusChangeListener = std::function<void(std::optional<DnsResolverStatus> dns_resolver_status)>;
 using ExtenderProvideStatusChangeListener = std::function<void(std::optional<ExtenderProvideStatus> status)>;
 using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using ExtenderViewControllerListener = std::function<void(std::optional<ExtenderStatus> status)>;
@@ -21102,6 +22218,8 @@ using ListApiKeysCallback = std::function<void(std::optional<ListApiKeysResult> 
 using LocalOverrideAppIdsListener = std::function<void()>;
 using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;
 using LocationMatchListener = std::function<void()>;
+using ManageDevicesListener = std::function<void(std::optional<ManageDevicesSnapshot> snapshot)>;
+using ManageDevicesSignInRetry = std::function<void()>;
 using NetworkBlockLocationCallback = std::function<void(std::optional<NetworkBlockLocationResult> result, std::optional<std::string> err_param)>;
 using NetworkCheckCallback = std::function<void(std::optional<NetworkCheckResult> result, std::optional<std::string> err_param)>;
 using NetworkClientsListener = std::function<void(std::optional<NetworkClientInfoList> network_clients)>;
@@ -21151,6 +22269,7 @@ using RemoteChangeListener = std::function<void(bool remote_connected)>;
 using RemoveAuthCallback = std::function<void(std::optional<RemoveAuthResult> result, std::optional<std::string> err_param)>;
 using RemoveNetworkClientCallback = std::function<void(std::optional<RemoveNetworkClientResult> result, std::optional<std::string> err_param)>;
 using RemoveWalletCallback = std::function<void(std::optional<RemoveWalletResult> result, std::optional<std::string> err_param)>;
+using RotateProxyExitCallback = std::function<void(std::optional<RotateProxyExitResult> result, std::optional<std::string> err_param)>;
 using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
 using SelectedProviderLocationChangeListener = std::function<void()>;
@@ -21291,6 +22410,7 @@ public:
 	Sub addContractStatusChangeListener(ContractStatusChangeListener listener) const;
 	Sub addDefaultLocationChangeListener(DefaultLocationChangeListener listener) const;
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
+	Sub addDnsResolverStatusChangeListener(DnsResolverStatusChangeListener listener) const;
 	Sub addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const;
@@ -21346,7 +22466,9 @@ public:
 	int64_t getControlIpFamilyPolicy() const;
 	std::string getControlIpFamilyStatus() const;
 	std::optional<ConnectLocation> getDefaultLocation() const;
+	int64_t getDnsBlockedCount() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
+	std::optional<DnsResolverStatus> getDnsResolverStatus() const;
 	bool getDone() const;
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
@@ -21400,6 +22522,8 @@ public:
 	void removeConnectedProvider(const std::string& client_id) const;
 	void removeDestination() const;
 	void resetExtenders() const;
+	bool retryClientLimit() const;
+	bool retryClientLimitAfterChange() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
@@ -21534,6 +22658,7 @@ public:
 	void onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const;
 	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
 	ClientSessionViewController openClientSessionViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -21546,6 +22671,8 @@ public:
 	void requoteCryptoPayment(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentIntentCallback callback) const;
 	void revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const;
 	void revokeOtherNetworkSessions(const std::optional<RevokeOtherNetworkSessionsArgs>& args, SessionOperationCallback callback) const;
+	void rotateProxyExit(const std::optional<RotateProxyExitArgs>& args, RotateProxyExitCallback callback) const;
+	std::optional<RotateProxyExitResult> rotateProxyExitSync(const std::optional<RotateProxyExitArgs>& args) const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setClientInfo(const std::optional<ClientInfo>& info) const;
@@ -21716,6 +22843,14 @@ public:
 	int64_t pendingCount() const;
 	void setAppVersion(const std::string& app_version) const;
 	void setLocale(const std::string& locale) const;
+};
+
+class ClientLimitNoticeTracker final : public detail::Handle {
+public:
+	ClientLimitNoticeTracker() = default;
+	explicit ClientLimitNoticeTracker(uint64_t h) : detail::Handle(h) {}
+	std::string reset() const;
+	std::string update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const;
 };
 
 class ClientRefreshIntegrityNotice final : public detail::Handle {
@@ -21901,6 +23036,7 @@ public:
 	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closeManageDevicesViewController(const ManageDevicesViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
@@ -21953,6 +23089,7 @@ public:
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
@@ -22087,6 +23224,7 @@ public:
 	void closeCryptoInvoiceViewController(const CryptoInvoiceViewController& vc) const;
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closeManageDevicesViewController(const ManageDevicesViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
@@ -22123,6 +23261,7 @@ public:
 	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
+	ManageDevicesViewController openManageDevicesViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
@@ -22383,6 +23522,20 @@ public:
 	LoginViewController() = default;
 	explicit LoginViewController(uint64_t h) : detail::Handle(h) {}
 	void close() const;
+	void start() const;
+	void stop() const;
+};
+
+class ManageDevicesViewController final : public detail::Handle {
+public:
+	ManageDevicesViewController() = default;
+	explicit ManageDevicesViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addManageDevicesListener(ManageDevicesListener listener) const;
+	void close() const;
+	bool getCanManage() const;
+	std::optional<ManageDevicesSnapshot> getSnapshot() const;
+	void refresh() const;
+	void removeDevice(const std::string& client_id) const;
 	void start() const;
 	void stop() const;
 };
@@ -22800,6 +23953,16 @@ public:
 	void start() const;
 	void startPurchaseConfirmation() const;
 	void stop() const;
+};
+
+class SubscriptionProTracker final : public detail::Handle {
+public:
+	SubscriptionProTracker() = default;
+	explicit SubscriptionProTracker(uint64_t h) : detail::Handle(h) {}
+	bool balanceLoaded(bool server_is_pro) const;
+	bool getIsPro() const;
+	void reset() const;
+	bool setJwt(const std::string& by_jwt) const;
 };
 
 class Tunnel final : public detail::Handle {
@@ -24672,6 +25835,34 @@ inline void oneshot_dns_resolver_settings_change(void* user_data, const char* dn
 	delete f;
 }
 
+inline void retained_dns_resolver_status_change(void* user_data, const char* dns_resolver_status_json) {
+	auto* f = static_cast<DnsResolverStatusChangeListener*>(user_data);
+	try {
+		std::optional<DnsResolverStatus> dns_resolver_status_v;
+		if (dns_resolver_status_json) {
+			dns_resolver_status_v = parseJson<DnsResolverStatus>(dns_resolver_status_json);
+		}
+		(*f)(std::move(dns_resolver_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_dns_resolver_status_change(void* user_data, const char* dns_resolver_status_json) {
+	auto* f = static_cast<DnsResolverStatusChangeListener*>(user_data);
+	try {
+		std::optional<DnsResolverStatus> dns_resolver_status_v;
+		if (dns_resolver_status_json) {
+			dns_resolver_status_v = parseJson<DnsResolverStatus>(dns_resolver_status_json);
+		}
+		(*f)(std::move(dns_resolver_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_extender_provide_status_change(void* user_data, const char* status_json) {
 	auto* f = static_cast<ExtenderProvideStatusChangeListener*>(user_data);
 	try {
@@ -25909,6 +27100,54 @@ inline void retained_location_match(void* user_data) {
 }
 inline void oneshot_location_match(void* user_data) {
 	auto* f = static_cast<LocationMatchListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_manage_devices(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ManageDevicesListener*>(user_data);
+	try {
+		std::optional<ManageDevicesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ManageDevicesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_manage_devices(void* user_data, const char* snapshot_json) {
+	auto* f = static_cast<ManageDevicesListener*>(user_data);
+	try {
+		std::optional<ManageDevicesSnapshot> snapshot_v;
+		if (snapshot_json) {
+			snapshot_v = parseJson<ManageDevicesSnapshot>(snapshot_json);
+		}
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_manage_devices_sign_in_retry(void* user_data) {
+	auto* f = static_cast<ManageDevicesSignInRetry*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_manage_devices_sign_in_retry(void* user_data) {
+	auto* f = static_cast<ManageDevicesSignInRetry*>(user_data);
 	try {
 		(*f)();
 	} catch (const std::exception& e) {
@@ -27209,6 +28448,42 @@ inline void oneshot_remove_wallet(void* user_data, const char* result_json, cons
 		std::optional<RemoveWalletResult> result_v;
 		if (result_json) {
 			result_v = parseJson<RemoveWalletResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_rotate_proxy_exit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RotateProxyExitCallback*>(user_data);
+	try {
+		std::optional<RotateProxyExitResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RotateProxyExitResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_rotate_proxy_exit(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RotateProxyExitCallback*>(user_data);
+	try {
+		std::optional<RotateProxyExitResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RotateProxyExitResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -29799,6 +31074,17 @@ inline Sub Device::addDnsResolverSettingsChangeListener(DnsResolverSettingsChang
 	}
 	return r;
 }
+inline Sub Device::addDnsResolverStatusChangeListener(DnsResolverStatusChangeListener listener) const {
+	std::shared_ptr<DnsResolverStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DnsResolverStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_dns_resolver_status_change_listener(handle(), listener_fn ? &detail::retained_dns_resolver_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -30272,6 +31558,10 @@ inline std::optional<ConnectLocation> Device::getDefaultLocation() const {
 	}
 	return detail::parseJson<ConnectLocation>(r_s->c_str());
 }
+inline int64_t Device::getDnsBlockedCount() const {
+	int64_t r = urnet_device_get_dns_blocked_count(handle());
+	return r;
+}
 inline std::optional<DnsResolverSettings> Device::getDnsResolverSettings() const {
 	char* r_c = urnet_device_get_dns_resolver_settings(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30279,6 +31569,14 @@ inline std::optional<DnsResolverSettings> Device::getDnsResolverSettings() const
 		return std::nullopt;
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverStatus> Device::getDnsResolverStatus() const {
+	char* r_c = urnet_device_get_dns_resolver_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverStatus>(r_s->c_str());
 }
 inline bool Device::getDone() const {
 	bool r = urnet_device_get_done(handle());
@@ -30612,6 +31910,14 @@ inline void Device::removeDestination() const {
 }
 inline void Device::resetExtenders() const {
 	urnet_device_reset_extenders(handle());
+}
+inline bool Device::retryClientLimit() const {
+	bool r = urnet_device_retry_client_limit(handle());
+	return r;
+}
+inline bool Device::retryClientLimitAfterChange() const {
+	bool r = urnet_device_retry_client_limit_after_change(handle());
+	return r;
 }
 inline void Device::setAllowForeground(bool allow_foreground) const {
 	urnet_device_set_allow_foreground(handle(), allow_foreground);
@@ -31429,6 +32735,10 @@ inline ClientSessionViewController Api::openClientSessionViewController() const 
 	ClientSessionViewController r(urnet_api_open_client_session_view_controller(handle()));
 	return r;
 }
+inline ManageDevicesViewController Api::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_api_open_manage_devices_view_controller(handle()));
+	return r;
+}
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -31545,6 +32855,34 @@ inline void Api::revokeOtherNetworkSessions(const std::optional<RevokeOtherNetwo
 	}
 	auto* callback_fn = callback ? new SessionOperationCallback(std::move(callback)) : nullptr;
 	urnet_api_revoke_other_network_sessions(handle(), args_c, callback_fn ? &detail::oneshot_session_operation : nullptr, callback_fn);
+}
+inline void Api::rotateProxyExit(const std::optional<RotateProxyExitArgs>& args, RotateProxyExitCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new RotateProxyExitCallback(std::move(callback)) : nullptr;
+	urnet_api_rotate_proxy_exit(handle(), args_c, callback_fn ? &detail::oneshot_rotate_proxy_exit : nullptr, callback_fn);
+}
+inline std::optional<RotateProxyExitResult> Api::rotateProxyExitSync(const std::optional<RotateProxyExitArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_rotate_proxy_exit_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<RotateProxyExitResult>(r_s->c_str());
 }
 inline void Api::sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const {
 	std::string send_feedback_json;
@@ -32460,6 +33798,20 @@ inline void ClientEventQueue::setAppVersion(const std::string& app_version) cons
 inline void ClientEventQueue::setLocale(const std::string& locale) const {
 	urnet_client_event_queue_set_locale(handle(), locale.c_str());
 }
+inline std::string ClientLimitNoticeTracker::reset() const {
+	char* r_c = urnet_client_limit_notice_tracker_reset(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientLimitNoticeTracker::update(const std::optional<ClientLimitStatus>& status, bool connect_requested) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_client_limit_notice_tracker_update(handle(), status_c, connect_requested);
+	return detail::takeString(r_c);
+}
 inline bool ClientRefreshIntegrityNotice::closeApiIfCurrent() const {
 	bool r = urnet_client_refresh_integrity_notice_close_api_if_current(handle());
 	return r;
@@ -33057,6 +34409,9 @@ inline void DeviceLocal::closeDevicesViewController(const DevicesViewController&
 inline void DeviceLocal::closeLocationsViewController(const LocationsViewController& vc) const {
 	urnet_device_local_close_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closeManageDevicesViewController(const ManageDevicesViewController& vc) const {
+	urnet_device_local_close_manage_devices_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_local_close_peer_view_controller(handle(), vc.handle());
 }
@@ -33326,6 +34681,10 @@ inline FeedbackViewController DeviceLocal::openFeedbackViewController() const {
 }
 inline LocationsViewController DeviceLocal::openLocationsViewController() const {
 	LocationsViewController r(urnet_device_local_open_locations_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController DeviceLocal::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_device_local_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline NetworkUserViewController DeviceLocal::openNetworkUserViewController() const {
@@ -33908,6 +35267,9 @@ inline void DeviceRemote::closeDevicesViewController(const DevicesViewController
 inline void DeviceRemote::closeLocationsViewController(const LocationsViewController& vc) const {
 	urnet_device_remote_close_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeManageDevicesViewController(const ManageDevicesViewController& vc) const {
+	urnet_device_remote_close_manage_devices_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_remote_close_peer_view_controller(handle(), vc.handle());
 }
@@ -34091,6 +35453,10 @@ inline FeedbackViewController DeviceRemote::openFeedbackViewController() const {
 }
 inline LocationsViewController DeviceRemote::openLocationsViewController() const {
 	LocationsViewController r(urnet_device_remote_open_locations_view_controller(handle()));
+	return r;
+}
+inline ManageDevicesViewController DeviceRemote::openManageDevicesViewController() const {
+	ManageDevicesViewController r(urnet_device_remote_open_manage_devices_view_controller(handle()));
 	return r;
 }
 inline NetworkUserViewController DeviceRemote::openNetworkUserViewController() const {
@@ -35378,6 +36744,44 @@ inline void LoginViewController::start() const {
 }
 inline void LoginViewController::stop() const {
 	urnet_login_view_controller_stop(handle());
+}
+inline Sub ManageDevicesViewController::addManageDevicesListener(ManageDevicesListener listener) const {
+	std::shared_ptr<ManageDevicesListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ManageDevicesListener>(std::move(listener));
+	}
+	Sub r(urnet_manage_devices_view_controller_add_manage_devices_listener(handle(), listener_fn ? &detail::retained_manage_devices : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ManageDevicesViewController::close() const {
+	urnet_manage_devices_view_controller_close(handle());
+}
+inline bool ManageDevicesViewController::getCanManage() const {
+	bool r = urnet_manage_devices_view_controller_get_can_manage(handle());
+	return r;
+}
+inline std::optional<ManageDevicesSnapshot> ManageDevicesViewController::getSnapshot() const {
+	char* r_c = urnet_manage_devices_view_controller_get_snapshot(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ManageDevicesSnapshot>(r_s->c_str());
+}
+inline void ManageDevicesViewController::refresh() const {
+	urnet_manage_devices_view_controller_refresh(handle());
+}
+inline void ManageDevicesViewController::removeDevice(const std::string& client_id) const {
+	urnet_manage_devices_view_controller_remove_device(handle(), client_id.c_str());
+}
+inline void ManageDevicesViewController::start() const {
+	urnet_manage_devices_view_controller_start(handle());
+}
+inline void ManageDevicesViewController::stop() const {
+	urnet_manage_devices_view_controller_stop(handle());
 }
 inline void NetworkNameValidationViewController::close() const {
 	urnet_network_name_validation_view_controller_close(handle());
@@ -36783,6 +38187,21 @@ inline void SubscriptionBalanceViewController::startPurchaseConfirmation() const
 inline void SubscriptionBalanceViewController::stop() const {
 	urnet_subscription_balance_view_controller_stop(handle());
 }
+inline bool SubscriptionProTracker::balanceLoaded(bool server_is_pro) const {
+	bool r = urnet_subscription_pro_tracker_balance_loaded(handle(), server_is_pro);
+	return r;
+}
+inline bool SubscriptionProTracker::getIsPro() const {
+	bool r = urnet_subscription_pro_tracker_get_is_pro(handle());
+	return r;
+}
+inline void SubscriptionProTracker::reset() const {
+	urnet_subscription_pro_tracker_reset(handle());
+}
+inline bool SubscriptionProTracker::setJwt(const std::string& by_jwt) const {
+	bool r = urnet_subscription_pro_tracker_set_jwt(handle(), by_jwt.c_str());
+	return r;
+}
 inline void Tunnel::cancel() const {
 	urnet_tunnel_cancel(handle());
 }
@@ -37226,9 +38645,47 @@ inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, con
 	char* r_c = urnet_connect_link_url(key_c, values_c, target.c_str());
 	return detail::takeString(r_c);
 }
+inline std::optional<DnsResolverSettings> copyDnsResolverSettings(const std::optional<DnsResolverSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_copy_dns_resolver_settings(settings_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
 inline std::string createPaymentReference() {
 	char* r_c = urnet_create_payment_reference();
 	return detail::takeString(r_c);
+}
+inline int64_t cryptoAssetDecimals(const std::string& asset) {
+	int64_t r = urnet_crypto_asset_decimals(asset.c_str());
+	return r;
+}
+inline std::string cryptoAssetIconKey(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_icon_key(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetLabel(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_label(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetLabelKey(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_label_key(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoAssetMarket(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_market(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline int64_t cryptoAssetQuoteDecimals(const std::string& asset) {
+	int64_t r = urnet_crypto_asset_quote_decimals(asset.c_str());
+	return r;
 }
 inline bool cryptoAssetSells(const std::optional<CryptoPaymentAssetList>& assets, const std::string& asset, const std::string& item) {
 	std::string assets_json;
@@ -37242,6 +38699,44 @@ inline bool cryptoAssetSells(const std::optional<CryptoPaymentAssetList>& assets
 }
 inline std::string cryptoAssetTicker(const std::string& asset) {
 	char* r_c = urnet_crypto_asset_ticker(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoPaymentQrText(const std::string& asset, const std::string& uri, const std::string& address) {
+	char* r_c = urnet_crypto_payment_qr_text(asset.c_str(), uri.c_str(), address.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoPaymentTabId(const std::string& asset) {
+	char* r_c = urnet_crypto_payment_tab_id(asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::optional<CryptoPaymentTabList> cryptoPaymentTabs(const std::optional<CryptoPaymentAssetList>& assets, const std::optional<CryptoPaymentAssetList>& unavailable_assets, const std::optional<StringList>& items) {
+	std::string assets_json;
+	const char* assets_c = nullptr;
+	if (assets) {
+		assets_json = nlohmann::json(*assets).dump();
+		assets_c = assets_json.c_str();
+	}
+	std::string unavailable_assets_json;
+	const char* unavailable_assets_c = nullptr;
+	if (unavailable_assets) {
+		unavailable_assets_json = nlohmann::json(*unavailable_assets).dump();
+		unavailable_assets_c = unavailable_assets_json.c_str();
+	}
+	std::string items_json;
+	const char* items_c = nullptr;
+	if (items) {
+		items_json = nlohmann::json(*items).dump();
+		items_c = items_json.c_str();
+	}
+	char* r_c = urnet_crypto_payment_tabs(assets_c, unavailable_assets_c, items_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<CryptoPaymentTabList>(r_s->c_str());
+}
+inline std::string cryptoPaymentUriScheme(const std::string& asset) {
+	char* r_c = urnet_crypto_payment_uri_scheme(asset.c_str());
 	return detail::takeString(r_c);
 }
 inline bool cryptoTermNoticeDue(const std::optional<CryptoTerm>& term) {
@@ -37329,6 +38824,82 @@ inline std::optional<TunnelDnsSetting> defaultTunnelDnsSetting() {
 		return std::nullopt;
 	}
 	return detail::parseJson<TunnelDnsSetting>(r_s->c_str());
+}
+inline std::optional<DnsSelectionSummary> describeDnsResolverSettings(const std::optional<DnsResolverSettings>& settings, const std::string& exit_country_code) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_describe_dns_resolver_settings(settings_c, exit_country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsSelectionSummary>(r_s->c_str());
+}
+inline std::optional<DnsStatusSummary> describeDnsResolverStatus(const std::optional<DnsResolverSettings>& settings, const std::optional<DnsResolverStatus>& status) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	char* r_c = urnet_describe_dns_resolver_status(settings_c, status_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsStatusSummary>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsAsCustom(const std::optional<DnsResolverSettings>& base) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_as_custom(base_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsWithFallback(const std::optional<DnsResolverSettings>& base, bool enable_fallback) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_with_fallback(base_c, enable_fallback);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::optional<DnsResolverSettings> dnsResolverSettingsWithPreset(const std::optional<DnsResolverSettings>& base, const std::string& preset_id, const std::string& personal_id) {
+	std::string base_json;
+	const char* base_c = nullptr;
+	if (base) {
+		base_json = nlohmann::json(*base).dump();
+		base_c = base_json.c_str();
+	}
+	char* r_c = urnet_dns_resolver_settings_with_preset(base_c, preset_id.c_str(), personal_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
 inline std::string encodeBase58(const uint8_t* data, int32_t data_len) {
 	char* r_c = urnet_encode_base58(data, data_len);
@@ -37511,6 +39082,40 @@ inline std::string getDefaultTunnelDnsAddressIpv6() {
 inline int64_t getDefaultTunnelMtu() {
 	int64_t r = urnet_get_default_tunnel_mtu();
 	return r;
+}
+inline std::optional<DnsPickList> getDnsPicks(const std::string& exit_country_code) {
+	char* r_c = urnet_get_dns_picks(exit_country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPickList>(r_s->c_str());
+}
+inline std::optional<DnsPreset> getDnsPreset(const std::string& preset_id) {
+	char* r_c = urnet_get_dns_preset(preset_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPreset>(r_s->c_str());
+}
+inline std::string getDnsPresetPersonalIdForEdit(const std::optional<DnsResolverSettings>& settings, const std::string& preset_id) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_get_dns_preset_personal_id_for_edit(settings_c, preset_id.c_str());
+	return detail::takeString(r_c);
+}
+inline std::optional<DnsPresetProviderList> getDnsPresetProviders() {
+	char* r_c = urnet_get_dns_preset_providers();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DnsPresetProviderList>(r_s->c_str());
 }
 inline std::string getExtenderColorHex(const std::string& ip) {
 	char* r_c = urnet_get_extender_color_hex(ip.c_str());
@@ -37726,6 +39331,10 @@ inline std::optional<ClientInfo> newClientInfo(const std::string& device_type, c
 		return std::nullopt;
 	}
 	return detail::parseJson<ClientInfo>(r_s->c_str());
+}
+inline ClientLimitNoticeTracker newClientLimitNoticeTracker() {
+	ClientLimitNoticeTracker r(urnet_new_client_limit_notice_tracker());
+	return r;
 }
 inline std::optional<ClientEvent> newConnectFirstEvent() {
 	char* r_c = urnet_new_connect_first_event();
@@ -37971,6 +39580,17 @@ inline std::optional<ClientEvent> newPurchaseStartedEvent(const std::string& sto
 	}
 	return detail::parseJson<ClientEvent>(r_s->c_str());
 }
+inline ManageDevicesViewController newSignInManageDevicesViewController(const Api& api, const std::string& network_by_jwt, ManageDevicesSignInRetry retry) {
+	std::shared_ptr<ManageDevicesSignInRetry> retry_fn;
+	if (retry) {
+		retry_fn = std::make_shared<ManageDevicesSignInRetry>(std::move(retry));
+	}
+	ManageDevicesViewController r(urnet_new_sign_in_manage_devices_view_controller(api.handle(), network_by_jwt.c_str(), retry_fn ? &detail::retained_manage_devices_sign_in_retry : nullptr, retry_fn.get()));
+	if (retry_fn) {
+		r.retain(retry_fn);
+	}
+	return r;
+}
 inline std::optional<ClientEvent> newSignupOptoutChangedEvent(bool product_updates) {
 	char* r_c = urnet_new_signup_optout_changed_event(product_updates);
 	auto r_s = detail::takeStringOpt(r_c);
@@ -38030,6 +39650,10 @@ inline SubscriptionBalanceViewController newSubscriptionBalanceViewController(co
 	SubscriptionBalanceViewController r(urnet_new_subscription_balance_view_controller(api.handle()));
 	return r;
 }
+inline SubscriptionProTracker newSubscriptionProTracker() {
+	SubscriptionProTracker r(urnet_new_subscription_pro_tracker());
+	return r;
+}
 inline int64_t newTimeUnixMilli(int64_t unix_milli) {
 	int64_t r = urnet_new_time_unix_milli(unix_milli);
 	return r;
@@ -38084,6 +39708,10 @@ inline std::string normalExtenderGossipMode(const std::string& mode) {
 }
 inline std::string normalizeBittensorSignature(const std::string& signature) {
 	char* r_c = urnet_normalize_bittensor_signature(signature.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string normalizeDnsPresetPersonalId(const std::string& preset_id, const std::string& input) {
+	char* r_c = urnet_normalize_dns_preset_personal_id(preset_id.c_str(), input.c_str());
 	return detail::takeString(r_c);
 }
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
@@ -38286,6 +39914,9 @@ inline void setControlIpFamilyPolicy(int64_t policy) {
 }
 inline void setDeviceRpcH1PlusEnabled(bool enabled) {
 	urnet_set_device_rpc_h1_plus_enabled(enabled);
+}
+inline void setDnsPresetsHideAdBlocking(bool hide) {
+	urnet_set_dns_presets_hide_ad_blocking(hide);
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
@@ -38533,6 +40164,11 @@ inline int64_t usdToNanoCents(double usd) {
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateControlDohUrl(const std::string& doh_url) {
 	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
+	return detail::takeString(r_c);
+}
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+inline std::string validateDnsPresetPersonalId(const std::string& preset_id, const std::string& personal_id) {
+	char* r_c = urnet_validate_dns_preset_personal_id(preset_id.c_str(), personal_id.c_str());
 	return detail::takeString(r_c);
 }
 inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {

@@ -999,16 +999,72 @@ type AuthNetworkClientResult struct {
 type AuthNetworkClientError struct {
 	// can be a hard limit or a rate limit
 	ClientLimitExceeded bool `json:"client_limit_exceeded"`
-	// the network is at its PLAN's limit for concurrent connected clients, rather
-	// than a hard cap. The client should prompt the user to upgrade (or, for an
-	// agent, pay inline over x402 -- the same request answers 402 with payment
-	// terms). Distinct from ClientLimitExceeded, which no upgrade can lift.
-	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
-	Message         string `json:"message"`
+	// a plan limit refused the request and UR Pro lifts it: the network is on
+	// the free plan at its concurrent connected client limit, its hosted proxy
+	// cap or rate, or asked for a Pro-only feature. The client should prompt the
+	// user to upgrade (an agent may pay inline over x402: a request that asks
+	// with `X-UR-X402: 1` is answered 402 with payment terms, which this sdk
+	// reads back as this refusal). With ClientLimitExceeded and without this, no
+	// upgrade lifts the limit: a Pro network at the Pro limit, or a cap.
+	UpgradeRequired bool `json:"upgrade_required,omitempty"`
+	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
+	// does not already hold in the location; nothing was created and neither
+	// the cap nor the creation rate was spent
+	NoUniqueSupply bool   `json:"no_unique_supply,omitempty"`
+	Message        string `json:"message"`
+	// What an app offers for this refusal, set by the sdk from the fields
+	// above and never sent by the server (client_limit_status.go):
+	// ClientLimitPromptUpgrade with UpgradeRequired,
+	// ClientLimitPromptRemoveClient for a client limit no upgrade lifts, and
+	// ClientLimitPromptNone for any other refusal.
+	ClientLimitPrompt string `json:"client_limit_prompt,omitempty"`
+}
+
+// authNetworkClientRefusalHttpPostRaw answers auth-client's 402 Payment
+// Required as the refusal it stands for. The server answers a refusal an
+// upgrade lifts with x402 payment terms only to a caller that asks for them
+// (`X-UR-X402: 1`, which this sdk never sends), but servers before 2026-11-10
+// quoted every caller whose client info named no app, and servers before
+// 2026-11-08 every caller. The terms' error is the refusal's message. A
+// person cannot sign x402 terms, and
+// the apps read a 402 as a failed request and showed the raw terms or a
+// generic error, so the 402 reads as the refusal with upgrade_required, the
+// same as the server's JSON body for it, and the apps show their upgrade
+// prompt. Every other answer passes through.
+func authNetworkClientRefusalHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) connect.HttpPostRawFunction {
+	return func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+		bodyBytes, err := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		var statusError *connect.HttpStatusError
+		if err == nil || !errors.As(err, &statusError) || !statusError.PaymentRequired() {
+			return bodyBytes, err
+		}
+		var terms struct {
+			Error string `json:"error"`
+		}
+		// terms that do not parse still mean an upgrade lifts the refusal
+		_ = json.Unmarshal(statusError.Body, &terms)
+		return json.Marshal(&AuthNetworkClientResult{
+			Error: &AuthNetworkClientError{
+				UpgradeRequired: true,
+				Message:         terms.Error,
+			},
+		})
+	}
+}
+
+// withAuthNetworkClientPrompt sets the prompt of a refused auth-client, so
+// every app reads the same decision (clientLimitPromptForRefusal).
+func withAuthNetworkClientPrompt(result *AuthNetworkClientResult) *AuthNetworkClientResult {
+	if result != nil && result.Error != nil {
+		result.Error.ClientLimitPrompt = clientLimitPromptForRefusal(result.Error)
+	}
+	return result
 }
 
 // Registers with the invoking sign-in, retaining its credential generation
 // even when a later login uses equal token bytes before the goroutine runs.
+// A refusal carries its ClientLimitPrompt, and a 402 reads as the refusal it
+// stands for (authNetworkClientRefusalHttpPostRaw).
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
 	byJwt, networkGeneration := func() (string, uint64) {
 		self.mutex.Lock()
@@ -1018,12 +1074,14 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 	request := func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(networkGeneration),
+			authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw(networkGeneration)),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
 			byJwt,
 			&AuthNetworkClientResult{},
-			callback,
+			connect.NewApiCallback(func(result *AuthNetworkClientResult, err error) {
+				callback.Result(withAuthNetworkClientPrompt(result), err)
+			}),
 		)
 	}
 	if self.authNetworkClientLaunch != nil {
@@ -1039,15 +1097,16 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 //
 //gomobile:noexport
 func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
-	return connect.HttpPostWithRawFunction(
+	result, err := connect.HttpPostWithRawFunction(
 		ctx,
-		self.getHttpPostRaw(),
+		authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw()),
 		fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 		authNetworkClient,
 		self.GetByJwt(),
 		&AuthNetworkClientResult{},
 		connect.NewNoopApiCallback[*AuthNetworkClientResult](),
 	)
+	return withAuthNetworkClientPrompt(result), err
 }
 
 // AuthNetworkClientSync uses the API lifetime as its bound.
@@ -1086,7 +1145,10 @@ type NetworkClientInfo struct {
 	ProvideMode int `json:"provide_mode"`
 	// ProxyClient carries the hosted proxy device's credentials; only the
 	// /network/proxies listing fills it, /network/clients never does
-	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
+	ProxyClient *ProxyClient `json:"proxy_client,omitempty"`
+	// Exit is a unique-exit proxy's current exit (ProxyConfig.UniqueExit),
+	// beside ProxyClient in the /network/proxies listing; nil otherwise
+	Exit        *ProxyExit                   `json:"exit,omitempty"`
 	Connections *NetworkClientConnectionList `json:"connections"`
 }
 
@@ -1919,8 +1981,9 @@ type SubscriptionBalanceResult struct {
 
 	// ----- crypto payments (crypto_pay_api.go) -----
 	// CryptoAssets are the coins the network can pay in now and what each
-	// sells (PaymentMethods). nil when none is enabled, and from an older
-	// server, so no crypto method is offered then.
+	// sells (PaymentMethods, CryptoPaymentTabs): never one whose quotes the
+	// server refuses for now, which the tabs grey out. nil when there is none,
+	// and from an older server, so no crypto method is offered then.
 	CryptoAssets *CryptoPaymentAssetList `json:"crypto_assets,omitempty"`
 	// CryptoTerm is the network's latest one-time crypto credit whose grace
 	// has not ended, for the renewal notice (CryptoTermNoticeDue); nil when
@@ -3995,6 +4058,65 @@ func (self *Api) RemoveNetworkClientSyncWithContextAndJwt(ctx context.Context, a
 //gomobile:noexport
 func (self *Api) RemoveNetworkClientSync(args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
 	return self.RemoveNetworkClientSyncWithContext(self.ctx, args)
+}
+
+/**
+ * Rotate a unique-exit proxy's exit
+ */
+
+type RotateProxyExitArgs struct {
+	// ClientId is the unique-exit proxy's client
+	ClientId *Id `json:"client_id"`
+}
+
+type RotateProxyExitResult struct {
+	// Exit is the proxy's new exit
+	Exit  *ProxyExit            `json:"exit,omitempty"`
+	Error *RotateProxyExitError `json:"error,omitempty"`
+}
+
+// A refused rotate: the proxy keeps its current exit
+type RotateProxyExitError struct {
+	// no other unique exit is available in the proxy's location
+	NoUniqueSupply bool `json:"no_unique_supply,omitempty"`
+	// the proxy rotated in the last minute, or 60 times today
+	RateLimited bool   `json:"rate_limited,omitempty"`
+	Message     string `json:"message"`
+}
+
+type RotateProxyExitCallback connect.ApiCallback[*RotateProxyExitResult]
+
+// Assigns a unique-exit proxy (ProxyConfig.UniqueExit) a new exit whose
+// egress IP no other active unique-exit proxy of the network uses. The server
+// rate-limits rotation per proxy. It administers the network's proxies, so it
+// is sent with the network credential (apiAdminRouteAccess).
+func (self *Api) RotateProxyExit(args *RotateProxyExitArgs, callback RotateProxyExitCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RotateProxyExitResult{},
+			callback,
+		)
+	})
+}
+
+// Uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) RotateProxyExitSync(args *RotateProxyExitArgs) (*RotateProxyExitResult, error) {
+	return connect.HttpPostWithRawFunction(
+		self.ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/proxy/rotate-exit", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&RotateProxyExitResult{},
+		connect.NewNoopApiCallback[*RotateProxyExitResult](),
+	)
 }
 
 /**

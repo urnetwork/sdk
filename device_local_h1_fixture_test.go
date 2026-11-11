@@ -14,15 +14,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The old local relay attached Unknown/no-properties routes to its provider.
-// Saturation then silently dropped a Pack that the H1 sender had delivered.
-// Prove that exact discriminator and the fixture's repaired carrier contract
-// through real Client receive/decode/queue/callback processing.
+// The fixture still publishes the actual H1 lane classification, but neither
+// reliable nor unknown carriers may park the shared Client pump at a full
+// logical queue. These are explicit NoAck packets: exactly the accepted prefix
+// drains, and the refused packet has no delivery or retry guarantee.
 func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 	for _, reliable := range []bool{false, true} {
 		name := "old-unknown-drops"
 		if reliable {
-			name = "h1-backpressures"
+			name = "h1-refuses-full"
 		}
 		t.Run(name, func(t *testing.T) {
 			settings := connect.DefaultClientSettings()
@@ -85,7 +85,7 @@ func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 			deadline := time.Now().Add(time.Second)
 			for {
 				stats := client.ReceiveStats()
-				if (reliable && stats.PackHandoffWaitCount > 0) || (!reliable && stats.PackHandoffDropCount > 0) {
+				if stats.PackHandoffDropCount > 0 {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -95,9 +95,6 @@ func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 			}
 			unblock()
 			want := 2
-			if reliable {
-				want = 3
-			}
 			for i := range want {
 				select {
 				case got := <-delivered:
@@ -108,7 +105,7 @@ func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 					t.Fatalf("missing packet %d", i)
 				}
 			}
-			if stats := client.ReceiveStats(); reliable && stats.PackHandoffDropCount != 0 || !reliable && stats.PackHandoffDropCount != 1 {
+			if stats := client.ReceiveStats(); stats.PackHandoffWaitCount != 0 || stats.PackHandoffDropCount != 1 {
 				t.Fatalf("unexpected carrier handoff: reliable=%t drops=%d", reliable, stats.PackHandoffDropCount)
 			}
 		})

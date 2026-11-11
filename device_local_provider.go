@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -107,6 +108,16 @@ type deviceLocalProvider struct {
 	// the client limit hold every transport generation shares, carried to
 	// each through its settings. Immutable after construction.
 	clientLimitBackoff *connect.ClientLimitBackoff
+	// when retryClientLimit last ended a hold, zero before the first, and how
+	// many holds it ended in a row, each within the backoff window of the one
+	// before (clientLimitRetryAdmit). Guarded by stateLock.
+	clientLimitRetryTime  time.Time
+	clientLimitRetryCount int
+	// when retryClientLimitAfterChange last ended a hold, and when it last
+	// started retryClientLimit's row over; zero before the first. Guarded by
+	// stateLock.
+	clientLimitChangeRetryTime time.Time
+	clientLimitChangeResetTime time.Time
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -271,12 +282,15 @@ func newDeviceLocalProviderWithOverrides(
 		providerMemoryTargetByteCount,
 		providerTransferParent,
 	)
+	transferMemory.configureProviderHeadRecovery(clientSettings)
 	// Admit the fallback NAT while the new device root is still empty, before
 	// starting the provider client. It is a lifetime owner even with providing
 	// disabled. Refusal is observable; never install a dead/nil NAT as a route.
 	// It carries the device's local route, so it dials through that seam.
-	localUserNatSettings := providerLocalUserNatSettings(
+	localUserNatSettings := providerLocalUserNatSettingsForProfile(
 		providerMemoryTargetByteCount,
+		deviceMemoryTargetByteCount,
+		mobileRuntime() || transferMemory != nil,
 		clientSettings.Log,
 		localDialContextSettings,
 	)
@@ -500,6 +514,133 @@ func (self *deviceLocalProvider) clientLimitStatus() (connect.ClientLimitStatus,
 	return self.clientLimitBackoff.Get()
 }
 
+// retryClientLimit ends the client limit hold in force at `now`, so the
+// transports parked on it dial again, and returns whether it did. It ends
+// none when no hold is in force, and none before the retry floor since the
+// last hold it ended (clientLimitRetryAdmit: `minInterval`, doubling with each
+// retry in a row up to `maxInterval`); see DeviceLocal.RetryClientLimit. A
+// provider built without a hold ends none.
+func (self *deviceLocalProvider) retryClientLimit(now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
+	if self.clientLimitBackoff == nil {
+		return false
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || !self.clientLimitBackoff.Status().Exceeded {
+		return false
+	}
+	admit, count := clientLimitRetryAdmit(
+		self.clientLimitRetryTime,
+		self.clientLimitRetryCount,
+		now,
+		minInterval,
+		maxInterval,
+	)
+	if !admit {
+		return false
+	}
+	self.clientLimitRetryTime = now
+	self.clientLimitRetryCount = count
+	// under the lock, as setProvideMode resets it: the platform judges the next
+	// dial again, and a refusal starts a new hold
+	self.clientLimitBackoff.Reset()
+	return true
+}
+
+// retryClientLimitAfterChange ends the client limit hold in force at `now`
+// after a change that frees a slot or raises the limit, and returns whether it
+// did (DeviceLocal.RetryClientLimitAfterChange). The backoff of the ordinary
+// retries refused before it does not hold it back: change retries are bounded
+// on their own, none within `minInterval` of the last one admitted. It ends
+// none when no hold is in force. A provider built without a hold ends none.
+//
+// The change also starts the ordinary retries' row over, since the retries
+// refused before it were refused for a reason it removed, but at most once per
+// twice the larger of `minInterval` and `maxInterval`, the quiet that starts a
+// row over on its own (clientLimitChangeResetAdmit). So a host that calls both
+// retries in a loop gets the change retries' bound plus the ordinary retries'
+// own backoff, not both at their least floor.
+func (self *deviceLocalProvider) retryClientLimitAfterChange(now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
+	if self.clientLimitBackoff == nil {
+		return false
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || !self.clientLimitBackoff.Status().Exceeded {
+		return false
+	}
+	if !clientLimitChangeRetryAdmit(self.clientLimitChangeRetryTime, now, minInterval) {
+		return false
+	}
+	self.clientLimitChangeRetryTime = now
+	if clientLimitChangeResetAdmit(self.clientLimitChangeResetTime, now, minInterval, maxInterval) {
+		// the change's retry is the first of a new row
+		self.clientLimitChangeResetTime = now
+		self.clientLimitRetryTime = now
+		self.clientLimitRetryCount = 1
+	}
+	self.clientLimitBackoff.Reset()
+	return true
+}
+
+// clientLimitChangeRetryAdmit decides a change retry at `now`, the last one at
+// `last` (zero before the first): at most one per minInterval, whatever the
+// backoff of the ordinary retries. A non-positive minInterval does not limit.
+func clientLimitChangeRetryAdmit(last time.Time, now time.Time, minInterval time.Duration) bool {
+	return last.IsZero() || minInterval <= 0 || minInterval <= now.Sub(last)
+}
+
+// clientLimitChangeResetAdmit decides whether a change retry at `now` starts
+// the ordinary retries' row over, the last change retry that did at `last`
+// (zero before the first): the first does, and then one more than twice the
+// larger interval after the last that did, as a row starts over on its own
+// after that much quiet (clientLimitRetryAdmit).
+func clientLimitChangeResetAdmit(last time.Time, now time.Time, minInterval time.Duration, maxInterval time.Duration) bool {
+	return last.IsZero() || 2*max(minInterval, maxInterval) < now.Sub(last)
+}
+
+// clientLimitRetryAdmit decides a retry at `now`, after `count` retries in a
+// row that ended a hold, the last at `last` (zero before the first): whether it
+// may end the hold in force, and the count to keep when it does.
+//
+// A hold is in force at every retry, so each retry after the first in a row
+// follows a redial the platform refused again. The floor after the first is
+// minInterval, and it doubles with each retry in a row up to maxInterval (the
+// platform's shortest hold), so an app that loops on the retry costs at most
+// the dials the holds themselves allow, not one per minInterval. A retry more
+// than twice the larger interval after the last starts a new row. A
+// non-positive minInterval does not limit.
+func clientLimitRetryAdmit(
+	last time.Time,
+	count int,
+	now time.Time,
+	minInterval time.Duration,
+	maxInterval time.Duration,
+) (admit bool, nextCount int) {
+	if last.IsZero() || minInterval <= 0 {
+		return true, 1
+	}
+	elapsed := now.Sub(last)
+	if 2*max(minInterval, maxInterval) < elapsed {
+		return true, 1
+	}
+	if elapsed < clientLimitRetryFloor(count, minInterval, maxInterval) {
+		return false, count
+	}
+	return true, count + 1
+}
+
+// clientLimitRetryFloor is how long after the last of `count` retries in a row
+// the next may end a hold: minInterval after the first, doubling with each
+// retry since, up to maxInterval, and never less than minInterval.
+func clientLimitRetryFloor(count int, minInterval time.Duration, maxInterval time.Duration) time.Duration {
+	floor := minInterval
+	for i := 1; i < count && floor < maxInterval; i += 1 {
+		floor *= 2
+	}
+	return max(minInterval, min(floor, maxInterval))
+}
+
 // newProviderPlatformTransport builds the provider's transport group: the
 // v4 and v6 pinned transports when the network space derives family urls,
 // plus the family-agnostic standby. Both construction and migration build
@@ -589,6 +730,8 @@ func configureDeviceLocalProviderMemory(
 	receiveQueueBudget = deviceLocalTransferBudgetWithParent(max(byteCountFraction(pairTarget, 4, 7), 384*1024), parents...)
 	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	// A provider's distinct RX parent cannot inherit the consumer-only child.
+	clientSettings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget = nil
 
 	// Public P2P connections admit against a dedicated phone-sized pool, not
 	// the active transfer receive queue (which is legitimately full precisely
@@ -1608,6 +1751,18 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	if self.dialContextSettings != nil {
 		connectSettings.DialContextSettings = self.dialContextSettings
 	}
+	// a client names where the relay forwards to, and the name resolves on
+	// this host, so every forward socket is judged before it connects: an
+	// address that is not public, or is this host's own or on its links, is
+	// refused (connect docs/IP_SECURITY.md §2.2.4). A dial the host supplies
+	// itself (dialContextSettings, a test harness seam) is the host's
+	connectSettings.DialControl = extenderForwardDialControl(connectSettings.DialControl)
+	// the datagram relay's udp sockets: the same control and resolver as the
+	// stream forward's
+	packetDialer := &net.Dialer{
+		Resolver: connectSettings.Resolver,
+		Control:  connectSettings.DialControl,
+	}
 
 	settings := &deviceLocalExtenderSettings{
 		Log:                    networkSpace.logger(),
@@ -1626,6 +1781,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ByJwt:                  self.byJwt,
 		ClientStrategySettings: self.clientStrategySettings,
 		DialContext:            connectSettings.DialContext,
+		DialPacketContext:      packetDialer.DialContext,
 		Restart:                self.restartExtender,
 		RenewKey:               self.renewExtenderKey,
 		RestartJitter:          self.extenderRestartJitter,

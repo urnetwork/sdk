@@ -378,7 +378,9 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		nil,
 		settings.AllowedHosts,
 		self.ports(),
-		&net.Dialer{},
+		// what dials a forward the settings give no dial for, under the
+		// forward's control all the same
+		&net.Dialer{Control: extenderForwardDialControl(nil)},
 		self.serverSettings(nodeRuns),
 	)
 	func() {
@@ -606,6 +608,7 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	// (L2); a failure of that bind disables the one port, not the carrier
 	settings.DnsPrivilegedPort = self.settings.DnsPrivilegedPort
 	settings.DialContext = self.settings.DialContext
+	settings.DialPacketContext = self.settings.DialPacketContext
 	// the tcp carrier is the listener the role already holds (G2); every
 	// other bind goes through the configured seam
 	listen := self.settings.Listen

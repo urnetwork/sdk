@@ -97,6 +97,7 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /network/register-client-v1":      apiRouteAccessNetwork,
 	"POST /network/remove-clients":          apiRouteAccessNetwork,
 	"GET /network/proxies":                  apiRouteAccessNetwork,
+	"POST /network/proxy/rotate-exit":       apiRouteAccessNetwork,
 	"POST /network/user/update":             apiRouteAccessNetwork,
 	"POST /network/client-data-cap":         apiRouteAccessNetwork,
 	"GET /network/client-data-caps":         apiRouteAccessNetwork,

@@ -74,7 +74,7 @@ type ioLoopWitnessFixture struct {
 // the production os.File/read/drain/send/unsubscribe/close bodies are unchanged.
 func newIoLoopWitnessFixture(t *testing.T, preload [][]byte, now func() time.Time) *ioLoopWitnessFixture {
 	t.Helper()
-	for _, size := range []int{60, 1100} {
+	for _, size := range []int{60, connect.DefaultTunnelMtu} {
 		connect.MessagePoolReturn(connect.MessagePoolGet(size))
 	}
 	previous := connect.SetMessagePoolViolationHandler(func(err error, stack []byte) {
@@ -140,7 +140,7 @@ func ioLoopWitnessPacket(size int, marker byte) []byte {
 // no sleep, queue-length polling, or assumed absence of a callback is the proof.
 func TestIoLoopHeldSendLeavesNextDatagramNativeOwned(t *testing.T) {
 	first := ioLoopWitnessPacket(60, 0x41)
-	second := ioLoopWitnessPacket(1100, 0x52)
+	second := ioLoopWitnessPacket(connect.DefaultTunnelMtu, 0x52)
 	var clock atomic.Int64
 	fixture := newIoLoopWitnessFixture(t, [][]byte{first}, func() time.Time {
 		return time.Unix(100, clock.Load())
@@ -187,7 +187,7 @@ func TestIoLoopPartialBatchDispositionReturnsAllRoots(t *testing.T) {
 	for _, accepted := range []int{0, 1, 3} {
 		packets := [][]byte{
 			ioLoopWitnessPacket(60, 0x41),
-			ioLoopWitnessPacket(1100, 0x52),
+			ioLoopWitnessPacket(connect.DefaultTunnelMtu, 0x52),
 			ioLoopWitnessPacket(60, 0x63),
 		}
 		nextRead := make(chan struct{})

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -414,13 +415,21 @@ func (self *LocalState) SetRouteLocal(routeLocal bool) error {
 }
 
 func (self *LocalState) GetRouteLocal() bool {
+	routeLocal, _ := self.routeLocalIfSet()
+	return routeLocal
+}
+
+// GetRouteLocal plus whether one was saved. A DeviceRemote queues only a saved
+// kill switch for its device (device_remote_saved_settings.go): the default
+// read for a missing record is no instruction to a device that has its own.
+func (self *LocalState) routeLocalIfSet() (bool, bool) {
 	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	if routeLocalBytes, err := os.ReadFile(path); err == nil {
 		if value, err := decodeLocalPreference("route-local", routeLocalBytes); err == nil {
-			return value.(bool)
+			return value.(bool), true
 		}
 	}
-	return true
+	return true, false
 }
 
 // SetLogVerbosity persists the glog verbosity the user chose, so a tunnel
@@ -540,13 +549,20 @@ func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 }
 
 func (self *LocalState) GetBlockerEnabled() bool {
+	blockerEnabled, _ := self.blockerEnabledIfSet()
+	return blockerEnabled
+}
+
+// GetBlockerEnabled plus whether one was saved: a DeviceRemote queues only a
+// saved blocker setting for its device (device_remote_saved_settings.go).
+func (self *LocalState) blockerEnabledIfSet() (bool, bool) {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	if blockerEnabledBytes, err := os.ReadFile(path); err == nil {
 		if value, err := decodeLocalPreference("blocker-enabled", blockerEnabledBytes); err == nil {
-			return value.(bool)
+			return value.(bool), true
 		}
 	}
-	return false
+	return false, false
 }
 
 // Dropped while the space is signed out (local_state_sign_in.go): a late
@@ -600,19 +616,46 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 // resolves only through the tunnel); a record written at this version keeps the user's choice.
 const dnsResolverSettingsFallbackOptInVersion = 1
 
+// The record also carries the version of the default server lists it was written against: 1
+// once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left,
+// Cloudflare's second address joined and Quad9's unfiltered 9.9.9.10 took the place of its
+// filtering 9.9.9.9, 3 once DNS.SB joined them (2026-11-09) and the old Google-only kz
+// recommendation began to load as today's kz pick. The dns editors save every list, so a record
+// written before a version can hold the default lists of its time carried along rather than
+// chosen. See migrateDefaultServerLists and dnsResolverSettingsHoldGoogleKzRecommendation.
+const dnsResolverSettingsDefaultServersVersion = 3
+
+// The record also carries the version of the dns selection (connect ADBLOCK3RD E4): 1 once the
+// record holds PresetId and PresetPersonalId, the selection the device derives the lists from
+// (dns_presets.go). A record without it was written by an sdk before the presets, where the
+// editors saved every list, so the defaults carried along cannot be told apart from a choice by
+// its PresetId. See migrateDnsResolverSettingsSelection.
+//
+// In a record at this version, the lists of a selection are always the derivation of the release
+// that wrote it, never an edit: every writer turns lists edited under a selection into custom
+// settings first (dnsResolverSettingsAsEdited). So a record's selection loads with the lists it
+// derives today, and a selection follows a later release's defaults, presets and regional
+// recommendations, through an app's own copy of the settings too.
+const dnsResolverSettingsPresetVersion = 1
+
 type dnsResolverSettingsRecord struct {
 	DnsResolverSettings
-	FallbackOptInVersion int `json:",omitempty"`
+	FallbackOptInVersion  int `json:",omitempty"`
+	DefaultServersVersion int `json:",omitempty"`
+	PresetVersion         int `json:",omitempty"`
 }
 
 func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) ([]byte, error) {
 	return json.Marshal(&dnsResolverSettingsRecord{
-		DnsResolverSettings:  *dnsResolverSettings,
-		FallbackOptInVersion: dnsResolverSettingsFallbackOptInVersion,
+		DnsResolverSettings:   *dnsResolverSettings,
+		FallbackOptInVersion:  dnsResolverSettingsFallbackOptInVersion,
+		DefaultServersVersion: dnsResolverSettingsDefaultServersVersion,
+		PresetVersion:         dnsResolverSettingsPresetVersion,
 	})
 }
 
-// Applies the fallback opt-in migration to records written by older sdks.
+// Applies the fallback opt-in, default server list and selection migrations to records written
+// by older sdks.
 func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) {
 	var record dnsResolverSettingsRecord
 	if err := json.Unmarshal(data, &record); err != nil {
@@ -622,10 +665,373 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 		record.EnableFallback = false
 	}
 	dnsResolverSettings := record.DnsResolverSettings
+	if dnsResolverSettingsHoldGoogleKzRecommendation(&dnsResolverSettings, record.DefaultServersVersion) {
+		// the kz recommendation of its time loads as today's kz pick, with the fallback choice and
+		// mask it had
+		dnsResolverSettings.PresetId = DnsPresetIdRegionalPrefix + "kz"
+		dnsResolverSettings.PresetPersonalId = ""
+		return ownDnsResolverSettings(&dnsResolverSettings), nil
+	}
+	if record.DefaultServersVersion < dnsResolverSettingsDefaultServersVersion {
+		migrateDefaultServerLists(&dnsResolverSettings, record.DefaultServersVersion)
+	}
+	if record.PresetVersion < dnsResolverSettingsPresetVersion {
+		migrateDnsResolverSettingsSelection(&dnsResolverSettings)
+	} else if dnsResolverSettings.PresetId != "" {
+		// the release that wrote it derived these lists; derive them again
+		return ownDnsResolverSettings(&dnsResolverSettings), nil
+	}
 	return &dnsResolverSettings, nil
 }
 
-// Dropped while the space is signed out, as SetProvideNetworkMode.
+// A record from before the presets selects URnetwork's default (DnsPresetIdDefault) when its
+// toggles are the defaults' (remote DoH alone, with any fallback choice) and every list equals
+// the current default list, in order, after the default server list migration: an editor saved
+// the defaults along, so the device follows later default changes without another list
+// migration, and resolves exactly as before. The mask is the user's either way. Every other
+// record is custom, its lists as saved.
+func migrateDnsResolverSettingsSelection(dnsResolverSettings *DnsResolverSettings) {
+	dnsResolverSettings.PresetPersonalId = ""
+	if dnsResolverSettingsSelectDefault(dnsResolverSettings) {
+		dnsResolverSettings.PresetId = DnsPresetIdDefault
+	} else {
+		dnsResolverSettings.PresetId = ""
+	}
+}
+
+// Whether settings resolve exactly as URnetwork's default: the default toggles and all eight
+// lists equal to the default lists in order, an absent list the same as an empty one. The
+// fallback choice and the mask do not count.
+func dnsResolverSettingsSelectDefault(dnsResolverSettings *DnsResolverSettings) bool {
+	defaults := defaultDnsResolver()
+	if dnsResolverSettings.EnableRemoteDoh != defaults.EnableRemoteDoh ||
+		dnsResolverSettings.EnableLocalDoh != defaults.EnableLocalDoh ||
+		dnsResolverSettings.EnableRemoteDns != defaults.EnableRemoteDns ||
+		dnsResolverSettings.EnableLocalDns != defaults.EnableLocalDns {
+		return false
+	}
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	for _, pair := range [][2][]string{
+		{stringsOf(dnsResolverSettings.RemoteDohUrlsIpv4), defaults.RemoteDohUrlsIpv4},
+		{stringsOf(dnsResolverSettings.RemoteDohUrlsIpv6), defaults.RemoteDohUrlsIpv6},
+		{stringsOf(dnsResolverSettings.LocalDohUrlsIpv4), defaults.LocalDohUrlsIpv4},
+		{stringsOf(dnsResolverSettings.LocalDohUrlsIpv6), defaults.LocalDohUrlsIpv6},
+		{stringsOf(dnsResolverSettings.RemoteDnsIpv4), defaults.RemoteDnsIpv4},
+		{stringsOf(dnsResolverSettings.RemoteDnsIpv6), defaults.RemoteDnsIpv6},
+		{stringsOf(dnsResolverSettings.LocalDnsIpv4), defaults.LocalDnsIpv4},
+		{stringsOf(dnsResolverSettings.LocalDnsIpv6), defaults.LocalDnsIpv6},
+	} {
+		if !slices.Equal(pair[0], pair[1]) {
+			return false
+		}
+	}
+	return true
+}
+
+// The default server lists as shipped before each DefaultServersVersion, each with the current
+// default list that replaces it. A record written at a version below `before` can hold the list
+// as the old default: the lists that named Google Public DNS (connect, 2026-07-02 to
+// 2026-11-08) before version 1, the lists that named OpenDNS after it (2026-11-08 until version
+// 2) before version 2, and the lists of Cloudflare at both of its addresses and Quad9's
+// unfiltered 9.9.9.10 (2026-11-08 until DNS.SB joined at version 3) before version 3. Each
+// migrates straight to the current lists. Every release that changes the default lists adds its
+// old ones here: the edit rule (dnsResolverSettingsAsEdited) reads a selection's lists of an
+// earlier release as that release's derivation by this table.
+var dnsResolverSettingsOldDefaultServerLists = []struct {
+	before  int
+	servers []string
+	current func(defaults *connect.DnsResolverSettings) []string
+}{
+	{
+		before: 1,
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://8.8.8.8/dns-query",
+			"https://9.9.9.9/dns-query",
+			"https://208.67.222.222/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		before: 1,
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2001:4860:4860::8888]/dns-query",
+			"https://[2620:fe::fe]/dns-query",
+			"https://[2620:119:35::35]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		before:  1,
+		servers: []string{"1.1.1.1", "9.9.9.9", "8.8.8.8", "208.67.222.222"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		before:  1,
+		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2001:4860:4860::8888", "2620:119:35::35"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
+	{
+		before: 2,
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://9.9.9.9/dns-query",
+			"https://208.67.222.222/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		before: 2,
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2620:fe::fe]/dns-query",
+			"https://[2620:119:35::35]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		before:  2,
+		servers: []string{"1.1.1.1", "9.9.9.9", "208.67.222.222"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		before:  2,
+		servers: []string{"2606:4700:4700::1111", "2620:fe::fe", "2620:119:35::35"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
+	{
+		before: 3,
+		servers: []string{
+			"https://1.1.1.1/dns-query",
+			"https://9.9.9.10/dns-query",
+			"https://1.0.0.1/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv4 },
+	},
+	{
+		before: 3,
+		servers: []string{
+			"https://[2606:4700:4700::1111]/dns-query",
+			"https://[2620:fe::10]/dns-query",
+			"https://[2606:4700:4700::1001]/dns-query",
+		},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDohUrlsIpv6 },
+	},
+	{
+		before:  3,
+		servers: []string{"1.1.1.1", "9.9.9.10", "1.0.0.1"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv4 },
+	},
+	{
+		before:  3,
+		servers: []string{"2606:4700:4700::1111", "2620:fe::10", "2606:4700:4700::1001"},
+		current: func(defaults *connect.DnsResolverSettings) []string { return defaults.RemoteDnsIpv6 },
+	},
+}
+
+// Quad9's filtering address in the old default lists, each with its unfiltered address, which
+// takes its place when such a list migrates (DefaultServersVersion 2).
+var dnsResolverSettingsReplacedDefaultServers = map[string]string{
+	"https://9.9.9.9/dns-query":       "https://9.9.9.10/dns-query",
+	"https://[2620:fe::fe]/dns-query": "https://[2620:fe::10]/dns-query",
+	"9.9.9.9":                         "9.9.9.10",
+	"2620:fe::fe":                     "2620:fe::10",
+}
+
+// The tm regional recommendation as shipped while it named Google Public DNS (connect,
+// 2026-07-10 to 2026-11-08): Turkmentelecom and Google in the remote plain v4 list, and from
+// 2026-09-11 Google's v6 address in the remote plain v6 list.
+var (
+	dnsResolverSettingsGoogleTmRemoteDnsIpv4 = []string{"217.174.238.141", "8.8.4.4"}
+	dnsResolverSettingsGoogleTmRemoteDnsIpv6 = []string{"2001:4860:4860::8844"}
+)
+
+// The kz regional recommendation as shipped at version 1 (connect, 2026-11-08, after Google
+// Public DNS left it): Cloudflare and Quad9's filtering 9.9.9.9 in the remote plain lists.
+var (
+	dnsResolverSettingsVersion1KzRemoteDnsIpv4 = []string{"1.1.1.1", "9.9.9.9"}
+	dnsResolverSettingsVersion1KzRemoteDnsIpv6 = []string{"2606:4700:4700::1111", "2620:fe::fe"}
+)
+
+// The kz regional recommendation while it named Google Public DNS alone, as an sdk applied it
+// (connect, from 2026-07-10, when an sdk first saved dns settings, to 2026-11-08): remote plain
+// dns alone, Google's 8.8.8.8 in the v4 list, from 2026-09-11 Google's v6 address in the v6
+// list, and every other list empty. Until 2026-07-10 the recommendation also turned on local
+// plain dns with Cloudflare's 1.1.1.1, but no sdk saved dns settings then, so no record holds it.
+var dnsResolverSettingsGoogleKzRecommendations = []struct {
+	remoteDnsIpv4 []string
+	remoteDnsIpv6 []string
+}{
+	{remoteDnsIpv4: []string{"8.8.8.8"}},
+	{remoteDnsIpv4: []string{"8.8.8.8"}, remoteDnsIpv6: []string{"2001:4860:4860::8888"}},
+}
+
+// The DefaultServersVersion from which an sdk loads the Google-only kz recommendation as the kz
+// pick, so a record at it holds those lists only as the user's own choice.
+const dnsResolverSettingsGoogleKzMigratedVersion = 3
+
+// Whether a record of recordVersion holds a kz recommendation of Google alone
+// (dnsResolverSettingsGoogleKzRecommendations) exactly: custom settings with its toggles, remote
+// plain dns alone, and every list, an absent list the same as an empty one, with any fallback
+// choice and mask. The owner moves these users to today's kz recommendation, which the record
+// then selects (owner decision 2026-11-09), and accepts that a user who typed exactly that list
+// moves too. Only a record from before dnsResolverSettingsGoogleKzMigratedVersion holds it as the
+// recommendation; any other list, with Google or not, loads as saved.
+func dnsResolverSettingsHoldGoogleKzRecommendation(dnsResolverSettings *DnsResolverSettings, recordVersion int) bool {
+	if dnsResolverSettingsGoogleKzMigratedVersion <= recordVersion || dnsResolverSettings.PresetId != "" {
+		return false
+	}
+	if dnsResolverSettings.EnableRemoteDoh || dnsResolverSettings.EnableLocalDoh ||
+		!dnsResolverSettings.EnableRemoteDns || dnsResolverSettings.EnableLocalDns {
+		return false
+	}
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	for _, list := range []*StringList{
+		dnsResolverSettings.RemoteDohUrlsIpv4,
+		dnsResolverSettings.RemoteDohUrlsIpv6,
+		dnsResolverSettings.LocalDohUrlsIpv4,
+		dnsResolverSettings.LocalDohUrlsIpv6,
+		dnsResolverSettings.LocalDnsIpv4,
+		dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if 0 < len(stringsOf(list)) {
+			return false
+		}
+	}
+	for _, recommendation := range dnsResolverSettingsGoogleKzRecommendations {
+		if slices.Equal(stringsOf(dnsResolverSettings.RemoteDnsIpv4), recommendation.remoteDnsIpv4) &&
+			slices.Equal(stringsOf(dnsResolverSettings.RemoteDnsIpv6), recommendation.remoteDnsIpv6) {
+			return true
+		}
+	}
+	return false
+}
+
+// Replaces each saved list that holds exactly the servers of an old default list (in any order)
+// that a record of recordVersion can carry with the current default list, keeping the saved
+// order of the servers that remain, with Quad9's unfiltered 9.9.9.10 in the place of its
+// filtering 9.9.9.9. Such a list is the old default carried along by an editor, not a choice. A
+// list a later version's sdk saved was a choice made with that version's defaults in view, so an
+// older version's default list in it is kept.
+//
+// The old tm recommendation, in a record from before version 1, is replaced the same way by the
+// current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
+// v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
+// the pair as the recommendation. So is the version 1 kz recommendation, in a version 1 record:
+// remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both families, which load as
+// the current kz recommendation with 9.9.9.10 in Quad9's place. Only a version 1 record can hold
+// it as the recommendation: before version 1, kz recommended Google alone, and no step turns that
+// into it. The same lists in a version 0 record are the user's own choice and load as saved.
+//
+// Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
+// themselves, alone or among other servers, keeps it. The old kz recommendation, Google alone, is
+// not a list this replaces: a record that holds it exactly loads as today's kz pick instead
+// (dnsResolverSettingsHoldGoogleKzRecommendation), and Google's address in any other settings
+// stays as saved.
+func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordVersion int) {
+	defaults := connect.DefaultDnsResolverSettings()
+	sameServers := func(saved []string, servers []string) bool {
+		if len(saved) != len(servers) {
+			return false
+		}
+		for _, server := range saved {
+			if !slices.Contains(servers, server) {
+				return false
+			}
+		}
+		for _, server := range servers {
+			if !slices.Contains(saved, server) {
+				return false
+			}
+		}
+		return true
+	}
+	// the saved servers that the current list still has, in their saved order and with a replaced
+	// server's successor in its place, then the current list's other servers
+	migrated := func(saved []string, current []string) *StringList {
+		servers := []string{}
+		for _, server := range saved {
+			if successor, ok := dnsResolverSettingsReplacedDefaultServers[server]; ok && !slices.Contains(current, server) {
+				server = successor
+			}
+			if slices.Contains(current, server) && !slices.Contains(servers, server) {
+				servers = append(servers, server)
+			}
+		}
+		for _, server := range current {
+			if !slices.Contains(servers, server) {
+				servers = append(servers, server)
+			}
+		}
+		migratedList := NewStringList()
+		migratedList.addAll(servers...)
+		return migratedList
+	}
+
+	if recordVersion < 1 && dnsResolverSettings.RemoteDnsIpv4 != nil {
+		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
+		var savedIpv6 []string
+		if dnsResolverSettings.RemoteDnsIpv6 != nil {
+			savedIpv6 = dnsResolverSettings.RemoteDnsIpv6.getAll()
+		}
+		if sameServers(savedIpv4, dnsResolverSettingsGoogleTmRemoteDnsIpv4) &&
+			(len(savedIpv6) == 0 || sameServers(savedIpv6, dnsResolverSettingsGoogleTmRemoteDnsIpv6)) {
+			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("tm"))
+			if 0 < len(savedIpv6) {
+				dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("tm"))
+			}
+		}
+	}
+
+	// a version 0 record predates the version 1 kz recommendation, so these lists there are a choice
+	if recordVersion == 1 && dnsResolverSettings.RemoteDnsIpv4 != nil && dnsResolverSettings.RemoteDnsIpv6 != nil {
+		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
+		savedIpv6 := dnsResolverSettings.RemoteDnsIpv6.getAll()
+		if sameServers(savedIpv4, dnsResolverSettingsVersion1KzRemoteDnsIpv4) &&
+			sameServers(savedIpv6, dnsResolverSettingsVersion1KzRemoteDnsIpv6) {
+			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("kz"))
+			dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("kz"))
+		}
+	}
+
+	for _, list := range []**StringList{
+		&dnsResolverSettings.RemoteDohUrlsIpv4,
+		&dnsResolverSettings.RemoteDohUrlsIpv6,
+		&dnsResolverSettings.LocalDohUrlsIpv4,
+		&dnsResolverSettings.LocalDohUrlsIpv6,
+		&dnsResolverSettings.RemoteDnsIpv4,
+		&dnsResolverSettings.RemoteDnsIpv6,
+		&dnsResolverSettings.LocalDnsIpv4,
+		&dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if *list == nil {
+			continue
+		}
+		saved := (*list).getAll()
+		for _, oldDefault := range dnsResolverSettingsOldDefaultServerLists {
+			if oldDefault.before <= recordVersion || !sameServers(saved, oldDefault.servers) {
+				continue
+			}
+			*list = migrated(saved, oldDefault.current(defaults))
+			break
+		}
+	}
+}
+
+// Dropped while the space is signed out, as SetProvideNetworkMode. An app keeps its copy of the
+// device's settings here, saved as the device saves them: lists edited under the default or a
+// regional selection as custom settings, and a selection with the lists it derives.
 func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettings == nil {
@@ -634,6 +1040,10 @@ func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverS
 			return nil
 		})
 	} else {
+		dnsResolverSettings = dnsResolverSettingsAsEdited(dnsResolverSettings)
+		if dnsResolverSettings.PresetId != "" {
+			dnsResolverSettings = ownDnsResolverSettings(dnsResolverSettings)
+		}
 		dnsResolverSettingsBytes, err := encodeDnsResolverSettingsRecord(dnsResolverSettings)
 		if err != nil {
 			return err

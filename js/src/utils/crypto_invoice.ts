@@ -52,6 +52,7 @@ import {
   PAYMENT_METHOD_CARD,
   checkCryptoPaymentUri,
   cryptoAssetTicker,
+  cryptoPaymentQrText,
 } from "./crypto_pay";
 import { parseRfc3339 } from "./rfc3339";
 
@@ -102,13 +103,15 @@ export interface CryptoInvoiceState {
   readonly amountAtomic: string;
   readonly ticker: string;
   /**
-   * The server's payment uri, for the QR code and "Open in wallet". Empty when
-   * it does not pass checkCryptoPaymentUri against `address`, or when the quote
-   * changed elsewhere and the uri no longer pays the amount: show the address
-   * and the amount to send by hand then.
+   * The server's payment uri, for "Open in wallet". Empty when it does not
+   * pass checkCryptoPaymentUri against `address`, when the quote changed
+   * elsewhere and the uri no longer pays the amount, and for TAO, which has
+   * none: show the address and the amount to send by hand then.
    */
   readonly uri: string;
-  /** usdc_solana only: the memo for a transfer sent by hand */
+  /** what the QR code encodes (cryptoPaymentQrText): `uri`, or for TAO the address alone; empty when there is no QR code to show */
+  readonly qrText: string;
+  /** usdc_solana and sol only: the memo for a transfer sent by hand */
   readonly memo: string;
   readonly priceUsd: number;
   readonly rateUsd: number;
@@ -245,6 +248,7 @@ function emptyState(phase: string): MutableState {
     amountAtomic: "",
     ticker: "",
     uri: "",
+    qrText: "",
     memo: "",
     priceUsd: 0,
     rateUsd: 0,
@@ -1203,7 +1207,9 @@ export class CryptoInvoice {
   private buildSnapshot(): CryptoInvoiceState {
     const secondsLeft =
       this.state.phase === CRYPTO_INVOICE_PHASE_OPEN ? secondsLeftAt(this.expiresAtMs, this.clock.now()) : 0;
-    return Object.freeze({ ...this.state, secondsLeft });
+    // follows uri and address wherever they change
+    const qrText = cryptoPaymentQrText(this.state.asset, this.state.uri, this.state.address);
+    return Object.freeze({ ...this.state, secondsLeft, qrText });
   }
 
   private notify(): void {

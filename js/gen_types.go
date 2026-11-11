@@ -59,6 +59,7 @@ func generateTypes() ([]byte, error) {
 		sdk.VlessSettings{},
 		sdk.ProxyAuthResult{},
 		sdk.ProxyConfigResult{},
+		sdk.ProxyExit{},
 		sdk.WgConfig{},
 
 		/**

@@ -30,6 +30,7 @@ var testingErrorIdFunctions = []struct {
 	{receiver: "NetworkSpace", method: "SetControlDohUrls", exits: 2},
 	{method: "ValidateVlessSettings", exits: 1},
 	{method: "ValidateControlDohUrl", exits: 0},
+	{method: "ValidateDnsPresetPersonalId", exits: 0},
 }
 
 // The sdk symbol of an error-id function: `Receiver.Method`, or the bare name
@@ -47,7 +48,7 @@ func testingErrorIdSymbol(receiver string, method string) string {
 func TestErrorIdExportsAnswerInternalErrorWhenTheCallCannotRun(t *testing.T) {
 	g := testingPreferenceGenerator(t)
 	g.emitType(testingPreferenceType(t, g, "NetworkSpace"))
-	for _, name := range []string{"ValidateVlessSettings", "ValidateControlDohUrl"} {
+	for _, name := range []string{"ValidateVlessSettings", "ValidateControlDohUrl", "ValidateDnsPresetPersonalId"} {
 		g.emitFunc(g.scope.Lookup(name).(*types.Func))
 	}
 	for _, expected := range testingErrorIdFunctions {
@@ -117,7 +118,7 @@ func TestErrorIdHeadersDefineTheInternalIdAndMarkTheFunctions(t *testing.T) {
 
 	g := testingPreferenceGenerator(t)
 	g.emitType(testingPreferenceType(t, g, "NetworkSpace"))
-	for _, name := range []string{"ValidateVlessSettings", "ValidateControlDohUrl"} {
+	for _, name := range []string{"ValidateVlessSettings", "ValidateControlDohUrl", "ValidateDnsPresetPersonalId"} {
 		g.emitFunc(g.scope.Lookup(name).(*types.Func))
 	}
 	for _, expected := range testingErrorIdFunctions {
