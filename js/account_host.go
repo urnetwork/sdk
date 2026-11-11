@@ -64,8 +64,10 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		vc := sdk.NewLocationsViewControllerWithApi(ctx, api)
 		return jsLocationsViewController(vc, vc.Close)
 	})
+	// setClientInfo(deviceType, appVersion, distribution?): a page that names
+	// no distribution reports it unknown
 	m["setClientInfo"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		api.SetClientInfo(sdk.NewClientInfo(stringArg(args, 0), stringArg(args, 1)))
+		api.SetClientInfo(sdk.NewClientInfoWithDistribution(stringArg(args, 0), stringArg(args, 1), stringArg(args, 2)))
 		return js.Null()
 	})
 	m["openClientSessionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {

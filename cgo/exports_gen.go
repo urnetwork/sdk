@@ -19436,6 +19436,16 @@ func urnet_new_client_info(deviceType *C.char, appVersion *C.char) *C.char {
 	return cJson(r0, "urnet_new_client_info")
 }
 
+//export urnet_new_client_info_with_distribution
+func urnet_new_client_info_with_distribution(deviceType *C.char, appVersion *C.char, distribution *C.char) *C.char {
+	defer cgoGuard("urnet_new_client_info_with_distribution")
+	r0 := sdk.NewClientInfoWithDistribution(goString(deviceType), goString(appVersion), goString(distribution))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_client_info_with_distribution")
+}
+
 //export urnet_new_client_limit_notice_tracker
 func urnet_new_client_limit_notice_tracker() C.uint64_t {
 	defer cgoGuard("urnet_new_client_limit_notice_tracker")
