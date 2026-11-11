@@ -17,7 +17,9 @@ import (
 // The fixture still publishes the actual H1 lane classification, but neither
 // reliable nor unknown carriers may park the shared Client pump at a full
 // logical queue. These are explicit NoAck packets: exactly the accepted prefix
-// drains, and the refused packet has no delivery or retry guarantee.
+// drains, and the refused packet has no delivery or retry guarantee. They carry
+// DATA frames: Connect hands protocol-only originals to a separate protocol
+// mailbox, outside the one-slot DATA queue this fixture fills.
 func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 	for _, reliable := range []bool{false, true} {
 		name := "old-unknown-drops"
@@ -67,7 +69,7 @@ func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 					TransferPath: connect.TransferPath{SourceId: source, DestinationId: client.ClientId()}.ToProtobuf(),
 					Pack: &protocol.Pack{MessageId: connect.NewId().Bytes(), SequenceId: sequence.Bytes(),
 						SequenceNumber: uint64(marker), Head: marker == 0, Nack: true,
-						Frames: []*protocol.Frame{{MessageType: protocol.MessageType_TransferExchangeSignals, MessageBytes: []byte{marker}}}},
+						Frames: []*protocol.Frame{{MessageType: protocol.MessageType_TestSimpleMessage, MessageBytes: []byte{marker}}}},
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -105,8 +107,10 @@ func TestH1OwnerFixtureReliableProviderHandoff(t *testing.T) {
 					t.Fatalf("missing packet %d", i)
 				}
 			}
-			if stats := client.ReceiveStats(); stats.PackHandoffWaitCount != 0 || stats.PackHandoffDropCount != 1 {
-				t.Fatalf("unexpected carrier handoff: reliable=%t drops=%d", reliable, stats.PackHandoffDropCount)
+			// The one-slot DATA queue held the accepted packet; a protocol
+			// mailbox would leave this count at zero.
+			if stats := client.ReceiveStats(); stats.PackHandoffWaitCount != 0 || stats.PackHandoffDropCount != 1 || stats.PackHandoffMaxCount != 1 {
+				t.Fatalf("unexpected carrier handoff: reliable=%t drops=%d max=%d", reliable, stats.PackHandoffDropCount, stats.PackHandoffMaxCount)
 			}
 		})
 	}
