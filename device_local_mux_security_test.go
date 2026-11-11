@@ -3,7 +3,9 @@ package sdk
 import (
 	"context"
 	"net"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,16 +16,36 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
-// dmcaReclaimFlowTtl is the DMCA flow idle TTL for the mux/security test. It must
-// exceed the reclaim-phase fill duration (even under -race, where 40k sends take a
-// few seconds) so the flow table accumulates fully before the idle scan reclaims
-// it.
+// dmcaReclaimFlowTtl is the DMCA flow idle TTL for the mux/security test, on the
+// policy's settings clock (muxSecurityFlowClock). That clock moves only when the
+// test advances it, so no fill or iteration, however long it takes on a loaded
+// host, can age a flow past it.
 const dmcaReclaimFlowTtl = 15 * time.Second
 
-// How often the idle scan runs in the mux/security test. A policy that shortens
-// FlowTtl has to shorten this too: the default stays 75s whatever FlowTtl is, so
-// the reclaim phase would end before the first scan.
+// How often the idle scan runs in the mux/security test, on the wall clock. A
+// policy that shortens FlowTtl has to shorten this too: the default stays 75s
+// whatever FlowTtl is, so the reclaim phase would wait that long for its scan.
 const dmcaReclaimFlowScanInterval = 1 * time.Second
+
+// The DMCA capacity the reclaim fill stays below in every shard. Pinned to the
+// unscaled default so a process memory budget left by another test cannot let
+// the capacity-LRU, rather than the idle scan, drop filled flows.
+const dmcaReclaimMaxFlows = 65536
+
+// The DMCA settings clock of one test device: flows are stamped and aged on it
+// alone, and it holds still until the test advances it.
+type muxSecurityFlowClock struct {
+	start   time.Time
+	elapsed atomic.Int64
+}
+
+func (self *muxSecurityFlowClock) Now() time.Time {
+	return self.start.Add(time.Duration(self.elapsed.Load()))
+}
+
+func (self *muxSecurityFlowClock) Advance(elapsed time.Duration) {
+	self.elapsed.Add(int64(elapsed))
+}
 
 // TestDeviceLocalMuxSecurityLoadStability drives packets through a real DeviceLocal
 // over the MUX UPGRADE path (not routeLocal) so that the client-egress security
@@ -40,9 +62,11 @@ const dmcaReclaimFlowScanInterval = 1 * time.Second
 //     web-standard rescues (TLS/QUIC/DTLS/STUN), and plaintext HTTP allow. Each is
 //     confirmed via the egress SecurityPolicyStats counters (a distinct
 //     result+port per branch).
-//   - DMCA idle-scan TTL reclaim: a short FlowTtl plus a large fill-then-idle phase
-//     verifies the scan drains the flow table (heap drops) while the device stays
-//     up; the capacity-LRU (MaxFlows) bounds the table under the fill.
+//   - DMCA idle-scan TTL reclaim: a large fill, then the policy's settings clock
+//     advanced past FlowTtl, verifies the real idle scan drains the flow table
+//     (exact flow counts; the heap drops without -race) while the device stays
+//     up. The fill stays below the capacity-LRU (MaxFlows) bound, so only the
+//     time-based scan reclaims, and no wall-clock time ages a flow.
 //
 // Topology (fully in-process, no platform/credentials, no real network egress):
 //
@@ -101,7 +125,26 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 		t.Fatalf("network space: %v", err)
 	}
 
-	newEnv := func() (*DeviceLocal, func()) {
+	// The DMCA policy a device generated, and the settings clock its flows age on.
+	type envPolicy struct {
+		clock  *muxSecurityFlowClock
+		lock   sync.Mutex
+		policy connect.SecurityPolicy
+	}
+	// Exact tracked DMCA flows, read through connect's test hook.
+	flowCount := func(env *envPolicy) int {
+		t.Helper()
+		env.lock.Lock()
+		policy := env.policy
+		env.lock.Unlock()
+		counter, ok := policy.(interface{ Testing_FlowCount() int })
+		if !ok {
+			t.Fatal("the device generated no DMCA policy with a flow count")
+		}
+		return counter.Testing_FlowCount()
+	}
+
+	newEnv := func() (*DeviceLocal, *envPolicy, func()) {
 		// per-env in-process provider + generator so teardown releases everything
 		// and there is no cross-cycle accumulation in a shared provider.
 		providerCtx, providerCancel := context.WithCancel(ctx)
@@ -138,20 +181,27 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 		// Use a short DMCA FlowTtl and scan interval so the idle-scan actually
 		// reclaims flows within the test. CFAA and web-standard settings stay at
 		// their defaults, so the full chain runs.
+		env := &envPolicy{clock: &muxSecurityFlowClock{start: time.Now()}}
 		device.SetClientSecurityPolicyGenerator(func(policyCtx context.Context, stats *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy {
 			dmca := connect.DefaultDmcaSecurityPolicySettings()
-			// Long enough that the whole reclaim fill (even under -race) completes
-			// before any flow is idle past it, so the table accumulates fully; the
-			// reclaim phase then idles past this to trigger the scan.
+			// Flows age on this settings clock only, so the table accumulates
+			// fully however slowly the fill runs; the reclaim phase advances it
+			// past FlowTtl to let the scan reclaim.
 			dmca.FlowTtl = dmcaReclaimFlowTtl
 			dmca.FlowScanInterval = dmcaReclaimFlowScanInterval
-			return connect.NewSecurityPolicy(
+			dmca.Now = env.clock.Now
+			dmca.MaxFlows = dmcaReclaimMaxFlows
+			policy := connect.NewSecurityPolicy(
 				policyCtx,
 				connect.DefaultCfaaSecurityPolicySettings(),
 				dmca,
 				connect.DefaultWebStandardSettings(),
 				stats,
 			)
+			env.lock.Lock()
+			env.policy = policy
+			env.lock.Unlock()
+			return policy
 		})
 
 		// build the mux + remote multi-client and publish route.upgradeMux
@@ -167,13 +217,13 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 			closeProvider() // release the in-process provider's goroutines
 			providerCancel()
 		}
-		return device, teardown
+		return device, env, teardown
 	}
 
 	// warm up with the heaviest load so pools / mux / policy machinery reach steady
 	// state before the baseline (so return-to-baseline is achievable).
 	func() {
-		device, teardown := newEnv()
+		device, _, teardown := newEnv()
 		defer teardown()
 		sendSecurityProbes(device, warmupRounds, srcPortFanout)
 	}()
@@ -183,7 +233,7 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 	baseFds := openFdCount()
 	t.Logf("baseline: goroutines=%d heap=%s fds=%d", baseGoroutines, humanBytes(baseHeap), baseFds)
 
-	device, teardown := newEnv()
+	device, env, teardown := newEnv()
 
 	gSamples := make([]int, measureIterations)
 	hSamples := make([]uint64, measureIterations)
@@ -256,37 +306,51 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 
 	// --- exercise the real DMCA idle-scan TTL reclaim ---
 	// Fill the flow table with many distinct fresh flows (BitTorrent handshakes ->
-	// Incident, so each is tracked but dropped rather than egressed), then idle past
-	// FlowTtl + the scan interval and confirm the scan drains the table: live heap
-	// drops back while the device stays up. A broken reclaim leaves
-	// the flows (and heap) resident. The capacity-LRU (MaxFlows) is left at its
-	// default, so reclaimFlows stays below it and this isolates the time-based scan.
+	// Incident, so each is tracked but dropped rather than egressed). The flows age
+	// on the policy's settings clock, which holds still through the fill, so the
+	// whole fill is tracked however long it runs. Then advance that clock past
+	// FlowTtl: the real idle scan, on its own wall-clock interval, must drain the
+	// table while the device stays up. A broken reclaim leaves the flows (and heap)
+	// resident. The fill stays below the capacity-LRU (MaxFlows) in every shard, so
+	// this isolates the time-based scan.
 	const (
 		reclaimFlows        = 40000
-		reclaimIdle         = dmcaReclaimFlowTtl + 5*dmcaReclaimFlowScanInterval // > FlowTtl + scan interval
-		reclaimFillMinBytes = 3 << 20                                            // the fill must build a substantial flow table
-		reclaimMinDropBytes = 2 << 20                                            // and the idle scan must reclaim most of it
+		reclaimFillMinBytes = 3 << 20 // the fill must build a substantial flow table
+		reclaimMinDropBytes = 2 << 20 // and the idle scan must reclaim most of it
+		// bounds a hang only; the scan runs every dmcaReclaimFlowScanInterval
+		reclaimWatchdog = 2 * time.Minute
 	)
+	beforeFill := flowCount(env)
 	fillStart := time.Now()
 	fillDmcaFlows(device, reclaimFlows)
 	fillElapsed := time.Since(fillStart)
-	loadedHeap := sampleHeap()
-	if fillElapsed >= dmcaReclaimFlowTtl {
-		t.Errorf("reclaim fill (%v) exceeded FlowTtl (%v); flows evicted mid-fill -- raise dmcaReclaimFlowTtl", fillElapsed, dmcaReclaimFlowTtl)
+	if filled := flowCount(env); filled != beforeFill+reclaimFlows {
+		t.Errorf("reclaim fill tracked %d DMCA flows, want %d (%d before + %d filled)",
+			filled, beforeFill+reclaimFlows, beforeFill, reclaimFlows)
 	}
+	loadedHeap := sampleHeap()
 	if loadedHeap < baseHeap+reclaimFillMinBytes {
 		t.Errorf("reclaim fill did not build a flow table: loaded=%s base=%s (want >= base + %s)",
 			humanBytes(loadedHeap), humanBytes(baseHeap), humanBytes(reclaimFillMinBytes))
 	}
-	time.Sleep(reclaimIdle)
+	// Every tracked flow, the probes' included, is now idle past FlowTtl. The next
+	// scan reclaims them all; the wait observes the exact count, not elapsed time.
+	env.clock.Advance(dmcaReclaimFlowTtl + time.Nanosecond)
+	reclaimStart := time.Now()
+	for remaining := flowCount(env); remaining != 0; remaining = flowCount(env) {
+		if reclaimWatchdog < time.Since(reclaimStart) {
+			t.Fatalf("the DMCA idle scan left %d flows idle past FlowTtl", remaining)
+		}
+		runtime.Gosched()
+	}
 	reclaimedHeap := sampleHeap()
-	t.Logf("DMCA TTL reclaim: filled %d flows in %v, heap %s -> after %v idle %s (base %s)",
-		reclaimFlows, fillElapsed.Round(time.Millisecond), humanBytes(loadedHeap), reclaimIdle,
+	t.Logf("DMCA TTL reclaim: filled %d flows in %v, heap %s -> after the scan %s (base %s)",
+		reclaimFlows, fillElapsed.Round(time.Millisecond), humanBytes(loadedHeap),
 		humanBytes(reclaimedHeap), humanBytes(baseHeap))
 	// Assert the idle-scan actually reclaimed the flow values only without -race,
 	// where the live-heap delta is reliable. Under -race the delta is dominated by
-	// allocator/GC noise, so the no-leak proof there is the exact return-to-baseline
-	// after teardown (checked below) plus the fill-built-a-table check above.
+	// allocator/GC noise, so the no-leak proof there is the exact flow counts above
+	// plus the return-to-baseline after teardown (checked below).
 	if !raceEnabled && int64(loadedHeap)-int64(reclaimedHeap) < reclaimMinDropBytes {
 		t.Errorf("DMCA idle-scan did not reclaim the flow table: loaded=%s reclaimed=%s (want drop >= %s)",
 			humanBytes(loadedHeap), humanBytes(reclaimedHeap), humanBytes(reclaimMinDropBytes))
