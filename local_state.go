@@ -620,10 +620,13 @@ const dnsResolverSettingsFallbackOptInVersion = 1
 // once Google Public DNS left them (2026-11-08, support inbox 8236), 2 once OpenDNS left,
 // Cloudflare's second address joined and Quad9's unfiltered 9.9.9.10 took the place of its
 // filtering 9.9.9.9, 3 once DNS.SB joined them (2026-11-09) and the old Google-only kz
-// recommendation began to load as today's kz pick. The dns editors save every list, so a record
-// written before a version can hold the default lists of its time carried along rather than
-// chosen. See migrateDefaultServerLists and dnsResolverSettingsHoldGoogleKzRecommendation.
-const dnsResolverSettingsDefaultServersVersion = 3
+// recommendation began to load as today's kz pick, 4 once the ir, tr and tm regional
+// recommendations changed (connect, 2026-11-11) and a record below it that holds an earlier one
+// as Custom began to load as its country's pick. The dns editors save every list, so a
+// record written before a version can hold the default lists of its time carried along rather
+// than chosen. See migrateDefaultServerLists, dnsResolverSettingsHoldGoogleKzRecommendation and
+// dnsResolverSettingsEarlierRegionalRecommendationCountry.
+const dnsResolverSettingsDefaultServersVersion = 4
 
 // The record also carries the version of the dns selection (connect ADBLOCK3RD E4): 1 once the
 // record holds PresetId and PresetPersonalId, the selection the device derives the lists from
@@ -669,6 +672,14 @@ func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) 
 		// the kz recommendation of its time loads as today's kz pick, with the fallback choice and
 		// mask it had
 		dnsResolverSettings.PresetId = DnsPresetIdRegionalPrefix + "kz"
+		dnsResolverSettings.PresetPersonalId = ""
+		return ownDnsResolverSettings(&dnsResolverSettings), nil
+	}
+	if countryCode := dnsResolverSettingsEarlierRegionalRecommendationCountry(&dnsResolverSettings, record.DefaultServersVersion); countryCode != "" {
+		// an earlier recommendation, which an sdk before the presets applied as lists and a later
+		// one kept as Custom, loads as today's pick of its country, with the fallback choice and
+		// mask it had
+		dnsResolverSettings.PresetId = DnsPresetIdRegionalPrefix + countryCode
 		dnsResolverSettings.PresetPersonalId = ""
 		return ownDnsResolverSettings(&dnsResolverSettings), nil
 	}
@@ -844,13 +855,106 @@ var dnsResolverSettingsReplacedDefaultServers = map[string]string{
 	"2620:fe::fe":                     "2620:fe::10",
 }
 
-// The tm regional recommendation as shipped while it named Google Public DNS (connect,
-// 2026-07-10 to 2026-11-08): Turkmentelecom and Google in the remote plain v4 list, and from
-// 2026-09-11 Google's v6 address in the remote plain v6 list.
-var (
-	dnsResolverSettingsGoogleTmRemoteDnsIpv4 = []string{"217.174.238.141", "8.8.4.4"}
-	dnsResolverSettingsGoogleTmRemoteDnsIpv6 = []string{"2001:4860:4860::8844"}
-)
+// The ir, tr and tm regional recommendations as earlier releases derived them: remote plain dns
+// alone, with these servers (connect net_http_doh_regional.go). An sdk before the presets applied
+// one as custom lists, and a preset-aware sdk below version 4 loaded and saved those as Custom.
+// From 2026-07-10, when an sdk first saved dns settings, to 2026-11-11 ir named Shecan and
+// 403.online's private 10.202.10.10, and tr TTNET and Turkcell Superonline. tm named
+// Turkmentelecom and Google until 2026-11-08, from 2026-09-11 with Google's v6 address, then
+// Turkmentelecom alone until 2026-11-11, when tm lost its recommendation. A record whose
+// DefaultServersVersion is in [since, before) can hold one as the recommendation; in a record of
+// any other version the same lists are the user's own choice.
+var dnsResolverSettingsEarlierRegionalRecommendations = []struct {
+	countryCode   string
+	since         int
+	before        int
+	remoteDnsIpv4 []string
+	remoteDnsIpv6 []string
+}{
+	{countryCode: "ir", since: 0, before: 4, remoteDnsIpv4: []string{"178.22.122.100", "10.202.10.10"}},
+	{countryCode: "tr", since: 0, before: 4, remoteDnsIpv4: []string{"195.175.39.39", "212.252.114.8"}},
+	{countryCode: "tm", since: 0, before: 1, remoteDnsIpv4: []string{"217.174.238.141", "8.8.4.4"}},
+	{countryCode: "tm", since: 0, before: 1, remoteDnsIpv4: []string{"217.174.238.141", "8.8.4.4"}, remoteDnsIpv6: []string{"2001:4860:4860::8844"}},
+	{countryCode: "tm", since: 1, before: 4, remoteDnsIpv4: []string{"217.174.238.141"}},
+}
+
+// Whether settings hold a regional recommendation of remoteDnsIpv4 and remoteDnsIpv6 exactly:
+// remote plain dns alone, each remote plain list with the recommendation's servers in any order,
+// and every other list empty, an absent list the same as an empty one. The selection, the fallback
+// choice and the mask do not count.
+func dnsResolverSettingsHoldRegionalRecommendation(dnsResolverSettings *DnsResolverSettings, remoteDnsIpv4 []string, remoteDnsIpv6 []string) bool {
+	if dnsResolverSettings.EnableRemoteDoh || dnsResolverSettings.EnableLocalDoh ||
+		!dnsResolverSettings.EnableRemoteDns || dnsResolverSettings.EnableLocalDns {
+		return false
+	}
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	for _, list := range []*StringList{
+		dnsResolverSettings.RemoteDohUrlsIpv4,
+		dnsResolverSettings.RemoteDohUrlsIpv6,
+		dnsResolverSettings.LocalDohUrlsIpv4,
+		dnsResolverSettings.LocalDohUrlsIpv6,
+		dnsResolverSettings.LocalDnsIpv4,
+		dnsResolverSettings.LocalDnsIpv6,
+	} {
+		if 0 < len(stringsOf(list)) {
+			return false
+		}
+	}
+	sameServers := func(saved []string, servers []string) bool {
+		if len(saved) != len(servers) {
+			return false
+		}
+		for _, server := range saved {
+			if !slices.Contains(servers, server) {
+				return false
+			}
+		}
+		for _, server := range servers {
+			if !slices.Contains(saved, server) {
+				return false
+			}
+		}
+		return true
+	}
+	return sameServers(stringsOf(dnsResolverSettings.RemoteDnsIpv4), remoteDnsIpv4) &&
+		sameServers(stringsOf(dnsResolverSettings.RemoteDnsIpv6), remoteDnsIpv6)
+}
+
+// The country of the earlier regional recommendation (dnsResolverSettingsEarlierRegionalRecommendations)
+// that custom settings of a record of recordVersion hold exactly, with any fallback choice and
+// mask, or "" for none. Such a record loads as today's regional pick of the country, which follows
+// the country's recommendation from then on and, where the country no longer has one, applies
+// URnetwork's default with the selection's notice (A7); a user who typed exactly that list moves
+// too, as the owner accepted for kz (2026-11-09).
+func dnsResolverSettingsEarlierRegionalRecommendationCountry(dnsResolverSettings *DnsResolverSettings, recordVersion int) string {
+	if dnsResolverSettings.PresetId != "" {
+		return ""
+	}
+	for _, recommendation := range dnsResolverSettingsEarlierRegionalRecommendations {
+		if recommendation.since <= recordVersion && recordVersion < recommendation.before &&
+			dnsResolverSettingsHoldRegionalRecommendation(dnsResolverSettings, recommendation.remoteDnsIpv4, recommendation.remoteDnsIpv6) {
+			return recommendation.countryCode
+		}
+	}
+	return ""
+}
+
+// Whether settings hold an earlier release's derivation of the regional pick of countryCode
+// (dnsResolverSettingsEarlierRegionalRecommendations), of any version.
+func dnsResolverSettingsHoldEarlierRegionalDerivation(dnsResolverSettings *DnsResolverSettings, countryCode string) bool {
+	for _, recommendation := range dnsResolverSettingsEarlierRegionalRecommendations {
+		if recommendation.countryCode == countryCode &&
+			dnsResolverSettingsHoldRegionalRecommendation(dnsResolverSettings, recommendation.remoteDnsIpv4, recommendation.remoteDnsIpv6) {
+			return true
+		}
+	}
+	return false
+}
 
 // The kz regional recommendation as shipped at version 1 (connect, 2026-11-08, after Google
 // Public DNS left it): Cloudflare and Quad9's filtering 9.9.9.9 in the remote plain lists.
@@ -925,20 +1029,21 @@ func dnsResolverSettingsHoldGoogleKzRecommendation(dnsResolverSettings *DnsResol
 // list a later version's sdk saved was a choice made with that version's defaults in view, so an
 // older version's default list in it is kept.
 //
-// The old tm recommendation, in a record from before version 1, is replaced the same way by the
-// current one: a remote plain v4 list of exactly Turkmentelecom and Google, with a remote plain
-// v6 list that is empty or exactly Google's tm address. Turkmentelecom's address is what marks
-// the pair as the recommendation. So is the version 1 kz recommendation, in a version 1 record:
-// remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both families, which load as
-// the current kz recommendation with 9.9.9.10 in Quad9's place. Only a version 1 record can hold
-// it as the recommendation: before version 1, kz recommended Google alone, and no step turns that
-// into it. The same lists in a version 0 record are the user's own choice and load as saved.
+// The version 1 kz recommendation, in a version 1 record, is replaced the same way by the current
+// one: remote plain lists of exactly Cloudflare and Quad9's 9.9.9.9 in both families, which load
+// as the current kz recommendation with 9.9.9.10 in Quad9's place. Only a version 1 record can
+// hold it as the recommendation: before version 1, kz recommended Google alone, and no step turns
+// that into it. The same lists in a version 0 record are the user's own choice and load as saved.
 //
 // Every other list loads as saved, so a user who named Google, OpenDNS or Quad9's 9.9.9.9
 // themselves, alone or among other servers, keeps it. The old kz recommendation, Google alone, is
 // not a list this replaces: a record that holds it exactly loads as today's kz pick instead
 // (dnsResolverSettingsHoldGoogleKzRecommendation), and Google's address in any other settings
-// stays as saved.
+// stays as saved. Nor are the earlier ir, tr and tm recommendations, the tm one with Google
+// included: a record from before the presets that holds one exactly loads as its country's pick
+// (dnsResolverSettingsEarlierRegionalRecommendationCountry), and those servers in any other list
+// stay as saved. Until version 4 this replaced a record's Google-era tm pair with the current tm
+// list, which tm no longer has.
 func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordVersion int) {
 	defaults := connect.DefaultDnsResolverSettings()
 	sameServers := func(saved []string, servers []string) bool {
@@ -977,21 +1082,6 @@ func migrateDefaultServerLists(dnsResolverSettings *DnsResolverSettings, recordV
 		migratedList := NewStringList()
 		migratedList.addAll(servers...)
 		return migratedList
-	}
-
-	if recordVersion < 1 && dnsResolverSettings.RemoteDnsIpv4 != nil {
-		savedIpv4 := dnsResolverSettings.RemoteDnsIpv4.getAll()
-		var savedIpv6 []string
-		if dnsResolverSettings.RemoteDnsIpv6 != nil {
-			savedIpv6 = dnsResolverSettings.RemoteDnsIpv6.getAll()
-		}
-		if sameServers(savedIpv4, dnsResolverSettingsGoogleTmRemoteDnsIpv4) &&
-			(len(savedIpv6) == 0 || sameServers(savedIpv6, dnsResolverSettingsGoogleTmRemoteDnsIpv6)) {
-			dnsResolverSettings.RemoteDnsIpv4 = migrated(savedIpv4, connect.RegionalDnsServerIps("tm"))
-			if 0 < len(savedIpv6) {
-				dnsResolverSettings.RemoteDnsIpv6 = migrated(savedIpv6, connect.RegionalDnsServerIpv6s("tm"))
-			}
-		}
 	}
 
 	// a version 0 record predates the version 1 kz recommendation, so these lists there are a choice

@@ -363,9 +363,9 @@ func TestChosenDnsListsLoadAsSavedAfterVersion2(t *testing.T) {
 // An sdk that knows only version 1 migrates a record only below
 // DefaultServersVersion 1 and resets the fallback only below
 // FallbackOptInVersion 1, and reads unknown fields as absent. A record this
-// sdk writes carries version 3 of the first (since DNS.SB joined the
-// defaults) and version 1 of the second, so that sdk (shipped at sdk
-// 92553ef0) loads it as saved.
+// sdk writes carries version 4 of the first (since the ir, tr and tm regional
+// recommendations changed) and version 1 of the second, so that sdk (shipped
+// at sdk 92553ef0) loads it as saved.
 func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 	settings := testingOpenDnsEraDefaultDnsResolverSettings()
 	data, err := encodeDnsResolverSettingsRecord(settings)
@@ -380,8 +380,8 @@ func TestVersion2RecordLoadsAsSavedForAVersion1Sdk(t *testing.T) {
 	if err := json.Unmarshal(data, &version1Record); err != nil {
 		t.Fatal(err)
 	}
-	if version1Record.DefaultServersVersion != 3 || version1Record.FallbackOptInVersion != 1 {
-		t.Fatalf("record versions = default servers %d, fallback opt-in %d; want 3 and 1",
+	if version1Record.DefaultServersVersion != 4 || version1Record.FallbackOptInVersion != 1 {
+		t.Fatalf("record versions = default servers %d, fallback opt-in %d; want 4 and 1",
 			version1Record.DefaultServersVersion, version1Record.FallbackOptInVersion)
 	}
 	saved := testingDnsResolverSettingsLists(settings)
