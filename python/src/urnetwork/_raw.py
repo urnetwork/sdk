@@ -2969,6 +2969,8 @@ def bind(lib):
     lib.urnet_new_client_event_queue.restype = c_uint64
     lib.urnet_new_client_info.argtypes = [c_char_p, c_char_p]
     lib.urnet_new_client_info.restype = c_void_p
+    lib.urnet_new_client_info_with_distribution.argtypes = [c_char_p, c_char_p, c_char_p]
+    lib.urnet_new_client_info_with_distribution.restype = c_void_p
     lib.urnet_new_client_limit_notice_tracker.argtypes = []
     lib.urnet_new_client_limit_notice_tracker.restype = c_uint64
     lib.urnet_new_connect_first_event.argtypes = []

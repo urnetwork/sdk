@@ -284,6 +284,19 @@ inline constexpr const char* CheckoutBridgeErrorStripeUnavailable = "stripe_unav
 inline constexpr const char* CheckoutBridgeErrorUnavailable = "checkout_unavailable";
 inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
+inline constexpr const char* ClientDistributionAndroidDirect = "android_direct";
+inline constexpr const char* ClientDistributionAppStore = "app_store";
+inline constexpr const char* ClientDistributionEthosDapp = "ethos_dapp";
+inline constexpr const char* ClientDistributionExtensionChrome = "extension_chrome";
+inline constexpr const char* ClientDistributionExtensionFirefox = "extension_firefox";
+inline constexpr const char* ClientDistributionLinux = "linux";
+inline constexpr const char* ClientDistributionLinuxAppimage = "linux_appimage";
+inline constexpr const char* ClientDistributionLinuxFlatpak = "linux_flatpak";
+inline constexpr const char* ClientDistributionMacDirect = "mac_direct";
+inline constexpr const char* ClientDistributionPlay = "play";
+inline constexpr const char* ClientDistributionSolanaDapp = "solana_dapp";
+inline constexpr const char* ClientDistributionWeb = "web";
+inline constexpr const char* ClientDistributionWindows = "windows";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
 inline constexpr int64_t ClientEventMaxAttempts = 3;
 inline constexpr const char* ClientLimitNoticeNone = "";
@@ -2064,6 +2077,7 @@ struct ClientInfo {
 	std::string device_type{};
 	std::string app_version{};
 	std::optional<std::string> sdk_version;
+	std::optional<std::string> distribution;
 };
 
 struct ClientLimitStatus {
@@ -9140,6 +9154,9 @@ inline void to_json(nlohmann::json& j, const ClientInfo& v) {
 	if (v.sdk_version) {
 		j["sdk_version"] = *v.sdk_version;
 	}
+	if (v.distribution) {
+		j["distribution"] = *v.distribution;
+	}
 }
 inline void from_json(const nlohmann::json& j, ClientInfo& v) {
 	if (!j.is_object()) {
@@ -9158,6 +9175,11 @@ inline void from_json(const nlohmann::json& j, ClientInfo& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.sdk_version = std::move(tmp);
+	}
+	if (auto it = j.find("distribution"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.distribution = std::move(tmp);
 	}
 }
 
@@ -39471,6 +39493,14 @@ inline ClientEventQueue newClientEventQueue(const NetworkSpace& network_space, c
 }
 inline std::optional<ClientInfo> newClientInfo(const std::string& device_type, const std::string& app_version) {
 	char* r_c = urnet_new_client_info(device_type.c_str(), app_version.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientInfo>(r_s->c_str());
+}
+inline std::optional<ClientInfo> newClientInfoWithDistribution(const std::string& device_type, const std::string& app_version, const std::string& distribution) {
+	char* r_c = urnet_new_client_info_with_distribution(device_type.c_str(), app_version.c_str(), distribution.c_str());
 	auto r_s = detail::takeStringOpt(r_c);
 	if (!r_s) {
 		return std::nullopt;

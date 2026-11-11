@@ -6,6 +6,7 @@
 // The package root ("@urnetwork/sdk") re-exports all of this too.
 
 export * from "./api_client";
+export * from "./client_info";
 export {
   URNetworkApiClient,
   createURNetworkApiClient,
