@@ -678,8 +678,10 @@ func CryptoPaidAsset(market string, asset string) string {
 
 // CryptoWalletSuggestions are the wallets the invoice names as working for a
 // coin ("Wallets that work: ..."), in the order to show them. Every Zcash one
-// sends to a shielded address; the TAO ones are Bittensor's own list. Empty
-// for anything else, and for Bitcoin and ETH, which most wallets send.
+// sends to a shielded address; the TAO ones are Bittensor's own list; the
+// Bitcoin and ETH ones (the owner's, 2026-11-11) are wallets and hardware
+// wallets that send on the coin's own network. The names are product names,
+// never translated. Empty for anything else, which shows no line.
 func CryptoWalletSuggestions(asset string) *StringList {
 	wallets := NewStringList()
 	switch asset {
@@ -691,6 +693,10 @@ func CryptoWalletSuggestions(asset string) *StringList {
 		wallets.addAll("Phantom", "Solflare")
 	case CryptoAssetTao:
 		wallets.addAll("btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem")
+	case CryptoAssetBtc:
+		wallets.addAll("Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor")
+	case CryptoAssetEth:
+		wallets.addAll("MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor")
 	}
 	return wallets
 }

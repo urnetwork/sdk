@@ -233,6 +233,19 @@ test("cryptoWalletSuggestions", () => {
   }
 });
 
+// Every coin's invoice names the wallets that work: Bitcoin and ETH have
+// lists of their own since 2026-11-11 (the owner's), where their invoices
+// showed no wallets line.
+test("every coin names its wallets", () => {
+  for (const asset of [CRYPTO_ASSET_USDC_SOLANA, CRYPTO_ASSET_ZEC, CRYPTO_ASSET_XMR, CRYPTO_ASSET_TAO, CRYPTO_ASSET_BTC, CRYPTO_ASSET_ETH, CRYPTO_ASSET_SOL]) {
+    const wallets = cryptoWalletSuggestions(asset);
+    assert.ok(0 < wallets.length, `${asset} names no wallets`);
+    assert.equal(new Set(wallets).size, wallets.length, `${asset} names a wallet twice`);
+  }
+  assert.deepEqual(cryptoWalletSuggestions(CRYPTO_ASSET_BTC), ["Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor"]);
+  assert.deepEqual(cryptoWalletSuggestions(CRYPTO_ASSET_ETH), ["MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor"]);
+});
+
 for (const vector of vectors.checkCryptoPaymentUri) {
   test(`checkCryptoPaymentUri: ${vector.name}`, () => {
     assert.equal(checkCryptoPaymentUri(vector.asset, vector.uri, vector.address), vector.expected);
