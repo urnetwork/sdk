@@ -17,6 +17,14 @@ package sdk
 // the fallback working: the balances come from the public ledger, and the action
 // is the device's own claim. A page with no device, the web's wasm, gets the same
 // rules over what it read with its own client (sn_claim_relay_js.go).
+//
+// From epoch 8 a coldkey has an account in each of the operator's pools, its
+// pool and its capture the flag pool (sn CAPTURETHEFLAG.md §10). Accounts lists
+// one row per (coldkey, pool), each with its pool's kind and label, and the top
+// level is the primary coldkey's accounts together, so one action claims every
+// pool: Claim now claims all of a coldkey's pools, and the device's own claim
+// batches them. A pool whose ledger could not be read is listed in
+// UnavailablePools and shown as unavailable, never as zero.
 
 import (
 	"context"
@@ -82,12 +90,19 @@ const SnClaimRelayStateUnavailable = "unavailable"
 
 const snClaimStatusTimeout = 60 * time.Second
 
-// SnClaimRelayAccount is one coldkey's account in the operator's pool, as the
-// server's relay sees it. Amounts are rao of α unless they say otherwise.
+// SnClaimRelayAccount is one coldkey's account in one of the operator's pools,
+// as the server's relay sees it. Amounts are rao of α unless they say
+// otherwise.
 type SnClaimRelayAccount struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
 	NoId        int64  `json:"no_id"`
-	Index       int64  `json:"index"`
+	// SnLedgerPoolKind*: the relay's, else a capture the flag pool's id is ctf
+	// and any other a pool
+	Kind string `json:"kind"`
+	// the relay's English name for the pool, else "Pool <no_id>" or "Capture
+	// the flag", for an app without a localized one
+	Label string `json:"label"`
+	Index int64  `json:"index"`
 	// what a claim would pay now
 	ClaimableRao int64 `json:"claimable_rao"`
 	// its TAO value, in rao of TAO, at the relay's last price; 0 without one
@@ -144,7 +159,9 @@ type SnClaimRelayResult struct {
 	// days between two Claim now of one coldkey
 	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
 	Accounts           *SnClaimRelayAccountList `json:"accounts"`
-	Error              *SnClaimRelayError       `json:"error,omitempty"`
+	// pools whose accounts the relay could not read, when it names them
+	UnavailablePools *SnLedgerUnavailablePoolList `json:"unavailable_pools"`
+	Error            *SnClaimRelayError           `json:"error,omitempty"`
 }
 
 type SnClaimRelayCallback connect.ApiCallback[*SnClaimRelayResult]
@@ -222,21 +239,25 @@ func (self *Api) SnClaimRelayClaimNowSyncWithContext(ctx context.Context, args *
 }
 
 // SnClaimStatusResult is everything an app draws. The top level is the primary
-// account: the connected wallet's when it has one, else the first with something
-// to claim. Accounts lists each of the network's, including a wallet's it replaced,
-// whose balance URnetwork keeps claiming. With an Error the balances are
-// unavailable, never zero.
+// coldkey's accounts together, one per pool: the connected wallet's when it has
+// one, else the first with something to claim. Accounts lists each of the
+// network's, one per coldkey and pool, including a wallet's it replaced, whose
+// balance URnetwork keeps claiming; UnavailablePools each pool that could not be
+// read. With an Error the balances are unavailable, never zero.
 type SnClaimStatusResult struct {
 	// the relay's state, SnClaimRelayStateUnavailable when the server did not answer
 	RelayState  string `json:"relay_state"`
 	ColdkeySs58 string `json:"coldkey_ss58,omitempty"`
-	// SnClaimAction*: what the main control does
+	// SnClaimAction*: what the main control does, for every pool of the
+	// primary coldkey
 	Action string `json:"action"`
-	// SnClaimReason*: why a balance is pending
-	Reason       string `json:"reason"`
-	ClaimableRao int64  `json:"claimable_rao"`
-	ValueTaoRao  int64  `json:"value_tao_rao"`
-	PendingRao   int64  `json:"pending_rao"`
+	// SnClaimReason*: why a balance is pending, the lead account's: the one
+	// with the most to claim
+	Reason string `json:"reason"`
+	// the primary coldkey's accounts together
+	ClaimableRao int64 `json:"claimable_rao"`
+	ValueTaoRao  int64 `json:"value_tao_rao"`
+	PendingRao   int64 `json:"pending_rao"`
 	// whether SnClaimNow can be tapped, why not, and when its limit ends
 	ClaimNowAvailable    bool   `json:"claim_now_available"`
 	ClaimNowReason       string `json:"claim_now_reason,omitempty"`
@@ -260,15 +281,22 @@ type SnClaimStatusResult struct {
 	// true
 	ShowsTile bool `json:"shows_tile"`
 	// the claimed state, "Claimed by URnetwork" with the transaction: URnetwork's
-	// claim is the primary account's latest, and nothing is claimable now
+	// claim is the lead account's latest, nothing is claimable now in any of the
+	// primary coldkey's pools, and none is unavailable
 	ShowsClaimed bool `json:"shows_claimed"`
-	// the primary account's latest claim when URnetwork sent it, as its account's:
-	// the transaction, the explorer's page of it ("" without one) and what it paid
+	// the lead account's latest claim when URnetwork sent it: the transaction,
+	// the explorer's page of it ("" without one) and what it paid the primary
+	// coldkey's accounts together, as a batch pays several
 	ClaimTxHash    string                   `json:"claim_tx_hash,omitempty"`
 	ClaimTxUrl     string                   `json:"claim_tx_url,omitempty"`
 	ClaimAmountRao int64                    `json:"claim_amount_rao,omitempty"`
 	Accounts       *SnClaimRelayAccountList `json:"accounts"`
-	Error          *SnError                 `json:"error,omitempty"`
+	// the pools that could not be read, each shown as unavailable beside the
+	// accounts; empty for a whole answer
+	UnavailablePools *SnLedgerUnavailablePoolList `json:"unavailable_pools"`
+	// UnavailablePools is not empty: the sums leave those pools out
+	Partial bool     `json:"partial"`
+	Error   *SnError `json:"error,omitempty"`
 }
 
 type SnClaimStatusCallback connect.ApiCallback[*SnClaimStatusResult]
@@ -317,8 +345,9 @@ func snClaimAction(account *SnClaimRelayAccount, selfClaimAvailable bool, selfCl
 	return SnClaimActionSelfClaim
 }
 
-// snClaimStatusPrimary picks the account the top level describes: the connected
-// wallet's before any other, and one with something to claim before one without.
+// snClaimStatusPrimary picks the account whose coldkey the top level describes:
+// the connected wallet's before any other, and one with something to claim before
+// one without.
 func snClaimStatusPrimary(accounts []*SnClaimRelayAccount) *SnClaimRelayAccount {
 	rank := func(account *SnClaimRelayAccount) int {
 		value := 0
@@ -339,14 +368,40 @@ func snClaimStatusPrimary(accounts []*SnClaimRelayAccount) *SnClaimRelayAccount 
 	return primary
 }
 
+// snClaimStatusLead picks the account of a coldkey whose reason and claim the top
+// level names: the one with the most to claim, then one URnetwork claimed, then
+// the first.
+func snClaimStatusLead(group []*SnClaimRelayAccount) *SnClaimRelayAccount {
+	var lead *SnClaimRelayAccount
+	for _, account := range group {
+		switch {
+		case lead == nil, lead.ClaimableRao < account.ClaimableRao:
+			lead = account
+		case lead.ClaimableRao == account.ClaimableRao && lead.ClaimTxHash == "" && account.ClaimTxHash != "":
+			lead = account
+		}
+	}
+	return lead
+}
+
+// snRelayPoolKind is a relay account's kind: the relay's, or, from a relay that
+// names none, a capture the flag pool's id is ctf and any other a pool.
+func snRelayPoolKind(kind string, noId int64) string {
+	if kind == "" {
+		return snLedgerPoolKind(nil, noId)
+	}
+	return snLedgerPoolKind(&kind, noId)
+}
+
 // snClaimStatusBuild turns the server's answer and the device's gas key into what
 // an app draws. relay is nil when the server did not answer. Pure.
 func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfClaimConfigured bool, selfClaimNeedsGas bool) *SnClaimStatusResult {
 	result := &SnClaimStatusResult{
-		RelayState: SnClaimRelayStateUnavailable,
-		Action:     SnClaimActionNone,
-		Reason:     SnClaimReasonNothingPending,
-		Accounts:   NewSnClaimRelayAccountList(),
+		RelayState:       SnClaimRelayStateUnavailable,
+		Action:           SnClaimActionNone,
+		Reason:           SnClaimReasonNothingPending,
+		Accounts:         NewSnClaimRelayAccountList(),
+		UnavailablePools: NewSnLedgerUnavailablePoolList(),
 	}
 	accounts := []*SnClaimRelayAccount{}
 	if relay != nil {
@@ -357,10 +412,27 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 		result.TransferFloorTaoRao = relay.TransferFloorTaoRao
 		result.ClaimNowPeriodDays = relay.ClaimNowPeriodDays
 		if relay.Accounts != nil {
-			accounts = relay.Accounts.getAll()
+			for _, account := range relay.Accounts.getAll() {
+				if account != nil {
+					accounts = append(accounts, account)
+				}
+			}
+		}
+		if relay.UnavailablePools != nil {
+			for _, pool := range relay.UnavailablePools.getAll() {
+				if pool == nil {
+					continue
+				}
+				pool.Kind = snRelayPoolKind(pool.Kind, pool.NoId)
+				pool.Label = snLedgerPoolLabel(&pool.Label, pool.Kind, pool.NoId)
+				result.UnavailablePools.Add(pool)
+			}
 		}
 	}
+	result.Partial = 0 < result.UnavailablePools.Len()
 	for _, account := range accounts {
+		account.Kind = snRelayPoolKind(account.Kind, account.NoId)
+		account.Label = snLedgerPoolLabel(&account.Label, account.Kind, account.NoId)
 		account.Connected = connectedSs58 != "" && account.ColdkeySs58 == connectedSs58
 		account.Action = snClaimAction(account, snClaimSelfClaimAvailable(relay, account, selfClaimConfigured), selfClaimNeedsGas)
 		// a transaction the sdk cannot name is none
@@ -375,23 +447,48 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 	primary := snClaimStatusPrimary(accounts)
 	if primary == nil {
 		result.ColdkeySs58 = connectedSs58
+		// an unavailable pool is shown as unavailable, never left out
+		result.ShowsTile = result.Partial
 		return result
 	}
+	// the primary coldkey's accounts, one per pool: one action claims them all
+	var group []*SnClaimRelayAccount
+	for _, account := range accounts {
+		if account.ColdkeySs58 == primary.ColdkeySs58 {
+			group = append(group, account)
+		}
+	}
+	lead := snClaimStatusLead(group)
 	result.ColdkeySs58 = primary.ColdkeySs58
-	result.Action = primary.Action
-	result.Reason = primary.Reason
-	result.ClaimableRao = primary.ClaimableRao
-	result.ValueTaoRao = primary.ValueTaoRao
-	result.PendingRao = primary.PendingRao
-	result.ClaimNowAvailable = primary.ClaimNowAvailable
-	result.ClaimNowReason = primary.ClaimNowReason
-	result.ClaimNowNextAtMillis = primary.ClaimNowNextAtMillis
-	result.SelfClaimAvailable = snClaimSelfClaimAvailable(relay, primary, selfClaimConfigured)
+	result.Reason = lead.Reason
+	for _, account := range group {
+		result.ClaimableRao += account.ClaimableRao
+		result.ValueTaoRao += account.ValueTaoRao
+		result.PendingRao += account.PendingRao
+		// Claim now claims every pool of the coldkey, under one limit
+		result.ClaimNowAvailable = result.ClaimNowAvailable || account.ClaimNowAvailable
+		result.ClaimNowNextAtMillis = max(result.ClaimNowNextAtMillis, account.ClaimNowNextAtMillis)
+		// the device's own claim claims every pool of the connected wallet
+		result.SelfClaimAvailable = result.SelfClaimAvailable || snClaimSelfClaimAvailable(relay, account, selfClaimConfigured)
+		if lead.ClaimTxHash != "" && account.ClaimTxHash == lead.ClaimTxHash {
+			result.ClaimAmountRao += account.ClaimAmountRao
+		}
+	}
+	if !result.ClaimNowAvailable {
+		result.ClaimNowReason = lead.ClaimNowReason
+	}
 	result.SelfClaimNeedsGas = result.SelfClaimAvailable && selfClaimNeedsGas
-	result.ClaimTxHash = primary.ClaimTxHash
-	result.ClaimAmountRao = primary.ClaimAmountRao
-	result.ShowsClaimed = primary.ClaimTxHash != "" && primary.ClaimableRao <= 0
-	result.ShowsTile = snClaimStatusShowsTile(primary, result.ShowsClaimed)
+	result.Action = snClaimAction(&SnClaimRelayAccount{
+		ClaimableRao:      result.ClaimableRao,
+		Reason:            lead.Reason,
+		ClaimNowAvailable: result.ClaimNowAvailable,
+	}, result.SelfClaimAvailable, selfClaimNeedsGas)
+	result.ClaimTxHash = lead.ClaimTxHash
+	result.ShowsClaimed = lead.ClaimTxHash != "" && result.ClaimableRao <= 0 && !result.Partial
+	result.ShowsTile = snClaimStatusShowsTile(&SnClaimRelayAccount{
+		ClaimableRao: result.ClaimableRao,
+		PendingRao:   result.PendingRao,
+	}, result.ShowsClaimed) || result.Partial
 	return result
 }
 
@@ -399,10 +496,10 @@ func snClaimStatusBuild(relay *SnClaimRelayResult, connectedSs58 string, selfCla
 var snClaimTxHashPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{64}$`)
 
 // snClaimStatusShowsTile is when a network with no wallet on this device shows the
-// Settlement v2 tile: while the primary account has a claimable or pending
-// balance, as Apple's Earnings first drew it, and while it shows the claimed
-// state, so that a balance URnetwork claimed in full stays reachable with its
-// transaction.
+// Settlement v2 tile: while the primary coldkey's accounts, given together, have
+// a claimable or pending balance, as Apple's Earnings first drew it, and while
+// they show the claimed state, so that a balance URnetwork claimed in full stays
+// reachable with its transaction.
 func snClaimStatusShowsTile(primary *SnClaimRelayAccount, showsClaimed bool) bool {
 	return primary != nil && (0 < primary.ClaimableRao || 0 < primary.PendingRao || showsClaimed)
 }
@@ -490,7 +587,7 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 		err,
 		connectedSs58,
 		selfClaimConfigured,
-		func() (*SnClaimRelayAccountList, *SnError) {
+		func() (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
 			return self.snClaimLedgerAccounts(ctx, settings, connectedSs58)
 		},
 		func() bool {
@@ -504,7 +601,8 @@ func (self *snDevice) snClaimStatus(ctx context.Context) *SnClaimStatusResult {
 // with no device (sn_claim_relay_js.go), so both follow the same rules. relay is
 // the server's answer, nil when it did not answer, with relayErr saying why.
 // ledger reads the connected wallet's accounts from the public ledger, which stand
-// in for an answer without balances; it is called only then. needsGas says whether
+// in for an answer without balances, with the pools it could not read; it is
+// called only then. needsGas says whether
 // the device's own claim is short of gas, asked only when that claim could pay
 // something; nil is never short. settings links each claim's transaction; nil
 // links none. Pure apart from what ledger and needsGas read.
@@ -513,7 +611,7 @@ func snClaimStatusOf(
 	relayErr error,
 	connectedSs58 string,
 	selfClaimConfigured bool,
-	ledger func() (*SnClaimRelayAccountList, *SnError),
+	ledger func() (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError),
 	needsGas func() bool,
 	settings *SnChainSettings,
 ) *SnClaimStatusResult {
@@ -536,9 +634,11 @@ func snClaimStatusOf(
 		if relay != nil {
 			state = relay.State
 		}
-		accounts, snErr := ledger()
+		accounts, unavailable, snErr := ledger()
 		if snErr == nil {
-			relay = &SnClaimRelayResult{State: state, Accounts: accounts}
+			// a partial read carries its unavailable pools, so it is never
+			// drawn as whole
+			relay = &SnClaimRelayResult{State: state, Accounts: accounts, UnavailablePools: unavailable}
 			relayError = nil
 		} else {
 			relayError = snErr
@@ -576,7 +676,7 @@ func snClaimAnyClaimable(relay *SnClaimRelayResult, coldkeySs58 string) bool {
 
 // The connected wallet's accounts from the public ledger, with no relay behind
 // them: the reason says so, and the app falls back to the device's own claim.
-func (self *snDevice) snClaimLedgerAccounts(ctx context.Context, settings *SnChainSettings, coldkeySs58 string) (*SnClaimRelayAccountList, *SnError) {
+func (self *snDevice) snClaimLedgerAccounts(ctx context.Context, settings *SnChainSettings, coldkeySs58 string) (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
 	api := self.api()
 	fetch := func(ctx context.Context, requestUrl string) ([]byte, error) {
 		return api.getHttpGetRaw()(ctx, requestUrl, "")
@@ -585,9 +685,10 @@ func (self *snDevice) snClaimLedgerAccounts(ctx context.Context, settings *SnCha
 }
 
 // snClaimLedgerRelayAccounts turns a read of the connected wallet's accounts in the
-// public ledger into the relay's accounts, with no relay behind them. A read that
-// was not made or has no accounts is the ledger unavailable, never zero. Pure.
-func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 string) (*SnClaimRelayAccountList, *SnError) {
+// public ledger into the relay's accounts, with no relay behind them, and the
+// pools it could not read. A read that was not made or has no accounts is the
+// ledger unavailable, never zero. Pure.
+func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 string) (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
 	switch {
 	case ledger != nil && ledger.Error != nil:
 		code, message := ledger.Error.Code, ledger.Error.Message
@@ -597,12 +698,27 @@ func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 stri
 		if message == "" {
 			message = "the ledger could not be read"
 		}
-		return nil, newSnError(code, message)
+		return nil, nil, newSnError(code, message)
 	case ledger == nil || ledger.Accounts == nil:
-		return nil, newSnError(SnErrorCodeLedgerUnavailable, "the ledger could not be read")
+		return nil, nil, newSnError(SnErrorCodeLedgerUnavailable, "the ledger could not be read")
+	}
+	unavailable := NewSnLedgerUnavailablePoolList()
+	if ledger.UnavailablePools != nil {
+		for _, pool := range ledger.UnavailablePools.getAll() {
+			if pool != nil {
+				unavailable.Add(pool)
+			}
+		}
+	}
+	if ledger.Partial && unavailable.Len() == 0 {
+		// a read that says it is partial without naming what it lacks
+		return nil, nil, newSnError(SnErrorCodeLedgerUnavailable, "the ledger answer is partial and names no unavailable pool")
 	}
 	accounts := NewSnClaimRelayAccountList()
 	for _, account := range ledger.Accounts.getAll() {
+		if account == nil {
+			continue
+		}
 		reason := SnClaimReasonRelayNotRunning
 		if account.ClaimableRao <= 0 {
 			reason = SnClaimReasonNothingPending
@@ -614,6 +730,8 @@ func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 stri
 		accounts.Add(&SnClaimRelayAccount{
 			ColdkeySs58:    coldkeySs58,
 			NoId:           account.NoId,
+			Kind:           account.Kind,
+			Label:          account.Label,
 			Index:          account.Index,
 			ClaimableRao:   account.ClaimableRao,
 			PendingRao:     pending,
@@ -621,7 +739,7 @@ func snClaimLedgerRelayAccounts(ledger *SnLedgerAccountsResult, coldkeySs58 stri
 			ClaimNowReason: reason,
 		})
 	}
-	return accounts, nil
+	return accounts, unavailable, nil
 }
 
 // SnClaimStatus reads what is pending and why, and what the main control does.
