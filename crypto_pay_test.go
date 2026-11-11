@@ -3,9 +3,12 @@ package sdk
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/urnetwork/connect"
 )
@@ -73,6 +76,33 @@ type cryptoPayVectors struct {
 			AvailableCoins []string `json:"available_coins"`
 		} `json:"expected"`
 	} `json:"cryptoPaymentTabs"`
+	CryptoPaymentTabCoin []struct {
+		Name       string            `json:"name"`
+		Tab        *CryptoPaymentTab `json:"tab"`
+		LastChosen string            `json:"last_chosen"`
+		Remembered string            `json:"remembered"`
+		Expected   string            `json:"expected"`
+	} `json:"cryptoPaymentTabCoin"`
+	CryptoPaymentShowsMemo []struct {
+		Name     string `json:"name"`
+		Asset    string `json:"asset"`
+		Memo     string `json:"memo"`
+		Expected bool   `json:"expected"`
+	} `json:"cryptoPaymentShowsMemo"`
+	CryptoPaymentSteps []struct {
+		Name                  string              `json:"name"`
+		Asset                 string              `json:"asset"`
+		Status                string              `json:"status"`
+		Confirmations         int                 `json:"confirmations"`
+		ConfirmationsRequired int                 `json:"confirmations_required"`
+		Expected              []CryptoPaymentStep `json:"expected"`
+	} `json:"cryptoPaymentSteps"`
+	CryptoPaidAsset []struct {
+		Name     string `json:"name"`
+		Market   string `json:"market"`
+		Asset    string `json:"asset"`
+		Expected string `json:"expected"`
+	} `json:"cryptoPaidAsset"`
 }
 
 // A tab of the payment widget as it is laid out, whatever is available.
@@ -91,16 +121,23 @@ type cryptoPaymentTabLayoutVector struct {
 
 // One coin's facts, as every surface reads them.
 type cryptoAssetVector struct {
-	Asset         string `json:"asset"`
-	Ticker        string `json:"ticker"`
-	Label         string `json:"label"`
-	LabelKey      string `json:"label_key"`
-	IconKey       string `json:"icon_key"`
-	Decimals      int    `json:"decimals"`
-	QuoteDecimals int    `json:"quote_decimals"`
-	Market        string `json:"market"`
-	UriScheme     string `json:"uri_scheme"`
-	TabId         string `json:"tab_id"`
+	Asset                string `json:"asset"`
+	Ticker               string `json:"ticker"`
+	Label                string `json:"label"`
+	LabelKey             string `json:"label_key"`
+	IconKey              string `json:"icon_key"`
+	Decimals             int    `json:"decimals"`
+	QuoteDecimals        int    `json:"quote_decimals"`
+	Market               string `json:"market"`
+	UriScheme            string `json:"uri_scheme"`
+	TabId                string `json:"tab_id"`
+	NetworkLine          string `json:"network_line"`
+	NetworkLineKey       string `json:"network_line_key"`
+	NetworkWarning       string `json:"network_warning"`
+	NetworkWarningKey    string `json:"network_warning_key"`
+	NoPaymentLinkNote    string `json:"no_payment_link_note"`
+	NoPaymentLinkNoteKey string `json:"no_payment_link_note_key"`
+	EventProduct         string `json:"event_product"`
 }
 
 func loadCryptoPayVectors(t *testing.T) *cryptoPayVectors {
@@ -143,6 +180,9 @@ func TestCryptoPayConstants(t *testing.T) {
 		"CryptoPaymentStatusExpired":        {CryptoPaymentStatusExpired, "expired"},
 		"CryptoPaymentStatusReview":         {CryptoPaymentStatusReview, "review"},
 		"CryptoPaymentStatusUnknown":        {CryptoPaymentStatusUnknown, "unknown"},
+		"CryptoPaymentStepDone":             {CryptoPaymentStepDone, "done"},
+		"CryptoPaymentStepCurrent":          {CryptoPaymentStepCurrent, "current"},
+		"CryptoPaymentStepUpcoming":         {CryptoPaymentStepUpcoming, "upcoming"},
 		"CryptoPaymentDeliveryAccount":      {CryptoPaymentDeliveryAccount, "account"},
 		"CryptoPaymentDeliveryNetwork":      {CryptoPaymentDeliveryNetwork, "network"},
 		"CryptoPaymentDeliveryCode":         {CryptoPaymentDeliveryCode, "code"},
@@ -252,22 +292,231 @@ func TestCryptoTermNoticeDue(t *testing.T) {
 func TestCryptoAssets(t *testing.T) {
 	for _, vector := range loadCryptoPayVectors(t).CryptoAssets {
 		asset := vector.Asset
+		lines := CryptoAssetLinesFor(asset)
+		if lines == nil {
+			t.Fatalf("CryptoAssetLinesFor(%q) is nil; the bindings need lines", asset)
+		}
 		got := cryptoAssetVector{
-			Asset:         asset,
-			Ticker:        CryptoAssetTicker(asset),
-			Label:         CryptoAssetLabel(asset),
-			LabelKey:      CryptoAssetLabelKey(asset),
-			IconKey:       CryptoAssetIconKey(asset),
-			Decimals:      CryptoAssetDecimals(asset),
-			QuoteDecimals: CryptoAssetQuoteDecimals(asset),
-			Market:        CryptoAssetMarket(asset),
-			UriScheme:     CryptoPaymentUriScheme(asset),
-			TabId:         CryptoPaymentTabId(asset),
+			Asset:                asset,
+			Ticker:               CryptoAssetTicker(asset),
+			Label:                CryptoAssetLabel(asset),
+			LabelKey:             CryptoAssetLabelKey(asset),
+			IconKey:              CryptoAssetIconKey(asset),
+			Decimals:             CryptoAssetDecimals(asset),
+			QuoteDecimals:        CryptoAssetQuoteDecimals(asset),
+			Market:               CryptoAssetMarket(asset),
+			UriScheme:            CryptoPaymentUriScheme(asset),
+			TabId:                CryptoPaymentTabId(asset),
+			NetworkLine:          lines.NetworkLine,
+			NetworkLineKey:       lines.NetworkLineKey,
+			NetworkWarning:       lines.NetworkWarning,
+			NetworkWarningKey:    lines.NetworkWarningKey,
+			NoPaymentLinkNote:    lines.NoPaymentLinkNote,
+			NoPaymentLinkNoteKey: lines.NoPaymentLinkNoteKey,
+			EventProduct:         CryptoPaymentEventProduct(asset),
 		}
 		if got != vector {
 			t.Errorf("the facts of %q are %+v, want %+v", asset, got, vector)
 		}
 	}
+}
+
+// With URNETWORK_LOCALIZATIONS_KEYS_DIR naming a store's keys/ directory,
+// each line's English is the store's own (its `source`, and its English
+// translation), byte for byte: the Linux app looks a line up by its English
+// as the gettext msgid, the Apple catalog is keyed by it, and every app shows
+// the English where it has no string for the id. The lines were checked this
+// way against localizations 3698bd5; the vectors' cryptoAssets hold them since.
+func TestCryptoAssetLinesAreTheStoresEnglish(t *testing.T) {
+	keysDir := os.Getenv("URNETWORK_LOCALIZATIONS_KEYS_DIR")
+	if keysDir == "" {
+		t.Skip("URNETWORK_LOCALIZATIONS_KEYS_DIR is not set; the vectors' cryptoAssets stand in for the store")
+	}
+	type storeKey struct {
+		Source        string         `yaml:"source"`
+		Localizations map[string]any `yaml:"localizations"`
+	}
+	source := func(key string) string {
+		data, err := os.ReadFile(filepath.Join(keysDir, key+".yaml"))
+		if err != nil {
+			t.Fatalf("the store has no %s: %v", key, err)
+		}
+		var storeEntry storeKey
+		if err := yaml.Unmarshal(data, &storeEntry); err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
+		if english := storeEntry.Localizations["en"]; english != storeEntry.Source {
+			t.Errorf("%s: the store's English %q is not its source %q", key, english, storeEntry.Source)
+		}
+		return storeEntry.Source
+	}
+	pairs := 0
+	for _, asset := range cryptoAssetOrder {
+		lines := CryptoAssetLinesFor(asset)
+		if lines.NetworkLineKey == "" {
+			t.Errorf("%s has no network line", asset)
+		}
+		for key, english := range map[string]string{
+			lines.NetworkLineKey:       lines.NetworkLine,
+			lines.NetworkWarningKey:    lines.NetworkWarning,
+			lines.NoPaymentLinkNoteKey: lines.NoPaymentLinkNote,
+		} {
+			if key == "" {
+				connect.AssertEqual(t, english, "")
+				continue
+			}
+			pairs += 1
+			if got := source(key); got != english {
+				t.Errorf("%s: %s is %q in the sdk, %q in the store", asset, key, english, got)
+			}
+		}
+	}
+	// 7 network lines, 5 warnings (none for Zcash and Monero), 1 note (TAO)
+	connect.AssertEqual(t, pairs, 13)
+}
+
+// The coin a tap on a tab chooses: the coin last chosen in the tab, else the
+// remembered method's, else the tab's first that can be paid with.
+func TestCryptoPaymentTabCoin(t *testing.T) {
+	for _, vector := range loadCryptoPayVectors(t).CryptoPaymentTabCoin {
+		t.Run(vector.Name, func(t *testing.T) {
+			if got := CryptoPaymentTabCoin(vector.Tab, vector.LastChosen, vector.Remembered); got != vector.Expected {
+				t.Fatalf("CryptoPaymentTabCoin(%q, %q) = %q, want %q", vector.LastChosen, vector.Remembered, got, vector.Expected)
+			}
+		})
+	}
+}
+
+// Over the tabs CryptoPaymentTabs lays out, a surface that keeps the coin last
+// chosen per tab gets that coin back on More coins after choosing another tab
+// in between; one that kept only the last coin chosen anywhere (every app
+// before the rule moved here) fell back to TAO.
+func TestCryptoPaymentTabCoinKeepsTheCoinChosenInTheTab(t *testing.T) {
+	assets := NewCryptoPaymentAssetList()
+	for _, asset := range []string{CryptoAssetUsdcSolana, CryptoAssetTao, CryptoAssetBtc, CryptoAssetEth, CryptoAssetSol} {
+		plans := NewStringList()
+		plans.Add(PlanYearly)
+		assets.Add(&CryptoPaymentAsset{Asset: asset, Plans: plans})
+	}
+	items := NewStringList()
+	items.Add(PlanYearly)
+	tabs := CryptoPaymentTabs(assets, nil, items)
+	tab := func(id string) *CryptoPaymentTab {
+		for i := 0; i < tabs.Len(); i += 1 {
+			if tabs.Get(i).Id == id {
+				return tabs.Get(i)
+			}
+		}
+		t.Fatalf("no %s tab", id)
+		return nil
+	}
+	lastChosen := map[string]string{}
+	remembered := ""
+	choose := func(asset string) {
+		lastChosen[CryptoPaymentTabId(asset)] = asset
+		remembered = asset
+	}
+	tap := func(id string) string {
+		asset := CryptoPaymentTabCoin(tab(id), lastChosen[id], remembered)
+		if asset != "" {
+			choose(asset)
+		}
+		return asset
+	}
+	// first visit: the remembered method's tab is not More coins
+	remembered = CryptoAssetUsdcSolana
+	connect.AssertEqual(t, tap(CryptoPaymentTabMoreCoins), CryptoAssetTao)
+	choose(CryptoAssetBtc)
+	connect.AssertEqual(t, tap(CryptoAssetUsdcSolana), CryptoAssetUsdcSolana)
+	connect.AssertEqual(t, remembered, CryptoAssetUsdcSolana)
+	// back on More coins: Bitcoin, chosen there, not the first coin
+	connect.AssertEqual(t, tap(CryptoPaymentTabMoreCoins), CryptoAssetBtc)
+	// a fresh screen remembers the device's method
+	lastChosen = map[string]string{}
+	choose(CryptoAssetEth)
+	lastChosen = map[string]string{}
+	connect.AssertEqual(t, tap(CryptoPaymentTabMoreCoins), CryptoAssetEth)
+	// the rule every app kept before: the last coin chosen anywhere
+	connect.AssertEqual(t, CryptoPaymentTabCoin(tab(CryptoPaymentTabMoreCoins), CryptoAssetUsdcSolana, CryptoAssetUsdcSolana), CryptoAssetTao)
+}
+
+// The memo shows only when the server sent one, whatever the coin.
+func TestCryptoPaymentShowsMemo(t *testing.T) {
+	for _, vector := range loadCryptoPayVectors(t).CryptoPaymentShowsMemo {
+		t.Run(vector.Name, func(t *testing.T) {
+			if got := CryptoPaymentShowsMemo(vector.Asset, vector.Memo); got != vector.Expected {
+				t.Fatalf("CryptoPaymentShowsMemo(%q, %q) = %t, want %t", vector.Asset, vector.Memo, got, vector.Expected)
+			}
+		})
+	}
+}
+
+// Each coin's status steps at each status, a skipped step drawn done.
+func TestCryptoPaymentSteps(t *testing.T) {
+	for _, vector := range loadCryptoPayVectors(t).CryptoPaymentSteps {
+		t.Run(vector.Name, func(t *testing.T) {
+			steps := CryptoPaymentSteps(vector.Asset, vector.Status, vector.Confirmations, vector.ConfirmationsRequired)
+			if steps == nil {
+				t.Fatal("no step list; the bindings need an empty one")
+			}
+			got := []CryptoPaymentStep{}
+			for i := 0; i < steps.Len(); i += 1 {
+				got = append(got, *steps.Get(i))
+			}
+			if !slices.Equal(got, vector.Expected) {
+				t.Fatalf("CryptoPaymentSteps(%q, %q, %d, %d) = %+v, want %+v", vector.Asset, vector.Status, vector.Confirmations, vector.ConfirmationsRequired, got, vector.Expected)
+			}
+		})
+	}
+}
+
+// The coin a paid year is named by: the server's asset, never its market.
+func TestCryptoPaidAsset(t *testing.T) {
+	for _, vector := range loadCryptoPayVectors(t).CryptoPaidAsset {
+		t.Run(vector.Name, func(t *testing.T) {
+			if got := CryptoPaidAsset(vector.Market, vector.Asset); got != vector.Expected {
+				t.Fatalf("CryptoPaidAsset(%q, %q) = %q, want %q", vector.Market, vector.Asset, got, vector.Expected)
+			}
+		})
+	}
+}
+
+// The lines and the steps cross the c abi as json, in these names.
+func TestCryptoAssetLinesAndStepsJson(t *testing.T) {
+	data, err := json.Marshal(CryptoAssetLinesFor(CryptoAssetTao))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireJsonEqual(t, string(data), `{
+		"network_line": "Bittensor network", "network_line_key": "crypto_network_tao",
+		"network_warning": "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
+		"network_warning_key": "crypto_invoice_tao_network_only",
+		"no_payment_link_note": "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
+		"no_payment_link_note_key": "crypto_invoice_tao_no_payment_link"
+	}`)
+	data, err = json.Marshal(CryptoAssetLinesFor("ltc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireJsonEqual(t, string(data), `{
+		"network_line": "", "network_line_key": "", "network_warning": "", "network_warning_key": "",
+		"no_payment_link_note": "", "no_payment_link_note_key": ""
+	}`)
+	data, err = json.Marshal(CryptoPaymentSteps(CryptoAssetSol, CryptoPaymentStatusPaid, 1, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireJsonEqual(t, string(data), `[
+		{"status": "pending", "progress": "done", "confirmations": 0, "confirmations_required": 0},
+		{"status": "seen", "progress": "done", "confirmations": 0, "confirmations_required": 0},
+		{"status": "confirming", "progress": "done", "confirmations": 1, "confirmations_required": 1},
+		{"status": "paid", "progress": "done", "confirmations": 0, "confirmations_required": 0}
+	]`)
+	data, err = json.Marshal(CryptoPaymentSteps(CryptoAssetBtc, CryptoPaymentStatusReview, 0, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect.AssertEqual(t, string(data), "[]")
 }
 
 // The vectors and the sdk's table name the same coins, so a coin added to one
@@ -428,6 +677,10 @@ func TestCryptoPayVectorsAreAllRead(t *testing.T) {
 		"cryptoPaymentQrText":     len(vectors.CryptoPaymentQrText),
 		"cryptoPaymentTabLayout":  len(vectors.CryptoPaymentTabLayout),
 		"cryptoPaymentTabs":       len(vectors.CryptoPaymentTabs),
+		"cryptoPaymentTabCoin":    len(vectors.CryptoPaymentTabCoin),
+		"cryptoPaymentShowsMemo":  len(vectors.CryptoPaymentShowsMemo),
+		"cryptoPaymentSteps":      len(vectors.CryptoPaymentSteps),
+		"cryptoPaidAsset":         len(vectors.CryptoPaidAsset),
 	} {
 		if count == 0 {
 			t.Errorf("no %s vectors were read", name)

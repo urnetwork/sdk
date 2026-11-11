@@ -654,6 +654,55 @@ test("a tao invoice's QR code is the address alone", async () => {
   assert.equal(withUri.saved()!.uri, "");
 });
 
+// The state's steps follow its status, as cryptoPaymentSteps draws them: a tao
+// invoice the server sees only once final goes from pending straight to paid,
+// and every step it skipped is drawn done, confirming at its full count; a
+// resumed invoice has none until its first poll answers. TAO has no memo.
+test("the steps follow the status", async () => {
+  const harness = new Harness();
+  harness.client.intent = { result: testTaoIntent(harness.clock.now()) };
+  harness.client.status = { result: testTaoStatus("0.185774", "185774000", harness.clock.now() + QUOTE_TTL) };
+  harness.invoice.setActive(true);
+  await harness.invoice.startInvoice({ asset: "tao", plan: "yearly" });
+  let state = harness.invoice.getState();
+  assert.deepEqual(state.steps, [
+    { status: "pending", progress: "current", confirmations: 0, confirmationsRequired: 0 },
+    { status: "seen", progress: "upcoming", confirmations: 0, confirmationsRequired: 0 },
+    { status: "confirming", progress: "upcoming", confirmations: 0, confirmationsRequired: 1 },
+    { status: "paid", progress: "upcoming", confirmations: 0, confirmationsRequired: 0 },
+  ]);
+  assert.ok(Object.isFrozen(state.steps));
+  assert.equal(state.memo, "");
+
+  // resumed after a reload: no status, no steps
+  const reloaded = harness.newInvoice();
+  assert.equal(reloaded.resume(), true, "the tao invoice did not resume");
+  state = reloaded.getState();
+  assert.equal(state.status, "");
+  assert.deepEqual(state.steps, []);
+
+  // final, and paid in one poll
+  harness.client.status = {
+    result: {
+      ...testTaoStatus("0.185774", "185774000", harness.clock.now() + QUOTE_TTL),
+      status: "paid",
+      received: "0.185774",
+      received_atomic: "185774000",
+      remaining: "0",
+      remaining_atomic: "0",
+    },
+  };
+  await harness.clock.advance(5 * SECOND);
+  state = harness.invoice.getState();
+  assert.equal(state.phase, CRYPTO_INVOICE_PHASE_PAID);
+  assert.deepEqual(state.steps, [
+    { status: "pending", progress: "done", confirmations: 0, confirmationsRequired: 0 },
+    { status: "seen", progress: "done", confirmations: 0, confirmationsRequired: 0 },
+    { status: "confirming", progress: "done", confirmations: 1, confirmationsRequired: 1 },
+    { status: "paid", progress: "done", confirmations: 0, confirmationsRequired: 0 },
+  ]);
+});
+
 // The QR code of a coin with a payment uri is the uri, and goes with it: a
 // bitcoin invoice shows its BIP 21 uri, and a usdc invoice whose uri names no
 // token (it would ask for SOL) shows neither a uri nor a QR code.

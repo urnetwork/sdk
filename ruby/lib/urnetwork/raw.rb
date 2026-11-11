@@ -1511,11 +1511,17 @@ module URnetwork
       attach_function :urnet_crypto_asset_icon_key, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_asset_label, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_asset_label_key, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_asset_lines_for, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_asset_market, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_asset_quote_decimals, [:string], :int64, blocking: true
       attach_function :urnet_crypto_asset_sells, [:string, :string, :string], :bool, blocking: true
       attach_function :urnet_crypto_asset_ticker, [:string], :pointer, blocking: true
+      attach_function :urnet_crypto_paid_asset, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_event_product, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_payment_qr_text, [:string, :string, :string], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_shows_memo, [:string, :string], :bool, blocking: true
+      attach_function :urnet_crypto_payment_steps, [:string, :string, :int64, :int64], :pointer, blocking: true
+      attach_function :urnet_crypto_payment_tab_coin, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_crypto_payment_tab_id, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_payment_tabs, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_crypto_payment_uri_scheme, [:string], :pointer, blocking: true

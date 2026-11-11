@@ -282,6 +282,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CRYPTO_PAYMENT_STATUS_REVIEW "review"
 #define URNET_CRYPTO_PAYMENT_STATUS_SEEN "seen"
 #define URNET_CRYPTO_PAYMENT_STATUS_UNKNOWN "unknown"
+#define URNET_CRYPTO_PAYMENT_STEP_CURRENT "current"
+#define URNET_CRYPTO_PAYMENT_STEP_DONE "done"
+#define URNET_CRYPTO_PAYMENT_STEP_UPCOMING "upcoming"
 #define URNET_CRYPTO_PAYMENT_TAB_MORE_COINS "more_coins"
 #define URNET_DEFAULT_TUNNEL_DNS_ADDRESS_IPV6 "2001:db8::65:49:70:65"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
@@ -2650,11 +2653,17 @@ int64_t urnet_crypto_asset_decimals(const char* asset);
 char* urnet_crypto_asset_icon_key(const char* asset);
 char* urnet_crypto_asset_label(const char* asset);
 char* urnet_crypto_asset_label_key(const char* asset);
+char* urnet_crypto_asset_lines_for(const char* asset);
 char* urnet_crypto_asset_market(const char* asset);
 int64_t urnet_crypto_asset_quote_decimals(const char* asset);
 bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const char* item);
 char* urnet_crypto_asset_ticker(const char* asset);
+char* urnet_crypto_paid_asset(const char* market, const char* asset);
+char* urnet_crypto_payment_event_product(const char* asset);
 char* urnet_crypto_payment_qr_text(const char* asset, const char* uri, const char* address);
+bool urnet_crypto_payment_shows_memo(const char* asset, const char* memo);
+char* urnet_crypto_payment_steps(const char* asset, const char* status, int64_t confirmations, int64_t confirmations_required);
+char* urnet_crypto_payment_tab_coin(const char* tab_json, const char* last_chosen, const char* remembered);
 char* urnet_crypto_payment_tab_id(const char* asset);
 char* urnet_crypto_payment_tabs(const char* assets_json, const char* unavailable_assets_json, const char* items_json);
 char* urnet_crypto_payment_uri_scheme(const char* asset);
@@ -3662,6 +3671,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   email: string
  */
 
+/* CryptoAssetLines (json):
+ *   network_line: string
+ *   network_line_key: string
+ *   network_warning: string
+ *   network_warning_key: string
+ *   no_payment_link_note: string
+ *   no_payment_link_note_key: string
+ */
+
 /* CryptoInvoiceState (json):
  *   phase: string
  *   intent_id: string
@@ -3687,6 +3705,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   remaining: string
  *   confirmations: number
  *   confirmations_required: number
+ *   steps: CryptoPaymentStepList | null
  *   balance_code: string
  *   refreshing: boolean
  *   error_code: string
@@ -3780,6 +3799,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: CryptoPaymentError | null
  */
 
+/* CryptoPaymentStep (json):
+ *   status: string
+ *   progress: string
+ *   confirmations: number
+ *   confirmations_required: number
+ */
+
+/* CryptoPaymentStepList (json):
+ *   = CryptoPaymentStep | null[]
+ */
+
 /* CryptoPaymentTab (json):
  *   id: string
  *   label: string
@@ -3795,6 +3825,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* CryptoTerm (json):
  *   market: string
+ *   asset: string
  *   term_end_time: string
  *   grace_end_time: string
  */
@@ -6338,6 +6369,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   winback_offer?: WinbackOffer | null
  *   experiments?: ExperimentAssignmentList | null
  *   crypto_assets?: CryptoPaymentAssetList | null
+ *   crypto_unavailable_assets?: CryptoPaymentAssetList | null
  *   crypto_term?: CryptoTerm | null
  *   payment_past_due?: PaymentPastDue | null
  */

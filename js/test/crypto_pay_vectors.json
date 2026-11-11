@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived. The coins of mmm/BTCPAY.md §17 (tao, btc, eth, sol) joined on 2026-11-10: cryptoAssets pins every coin's facts (ticker, label and its localization key, icon key, decimals, quote decimals, market, uri scheme, tab), cryptoPaymentQrText what an invoice's QR code encodes, cryptoPaymentTabLayout the payment widget's tabs and their coins in order, and cryptoPaymentTabs which tabs a surface shows and which of their coins are available (every other coin of a shown tab has its label greyed with Temporarily unavailable; no icon is ever dimmed). ltc stands for a coin this sdk does not know.",
+  "_comment": "Shared vectors for the crypto payment rules and for the invoice's Dismiss and countdown rules (mmm/ZCASH-CONTRACT.md §4.4.2). invoiceDismiss: drop = the saved invoice is gone; keep = an account invoice stays saved and comes back at the next resume; hide = an invoice bought without a sign-in (network or code) stays saved, hidden. sdk/crypto_pay_test.go and sdk/crypto_invoice_view_controller_test.go (Go) and js/test/crypto_pay.test.ts and js/test/crypto_invoice.test.ts (TypeScript) replay every vector here, so the two implementations cannot drift. Addresses are synthetic fixtures; the Solana recipient is the sdk's fixture key, never the merchant. Countdown times: quoted_at and expires_at are the server's clock, received_at the device's when the quote arrived. The coins of mmm/BTCPAY.md §17 (tao, btc, eth, sol) joined on 2026-11-10: cryptoAssets pins every coin's facts (ticker, label and its localization key, icon key, decimals, quote decimals, market, uri scheme, tab), cryptoPaymentQrText what an invoice's QR code encodes, cryptoPaymentTabLayout the payment widget's tabs and their coins in order, and cryptoPaymentTabs which tabs a surface shows and which of their coins are available (every other coin of a shown tab has its label greyed with Temporarily unavailable; no icon is ever dimmed). ltc stands for a coin this sdk does not know. Crypto wave 3 (2026-11-11) moved the rules every app kept a copy of into the sdk: cryptoAssets pins each coin's invoice lines (network line, network-only warning, no-payment-link note, each with the store's English) and the product its purchase events name; cryptoPaymentTabCoin the coin a tap on a tab chooses (the coin last chosen in the tab, else the remembered method's, else the first that can be paid with); cryptoPaymentShowsMemo when the memo shows (only when the server sent one); cryptoPaymentSteps the status steps and how a skipped step is drawn (done, a done confirming step at its full count); cryptoPaidAsset the coin a paid year is named by (the server's asset, never the market, which USDC and SOL share).",
   "addresses": {
     "xmr": "8BSyntheticXmrSubaddressFixture",
     "zec": "u1syntheticzcashunifiedaddressfixture",
@@ -1613,7 +1613,14 @@
       "quote_decimals": 6,
       "market": "solana",
       "uri_scheme": "solana",
-      "tab_id": "usdc_solana"
+      "tab_id": "usdc_solana",
+      "network_line": "USDC on Solana",
+      "network_line_key": "crypto_network_usdc",
+      "network_warning": "Send USDC on the Solana network only. USDC sent on any other network will not arrive.",
+      "network_warning_key": "usdc_solana_network_only",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_usdc"
     },
     {
       "asset": "zec",
@@ -1625,7 +1632,14 @@
       "quote_decimals": 6,
       "market": "zcash",
       "uri_scheme": "zcash",
-      "tab_id": "zec"
+      "tab_id": "zec",
+      "network_line": "Zcash, shielded",
+      "network_line_key": "crypto_network_zcash",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_zec"
     },
     {
       "asset": "xmr",
@@ -1637,7 +1651,14 @@
       "quote_decimals": 6,
       "market": "monero",
       "uri_scheme": "monero",
-      "tab_id": "xmr"
+      "tab_id": "xmr",
+      "network_line": "Monero",
+      "network_line_key": "crypto_network_monero",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_xmr"
     },
     {
       "asset": "tao",
@@ -1649,7 +1670,14 @@
       "quote_decimals": 6,
       "market": "bittensor",
       "uri_scheme": "",
-      "tab_id": "more_coins"
+      "tab_id": "more_coins",
+      "network_line": "Bittensor network",
+      "network_line_key": "crypto_network_tao",
+      "network_warning": "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
+      "network_warning_key": "crypto_invoice_tao_network_only",
+      "no_payment_link_note": "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
+      "no_payment_link_note_key": "crypto_invoice_tao_no_payment_link",
+      "event_product": "pro_yearly_tao"
     },
     {
       "asset": "btc",
@@ -1661,7 +1689,14 @@
       "quote_decimals": 8,
       "market": "bitcoin",
       "uri_scheme": "bitcoin",
-      "tab_id": "more_coins"
+      "tab_id": "more_coins",
+      "network_line": "Bitcoin network",
+      "network_line_key": "crypto_network_bitcoin",
+      "network_warning": "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
+      "network_warning_key": "crypto_invoice_bitcoin_network_only",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_btc"
     },
     {
       "asset": "eth",
@@ -1673,7 +1708,14 @@
       "quote_decimals": 6,
       "market": "ethereum",
       "uri_scheme": "ethereum",
-      "tab_id": "more_coins"
+      "tab_id": "more_coins",
+      "network_line": "Ethereum mainnet",
+      "network_line_key": "crypto_network_eth",
+      "network_warning": "Send only ETH on Ethereum mainnet to this address. Tokens and ETH on other networks, such as Base or Arbitrum, won't be credited.",
+      "network_warning_key": "crypto_invoice_eth_network_only",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_eth"
     },
     {
       "asset": "sol",
@@ -1685,7 +1727,14 @@
       "quote_decimals": 6,
       "market": "solana",
       "uri_scheme": "solana",
-      "tab_id": "more_coins"
+      "tab_id": "more_coins",
+      "network_line": "Solana (native SOL)",
+      "network_line_key": "crypto_network_sol",
+      "network_warning": "Send only SOL on the Solana network to this address. Tokens, including USDC, won't be credited.",
+      "network_warning_key": "crypto_invoice_sol_network_only",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": "pro_yearly_sol"
     },
     {
       "asset": "card",
@@ -1697,7 +1746,14 @@
       "quote_decimals": 0,
       "market": "",
       "uri_scheme": "",
-      "tab_id": ""
+      "tab_id": "",
+      "network_line": "",
+      "network_line_key": "",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": ""
     },
     {
       "asset": "",
@@ -1709,7 +1765,14 @@
       "quote_decimals": 0,
       "market": "",
       "uri_scheme": "",
-      "tab_id": ""
+      "tab_id": "",
+      "network_line": "",
+      "network_line_key": "",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": ""
     },
     {
       "asset": "ltc",
@@ -1721,7 +1784,14 @@
       "quote_decimals": 0,
       "market": "",
       "uri_scheme": "",
-      "tab_id": ""
+      "tab_id": "",
+      "network_line": "",
+      "network_line_key": "",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": ""
     },
     {
       "asset": "BTC",
@@ -1733,7 +1803,14 @@
       "quote_decimals": 0,
       "market": "",
       "uri_scheme": "",
-      "tab_id": ""
+      "tab_id": "",
+      "network_line": "",
+      "network_line_key": "",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": ""
     },
     {
       "asset": "more_coins",
@@ -1745,7 +1822,14 @@
       "quote_decimals": 0,
       "market": "",
       "uri_scheme": "",
-      "tab_id": ""
+      "tab_id": "",
+      "network_line": "",
+      "network_line_key": "",
+      "network_warning": "",
+      "network_warning_key": "",
+      "no_payment_link_note": "",
+      "no_payment_link_note_key": "",
+      "event_product": ""
     }
   ],
   "cryptoPaymentQrText": [
@@ -2677,6 +2761,953 @@
       "received_at": "2026-10-20T18:20:00Z",
       "after_ms": 0,
       "expected": 600
+    }
+  ],
+  "cryptoPaymentTabCoin": [
+    {
+      "name": "the coin last chosen in the tab, over the remembered one",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "btc",
+      "remembered": "eth",
+      "expected": "btc"
+    },
+    {
+      "name": "the coin last chosen cannot be paid with now: the remembered coin",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": false
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "btc",
+      "remembered": "eth",
+      "expected": "eth"
+    },
+    {
+      "name": "nothing chosen in the tab yet: the remembered coin",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "sol",
+      "expected": "sol"
+    },
+    {
+      "name": "the remembered method is of another tab: the first coin that can be paid with",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "usdc_solana",
+      "expected": "tao"
+    },
+    {
+      "name": "the remembered method is the card: the first coin that can be paid with",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "card",
+      "expected": "tao"
+    },
+    {
+      "name": "a coin of another tab as the last chosen never matches",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "xmr",
+      "remembered": "",
+      "expected": "tao"
+    },
+    {
+      "name": "the first coin that can be paid with skips a greyed TAO",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": false
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "",
+      "expected": "btc"
+    },
+    {
+      "name": "the remembered coin is greyed now: the first coin that can be paid with",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": true
+          },
+          {
+            "asset": "btc",
+            "available": true
+          },
+          {
+            "asset": "eth",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": false
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "sol",
+      "expected": "tao"
+    },
+    {
+      "name": "no coin of the tab can be paid with: it cannot be chosen",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "tao",
+            "available": false
+          },
+          {
+            "asset": "btc",
+            "available": false
+          },
+          {
+            "asset": "eth",
+            "available": false
+          },
+          {
+            "asset": "sol",
+            "available": false
+          }
+        ]
+      },
+      "last_chosen": "btc",
+      "remembered": "eth",
+      "expected": ""
+    },
+    {
+      "name": "a tab of one coin chooses its coin",
+      "tab": {
+        "id": "usdc_solana",
+        "coins": [
+          {
+            "asset": "usdc_solana",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "",
+      "remembered": "card",
+      "expected": "usdc_solana"
+    },
+    {
+      "name": "a tab of one greyed coin cannot be chosen",
+      "tab": {
+        "id": "zec",
+        "coins": [
+          {
+            "asset": "zec",
+            "available": false
+          }
+        ]
+      },
+      "last_chosen": "zec",
+      "remembered": "zec",
+      "expected": ""
+    },
+    {
+      "name": "a coin this sdk does not know is never chosen",
+      "tab": {
+        "id": "more_coins",
+        "coins": [
+          {
+            "asset": "ltc",
+            "available": true
+          },
+          {
+            "asset": "sol",
+            "available": true
+          }
+        ]
+      },
+      "last_chosen": "ltc",
+      "remembered": "ltc",
+      "expected": "sol"
+    },
+    {
+      "name": "no tab",
+      "tab": null,
+      "last_chosen": "btc",
+      "remembered": "btc",
+      "expected": ""
+    }
+  ],
+  "cryptoPaymentShowsMemo": [
+    {
+      "name": "USDC with its reference",
+      "asset": "usdc_solana",
+      "memo": "3sYnthetIcReferenceKey",
+      "expected": true
+    },
+    {
+      "name": "USDC without one",
+      "asset": "usdc_solana",
+      "memo": "",
+      "expected": false
+    },
+    {
+      "name": "SOL: the server sends no memo",
+      "asset": "sol",
+      "memo": "",
+      "expected": false
+    },
+    {
+      "name": "the rule is the memo, not the coin: one a server sends for SOL shows",
+      "asset": "sol",
+      "memo": "3sYnthetIcReferenceKey",
+      "expected": true
+    },
+    {
+      "name": "Monero",
+      "asset": "xmr",
+      "memo": "",
+      "expected": false
+    },
+    {
+      "name": "TAO",
+      "asset": "tao",
+      "memo": "",
+      "expected": false
+    },
+    {
+      "name": "a coin this sdk does not know",
+      "asset": "ltc",
+      "memo": "anything",
+      "expected": false
+    },
+    {
+      "name": "the card",
+      "asset": "card",
+      "memo": "anything",
+      "expected": false
+    }
+  ],
+  "cryptoPaymentSteps": [
+    {
+      "name": "USDC waits until it is paid: two steps",
+      "asset": "usdc_solana",
+      "status": "pending",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "USDC paid",
+      "asset": "usdc_solana",
+      "status": "paid",
+      "confirmations": 1,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "USDC expired is still at the first step",
+      "asset": "usdc_solana",
+      "status": "expired",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "Bitcoin waiting: four steps, the confirming count 0",
+      "asset": "btc",
+      "status": "pending",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "a whole Bitcoin payment skips seen, which is drawn done",
+      "asset": "btc",
+      "status": "confirming",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "part of a Monero payment arrived",
+      "asset": "xmr",
+      "status": "seen",
+      "confirmations": 0,
+      "confirmations_required": 10,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 10
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "Zcash confirming",
+      "asset": "zec",
+      "status": "confirming",
+      "confirmations": 4,
+      "confirmations_required": 10,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "current",
+          "confirmations": 4,
+          "confirmations_required": 10
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "a count past the required one reads the required one",
+      "asset": "zec",
+      "status": "confirming",
+      "confirmations": 12,
+      "confirmations_required": 10,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "current",
+          "confirmations": 10,
+          "confirmations_required": 10
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "a negative count reads 0",
+      "asset": "zec",
+      "status": "confirming",
+      "confirmations": -3,
+      "confirmations_required": 10,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 10
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "SOL goes from pending straight to paid: every step done, confirming at its full count",
+      "asset": "sol",
+      "status": "paid",
+      "confirmations": 1,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "done",
+          "confirmations": 1,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "TAO paid with no confirmations reported: confirming still reads its full count",
+      "asset": "tao",
+      "status": "paid",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "done",
+          "confirmations": 1,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "ETH paid",
+      "asset": "eth",
+      "status": "paid",
+      "confirmations": 1,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "done",
+          "confirmations": 1,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "Bitcoin expired is still at the first step",
+      "asset": "btc",
+      "status": "expired",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "confirming",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 1
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "no confirming step while the confirmations required are not known",
+      "asset": "eth",
+      "status": "pending",
+      "confirmations": 0,
+      "confirmations_required": 0,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "confirming with no confirming step listed: the step before paid",
+      "asset": "xmr",
+      "status": "confirming",
+      "confirmations": 0,
+      "confirmations_required": 0,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "current",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "upcoming",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "a paid code shown from storage before the required count is known",
+      "asset": "xmr",
+      "status": "paid",
+      "confirmations": 0,
+      "confirmations_required": 0,
+      "expected": [
+        {
+          "status": "pending",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "seen",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        },
+        {
+          "status": "paid",
+          "progress": "done",
+          "confirmations": 0,
+          "confirmations_required": 0
+        }
+      ]
+    },
+    {
+      "name": "review shows its copy instead",
+      "asset": "btc",
+      "status": "review",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": []
+    },
+    {
+      "name": "unknown",
+      "asset": "btc",
+      "status": "unknown",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": []
+    },
+    {
+      "name": "a resumed invoice before its first poll",
+      "asset": "btc",
+      "status": "",
+      "confirmations": 0,
+      "confirmations_required": 0,
+      "expected": []
+    },
+    {
+      "name": "a status this sdk does not know",
+      "asset": "btc",
+      "status": "refunded",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": []
+    },
+    {
+      "name": "a coin this sdk does not know",
+      "asset": "ltc",
+      "status": "pending",
+      "confirmations": 0,
+      "confirmations_required": 1,
+      "expected": []
+    }
+  ],
+  "cryptoPaidAsset": [
+    {
+      "name": "a SOL year is named SOL, not by its market",
+      "market": "solana",
+      "asset": "sol",
+      "expected": "sol"
+    },
+    {
+      "name": "a USDC year",
+      "market": "solana",
+      "asset": "usdc_solana",
+      "expected": "usdc_solana"
+    },
+    {
+      "name": "a server that names no coin: solana was USDC before SOL",
+      "market": "solana",
+      "asset": "",
+      "expected": "usdc_solana"
+    },
+    {
+      "name": "a coin of another market is not believed",
+      "market": "solana",
+      "asset": "xmr",
+      "expected": "usdc_solana"
+    },
+    {
+      "name": "a coin this sdk does not know is not believed",
+      "market": "solana",
+      "asset": "ltc",
+      "expected": "usdc_solana"
+    },
+    {
+      "name": "monero",
+      "market": "monero",
+      "asset": "",
+      "expected": "xmr"
+    },
+    {
+      "name": "zcash",
+      "market": "zcash",
+      "asset": "zec",
+      "expected": "zec"
+    },
+    {
+      "name": "bittensor",
+      "market": "bittensor",
+      "asset": "tao",
+      "expected": "tao"
+    },
+    {
+      "name": "bitcoin",
+      "market": "bitcoin",
+      "asset": "",
+      "expected": "btc"
+    },
+    {
+      "name": "ethereum",
+      "market": "ethereum",
+      "asset": "eth",
+      "expected": "eth"
+    },
+    {
+      "name": "not a one-time crypto market",
+      "market": "stripe",
+      "asset": "",
+      "expected": ""
+    },
+    {
+      "name": "gamma renews, and is no coin",
+      "market": "gamma",
+      "asset": "",
+      "expected": ""
+    },
+    {
+      "name": "no market",
+      "market": "",
+      "asset": "sol",
+      "expected": ""
     }
   ]
 }

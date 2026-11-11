@@ -333,6 +333,9 @@ inline constexpr const char* CryptoPaymentStatusPending = "pending";
 inline constexpr const char* CryptoPaymentStatusReview = "review";
 inline constexpr const char* CryptoPaymentStatusSeen = "seen";
 inline constexpr const char* CryptoPaymentStatusUnknown = "unknown";
+inline constexpr const char* CryptoPaymentStepCurrent = "current";
+inline constexpr const char* CryptoPaymentStepDone = "done";
+inline constexpr const char* CryptoPaymentStepUpcoming = "upcoming";
 inline constexpr const char* CryptoPaymentTabMoreCoins = "more_coins";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
@@ -967,6 +970,7 @@ struct CreateApiKeyArgs;
 struct CreateApiKeyResult;
 struct CreateCryptoPaymentIntentArgs;
 struct CreateDataCryptoPaymentIntentArgs;
+struct CryptoAssetLines;
 struct CryptoInvoiceState;
 struct CryptoPaymentAsset;
 struct CryptoPaymentAssetsResult;
@@ -975,6 +979,7 @@ struct CryptoPaymentError;
 struct CryptoPaymentStatusResult;
 struct CryptoPaymentIntentResult;
 struct CryptoPaymentStatusArgs;
+struct CryptoPaymentStep;
 struct CryptoPaymentTab;
 struct CryptoTerm;
 struct DeleteApiKeyArgs;
@@ -1302,6 +1307,7 @@ using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using CryptoPaymentAssetList = std::vector<CryptoPaymentAsset>;
 using CryptoPaymentCoinList = std::vector<CryptoPaymentCoin>;
+using CryptoPaymentStepList = std::vector<CryptoPaymentStep>;
 using CryptoPaymentTabList = std::vector<CryptoPaymentTab>;
 using DestinationExitList = std::vector<DestinationExit>;
 using DnsPickList = std::vector<DnsPick>;
@@ -2191,6 +2197,15 @@ struct CreateDataCryptoPaymentIntentArgs {
 	std::string email{};
 };
 
+struct CryptoAssetLines {
+	std::string network_line{};
+	std::string network_line_key{};
+	std::string network_warning{};
+	std::string network_warning_key{};
+	std::string no_payment_link_note{};
+	std::string no_payment_link_note_key{};
+};
+
 struct CryptoInvoiceState {
 	std::string phase{};
 	std::string intent_id{};
@@ -2216,6 +2231,7 @@ struct CryptoInvoiceState {
 	std::string remaining{};
 	int64_t confirmations{};
 	int64_t confirmations_required{};
+	std::optional<CryptoPaymentStepList> steps;
 	std::string balance_code{};
 	bool refreshing{};
 	std::string error_code{};
@@ -2301,6 +2317,13 @@ struct CryptoPaymentStatusArgs {
 	std::string status_token{};
 };
 
+struct CryptoPaymentStep {
+	std::string status{};
+	std::string progress{};
+	int64_t confirmations{};
+	int64_t confirmations_required{};
+};
+
 struct CryptoPaymentTab {
 	std::string id{};
 	std::string label{};
@@ -2312,6 +2335,7 @@ struct CryptoPaymentTab {
 
 struct CryptoTerm {
 	std::string market{};
+	std::string asset{};
 	std::string term_end_time{};
 	std::string grace_end_time{};
 };
@@ -4609,6 +4633,7 @@ struct SubscriptionBalanceResult {
 	std::optional<WinbackOffer> winback_offer;
 	std::optional<ExperimentAssignmentList> experiments;
 	std::optional<CryptoPaymentAssetList> crypto_assets;
+	std::optional<CryptoPaymentAssetList> crypto_unavailable_assets;
 	std::optional<CryptoTerm> crypto_term;
 	std::optional<PaymentPastDue> payment_past_due;
 };
@@ -5125,6 +5150,8 @@ inline void to_json(nlohmann::json& j, const CreateCryptoPaymentIntentArgs& v);
 inline void from_json(const nlohmann::json& j, CreateCryptoPaymentIntentArgs& v);
 inline void to_json(nlohmann::json& j, const CreateDataCryptoPaymentIntentArgs& v);
 inline void from_json(const nlohmann::json& j, CreateDataCryptoPaymentIntentArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoAssetLines& v);
+inline void from_json(const nlohmann::json& j, CryptoAssetLines& v);
 inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v);
 inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v);
@@ -5141,6 +5168,8 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentStatusArgs& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v);
+inline void to_json(nlohmann::json& j, const CryptoPaymentStep& v);
+inline void from_json(const nlohmann::json& j, CryptoPaymentStep& v);
 inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v);
 inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v);
 inline void to_json(nlohmann::json& j, const CryptoTerm& v);
@@ -9676,6 +9705,39 @@ inline void from_json(const nlohmann::json& j, CreateDataCryptoPaymentIntentArgs
 	}
 }
 
+inline void to_json(nlohmann::json& j, const CryptoAssetLines& v) {
+	j = nlohmann::json::object();
+	j["network_line"] = v.network_line;
+	j["network_line_key"] = v.network_line_key;
+	j["network_warning"] = v.network_warning;
+	j["network_warning_key"] = v.network_warning_key;
+	j["no_payment_link_note"] = v.no_payment_link_note;
+	j["no_payment_link_note_key"] = v.no_payment_link_note_key;
+}
+inline void from_json(const nlohmann::json& j, CryptoAssetLines& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("network_line"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_line);
+	}
+	if (auto it = j.find("network_line_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_line_key);
+	}
+	if (auto it = j.find("network_warning"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_warning);
+	}
+	if (auto it = j.find("network_warning_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.network_warning_key);
+	}
+	if (auto it = j.find("no_payment_link_note"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_payment_link_note);
+	}
+	if (auto it = j.find("no_payment_link_note_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_payment_link_note_key);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j = nlohmann::json::object();
 	j["phase"] = v.phase;
@@ -9702,6 +9764,9 @@ inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j["remaining"] = v.remaining;
 	j["confirmations"] = v.confirmations;
 	j["confirmations_required"] = v.confirmations_required;
+	if (v.steps) {
+		j["steps"] = *v.steps;
+	}
 	j["balance_code"] = v.balance_code;
 	j["refreshing"] = v.refreshing;
 	j["error_code"] = v.error_code;
@@ -9782,6 +9847,11 @@ inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
 	}
 	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
 		it->get_to(v.confirmations_required);
+	}
+	if (auto it = j.find("steps"); it != j.end() && !it->is_null()) {
+		CryptoPaymentStepList tmp{};
+		it->get_to(tmp);
+		v.steps = std::move(tmp);
 	}
 	if (auto it = j.find("balance_code"); it != j.end() && !it->is_null()) {
 		it->get_to(v.balance_code);
@@ -10268,6 +10338,31 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentStatusArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const CryptoPaymentStep& v) {
+	j = nlohmann::json::object();
+	j["status"] = v.status;
+	j["progress"] = v.progress;
+	j["confirmations"] = v.confirmations;
+	j["confirmations_required"] = v.confirmations_required;
+}
+inline void from_json(const nlohmann::json& j, CryptoPaymentStep& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("progress"); it != j.end() && !it->is_null()) {
+		it->get_to(v.progress);
+	}
+	if (auto it = j.find("confirmations"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations);
+	}
+	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmations_required);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const CryptoPaymentTab& v) {
 	j = nlohmann::json::object();
 	j["id"] = v.id;
@@ -10312,6 +10407,7 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentTab& v) {
 inline void to_json(nlohmann::json& j, const CryptoTerm& v) {
 	j = nlohmann::json::object();
 	j["market"] = v.market;
+	j["asset"] = v.asset;
 	j["term_end_time"] = v.term_end_time;
 	j["grace_end_time"] = v.grace_end_time;
 }
@@ -10321,6 +10417,9 @@ inline void from_json(const nlohmann::json& j, CryptoTerm& v) {
 	}
 	if (auto it = j.find("market"); it != j.end() && !it->is_null()) {
 		it->get_to(v.market);
+	}
+	if (auto it = j.find("asset"); it != j.end() && !it->is_null()) {
+		it->get_to(v.asset);
 	}
 	if (auto it = j.find("term_end_time"); it != j.end() && !it->is_null()) {
 		it->get_to(v.term_end_time);
@@ -20746,6 +20845,9 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	if (v.crypto_assets) {
 		j["crypto_assets"] = *v.crypto_assets;
 	}
+	if (v.crypto_unavailable_assets) {
+		j["crypto_unavailable_assets"] = *v.crypto_unavailable_assets;
+	}
 	if (v.crypto_term) {
 		j["crypto_term"] = *v.crypto_term;
 	}
@@ -20816,6 +20918,11 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 		CryptoPaymentAssetList tmp{};
 		it->get_to(tmp);
 		v.crypto_assets = std::move(tmp);
+	}
+	if (auto it = j.find("crypto_unavailable_assets"); it != j.end() && !it->is_null()) {
+		CryptoPaymentAssetList tmp{};
+		it->get_to(tmp);
+		v.crypto_unavailable_assets = std::move(tmp);
 	}
 	if (auto it = j.find("crypto_term"); it != j.end() && !it->is_null()) {
 		CryptoTerm tmp{};
@@ -38679,6 +38786,14 @@ inline std::string cryptoAssetLabelKey(const std::string& asset) {
 	char* r_c = urnet_crypto_asset_label_key(asset.c_str());
 	return detail::takeString(r_c);
 }
+inline std::optional<CryptoAssetLines> cryptoAssetLinesFor(const std::string& asset) {
+	char* r_c = urnet_crypto_asset_lines_for(asset.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<CryptoAssetLines>(r_s->c_str());
+}
 inline std::string cryptoAssetMarket(const std::string& asset) {
 	char* r_c = urnet_crypto_asset_market(asset.c_str());
 	return detail::takeString(r_c);
@@ -38701,8 +38816,38 @@ inline std::string cryptoAssetTicker(const std::string& asset) {
 	char* r_c = urnet_crypto_asset_ticker(asset.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string cryptoPaidAsset(const std::string& market, const std::string& asset) {
+	char* r_c = urnet_crypto_paid_asset(market.c_str(), asset.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string cryptoPaymentEventProduct(const std::string& asset) {
+	char* r_c = urnet_crypto_payment_event_product(asset.c_str());
+	return detail::takeString(r_c);
+}
 inline std::string cryptoPaymentQrText(const std::string& asset, const std::string& uri, const std::string& address) {
 	char* r_c = urnet_crypto_payment_qr_text(asset.c_str(), uri.c_str(), address.c_str());
+	return detail::takeString(r_c);
+}
+inline bool cryptoPaymentShowsMemo(const std::string& asset, const std::string& memo) {
+	bool r = urnet_crypto_payment_shows_memo(asset.c_str(), memo.c_str());
+	return r;
+}
+inline std::optional<CryptoPaymentStepList> cryptoPaymentSteps(const std::string& asset, const std::string& status, int64_t confirmations, int64_t confirmations_required) {
+	char* r_c = urnet_crypto_payment_steps(asset.c_str(), status.c_str(), confirmations, confirmations_required);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<CryptoPaymentStepList>(r_s->c_str());
+}
+inline std::string cryptoPaymentTabCoin(const std::optional<CryptoPaymentTab>& tab, const std::string& last_chosen, const std::string& remembered) {
+	std::string tab_json;
+	const char* tab_c = nullptr;
+	if (tab) {
+		tab_json = nlohmann::json(*tab).dump();
+		tab_c = tab_json.c_str();
+	}
+	char* r_c = urnet_crypto_payment_tab_coin(tab_c, last_chosen.c_str(), remembered.c_str());
 	return detail::takeString(r_c);
 }
 inline std::string cryptoPaymentTabId(const std::string& asset) {
