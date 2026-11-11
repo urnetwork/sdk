@@ -28,6 +28,10 @@ func TestMobile64WindowFactorySharedPumpRefusesNoAckWithoutWaiting(t *testing.T)
 // shared Client pump. This deliberately uses one-shot NoAck packets: a refused
 // packet is not delivered or acknowledged, and this fixture never replays it.
 // Reliable-original recovery is covered by the separate real-peer ACK witness.
+// The payload is a DATA frame. Connect hands a protocol-only original (an
+// exchange signal, contract or ACK) to a separate protocol mailbox that this
+// DATA handoff count never sees, so such a payload would not reach the queue
+// under test.
 func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 	t.Helper()
 	connect.GetMessagePoolAggregateStats()
@@ -131,7 +135,7 @@ func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 			TransferPath: connect.TransferPath{SourceId: source, DestinationId: client.ClientId()}.ToProtobuf(),
 			Pack: &protocol.Pack{MessageId: connect.NewId().Bytes(), SequenceId: sequence.Bytes(),
 				SequenceNumber: uint64(marker), Head: marker == 0, Nack: true,
-				Frames: []*protocol.Frame{{MessageType: protocol.MessageType_TransferExchangeSignals, MessageBytes: payload}}},
+				Frames: []*protocol.Frame{{MessageType: protocol.MessageType_TestSimpleMessage, MessageBytes: payload}}},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -176,7 +180,8 @@ func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 	before := client.ReceiveStats()
 	if before.PackHandoffWaitCount != 0 || before.PackHandoffDropCount != 1 ||
 		before.PackHandoffMaxCount != uint64(count) || len(delivered) != 0 || len(outgoing) != 0 || observerOverflow.Load() {
-		t.Fatal("full queue did not truthfully refuse without ACK or callback progress")
+		t.Fatalf("full queue did not truthfully refuse without ACK or callback progress: wait=%d drop=%d max=%d/%d delivered=%d outgoing=%d",
+			before.PackHandoffWaitCount, before.PackHandoffDropCount, before.PackHandoffMaxCount, count, len(delivered), len(outgoing))
 	}
 	unblock()
 	for marker := 0; marker <= count; marker++ {
