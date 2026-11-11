@@ -256,6 +256,27 @@ func TestCryptoWalletSuggestions(t *testing.T) {
 	}
 }
 
+// Every coin's invoice names the wallets that work: Bitcoin and ETH have
+// lists of their own since 2026-11-11 (the owner's), where their invoices
+// showed no wallets line. A name is never blank and never listed twice.
+func TestCryptoWalletSuggestionsNameEveryCoinsWallets(t *testing.T) {
+	for _, asset := range cryptoAssetOrder {
+		wallets := stringListValues(CryptoWalletSuggestions(asset))
+		if len(wallets) == 0 {
+			t.Errorf("%s names no wallets, and its invoice shows no wallets line", asset)
+		}
+		seen := map[string]bool{}
+		for _, wallet := range wallets {
+			if wallet == "" || seen[wallet] {
+				t.Errorf("%s names %q blank or twice: %v", asset, wallet, wallets)
+			}
+			seen[wallet] = true
+		}
+	}
+	connect.AssertEqual(t, stringListValues(CryptoWalletSuggestions(CryptoAssetBtc)), []string{"Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor"})
+	connect.AssertEqual(t, stringListValues(CryptoWalletSuggestions(CryptoAssetEth)), []string{"MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor"})
+}
+
 func TestCheckCryptoPaymentUri(t *testing.T) {
 	for _, vector := range loadCryptoPayVectors(t).CheckCryptoPaymentUri {
 		t.Run(vector.Name, func(t *testing.T) {

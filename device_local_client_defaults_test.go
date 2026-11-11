@@ -49,6 +49,21 @@ func testDeviceLocalWindowProfileIndependentOfHost(t *testing.T, target ByteCoun
 	expected.ReceiveBufferSettings.PackQueueBudget = device.settings.ReceiveBufferSettings.PackQueueBudget
 	applyMobileLowMemoryClientSettingsForPlatform(expected, target, true)
 	applyMobileH1PerformanceClientSettingsForPlatform(expected, target, true, true)
+	// Independent candidate expectations supplement the unchanged generic
+	// transforms; the new product projection is never called on the oracle.
+	wantPhysical, wantWire, wantRoot, wantH1 := ByteCount(7633633), ByteCount(2181038), ByteCount(21810380), 256
+	if target == 64*1024*1024 {
+		wantPhysical, wantWire, wantRoot, wantH1 = 15267266, 4362076, 43620760, 512
+	}
+	expected.ReceiveBufferSettings.H1SequenceBufferSize = wantH1
+	expected.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleNumerator = 2
+	expected.ReceiveBufferSettings.AdvertisedReceiveWindowBudgetScaleDenominator = 7
+	expected.ReceiveBufferSettings.AdvertisedReceiveWindowMaxByteCount = 0
+	if device.settings.ReceiveBufferSettings.ReceiveQueueBudget.TotalByteCount() != wantPhysical ||
+		device.settings.ReceiveBufferSettings.ReceiveHeadRecoveryBudget.TotalByteCount() != wantWire ||
+		device.settings.ReceiveBufferSettings.PackQueueBudget.TotalByteCount() != wantWire || device.transferMemory.root.TotalByteCount() != wantRoot {
+		t.Fatal("actual constructor changed the independent physical/wire/root contract")
+	}
 	receiveSize, peerBudget := deviceLocalDestinationWebRtcSettings(device.settings.WebRtcSettings, false)
 	applyDeviceLocalDestinationWebRtcSettings(expected.WebRtcSettings, false, nil, receiveSize, peerBudget)
 	expected.WebRtcSettings.UseEgressOnlyIceInterfaces = device.settings.WebRtcSettings.UseEgressOnlyIceInterfaces

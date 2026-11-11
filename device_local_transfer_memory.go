@@ -1,6 +1,48 @@
 package sdk
 
-import "github.com/urnetwork/connect"
+import (
+	"math"
+
+	"github.com/urnetwork/connect"
+)
+
+// The measured 32/64 MiB profiles back the same encoded credit with retained
+// decode ownership. Smaller/default Android and targetless profiles keep their
+// existing calibration. These remain overlapping ceilings under the same root.
+func deviceLocalReceiveBackingEnabled(target ByteCount, mobile bool) bool {
+	return mobileMemoryPolicyEnabledForPlatform(target, mobile) && 32*1024*1024 <= target
+}
+
+func deviceLocalPhysicalReceiveBytes(logical ByteCount, target ByteCount, mobile bool) ByteCount {
+	if !deviceLocalReceiveBackingEnabled(target, mobile) || logical <= 0 {
+		return logical
+	}
+	if logical > math.MaxInt64/7*2 {
+		return math.MaxInt64
+	}
+	// Ceil(7*logical/2), so the wire's floor(2*physical/7) preserves odd
+	// logical capacities as well. No physical ownership is reserved here.
+	return logical/2*7 + (logical%2*7+1)/2
+}
+
+func deviceLocalBackedH1ReceiveCount(target ByteCount) int {
+	// 256 at32 MiB and512 at64 MiB. Keep a fixed512-slot ceiling for larger
+	// targets rather than allowing a host-supplied target to size a huge channel.
+	return int(min(target, ByteCount(64*1024*1024)) / (128 * 1024))
+}
+
+// Window construction only copies immutable policy. It never retunes the
+// shared RX/Head/Pack budgets that older generations may still be using.
+func copyDeviceLocalReceiveSizingToWindow(receive *connect.ReceiveBufferSettings, settings *DeviceLocalSettings) {
+	if receive == nil || settings == nil || settings.ReceiveBufferSettings == nil ||
+		!deviceLocalReceiveBackingEnabled(settings.MemoryTargetByteCount, settings.LowMemoryProfile) {
+		return
+	}
+	source := settings.ReceiveBufferSettings
+	receive.H1SequenceBufferSize = source.H1SequenceBufferSize
+	receive.AdvertisedReceiveWindowBudgetScaleNumerator = source.AdvertisedReceiveWindowBudgetScaleNumerator
+	receive.AdvertisedReceiveWindowBudgetScaleDenominator = source.AdvertisedReceiveWindowBudgetScaleDenominator
+}
 
 // One lifetime owner spans every client/provider generation and both egress
 // NATs. Child capacities are overlapping permission ceilings, not standing
@@ -69,6 +111,7 @@ func configureDeviceLocalClientMemoryForPlatform(settings *DeviceLocalSettings, 
 		parent = memory.client
 	}
 	client := &settings.ClientSettings
+	configuredH1Count := client.ReceiveBufferSettings.H1SequenceBufferSize
 	client.SendBufferSettings.ResendQueueBudget, client.ReceiveBufferSettings.ReceiveQueueBudget =
 		deviceLocalTransferBudgets(clientShare, parent)
 	// The provider settings deliberately copy this same Pack pointer. The
@@ -80,12 +123,26 @@ func configureDeviceLocalClientMemoryForPlatform(settings *DeviceLocalSettings, 
 	if memory != nil {
 		receive := client.ReceiveBufferSettings
 		if rx := receive.ReceiveQueueBudget; rx != nil && rx.Parent() == memory.client {
+			headBytes := rx.TotalByteCount()
+			if deviceLocalReceiveBackingEnabled(settings.MemoryTargetByteCount, mobile) {
+				// Initial providing is off. Use the actual final client parent,
+				// including its folded provider share, before publishing clients.
+				headBytes = mobileReceiveQueueBudgetForPlatform(settings.MemoryTargetByteCount, memory.client.TotalByteCount(), mobile)
+				rx.SetTotalByteCount(deviceLocalPhysicalReceiveBytes(headBytes, settings.MemoryTargetByteCount, mobile))
+				receive.AdvertisedReceiveWindowBudgetScaleNumerator = 2
+				receive.AdvertisedReceiveWindowBudgetScaleDenominator = 7
+				count := deviceLocalBackedH1ReceiveCount(settings.MemoryTargetByteCount)
+				if !settings.hasDefaultH1ReceiveCount || configuredH1Count != settings.defaultH1ReceiveCount {
+					count = min(count, configuredH1Count)
+				}
+				receive.H1SequenceBufferSize = count
+			}
 			// One shared partition survives client generations and role changes.
 			// Its ceiling is permission; only an admitted head charges the root.
 			if memory.headRecovery == nil {
-				memory.headRecovery = connect.NewTransferMemoryBudgetWithParent(rx.TotalByteCount(), memory.client)
+				memory.headRecovery = connect.NewTransferMemoryBudgetWithParent(headBytes, memory.client)
 			} else {
-				memory.headRecovery.SetTotalByteCount(rx.TotalByteCount())
+				memory.headRecovery.SetTotalByteCount(headBytes)
 			}
 			receive.ReceiveHeadRecoveryBudget = memory.headRecovery
 		}
