@@ -141,6 +141,7 @@ public interface Raw extends Library {
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_post_quantum_identity_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_pro_features_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_provide_control_mode_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_mode_change_cb extends Callback { void invoke(Pointer a0, long a1); }
@@ -372,6 +373,7 @@ public interface Raw extends Library {
   void urnet_api_onboarding_offer_issue(long a0, String a1, urnet_onboarding_offer_issue_cb a2, Pointer a3);
   long urnet_api_open_client_session_view_controller(long a0);
   long urnet_api_open_manage_devices_view_controller(long a0);
+  long urnet_api_open_pro_features_view_controller(long a0);
   void urnet_api_redeem_balance_code(long a0, String a1, urnet_redeem_balance_code_cb a2, Pointer a3);
   void urnet_api_refresh_jwt(long a0, urnet_refresh_jwt_cb a1, Pointer a2);
   Pointer urnet_api_refresh_jwt_sync(long a0, PointerByReference a1);
@@ -1328,6 +1330,17 @@ public interface Raw extends Library {
   void urnet_post_quantum_identity_view_controller_provider_identities_changed(long a0);
   void urnet_post_quantum_identity_view_controller_start(long a0);
   void urnet_post_quantum_identity_view_controller_stop(long a0);
+  Pointer urnet_pro_features_notice_tracker_dismiss(long a0);
+  Pointer urnet_pro_features_notice_tracker_get_shown_prompt(long a0);
+  Pointer urnet_pro_features_notice_tracker_reset(long a0);
+  Pointer urnet_pro_features_notice_tracker_update(long a0, String a1);
+  long urnet_pro_features_view_controller_add_pro_features_listener(long a0, urnet_pro_features_cb a1, Pointer a2);
+  void urnet_pro_features_view_controller_close(long a0);
+  void urnet_pro_features_view_controller_dismiss_main_notice(long a0);
+  Pointer urnet_pro_features_view_controller_get_snapshot(long a0);
+  void urnet_pro_features_view_controller_refresh(long a0);
+  void urnet_pro_features_view_controller_start(long a0);
+  void urnet_pro_features_view_controller_stop(long a0);
   void urnet_provide_view_controller_close(long a0);
   void urnet_provide_view_controller_start(long a0);
   void urnet_provide_view_controller_stop(long a0);
@@ -1637,6 +1650,7 @@ public interface Raw extends Library {
   Pointer urnet_new_onboarding_step_shown_event(String a0, long a1, long a2);
   Pointer urnet_new_onboarding_step_skipped_event(String a0, long a1, long a2);
   long urnet_new_platform_device_remote(long a0, String a1, String a2, String a3, String a4, PointerByReference a5);
+  long urnet_new_pro_features_notice_tracker();
   long urnet_new_proxy_device_with_defaults(String a0, urnet_setup_new_device_cb a1, Pointer a2);
   Pointer urnet_new_purchase_cancelled_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_purchase_completed_event(String a0, String a1, String a2, byte a3, double a4, String a5);
@@ -1673,6 +1687,7 @@ public interface Raw extends Library {
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);
+  Pointer urnet_pro_features_status_for(String a0);
   Pointer urnet_public_identity_key_hash(Pointer a0, int a1);
   long urnet_purchase_report_backoff_millis(long a0);
   Pointer urnet_record_tunnel_recovery_stage(String a0, String a1, byte a2, byte a3, byte a4, long a5, long a6);
