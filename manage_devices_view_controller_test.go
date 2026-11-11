@@ -30,9 +30,11 @@ const testingManageDevicesNetworkJwt = "synthetic-network-credential"
 // testingManageDevicesServer answers GET /network/clients, GET /network/proxies
 // and POST /network/remove-client, and records the credential of each request.
 type testingManageDevicesServer struct {
-	stateLock   sync.Mutex
-	devices     []*NetworkClientInfo
-	proxies     []*NetworkClientInfo
+	stateLock sync.Mutex
+	devices   []*NetworkClientInfo
+	proxies   []*NetworkClientInfo
+	// the plan the proxies list answers with; nil for a server before it
+	proxiesPlan *NetworkProxiesPlan
 	removed     []Id
 	credentials []string
 	gets        int
@@ -54,17 +56,19 @@ func (self *testingManageDevicesServer) install(t *testing.T, api *Api) {
 			return nil, &connect.HttpStatusError{StatusCode: self.listStatus, Status: http.StatusText(self.listStatus)}
 		}
 		var clients []*NetworkClientInfo
+		var plan *NetworkProxiesPlan
 		switch {
 		case strings.HasSuffix(requestUrl, "/network/clients"):
 			clients = self.devices
 		case strings.HasSuffix(requestUrl, "/network/proxies"):
 			clients = self.proxies
+			plan = self.proxiesPlan
 		default:
 			t.Errorf("unexpected get %s", requestUrl)
 		}
 		list := NewNetworkClientInfoList()
 		list.addAll(clients...)
-		return json.Marshal(&NetworkClientsResult{Clients: list})
+		return json.Marshal(&NetworkClientsResult{Clients: list, Plan: plan})
 	})
 	api.setHttpPostRaw(func(_ context.Context, requestUrl string, body []byte, byJwt string) ([]byte, error) {
 		self.stateLock.Lock()
