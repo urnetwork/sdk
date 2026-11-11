@@ -176,7 +176,7 @@ func (self *LocalState) SetProvideExtender(provideExtender bool) error {
 	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
 }
 
-// The provider extender's router port mapping setting (connect EXTENDER.md S8):
+// The provider extender's router port mapping setting (connect EXTENDER.md S10):
 // whether the role asks the router to forward its ports to this device. A file
 // that is not there is a user who never set it, and the device default applies
 // (DeviceLocalSettings.DefaultProvideExtenderPortMapping, off on every app and

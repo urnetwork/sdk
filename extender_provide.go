@@ -168,7 +168,7 @@ type ExtenderProvideStatus struct {
 	// connection.
 	LimitedBySubnetsCount int
 	LimitedBySourceCount  int
-	// The router port mapping of the role (connect EXTENDER.md S8), one of the
+	// The router port mapping of the role (connect EXTENDER.md S10), one of the
 	// ExtenderPortMapping values below; empty while the role is not running.
 	PortMapping string
 	// How the router mapped: "pcp", "nat-pmp" or "upnp". Empty while nothing
@@ -190,7 +190,7 @@ type ExtenderProvideStatus struct {
 	ConnectionCount int
 }
 
-// The states of the router port mapping in the status (connect EXTENDER.md S8),
+// The states of the router port mapping in the status (connect EXTENDER.md S10),
 // as plain strings for every binding.
 const (
 	// The setting is off: the role asks the router for nothing.
@@ -484,7 +484,7 @@ type deviceLocalExtenderSettings struct {
 	// and on in the sn miner. A failed 53 bind leaves the carrier on DnsPort.
 	DnsPrivilegedPort bool
 	// PortMapping asks the router to forward the carriers that bound to this
-	// device (connect EXTENDER.md S8). The provider fills it from the device's
+	// device (connect EXTENDER.md S10). The provider fills it from the device's
 	// setting (DeviceLocal.GetProvideExtenderPortMapping), off on every app
 	// until its user turns it on and on in the sn miner.
 	PortMapping bool
@@ -697,7 +697,7 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 	self.updateExtenderProvide()
 }
 
-// The router port mapping setting of this device (connect EXTENDER.md S8):
+// The router port mapping setting of this device (connect EXTENDER.md S10):
 // whether the provider extender role asks the router, by PCP, NAT-PMP or UPnP,
 // to forward its own ports -- tcp 443, udp 443 and udp 4053 -- to this device,
 // which opens those ports on the router. The value the space's local state
@@ -723,7 +723,7 @@ func (self *DeviceLocal) GetProvideExtenderPortMapping() bool {
 	return self.settings.DefaultProvideExtenderPortMapping
 }
 
-// Sets the router port mapping setting and applies it at once (S8): stored in
+// Sets the router port mapping setting and applies it at once (S10): stored in
 // the space's local state, which keeps it across restarts, or held by this
 // device for its life on a space that keeps no local state. A running role is
 // replaced by one that maps or does not, so turning the setting off removes

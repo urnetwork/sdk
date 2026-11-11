@@ -58,7 +58,7 @@ func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorStat
 func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
 }
 
-// No role, so nothing to ask the router for (connect EXTENDER.md S8).
+// No role, so nothing to ask the router for (connect EXTENDER.md S10).
 func (self *deviceLocalExtender) portMappingEnabled() bool {
 	return false
 }

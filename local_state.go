@@ -87,7 +87,7 @@ type LocalState struct {
 
 	// The provider extender's router port mapping setting, read from
 	// `.provide_extender_port_mapping` once and cached after (connect
-	// EXTENDER.md S8), and whether the space stores one at all. Guarded by
+	// EXTENDER.md S10), and whether the space stores one at all. Guarded by
 	// provideExtenderPortMappingLock as the setting above is.
 	provideExtenderPortMappingLock   sync.Mutex
 	provideExtenderPortMappingLoaded bool

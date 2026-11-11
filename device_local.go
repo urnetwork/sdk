@@ -456,7 +456,7 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// miner opts in to 53 (L2)
 		ProvideExtenderDnsPrivilegedPort: false,
 		// no app asks the router to open a port until its user turns it on;
-		// the sn miner turns it on (owner, 2026-11-11; connect EXTENDER.md S8)
+		// the sn miner turns it on (owner, 2026-11-11; connect EXTENDER.md S10)
 		DefaultProvideExtenderPortMapping: false,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
@@ -815,7 +815,7 @@ type DeviceLocalSettings struct {
 	// binds it and the c abi settings json carries it.
 	ProvideExtenderDnsPrivilegedPort bool
 	// DefaultProvideExtenderPortMapping is the router port mapping setting
-	// this device uses until the user sets one (connect EXTENDER.md S8,
+	// this device uses until the user sets one (connect EXTENDER.md S10,
 	// DeviceLocal.SetProvideExtenderPortMapping): whether the provider
 	// extender role asks the router, by PCP, NAT-PMP or UPnP, to forward its
 	// own ports -- tcp 443, udp 443 and udp 4053 -- to this device, so that a
@@ -1390,7 +1390,7 @@ type DeviceLocal struct {
 	measurementsEnabledSet bool
 	measurementsEnabled    bool
 	// The router port mapping setting on a space that keeps no local state
-	// (connect EXTENDER.md S8): set by SetProvideExtenderPortMapping and held
+	// (connect EXTENDER.md S10): set by SetProvideExtenderPortMapping and held
 	// for the life of the device, with settings.DefaultProvideExtenderPortMapping
 	// in force until it is set. A space with local state stores it there.
 	provideExtenderPortMappingSet bool
@@ -2276,7 +2276,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		// (lag.dev/PLAN.md C4)
 		provider.extenderMeasurementsEnabled = deviceLocal.GetMeasurementsEnabled
 		// the role reads the router port mapping setting as it starts, and a
-		// change replaces a running role (connect EXTENDER.md S8)
+		// change replaces a running role (connect EXTENDER.md S10)
 		provider.extenderPortMapping = deviceLocal.GetProvideExtenderPortMapping
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub

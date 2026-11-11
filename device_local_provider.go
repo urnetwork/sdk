@@ -88,7 +88,7 @@ type deviceLocalProvider struct {
 	// starts (lag.dev/PLAN.md C4)
 	extenderMeasurementsEnabled func() bool
 	// extenderPortMapping, when set, is the device's router port mapping
-	// setting, read as each role starts (connect EXTENDER.md S8). A change
+	// setting, read as each role starts (connect EXTENDER.md S10). A change
 	// replaces a running role (setExtenderPortMapping). Nil maps nothing.
 	extenderPortMapping func() bool
 
@@ -1827,7 +1827,7 @@ func (self *deviceLocalProvider) setExtenderMeasurementsEnabled(measurementsEnab
 }
 
 // Applies the router port mapping setting to the running role (connect
-// EXTENDER.md S8): a role that maps otherwise than the setting now says is
+// EXTENDER.md S10): a role that maps otherwise than the setting now says is
 // replaced at once, which removes what its router forwards when the setting
 // turns off, and asks the router when it turns on. The new role starts as a new
 // process does, every family due, since a family the operator refused for want

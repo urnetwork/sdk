@@ -19,7 +19,7 @@ import (
 )
 
 // The router port mapping of the provider extender role (connect EXTENDER.md
-// S8), at the device's entry points: the setting, its defaults, the role that
+// S10), at the device's entry points: the setting, its defaults, the role that
 // maps the carriers it holds and offers what the router forwards, the skip on a
 // public address, and the removal when the role stops or the setting turns off.
 // The router is a NAT-PMP server answered in memory through the mapper's

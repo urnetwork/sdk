@@ -1681,7 +1681,7 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 
 // GetProvideExtenderPortMapping reads the router port mapping setting through
 // to the local device, which owns the space it is stored in (connect
-// EXTENDER.md S8). A device that cannot be reached, or one too old to answer,
+// EXTENDER.md S10). A device that cannot be reached, or one too old to answer,
 // reads the value queued for it, else the last value read, else off -- the
 // apps' default, so an app never shows a port opened that it cannot confirm.
 func (self *DeviceRemote) GetProvideExtenderPortMapping() bool {
@@ -1703,7 +1703,7 @@ func (self *DeviceRemote) GetProvideExtenderPortMapping() bool {
 }
 
 // SetProvideExtenderPortMapping writes the setting through to the local device,
-// which persists it and applies it at once (S8). While the device process
+// which persists it and applies it at once (S10). While the device process
 // cannot be reached the value is queued and replayed at the next sync, as the
 // provider extender setting is. A device process too old to have the setter
 // drops the write instead of queueing it: it maps nothing, and a queued value
@@ -7721,7 +7721,7 @@ type DeviceRemoteState struct {
 	// the lag.dev measurements setting (lag.dev/PLAN.md C4), stored beside the
 	// provider extender setting and queued as it is
 	MeasurementsEnabled deviceRemoteValue[bool]
-	// the router port mapping setting (connect EXTENDER.md S8), stored beside
+	// the router port mapping setting (connect EXTENDER.md S10), stored beside
 	// the provider extender setting and queued as it is
 	ProvideExtenderPortMapping deviceRemoteValue[bool]
 	// the id of a reset of the extender state (EXTENDER.md E7) queued for the
@@ -10767,7 +10767,7 @@ func (self *DeviceLocalRpc) Sync(
 	if state.MeasurementsEnabled.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetMeasurementsEnabled(state.MeasurementsEnabled.Value)
 	}
-	// and so is the router port mapping setting (connect EXTENDER.md S8)
+	// and so is the router port mapping setting (connect EXTENDER.md S10)
 	if state.ProvideExtenderPortMapping.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideExtenderPortMapping(state.ProvideExtenderPortMapping.Value)
 	}

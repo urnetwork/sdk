@@ -868,7 +868,7 @@ type Device interface {
 	GetSupportsExtenderPin() bool
 
 	// GetProvideExtenderPortMapping is the user's router port mapping setting
-	// (connect EXTENDER.md S8): whether the provider extender role asks the
+	// (connect EXTENDER.md S10): whether the provider extender role asks the
 	// router, by PCP, NAT-PMP or UPnP, to forward its ports -- tcp 443, udp 443
 	// and udp 4053 -- to this device, which opens them on the router. Stored per
 	// network space; until the user sets it, the device default applies
