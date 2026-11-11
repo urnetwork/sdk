@@ -117,6 +117,10 @@ type ManageDevicesSnapshot struct {
 	// the removals that freed a slot and added this device again, so an app
 	// can say it is connecting this device
 	AddRetryCount int
+	// the network's Pro features in use, from the same proxies list: the list
+	// shows its Prompt (pro_features_status.go). Never nil; it has no prompt
+	// before the first load, or when the proxies could not be read.
+	ProFeatures *ProFeaturesStatus
 }
 
 // ManageDevicesListener receives every change of the snapshot.
@@ -188,6 +192,7 @@ type ManageDevicesViewController struct {
 	removingClientId *Id
 	errorId          string
 	addRetryCount    int
+	proFeatures      *ProFeaturesStatus
 }
 
 func newManageDevicesViewController(ctx context.Context, device Device) *ManageDevicesViewController {
@@ -203,11 +208,12 @@ func newManageDevicesViewControllerWithDevice(ctx context.Context, device manage
 func newManageDevicesViewControllerWithApi(ctx context.Context, api *Api, settings *manageDevicesSettings) *ManageDevicesViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	return &ManageDevicesViewController{
-		ctx:       cancelCtx,
-		cancel:    cancel,
-		api:       api,
-		settings:  settings,
-		listeners: connect.NewCallbackList[ManageDevicesListener](),
+		ctx:         cancelCtx,
+		cancel:      cancel,
+		api:         api,
+		settings:    settings,
+		listeners:   connect.NewCallbackList[ManageDevicesListener](),
+		proFeatures: ProFeaturesStatusFor(nil),
 	}
 }
 
@@ -278,6 +284,7 @@ func (self *ManageDevicesViewController) snapshotWithLock() *ManageDevicesSnapsh
 		RemovingClientId: self.removingClientId,
 		ErrorId:          self.errorId,
 		AddRetryCount:    self.addRetryCount,
+		ProFeatures:      cloneProFeaturesStatus(self.proFeatures),
 	}
 }
 
@@ -325,7 +332,7 @@ func (self *ManageDevicesViewController) Refresh() {
 		return
 	}
 	go connect.HandleError(func() {
-		devices, errorId := self.load(networkByJwt)
+		devices, proFeatures, errorId := self.load(networkByJwt)
 		applied := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -336,6 +343,7 @@ func (self *ManageDevicesViewController) Refresh() {
 			self.errorId = errorId
 			if errorId == ManageDevicesErrorNone {
 				self.devices = devices
+				self.proFeatures = proFeatures
 				self.loaded = true
 			}
 			return true
@@ -346,9 +354,11 @@ func (self *ManageDevicesViewController) Refresh() {
 	})
 }
 
-// load reads the devices and the hosted proxies. A failed proxies read leaves
-// the devices listed: an older server, or a network the read refused.
-func (self *ManageDevicesViewController) load(networkByJwt string) ([]*ManagedDevice, string) {
+// load reads the devices and the hosted proxies, and the network's Pro features
+// in use from the proxies. A failed proxies read leaves the devices listed: an
+// older server, or a network the read refused; the Pro features then have no
+// prompt.
+func (self *ManageDevicesViewController) load(networkByJwt string) ([]*ManagedDevice, *ProFeaturesStatus, string) {
 	ctx, cancel := context.WithTimeout(self.ctx, self.settings.RequestTimeout)
 	defer cancel()
 	devicesResult, err := connect.HttpGetWithRawFunction(
@@ -360,7 +370,7 @@ func (self *ManageDevicesViewController) load(networkByJwt string) ([]*ManagedDe
 		connect.NewNoopApiCallback[*NetworkClientsResult](),
 	)
 	if err != nil {
-		return nil, manageDevicesErrorFor(err, ManageDevicesErrorLoadFailed)
+		return nil, nil, manageDevicesErrorFor(err, ManageDevicesErrorLoadFailed)
 	}
 	proxiesResult, err := connect.HttpGetWithRawFunction(
 		ctx,
@@ -377,7 +387,7 @@ func (self *ManageDevicesViewController) load(networkByJwt string) ([]*ManagedDe
 	if self.device != nil {
 		thisClientId = self.device.GetClientId()
 	}
-	return managedDevicesFrom(devicesResult, proxiesResult, thisClientId), ManageDevicesErrorNone
+	return managedDevicesFrom(devicesResult, proxiesResult, thisClientId), ProFeaturesStatusFor(proxiesResult), ManageDevicesErrorNone
 }
 
 // managedDevicesFrom merges the devices and the hosted proxies into the list
