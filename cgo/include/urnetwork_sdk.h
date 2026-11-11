@@ -555,6 +555,18 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROXY_EXIT_STATE_REPLACING "replacing"
 #define URNET_PROXY_UNIQUE_EXIT_REPLACE_AUTO "auto"
 #define URNET_PROXY_UNIQUE_EXIT_REPLACE_MANUAL "manual"
+#define URNET_PRO_FEATURES_ERROR_LOAD_FAILED "load_failed"
+#define URNET_PRO_FEATURES_ERROR_NONE ""
+#define URNET_PRO_FEATURES_ERROR_SIGN_IN_REQUIRED "sign_in_required"
+#define URNET_PRO_FEATURES_NOTICE_NONE ""
+#define URNET_PRO_FEATURES_NOTICE_POST "post"
+#define URNET_PRO_FEATURES_NOTICE_REMOVE "remove"
+#define URNET_PRO_FEATURES_NOTICE_UPDATE "update"
+#define URNET_PRO_FEATURES_PROMPT_NONE ""
+#define URNET_PRO_FEATURES_PROMPT_STOPPED "stopped"
+#define URNET_PRO_FEATURES_PROMPT_UPGRADE "upgrade"
+#define URNET_PRO_FEATURE_SOCKS_PROXY "socks_proxy"
+#define URNET_PRO_FEATURE_WIREGUARD_PROXY "wireguard_proxy"
 #define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_NOT_REFLECTED "not_reflected"
 #define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_UNREACHABLE "unreachable"
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMATION_GAVE_UP "confirmation_gave_up"
@@ -1022,6 +1034,8 @@ typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char*
 typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 /* PostQuantumIdentityListener */
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
+/* ProFeaturesListener */
+typedef void (*urnet_pro_features_cb)(void* user_data, const char* snapshot_json);
 /* ProvideChangeListener */
 typedef void (*urnet_provide_change_cb)(void* user_data, bool provide_enabled);
 /* ProvideControlModeChangeListener */
@@ -1326,6 +1340,7 @@ void urnet_api_onboarding_feedback_token(uint64_t self, const char* token, int64
 void urnet_api_onboarding_offer_issue(uint64_t self, const char* args_json, urnet_onboarding_offer_issue_cb callback_result, void* callback_user_data);
 uint64_t urnet_api_open_client_session_view_controller(uint64_t self);
 uint64_t urnet_api_open_manage_devices_view_controller(uint64_t self);
+uint64_t urnet_api_open_pro_features_view_controller(uint64_t self);
 void urnet_api_redeem_balance_code(uint64_t self, const char* args_json, urnet_redeem_balance_code_cb callback_result, void* callback_user_data);
 void urnet_api_refresh_jwt(uint64_t self, urnet_refresh_jwt_cb callback_result, void* callback_user_data);
 char* urnet_api_refresh_jwt_sync(uint64_t self, char** out_error);
@@ -2429,6 +2444,23 @@ void urnet_post_quantum_identity_view_controller_provider_identities_changed(uin
 void urnet_post_quantum_identity_view_controller_start(uint64_t self);
 void urnet_post_quantum_identity_view_controller_stop(uint64_t self);
 
+/* ----- ProFeaturesNoticeTracker ----- */
+
+char* urnet_pro_features_notice_tracker_dismiss(uint64_t self);
+char* urnet_pro_features_notice_tracker_get_shown_prompt(uint64_t self);
+char* urnet_pro_features_notice_tracker_reset(uint64_t self);
+char* urnet_pro_features_notice_tracker_update(uint64_t self, const char* status_json);
+
+/* ----- ProFeaturesViewController ----- */
+
+uint64_t urnet_pro_features_view_controller_add_pro_features_listener(uint64_t self, urnet_pro_features_cb listener_pro_features_changed, void* listener_user_data);
+void urnet_pro_features_view_controller_close(uint64_t self);
+void urnet_pro_features_view_controller_dismiss_main_notice(uint64_t self);
+char* urnet_pro_features_view_controller_get_snapshot(uint64_t self);
+void urnet_pro_features_view_controller_refresh(uint64_t self);
+void urnet_pro_features_view_controller_start(uint64_t self);
+void urnet_pro_features_view_controller_stop(uint64_t self);
+
 /* ----- ProvideViewController ----- */
 
 void urnet_provide_view_controller_close(uint64_t self);
@@ -2791,6 +2823,7 @@ char* urnet_new_onboarding_step_completed_event(const char* step, int64_t index,
 char* urnet_new_onboarding_step_shown_event(const char* step, int64_t index, int64_t elapsed_ms);
 char* urnet_new_onboarding_step_skipped_event(const char* step, int64_t index, int64_t elapsed_ms);
 uint64_t urnet_new_platform_device_remote(uint64_t network_space, const char* by_jwt, const char* proxy_url, const char* signed_proxy_id, const char* instance_id, char** out_error);
+uint64_t urnet_new_pro_features_notice_tracker(void);
 uint64_t urnet_new_proxy_device_with_defaults(const char* proxy_config_json, urnet_setup_new_device_cb setup_new_device_callback_setup_new_device, void* setup_new_device_callback_user_data);
 char* urnet_new_purchase_cancelled_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
 char* urnet_new_purchase_completed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
@@ -2827,6 +2860,7 @@ char* urnet_payment_methods(const char* assets_json, const char* items_json);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);
+char* urnet_pro_features_status_for(const char* result_json);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
 char* urnet_record_tunnel_recovery_stage(const char* stage, const char* result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation);
@@ -4678,6 +4712,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   RemovingClientId: string (uuid) | null
  *   ErrorId: string
  *   AddRetryCount: number
+ *   ProFeatures: ProFeaturesStatus | null
  */
 
 /* ManagedDevice (json):
@@ -4814,6 +4849,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_client?: ProxyClient | null
  *   exit?: ProxyExit | null
  *   connections: NetworkClientConnectionList | null
+ *   pro_features?: StringList | null
  */
 
 /* NetworkClientInfoList (json):
@@ -4822,6 +4858,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* NetworkClientsResult (json):
  *   clients: NetworkClientInfoList | null
+ *   plan?: NetworkProxiesPlan | null
  */
 
 /* NetworkCreateArgs (json):
@@ -4886,6 +4923,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* NetworkPeers (json):
  *   Connected: NetworkPeerList | null
  *   DisconnectedCount: number
+ */
+
+/* NetworkProxiesPlan (json):
+ *   pro: boolean
+ *   pro_features_enforced: boolean
  */
 
 /* NetworkRanking (json):
@@ -5151,6 +5193,23 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   currency: string
  *   source: string
  *   estimate: boolean
+ */
+
+/* ProFeaturesSnapshot (json):
+ *   Status: ProFeaturesStatus | null
+ *   MainPrompt: string
+ *   Loaded: boolean
+ *   Loading: boolean
+ *   ErrorId: string
+ */
+
+/* ProFeaturesStatus (json):
+ *   Prompt: string
+ *   SocksProxyCount: number
+ *   WireguardProxyCount: number
+ *   PlanKnown: boolean
+ *   Pro: boolean
+ *   ProFeaturesEnforced: boolean
  */
 
 /* ProbeResult (json):

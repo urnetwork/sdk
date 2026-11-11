@@ -2182,6 +2182,20 @@ func (self *cAdapterPostQuantumIdentityListener) ProviderIdentitiesChanged() {
 	C.urnet_invoke_post_quantum_identity(self.cbProviderIdentitiesChanged, self.userData)
 }
 
+type cAdapterProFeaturesListener struct {
+	cbProFeaturesChanged C.urnet_pro_features_cb
+	userData             unsafe.Pointer
+}
+
+func (self *cAdapterProFeaturesListener) ProFeaturesChanged(snapshot *sdk.ProFeaturesSnapshot) {
+	defer cgoGuard("urnet_pro_features_cb")
+	snapshot_ := cJson(snapshot, "urnet_pro_features_cb")
+	C.urnet_invoke_pro_features(self.cbProFeaturesChanged, self.userData, snapshot_)
+	if snapshot_ != nil {
+		cStringFree(snapshot_)
+	}
+}
+
 type cAdapterProvideChangeListener struct {
 	cbProvideChanged C.urnet_provide_change_cb
 	userData         unsafe.Pointer
@@ -5453,6 +5467,20 @@ func urnet_api_open_manage_devices_view_controller(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	r0 := self_.OpenManageDevicesViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_api_open_pro_features_view_controller
+func urnet_api_open_pro_features_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_api_open_pro_features_view_controller")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_open_pro_features_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProFeaturesViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -19849,6 +19877,16 @@ func urnet_new_platform_device_remote(networkSpace C.uint64_t, byJwt *C.char, pr
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_pro_features_notice_tracker
+func urnet_new_pro_features_notice_tracker() C.uint64_t {
+	defer cgoGuard("urnet_new_pro_features_notice_tracker")
+	r0 := sdk.NewProFeaturesNoticeTracker()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_proxy_device_with_defaults
 func urnet_new_proxy_device_with_defaults(proxyConfig *C.char, setupNewDeviceCallback_setup_new_device C.urnet_setup_new_device_cb, setupNewDeviceCallback_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_new_proxy_device_with_defaults")
@@ -20812,6 +20850,153 @@ func urnet_post_quantum_identity_view_controller_start(self C.uint64_t) {
 func urnet_post_quantum_identity_view_controller_stop(self C.uint64_t) {
 	defer cgoGuard("urnet_post_quantum_identity_view_controller_stop")
 	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
+//export urnet_pro_features_notice_tracker_dismiss
+func urnet_pro_features_notice_tracker_dismiss(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_pro_features_notice_tracker_dismiss")
+	self_, ok := resolveHandle[*sdk.ProFeaturesNoticeTracker](uint64(self), "urnet_pro_features_notice_tracker_dismiss")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Dismiss()
+	return cString(string(r0))
+}
+
+//export urnet_pro_features_notice_tracker_get_shown_prompt
+func urnet_pro_features_notice_tracker_get_shown_prompt(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_pro_features_notice_tracker_get_shown_prompt")
+	self_, ok := resolveHandle[*sdk.ProFeaturesNoticeTracker](uint64(self), "urnet_pro_features_notice_tracker_get_shown_prompt")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetShownPrompt()
+	return cString(string(r0))
+}
+
+//export urnet_pro_features_notice_tracker_reset
+func urnet_pro_features_notice_tracker_reset(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_pro_features_notice_tracker_reset")
+	self_, ok := resolveHandle[*sdk.ProFeaturesNoticeTracker](uint64(self), "urnet_pro_features_notice_tracker_reset")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Reset()
+	return cString(string(r0))
+}
+
+//export urnet_pro_features_notice_tracker_update
+func urnet_pro_features_notice_tracker_update(self C.uint64_t, status *C.char) *C.char {
+	defer cgoGuard("urnet_pro_features_notice_tracker_update")
+	self_, ok := resolveHandle[*sdk.ProFeaturesNoticeTracker](uint64(self), "urnet_pro_features_notice_tracker_update")
+	if !ok {
+		return nil
+	}
+	var status_ *sdk.ProFeaturesStatus
+	if status != nil {
+		status_ = &sdk.ProFeaturesStatus{}
+		if !goJson(status, status_, "urnet_pro_features_notice_tracker_update") {
+			return nil
+		}
+	}
+	r0 := self_.Update(status_)
+	return cString(string(r0))
+}
+
+//export urnet_pro_features_status_for
+func urnet_pro_features_status_for(result *C.char) *C.char {
+	defer cgoGuard("urnet_pro_features_status_for")
+	var result_ *sdk.NetworkClientsResult
+	if result != nil {
+		result_ = &sdk.NetworkClientsResult{}
+		if !goJson(result, result_, "urnet_pro_features_status_for") {
+			return nil
+		}
+	}
+	r0 := sdk.ProFeaturesStatusFor(result_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_pro_features_status_for")
+}
+
+//export urnet_pro_features_view_controller_add_pro_features_listener
+func urnet_pro_features_view_controller_add_pro_features_listener(self C.uint64_t, listener_pro_features_changed C.urnet_pro_features_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_pro_features_view_controller_add_pro_features_listener")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_add_pro_features_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProFeaturesListener
+	if listener_pro_features_changed != nil {
+		listener_ = &cAdapterProFeaturesListener{cbProFeaturesChanged: listener_pro_features_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProFeaturesListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_pro_features_view_controller_close
+func urnet_pro_features_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_pro_features_view_controller_close")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_pro_features_view_controller_dismiss_main_notice
+func urnet_pro_features_view_controller_dismiss_main_notice(self C.uint64_t) {
+	defer cgoGuard("urnet_pro_features_view_controller_dismiss_main_notice")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_dismiss_main_notice")
+	if !ok {
+		return
+	}
+	self_.DismissMainNotice()
+}
+
+//export urnet_pro_features_view_controller_get_snapshot
+func urnet_pro_features_view_controller_get_snapshot(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_pro_features_view_controller_get_snapshot")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_get_snapshot")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSnapshot()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_pro_features_view_controller_get_snapshot")
+}
+
+//export urnet_pro_features_view_controller_refresh
+func urnet_pro_features_view_controller_refresh(self C.uint64_t) {
+	defer cgoGuard("urnet_pro_features_view_controller_refresh")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_refresh")
+	if !ok {
+		return
+	}
+	self_.Refresh()
+}
+
+//export urnet_pro_features_view_controller_start
+func urnet_pro_features_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_pro_features_view_controller_start")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_pro_features_view_controller_stop
+func urnet_pro_features_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_pro_features_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.ProFeaturesViewController](uint64(self), "urnet_pro_features_view_controller_stop")
 	if !ok {
 		return
 	}
