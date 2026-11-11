@@ -455,6 +455,16 @@ func TestApiCredentialCasesCoverEverySdkRoute(t *testing.T) {
 	}
 }
 
+// Pay with Gamma's automatic charge switches administer the network's
+// spending: the server classes them Network only and refuses a client token
+// there, so they carry the network credential. A payment intent keeps the
+// current credential. Needs no server checkout.
+func TestGammaSettingsRoutesTakeTheNetworkCredential(t *testing.T) {
+	connect.AssertEqual(t, apiRouteAccessFor("GET", "/pay/gamma/settings"), apiRouteAccessNetwork)
+	connect.AssertEqual(t, apiRouteAccessFor("POST", "/pay/gamma/settings"), apiRouteAccessNetwork)
+	connect.AssertEqual(t, apiRouteAccessFor("POST", "/pay/gamma/intent"), apiRouteAccessClient)
+}
+
 // The SDK's admin route table is the server's App admin and Network only
 // classes (server api/route_authz.go), and every other server class takes the
 // current credential. A new server class fails here until the sdk decides the
