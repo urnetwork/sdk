@@ -303,3 +303,48 @@ func TestEarlierRegionalListsOtherwiseLoadAsSaved(t *testing.T) {
 		}
 	}
 }
+
+// What the sdk shows the apps follows connect's recommendations of
+// 2026-11-11: the regional server list, the recommendation and its pick, and
+// the connection regions with their plain fallback servers name ir's Shecan
+// and Electro and tr's Cloudflare and Quad9, tm has none and is no connection
+// region, and no view names a server that cannot answer an exit.
+func TestRegionalDnsViewsShowTodaysRecommendations(t *testing.T) {
+	unable := []string{"10.202.10.10", "195.175.39.39", "195.175.39.40", "212.252.114.8", "217.174.238.141"}
+	servers := GetRegionalDnsServers()
+	for i := range servers.Len() {
+		server := servers.Get(i)
+		if server.CountryCode == "tm" {
+			t.Errorf("the regional servers name tm's %s %s", server.Name, server.Ipv4)
+		}
+		if slices.Contains(unable, server.Ipv4) {
+			t.Errorf("the regional servers name %s %s %s, which cannot answer an exit", server.CountryCode, server.Name, server.Ipv4)
+		}
+	}
+	for countryCode, want := range map[string]bool{"ir": true, "tr": true, "tm": false} {
+		if got := HasRegionalDnsRecommendation(countryCode); got != want {
+			t.Errorf("%s has a recommendation: %t, want %t", countryCode, got, want)
+		}
+	}
+	if recommended := GetRecommendedDnsResolverSettings("tm"); recommended != nil {
+		t.Errorf("tm recommendation = %+v, want none", recommended)
+	}
+	tr := GetRecommendedDnsResolverSettings("tr")
+	if tr == nil || tr.PresetId != "regional-tr" || !tr.EnableRemoteDns || tr.EnableRemoteDoh {
+		t.Fatalf("tr recommendation = %+v, want the tr pick with remote plain dns", tr)
+	}
+	connect.AssertEqual(t, testingStringsOf(tr.RemoteDnsIpv4), []string{"1.1.1.1", "9.9.9.10"})
+	connect.AssertEqual(t, testingStringsOf(tr.RemoteDnsIpv6), []string{"2606:4700:4700::1111", "2620:fe::10"})
+	if slices.Contains(IngressCountryCodes().getAll(), "tm") {
+		t.Errorf("tm is a connection region: %v", IngressCountryCodes().getAll())
+	}
+	for countryCode, want := range map[string][]string{
+		"ir": {"178.22.122.100", "78.157.42.100"},
+		"tr": {"1.1.1.1", "9.9.9.10", "2606:4700:4700::1111", "2620:fe::10"},
+		"tm": {},
+	} {
+		if got := IngressPlainDnsServers(countryCode).getAll(); !slices.Equal(got, want) {
+			t.Errorf("%s connection region plain servers = %v, want %v", countryCode, got, want)
+		}
+	}
+}
