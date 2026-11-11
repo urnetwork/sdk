@@ -256,25 +256,40 @@ func TestCryptoWalletSuggestions(t *testing.T) {
 	}
 }
 
-// Every coin's invoice names the wallets that work: Bitcoin and ETH have
-// lists of their own since 2026-11-11 (the owner's), where their invoices
-// showed no wallets line. A name is never blank and never listed twice.
-func TestCryptoWalletSuggestionsNameEveryCoinsWallets(t *testing.T) {
-	for _, asset := range cryptoAssetOrder {
-		wallets := stringListValues(CryptoWalletSuggestions(asset))
-		if len(wallets) == 0 {
-			t.Errorf("%s names no wallets, and its invoice shows no wallets line", asset)
-		}
-		seen := map[string]bool{}
-		for _, wallet := range wallets {
-			if wallet == "" || seen[wallet] {
-				t.Errorf("%s names %q blank or twice: %v", asset, wallet, wallets)
-			}
-			seen[wallet] = true
+// Only TAO's invoice names the wallets that work. The owner, 2026-11-11: "we
+// do not need to suggest btc or eth wallets. for other coins besides tao we
+// don't need to suggest wallets". Every other coin the widget sells (USDC on
+// Solana, Zcash, Monero, SOL, Bitcoin and ETH) names none, so its invoice
+// shows no wallets line, and so does a coin added later. The shared vectors
+// pin every coin, which holds the TypeScript twin to the same.
+func TestCryptoWalletSuggestionsTaoOnly(t *testing.T) {
+	taoWallets := []string{"btcli", "Talisman", "Nova", "SubWallet", "Polkadot.js", "Ledger", "Tangem"}
+	for _, asset := range []string{CryptoAssetUsdcSolana, CryptoAssetZec, CryptoAssetXmr, CryptoAssetTao, CryptoAssetBtc, CryptoAssetEth, CryptoAssetSol} {
+		if !slices.Contains(cryptoAssetOrder, asset) {
+			t.Errorf("%s is not among the widget's coins", asset)
 		}
 	}
-	connect.AssertEqual(t, stringListValues(CryptoWalletSuggestions(CryptoAssetBtc)), []string{"Sparrow", "BlueWallet", "Electrum", "Ledger", "Trezor"})
-	connect.AssertEqual(t, stringListValues(CryptoWalletSuggestions(CryptoAssetEth)), []string{"MetaMask", "Rabby", "Coinbase Wallet", "Ledger", "Trezor"})
+	pinned := map[string]bool{}
+	for _, vector := range loadCryptoPayVectors(t).CryptoWalletSuggestions {
+		pinned[vector.Asset] = true
+	}
+	for _, asset := range cryptoAssetOrder {
+		wallets := CryptoWalletSuggestions(asset)
+		if wallets == nil {
+			t.Fatalf("CryptoWalletSuggestions(%q) is nil; the bindings need an empty list", asset)
+		}
+		got := stringListValues(wallets)
+		if asset == CryptoAssetTao {
+			if !slices.Equal(got, taoWallets) {
+				t.Errorf("CryptoWalletSuggestions(%q) = %v, want %v", asset, got, taoWallets)
+			}
+		} else if len(got) != 0 {
+			t.Errorf("%s names wallets %v; only TAO's invoice suggests wallets", asset, got)
+		}
+		if !pinned[asset] {
+			t.Errorf("no cryptoWalletSuggestions vector pins %s", asset)
+		}
+	}
 }
 
 func TestCheckCryptoPaymentUri(t *testing.T) {
