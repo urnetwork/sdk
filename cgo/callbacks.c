@@ -557,6 +557,10 @@ void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void*
 	cb(user_data);
 }
 
+void urnet_invoke_pro_features(urnet_pro_features_cb cb, void* user_data, const char* snapshot_json) {
+	cb(user_data, snapshot_json);
+}
+
 void urnet_invoke_provide_change(urnet_provide_change_cb cb, void* user_data, bool provide_enabled) {
 	cb(user_data, provide_enabled);
 }

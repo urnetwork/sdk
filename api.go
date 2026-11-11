@@ -1120,6 +1120,10 @@ type GetNetworkClientsCallback connect.ApiCallback[*NetworkClientsResult]
 
 type NetworkClientsResult struct {
 	Clients *NetworkClientInfoList `json:"clients"`
+	// the network's plan beside its proxies; only the /network/proxies
+	// listing fills it, and a server before it never does (see
+	// pro_features_status.go)
+	Plan *NetworkProxiesPlan `json:"plan,omitempty"`
 }
 
 type NetworkClientInfo struct {
@@ -1150,6 +1154,10 @@ type NetworkClientInfo struct {
 	// beside ProxyClient in the /network/proxies listing; nil otherwise
 	Exit        *ProxyExit                   `json:"exit,omitempty"`
 	Connections *NetworkClientConnectionList `json:"connections"`
+	// ProFeatures are the Pro-only features the hosted proxy holds
+	// credentials for (ProFeatureSocksProxy, ProFeatureWireguardProxy), in
+	// the /network/proxies listing; nil otherwise
+	ProFeatures *StringList `json:"pro_features,omitempty"`
 }
 
 // `model.ProxyClient`: the credentials of a hosted proxy device
