@@ -504,6 +504,9 @@ type CryptoInvoiceViewController struct {
 	// the SecondsLeft the last tick published; -1 before the first tick of a
 	// quote, and the tick stops once it published 0
 	tickSecondsLeft int
+	// the AwaitingConfirmation the loop last announced, so the end of the
+	// grace is announced when it comes, poll or not
+	announcedAwaiting bool
 
 	listeners *connect.CallbackList[CryptoInvoiceListener]
 
@@ -1125,6 +1128,7 @@ func (self *CryptoInvoiceViewController) resetLocked() {
 	self.nextPollAt = time.Time{}
 	self.nextTickAt = time.Time{}
 	self.tickSecondsLeft = -1
+	self.announcedAwaiting = false
 }
 
 // Caller holds stateLock.
@@ -1467,9 +1471,10 @@ func (self *CryptoInvoiceViewController) run() {
 	}
 }
 
-// Launches a due status poll, publishes a due tick, and returns the delay
-// until the next of either; arm is false when nothing is due later (stopped,
-// closed, no open invoice, a poll or requote in flight and the countdown
+// Launches a due status poll, publishes a due tick or the end of a
+// confirmation grace (AwaitingConfirmation), and returns the delay until the
+// next of them; arm is false when nothing is due later (stopped, closed, no
+// open invoice, a poll or requote in flight and the countdown and any grace
 // done).
 func (self *CryptoInvoiceViewController) step() (delay time.Duration, arm bool) {
 	var pollArgs *CryptoPaymentStatusArgs
@@ -1512,6 +1517,20 @@ func (self *CryptoInvoiceViewController) step() (delay time.Duration, arm bool) 
 			}
 			if self.tickSecondsLeft != 0 && (next.IsZero() || self.nextTickAt.Before(next)) {
 				next = self.nextTickAt
+			}
+		}
+
+		// the wait for a confirmation ends with the grace, on the quote's
+		// clock, whatever the polls say meanwhile (as the TypeScript twin)
+		awaiting := self.awaitingConfirmationLocked(now)
+		if awaiting != self.announcedAwaiting {
+			self.announcedAwaiting = awaiting
+			ticked = true
+		}
+		if awaiting {
+			graceEnd := self.expiresAt.Add(time.Duration(self.state.ConfirmationGraceSeconds) * time.Second)
+			if next.IsZero() || graceEnd.Before(next) {
+				next = graceEnd
 			}
 		}
 

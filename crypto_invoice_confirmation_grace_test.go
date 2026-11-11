@@ -135,6 +135,29 @@ func TestCryptoInvoiceBitcoinAwaitsConfirmationThroughTheGrace(t *testing.T) {
 	connect.AssertEqual(t, harness.vc.GetState().Refreshing, true)
 }
 
+// The end of the grace is announced when it comes, on the quote's clock, even
+// with no poll answering: the loop wakes for it, and the listeners hear that
+// AwaitingConfirmation ended.
+func TestCryptoInvoiceBitcoinGraceEndWakesTheScreen(t *testing.T) {
+	harness := newCryptoInvoiceHarness(t, t.TempDir())
+	harness.startBtcInvoice()
+	// the countdown's last tick, and a poll left in flight
+	harness.api.holdStatus = true
+	harness.advance(cryptoInvoiceTestQuoteTtl)
+	connect.AssertEqual(t, harness.vc.GetState().AwaitingConfirmation, true)
+	// the countdown done and the poll in flight: the grace's end is the next wake
+	delay, arm := harness.vc.step()
+	connect.AssertEqual(t, arm, true)
+	connect.AssertEqual(t, delay, cryptoInvoiceTestBtcGrace)
+	changes := harness.changes
+	harness.advance(cryptoInvoiceTestBtcGrace)
+	connect.AssertEqual(t, harness.changes, changes+1)
+	connect.AssertEqual(t, harness.vc.GetState().AwaitingConfirmation, false)
+	// nothing more to wake for
+	_, arm = harness.vc.step()
+	connect.AssertEqual(t, arm, false)
+}
+
 // A payment mined in the grace ends the wait: confirming, then paid.
 func TestCryptoInvoiceBitcoinPaymentMinedInTheGraceEndsTheWait(t *testing.T) {
 	harness := newCryptoInvoiceHarness(t, t.TempDir())
