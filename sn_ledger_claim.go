@@ -570,8 +570,12 @@ func (self *snLedgerClaimEngine) sizeBatch(ctx context.Context, from [20]byte, p
 // passing, a batch that cannot be sized, or a gas key that cannot pay for the
 // batch, which a claim alone may still afford. Once the batch is sent its
 // accounts are claimed only by it, except those its mined receipt shows it
-// did not attempt, which are returned.
-func (self *snLedgerClaimEngine) sendBatch(ctx context.Context, key *secp.PrivateKey, plans []*snLedgerClaimPlan, callback SnLedgerClaimCallback) []*snLedgerClaimPlan {
+// did not attempt, which are returned. The batch is prepared and sent within a
+// claim's time, and its receipt waited for within another, so a slow
+// preparation never cuts the wait short.
+func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.PrivateKey, plans []*snLedgerClaimPlan, callback SnLedgerClaimCallback) []*snLedgerClaimPlan {
+	ctx, cancel := context.WithTimeout(parent, snClaimTimeout)
+	defer cancel()
 	if len(plans) < 2 || !self.batcherVerified(ctx) {
 		return plans
 	}
@@ -622,7 +626,9 @@ func (self *snLedgerClaimEngine) sendBatch(ctx context.Context, key *secp.Privat
 	for _, plan := range batch {
 		callback.Sent(plan.noId, plan.index, txHash)
 	}
-	receipt, err := self.client.WaitReceipt(ctx, txHash, snClaimReceiptPoll, snClaimReceiptTimeout)
+	waitCtx, cancelWait := context.WithTimeout(parent, snClaimTimeout)
+	defer cancelWait()
+	receipt, err := self.client.WaitReceipt(waitCtx, txHash, snClaimReceiptPoll, snClaimReceiptTimeout)
 	if err != nil {
 		failAll(SnErrorCodeClaimFailed + ": " + err.Error())
 		return alone
@@ -646,7 +652,7 @@ func (self *snLedgerClaimEngine) sendBatch(ctx context.Context, key *secp.Privat
 		case outcomes[i].Outcome == evm.ClaimBatchNotAttempted:
 			notAttempted = append(notAttempted, plan)
 		case outcomes[i].Outcome == evm.ClaimBatchRefused:
-			callback.Failed(plan.noId, plan.index, self.batchRefusal(ctx, plan, outcomes[i].Selector))
+			callback.Failed(plan.noId, plan.index, self.batchRefusal(waitCtx, plan, outcomes[i].Selector))
 		default:
 			callback.Failed(plan.noId, plan.index, SnErrorCodeClaimFailed+": the batch transaction has no Claimed event for this account")
 		}
@@ -671,9 +677,7 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 		callback.Failed(0, 0, snLedgerNothingToClaim)
 	}
 	if 2 <= len(plans) {
-		batchCtx, cancel := context.WithTimeout(ctx, snClaimTimeout)
-		plans = self.sendBatch(batchCtx, key, plans, callback)
-		cancel()
+		plans = self.sendBatch(ctx, key, plans, callback)
 	}
 	for _, plan := range plans {
 		sendCtx, cancel := context.WithTimeout(ctx, snClaimTimeout)
