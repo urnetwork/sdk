@@ -21,9 +21,12 @@
 //   - At construction it queues the space's ingress dns for the device, so the
 //     first sync, also on an attach to a tunnel that is already up, gives the
 //     device the app's values.
-//   - It registers for the space's in-place changes, and on each one hands the
-//     space's values to the device at once over the rpc, and queues them for
-//     the next sync when the rpc is down.
+//   - The space calls it on each in-place change with a snapshot of the values
+//     and their revision, taken with the change. It queues the newest for the
+//     next sync on the caller's goroutine, without i/o, and its hand-off loop
+//     sends the newest to the device over the rpc at once when the rpc is up.
+//     Stale snapshots, which a slower caller can deliver after a newer one,
+//     are dropped by revision.
 //   - The values stay queued across syncs, as the reliability override does,
 //     so an rpc reconnect or a new device gets them again. A device that has
 //     them already changes nothing.
@@ -40,6 +43,10 @@
 // takes none: its space is the platform's. An older device has no
 // SetIngressDns and ignores the queued field; it keeps the values it imported
 // until its next start, as before.
+//
+// Locks: the space calls its callbacks with no lock held, and the remote takes
+// only its own stateLock to queue; the hand-off loop holds no lock while it
+// waits on the rpc.
 package sdk
 
 import (
@@ -59,6 +66,11 @@ type DeviceRemoteIngressDns struct {
 	ControlDohUrlsIpv6 []string
 }
 
+// Called after a space's ingress dns changed in place, with the snapshot and
+// revision taken with the change. It runs on the goroutine that made the
+// change, with no lock held, and must not block.
+type ingressDnsChangeCallback func(ingressDns *DeviceRemoteIngressDns, revision uint64)
+
 // The ingress dns a space's values name, read by the space's rules: a region
 // with a recommendation, else undisclosed, and the urls the url rule reads.
 func newDeviceRemoteIngressDns(values *NetworkSpaceValues) *DeviceRemoteIngressDns {
@@ -71,9 +83,8 @@ func newDeviceRemoteIngressDns(values *NetworkSpaceValues) *DeviceRemoteIngressD
 }
 
 // Registers `callback` for the space's in-place ingress dns changes
-// (applyControlDohValues). It runs on the goroutine that made the change,
-// outside the space's lock, and must not block. Returns the unsubscribe.
-func (self *NetworkSpace) addIngressDnsChangeCallback(callback func()) func() {
+// (applyControlDohValues). Returns the unsubscribe.
+func (self *NetworkSpace) addIngressDnsChangeCallback(callback ingressDnsChangeCallback) func() {
 	if self.ingressDnsChangeCallbacks == nil {
 		return func() {}
 	}
@@ -83,23 +94,25 @@ func (self *NetworkSpace) addIngressDnsChangeCallback(callback func()) func() {
 	}
 }
 
-func (self *NetworkSpace) ingressDnsChanged() {
+// Runs the ingress dns callbacks for one change. Called with no lock held.
+func (self *NetworkSpace) ingressDnsChanged(ingressDns *DeviceRemoteIngressDns, revision uint64) {
 	if self.ingressDnsChangeCallbacks == nil {
 		return
 	}
 	for _, callback := range self.ingressDnsChangeCallbacks.Get() {
-		callback()
+		callback(ingressDns, revision)
 	}
 }
 
-// The space's ingress dns.
-func (self *NetworkSpace) ingressDns() *DeviceRemoteIngressDns {
-	values := self.valuesCopy()
-	return newDeviceRemoteIngressDns(&values)
+// The space's ingress dns and its revision, read together.
+func (self *NetworkSpace) ingressDnsAndRevision() (*DeviceRemoteIngressDns, uint64) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return newDeviceRemoteIngressDns(&self.values), self.ingressDnsRevision
 }
 
 // Applies an app's ingress dns to this copy of the space in place, persisting
-// nothing (see the package comment). The values are read by the space's rules
+// nothing (see the file comment). The values are read by the space's rules
 // first. Returns whether anything changed.
 func (self *NetworkSpace) applyIngressDns(ingressDns *DeviceRemoteIngressDns) bool {
 	if ingressDns == nil || self.hostedIncompatibleGuarded("applyIngressDns") {
@@ -109,61 +122,83 @@ func (self *NetworkSpace) applyIngressDns(ingressDns *DeviceRemoteIngressDns) bo
 	values.IngressCountryCode = ingressDns.CountryCode
 	values.ControlDohUrlsIpv4 = slices.Clone(ingressDns.ControlDohUrlsIpv4)
 	values.ControlDohUrlsIpv6 = slices.Clone(ingressDns.ControlDohUrlsIpv6)
-	read := newDeviceRemoteIngressDns(&values)
-	values.IngressCountryCode = read.CountryCode
-	values.ControlDohUrlsIpv4 = read.ControlDohUrlsIpv4
-	values.ControlDohUrlsIpv6 = read.ControlDohUrlsIpv6
+	readIngressDns := newDeviceRemoteIngressDns(&values)
+	values.IngressCountryCode = readIngressDns.CountryCode
+	values.ControlDohUrlsIpv4 = readIngressDns.ControlDohUrlsIpv4
+	values.ControlDohUrlsIpv6 = readIngressDns.ControlDohUrlsIpv6
 	return self.applyControlDohValues(&values)
 }
 
-// Queues the space's ingress dns for the device and registers for its
-// changes. The constructor calls this before the run loop starts, so it sets
-// the state without stateLock, as queueSavedSettings does.
+// Queues the space's ingress dns for the device, registers for its changes
+// and starts the hand-off loop. The constructor calls this before the run loop
+// starts, so it sets the state without stateLock, as queueSavedSettings does.
 func (self *DeviceRemote) queueIngressDns() {
 	if self.settings == nil || self.settings.DisableHostedIncompatible ||
 		self.networkSpace == nil || self.networkSpace.hostedIncompatible {
 		return
 	}
-	self.state.IngressDns.Set(self.networkSpace.ingressDns())
+	ingressDns, revision := self.networkSpace.ingressDnsAndRevision()
+	self.ingressDns = ingressDns
+	self.ingressDnsRevision = revision
+	self.state.IngressDns.Set(ingressDns)
+	// the first sync carries the constructor's value, so the loop starts at
+	// its revision and sends only what changes after
+	self.ingressDnsRevisionMonitor = connect.NewMonitorValue(revision)
 	self.ingressDnsUnsub = self.networkSpace.addIngressDnsChangeCallback(self.ingressDnsChangedInSpace)
+
+	self.backgroundWorkers.Add(1)
+	go connect.HandleError(func() {
+		defer self.backgroundWorkers.Done()
+		self.runIngressDnsHandOff(revision)
+	})
 }
 
-// The space's ingress dns changed in place. The space calls this on the
-// goroutine that changed it, the app's settings screen, so the hand-off runs
-// on a goroutine of its own: it takes the remote's lock and waits on the rpc,
-// and a device that applies the values in a process sharing this space calls
-// back here from inside its sync.
-func (self *DeviceRemote) ingressDnsChangedInSpace() {
-	go connect.HandleError(self.handOffIngressDns)
-}
-
-// Hands the space's ingress dns to the device, and queues it for the next
-// sync. The values are read under the remote's lock, so of changes made close
-// together the hand-off that runs last carries the newest.
-func (self *DeviceRemote) handOffIngressDns() {
+// Queues the space's newer ingress dns for the next sync and wakes the
+// hand-off loop. A snapshot older than the one queued is dropped.
+func (self *DeviceRemote) ingressDnsChangedInSpace(ingressDns *DeviceRemoteIngressDns, revision uint64) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-
-	if self.closed {
+	if self.closed || revision <= self.ingressDnsRevision {
 		return
 	}
-	ingressDns := self.networkSpace.ingressDns()
-	// queued whether or not the call below lands, and kept across syncs: a
-	// new device, or this one after an rpc reconnect, takes it at its first
-	// sync
+	self.ingressDns = ingressDns
+	self.ingressDnsRevision = revision
+	// queued whether or not the hand-off lands, and kept across syncs: a new
+	// device, or this one after an rpc reconnect, takes it at its first sync
 	self.state.IngressDns.Set(ingressDns)
-	if self.service == nil {
-		// the tunnel is not running, or the rpc is reconnecting
-		return
+	self.ingressDnsRevisionMonitor.Set(revision)
+}
+
+// Sends each newer queued ingress dns to the device at once while the rpc is
+// up; with the rpc down the queued value waits for the next sync. Ends with
+// the remote's context. `sentRevision` is the revision the first sync carries.
+func (self *DeviceRemote) runIngressDnsHandOff(sentRevision uint64) {
+	for {
+		revision, update := self.ingressDnsRevisionMonitor.Get()
+		if sentRevision < revision {
+			ingressDns, queuedRevision, service := func() (*DeviceRemoteIngressDns, uint64, *rpcClient) {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				return self.ingressDns, self.ingressDnsRevision, self.service
+			}()
+			if service != nil {
+				// an older device without the method keeps its session; it
+				// takes the values at its next start
+				rpcCallVoidAllowMissingMethod(
+					service,
+					"DeviceLocalRpc.SetIngressDns",
+					ingressDns,
+					func() { self.closeServiceInstance(service) },
+				)
+			}
+			sentRevision = queuedRevision
+		}
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-update:
+		}
 	}
-	// an older device without the method keeps its session; it takes the
-	// values at its next start
-	rpcCallVoidAllowMissingMethod(
-		self.service,
-		"DeviceLocalRpc.SetIngressDns",
-		ingressDns,
-		self.closeService,
-	)
 }
 
 // Applies the app's ingress dns to this device's network space in place. A
@@ -175,9 +210,9 @@ func (self *DeviceLocal) applyIngressDns(ingressDns *DeviceRemoteIngressDns) {
 	self.networkSpace.applyIngressDns(ingressDns)
 }
 
-// SetIngressDns applies the app's connection region and bootstrap DoH servers
-// to the device's copy of the network space, in place and at once
-// (DeviceRemote.handOffIngressDns).
+// Applies the app's connection region and bootstrap DoH servers to the
+// device's copy of the network space, in place and at once
+// (DeviceRemote.runIngressDnsHandOff).
 func (self *DeviceLocalRpc) SetIngressDns(ingressDns *DeviceRemoteIngressDns, _ RpcVoid) error {
 	if self.hostedIncompatibleRpcGuarded("SetIngressDns") {
 		return nil

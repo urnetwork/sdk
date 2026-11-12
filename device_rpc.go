@@ -259,6 +259,13 @@ type DeviceRemote struct {
 	// when it registered none (device_remote_ingress_dns.go). Set once in the
 	// constructor and taken under closeOnce
 	ingressDnsUnsub func()
+	// the newest ingress dns the space handed this remote and its space
+	// revision, which the hand-off loop sends. Guarded by stateLock
+	ingressDns         *DeviceRemoteIngressDns
+	ingressDnsRevision uint64
+	// the revision of the newest queued ingress dns, watched by the hand-off
+	// loop. Nil when the remote registered no callback
+	ingressDnsRevisionMonitor *connect.MonitorValue[uint64]
 	// why the server ended this remote's sign-in, set before its AuthLogout
 	// listeners run (GetAuthLogoutCause). A rejection the device process
 	// answered over rpc carries its typed status (DeviceRemoteHttpResponseError).
