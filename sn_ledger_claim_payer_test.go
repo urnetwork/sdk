@@ -239,6 +239,9 @@ func TestSnLedgerClaimTransactionsForPayerNeedsGas(t *testing.T) {
 		result.MaxCostWei != testCost(2_600_000) || result.AllCostWei != testCost(2_600_000) {
 		t.Fatalf("one account %+v, still claimable %+v", result, result.StillClaimable.getAll())
 	}
+	if raw, _ := json.Marshal(result); !strings.HasPrefix(string(raw), `{"transactions":[],"still_claimable":[{"no_id":1,"index":2,`) || !strings.HasSuffix(string(raw), `,"needs_gas":true}`) {
+		t.Fatalf("one account, json %s", raw)
+	}
 	if result = testPayerResult(t, f, oneAlone-1); result.Transactions.Len() != 0 || !result.NeedsGas || result.StillClaimable.Len() != 1 {
 		t.Fatalf("one account, a wei short %+v", result)
 	}
@@ -249,23 +252,34 @@ func TestSnLedgerClaimTransactionsForPayerNeedsGas(t *testing.T) {
 		t.Fatalf("one account paid for %+v", result)
 	}
 
+	// without a batcher: both claims alone, the largest alone, or, under one
+	// claim's cost, none
 	for _, c := range []struct {
 		name    string
 		balance int64
-		alone   bool
+		txs     []int64
+		still   []int64
 	}{
-		{"both", 2*2_600_000*testWeiPerGas + 1, false},
-		{"one", 2*2_600_000*testWeiPerGas - 1, true},
+		{"both", 2*2_600_000*testWeiPerGas + 1, []int64{1, testCtfNoId}, nil},
+		{"one", 2*2_600_000*testWeiPerGas - 1, []int64{testCtfNoId}, []int64{1}},
+		{"none", oneAlone - 1, nil, []int64{1, testCtfNoId}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f, _ := newTestV2BatchClaim(t)
 			f.settings.ClaimBatcherAddress = ""
 			result := testPayerResult(t, f, c.balance)
+			var txs, still []int64
+			for _, tx := range result.Transactions.getAll() {
+				txs = append(txs, tx.NoId)
+			}
+			for _, outcome := range result.StillClaimable.getAll() {
+				still = append(still, outcome.NoId)
+			}
 			switch {
-			case !c.alone && (result.Transactions.Len() != 2 || result.StillClaimable.Len() != 0 || result.Transactions.Get(0).NoId != 1 || result.Transactions.Get(1).NoId != testCtfNoId):
-				t.Fatalf("claims alone %+v", result.Transactions)
-			case c.alone && (result.Transactions.Len() != 1 || result.Transactions.Get(0).NoId != testCtfNoId || result.StillClaimable.Len() != 1 || result.NeedsGas):
-				t.Fatalf("the largest alone %+v", result)
+			case !reflect.DeepEqual(txs, c.txs) || !reflect.DeepEqual(still, c.still):
+				t.Fatalf("claims of %v and %v still claimable, want %v and %v", txs, still, c.txs, c.still)
+			case result.NeedsGas != (len(c.txs) == 0):
+				t.Fatalf("needs gas %+v", result)
 			case result.AllCostWei != testCost(2*2_600_000):
 				t.Fatalf("all cost %s", result.AllCostWei)
 			}
@@ -408,6 +422,7 @@ func TestSnLedgerClaimTransactionsForPayerTheMostItCanPayFor(t *testing.T) {
 		{"all three", true, 1_000_000_000_000_000_000, [][]int64{{1, 2, testCtfNoId}}, nil, false, ""},
 		{"two", true, 40_000_000_000_000_000, [][]int64{{2, testCtfNoId}}, []int64{1}, false, "so only the 2 largest accounts are claimed now; claim again for this one"},
 		{"one", true, 30_000_000_000_000_000, [][]int64{{testCtfNoId}}, []int64{1, 2}, false, "so only the largest account is claimed now; claim again for this one"},
+		{"one at its cost", true, oneAlone, [][]int64{{testCtfNoId}}, []int64{1, 2}, false, "so only the largest account is claimed now; claim again for this one"},
 		{"none", true, 10_000_000_000_000_000, nil, []int64{1, 2, testCtfNoId}, true,
 			"which is not enough even for the largest account's claim alone (up to 0.028600 TAO), so no account is claimed now; add TAO to the wallet and claim again"},
 		// every claim alone, in the ledger's order, as SnLedgerClaimTransactionsFor

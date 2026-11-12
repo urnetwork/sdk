@@ -350,9 +350,11 @@ func TestSnLedgerClaimTransactionsForPayerWasm(t *testing.T) {
 	wantFields(t, "transaction", transactions[0].(map[string]any), map[string]any{"no_id": float64(4294967297), "to": testCtfVault2, "gas": float64(2_600_000), "batch": false})
 	wantFields(t, "still claimable", stillClaimable[0].(map[string]any), map[string]any{"no_id": float64(1), "index": float64(2), "status": "still_claimable", "amount_rao": float64(700)})
 
-	// a payer that cannot pay even for the largest account's claim alone: no
-	// transaction, an empty array the page reads as nothing to send, and every
-	// account still claimable
+	// the json of a result with no transaction, the payer form's answer to a
+	// payer that cannot pay even for the largest account's claim alone (the
+	// payer form itself is tested in sn_ledger_claim_payer_test.go): the page
+	// gets transactions as [], never null, which it reads as nothing to send,
+	// and every account still claimable
 	still.Add(&sdk.SnLedgerClaimOutcome{NoId: 4294967297, Index: 1, Status: sdk.SnLedgerClaimOutcomeStillClaimable, AmountRao: 48_025_660, Message: "needs_gas: add TAO to the wallet and claim again"})
 	result = jsonOf(t, jsJson(&sdk.SnLedgerClaimTransactionsResult{
 		Transactions: sdk.NewSnLedgerUnsignedTxList(), StillClaimable: still, PayerAddress: "0x00000000000000000000000000000000000000a1",
