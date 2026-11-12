@@ -24,7 +24,8 @@ import (
 
 // A crash payload as MXDiagnosticPayload.jsonRepresentation writes one: the
 // diagnostic's facts in its diagnosticMetaData, beside a call stack tree, the
-// memory region of the bad access, and the device's type and region.
+// memory region of the bad access, and the device's type and region. Every
+// id, address and name in it is synthetic.
 const testingMetricKitCrashPayload = `{
   "timeStampEnd" : "2026-11-10 13:19:00 +0000",
   "crashDiagnostics" : [
@@ -40,7 +41,7 @@ const testingMetricKitCrashPayload = `{
                 "binaryUUID" : "70B89F27-1634-3580-A695-57CDB41D7743",
                 "offsetIntoBinaryTextSegment" : 165304,
                 "sampleCount" : 1,
-                "binaryName" : "URnetwork",
+                "binaryName" : "ExampleApp",
                 "address" : 7170766264,
                 "subFrames" : [
                   {
@@ -66,11 +67,11 @@ const testingMetricKitCrashPayload = `{
         "exceptionCode" : 1,
         "signal" : 11,
         "pid" : 98765,
-        "bundleIdentifier" : "network.ur",
+        "bundleIdentifier" : "com.example.app",
         "isTestFlightApp" : false,
         "lowPowerModeEnabled" : false,
         "platformArchitecture" : "arm64e",
-        "virtualMemoryRegionInfo" : "0x0000000107a5c000 is not in any region.  Bytes before following region: 4000000000 REGION TYPE START - END [ VSIZE] PRT/MAX SHRMOD REGION DETAIL UNUSED SPACE AT START ---> __TEXT 0000000100000000-0000000100008000 [ 32K] r-x/r-x SM=COW /private/var/containers/Bundle/Application/1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33/URnetwork.app/URnetwork",
+        "virtualMemoryRegionInfo" : "0x0000000107a5c000 is not in any region.  Bytes before following region: 4000000000 REGION TYPE START - END [ VSIZE] PRT/MAX SHRMOD REGION DETAIL UNUSED SPACE AT START ---> __TEXT 0000000100000000-0000000100008000 [ 32K] r-x/r-x SM=COW /private/var/containers/Bundle/Application/1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33/ExampleApp.app/ExampleApp",
         "terminationReason" : "Namespace SIGNAL, Code 11 Segmentation fault: 11"
       }
     }
@@ -78,7 +79,7 @@ const testingMetricKitCrashPayload = `{
   "timeStampBegin" : "2026-11-10 13:19:00 +0000"
 }`
 
-const testingMetricKitCrashLine = `2026-11-10T13:19:00Z..2026-11-10T13:19:00Z metrickit crash process=network.ur app=2026.11.3 build=4512 os="iPhone OS 26.1 (23B85)" exception_type=EXC_BAD_ACCESS(1) exception_code=0x1 signal=SIGSEGV(11) termination_reason="Namespace SIGNAL, Code 11 Segmentation fault: 11"`
+const testingMetricKitCrashLine = `2026-11-10T13:19:00Z..2026-11-10T13:19:00Z metrickit crash process=com.example.app app=2026.11.3 build=4512 os="iPhone OS 26.1 (23B85)" exception_type=EXC_BAD_ACCESS(1) exception_code=0x1 signal=SIGSEGV(11) termination_reason="Namespace SIGNAL, Code 11 Segmentation fault: 11"`
 
 // A day's metric payload as MXMetricPayload.jsonRepresentation writes one:
 // the exit metric among the others, the device's type and region in its
@@ -140,6 +141,7 @@ var testingMetricKitExitLines = []string{
 // The clock the pure tests run at.
 var testingExitDiagnosticsNowMillis = time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC).UnixMilli()
 
+// A time of the tests in unix milliseconds.
 func testingUtcMillis(year int, month time.Month, day int, hour int, minute int) int64 {
 	return time.Date(year, month, day, hour, minute, 0, 0, time.UTC).UnixMilli()
 }
@@ -164,7 +166,8 @@ func testingExitDiagnosticsLineIsPrintableAscii(line string) bool {
 // exception, the signal and the reason. Of the call stack, the memory region,
 // the device and the region nothing is left.
 func TestMetricKitCrashLineKeepsWhyAndNothingElse(t *testing.T) {
-	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, testingMetricKitCrashPayload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+	settings := defaultExitDiagnosticsSettings()
+	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, testingMetricKitCrashPayload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
 	if !ok || len(lines) != 1 || lines[0] != testingMetricKitCrashLine {
 		t.Fatalf("lines = %q (ok %t), want [%q]", lines, ok, testingMetricKitCrashLine)
 	}
@@ -177,7 +180,7 @@ func TestMetricKitCrashLineKeepsWhyAndNothingElse(t *testing.T) {
 	// the payload's own times, which the app passes, win over the json's
 	begin := testingUtcMillis(2026, 11, 10, 13, 18)
 	end := testingUtcMillis(2026, 11, 10, 13, 20)
-	lines, _, _ = metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, testingMetricKitCrashPayload, begin, end, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+	lines, _, _ = metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, testingMetricKitCrashPayload, begin, end, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
 	want := strings.Replace(testingMetricKitCrashLine, "2026-11-10T13:19:00Z..2026-11-10T13:19:00Z", "2026-11-10T13:18:00Z..2026-11-10T13:20:00Z", 1)
 	if len(lines) != 1 || lines[0] != want {
 		t.Fatalf("with the payload's times, lines = %q, want [%q]", lines, want)
@@ -191,14 +194,15 @@ func TestMetricKitCrashLineKeepsWhyAndNothingElse(t *testing.T) {
 // quotes to end the field, and 14 KB of text; metadata with a path, a forged
 // log line and an email where versions belong; and an objective-c message
 // with a user's data. None of it reaches the line, and the line stays one
-// bounded line of printable ascii.
+// bounded line of printable ascii. Every value is synthetic.
 func TestMetricKitHostileDiagnosticLeavesNothingSensitive(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
 	hostileReason := "Namespace DYLD, Code 1 Library missing\n" +
 		"Library not loaded: @rpath/Tunnel.framework/Tunnel\r\n" +
-		"  Referenced from: <1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33> /private/var/containers/Bundle/Application/2A7F5D6E-1B2C-4D3E-8F9A-0B1C2D3E4F5A/URnetwork.app/URnetwork\t" +
+		"  Referenced from: <1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33> /private/var/containers/Bundle/Application/2A7F5D6E-1B2C-4D3E-8F9A-0B1C2D3E4F5A/ExampleApp.app/ExampleApp\t" +
 		"Reason: tried: 'C:\\Users\\alice\\Tunnel' '~alice/Tunnel' (no such file) owner alice@example.com " +
 		"at 0x00000001045a8000 \"quoted\" ecid 00008110-001A2B3C4D5E801E " +
-		"from 192.168.1.23:443 and [2001:db8::1]:443 via a4:83:e7:12:34:56 code 0x8badf00d at 1731244740123 " +
+		"from 192.0.2.23:443 and [2001:db8::1]:443 via 0a:1b:2c:3d:4e:5f code 0x8badf00d at 1731244740123 " +
 		"\x00\x1b[31mred\u2028\u2029next\x7f \u00e9 " + strings.Repeat("filler ", 2000)
 	payload := map[string]any{
 		"timeStampBegin": "2026-11-10 13:19:00 +0000",
@@ -216,7 +220,7 @@ func TestMetricKitHostileDiagnosticLeavesNothingSensitive(t *testing.T) {
 					"appVersion":              "/Users/alice/2026.11.3",
 					"appBuildVersion":         "4512\nI1110 00:00:00.000000 1 forged.go:1] forged",
 					"osVersion":               "iPhone OS 26.1 (23B85)\u2028alice@example.com",
-					"bundleIdentifier":        "network.ur/../../alice",
+					"bundleIdentifier":        "com.example.app/../../alice",
 					"deviceType":              "Alice's iPhone 17",
 					"regionFormat":            "US",
 					"pid":                     98765,
@@ -243,7 +247,7 @@ func TestMetricKitHostileDiagnosticLeavesNothingSensitive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, string(payloadBytes), 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, string(payloadBytes), 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
 	if !ok || len(lines) != 1 {
 		t.Fatalf("lines = %q (ok %t), want one", lines, ok)
 	}
@@ -252,14 +256,14 @@ func TestMetricKitHostileDiagnosticLeavesNothingSensitive(t *testing.T) {
 	if !testingExitDiagnosticsLineIsPrintableAscii(line) {
 		t.Errorf("the line is not one line of printable ascii: %q", line)
 	}
-	if exitDiagnosticsLineMaxLength < len(line) {
-		t.Errorf("the line is %d bytes, over %d", len(line), exitDiagnosticsLineMaxLength)
+	if settings.LineMaxLength < len(line) {
+		t.Errorf("the line is %d bytes, over %d", len(line), settings.LineMaxLength)
 	}
 	for _, sensitive := range []string{
 		"alice", "Alice", "Users", "/private", "/", "\\", "@", "~",
 		"1F6E4C59", "6A1E", "2A7F5D6E", "70B89F27",
 		"1045a8000", "0x00000001", "107a5c000", "7170766264", "4400000000",
-		"001A2B3C4D5E801E", "192.168.1.23", "2001:db8", "a4:83:e7", "1731244740123",
+		"001A2B3C4D5E801E", "192.0.2.23", "2001:db8", "0a:1b:2c", "1731244740123",
 		"98765", "iPhone 17", "region", "setObject", "key cannot be nil", "forged",
 		"quoted\"", "\u00e9", "filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler",
 	} {
@@ -289,60 +293,128 @@ func TestMetricKitHostileDiagnosticLeavesNothingSensitive(t *testing.T) {
 		t.Fatalf("the reason is not the line's last, cut field: %q", line)
 	}
 	reason = strings.TrimSuffix(reason, `"`)
-	if exitDiagnosticsReasonMaxLength < len(reason) {
-		t.Errorf("the reason is %d bytes, over %d: %q", len(reason), exitDiagnosticsReasonMaxLength, reason)
+	if settings.ReasonMaxLength < len(reason) {
+		t.Errorf("the reason is %d bytes, over %d: %q", len(reason), settings.ReasonMaxLength, reason)
 	}
 }
 
 // Each kind of thing a reason can carry is replaced by a word that says what
 // was there, short codes stay, and the reason is cut between words.
 func TestSanitizeExitDiagnosticsReason(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
 	for _, c := range []struct {
 		name   string
 		reason string
 		want   string
 	}{
-		{"a signal", "Namespace SIGNAL, Code 11 Segmentation fault: 11", "Namespace SIGNAL, Code 11 Segmentation fault: 11"},
-		{"the watchdog's code", "Namespace SPRINGBOARD, Code 0x8badf00d", "Namespace SPRINGBOARD, Code 0x8badf00d"},
-		{"a watchdog report", "<RBSTerminateContext| domain:10 code:0x8BADF00D explanation:scene-create watchdog transgression: application<network.ur>:1234 exhausted real (wall clock) time allowance of 19.97 seconds",
-			"<RBSTerminateContext| domain:10 code:0x8BADF00D explanation:scene-create watchdog transgression: application<network.ur>:1234 exhausted real (wall clock) time allowance of 19.97 seconds"},
-		{"line breaks and control characters", "line\nbreak\r\ttab\x00nul\x1b[31m\u2028sep\u2029x\x7fdel \u00e9 \xff", "line break tab nul [31m sep x del"},
-		{"paths", "dyld: /private/var/containers/Bundle/Application/X/URnetwork.app/URnetwork and C:\\Users\\alice and ~alice and file:///etc/hosts", "dyld: <path> and <path> and <path> and <path>"},
-		{"an email address", "owner alice@example.com", "owner <email>"},
-		{"a uuid", "id 1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33.", "id <uuid>."},
-		{"a mac address", "via a4:83:e7:12:34:56 and A4-83-E7-12-34-56", "via <mac> and <mac>"},
-		{"ipv4", "to 192.168.1.23:443 and 10.0.0.1", "to <ip> and <ip>"},
-		{"ipv6", "to [2001:db8::1]:443 and fe80::1%en0 and 2001:db8:0:0:0:0:0:2", "to <ip> and <ip> and <ip>"},
-		{"memory addresses", "at 0x00000001045a8000 or 0X7FFF5FBFF8A0 but not 0xdead10cc", "at <address> or <address> but not 0xdead10cc"},
-		{"long numbers", "tick 1731244740123 and Code 2343432205 but pid 4242", "tick <number> and Code <number> but pid 4242"},
-		{"long hex runs", "ecid 00008110-001A2B3C4D5E801E binary 70B89F2716343580A69557CDB41D7743", "ecid 00008110-<hex> binary <hex>"},
-		{"quotes", `said "hi"`, `said 'hi'`},
-		{"nothing", " \n\t ", ""},
-		{"a time is not an address", "at 13:19:00 on 2026-11-10", "at 13:19:00 on 2026-11-10"},
-		{"a c++ type is not an address", "terminating due to uncaught exception of type std::runtime_error: boom", "terminating due to uncaught exception of type std::runtime_error: boom"},
+		{
+			name:   "a signal",
+			reason: "Namespace SIGNAL, Code 11 Segmentation fault: 11",
+			want:   "Namespace SIGNAL, Code 11 Segmentation fault: 11",
+		},
+		{
+			name:   "the watchdog's code",
+			reason: "Namespace SPRINGBOARD, Code 0x8badf00d",
+			want:   "Namespace SPRINGBOARD, Code 0x8badf00d",
+		},
+		{
+			name:   "a watchdog report",
+			reason: "<RBSTerminateContext| domain:10 code:0x8BADF00D explanation:scene-create watchdog transgression: application<com.example.app>:1234 exhausted real (wall clock) time allowance of 19.97 seconds",
+			want:   "<RBSTerminateContext| domain:10 code:0x8BADF00D explanation:scene-create watchdog transgression: application<com.example.app>:1234 exhausted real (wall clock) time allowance of 19.97 seconds",
+		},
+		{
+			name:   "line breaks and control characters",
+			reason: "line\nbreak\r\ttab\x00nul\x1b[31m\u2028sep\u2029x\x7fdel \u00e9 \xff",
+			want:   "line break tab nul [31m sep x del",
+		},
+		{
+			name:   "paths",
+			reason: "dyld: /private/var/containers/Bundle/Application/X/ExampleApp.app/ExampleApp and C:\\Users\\alice and ~alice and file:///etc/hosts",
+			want:   "dyld: <path> and <path> and <path> and <path>",
+		},
+		{
+			name:   "an email address",
+			reason: "owner alice@example.com",
+			want:   "owner <email>",
+		},
+		{
+			name:   "a uuid",
+			reason: "id 1F6E4C59-6A1E-4C3B-9E5D-0D2C5B1A7E33.",
+			want:   "id <uuid>.",
+		},
+		{
+			name:   "a mac address",
+			reason: "via 0a:1b:2c:3d:4e:5f and 0A-1B-2C-3D-4E-5F",
+			want:   "via <mac> and <mac>",
+		},
+		{
+			name:   "ipv4",
+			reason: "to 192.0.2.23:443 and 198.51.100.1",
+			want:   "to <ip> and <ip>",
+		},
+		{
+			name:   "ipv6",
+			reason: "to [2001:db8::1]:443 and 2001:db8::3%en0 and 2001:db8:0:0:0:0:0:2",
+			want:   "to <ip> and <ip> and <ip>",
+		},
+		{
+			name:   "memory addresses",
+			reason: "at 0x00000001045a8000 or 0X7FFF5FBFF8A0 but not 0xdead10cc",
+			want:   "at <address> or <address> but not 0xdead10cc",
+		},
+		{
+			name:   "long numbers",
+			reason: "tick 1731244740123 and Code 2343432205 but pid 4242",
+			want:   "tick <number> and Code <number> but pid 4242",
+		},
+		{
+			name:   "long hex runs",
+			reason: "ecid 00008110-001A2B3C4D5E801E binary 70B89F2716343580A69557CDB41D7743",
+			want:   "ecid 00008110-<hex> binary <hex>",
+		},
+		{
+			name:   "quotes",
+			reason: `said "hi"`,
+			want:   `said 'hi'`,
+		},
+		{
+			name:   "nothing",
+			reason: " \n\t ",
+			want:   "",
+		},
+		{
+			name:   "a time is not an address",
+			reason: "at 13:19:00 on 2026-11-10",
+			want:   "at 13:19:00 on 2026-11-10",
+		},
+		{
+			name:   "a c++ type is not an address",
+			reason: "terminating due to uncaught exception of type std::runtime_error: boom",
+			want:   "terminating due to uncaught exception of type std::runtime_error: boom",
+		},
 	} {
-		if got := sanitizeExitDiagnosticsReason(c.reason); got != c.want {
+		if got := sanitizeExitDiagnosticsReason(c.reason, settings); got != c.want {
 			t.Errorf("%s: sanitizeExitDiagnosticsReason(%q) = %q, want %q", c.name, c.reason, got, c.want)
 		}
 	}
 
 	// a long reason is cut between words to the bound, ending in "..."
-	long := sanitizeExitDiagnosticsReason(strings.Repeat("word ", 100))
-	if exitDiagnosticsReasonMaxLength < len(long) || !strings.HasSuffix(long, "...") {
+	long := sanitizeExitDiagnosticsReason(strings.Repeat("word ", 100), settings)
+	if settings.ReasonMaxLength < len(long) || !strings.HasSuffix(long, "...") {
 		t.Errorf("a long reason became %d bytes: %q", len(long), long)
 	}
 	if words := strings.TrimSuffix(long, "..."); strings.Trim(strings.ReplaceAll(words, "word", ""), " ") != "" || strings.HasSuffix(words, " ") {
 		t.Errorf("a long reason was not cut between words: %q", long)
 	}
 
-	// only the first 4096 bytes are read, and a word the read cuts is
+	// only ReasonReadMaxLength bytes are read, and a word the read cuts is
 	// dropped: what is left of it may have lost what marks it as a path or an
 	// email address
-	cutWord := strings.Repeat("\n", 4091) + " alice@example.com"
-	if got := sanitizeExitDiagnosticsReason(cutWord); got != "" {
+	cutWord := strings.Repeat("\n", settings.ReasonReadMaxLength-5) + " alice@example.com"
+	if got := sanitizeExitDiagnosticsReason(cutWord, settings); got != "" {
 		t.Errorf("a reason cut inside an email address became %q, want nothing", got)
 	}
-	if got := sanitizeExitDiagnosticsReason(strings.Repeat("\n", 4091) + " ok"); got != "ok" {
+	if got := sanitizeExitDiagnosticsReason(strings.Repeat("\n", settings.ReasonReadMaxLength-5)+" ok", settings); got != "ok" {
 		t.Errorf("a reason under the read bound became %q, want ok", got)
 	}
 }
@@ -365,7 +437,7 @@ func TestMetricKitDiagnosticKinds(t *testing.T) {
   "memoryExceptionDiagnostics" : [{"diagnosticMetaData" : {"appVersion" : "2026.11.3"}}],
   "alice/Users Diagnostics" : [{"diagnosticMetaData" : {}}]
 }`
-	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, defaultExitDiagnosticsSettings())
 	timeRange := "2026-11-10T08:00:00Z..2026-11-10T08:00:00Z metrickit "
 	want := []string{
 		timeRange + `hang app=2026.11.3 build=4512 os="iPhone OS 26.1 (23B85)" hang_duration="20 sec"`,
@@ -398,7 +470,8 @@ func TestMetricKitDiagnosticKinds(t *testing.T) {
 // total and each reason counted, a count a later os adds as other, and the
 // device's type and region left out.
 func TestMetricKitExitMetricLines(t *testing.T) {
-	lines, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, testingMetricKitMetricPayload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+	settings := defaultExitDiagnosticsSettings()
+	lines, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, testingMetricKitMetricPayload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
 	if !ok || !reflect.DeepEqual(lines, testingMetricKitExitLines) {
 		t.Fatalf("lines = %q (ok %t), want %q", lines, ok, testingMetricKitExitLines)
 	}
@@ -436,7 +509,7 @@ func TestMetricKitExitMetricLines(t *testing.T) {
 			want:    []string{},
 		},
 	} {
-		lines, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, c.payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
+		lines, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, c.payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
 		if !ok || len(lines) != len(c.want) || (0 < len(c.want) && !reflect.DeepEqual(lines, c.want)) {
 			t.Errorf("%s: lines = %q (ok %t), want %q", c.name, lines, ok, c.want)
 		}
@@ -448,17 +521,19 @@ func TestMetricKitExitMetricLines(t *testing.T) {
 // is logged. The record keeps the newest payloads, and one that ends before
 // the oldest it no longer keeps -- the watermark -- counts as logged.
 func TestMetricKitPayloadIsLoggedOnce(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
 	now := testingExitDiagnosticsNowMillis
 	end := testingUtcMillis(2026, 11, 10, 13, 19)
 	kind := metricKitDiagnosticPayloadKind
+	minute := time.Minute.Milliseconds()
 
-	lines, state, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayload, end, end, exitDiagnosticsState{}, now)
+	lines, state, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayload, end, end, exitDiagnosticsState{}, now, settings)
 	if !ok || len(lines) != 1 || len(state.Payloads) != 1 {
 		t.Fatalf("the first time: lines %q, ok %t, record %+v", lines, ok, state)
 	}
 
 	// again, as MetricKit's past payloads come at each start
-	if lines, next, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayload, end, end, state, now); ok || len(lines) != 0 || !reflect.DeepEqual(next, state) {
+	if lines, next, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayload, end, end, state, now, settings); ok || len(lines) != 0 || !reflect.DeepEqual(next, state) {
 		t.Fatalf("again: lines %q, ok %t", lines, ok)
 	}
 	// again, printed without the spaces
@@ -466,86 +541,87 @@ func TestMetricKitPayloadIsLoggedOnce(t *testing.T) {
 	if err := json.Compact(&compact, []byte(testingMetricKitCrashPayload)); err != nil {
 		t.Fatal(err)
 	}
-	if lines, _, ok := metricKitExitDiagnosticLines(kind, compact.String(), end, end, state, now); ok || len(lines) != 0 {
+	if lines, _, ok := metricKitExitDiagnosticLines(kind, compact.String(), end, end, state, now, settings); ok || len(lines) != 0 {
 		t.Fatalf("again, compact: lines %q, ok %t", lines, ok)
 	}
 	// the same json is another payload as a metric payload
-	if _, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, testingMetricKitCrashPayload, end, end, state, now); !ok {
+	if _, _, ok := metricKitExitDiagnosticLines(metricKitMetricPayloadKind, testingMetricKitCrashPayload, end, end, state, now, settings); !ok {
 		t.Fatal("the diagnostic payload's json as a metric payload counted as logged")
 	}
 
 	// another payload that ends at the same time
-	lines, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(1), end, end, state, now)
+	lines, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(1), end, end, state, now, settings)
 	if !ok || len(lines) != 1 {
 		t.Fatalf("another payload of the same time: lines %q, ok %t", lines, ok)
 	}
 	// an earlier payload that comes late
-	earlier := end - int64(time.Hour/time.Millisecond)
-	lines, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(2), earlier, earlier, state, now)
+	earlier := end - time.Hour.Milliseconds()
+	lines, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(2), earlier, earlier, state, now, settings)
 	if !ok || len(lines) != 1 || len(state.Payloads) != 3 || state.FloorMillis != 0 {
 		t.Fatalf("an earlier payload: lines %q, ok %t, record %+v", lines, ok, state)
 	}
 
 	// the record keeps the newest payloads: past them the floor rises to the
 	// newest it dropped, and an old payload below it counts as logged
+	fewSettings := defaultExitDiagnosticsSettings()
+	fewSettings.StateMaxPayloadCount = 4
 	state = exitDiagnosticsState{}
 	first := testingUtcMillis(2026, 11, 5, 0, 0)
-	minute := int64(time.Minute / time.Millisecond)
-	for i := range 300 {
+	for i := range 10 {
 		at := first + int64(i)*minute
-		if _, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(100+i), at, at, state, now); !ok {
+		if _, state, ok = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(100+i), at, at, state, now, fewSettings); !ok {
 			t.Fatalf("payload %d was not logged", i)
 		}
 	}
-	if len(state.Payloads) != exitDiagnosticsStateMaxPayloadCount {
-		t.Fatalf("the record keeps %d payloads, want %d", len(state.Payloads), exitDiagnosticsStateMaxPayloadCount)
+	if len(state.Payloads) != 4 {
+		t.Fatalf("the record keeps %d payloads, want 4", len(state.Payloads))
 	}
-	if wantFloor := first + 43*minute; state.FloorMillis != wantFloor {
+	if wantFloor := first + 5*minute; state.FloorMillis != wantFloor {
 		t.Fatalf("the floor is %s, want %s", exitDiagnosticsTime(state.FloorMillis), exitDiagnosticsTime(wantFloor))
 	}
-	old := first + 10*minute
-	if lines, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(9999), old, old, state, now); ok || len(lines) != 0 {
+	old := first + 2*minute
+	if lines, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(9999), old, old, state, now, fewSettings); ok || len(lines) != 0 {
 		t.Fatalf("a new payload older than the watermark: lines %q, ok %t, want it skipped", lines, ok)
 	}
 	atFloor := state.FloorMillis
-	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(9998), atFloor, atFloor, state, now); !ok {
+	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(9998), atFloor, atFloor, state, now, fewSettings); !ok {
 		t.Fatal("a new payload ending at the watermark was skipped")
 	}
 
-	// past MetricKit's days the record drops a payload and the floor rises to it
+	// past StateRetention the record drops a payload and the floor rises to it
 	state = exitDiagnosticsState{}
-	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(1), first, first, state, now)
-	later := first + 15*24*60*minute
-	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(2), later, later, state, later)
+	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(1), first, first, state, now, settings)
+	later := first + settings.StateRetention.Milliseconds() + 24*60*minute
+	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(2), later, later, state, later, settings)
 	if len(state.Payloads) != 1 || state.FloorMillis != first {
-		t.Fatalf("after 15 days the record is %+v, want only the newer payload and the floor at the older", state)
+		t.Fatalf("past the retention the record is %+v, want only the newer payload and the floor at the older", state)
 	}
-	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(3), first-minute, first-minute, state, later); ok {
+	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(3), first-minute, first-minute, state, later, settings); ok {
 		t.Fatal("a payload from before the dropped one was logged")
 	}
 
 	// a time far ahead of the clock never lifts the floor over what comes next
 	yearsAhead := now + 10*365*24*60*minute
 	state = exitDiagnosticsState{FloorMillis: yearsAhead}
-	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(4), now-minute, now-minute, state, now); !ok {
+	if _, _, ok := metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(4), now-minute, now-minute, state, now, settings); !ok {
 		t.Fatal("a floor raised while the clock was years ahead skipped a payload of now")
 	}
-	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(5), now, yearsAhead, exitDiagnosticsState{}, now)
-	if want := now + exitDiagnosticsStateMaxAheadMillis; len(state.Payloads) != 1 || state.Payloads[0].EndMillis != want {
+	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(5), now, yearsAhead, exitDiagnosticsState{}, now, settings)
+	if want := now + settings.StateMaxAhead.Milliseconds(); len(state.Payloads) != 1 || state.Payloads[0].EndMillis != want {
 		t.Fatalf("a payload ending years ahead was recorded as %+v, want it at %s", state, exitDiagnosticsTime(want))
 	}
-	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(6), now-minute, now-minute, state, now)
+	_, state, _ = metricKitExitDiagnosticLines(kind, testingMetricKitCrashPayloadNamed(6), now-minute, now-minute, state, now, settings)
 	if len(state.Payloads) != 2 || state.FloorMillis != 0 {
 		t.Fatalf("after a payload ending years ahead the record is %+v, want both payloads and no floor", state)
 	}
 
 	// a payload without times is logged once, known by its digest
 	noTimes := testingMetricKitCrashPayloadNamed(7)
-	lines, state, ok = metricKitExitDiagnosticLines(kind, noTimes, 0, 0, exitDiagnosticsState{}, now)
+	lines, state, ok = metricKitExitDiagnosticLines(kind, noTimes, 0, 0, exitDiagnosticsState{}, now, settings)
 	if !ok || len(lines) != 1 || !strings.HasPrefix(lines[0], "unknown..unknown metrickit crash ") {
 		t.Fatalf("a payload without times: lines %q, ok %t", lines, ok)
 	}
-	if _, _, ok := metricKitExitDiagnosticLines(kind, noTimes, 0, 0, state, now+minute); ok {
+	if _, _, ok := metricKitExitDiagnosticLines(kind, noTimes, 0, 0, state, now+minute, settings); ok {
 		t.Fatal("a payload without times was logged twice")
 	}
 }
@@ -554,9 +630,12 @@ func TestMetricKitPayloadIsLoggedOnce(t *testing.T) {
 // it is; json of a payload's shape with values of the wrong kinds writes only
 // what has a clean value. Nothing panics.
 func TestMetricKitMalformedPayloadsWriteNothing(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
 	state := exitDiagnosticsState{
 		FloorMillis: 7,
-		Payloads:    []exitDiagnosticsLoggedPayload{{Digest: "d", EndMillis: testingExitDiagnosticsNowMillis - 1000}},
+		Payloads: []exitDiagnosticsLoggedPayload{
+			{Digest: "d", EndMillis: testingExitDiagnosticsNowMillis - 1000},
+		},
 	}
 	for _, payload := range []string{
 		"", " ", "{", "}", "null", "[]", "[{}]", "42", `"text"`, "true",
@@ -565,13 +644,13 @@ func TestMetricKitMalformedPayloadsWriteNothing(t *testing.T) {
 		`{"crashDiagnostics":` + strings.Repeat("[", 20000) + strings.Repeat("]", 20000) + `}`,
 	} {
 		for _, kind := range []metricKitPayloadKind{metricKitDiagnosticPayloadKind, metricKitMetricPayloadKind} {
-			lines, next, ok := metricKitExitDiagnosticLines(kind, payload, 1, 2, state, testingExitDiagnosticsNowMillis)
+			lines, next, ok := metricKitExitDiagnosticLines(kind, payload, 1, 2, state, testingExitDiagnosticsNowMillis, settings)
 			if ok || len(lines) != 0 || !reflect.DeepEqual(next, state) {
 				t.Errorf("%s %.40q: lines %q, ok %t, record %+v", kind, payload, lines, ok, next)
 			}
 		}
 	}
-	if _, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, "{}"+strings.Repeat(" ", exitDiagnosticsPayloadMaxByteCount), 1, 2, state, testingExitDiagnosticsNowMillis); ok {
+	if _, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, "{}"+strings.Repeat(" ", settings.PayloadMaxByteCount), 1, 2, state, testingExitDiagnosticsNowMillis, settings); ok {
 		t.Error("a payload over the size bound was read")
 	}
 
@@ -579,19 +658,28 @@ func TestMetricKitMalformedPayloadsWriteNothing(t *testing.T) {
 		payload string
 		want    []string
 	}{
-		{`{}`, nil},
-		{`{"crashDiagnostics" : "x", "hangDiagnostics" : {"a" : 1}}`, nil},
-		{`{"crashDiagnostics" : [1, "x", null, [], true]}`, nil},
 		{
-			`{"crashDiagnostics" : [{"diagnosticMetaData" : 5, "signal" : "eleven", "exceptionType" : {}, "exceptionCode" : -1, "terminationReason" : ["x"]}]}`,
-			[]string{"unknown..unknown metrickit crash exception_code=omitted"},
+			payload: `{}`,
+			want:    nil,
 		},
 		{
-			`{"crashDiagnostics" : [{"diagnosticMetaData" : {"signal" : 99999, "exceptionType" : 99, "exceptionCode" : "4294967295", "terminationReason" : 42, "appVersion" : 7}}]}`,
-			[]string{`unknown..unknown metrickit crash app=7 exception_type=unknown(99) exception_code=0xffffffff termination_reason="42"`},
+			payload: `{"crashDiagnostics" : "x", "hangDiagnostics" : {"a" : 1}}`,
+			want:    nil,
+		},
+		{
+			payload: `{"crashDiagnostics" : [1, "x", null, [], true]}`,
+			want:    nil,
+		},
+		{
+			payload: `{"crashDiagnostics" : [{"diagnosticMetaData" : 5, "signal" : "eleven", "exceptionType" : {}, "exceptionCode" : -1, "terminationReason" : ["x"]}]}`,
+			want:    []string{"unknown..unknown metrickit crash exception_code=omitted"},
+		},
+		{
+			payload: `{"crashDiagnostics" : [{"diagnosticMetaData" : {"signal" : 99999, "exceptionType" : 99, "exceptionCode" : "4294967295", "terminationReason" : 42, "appVersion" : 7}}]}`,
+			want:    []string{`unknown..unknown metrickit crash app=7 exception_type=unknown(99) exception_code=0xffffffff termination_reason="42"`},
 		},
 	} {
-		lines, next, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, c.payload, 0, 0, state, testingExitDiagnosticsNowMillis)
+		lines, next, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, c.payload, 0, 0, state, testingExitDiagnosticsNowMillis, settings)
 		if !ok || !reflect.DeepEqual(lines, c.want) && !(len(lines) == 0 && len(c.want) == 0) || len(next.Payloads) != 2 {
 			t.Errorf("%q: lines %q (ok %t, record %+v), want %q", c.payload, lines, ok, next, c.want)
 		}
@@ -601,20 +689,22 @@ func TestMetricKitMalformedPayloadsWriteNothing(t *testing.T) {
 // A payload of a hundred crashes, a device in a crash loop, adds a bounded
 // number of lines and one that counts the rest.
 func TestMetricKitPayloadLineCap(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
 	records := []string{}
 	for i := range 100 {
 		records = append(records, fmt.Sprintf(`{"diagnosticMetaData":{"signal":6,"terminationReason":"abort %d"}}`, i))
 	}
 	payload := `{"crashDiagnostics":[` + strings.Join(records, ",") + `]}`
-	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis)
-	if !ok || len(lines) != exitDiagnosticsPayloadMaxLineCount+1 {
-		t.Fatalf("%d lines (ok %t), want %d", len(lines), ok, exitDiagnosticsPayloadMaxLineCount+1)
+	lines, _, ok := metricKitExitDiagnosticLines(metricKitDiagnosticPayloadKind, payload, 0, 0, exitDiagnosticsState{}, testingExitDiagnosticsNowMillis, settings)
+	if !ok || len(lines) != settings.PayloadMaxLineCount+1 {
+		t.Fatalf("%d lines (ok %t), want %d", len(lines), ok, settings.PayloadMaxLineCount+1)
 	}
-	if want := "unknown..unknown metrickit omitted records=68"; lines[len(lines)-1] != want {
+	if want := fmt.Sprintf("unknown..unknown metrickit omitted records=%d", 100-settings.PayloadMaxLineCount); lines[len(lines)-1] != want {
 		t.Fatalf("the last line is %q, want %q", lines[len(lines)-1], want)
 	}
-	if want := `unknown..unknown metrickit crash signal=SIGABRT(6) termination_reason="abort 31"`; lines[31] != want {
-		t.Fatalf("line 31 is %q, want %q", lines[31], want)
+	last := settings.PayloadMaxLineCount - 1
+	if want := fmt.Sprintf(`unknown..unknown metrickit crash signal=SIGABRT(6) termination_reason="abort %d"`, last); lines[last] != want {
+		t.Fatalf("line %d is %q, want %q", last, lines[last], want)
 	}
 }
 
@@ -654,8 +744,13 @@ func TestLogMetricKitPayloadsWriteTheFileTheUploadCarries(t *testing.T) {
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != LocalStorageFilePermissions {
 		t.Errorf("the file's mode is %v (%v), want %v", info.Mode().Perm(), err, os.FileMode(LocalStorageFilePermissions))
 	}
-	if state := readExitDiagnosticsState(filepath.Join(root, "app")); len(state.Payloads) != 2 {
-		t.Errorf("the record holds %+v, want the two payloads", state)
+	stateContent, err := os.ReadFile(filepath.Join(root, "app", exitDiagnosticsStateFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state exitDiagnosticsState
+	if err := json.Unmarshal(stateContent, &state); err != nil || len(state.Payloads) != 2 {
+		t.Errorf("the record is %s (%v), want the two payloads", stateContent, err)
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Errorf("a write left %s.tmp behind (%v)", exitDiagnosticsFileName, err)
@@ -694,10 +789,12 @@ func TestLogMetricKitPayloadsWriteTheFileTheUploadCarries(t *testing.T) {
 // written and nothing panics.
 func TestLogMetricKitPayloadWithoutALogDirectory(t *testing.T) {
 	restoreTestingLogDir(t)
-	currentLogDirMu.Lock()
-	currentLogDir = ""
-	currentLogRoot = ""
-	currentLogDirMu.Unlock()
+	func() {
+		currentLogDirMu.Lock()
+		defer currentLogDirMu.Unlock()
+		currentLogDir = ""
+		currentLogRoot = ""
+	}()
 	if GetLogDir() != "" {
 		t.Skip("the log_dir flag names a directory in this run")
 	}
@@ -710,12 +807,20 @@ func TestLogMetricKitPayloadWithoutALogDirectory(t *testing.T) {
 // The file keeps its newest whole lines within its bound, however many are
 // added.
 func TestExitDiagnosticsFileKeepsItsNewestLines(t *testing.T) {
+	settings := defaultExitDiagnosticsSettings()
+	// nine lines of 211 bytes fit, ten do not
+	settings.MaxByteCount = 2000
 	dir := t.TempDir()
 	line := func(i int) string {
 		return fmt.Sprintf("line %04d %s", i, strings.Repeat("x", 200))
 	}
-	for i := range 400 {
-		if err := appendExitDiagnosticsLines(dir, []string{line(i)}); err != nil {
+	for i := range 40 {
+		err := func() error {
+			exitDiagnosticsStateLock.Lock()
+			defer exitDiagnosticsStateLock.Unlock()
+			return appendExitDiagnosticsLinesWithLock(dir, []string{line(i)}, settings)
+		}()
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -723,33 +828,28 @@ func TestExitDiagnosticsFileKeepsItsNewestLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exitDiagnosticsMaxByteCount < len(content) {
-		t.Fatalf("the file is %d bytes, over %d", len(content), exitDiagnosticsMaxByteCount)
-	}
 	lines := strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
-	last := 399
-	first := last - len(lines) + 1
-	for i, got := range lines {
-		if got != line(first+i) {
-			t.Fatalf("line %d of the file is %.20q, want %.20q", i, got, line(first+i))
-		}
+	if len(lines) != 9 || settings.MaxByteCount < len(content) {
+		t.Fatalf("the file has %d lines in %d bytes, want the newest 9 within %d", len(lines), len(content), settings.MaxByteCount)
 	}
-	if len(content)+len(line(first-1))+1 <= exitDiagnosticsMaxByteCount {
-		t.Fatalf("the file dropped a line it had room for: %d bytes", len(content))
+	for i, got := range lines {
+		if want := line(31 + i); got != want {
+			t.Fatalf("line %d of the file is %.20q, want %.20q", i, got, want)
+		}
 	}
 
 	for _, c := range []struct {
-		content string
-		max     int
-		want    string
+		content      string
+		maxByteCount int
+		want         string
 	}{
-		{"aa\nbb\ncc\n", 9, "aa\nbb\ncc\n"},
-		{"aa\nbb\ncc\n", 6, "bb\ncc\n"},
-		{"aa\nbb\ncc\n", 5, "cc\n"},
-		{"aa\nbb\ncc\n", 2, ""},
+		{content: "aa\nbb\ncc\n", maxByteCount: 9, want: "aa\nbb\ncc\n"},
+		{content: "aa\nbb\ncc\n", maxByteCount: 6, want: "bb\ncc\n"},
+		{content: "aa\nbb\ncc\n", maxByteCount: 5, want: "cc\n"},
+		{content: "aa\nbb\ncc\n", maxByteCount: 2, want: ""},
 	} {
-		if got := string(newestExitDiagnosticsLines([]byte(c.content), c.max)); got != c.want {
-			t.Errorf("newestExitDiagnosticsLines(%q, %d) = %q, want %q", c.content, c.max, got, c.want)
+		if got := string(newestExitDiagnosticsLines([]byte(c.content), c.maxByteCount)); got != c.want {
+			t.Errorf("newestExitDiagnosticsLines(%q, %d) = %q, want %q", c.content, c.maxByteCount, got, c.want)
 		}
 	}
 }
@@ -770,7 +870,12 @@ func TestExitDiagnosticsFileIsNeverReadThroughALink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := appendExitDiagnosticsLines(dir, []string{"a line"}); err != nil {
+	err := func() error {
+		exitDiagnosticsStateLock.Lock()
+		defer exitDiagnosticsStateLock.Unlock()
+		return appendExitDiagnosticsLinesWithLock(dir, []string{"a line"}, defaultExitDiagnosticsSettings())
+	}()
+	if err != nil {
 		t.Fatal(err)
 	}
 

@@ -281,14 +281,17 @@ func isUploadLogsFileName(name string) bool {
 // at the same time are taken in source and name order.
 //
 // The exit diagnostics files are taken before all of them. Each is small
-// (exitDiagnosticsMaxByteCount) and rarely written, so it is the oldest file
-// of its directory, and the glog files of the app and the extension can fill
-// the cap on their own: newest first, it would be the file left out, while it
-// is the one that says why the app closed.
+// (exitDiagnosticsSettings) and rarely written, so it is the oldest file of
+// its directory, and the glog files of the app and the extension can fill the
+// cap on their own: newest first, it would be the file left out, while it is
+// the one that says why the app closed.
 func selectUploadLogFiles(logFileInfos []*LogFileInfo, maxByteCount int64, entryByteCount int64) []*LogFileInfo {
+	isExitDiagnostics := func(logFileInfo *LogFileInfo) bool {
+		return logFileInfo.Name == exitDiagnosticsFileName
+	}
 	newestLogFileInfos := slices.Clone(logFileInfos)
 	slices.SortStableFunc(newestLogFileInfos, func(a *LogFileInfo, b *LogFileInfo) int {
-		if aExit, bExit := isExitDiagnosticsLogFile(a), isExitDiagnosticsLogFile(b); aExit != bExit {
+		if aExit, bExit := isExitDiagnostics(a), isExitDiagnostics(b); aExit != bExit {
 			if aExit {
 				return -1
 			}
