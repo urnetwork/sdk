@@ -45,7 +45,9 @@ func TestDeviceLocalSettingsJsonThroughTheAbi(t *testing.T) {
 		return values
 	}
 	defaults := readDefaults()
-	for _, key := range []string{"ProvideExtenderEnabled", "DefaultProvideExtender", "AllowProvider"} {
+	// the peer-to-peer webrtc carrier is on by default (connect/EXTENDER.md
+	// S8), so a c host that starts from these defaults serves it
+	for _, key := range []string{"ProvideExtenderEnabled", "DefaultProvideExtender", "AllowProvider", "ProvideExtenderWebRtc"} {
 		if defaults[key] != true {
 			t.Fatalf("the default settings json has %s = %v, expected true", key, defaults[key])
 		}

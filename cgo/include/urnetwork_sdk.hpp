@@ -644,6 +644,9 @@ inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* ShownPlanFree = "free";
+inline constexpr const char* ShownPlanPro = "pro";
+inline constexpr const char* ShownPlanUnknown = "unknown";
 inline constexpr const char* SnAlphaSymbol = "SN25α";
 inline constexpr int64_t SnChainIdMainnet = 964;
 inline constexpr int64_t SnChainIdTestnet = 945;
@@ -2514,6 +2517,7 @@ struct DeviceLocalSettings {
 	bool ProvideExtenderEnabled{};
 	bool DefaultProvideExtender{};
 	bool ProvideExtenderDnsPrivilegedPort{};
+	bool ProvideExtenderWebRtc{};
 	bool DefaultProvideExtenderPortMapping{};
 	bool Verbose{};
 	bool MoveDeclineBackgroundOrMetered{};
@@ -2759,6 +2763,7 @@ struct ExtenderProvideStatus {
 	std::string StartError{};
 	std::string TcpUnavailableError{};
 	bool Listening{};
+	bool WebRtcCarrier{};
 	std::string ListenError{};
 	bool ActivatedV4{};
 	bool ActivatedV6{};
@@ -10991,6 +10996,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
+	j["ProvideExtenderWebRtc"] = v.ProvideExtenderWebRtc;
 	j["DefaultProvideExtenderPortMapping"] = v.DefaultProvideExtenderPortMapping;
 	j["Verbose"] = v.Verbose;
 	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
@@ -11100,6 +11106,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("ProvideExtenderDnsPrivilegedPort"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProvideExtenderDnsPrivilegedPort);
+	}
+	if (auto it = j.find("ProvideExtenderWebRtc"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderWebRtc);
 	}
 	if (auto it = j.find("DefaultProvideExtenderPortMapping"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultProvideExtenderPortMapping);
@@ -12028,6 +12037,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["StartError"] = v.StartError;
 	j["TcpUnavailableError"] = v.TcpUnavailableError;
 	j["Listening"] = v.Listening;
+	j["WebRtcCarrier"] = v.WebRtcCarrier;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
 	j["ActivatedV6"] = v.ActivatedV6;
@@ -12083,6 +12093,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);
+	}
+	if (auto it = j.find("WebRtcCarrier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WebRtcCarrier);
 	}
 	if (auto it = j.find("ListenError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ListenError);
@@ -24921,6 +24934,7 @@ public:
 	int64_t getPendingByteCount() const;
 	std::string getPurchaseConfirmationGiveUpReason() const;
 	std::string getPurchaseConfirmationState() const;
+	std::string getShownPlan() const;
 	int64_t getStartBalanceByteCount() const;
 	std::optional<SubscriptionBalanceResult> getSubscriptionBalanceResult() const;
 	std::optional<SubscriptionList> getSubscriptions() const;
@@ -24941,8 +24955,11 @@ class SubscriptionProTracker final : public detail::Handle {
 public:
 	SubscriptionProTracker() = default;
 	explicit SubscriptionProTracker(uint64_t h) : detail::Handle(h) {}
+	bool balanceFailed() const;
 	bool balanceLoaded(bool server_is_pro) const;
 	bool getIsPro() const;
+	bool getLastReadFailed() const;
+	std::string getShownPlan() const;
 	void reset() const;
 	bool setJwt(const std::string& by_jwt) const;
 };
@@ -39292,6 +39309,10 @@ inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationSta
 	char* r_c = urnet_subscription_balance_view_controller_get_purchase_confirmation_state(handle());
 	return detail::takeString(r_c);
 }
+inline std::string SubscriptionBalanceViewController::getShownPlan() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_shown_plan(handle());
+	return detail::takeString(r_c);
+}
 inline int64_t SubscriptionBalanceViewController::getStartBalanceByteCount() const {
 	int64_t r = urnet_subscription_balance_view_controller_get_start_balance_byte_count(handle());
 	return r;
@@ -39346,6 +39367,10 @@ inline void SubscriptionBalanceViewController::startPurchaseConfirmation() const
 inline void SubscriptionBalanceViewController::stop() const {
 	urnet_subscription_balance_view_controller_stop(handle());
 }
+inline bool SubscriptionProTracker::balanceFailed() const {
+	bool r = urnet_subscription_pro_tracker_balance_failed(handle());
+	return r;
+}
 inline bool SubscriptionProTracker::balanceLoaded(bool server_is_pro) const {
 	bool r = urnet_subscription_pro_tracker_balance_loaded(handle(), server_is_pro);
 	return r;
@@ -39353,6 +39378,14 @@ inline bool SubscriptionProTracker::balanceLoaded(bool server_is_pro) const {
 inline bool SubscriptionProTracker::getIsPro() const {
 	bool r = urnet_subscription_pro_tracker_get_is_pro(handle());
 	return r;
+}
+inline bool SubscriptionProTracker::getLastReadFailed() const {
+	bool r = urnet_subscription_pro_tracker_get_last_read_failed(handle());
+	return r;
+}
+inline std::string SubscriptionProTracker::getShownPlan() const {
+	char* r_c = urnet_subscription_pro_tracker_get_shown_plan(handle());
+	return detail::takeString(r_c);
 }
 inline void SubscriptionProTracker::reset() const {
 	urnet_subscription_pro_tracker_reset(handle());
