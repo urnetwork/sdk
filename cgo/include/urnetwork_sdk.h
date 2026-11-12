@@ -381,6 +381,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_GOSSIP_STATE_DISCONNECTED "disconnected"
 #define URNET_EXTENDER_IMPORT_ERROR_FOREIGN_HOST "import_extenders_foreign_host"
 #define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
+#define URNET_EXTENDER_PORT_MAPPING_FAILED "failed"
+#define URNET_EXTENDER_PORT_MAPPING_MAPPED "mapped"
+#define URNET_EXTENDER_PORT_MAPPING_MAPPING "mapping"
+#define URNET_EXTENDER_PORT_MAPPING_NOT_NEEDED "not_needed"
+#define URNET_EXTENDER_PORT_MAPPING_OFF "off"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_FAILED "activation_failed"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_REFUSED "activation_refused"
 #define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_UNREACHABLE "activation_unreachable"
@@ -1768,6 +1773,7 @@ char* urnet_device_get_performance_profile(uint64_t self);
 char* urnet_device_get_provide_control_mode(uint64_t self);
 bool urnet_device_get_provide_enabled(uint64_t self);
 bool urnet_device_get_provide_extender(uint64_t self);
+bool urnet_device_get_provide_extender_port_mapping(uint64_t self);
 int64_t urnet_device_get_provide_mode(uint64_t self);
 char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
@@ -1819,6 +1825,7 @@ void urnet_device_set_offline(uint64_t self, bool offline);
 void urnet_device_set_performance_profile(uint64_t self, const char* performance_profile_json);
 void urnet_device_set_provide_control_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_extender(uint64_t self, bool provide_extender);
+void urnet_device_set_provide_extender_port_mapping(uint64_t self, bool port_mapping);
 void urnet_device_set_provide_mode(uint64_t self, int64_t provide_mode);
 void urnet_device_set_provide_network_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_paused(uint64_t self, bool provide_paused);
@@ -4010,6 +4017,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProvideExtenderEnabled: boolean
  *   DefaultProvideExtender: boolean
  *   ProvideExtenderDnsPrivilegedPort: boolean
+ *   DefaultProvideExtenderPortMapping: boolean
  *   Verbose: boolean
  *   MoveDeclineBackgroundOrMetered: boolean
  *   EnableTransportDelay: boolean
@@ -4298,6 +4306,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LastPeerPingTime: number
  *   LimitedBySubnetsCount: number
  *   LimitedBySourceCount: number
+ *   PortMapping: string
+ *   PortMappingMethod: string
+ *   PortMappingExternalIp: string
+ *   PortMappingTcpPort: number
+ *   PortMappingUdpPort: number
+ *   PortMappingDnsPort: number
+ *   PortMappingError: string
  *   ConnectionCount: number
  */
 

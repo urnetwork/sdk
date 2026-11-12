@@ -455,6 +455,9 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// every app binds the extender's dns carrier on 4053 alone; the sn
 		// miner opts in to 53 (L2)
 		ProvideExtenderDnsPrivilegedPort: false,
+		// no app asks the router to open a port until its user turns it on;
+		// the sn miner turns it on (owner, 2026-11-11; connect EXTENDER.md S10)
+		DefaultProvideExtenderPortMapping: false,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -811,6 +814,17 @@ type DeviceLocalSettings struct {
 	// ports on every extender whatever this is. A plain boolean, so gomobile
 	// binds it and the c abi settings json carries it.
 	ProvideExtenderDnsPrivilegedPort bool
+	// DefaultProvideExtenderPortMapping is the router port mapping setting
+	// this device uses until the user sets one (connect EXTENDER.md S10,
+	// DeviceLocal.SetProvideExtenderPortMapping): whether the provider
+	// extender role asks the router, by PCP, NAT-PMP or UPnP, to forward its
+	// own ports -- tcp 443, udp 443 and udp 4053 -- to this device, so that a
+	// device behind a home router can be reached. Default off, which is what
+	// every app runs with until its user turns the setting on (owner,
+	// 2026-11-11); the sn miner turns it on. A device with a public address
+	// maps nothing either way. A plain boolean, so gomobile binds it and the
+	// c abi settings json carries it.
+	DefaultProvideExtenderPortMapping bool
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -1375,6 +1389,12 @@ type DeviceLocal struct {
 	// the setting there instead.
 	measurementsEnabledSet bool
 	measurementsEnabled    bool
+	// The router port mapping setting on a space that keeps no local state
+	// (connect EXTENDER.md S10): set by SetProvideExtenderPortMapping and held
+	// for the life of the device, with settings.DefaultProvideExtenderPortMapping
+	// in force until it is set. A space with local state stores it there.
+	provideExtenderPortMappingSet bool
+	provideExtenderPortMapping    bool
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
@@ -2255,6 +2275,9 @@ func newDeviceLocalWithOverridesForPlatform(
 		// reaches a running role through setExtenderMeasurementsEnabled
 		// (lag.dev/PLAN.md C4)
 		provider.extenderMeasurementsEnabled = deviceLocal.GetMeasurementsEnabled
+		// the role reads the router port mapping setting as it starts, and a
+		// change replaces a running role (connect EXTENDER.md S10)
+		provider.extenderPortMapping = deviceLocal.GetProvideExtenderPortMapping
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
 		// the provider client lives as long as the device, so its contract
