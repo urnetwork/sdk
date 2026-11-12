@@ -254,6 +254,7 @@ EXPORTS
 	urnet_build_checkout_bridge_url_with_redirect
 	urnet_build_inline_checkout_bridge_url
 	urnet_build_solana_payment_url
+	urnet_cant_reach_on_stall
 	urnet_check_crypto_payment_uri
 	urnet_classify_balance_code_redeem
 	urnet_classify_subscription_store
@@ -937,6 +938,7 @@ EXPORTS
 	urnet_ingress_doh_urls
 	urnet_ingress_plain_dns_servers
 	urnet_is_balance_code_format_valid
+	urnet_is_cant_reach_error
 	urnet_is_checkout_redirect
 	urnet_is_points_leaderboard_sort
 	urnet_is_purchase_report_terminal

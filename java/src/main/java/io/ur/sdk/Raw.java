@@ -1521,6 +1521,7 @@ public interface Raw extends Library {
   Pointer urnet_build_checkout_bridge_url_with_redirect(String a0, String a1);
   Pointer urnet_build_inline_checkout_bridge_url(String a0);
   Pointer urnet_build_solana_payment_url(String a0, PointerByReference a1);
+  byte urnet_cant_reach_on_stall(String a0, String a1);
   byte urnet_check_crypto_payment_uri(String a0, String a1, String a2);
   Pointer urnet_classify_balance_code_redeem(String a0, String a1, String a2);
   Pointer urnet_classify_subscription_store(String a0);
@@ -1619,6 +1620,7 @@ public interface Raw extends Library {
   Pointer urnet_ingress_doh_urls(String a0);
   Pointer urnet_ingress_plain_dns_servers(String a0);
   byte urnet_is_balance_code_format_valid(String a0);
+  byte urnet_is_cant_reach_error(String a0);
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);

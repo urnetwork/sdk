@@ -1520,6 +1520,7 @@ module URnetwork
       attach_function :urnet_build_checkout_bridge_url_with_redirect, [:string, :string], :pointer, blocking: true
       attach_function :urnet_build_inline_checkout_bridge_url, [:string], :pointer, blocking: true
       attach_function :urnet_build_solana_payment_url, [:string, :pointer], :pointer, blocking: true
+      attach_function :urnet_cant_reach_on_stall, [:string, :string], :bool, blocking: true
       attach_function :urnet_check_crypto_payment_uri, [:string, :string, :string], :bool, blocking: true
       attach_function :urnet_classify_balance_code_redeem, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_classify_subscription_store, [:string], :pointer, blocking: true
@@ -1618,6 +1619,7 @@ module URnetwork
       attach_function :urnet_ingress_doh_urls, [:string], :pointer, blocking: true
       attach_function :urnet_ingress_plain_dns_servers, [:string], :pointer, blocking: true
       attach_function :urnet_is_balance_code_format_valid, [:string], :bool, blocking: true
+      attach_function :urnet_is_cant_reach_error, [:string], :bool, blocking: true
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true

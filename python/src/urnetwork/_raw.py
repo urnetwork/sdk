@@ -2791,6 +2791,8 @@ def bind(lib):
     lib.urnet_build_inline_checkout_bridge_url.restype = c_void_p
     lib.urnet_build_solana_payment_url.argtypes = [c_char_p, POINTER(c_void_p)]
     lib.urnet_build_solana_payment_url.restype = c_void_p
+    lib.urnet_cant_reach_on_stall.argtypes = [c_char_p, c_char_p]
+    lib.urnet_cant_reach_on_stall.restype = c_bool
     lib.urnet_check_crypto_payment_uri.argtypes = [c_char_p, c_char_p, c_char_p]
     lib.urnet_check_crypto_payment_uri.restype = c_bool
     lib.urnet_classify_balance_code_redeem.argtypes = [c_char_p, c_char_p, c_char_p]
@@ -2987,6 +2989,8 @@ def bind(lib):
     lib.urnet_ingress_plain_dns_servers.restype = c_void_p
     lib.urnet_is_balance_code_format_valid.argtypes = [c_char_p]
     lib.urnet_is_balance_code_format_valid.restype = c_bool
+    lib.urnet_is_cant_reach_error.argtypes = [c_char_p]
+    lib.urnet_is_cant_reach_error.restype = c_bool
     lib.urnet_is_checkout_redirect.argtypes = [c_char_p]
     lib.urnet_is_checkout_redirect.restype = c_bool
     lib.urnet_is_points_leaderboard_sort.argtypes = [c_char_p]
