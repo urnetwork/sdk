@@ -46,36 +46,13 @@ func NewProviderStatusReasonLineList() *ProviderStatusReasonLineList {
 	}
 }
 
-// The tcp line, then the ipv4 line, each when the server counted checks for
-// it, which is the order of the server's sentences. With neither count, a
+// Decodes the server's fields, then derives ReasonLines from them: the tcp
+// line, then the ipv4 line, each when the server counted checks for it,
+// which is the order of the server's sentences. With neither count, a
 // non-empty reason is one text line, so a sentence this build has no string
-// for still shows. Empty when there is no reason.
-func providerStatusReasonLines(number *ProviderRankingNumber) *ProviderStatusReasonLineList {
-	lines := NewProviderStatusReasonLineList()
-	if 0 < number.ReasonTcpCount {
-		lines.Add(&ProviderStatusReasonLine{
-			Label: ProviderStatusReasonLineTcp,
-			Count: number.ReasonTcpCount,
-		})
-	}
-	if 0 < number.ReasonIpv4Count {
-		lines.Add(&ProviderStatusReasonLine{
-			Label: ProviderStatusReasonLineIpv4,
-			Count: number.ReasonIpv4Count,
-		})
-	}
-	if lines.Len() == 0 && number.Reason != "" {
-		lines.Add(&ProviderStatusReasonLine{
-			Label: ProviderStatusReasonLineText,
-			Text:  number.Reason,
-		})
-	}
-	return lines
-}
-
-// Decodes the server's fields, then derives ReasonLines from them. Every
-// status reaches an app through this decode: the view controller's poll and
-// GetProviderStatus, whose answers the c abi hands the desktop apps as json.
+// for still shows; with no reason there are no lines. Every status reaches an
+// app through this decode: the view controller's poll and GetProviderStatus,
+// whose answers the c abi hands the desktop apps as json.
 func (self *ProviderRankingNumber) UnmarshalJSON(data []byte) error {
 	// the same fields without this method, so the decode does not recurse
 	type providerRankingNumberFields ProviderRankingNumber
@@ -84,6 +61,26 @@ func (self *ProviderRankingNumber) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*self = ProviderRankingNumber(number)
-	self.ReasonLines = providerStatusReasonLines(self)
+
+	lines := NewProviderStatusReasonLineList()
+	if 0 < self.ReasonTcpCount {
+		lines.Add(&ProviderStatusReasonLine{
+			Label: ProviderStatusReasonLineTcp,
+			Count: self.ReasonTcpCount,
+		})
+	}
+	if 0 < self.ReasonIpv4Count {
+		lines.Add(&ProviderStatusReasonLine{
+			Label: ProviderStatusReasonLineIpv4,
+			Count: self.ReasonIpv4Count,
+		})
+	}
+	if lines.Len() == 0 && self.Reason != "" {
+		lines.Add(&ProviderStatusReasonLine{
+			Label: ProviderStatusReasonLineText,
+			Text:  self.Reason,
+		})
+	}
+	self.ReasonLines = lines
 	return nil
 }
