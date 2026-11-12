@@ -202,7 +202,7 @@ func TestSessionMetadataAndHintsCrossDeviceRpc(t *testing.T) {
 	local, remote := testing_newSyncedDeviceLocalRemote(t, t.Context())
 	api := remote.GetApi()
 	api.SetByJwt(taggedSessionTestJwt(t, "rpc-session", ""))
-	api.SetClientInfo(NewClientInfo("android", "1.2.3"))
+	api.SetClientInfo(NewClientInfoWithDistribution("android", "1.2.3", ClientDistributionPlay))
 	observed := make(chan connect.ClientInfo, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -217,7 +217,9 @@ func TestSessionMetadataAndHintsCrossDeviceRpc(t *testing.T) {
 	}
 	select {
 	case info := <-observed:
-		if info.DeviceType != "android" || info.AppVersion != "1.2.3" {
+		// the distribution crosses the device rpc with the rest: a remote
+		// device's request reaches the server as its app reported itself
+		if info.DeviceType != "android" || info.AppVersion != "1.2.3" || info.Distribution != ClientDistributionPlay {
 			t.Fatal(info)
 		}
 	case <-time.After(5 * time.Second):

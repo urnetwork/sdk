@@ -283,6 +283,8 @@ typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 void urnet_invoke_points_leaderboard(urnet_points_leaderboard_cb cb, void* user_data);
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
 void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data);
+typedef void (*urnet_pro_features_cb)(void* user_data, const char* snapshot_json);
+void urnet_invoke_pro_features(urnet_pro_features_cb cb, void* user_data, const char* snapshot_json);
 typedef void (*urnet_provide_change_cb)(void* user_data, bool provide_enabled);
 void urnet_invoke_provide_change(urnet_provide_change_cb cb, void* user_data, bool provide_enabled);
 typedef void (*urnet_provide_control_mode_change_cb)(void* user_data, const char* provide_control_mode);
@@ -375,6 +377,8 @@ typedef void (*urnet_sn_claims_cb)(void* user_data, const char* result_json, con
 void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_connect_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_connect_wallet(urnet_sn_connect_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_ctf_client_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_ctf_client(urnet_sn_ctf_client_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_epoch_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_epoch(urnet_sn_epoch_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_fleet_claim_cb)(void* user_data, const char* result_json, const char* err_param);

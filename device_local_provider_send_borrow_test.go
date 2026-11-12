@@ -306,8 +306,12 @@ func TestProviderSendBorrowCustomParentsRemainOrdinary(t *testing.T) {
 	}
 }
 
-// Simultaneous client work retains every leaf ceiling. Physical RX permission
-// overlaps its siblings; their maxima are not simultaneous reservations.
+// Simultaneous client leaves retain every pre-existing ceiling. Their shared
+// parent and root determine contention, not a synthetic Pack-only donor. These
+// profiles back RX with physical bytes, 7/2 of its logical grant, so the leaf
+// ceilings together exceed their parent: a client that fills every leaf as far
+// as admission allows holds its whole parent, and the provider keeps exactly
+// its baseline send. Only client bytes that drain fund the loan.
 func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 	for _, row := range providerSendBorrowCases() {
 		settings := DefaultLowMemoryDeviceLocalSettings()
@@ -318,47 +322,39 @@ func TestProviderSendBorrowMixedClientLeaves(t *testing.T) {
 		client := &d.settings.ClientSettings
 		_, selected := deviceLocalDestinationWebRtcSettings(client.WebRtcSettings, true)
 		rx := client.ReceiveBufferSettings.ReceiveQueueBudget
-		receiveHeld := ByteCount(2 * 1024 * 1024)
-		physicalReceive := ByteCount(7 * 1024 * 1024)
-		if row.target == 64*1024*1024 {
-			receiveHeld = 4 * 1024 * 1024
-			physicalReceive = 14 * 1024 * 1024
+		leaves := []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, rx,
+			client.ReceiveBufferSettings.PackQueueBudget, client.WebRtcSettings.MemoryBudget, selected, m.peerKeyPins}
+		ceilings := ByteCount(0)
+		for _, leaf := range leaves {
+			ceilings += leaf.TotalByteCount()
 		}
-		if rx.TotalByteCount() != physicalReceive {
-			t.Fatalf("%s physical receive permission changed", row.name)
+		if ceilings <= row.client {
+			t.Fatalf("%s client leaf ceilings %d no longer overlap their %d parent", row.name, ceilings, row.client)
 		}
-		for _, leaf := range []*connect.TransferMemoryBudget{client.SendBufferSettings.ResendQueueBudget, rx,
-			client.ReceiveBufferSettings.PackQueueBudget, client.WebRtcSettings.MemoryBudget, selected, m.peerKeyPins} {
-			held := leaf.TotalByteCount()
-			if leaf == rx {
-				held = receiveHeld
+		for _, leaf := range leaves {
+			if bytes := min(leaf.TotalByteCount(), leaf.Available()); 0 < bytes {
+				f.reserve(leaf, bytes)
 			}
-			f.reserve(leaf, held)
+		}
+		if m.client.UsedByteCount() != row.client || m.client.Available() != 0 {
+			t.Fatalf("%s busy client leaves did not reach their shared parent: used=%d", row.name, m.client.UsedByteCount())
 		}
 		send, receive := d.provider.transferBudgets()
 		f.reserve(receive, row.receive)
 		f.reserve(m.nat, row.nat)
 		available := min(send.TotalByteCount(), m.root.Available())
-		if available < row.send {
-			t.Fatalf("%s existing client leaves lost baseline provider send", row.name)
+		if available != row.send {
+			t.Fatalf("%s busy client leaves left provider send %d, want its baseline %d", row.name, available, row.send)
 		}
 		f.reserve(send, available)
-		before := m.root.StatsWithDescendants(m.client, rx)
-		if rx.TryReserve(physicalReceive - receiveHeld) {
-			rx.Release(physicalReceive - receiveHeld)
-			t.Fatalf("%s overlapping physical RX permission escaped the shared parent/root", row.name)
-		}
-		if after := m.root.StatsWithDescendants(m.client, rx); !reflect.DeepEqual(before, after) {
-			t.Fatalf("%s refused RX ownership changed hierarchy balances", row.name)
-		}
 		if send.TryReserve(1) {
 			t.Fatalf("%s provider escaped its leaf/root bound", row.name)
 		}
-		if row.target == 32*1024*1024 && available >= 2*row.send {
-			t.Fatal("32MiB contention case did not reach root pressure")
-		}
-		if row.target == 64*1024*1024 && available != 2*row.send {
-			t.Fatal("64MiB literal leaf case lost its available loan")
+		// RX, not Pack, returns the bytes: whichever client leaf drains funds the loan.
+		f.release(rx, row.send)
+		f.reserve(send, row.send)
+		if send.UsedByteCount() != 2*row.send || send.TryReserve(1) || m.root.Available() != 0 {
+			t.Fatalf("%s drained client leaf did not fund exactly the provider loan", row.name)
 		}
 	}
 }

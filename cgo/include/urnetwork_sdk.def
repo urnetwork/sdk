@@ -93,6 +93,7 @@ EXPORTS
 	urnet_api_onboarding_offer_issue
 	urnet_api_open_client_session_view_controller
 	urnet_api_open_manage_devices_view_controller
+	urnet_api_open_pro_features_view_controller
 	urnet_api_redeem_balance_code
 	urnet_api_refresh_jwt
 	urnet_api_refresh_jwt_sync
@@ -685,6 +686,7 @@ EXPORTS
 	urnet_device_local_sn_claim_status
 	urnet_device_local_sn_claim_transactions
 	urnet_device_local_sn_claims
+	urnet_device_local_sn_ctf_client
 	urnet_device_local_sn_gas_balance
 	urnet_device_local_sn_ledger_accounts
 	urnet_device_local_sn_ledger_claim
@@ -789,6 +791,7 @@ EXPORTS
 	urnet_device_remote_sn_claim_status
 	urnet_device_remote_sn_claim_transactions
 	urnet_device_remote_sn_claims
+	urnet_device_remote_sn_ctf_client
 	urnet_device_remote_sn_gas_balance
 	urnet_device_remote_sn_ledger_accounts
 	urnet_device_remote_sn_ledger_claim
@@ -1162,6 +1165,7 @@ EXPORTS
 	urnet_new_bittensor_wallet_session
 	urnet_new_client_event_queue
 	urnet_new_client_info
+	urnet_new_client_info_with_distribution
 	urnet_new_client_limit_notice_tracker
 	urnet_new_connect_first_event
 	urnet_new_crypto_invoice_view_controller
@@ -1189,6 +1193,7 @@ EXPORTS
 	urnet_new_onboarding_step_shown_event
 	urnet_new_onboarding_step_skipped_event
 	urnet_new_platform_device_remote
+	urnet_new_pro_features_notice_tracker
 	urnet_new_proxy_device_with_defaults
 	urnet_new_purchase_cancelled_event
 	urnet_new_purchase_completed_event
@@ -1270,6 +1275,18 @@ EXPORTS
 	urnet_post_quantum_identity_view_controller_provider_identities_changed
 	urnet_post_quantum_identity_view_controller_start
 	urnet_post_quantum_identity_view_controller_stop
+	urnet_pro_features_notice_tracker_dismiss
+	urnet_pro_features_notice_tracker_get_shown_prompt
+	urnet_pro_features_notice_tracker_reset
+	urnet_pro_features_notice_tracker_update
+	urnet_pro_features_status_for
+	urnet_pro_features_view_controller_add_pro_features_listener
+	urnet_pro_features_view_controller_close
+	urnet_pro_features_view_controller_dismiss_main_notice
+	urnet_pro_features_view_controller_get_snapshot
+	urnet_pro_features_view_controller_refresh
+	urnet_pro_features_view_controller_start
+	urnet_pro_features_view_controller_stop
 	urnet_provide_view_controller_close
 	urnet_provide_view_controller_start
 	urnet_provide_view_controller_stop
@@ -1360,6 +1377,7 @@ EXPORTS
 	urnet_short_ss58
 	urnet_sn_claim_transactions_for
 	urnet_sn_claims_for
+	urnet_sn_ctf_client_of
 	urnet_sn_fleet_binding_digest
 	urnet_sn_fleet_claim_advance
 	urnet_sn_fleet_claim_leave
@@ -1373,6 +1391,7 @@ EXPORTS
 	urnet_sn_fleet_device_start
 	urnet_sn_gas_balance_for
 	urnet_sn_ledger_accounts_for
+	urnet_sn_ledger_claim_outcomes_of
 	urnet_sn_ledger_claim_transactions_for
 	urnet_sn_payout_leaf_hex
 	urnet_sn_testnet_chain_settings

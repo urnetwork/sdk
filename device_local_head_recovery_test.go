@@ -12,45 +12,46 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// Both mobile profiles preserve logical head credit and independently funded
-// physical RX backing under one root, including cloned clients and role changes.
+// Both requested mobile profiles keep their original root/ordinary-RX caps,
+// share one child across cloned clients, and preserve live owners on a shrink.
+// These profiles back RX with physical bytes, 7/2 of its logical grant, and
+// the child keeps the logical grant: its ceiling is below RX, not equal to it.
 func TestDeviceLocalConsumerHeadRecoveryProfilesAndGenerationOverlap(t *testing.T) {
-	for _, row := range []struct {
-		target, logicalOff, physicalOff, logicalOn, physicalOn ByteCount
-	}{
-		{target: 32 * 1024 * 1024, logicalOff: 2181038, physicalOff: 7633633, logicalOn: 2 * 1024 * 1024, physicalOn: 7 * 1024 * 1024},
-		{target: 64 * 1024 * 1024, logicalOff: 4362076, physicalOff: 15267266, logicalOn: 4 * 1024 * 1024, physicalOn: 14 * 1024 * 1024},
-	} {
-		device, provider := transferMemoryTestDevice(t, row.target)
+	for _, row := range privateH1RetainedSizingRows() {
+		target := row.target
+		device, provider := transferMemoryTestDevice(t, target)
 		memory := device.transferMemory
 		receive := device.settings.ClientSettings.ReceiveBufferSettings
 		recovery, rx := receive.ReceiveHeadRecoveryBudget, receive.ReceiveQueueBudget
 		pack := receive.PackQueueBudget
 		_, clientShare, _, providerShare := deviceMemoryShares(device.settings)
 		if recovery == nil || recovery != memory.headRecovery || recovery.Parent() != rx.Parent() || recovery.Parent() != memory.client ||
-			recovery == rx || recovery.TotalByteCount() != row.logicalOff || rx.TotalByteCount() != row.physicalOff || memory.root.TotalByteCount() != clientShare+providerShare ||
+			recovery == rx || recovery.TotalByteCount() != row.logicalOff || rx.TotalByteCount() != row.rxOff ||
+			memory.root.TotalByteCount() != clientShare+providerShare ||
 			recovery.UsedByteCount() != 0 || memory.root.UsedByteCount() != 0 || provider.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != nil ||
 			pack == nil || pack == rx || pack == recovery || pack.Parent() != memory.client || provider.ReceiveBufferSettings.PackQueueBudget != pack {
-			t.Fatalf("%d profile did not preserve logical head credit and physical RX backing under the unchanged hierarchy", row.target)
+			t.Fatalf("%d profile did not create one empty consumer-only child under the unchanged hierarchy: recovery=%d rx=%d",
+				target, recovery.TotalByteCount(), rx.TotalByteCount())
 		}
 		cloneA := newDeviceClientSettings(&device.settings.ClientSettings, "", nil)
 		cloneB := newDeviceClientSettings(&device.settings.ClientSettings, "", nil)
 		if cloneA.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery || cloneB.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery {
 			t.Fatal("client generations acquired independent recovery partitions")
 		}
-		beforeRoot, beforeRx, beforeHead := memory.root.TotalByteCount(), rx.TotalByteCount(), recovery.TotalByteCount()
+		beforeRoot, beforeRx, beforeRecovery := memory.root.TotalByteCount(), rx.TotalByteCount(), recovery.TotalByteCount()
 		if !recovery.TryReserve(1024) {
 			t.Fatal("head ownership setup")
 		}
 		device.applyProvideMemorySharesWithLock(true)
 		if memory.root.TotalByteCount() != beforeRoot || recovery != receive.ReceiveHeadRecoveryBudget ||
-			recovery.TotalByteCount() != row.logicalOn || rx.TotalByteCount() != row.physicalOn || recovery.UsedByteCount() != 1024 || memory.root.UsedByteCount() != 1024 {
+			recovery.TotalByteCount() != row.logicalOn || rx.TotalByteCount() != row.rxOn ||
+			recovery.UsedByteCount() != 1024 || memory.root.UsedByteCount() != 1024 {
 			recovery.Release(1024)
 			t.Fatal("role change replaced, lost or double-counted a live head owner")
 		}
 		recovery.Release(1024)
 		device.applyProvideMemorySharesWithLock(false)
-		if rx.TotalByteCount() != beforeRx || recovery.TotalByteCount() != beforeHead {
+		if rx.TotalByteCount() != beforeRx || recovery.TotalByteCount() != beforeRecovery {
 			t.Fatal("role round trip changed the ordinary or recovery ceiling")
 		}
 		competitor := connect.NewTransferMemoryBudgetWithParent(beforeRoot, memory.client)
@@ -136,7 +137,13 @@ func TestDeviceLocalConsumerHeadRecoverySnapshotReconcilesOwnership(t *testing.T
 // device settings alone does not exercise its budget forwarding. Real local
 // destination generations must keep this one child and the SDK Pack topology.
 // This fixture may attempt its configured loopback API, so it is not NoNetwork.
+// The 32-MiB low profile never provides here, so its client keeps the whole
+// root: the child's logical grant and RX's physical backing of it.
 func TestDeviceLocalConsumerHeadRecoveryDefaultWindowGenerations(t *testing.T) {
+	row := privateH1RetainedSizingRows()[0]
+	if row.target != ByteCount(LowMemoryDeviceTargetByteCount) {
+		t.Fatal("sizing receipt is not the low profile's target")
+	}
 	settings := DefaultLowMemoryDeviceLocalSettings()
 	settings.HostedIncompatible = true
 	settings.AllowProvider = false
@@ -164,8 +171,10 @@ func TestDeviceLocalConsumerHeadRecoveryDefaultWindowGenerations(t *testing.T) {
 		client := generator.NewClientSettings()
 		if client.ReceiveBufferSettings.ReceiveHeadRecoveryBudget != recovery || client.ReceiveBufferSettings.ReceiveQueueBudget != rx ||
 			client.ReceiveBufferSettings.PackQueueBudget != pack || recovery.Parent() != device.transferMemory.client ||
-			pack == rx || pack == recovery || pack.Parent() != recovery.Parent() || recovery.TotalByteCount() != 2181038 || rx.TotalByteCount() != 7633633 {
-			t.Fatal("default window settings lost the shared consumer recovery or Pack partition")
+			pack == rx || pack == recovery || pack.Parent() != recovery.Parent() ||
+			recovery.TotalByteCount() != row.logicalOff || rx.TotalByteCount() != row.rxOff {
+			t.Fatalf("default window settings lost the shared consumer recovery or Pack partition: recovery=%d rx=%d",
+				recovery.TotalByteCount(), rx.TotalByteCount())
 		}
 		previous = generator
 		device.SetConnectLocation(nil)

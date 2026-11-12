@@ -339,6 +339,31 @@ func (c *Client) LatestBaseFee(ctx context.Context) (*big.Int, error) {
 	return ParseUint256(block.BaseFeePerGas)
 }
 
+// LatestGasLimit is the latest block's gas limit.
+func (c *Client) LatestGasLimit(ctx context.Context) (uint64, error) {
+	raw, err := c.Call(ctx, "eth_getBlockByNumber", "latest", false)
+	if err != nil {
+		return 0, err
+	}
+	var block struct {
+		GasLimit string `json:"gasLimit"`
+	}
+	if err := json.Unmarshal(raw, &block); err != nil {
+		return 0, err
+	}
+	if block.GasLimit == "" {
+		return 0, errors.New("the latest block names no gas limit")
+	}
+	limit, err := ParseUint256(block.GasLimit)
+	if err != nil {
+		return 0, fmt.Errorf("block gas limit: %w", err)
+	}
+	if !limit.IsUint64() {
+		return 0, errors.New("block gas limit overflows uint64")
+	}
+	return limit.Uint64(), nil
+}
+
 // The latest block's number and timestamp (unix seconds).
 func (self *Client) LatestHeader(ctx context.Context) (uint64, uint64, error) {
 	raw, err := self.Call(ctx, "eth_getBlockByNumber", "latest", false)
@@ -371,6 +396,7 @@ type callMsg struct {
 	To    string `json:"to"`
 	Data  string `json:"data"`
 	Value string `json:"value,omitempty"`
+	Gas   string `json:"gas,omitempty"`
 }
 
 // EthCall executes a read-only call at latest.
@@ -386,6 +412,30 @@ func (c *Client) EthCall(ctx context.Context, to [20]byte, data []byte) ([]byte,
 // as the preflight of a transaction from `from`.
 func (c *Client) EthCallFrom(ctx context.Context, from, to [20]byte, data []byte) ([]byte, error) {
 	raw, err := c.Call(ctx, "eth_call", callMsg{From: AddressHex(from), To: AddressHex(to), Data: "0x" + hex.EncodeToString(data)}, "latest")
+	if err != nil {
+		return nil, err
+	}
+	return parseBytesResult(raw)
+}
+
+// EthCallGas executes a call at latest with a gas limit, as a transaction
+// naming that limit would run: from `from`, or from no sender when it is the
+// zero address.
+func (c *Client) EthCallGas(ctx context.Context, from, to [20]byte, data []byte, gas uint64) ([]byte, error) {
+	msg := callMsg{To: AddressHex(to), Data: "0x" + hex.EncodeToString(data), Gas: HexQuantity(new(big.Int).SetUint64(gas))}
+	if from != ([20]byte{}) {
+		msg.From = AddressHex(from)
+	}
+	raw, err := c.Call(ctx, "eth_call", msg, "latest")
+	if err != nil {
+		return nil, err
+	}
+	return parseBytesResult(raw)
+}
+
+// Code returns the code at addr at latest, empty for an account without code.
+func (c *Client) Code(ctx context.Context, addr [20]byte) ([]byte, error) {
+	raw, err := c.Call(ctx, "eth_getCode", AddressHex(addr), "latest")
 	if err != nil {
 		return nil, err
 	}

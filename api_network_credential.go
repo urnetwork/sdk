@@ -131,6 +131,9 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"GET /account/api-keys":                 apiRouteAccessNetwork,
 	"POST /oauth/authorize":                 apiRouteAccessNetwork,
 	"POST /oauth/consent":                   apiRouteAccessNetwork,
+	// Pay with Gamma's automatic charge switches
+	"GET /pay/gamma/settings":  apiRouteAccessNetwork,
+	"POST /pay/gamma/settings": apiRouteAccessNetwork,
 }
 
 type apiAdminRoutePattern struct {

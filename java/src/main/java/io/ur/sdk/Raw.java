@@ -141,6 +141,7 @@ public interface Raw extends Library {
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_post_quantum_identity_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_pro_features_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_provide_control_mode_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_mode_change_cb extends Callback { void invoke(Pointer a0, long a1); }
@@ -187,6 +188,7 @@ public interface Raw extends Library {
   interface urnet_sn_claim_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_claims_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_connect_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_ctf_client_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_epoch_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_fleet_claim_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
@@ -372,6 +374,7 @@ public interface Raw extends Library {
   void urnet_api_onboarding_offer_issue(long a0, String a1, urnet_onboarding_offer_issue_cb a2, Pointer a3);
   long urnet_api_open_client_session_view_controller(long a0);
   long urnet_api_open_manage_devices_view_controller(long a0);
+  long urnet_api_open_pro_features_view_controller(long a0);
   void urnet_api_redeem_balance_code(long a0, String a1, urnet_redeem_balance_code_cb a2, Pointer a3);
   void urnet_api_refresh_jwt(long a0, urnet_refresh_jwt_cb a1, Pointer a2);
   Pointer urnet_api_refresh_jwt_sync(long a0, PointerByReference a1);
@@ -901,6 +904,7 @@ public interface Raw extends Library {
   void urnet_device_local_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_local_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_local_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
+  void urnet_device_local_sn_ctf_client(long a0, urnet_sn_ctf_client_cb a1, Pointer a2);
   void urnet_device_local_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
   void urnet_device_local_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_local_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
@@ -1017,6 +1021,7 @@ public interface Raw extends Library {
   void urnet_device_remote_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_remote_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
+  void urnet_device_remote_sn_ctf_client(long a0, urnet_sn_ctf_client_cb a1, Pointer a2);
   void urnet_device_remote_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
   void urnet_device_remote_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_remote_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
@@ -1328,6 +1333,17 @@ public interface Raw extends Library {
   void urnet_post_quantum_identity_view_controller_provider_identities_changed(long a0);
   void urnet_post_quantum_identity_view_controller_start(long a0);
   void urnet_post_quantum_identity_view_controller_stop(long a0);
+  Pointer urnet_pro_features_notice_tracker_dismiss(long a0);
+  Pointer urnet_pro_features_notice_tracker_get_shown_prompt(long a0);
+  Pointer urnet_pro_features_notice_tracker_reset(long a0);
+  Pointer urnet_pro_features_notice_tracker_update(long a0, String a1);
+  long urnet_pro_features_view_controller_add_pro_features_listener(long a0, urnet_pro_features_cb a1, Pointer a2);
+  void urnet_pro_features_view_controller_close(long a0);
+  void urnet_pro_features_view_controller_dismiss_main_notice(long a0);
+  Pointer urnet_pro_features_view_controller_get_snapshot(long a0);
+  void urnet_pro_features_view_controller_refresh(long a0);
+  void urnet_pro_features_view_controller_start(long a0);
+  void urnet_pro_features_view_controller_stop(long a0);
   void urnet_provide_view_controller_close(long a0);
   void urnet_provide_view_controller_start(long a0);
   void urnet_provide_view_controller_stop(long a0);
@@ -1609,6 +1625,7 @@ public interface Raw extends Library {
   long urnet_new_bittensor_wallet_session(String a0, String a1, String a2, String a3, PointerByReference a4);
   long urnet_new_client_event_queue(long a0, String a1, String a2, String a3);
   Pointer urnet_new_client_info(String a0, String a1);
+  Pointer urnet_new_client_info_with_distribution(String a0, String a1, String a2);
   long urnet_new_client_limit_notice_tracker();
   Pointer urnet_new_connect_first_event();
   long urnet_new_crypto_invoice_view_controller(long a0, String a1);
@@ -1636,6 +1653,7 @@ public interface Raw extends Library {
   Pointer urnet_new_onboarding_step_shown_event(String a0, long a1, long a2);
   Pointer urnet_new_onboarding_step_skipped_event(String a0, long a1, long a2);
   long urnet_new_platform_device_remote(long a0, String a1, String a2, String a3, String a4, PointerByReference a5);
+  long urnet_new_pro_features_notice_tracker();
   long urnet_new_proxy_device_with_defaults(String a0, urnet_setup_new_device_cb a1, Pointer a2);
   Pointer urnet_new_purchase_cancelled_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_purchase_completed_event(String a0, String a1, String a2, byte a3, double a4, String a5);
@@ -1672,6 +1690,7 @@ public interface Raw extends Library {
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);
+  Pointer urnet_pro_features_status_for(String a0);
   Pointer urnet_public_identity_key_hash(Pointer a0, int a1);
   long urnet_purchase_report_backoff_millis(long a0);
   Pointer urnet_record_tunnel_recovery_stage(String a0, String a1, byte a2, byte a3, byte a4, long a5, long a6);
@@ -1698,9 +1717,11 @@ public interface Raw extends Library {
   Pointer urnet_short_ss58(String a0);
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);
+  Pointer urnet_sn_ctf_client_of(String a0);
   Pointer urnet_sn_fleet_binding_digest(String a0, PointerByReference a1);
   void urnet_sn_gas_balance_for(String a0, String a1, urnet_sn_gas_balance_cb a2, Pointer a3);
   void urnet_sn_ledger_accounts_for(String a0, String a1, urnet_sn_ledger_accounts_cb a2, Pointer a3);
+  Pointer urnet_sn_ledger_claim_outcomes_of(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_ledger_claim_transactions_for(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();

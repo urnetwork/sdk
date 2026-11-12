@@ -15,42 +15,16 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
-// Mirror the bounded Connect graph, including its separate prepaid control
-// and ordinary-ingress workspaces. The extra 32 KiB remains inside the same
-// NAT/root ceilings, including the tighter iOS sizing profile.
+// Mirror the bounded Connect graph, including the provider's separate prepaid
+// control and ordinary-ingress workspaces. The extra 32 KiB remains inside the
+// same NAT/root ceilings, including the tighter iOS sizing profile. A NAT's
+// fixed claim no longer holds a 16-KiB ACK/RST allowance: header-only packets
+// take no byte reservation (Connect natMemoryFixedBytes, 240 KiB).
 const (
-	providerMemoryTestNatEnvelopeByteCount ByteCount = 256 * 1024
-	providerMemoryTestProviderByteCount    ByteCount = 576 * 1024
-	providerMemoryTestStatsByteCount       ByteCount = 1024
+	providerMemoryTestNatByteCount      ByteCount = 240 * 1024
+	providerMemoryTestProviderByteCount ByteCount = 576 * 1024
+	providerMemoryTestStatsByteCount    ByteCount = 1024
 )
-
-// Calibrate the public NAT constructor in an independent ledger. The SDK tests
-// exercise graph admission, not a mirror of Connect's private fixed-byte total.
-// Keep the established envelope and prove the probe returns every owned byte.
-func providerMemoryTestNatFixedByteCount(t *testing.T, device *DeviceLocal) ByteCount {
-	t.Helper()
-	_, _, _, providerShare := deviceMemoryShares(device.settings)
-	settings := providerLocalUserNatSettingsForProfile(providerShare, device.settings.MemoryTargetByteCount,
-		true, connect.NewNoopLogger(), device.settings.ProviderDialContextSettings)
-	budget := connect.NewTransferMemoryBudget(providerMemoryTestNatEnvelopeByteCount)
-	settings.MemoryBudget = budget
-	nat, err := connect.TryNewLocalUserNat(t.Context(), "provider-memory-fixed-probe", settings)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = nat.CloseAndWait(context.Background()) })
-	admitted := budget.Stats()
-	if err := nat.CloseAndWait(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	retired := budget.Stats()
-	if admitted.UsedByteCount <= 0 || admitted.UsedByteCount > providerMemoryTestNatEnvelopeByteCount ||
-		admitted.ReservedByteCount != admitted.UsedByteCount || admitted.ReleasedByteCount != 0 ||
-		retired.UsedByteCount != 0 || retired.ReservedByteCount != retired.ReleasedByteCount {
-		t.Fatalf("NAT calibration escaped its envelope or retained ownership: admitted=%+v retired=%+v", admitted, retired)
-	}
-	return admitted.UsedByteCount
-}
 
 // Owns all retry and retirement work until cleanup shuts admission and joins it.
 func providerMemoryTestDevice(t *testing.T, target ByteCount) (*DeviceLocal, *connect.Client) {
@@ -110,9 +84,8 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 	for _, targetMiB := range []ByteCount{20, 28} {
 		device, _ := providerMemoryTestDevice(t, targetMiB*1024*1024)
 		memory := device.transferMemory
-		natBytes := providerMemoryTestNatFixedByteCount(t, device)
 		// Exactly enough for NAT+provider, but not the required subscription.
-		held := memory.root.TotalByteCount() - natBytes - providerMemoryTestProviderByteCount
+		held := memory.root.TotalByteCount() - providerMemoryTestNatByteCount - providerMemoryTestProviderByteCount
 		if !memory.client.TryReserve(held) {
 			t.Fatal("sibling fill failed")
 		}
@@ -128,7 +101,7 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 		admissionDone := device.remoteUserNatProviderMemoryWaitDone
 		refused := device.remoteUserNatProvider == nil && device.remoteUserNatProviderLocalUserNat != nil && admissionDone != nil
 		device.stateLock.Unlock()
-		if !errors.Is(err, connect.ErrNatMemoryBudget) || !refused || memory.nat.UsedByteCount() != natBytes {
+		if !errors.Is(err, connect.ErrNatMemoryBudget) || !refused || memory.nat.UsedByteCount() != providerMemoryTestNatByteCount {
 			t.Fatalf("%d MiB stats refusal installed incomplete generation: %v", targetMiB, err)
 		}
 		// Refusal must not allocate then release partial provider ownership:
@@ -138,7 +111,7 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 			t.Fatal("required stats refusal notified its own retry")
 		default:
 		}
-		if stats := memory.nat.Stats(); stats.ReservedByteCount != natBytes || stats.ReleasedByteCount != 0 {
+		if stats := memory.nat.Stats(); stats.ReservedByteCount != providerMemoryTestNatByteCount || stats.ReleasedByteCount != 0 {
 			t.Fatalf("required stats refusal changed provider ownership: %+v", stats)
 		}
 		memory.client.Release(providerMemoryTestStatsByteCount)
@@ -147,7 +120,7 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 		device.stateLock.Lock()
 		installed := device.remoteUserNatProvider != nil && device.providerPacketStatsSub != nil && device.remoteUserNatProviderMemoryWaitDone == nil
 		device.stateLock.Unlock()
-		if !installed || memory.nat.UsedByteCount() != natBytes+providerMemoryTestProviderByteCount+providerMemoryTestStatsByteCount {
+		if !installed || memory.nat.UsedByteCount() != providerMemoryTestNatByteCount+providerMemoryTestProviderByteCount+providerMemoryTestStatsByteCount {
 			t.Fatalf("%d MiB drained sibling did not admit complete provider graph: used=%d", targetMiB, memory.nat.UsedByteCount())
 		}
 	}
@@ -158,8 +131,7 @@ func TestDeviceLocalProviderMemoryRequiredStatsAdmissionRetries(t *testing.T) {
 func TestDeviceLocalProviderMemoryPendingAdmissionClose(t *testing.T) {
 	device, _ := providerMemoryTestDevice(t, 20*1024*1024)
 	memory := device.transferMemory
-	natBytes := providerMemoryTestNatFixedByteCount(t, device)
-	held := memory.root.TotalByteCount() - natBytes - providerMemoryTestProviderByteCount
+	held := memory.root.TotalByteCount() - providerMemoryTestNatByteCount - providerMemoryTestProviderByteCount
 	if !memory.client.TryReserve(held) {
 		t.Fatal("sibling fill failed")
 	}
@@ -242,7 +214,6 @@ func TestDeviceLocalProviderMemoryWorstSupportedOverlapProfiles(t *testing.T) {
 		t.Run(fmt.Sprint(targetMiB), func(t *testing.T) {
 			device, client := providerMemoryTestDevice(t, targetMiB*1024*1024)
 			memory := device.transferMemory
-			natBytes := providerMemoryTestNatFixedByteCount(t, device)
 			device.applyProvideMemorySharesWithLock(true)
 			var nats []*connect.LocalUserNat
 			for _, name := range []string{"fallback", "retiring-provider-local", "replacement-provider-local"} {
@@ -266,12 +237,13 @@ func TestDeviceLocalProviderMemoryWorstSupportedOverlapProfiles(t *testing.T) {
 				t.Cleanup(provider.Close)
 				providers = append(providers, provider)
 			}
-			exactOverlap := 3*natBytes + 2*(providerMemoryTestProviderByteCount+providerMemoryTestStatsByteCount)
-			if exactOverlap > 1922*1024 {
-				t.Fatal("old/new graph exceeded the established overlap envelope")
+			const exactOverlap = 3*providerMemoryTestNatByteCount + 2*(providerMemoryTestProviderByteCount+providerMemoryTestStatsByteCount)
+			if exactOverlap != 1874*1024 {
+				t.Fatal("old/new ordinary ingress workspaces are missing from overlap ledger")
 			}
 			if memory.nat.UsedByteCount() != exactOverlap || memory.root.UsedByteCount() != exactOverlap || memory.nat.Available() != memory.nat.TotalByteCount()-exactOverlap {
-				t.Fatal("fallback+old/new provider graph escaped shared profile ledger")
+				t.Fatalf("fallback+old/new provider graph escaped shared profile ledger: nat=%d root=%d want=%d",
+					memory.nat.UsedByteCount(), memory.root.UsedByteCount(), exactOverlap)
 			}
 			addr, stop := startUdpEchoServer(t)
 			defer stop()

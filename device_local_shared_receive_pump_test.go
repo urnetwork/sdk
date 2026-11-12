@@ -28,6 +28,10 @@ func TestMobile64WindowFactorySharedPumpRefusesNoAckWithoutWaiting(t *testing.T)
 // shared Client pump. This deliberately uses one-shot NoAck packets: a refused
 // packet is not delivered or acknowledged, and this fixture never replays it.
 // Reliable-original recovery is covered by the separate real-peer ACK witness.
+// The payload is a DATA frame. Connect hands a protocol-only original (an
+// exchange signal, contract or ACK) to a separate protocol mailbox that this
+// DATA handoff count never sees, so such a payload would not reach the queue
+// under test.
 func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 	t.Helper()
 	connect.GetMessagePoolAggregateStats()
@@ -82,12 +86,11 @@ func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 			return
 		}
 		for _, frame := range frames {
-			path, payload, err := connect.ParseIpPathWithPayload(frame.MessageBytes)
-			if frame.MessageType != protocol.MessageType_IpIpPacketFromProvider || !frame.Raw || err != nil || path == nil || path.Protocol != connect.IpProtocolTcp || len(payload) != 4 {
-				t.Error("controlled TCP DATA payload changed type or length")
+			if len(frame.MessageBytes) != 4 {
+				t.Error("controlled payload changed length")
 				continue
 			}
-			marker := binary.BigEndian.Uint32(payload)
+			marker := binary.BigEndian.Uint32(frame.MessageBytes)
 			if marker == 0 {
 				close(entered)
 				select {
@@ -128,14 +131,11 @@ func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 	offer := func(marker int) {
 		payload := make([]byte, 4)
 		binary.BigEndian.PutUint32(payload, uint32(marker))
-		// ExchangeSignals is protocol-only. A real TCP application payload
-		// exercises the ordinary queue and its unchanged byte/count budgets.
-		packet := mobilePressureTcp4Packet(0x18, payload)
 		wire, err := connect.ProtoMarshal(&protocol.TransferFrame{
 			TransferPath: connect.TransferPath{SourceId: source, DestinationId: client.ClientId()}.ToProtobuf(),
 			Pack: &protocol.Pack{MessageId: connect.NewId().Bytes(), SequenceId: sequence.Bytes(),
 				SequenceNumber: uint64(marker), Head: marker == 0, Nack: true,
-				Frames: []*protocol.Frame{{MessageType: protocol.MessageType_IpIpPacketFromProvider, Raw: true, MessageBytes: packet}}},
+				Frames: []*protocol.Frame{{MessageType: protocol.MessageType_TestSimpleMessage, MessageBytes: payload}}},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -180,8 +180,8 @@ func testingMobileWindowSharedPump(t *testing.T, target ByteCount) {
 	before := client.ReceiveStats()
 	if before.PackHandoffWaitCount != 0 || before.PackHandoffDropCount != 1 ||
 		before.PackHandoffMaxCount != uint64(count) || len(delivered) != 0 || len(outgoing) != 0 || observerOverflow.Load() {
-		t.Fatalf("full queue did not truthfully refuse without ACK or callback progress: configured=%d wait=%d drop=%d max=%d delivered=%d outgoing=%d observer_overflow=%t",
-			count, before.PackHandoffWaitCount, before.PackHandoffDropCount, before.PackHandoffMaxCount, len(delivered), len(outgoing), observerOverflow.Load())
+		t.Fatalf("full queue did not truthfully refuse without ACK or callback progress: wait=%d drop=%d max=%d/%d delivered=%d outgoing=%d",
+			before.PackHandoffWaitCount, before.PackHandoffDropCount, before.PackHandoffMaxCount, count, len(delivered), len(outgoing))
 	}
 	unblock()
 	for marker := 0; marker <= count; marker++ {
