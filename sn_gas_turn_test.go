@@ -927,8 +927,8 @@ func TestTwoDevicesSharingAGasKeyTakeTurns(t *testing.T) {
 
 // Every way a claim ends gives the gas key's turn back, and only a transaction
 // a node accepted raises the nonce floor: confirmed, short of gas, its nonce
-// unreadable, its broadcast refused, and a batch the gas key cannot pay for,
-// whose accounts are then claimed alone.
+// unreadable, its broadcast refused, a batch's broadcast refused, and a batch
+// the gas key cannot pay for, whose accounts are then claimed alone.
 func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
 	setGasKeyInFlightSpan(t, time.Minute)
 	epochs := NewInt64List()
@@ -966,6 +966,9 @@ func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
 			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": nonce unavailable", SnErrorCodeClaimFailed + ": nonce unavailable"}, 0},
 		{"the broadcast refused", newTestV2Claim, func(f *testGasKeyClaims) { f.pool.refuse(2, "transaction underpriced") },
 			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": transaction underpriced", SnErrorCodeClaimFailed + ": transaction underpriced"}, 0},
+		// the batch's accounts are then claimed by no other transaction
+		{"a batch's broadcast refused", func(t *testing.T) *testV2Claim { f, _ := newTestV2BatchClaim(t); return f }, func(f *testGasKeyClaims) { f.pool.refuse(1, "transaction underpriced") },
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV2}, []string{SnErrorCodeClaimFailed + ": transaction underpriced"}, 0},
 		// 0.036 TAO pays for one claim alone (0.0346 TAO) but not for the batch
 		{"a batch the gas key cannot pay for", func(t *testing.T) *testV2Claim { f, _ := newTestV2BatchClaim(t); return f }, func(f *testGasKeyClaims) { setBalance(f, 36_000_000_000_000_000) },
 			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV2}, []string{"confirmed"}, 7},
