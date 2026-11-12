@@ -208,6 +208,9 @@ type fakeVault2 struct {
 	mineExtraGas uint64
 	// a mined batch reverts whole
 	batchReverts bool
+	// a mined transaction spends its receipt's gasUsed at its price from the
+	// balance, as the chain charges only the gas used
+	chargeGas bool
 }
 
 func newFakeVault2(t *testing.T) *fakeVault2 {
@@ -470,7 +473,16 @@ func (self *fakeVault2) handle(method string, params []json.RawMessage) (any, *e
 		}
 		hash := evm.Keccak256(raw)
 		txHash := "0x" + hex.EncodeToString(hash[:])
-		self.receipts[txHash] = self.mine(tx, txHash)
+		receipt := self.mine(tx, txHash)
+		self.receipts[txHash] = receipt
+		if self.chargeGas {
+			gasUsed, _ := evm.ParseUint256(receipt["gasUsed"].(string))
+			price := tx.gasPrice
+			if price == nil {
+				price = tx.feeCap
+			}
+			self.balance = new(big.Int).Sub(self.balance, new(big.Int).Mul(gasUsed, price))
+		}
 		return txHash, nil
 	case "eth_getTransactionReceipt":
 		var txHash string
@@ -1850,7 +1862,8 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 }
 
 // APPS-SPEC SnLedgerClaim: two accounts are claimed in turn, each with its
-// own transaction and nonce, then Done.
+// own transaction and nonce, the largest first (pool 2's 7 α before pool 1's
+// 0.023 α, though pool 1 is first in the ledger), then Done.
 func TestSnLedgerClaimTwoPoolsInTurn(t *testing.T) {
 	f := newTestV2Claim(t)
 	f.answer(t, testLedgerClaimEntry(testVault2, 1, 2, 1, testV2Cumulative, f.proofs[2], testV2Paid), f.addPool2(t))
@@ -1860,10 +1873,10 @@ func TestSnLedgerClaimTwoPoolsInTurn(t *testing.T) {
 		t.Fatalf("events %+v", events)
 	}
 	want := []testLedgerClaimEvent{
-		{kind: "sent", noId: 1, index: 2, txHash: events[0].txHash},
-		{kind: "confirmed", noId: 1, index: 2, txHash: events[0].txHash, amount: testV2Cumulative - testV2Paid},
-		{kind: "sent", noId: 2, index: 0, txHash: events[2].txHash},
-		{kind: "confirmed", noId: 2, index: 0, txHash: events[2].txHash, amount: 7_000_000_000},
+		{kind: "sent", noId: 2, index: 0, txHash: events[0].txHash},
+		{kind: "confirmed", noId: 2, index: 0, txHash: events[0].txHash, amount: 7_000_000_000},
+		{kind: "sent", noId: 1, index: 2, txHash: events[2].txHash},
+		{kind: "confirmed", noId: 1, index: 2, txHash: events[2].txHash, amount: testV2Cumulative - testV2Paid},
 	}
 	if !reflect.DeepEqual(events, want) || sent[0].nonce != 5 || sent[1].nonce != 6 || events[0].txHash == events[2].txHash {
 		t.Fatalf("events %+v, nonces %d %d", events, sent[0].nonce, sent[1].nonce)
@@ -1893,8 +1906,21 @@ func TestSnLedgerClaimOnDevices(t *testing.T) {
 	if _, err := device.SnLedgerClaimTransactions(); err == nil || !strings.HasPrefix(err.Error(), SnErrorCodeConnectWalletFirst+": ") {
 		t.Fatalf("transactions without a wallet: %v", err)
 	}
+	if _, err := device.SnLedgerClaimTransactionsForPayer(testPayer); err == nil || !strings.HasPrefix(err.Error(), SnErrorCodeConnectWalletFirst+": ") {
+		t.Fatalf("a payer's transactions without a wallet: %v", err)
+	}
 
 	device.setSnWallet(&SnWallet{ColdkeySs58: f.aliceSs58})
+	if _, err := device.SnLedgerClaimTransactionsForPayer("0x12"); err == nil || !strings.HasPrefix(err.Error(), SnErrorCodeInvalidAddress+": ") {
+		t.Fatalf("a payer that is not an address: %v", err)
+	}
+	// an external wallet on the device: its one account's claim, which the
+	// wallet's 1 TAO pays for
+	paid, err := device.SnLedgerClaimTransactionsForPayer(testPayer)
+	if err != nil || paid.Transactions.Len() != 1 || paid.Transactions.Get(0).NoId != 1 || paid.StillClaimable.Len() != 0 || paid.NeedsGas || paid.PayerAddress != strings.ToLower(testPayer) {
+		t.Fatalf("a payer's transactions %+v, %v", paid, err)
+	}
+	f.ledger.takeRequests()
 	txs, err := device.SnLedgerClaimTransactions()
 	if err != nil || txs.Len() != 1 || txs.Get(0).AmountRao != testV2Cumulative-testV2Paid || txs.Get(0).Gas != 2_600_000 {
 		t.Fatalf("transactions %+v, %v", txs, err)
