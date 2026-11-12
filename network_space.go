@@ -346,6 +346,11 @@ type NetworkSpace struct {
 	// re-subscribes to the node it now has
 	extenderNodeMonitor           *connect.Monitor
 	extenderStatusChangeListeners *connect.CallbackList[ExtenderStatusChangeListener]
+	// called after the ingress dns -- the connection region or the bootstrap
+	// DoH servers -- changed in place (applyControlDohValues). A DeviceRemote
+	// bound to the space hands the change to its device, whose process runs
+	// its own copy of the space (device_remote_ingress_dns.go)
+	ingressDnsChangeCallbacks *connect.CallbackList[func()]
 	// The seed bootstrap (extender_seed.go), set once at construction under
 	// stateLock. Nil for a space that runs none: no directory, or the space a
 	// cloud host shares among its hosted devices.
@@ -430,6 +435,10 @@ func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
 // settings in place: the internal DoH cache is swapped and the extender
 // bootstrap queries the new servers from its next pass. Returns whether the
 // servers changed.
+//
+// The ingress dns callbacks run after the swap, outside the space's lock: a
+// DeviceRemote bound to the space hands the new values to its device
+// (device_remote_ingress_dns.go).
 func (self *NetworkSpace) applyControlDohValues(values *NetworkSpaceValues) bool {
 	changed, closed := func() (bool, bool) {
 		self.stateLock.Lock()
@@ -447,6 +456,7 @@ func (self *NetworkSpace) applyControlDohValues(values *NetworkSpaceValues) bool
 	}
 	current := self.valuesCopy()
 	self.clientStrategy.SetInternalDohSettings(spaceControlDohSettings(&current))
+	self.ingressDnsChanged()
 	return true
 }
 
@@ -773,6 +783,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 		extenderDirectory:             extenderDirectory,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
+		ingressDnsChangeCallbacks:     connect.NewCallbackList[func()](),
 	}
 	// a reset the values bring that this storage has not applied -- one made
 	// in the app, for the space a tunnel process imports -- is applied before
@@ -1431,6 +1442,7 @@ func NewNetworkSpaceWithUrls(
 		extenderDirectory:             extenderDirectory,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
+		ingressDnsChangeCallbacks:     connect.NewCallbackList[func()](),
 	}
 	if extenderDirectory != nil {
 		role := extenderRole(extenderGossipMode(nil))
