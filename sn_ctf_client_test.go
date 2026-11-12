@@ -570,3 +570,31 @@ func TestSnCtfClientThroughAnInstalledTransport(t *testing.T) {
 		t.Fatalf("a failed read %+v, asked %d", result, len(asked))
 	}
 }
+
+// sn api/operator.yml's CtfClientResultNetwork example: a network's two
+// clients, a provider in Iceland and an extender in Germany, each winning in
+// epochs 9 and 8, the provider's epoch 8 award claimed.
+const testCtfNetworkExample = `{"as_of":"2026-12-11T22:24:12Z","unit":{"token":"alpha","symbol":"α","netuid":25,"decimals":9},"client_id":null,"epochs":[],"wins":[` +
+	`{"epoch":9,"role":"provider","country":"is","rank":1,"client_id":"3f6c2a1e-8d4b-4c7a-9e21-5b0d7f3a9c64","amount":{"alpha":"0.076841056","rao":76841056},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.028815396","rao":28815396},"pending":false,"root_status":"pending","coldkey":"0xff05d4de50cdc2b6d6aca7b376cfdb00f65c4243f6799c4eaca182e877faf619","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd","claimed":false},` +
+	`{"epoch":9,"role":"extender","country":"de","rank":1,"client_id":"6a0f3c9d-71e2-4b58-8c3a-e94d2b6f1057","amount":{"alpha":"0.067235924","rao":67235924},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.019210264","rao":19210264},"pending":false,"root_status":"pending","coldkey":"0xb515f4c4f7bc1e73557df4d34f7fb3ae7885d1fa1e522eea3439d1c198697afb","coldkey_ss58":"5GA93f6m9nTDubvFwi7jKnX4E4YREFXCSbuTJMFqtrutGJFi","claimed":false},` +
+	`{"epoch":8,"role":"provider","country":"is","rank":2,"client_id":"3f6c2a1e-8d4b-4c7a-9e21-5b0d7f3a9c64","amount":{"alpha":"0.048025660","rao":48025660},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.000000000","rao":0},"pending":false,"root_status":"finalized","coldkey":"0xff05d4de50cdc2b6d6aca7b376cfdb00f65c4243f6799c4eaca182e877faf619","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd","claimed":true},` +
+	`{"epoch":8,"role":"extender","country":"de","rank":1,"client_id":"6a0f3c9d-71e2-4b58-8c3a-e94d2b6f1057","amount":{"alpha":"0.048025660","rao":48025660},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.000000000","rao":0},"pending":false,"root_status":"finalized","coldkey":"0xb515f4c4f7bc1e73557df4d34f7fb3ae7885d1fa1e522eea3439d1c198697afb","coldkey_ss58":"5GA93f6m9nTDubvFwi7jKnX4E4YREFXCSbuTJMFqtrutGJFi","claimed":false}]}`
+
+// The route's own network example reads whole: no client, no epochs, four
+// wins of two clients, the three not claimed the line's.
+func TestSnCtfClientOfReadsTheNetworkExample(t *testing.T) {
+	result := SnCtfClientOf(testCtfNetworkExample)
+	if result.Error != nil || result.ClientId != "" || result.Epochs.Len() != 0 || result.Wins.Len() != 4 || result.UnclaimedWins.Len() != 3 {
+		t.Fatalf("result %+v (%+v)", result, result.Error)
+	}
+	var lines []string
+	for _, win := range result.UnclaimedWins.getAll() {
+		lines = append(lines, fmt.Sprintf("%d %s %s %d %s", win.Epoch, win.Role, win.Country, win.AmountRao, win.ClientId[:8]))
+	}
+	if !reflect.DeepEqual(lines, []string{"9 provider is 76841056 3f6c2a1e", "9 extender de 67235924 6a0f3c9d", "8 extender de 48025660 6a0f3c9d"}) {
+		t.Fatalf("unclaimed %q", lines)
+	}
+	if claimed := result.Wins.Get(2); claimed.Epoch != 8 || claimed.Role != SnCtfRoleProvider || claimed.ClaimState != SnCtfWinClaimStateClaimed || result.LatestWin != result.Wins.Get(0) {
+		t.Fatalf("wins %+v", result.Wins.getAll())
+	}
+}
