@@ -624,6 +624,16 @@ func (self *testGasKeyClaims) sentAt(t *testing.T) time.Time {
 	return sent[0].at
 }
 
+// forgetGasKeySends forgets what every gas key sent, so the nonce floors
+// start over: for a fake chain whose nonces start afresh, signed for with a key
+// another test, or another fixture of the same test, sent with less than the
+// span ago.
+func forgetGasKeySends() {
+	snGasKeyTurns.mutex.Lock()
+	defer snGasKeyTurns.mutex.Unlock()
+	snGasKeyTurns.sent = map[snGasKeyId][]snSentNonce{}
+}
+
 // setGasKeyInFlightSpan sets how long a sent transaction raises its key's
 // nonce floor, for the test.
 func setGasKeyInFlightSpan(t *testing.T, span time.Duration) {
