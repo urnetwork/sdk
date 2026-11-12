@@ -668,6 +668,19 @@ inline constexpr const char* SnClaimStatusClaimed = "claimed";
 inline constexpr const char* SnClaimStatusExpired = "expired";
 inline constexpr const char* SnClaimStatusNotFinalized = "not-finalized";
 inline constexpr const char* SnClaimStatusOpen = "open";
+inline constexpr const char* SnCtfReasonCountryChanged = "country_changed";
+inline constexpr const char* SnCtfReasonDuplicateAddress = "duplicate_address";
+inline constexpr const char* SnCtfReasonHeadBound = "head_bound";
+inline constexpr const char* SnCtfReasonInactive = "inactive";
+inline constexpr const char* SnCtfReasonNoLocation = "no_location";
+inline constexpr const char* SnCtfReasonNoWallet = "no_wallet";
+inline constexpr const char* SnCtfReasonNotInRole = "not_in_role";
+inline constexpr const char* SnCtfReasonNotPublic = "not_public";
+inline constexpr const char* SnCtfReasonOfflineAtEnd = "offline_at_end";
+inline constexpr const char* SnCtfReasonOwnNetwork = "own_network";
+inline constexpr const char* SnCtfReasonPresence = "presence";
+inline constexpr const char* SnCtfRoleExtender = "extender";
+inline constexpr const char* SnCtfRoleProvider = "provider";
 inline constexpr const char* SnErrorCodeAlreadyClaimed = "already_claimed";
 inline constexpr const char* SnErrorCodeArtifactUnavailable = "artifact_unavailable";
 inline constexpr const char* SnErrorCodeChainNotConfigured = "chain_not_configured";
@@ -676,6 +689,7 @@ inline constexpr const char* SnErrorCodeChainRpcUnreachable = "chain_rpc_unreach
 inline constexpr const char* SnErrorCodeChallengeExpired = "challenge_expired";
 inline constexpr const char* SnErrorCodeClaimFailed = "claim_failed";
 inline constexpr const char* SnErrorCodeConnectWalletFirst = "connect_wallet_first";
+inline constexpr const char* SnErrorCodeCtfUnavailable = "ctf_unavailable";
 inline constexpr const char* SnErrorCodeExpired = "claims_for_epoch_expired";
 inline constexpr const char* SnErrorCodeInvalidAddress = "invalid_ss58_address";
 inline constexpr const char* SnErrorCodeLedgerUnavailable = "ledger_unavailable";
@@ -733,6 +747,12 @@ inline constexpr const char* SnFleetRefusalNotAuthorized = "hotkey_not_authorize
 inline constexpr const char* SnFleetRefusalOtherClient = "other_client";
 inline constexpr const char* SnFleetRefusalOtherClientKey = "other_client_key";
 inline constexpr const char* SnFleetRefusalStateUnreadable = "state_unreadable";
+inline constexpr const char* SnLedgerClaimOutcomeConfirmed = "confirmed";
+inline constexpr const char* SnLedgerClaimOutcomeFailed = "failed";
+inline constexpr const char* SnLedgerClaimOutcomeNotAttempted = "not_attempted";
+inline constexpr int64_t SnLedgerCtfPoolIdBase = 4294967296;
+inline constexpr const char* SnLedgerPoolKindCtf = "ctf";
+inline constexpr const char* SnLedgerPoolKindPool = "pool";
 inline constexpr int64_t SnNetworkConsentEpochSpan = 65535;
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
@@ -1216,6 +1236,10 @@ struct SnEpochSchedule;
 struct SnClaimsResult;
 struct SnWallet;
 struct SnConnectWalletResult;
+struct SnCtfClientRole;
+struct SnCtfClientEpoch;
+struct SnCtfWin;
+struct SnCtfClientResult;
 struct SnEpochClaim;
 struct SnEpochResult;
 struct SnFleetClaimState;
@@ -1227,6 +1251,9 @@ struct SnGetWalletResult;
 struct SnHeadResult;
 struct SnLedgerAccount;
 struct SnLedgerAccountsResult;
+struct SnLedgerClaimItem;
+struct SnLedgerClaimOutcome;
+struct SnLedgerUnavailablePool;
 struct SnLedgerUnsignedTx;
 struct SnNetworkConsentChallengeResult;
 struct SnNetworkConsentStatus;
@@ -1382,8 +1409,13 @@ using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
 using RegionalDnsServerList = std::vector<RegionalDnsServer>;
 using SnClaimRelayAccountList = std::vector<SnClaimRelayAccount>;
+using SnCtfClientEpochList = std::vector<SnCtfClientEpoch>;
+using SnCtfWinList = std::vector<SnCtfWin>;
 using SnEpochClaimList = std::vector<SnEpochClaim>;
 using SnLedgerAccountList = std::vector<SnLedgerAccount>;
+using SnLedgerClaimItemList = std::vector<SnLedgerClaimItem>;
+using SnLedgerClaimOutcomeList = std::vector<SnLedgerClaimOutcome>;
+using SnLedgerUnavailablePoolList = std::vector<SnLedgerUnavailablePool>;
 using SnLedgerUnsignedTxList = std::vector<SnLedgerUnsignedTx>;
 using SnTopFleetList = std::vector<SnTopFleet>;
 using SnTopHistoryPointList = std::vector<SnTopHistoryPoint>;
@@ -3434,6 +3466,7 @@ struct SnChainSettings {
 	int64_t chain_id{};
 	std::string vault_address{};
 	std::string vault2_address{};
+	std::string claim_batcher_address{};
 	std::string coordinator_address{};
 	std::string no_id{};
 	int64_t netuid{};
@@ -4080,6 +4113,8 @@ struct SnClaimNowResult {
 struct SnClaimRelayAccount {
 	std::string coldkey_ss58{};
 	int64_t no_id{};
+	std::string kind{};
+	std::string label{};
 	int64_t index{};
 	int64_t claimable_rao{};
 	int64_t value_tao_rao{};
@@ -4118,6 +4153,7 @@ struct SnClaimRelayResult {
 	int64_t transfer_floor_rao{};
 	int64_t claim_now_period_days{};
 	std::optional<SnClaimRelayAccountList> accounts;
+	std::optional<SnLedgerUnavailablePoolList> unavailable_pools;
 	std::optional<SnClaimRelayError> error;
 };
 
@@ -4145,6 +4181,8 @@ struct SnClaimStatusResult {
 	std::optional<std::string> claim_tx_url;
 	std::optional<int64_t> claim_amount_rao;
 	std::optional<SnClaimRelayAccountList> accounts;
+	std::optional<SnLedgerUnavailablePoolList> unavailable_pools;
+	bool partial{};
 	std::optional<SnError> error;
 };
 
@@ -4192,6 +4230,55 @@ struct SnConnectWalletResult {
 	std::optional<SnWallet> wallet;
 	bool exists_on_chain{};
 	std::optional<std::string> warning;
+	std::optional<SnError> error;
+};
+
+struct SnCtfClientRole {
+	std::string role{};
+	bool candidate{};
+	std::optional<std::string> reason;
+	std::optional<std::string> country;
+	std::optional<int64_t> unit_family;
+	int64_t presence_present{};
+	int64_t presence_required{};
+	int64_t presence_samples{};
+	int64_t presence_excused{};
+	std::optional<int64_t> units_in_draw;
+	bool won{};
+	std::optional<int64_t> rank;
+	int64_t slot_rao{};
+	int64_t pot_share_rao{};
+	bool pending{};
+	std::optional<std::string> coldkey_ss58;
+};
+
+struct SnCtfClientEpoch {
+	int64_t epoch{};
+	bool drawn{};
+	std::string root_status{};
+	std::optional<SnCtfClientRole> provider;
+	std::optional<SnCtfClientRole> extender;
+};
+
+struct SnCtfWin {
+	int64_t epoch{};
+	std::string role{};
+	std::string country{};
+	int64_t rank{};
+	int64_t slot_rao{};
+	int64_t pot_share_rao{};
+	int64_t amount_rao{};
+	bool pending{};
+	std::string root_status{};
+	std::string coldkey_ss58{};
+};
+
+struct SnCtfClientResult {
+	std::string client_id{};
+	int64_t as_of_millis{};
+	std::optional<SnCtfClientEpochList> epochs;
+	std::optional<SnCtfWinList> wins;
+	std::optional<SnCtfWin> latest_win;
 	std::optional<SnError> error;
 };
 
@@ -4302,6 +4389,8 @@ struct SnHeadResult {
 struct SnLedgerAccount {
 	std::string vault{};
 	int64_t no_id{};
+	std::string kind{};
+	std::string label{};
 	int64_t index{};
 	int64_t finalized_rao{};
 	int64_t claimable_rao{};
@@ -4312,8 +4401,34 @@ struct SnLedgerAccount {
 
 struct SnLedgerAccountsResult {
 	std::optional<SnLedgerAccountList> accounts;
+	std::optional<SnLedgerUnavailablePoolList> unavailable_pools;
+	bool partial{};
 	std::optional<std::string> coldkey_ss58;
 	std::optional<SnError> error;
+};
+
+struct SnLedgerClaimItem {
+	int64_t no_id{};
+	int64_t index{};
+	int64_t root_index{};
+	std::string kind{};
+	std::string label{};
+	int64_t amount_rao{};
+};
+
+struct SnLedgerClaimOutcome {
+	int64_t no_id{};
+	int64_t index{};
+	std::string status{};
+	int64_t amount_rao{};
+	std::optional<std::string> message;
+};
+
+struct SnLedgerUnavailablePool {
+	std::string vault{};
+	int64_t no_id{};
+	std::string kind{};
+	std::string label{};
 };
 
 struct SnLedgerUnsignedTx {
@@ -4326,6 +4441,9 @@ struct SnLedgerUnsignedTx {
 	std::string value{};
 	int64_t amount_rao{};
 	int64_t gas{};
+	std::string vault{};
+	bool batch{};
+	std::optional<SnLedgerClaimItemList> items;
 };
 
 struct SnNetworkConsentChallengeResult {
@@ -5647,6 +5765,14 @@ inline void to_json(nlohmann::json& j, const SnWallet& v);
 inline void from_json(const nlohmann::json& j, SnWallet& v);
 inline void to_json(nlohmann::json& j, const SnConnectWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnConnectWalletResult& v);
+inline void to_json(nlohmann::json& j, const SnCtfClientRole& v);
+inline void from_json(const nlohmann::json& j, SnCtfClientRole& v);
+inline void to_json(nlohmann::json& j, const SnCtfClientEpoch& v);
+inline void from_json(const nlohmann::json& j, SnCtfClientEpoch& v);
+inline void to_json(nlohmann::json& j, const SnCtfWin& v);
+inline void from_json(const nlohmann::json& j, SnCtfWin& v);
+inline void to_json(nlohmann::json& j, const SnCtfClientResult& v);
+inline void from_json(const nlohmann::json& j, SnCtfClientResult& v);
 inline void to_json(nlohmann::json& j, const SnEpochClaim& v);
 inline void from_json(const nlohmann::json& j, SnEpochClaim& v);
 inline void to_json(nlohmann::json& j, const SnEpochResult& v);
@@ -5669,6 +5795,12 @@ inline void to_json(nlohmann::json& j, const SnLedgerAccount& v);
 inline void from_json(const nlohmann::json& j, SnLedgerAccount& v);
 inline void to_json(nlohmann::json& j, const SnLedgerAccountsResult& v);
 inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v);
+inline void to_json(nlohmann::json& j, const SnLedgerClaimItem& v);
+inline void from_json(const nlohmann::json& j, SnLedgerClaimItem& v);
+inline void to_json(nlohmann::json& j, const SnLedgerClaimOutcome& v);
+inline void from_json(const nlohmann::json& j, SnLedgerClaimOutcome& v);
+inline void to_json(nlohmann::json& j, const SnLedgerUnavailablePool& v);
+inline void from_json(const nlohmann::json& j, SnLedgerUnavailablePool& v);
 inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v);
 inline void to_json(nlohmann::json& j, const SnNetworkConsentChallengeResult& v);
@@ -15145,6 +15277,7 @@ inline void to_json(nlohmann::json& j, const SnChainSettings& v) {
 	j["chain_id"] = v.chain_id;
 	j["vault_address"] = v.vault_address;
 	j["vault2_address"] = v.vault2_address;
+	j["claim_batcher_address"] = v.claim_batcher_address;
 	j["coordinator_address"] = v.coordinator_address;
 	j["no_id"] = v.no_id;
 	j["netuid"] = v.netuid;
@@ -15165,6 +15298,9 @@ inline void from_json(const nlohmann::json& j, SnChainSettings& v) {
 	}
 	if (auto it = j.find("vault2_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.vault2_address);
+	}
+	if (auto it = j.find("claim_batcher_address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_batcher_address);
 	}
 	if (auto it = j.find("coordinator_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.coordinator_address);
@@ -18152,6 +18288,8 @@ inline void to_json(nlohmann::json& j, const SnClaimRelayAccount& v) {
 	j = nlohmann::json::object();
 	j["coldkey_ss58"] = v.coldkey_ss58;
 	j["no_id"] = v.no_id;
+	j["kind"] = v.kind;
+	j["label"] = v.label;
 	j["index"] = v.index;
 	j["claimable_rao"] = v.claimable_rao;
 	j["value_tao_rao"] = v.value_tao_rao;
@@ -18189,6 +18327,12 @@ inline void from_json(const nlohmann::json& j, SnClaimRelayAccount& v) {
 	}
 	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
 		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
 	}
 	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
 		it->get_to(v.index);
@@ -18319,6 +18463,9 @@ inline void to_json(nlohmann::json& j, const SnClaimRelayResult& v) {
 	if (v.accounts) {
 		j["accounts"] = *v.accounts;
 	}
+	if (v.unavailable_pools) {
+		j["unavailable_pools"] = *v.unavailable_pools;
+	}
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -18349,6 +18496,11 @@ inline void from_json(const nlohmann::json& j, SnClaimRelayResult& v) {
 		SnClaimRelayAccountList tmp{};
 		it->get_to(tmp);
 		v.accounts = std::move(tmp);
+	}
+	if (auto it = j.find("unavailable_pools"); it != j.end() && !it->is_null()) {
+		SnLedgerUnavailablePoolList tmp{};
+		it->get_to(tmp);
+		v.unavailable_pools = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnClaimRelayError tmp{};
@@ -18396,6 +18548,10 @@ inline void to_json(nlohmann::json& j, const SnClaimStatusResult& v) {
 	if (v.accounts) {
 		j["accounts"] = *v.accounts;
 	}
+	if (v.unavailable_pools) {
+		j["unavailable_pools"] = *v.unavailable_pools;
+	}
+	j["partial"] = v.partial;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -18486,6 +18642,14 @@ inline void from_json(const nlohmann::json& j, SnClaimStatusResult& v) {
 		SnClaimRelayAccountList tmp{};
 		it->get_to(tmp);
 		v.accounts = std::move(tmp);
+	}
+	if (auto it = j.find("unavailable_pools"); it != j.end() && !it->is_null()) {
+		SnLedgerUnavailablePoolList tmp{};
+		it->get_to(tmp);
+		v.unavailable_pools = std::move(tmp);
+	}
+	if (auto it = j.find("partial"); it != j.end() && !it->is_null()) {
+		it->get_to(v.partial);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
@@ -18726,6 +18890,238 @@ inline void from_json(const nlohmann::json& j, SnConnectWalletResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.warning = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnCtfClientRole& v) {
+	j = nlohmann::json::object();
+	j["role"] = v.role;
+	j["candidate"] = v.candidate;
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.country) {
+		j["country"] = *v.country;
+	}
+	if (v.unit_family) {
+		j["unit_family"] = *v.unit_family;
+	}
+	j["presence_present"] = v.presence_present;
+	j["presence_required"] = v.presence_required;
+	j["presence_samples"] = v.presence_samples;
+	j["presence_excused"] = v.presence_excused;
+	if (v.units_in_draw) {
+		j["units_in_draw"] = *v.units_in_draw;
+	}
+	j["won"] = v.won;
+	if (v.rank) {
+		j["rank"] = *v.rank;
+	}
+	j["slot_rao"] = v.slot_rao;
+	j["pot_share_rao"] = v.pot_share_rao;
+	j["pending"] = v.pending;
+	if (v.coldkey_ss58) {
+		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnCtfClientRole& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("role"); it != j.end() && !it->is_null()) {
+		it->get_to(v.role);
+	}
+	if (auto it = j.find("candidate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.candidate);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.country = std::move(tmp);
+	}
+	if (auto it = j.find("unit_family"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.unit_family = std::move(tmp);
+	}
+	if (auto it = j.find("presence_present"); it != j.end() && !it->is_null()) {
+		it->get_to(v.presence_present);
+	}
+	if (auto it = j.find("presence_required"); it != j.end() && !it->is_null()) {
+		it->get_to(v.presence_required);
+	}
+	if (auto it = j.find("presence_samples"); it != j.end() && !it->is_null()) {
+		it->get_to(v.presence_samples);
+	}
+	if (auto it = j.find("presence_excused"); it != j.end() && !it->is_null()) {
+		it->get_to(v.presence_excused);
+	}
+	if (auto it = j.find("units_in_draw"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.units_in_draw = std::move(tmp);
+	}
+	if (auto it = j.find("won"); it != j.end() && !it->is_null()) {
+		it->get_to(v.won);
+	}
+	if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.rank = std::move(tmp);
+	}
+	if (auto it = j.find("slot_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.slot_rao);
+	}
+	if (auto it = j.find("pot_share_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pot_share_rao);
+	}
+	if (auto it = j.find("pending"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coldkey_ss58 = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnCtfClientEpoch& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["drawn"] = v.drawn;
+	j["root_status"] = v.root_status;
+	if (v.provider) {
+		j["provider"] = *v.provider;
+	}
+	if (v.extender) {
+		j["extender"] = *v.extender;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnCtfClientEpoch& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("drawn"); it != j.end() && !it->is_null()) {
+		it->get_to(v.drawn);
+	}
+	if (auto it = j.find("root_status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.root_status);
+	}
+	if (auto it = j.find("provider"); it != j.end() && !it->is_null()) {
+		SnCtfClientRole tmp{};
+		it->get_to(tmp);
+		v.provider = std::move(tmp);
+	}
+	if (auto it = j.find("extender"); it != j.end() && !it->is_null()) {
+		SnCtfClientRole tmp{};
+		it->get_to(tmp);
+		v.extender = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnCtfWin& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["role"] = v.role;
+	j["country"] = v.country;
+	j["rank"] = v.rank;
+	j["slot_rao"] = v.slot_rao;
+	j["pot_share_rao"] = v.pot_share_rao;
+	j["amount_rao"] = v.amount_rao;
+	j["pending"] = v.pending;
+	j["root_status"] = v.root_status;
+	j["coldkey_ss58"] = v.coldkey_ss58;
+}
+inline void from_json(const nlohmann::json& j, SnCtfWin& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("role"); it != j.end() && !it->is_null()) {
+		it->get_to(v.role);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		it->get_to(v.country);
+	}
+	if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank);
+	}
+	if (auto it = j.find("slot_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.slot_rao);
+	}
+	if (auto it = j.find("pot_share_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pot_share_rao);
+	}
+	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("pending"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending);
+	}
+	if (auto it = j.find("root_status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.root_status);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnCtfClientResult& v) {
+	j = nlohmann::json::object();
+	j["client_id"] = v.client_id;
+	j["as_of_millis"] = v.as_of_millis;
+	if (v.epochs) {
+		j["epochs"] = *v.epochs;
+	}
+	if (v.wins) {
+		j["wins"] = *v.wins;
+	}
+	if (v.latest_win) {
+		j["latest_win"] = *v.latest_win;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnCtfClientResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.client_id);
+	}
+	if (auto it = j.find("as_of_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.as_of_millis);
+	}
+	if (auto it = j.find("epochs"); it != j.end() && !it->is_null()) {
+		SnCtfClientEpochList tmp{};
+		it->get_to(tmp);
+		v.epochs = std::move(tmp);
+	}
+	if (auto it = j.find("wins"); it != j.end() && !it->is_null()) {
+		SnCtfWinList tmp{};
+		it->get_to(tmp);
+		v.wins = std::move(tmp);
+	}
+	if (auto it = j.find("latest_win"); it != j.end() && !it->is_null()) {
+		SnCtfWin tmp{};
+		it->get_to(tmp);
+		v.latest_win = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
@@ -19259,6 +19655,8 @@ inline void to_json(nlohmann::json& j, const SnLedgerAccount& v) {
 	j = nlohmann::json::object();
 	j["vault"] = v.vault;
 	j["no_id"] = v.no_id;
+	j["kind"] = v.kind;
+	j["label"] = v.label;
 	j["index"] = v.index;
 	j["finalized_rao"] = v.finalized_rao;
 	j["claimable_rao"] = v.claimable_rao;
@@ -19275,6 +19673,12 @@ inline void from_json(const nlohmann::json& j, SnLedgerAccount& v) {
 	}
 	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
 		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
 	}
 	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
 		it->get_to(v.index);
@@ -19301,6 +19705,10 @@ inline void to_json(nlohmann::json& j, const SnLedgerAccountsResult& v) {
 	if (v.accounts) {
 		j["accounts"] = *v.accounts;
 	}
+	if (v.unavailable_pools) {
+		j["unavailable_pools"] = *v.unavailable_pools;
+	}
+	j["partial"] = v.partial;
 	if (v.coldkey_ss58) {
 		j["coldkey_ss58"] = *v.coldkey_ss58;
 	}
@@ -19317,6 +19725,14 @@ inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v) {
 		it->get_to(tmp);
 		v.accounts = std::move(tmp);
 	}
+	if (auto it = j.find("unavailable_pools"); it != j.end() && !it->is_null()) {
+		SnLedgerUnavailablePoolList tmp{};
+		it->get_to(tmp);
+		v.unavailable_pools = std::move(tmp);
+	}
+	if (auto it = j.find("partial"); it != j.end() && !it->is_null()) {
+		it->get_to(v.partial);
+	}
 	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
 		it->get_to(tmp);
@@ -19326,6 +19742,97 @@ inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v) {
 		SnError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerClaimItem& v) {
+	j = nlohmann::json::object();
+	j["no_id"] = v.no_id;
+	j["index"] = v.index;
+	j["root_index"] = v.root_index;
+	j["kind"] = v.kind;
+	j["label"] = v.label;
+	j["amount_rao"] = v.amount_rao;
+}
+inline void from_json(const nlohmann::json& j, SnLedgerClaimItem& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("root_index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.root_index);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_rao);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerClaimOutcome& v) {
+	j = nlohmann::json::object();
+	j["no_id"] = v.no_id;
+	j["index"] = v.index;
+	j["status"] = v.status;
+	j["amount_rao"] = v.amount_rao;
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnLedgerClaimOutcome& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerUnavailablePool& v) {
+	j = nlohmann::json::object();
+	j["vault"] = v.vault;
+	j["no_id"] = v.no_id;
+	j["kind"] = v.kind;
+	j["label"] = v.label;
+}
+inline void from_json(const nlohmann::json& j, SnLedgerUnavailablePool& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("vault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.vault);
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
 	}
 }
 
@@ -19340,6 +19847,11 @@ inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v) {
 	j["value"] = v.value;
 	j["amount_rao"] = v.amount_rao;
 	j["gas"] = v.gas;
+	j["vault"] = v.vault;
+	j["batch"] = v.batch;
+	if (v.items) {
+		j["items"] = *v.items;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
 	if (!j.is_object()) {
@@ -19371,6 +19883,17 @@ inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
 	}
 	if (auto it = j.find("gas"); it != j.end() && !it->is_null()) {
 		it->get_to(v.gas);
+	}
+	if (auto it = j.find("vault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.vault);
+	}
+	if (auto it = j.find("batch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.batch);
+	}
+	if (auto it = j.find("items"); it != j.end() && !it->is_null()) {
+		SnLedgerClaimItemList tmp{};
+		it->get_to(tmp);
+		v.items = std::move(tmp);
 	}
 }
 
@@ -22624,6 +23147,7 @@ using SnClaimRelayClaimNowCallback = std::function<void(std::optional<SnClaimRel
 using SnClaimStatusCallback = std::function<void(std::optional<SnClaimStatusResult> result, std::optional<std::string> err_param)>;
 using SnClaimsCallback = std::function<void(std::optional<SnClaimsResult> result, std::optional<std::string> err_param)>;
 using SnConnectWalletCallback = std::function<void(std::optional<SnConnectWalletResult> result, std::optional<std::string> err_param)>;
+using SnCtfClientCallback = std::function<void(std::optional<SnCtfClientResult> result, std::optional<std::string> err_param)>;
 using SnEpochCallback = std::function<void(std::optional<SnEpochResult> result, std::optional<std::string> err_param)>;
 using SnFleetClaimCallback = std::function<void(std::optional<SnFleetClaimState> result, std::optional<std::string> err_param)>;
 struct SnFleetClaimStore {
@@ -23471,6 +23995,7 @@ public:
 	void snClaimStatus(SnClaimStatusCallback callback) const;
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
+	void snCtfClient(SnCtfClientCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
 	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
 	void snLedgerClaim(SnLedgerClaimCallback callback) const;
@@ -23622,6 +24147,7 @@ public:
 	void snClaimStatus(SnClaimStatusCallback callback) const;
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
+	void snCtfClient(SnCtfClientCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
 	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
 	void snLedgerClaim(SnLedgerClaimCallback callback) const;
@@ -29520,6 +30046,42 @@ inline void oneshot_sn_connect_wallet(void* user_data, const char* result_json, 
 	delete f;
 }
 
+inline void retained_sn_ctf_client(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnCtfClientCallback*>(user_data);
+	try {
+		std::optional<SnCtfClientResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnCtfClientResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_ctf_client(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnCtfClientCallback*>(user_data);
+	try {
+		std::optional<SnCtfClientResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnCtfClientResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sn_epoch(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SnEpochCallback*>(user_data);
 	try {
@@ -35383,6 +35945,10 @@ inline void DeviceLocal::snClaims(SnClaimsCallback callback) const {
 	auto* callback_fn = callback ? new SnClaimsCallback(std::move(callback)) : nullptr;
 	urnet_device_local_sn_claims(handle(), callback_fn ? &detail::oneshot_sn_claims : nullptr, callback_fn);
 }
+inline void DeviceLocal::snCtfClient(SnCtfClientCallback callback) const {
+	auto* callback_fn = callback ? new SnCtfClientCallback(std::move(callback)) : nullptr;
+	urnet_device_local_sn_ctf_client(handle(), callback_fn ? &detail::oneshot_sn_ctf_client : nullptr, callback_fn);
+}
 inline void DeviceLocal::snGasBalance(SnGasBalanceCallback callback) const {
 	auto* callback_fn = callback ? new SnGasBalanceCallback(std::move(callback)) : nullptr;
 	urnet_device_local_sn_gas_balance(handle(), callback_fn ? &detail::oneshot_sn_gas_balance : nullptr, callback_fn);
@@ -36014,6 +36580,10 @@ inline std::optional<SnUnsignedTxList> DeviceRemote::snClaimTransactions(const s
 inline void DeviceRemote::snClaims(SnClaimsCallback callback) const {
 	auto* callback_fn = callback ? new SnClaimsCallback(std::move(callback)) : nullptr;
 	urnet_device_remote_sn_claims(handle(), callback_fn ? &detail::oneshot_sn_claims : nullptr, callback_fn);
+}
+inline void DeviceRemote::snCtfClient(SnCtfClientCallback callback) const {
+	auto* callback_fn = callback ? new SnCtfClientCallback(std::move(callback)) : nullptr;
+	urnet_device_remote_sn_ctf_client(handle(), callback_fn ? &detail::oneshot_sn_ctf_client : nullptr, callback_fn);
 }
 inline void DeviceRemote::snGasBalance(SnGasBalanceCallback callback) const {
 	auto* callback_fn = callback ? new SnGasBalanceCallback(std::move(callback)) : nullptr;
@@ -40527,6 +41097,14 @@ inline void snClaimsFor(const std::optional<SnChainSettings>& settings, const st
 	auto* callback_fn = callback ? new SnClaimsCallback(std::move(callback)) : nullptr;
 	urnet_sn_claims_for(settings_c, coldkey_ss58.c_str(), from_epoch, callback_fn ? &detail::oneshot_sn_claims : nullptr, callback_fn);
 }
+inline std::optional<SnCtfClientResult> snCtfClientOf(const std::string& answer_json) {
+	char* r_c = urnet_sn_ctf_client_of(answer_json.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnCtfClientResult>(r_s->c_str());
+}
 inline std::string snFleetBindingDigest(const std::string& binding_json) {
 	char* err_c = nullptr;
 	char* r_c = urnet_sn_fleet_binding_digest(binding_json.c_str(), &err_c);
@@ -40554,6 +41132,24 @@ inline void snLedgerAccountsFor(const std::optional<SnChainSettings>& settings, 
 	}
 	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
 	urnet_sn_ledger_accounts_for(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline std::optional<SnLedgerClaimOutcomeList> snLedgerClaimOutcomesOf(const std::optional<SnLedgerUnsignedTx>& tx, const std::string& receipt_json) {
+	std::string tx_json;
+	const char* tx_c = nullptr;
+	if (tx) {
+		tx_json = nlohmann::json(*tx).dump();
+		tx_c = tx_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_sn_ledger_claim_outcomes_of(tx_c, receipt_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimOutcomeList>(r_s->c_str());
 }
 inline std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactionsFor(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58) {
 	std::string settings_json;

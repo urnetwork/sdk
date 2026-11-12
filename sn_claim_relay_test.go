@@ -168,6 +168,7 @@ type testClaimRelayService struct {
 	nowBody      string
 	nowArgs      []string
 	authorized   []string
+	relayQueries []string
 	ledgerStatus int
 	ledgerBody   string
 }
@@ -178,6 +179,7 @@ func (self *testClaimRelayService) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	switch r.URL.Path {
 	case "/sn/claim-relay":
 		self.authorized = append(self.authorized, r.Header.Get("Authorization"))
+		self.relayQueries = append(self.relayQueries, r.URL.RawQuery)
 		w.WriteHeader(self.relayStatus)
 		io.WriteString(w, self.relayBody)
 	case "/sn/claim-relay/claim-now":
@@ -629,11 +631,11 @@ func TestSnClaimStatusOnADeviceLinksTheTransaction(t *testing.T) {
 // gas only when the device's own claim could pay something.
 func TestSnClaimStatusOfReadsOnlyWhatItNeeds(t *testing.T) {
 	ledgerReads, gasReads := 0, 0
-	ledger := func() (*SnClaimRelayAccountList, *SnError) {
+	ledger := func() (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
 		ledgerReads++
 		list := NewSnClaimRelayAccountList()
 		list.Add(&SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 5, Reason: SnClaimReasonRelayNotRunning, ClaimNowReason: SnClaimReasonRelayNotRunning})
-		return list, nil
+		return list, NewSnLedgerUnavailablePoolList(), nil
 	}
 	needsGas := func() bool {
 		gasReads++
@@ -692,9 +694,9 @@ func TestSnClaimLedgerRelayAccounts(t *testing.T) {
 	ledgerAccounts := NewSnLedgerAccountList()
 	ledgerAccounts.Add(&SnLedgerAccount{NoId: 1, Index: 42, FinalizedRao: 2_100_000_000, ClaimableRao: 842_000_000, Pending: true, PendingRao: 2_200_000_000})
 	ledgerAccounts.Add(&SnLedgerAccount{NoId: 2, Index: 7, FinalizedRao: 5, PaidRao: 5})
-	accounts, snErr := snClaimLedgerRelayAccounts(&SnLedgerAccountsResult{Accounts: ledgerAccounts}, "a")
-	if snErr != nil || accounts.Len() != 2 {
-		t.Fatalf("accounts %v, %+v", accounts, snErr)
+	accounts, unavailable, snErr := snClaimLedgerRelayAccounts(&SnLedgerAccountsResult{Accounts: ledgerAccounts}, "a")
+	if snErr != nil || accounts.Len() != 2 || unavailable.Len() != 0 {
+		t.Fatalf("accounts %v, unavailable %v, %+v", accounts, unavailable, snErr)
 	}
 	first, second := accounts.getAll()[0], accounts.getAll()[1]
 	if first.ColdkeySs58 != "a" || first.NoId != 1 || first.Index != 42 || first.ClaimableRao != 842_000_000 || first.PendingRao != 100_000_000 ||
@@ -714,9 +716,11 @@ func TestSnClaimLedgerRelayAccounts(t *testing.T) {
 		{"no accounts", &SnLedgerAccountsResult{}, SnErrorCodeLedgerUnavailable, "the ledger could not be read"},
 		{"no code", &SnLedgerAccountsResult{Error: &SnError{}}, SnErrorCodeLedgerUnavailable, "the ledger could not be read"},
 		{"its own code", &SnLedgerAccountsResult{Accounts: NewSnLedgerAccountList(), Error: &SnError{Code: SnErrorCodeChainRpcUnreachable, Message: "rpc down"}}, SnErrorCodeChainRpcUnreachable, "rpc down"},
+		// partial, without naming what it lacks: never drawn as whole
+		{"partial without its pools", &SnLedgerAccountsResult{Accounts: NewSnLedgerAccountList(), Partial: true}, SnErrorCodeLedgerUnavailable, "the ledger answer is partial and names no unavailable pool"},
 	} {
-		if accounts, snErr := snClaimLedgerRelayAccounts(c.ledger, "a"); accounts != nil || snErr == nil || snErr.Code != c.code || snErr.Message != c.text {
-			t.Errorf("%s: %v, %+v", c.name, accounts, snErr)
+		if accounts, unavailable, snErr := snClaimLedgerRelayAccounts(c.ledger, "a"); accounts != nil || unavailable != nil || snErr == nil || snErr.Code != c.code || snErr.Message != c.text {
+			t.Errorf("%s: %v, %v, %+v", c.name, accounts, unavailable, snErr)
 		}
 	}
 }
@@ -758,5 +762,232 @@ func TestSnClaimNowOfPostsOnlyForAnAddress(t *testing.T) {
 	}
 	if len(posts) != posted {
 		t.Fatalf("posted %d more", len(posts)-posted)
+	}
+}
+
+// A coldkey's accounts in the operator's pool and its capture the flag pool: one
+// row each, with its pool's kind and label, the relay's when it names them and
+// else the pool id's, and a top level that is the coldkey's accounts together,
+// so one action claims both.
+func TestSnClaimStatusDrawsEachPoolOfAColdkey(t *testing.T) {
+	const connected, other = "connected", "other"
+	result := snClaimStatusBuild(testClaimRelayAnswer("running",
+		&SnClaimRelayAccount{ColdkeySs58: other, NoId: 1, ClaimableRao: 100_000_000_000, Reason: SnClaimReasonQueued},
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: 1, ClaimableRao: 500_000_000, ValueTaoRao: 2_000_000, PendingRao: 7, Reason: SnClaimReasonQueued, ClaimNowReason: SnClaimNowReasonRequested},
+		// a relay that names the kind and label
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: testCtfNoId, Kind: SnLedgerPoolKindCtf, Label: "Capture the flag", ClaimableRao: 48_025_660, ValueTaoRao: 200_000, PendingRao: 3, Reason: SnClaimReasonUnderThreshold, ClaimNowAvailable: true, ClaimNowNextAtMillis: 1_800_000_000_000},
+	), connected, true, false)
+	accounts := result.Accounts.getAll()
+	if len(accounts) != 3 {
+		t.Fatalf("accounts %+v", accounts)
+	}
+	if accounts[0].Kind != SnLedgerPoolKindPool || accounts[0].Label != "Pool 1" || accounts[1].Kind != SnLedgerPoolKindPool || accounts[1].Label != "Pool 1" ||
+		accounts[2].Kind != SnLedgerPoolKindCtf || accounts[2].Label != "Capture the flag" {
+		t.Fatalf("kinds and labels %+v %+v %+v", accounts[0], accounts[1], accounts[2])
+	}
+	// each row keeps its own action
+	if accounts[1].Action != SnClaimActionWait || accounts[2].Action != SnClaimActionClaimNow {
+		t.Fatalf("row actions %s %s", accounts[1].Action, accounts[2].Action)
+	}
+	// the top level: the connected coldkey's two accounts together, its reason the
+	// lead's (the most to claim), and Claim now open since a tap claims both
+	if result.ColdkeySs58 != connected || result.ClaimableRao != 548_025_660 || result.ValueTaoRao != 2_200_000 || result.PendingRao != 10 {
+		t.Fatalf("sums %+v", result)
+	}
+	if result.Reason != SnClaimReasonQueued || !result.ClaimNowAvailable || result.ClaimNowReason != "" || result.ClaimNowNextAtMillis != 1_800_000_000_000 || result.Action != SnClaimActionClaimNow {
+		t.Fatalf("top level %+v", result)
+	}
+	if !result.SelfClaimAvailable || result.Partial || result.UnavailablePools.Len() != 0 {
+		t.Fatalf("self claim and partial %+v", result)
+	}
+
+	// a relay that names no kind: the capture the flag pool's id is ctf
+	result = snClaimStatusBuild(testClaimRelayAnswer("running",
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: testCtfNoId, ClaimableRao: 5, Reason: SnClaimReasonUnderThreshold},
+		// a kind the sdk does not know is a pool, whatever its id
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: testCtfNoId + 1, Kind: "head", Label: " Head ", Reason: SnClaimReasonNothingPending},
+	), connected, true, false)
+	accounts = result.Accounts.getAll()
+	if accounts[0].Kind != SnLedgerPoolKindCtf || accounts[0].Label != "Capture the flag" || accounts[1].Kind != SnLedgerPoolKindPool || accounts[1].Label != "Head" {
+		t.Fatalf("derived %+v %+v", accounts[0], accounts[1])
+	}
+	// the lead is the one with something to claim: its reason is the top level's
+	if result.Reason != SnClaimReasonUnderThreshold || result.ClaimableRao != 5 || result.ClaimNowAvailable || result.Action != SnClaimActionWait {
+		t.Fatalf("lead %+v", result)
+	}
+
+	// neither can be tapped: the lead's reason why not
+	result = snClaimStatusBuild(testClaimRelayAnswer("running",
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: 1, ClaimableRao: 9, Reason: SnClaimReasonUnderThreshold, ClaimNowReason: SnClaimNowReasonLimit, ClaimNowNextAtMillis: 5},
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: testCtfNoId, ClaimableRao: 1, Reason: SnClaimReasonUnderThreshold, ClaimNowReason: SnClaimNowReasonUnderFloor},
+	), connected, true, false)
+	if result.ClaimNowAvailable || result.ClaimNowReason != SnClaimNowReasonLimit || result.ClaimNowNextAtMillis != 5 || result.ClaimableRao != 10 {
+		t.Fatalf("not tappable %+v", result)
+	}
+
+	// with the relay stopped the device's own claim claims both: it is offered
+	// when either clears the floor
+	result = snClaimStatusBuild(testClaimRelayAnswer("griefing_stop",
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: 1, ClaimableRao: 23_999_999, Reason: SnClaimReasonRelayPaused},
+		&SnClaimRelayAccount{ColdkeySs58: connected, NoId: testCtfNoId, ClaimableRao: 24_000_000, Reason: SnClaimReasonRelayPaused},
+	), connected, true, true)
+	if !result.SelfClaimAvailable || !result.SelfClaimNeedsGas || result.Action != SnClaimActionTopUpGas {
+		t.Fatalf("self claim %+v", result)
+	}
+}
+
+// URnetwork's batch claimed both of a coldkey's pools in one transaction: the
+// claimed state names it with what it paid both, and only while neither pool has
+// something to claim.
+func TestSnClaimStatusShowsABatchClaimed(t *testing.T) {
+	const otherTx = "0x1111111111111111111111111111111111111111111111111111111111111111"
+	build := func(accounts ...*SnClaimRelayAccount) *SnClaimStatusResult {
+		return snClaimStatusBuild(testClaimRelayAnswer("running", accounts...), "", true, false)
+	}
+	result := build(
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: 1, Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000},
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: testCtfNoId, Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 48_025_660},
+	)
+	if !result.ShowsClaimed || !result.ShowsTile || result.ClaimTxHash != testClaimTxHash || result.ClaimAmountRao != 890_025_660 {
+		t.Fatalf("batch claimed %+v", result)
+	}
+	// claimed apart: the lead's transaction and what it paid
+	result = build(
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: 1, Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000},
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: testCtfNoId, Reason: SnClaimReasonNothingPending, ClaimTxHash: otherTx, ClaimAmountRao: 48_025_660},
+	)
+	if !result.ShowsClaimed || result.ClaimTxHash != testClaimTxHash || result.ClaimAmountRao != 842_000_000 {
+		t.Fatalf("claimed apart %+v", result)
+	}
+	// only the capture the flag pool was claimed by URnetwork: its claim leads
+	result = build(
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: 1, Reason: SnClaimReasonNothingPending},
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: testCtfNoId, Reason: SnClaimReasonNothingPending, ClaimTxHash: otherTx, ClaimAmountRao: 48_025_660},
+	)
+	if !result.ShowsClaimed || result.ClaimTxHash != otherTx || result.ClaimAmountRao != 48_025_660 {
+		t.Fatalf("one pool claimed %+v", result)
+	}
+	// one pool has something to claim since: pending again, not claimed
+	result = build(
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: 1, Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 842_000_000},
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: testCtfNoId, ClaimableRao: 5, Reason: SnClaimReasonUnderThreshold, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 48_025_660},
+	)
+	if result.ShowsClaimed || result.ClaimableRao != 5 || result.Reason != SnClaimReasonUnderThreshold || !result.ShowsTile {
+		t.Fatalf("pending again %+v", result)
+	}
+}
+
+// A pool whose accounts could not be read is unavailable, never zero, and never
+// hides the others: the relay's unavailable pools reach the status, the sums
+// leave them out and say so, and no claimed state is drawn while one is unknown.
+func TestSnClaimStatusPartial(t *testing.T) {
+	answer := testClaimRelayAnswer("running",
+		&SnClaimRelayAccount{ColdkeySs58: "a", NoId: 1, Reason: SnClaimReasonNothingPending, ClaimTxHash: testClaimTxHash, ClaimAmountRao: 9},
+	)
+	answer.UnavailablePools = NewSnLedgerUnavailablePoolList()
+	answer.UnavailablePools.Add(&SnLedgerUnavailablePool{Vault: testLedgerVault, NoId: testCtfNoId})
+	result := snClaimStatusBuild(answer, "a", true, false)
+	if !result.Partial || result.UnavailablePools.Len() != 1 || result.Accounts.Len() != 1 {
+		t.Fatalf("partial %+v", result)
+	}
+	if pool := result.UnavailablePools.Get(0); pool.Kind != SnLedgerPoolKindCtf || pool.Label != "Capture the flag" || pool.NoId != testCtfNoId {
+		t.Fatalf("unavailable pool %+v", pool)
+	}
+	if result.ShowsClaimed || !result.ShowsTile || result.ClaimTxHash != testClaimTxHash {
+		t.Fatalf("partial claimed state %+v", result)
+	}
+	// nothing read but an unavailable pool: the tile shows it as unavailable
+	answer = testClaimRelayAnswer("running")
+	answer.UnavailablePools = NewSnLedgerUnavailablePoolList()
+	answer.UnavailablePools.Add(&SnLedgerUnavailablePool{Vault: testLedgerVault, NoId: testCtfNoId, Kind: SnLedgerPoolKindCtf, Label: "Capture the flag"})
+	if result = snClaimStatusBuild(answer, "", true, false); !result.Partial || !result.ShowsTile || result.Action != SnClaimActionNone {
+		t.Fatalf("only unavailable %+v", result)
+	}
+	// a whole answer
+	if result = snClaimStatusBuild(testClaimRelayAnswer("running"), "", true, false); result.Partial || result.UnavailablePools == nil || result.UnavailablePools.Len() != 0 {
+		t.Fatalf("whole %+v", result)
+	}
+
+	// the ledger standing in for the relay: a partial read carries its unavailable
+	// pools into the status
+	ledgerAccounts := NewSnLedgerAccountList()
+	ledgerAccounts.Add(&SnLedgerAccount{NoId: 1, Kind: SnLedgerPoolKindPool, Label: "Pool 1", Index: 42, FinalizedRao: 900, ClaimableRao: 900})
+	unavailable := NewSnLedgerUnavailablePoolList()
+	unavailable.Add(&SnLedgerUnavailablePool{Vault: testLedgerVault, NoId: testCtfNoId, Kind: SnLedgerPoolKindCtf, Label: "Capture the flag"})
+	ledger := &SnLedgerAccountsResult{Accounts: ledgerAccounts, UnavailablePools: unavailable, Partial: true}
+	result = snClaimStatusOf(nil, errors.New("Failed to fetch"), "a", true, func() (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
+		return snClaimLedgerRelayAccounts(ledger, "a")
+	}, nil, nil)
+	if result.Error != nil || !result.Partial || result.UnavailablePools.Len() != 1 || result.ClaimableRao != 900 || result.Action != SnClaimActionSelfClaim {
+		t.Fatalf("partial ledger %+v (%+v)", result, result.Error)
+	}
+	if account := result.Accounts.Get(0); account.Kind != SnLedgerPoolKindPool || account.Label != "Pool 1" {
+		t.Fatalf("ledger row %+v", account)
+	}
+	// the json the apps read
+	raw := testClaimRelayJson(t, result)
+	for _, part := range []string{`"partial":true`, `"unavailable_pools":[{"vault":"` + testLedgerVault + `","no_id":4294967297,"kind":"ctf","label":"Capture the flag"}]`, `"kind":"pool","label":"Pool 1"`} {
+		if !strings.Contains(raw, part) {
+			t.Errorf("%s lacks %s", raw, part)
+		}
+	}
+}
+
+// The relay's json, as the server sends it, reads its kinds, labels and
+// unavailable pools, and a relay that sends none reads as today.
+func TestSnClaimRelayResultReadsPools(t *testing.T) {
+	var answer SnClaimRelayResult
+	if err := json.Unmarshal([]byte(`{"state":"running","accounts":[
+		{"coldkey_ss58":"a","no_id":1,"kind":"pool","label":"Pool 1","index":7,"claimable_rao":5,"reason":"queued"},
+		{"coldkey_ss58":"a","no_id":4294967297,"kind":"ctf","label":"Capture the flag","index":3,"claimable_rao":2,"reason":"queued"}],
+		"unavailable_pools":[]}`), &answer); err != nil {
+		t.Fatal(err)
+	}
+	result := snClaimStatusBuild(&answer, "a", true, false)
+	if result.Accounts.Len() != 2 || result.Accounts.Get(1).Kind != SnLedgerPoolKindCtf || result.Accounts.Get(1).Index != 3 || result.Partial || result.ClaimableRao != 7 {
+		t.Fatalf("read %+v", result)
+	}
+	answer = SnClaimRelayResult{}
+	if err := json.Unmarshal([]byte(`{"state":"running","accounts":[{"coldkey_ss58":"a","no_id":1,"index":7,"claimable_rao":5,"reason":"queued"}]}`), &answer); err != nil {
+		t.Fatal(err)
+	}
+	result = snClaimStatusBuild(&answer, "a", true, false)
+	if account := result.Accounts.Get(0); account.Kind != SnLedgerPoolKindPool || account.Label != "Pool 1" || result.Partial {
+		t.Fatalf("an old relay %+v %+v", result, account)
+	}
+}
+
+// A device asks the relay with partial=true, so a pool the relay cannot read is
+// named while the others are answered: each pool of the coldkey is a row with
+// its kind and label, and the unavailable pool is drawn as unavailable.
+func TestSnClaimStatusAsksTheRelayForEachPool(t *testing.T) {
+	_, aliceSs58 := testAliceSs58(t)
+	service := &testClaimRelayService{relayStatus: http.StatusOK, ledgerStatus: http.StatusInternalServerError, ledgerBody: "ledger down",
+		relayBody: fmt.Sprintf(`{"state":"running","transfer_floor_rao":24000000,"accounts":[
+			{"coldkey_ss58":%q,"no_id":1,"kind":"pool","label":"Pool 1","index":7,"claimable_rao":1000000000,"reason":"queued"}],
+			"unavailable_pools":[{"vault":"0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b","no_id":4294967297,"kind":"ctf","label":"Capture the flag"}]}`, aliceSs58)}
+	chain := &fakeChain{t: t, block: 1000, claimed: map[string]bool{}, receipts: map[string]bool{}}
+	device := testClaimRelayDevice(t, service, chain, "")
+	result := device.snClaimStatus(context.Background())
+	if len(service.relayQueries) != 1 || service.relayQueries[0] != "partial=true" {
+		t.Fatalf("relay queries %q", service.relayQueries)
+	}
+	if result.Error != nil || !result.Partial || result.UnavailablePools.Len() != 1 || result.UnavailablePools.Get(0).Kind != SnLedgerPoolKindCtf ||
+		result.ClaimableRao != 1_000_000_000 || result.Accounts.Len() != 1 || result.Accounts.Get(0).Label != "Pool 1" {
+		t.Fatalf("result %+v (%+v)", result, result.Error)
+	}
+}
+
+// A relay answer with a null account is read past it, on a device whose own
+// claim could pay, as on any other.
+func TestSnClaimStatusOfSkipsANullAccount(t *testing.T) {
+	relay := testClaimRelayAnswer("griefing_stop", nil, &SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 100_000_000, Reason: SnClaimReasonRelayPaused})
+	gasReads := 0
+	result := snClaimStatusOf(relay, nil, "a", true, nil, func() bool {
+		gasReads++
+		return false
+	}, nil)
+	if gasReads != 1 || result.Accounts.Len() != 1 || result.Action != SnClaimActionSelfClaim || result.ClaimableRao != 100_000_000 {
+		t.Fatalf("gas reads %d, result %+v", gasReads, result)
 	}
 }

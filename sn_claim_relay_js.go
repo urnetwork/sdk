@@ -13,9 +13,10 @@ import (
 )
 
 // SnClaimStatusOf is SnClaimStatus over what a page read. relay is GET
-// /sn/claim-relay's answer, nil when the page could not read it, with relayErr
-// saying why. ledger is the connected wallet's v2 accounts, which stand in for an
-// answer without balances; nil when the page could not read them.
+// /sn/claim-relay?partial=true's answer, nil when the page could not read it,
+// with relayErr saying why. ledger is the connected wallet's v2 accounts, with the pools it
+// could not read, which stand in for an answer without balances; nil when the
+// page could not read them.
 // selfClaimConfigured says whether the page's own v2 claim can be sent. That claim
 // pays its gas from the reader's wallet, which the sdk cannot read, so it is never
 // short of gas, as on a device whose gas key cannot be read. settings links each
@@ -34,7 +35,7 @@ func SnClaimStatusOf(
 		relayErr,
 		connectedSs58,
 		selfClaimConfigured,
-		func() (*SnClaimRelayAccountList, *SnError) {
+		func() (*SnClaimRelayAccountList, *SnLedgerUnavailablePoolList, *SnError) {
 			return snClaimLedgerRelayAccounts(ledger, connectedSs58)
 		},
 		nil,

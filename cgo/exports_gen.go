@@ -2916,6 +2916,27 @@ func (self *cAdapterSnConnectWalletCallback) Result(result *sdk.SnConnectWalletR
 	}
 }
 
+type cAdapterSnCtfClientCallback struct {
+	cbResult C.urnet_sn_ctf_client_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnCtfClientCallback) Result(result *sdk.SnCtfClientResult, errParam error) {
+	defer cgoGuard("urnet_sn_ctf_client_cb")
+	result_ := cJson(result, "urnet_sn_ctf_client_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_ctf_client(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSnEpochCallback struct {
 	cbResult C.urnet_sn_epoch_cb
 	userData unsafe.Pointer
@@ -13535,6 +13556,20 @@ func urnet_device_local_sn_claims(self C.uint64_t, callback_result C.urnet_sn_cl
 	self_.SnClaims(callback_)
 }
 
+//export urnet_device_local_sn_ctf_client
+func urnet_device_local_sn_ctf_client(self C.uint64_t, callback_result C.urnet_sn_ctf_client_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_ctf_client")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_ctf_client")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnCtfClientCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnCtfClientCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnCtfClient(callback_)
+}
+
 //export urnet_device_local_sn_gas_balance
 func urnet_device_local_sn_gas_balance(self C.uint64_t, callback_result C.urnet_sn_gas_balance_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_sn_gas_balance")
@@ -15153,6 +15188,20 @@ func urnet_device_remote_sn_claims(self C.uint64_t, callback_result C.urnet_sn_c
 		callback_ = &cAdapterSnClaimsCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SnClaims(callback_)
+}
+
+//export urnet_device_remote_sn_ctf_client
+func urnet_device_remote_sn_ctf_client(self C.uint64_t, callback_result C.urnet_sn_ctf_client_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_ctf_client")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_ctf_client")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnCtfClientCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnCtfClientCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnCtfClient(callback_)
 }
 
 //export urnet_device_remote_sn_gas_balance
@@ -21979,6 +22028,16 @@ func urnet_sn_claims_for(settings *C.char, coldkeySs58 *C.char, fromEpoch C.int6
 	sdk.SnClaimsFor(settings_, goString(coldkeySs58), int64(fromEpoch), callback_)
 }
 
+//export urnet_sn_ctf_client_of
+func urnet_sn_ctf_client_of(answerJson *C.char) *C.char {
+	defer cgoGuard("urnet_sn_ctf_client_of")
+	r0 := sdk.SnCtfClientOf(goString(answerJson))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sn_ctf_client_of")
+}
+
 //export urnet_sn_fleet_binding_digest
 func urnet_sn_fleet_binding_digest(bindingJson *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_sn_fleet_binding_digest")
@@ -22167,6 +22226,27 @@ func urnet_sn_ledger_accounts_for(settings *C.char, coldkeySs58 *C.char, callbac
 		callback_ = &cAdapterSnLedgerAccountsCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	sdk.SnLedgerAccountsFor(settings_, goString(coldkeySs58), callback_)
+}
+
+//export urnet_sn_ledger_claim_outcomes_of
+func urnet_sn_ledger_claim_outcomes_of(tx *C.char, receiptJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sn_ledger_claim_outcomes_of")
+	var tx_ *sdk.SnLedgerUnsignedTx
+	if tx != nil {
+		tx_ = &sdk.SnLedgerUnsignedTx{}
+		if !goJson(tx, tx_, "urnet_sn_ledger_claim_outcomes_of") {
+			return nil
+		}
+	}
+	r0, err := sdk.SnLedgerClaimOutcomesOf(tx_, goString(receiptJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sn_ledger_claim_outcomes_of")
 }
 
 //export urnet_sn_ledger_claim_transactions_for

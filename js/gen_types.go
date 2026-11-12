@@ -177,9 +177,16 @@ func generateTypes() ([]byte, error) {
 		sdk.SnEpochSchedule{},
 		sdk.SnClaimsResult{},
 		sdk.SnLedgerAccount{},
+		sdk.SnLedgerUnavailablePool{},
 		sdk.SnLedgerAccountsResult{},
 		sdk.SnUnsignedTx{},
 		sdk.SnLedgerUnsignedTx{},
+		sdk.SnLedgerClaimItem{},
+		sdk.SnLedgerClaimOutcome{},
+		sdk.SnCtfClientRole{},
+		sdk.SnCtfClientEpoch{},
+		sdk.SnCtfWin{},
+		sdk.SnCtfClientResult{},
 		sdk.SnEpochResult{},
 		sdk.AccountEpoch{},
 		sdk.AccountEpochsResult{},
@@ -328,6 +335,16 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SnUnsignedTx[]"
 		case "sdk.SnLedgerUnsignedTxList":
 			return "SnLedgerUnsignedTx[]"
+		case "sdk.SnLedgerUnavailablePoolList":
+			return "SnLedgerUnavailablePool[]"
+		case "sdk.SnLedgerClaimItemList":
+			return "SnLedgerClaimItem[]"
+		case "sdk.SnLedgerClaimOutcomeList":
+			return "SnLedgerClaimOutcome[]"
+		case "sdk.SnCtfClientEpochList":
+			return "SnCtfClientEpoch[]"
+		case "sdk.SnCtfWinList":
+			return "SnCtfWin[]"
 		case "sdk.AccountEpochList":
 			return "AccountEpoch[]"
 		case "sdk.PointsLeaderboardRowList":

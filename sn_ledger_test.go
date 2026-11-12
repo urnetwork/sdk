@@ -109,13 +109,15 @@ func testLedgerDocument(coldkey [32]byte) map[string]any {
 	}
 }
 
-// What testLedgerDocument shows.
+// What testLedgerDocument shows. Its entries name no kind or label, as a
+// server's from before capture the flag: each is a pool, named as the apps
+// name one.
 func testLedgerAccounts() []*SnLedgerAccount {
 	return []*SnLedgerAccount{
-		{Vault: testLedgerVault, NoId: 1, Index: 42, FinalizedRao: 123_456_789, ClaimableRao: 23_456_789, PaidRao: 100_000_000, Pending: true, PendingRao: 130_000_000},
-		{Vault: testLedgerVault, NoId: 2, Index: 0, FinalizedRao: 5_000_000_000, ClaimableRao: 0, PaidRao: 5_000_000_000},
-		{Vault: testLedgerVault, NoId: 3, Index: 7, Pending: true, PendingRao: 777},
-		{Vault: "0x" + strings.Repeat("cd", 20), NoId: 4, Index: 1, FinalizedRao: 9_007_199_254_740_993, ClaimableRao: 9_007_199_254_740_993},
+		{Vault: testLedgerVault, NoId: 1, Kind: SnLedgerPoolKindPool, Label: "Pool 1", Index: 42, FinalizedRao: 123_456_789, ClaimableRao: 23_456_789, PaidRao: 100_000_000, Pending: true, PendingRao: 130_000_000},
+		{Vault: testLedgerVault, NoId: 2, Kind: SnLedgerPoolKindPool, Label: "Pool 2", Index: 0, FinalizedRao: 5_000_000_000, ClaimableRao: 0, PaidRao: 5_000_000_000},
+		{Vault: testLedgerVault, NoId: 3, Kind: SnLedgerPoolKindPool, Label: "Pool 3", Index: 7, Pending: true, PendingRao: 777},
+		{Vault: "0x" + strings.Repeat("cd", 20), NoId: 4, Kind: SnLedgerPoolKindPool, Label: "Pool 4", Index: 1, FinalizedRao: 9_007_199_254_740_993, ClaimableRao: 9_007_199_254_740_993},
 	}
 }
 
@@ -224,7 +226,7 @@ func TestSnLedgerAccountsShowEveryState(t *testing.T) {
 	if result.ColdkeySs58 != aliceSs58 {
 		t.Fatalf("coldkey %q", result.ColdkeySs58)
 	}
-	if requests := ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+aliceSs58+" " {
+	if requests := ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+aliceSs58+"&partial=true " {
 		t.Fatalf("requests %q", requests)
 	}
 }
@@ -344,7 +346,7 @@ func TestSnLedgerAccountsRequestTarget(t *testing.T) {
 	}
 	result := snLedgerAccounts(context.Background(), fetch, "", aliceSs58)
 	requireLedgerUnavailable(t, result, "offline")
-	if len(requested) != 1 || requested[0] != "https://api.bringyour.com/sn/ledger/account?coldkey="+aliceSs58 {
+	if len(requested) != 1 || requested[0] != "https://api.bringyour.com/sn/ledger/account?coldkey="+aliceSs58+"&partial=true" {
 		t.Fatalf("requested %q", requested)
 	}
 
@@ -474,7 +476,7 @@ func TestSnLedgerAccountsBesideV1Claims(t *testing.T) {
 
 	// v2 beside it, from the api host, without a credential
 	requireLedgerAccounts(t, testReadLedger(t, device.SnLedgerAccounts), testLedgerAccounts())
-	if requests := ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+aliceSs58+" " {
+	if requests := ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+aliceSs58+"&partial=true " {
 		t.Fatalf("requests %q", requests)
 	}
 	if again := testLedgerJson(t, testReadClaims(t, device)); string(again) != string(v1Json) {
@@ -506,5 +508,177 @@ func TestSnLedgerAccountsBesideV1Claims(t *testing.T) {
 	requireLedgerAccounts(t, testReadLedger(t, device.SnLedgerAccounts), testLedgerAccounts())
 	if requests := other.takeRequests(); len(requests) != 1 || len(ledger.takeRequests()) != 0 {
 		t.Fatalf("artifact host requests %q", requests)
+	}
+}
+
+// operator 1's capture the flag pool, vault2 pool 2^32 + 1
+const testCtfNoId = SnLedgerCtfPoolIdBase + 1
+
+// The ledger's answer from epoch 8 (sn api/operator.yml's examples): the
+// operator's pool and its capture the flag pool, each with its kind and label.
+func testCtfLedgerDocument(coldkey [32]byte) map[string]any {
+	return map[string]any{
+		"coldkey": "0x" + hex.EncodeToString(coldkey[:]),
+		"accounts": []any{
+			map[string]any{
+				"vault": testLedgerVault, "no_id": 1, "kind": "pool", "label": "Pool 1", "index": 6, "root_index": 4,
+				"cumulative": "4211936625",
+				"proof":      []any{map[string]any{"hash": "0x" + strings.Repeat("2e", 32), "sum": "18822104577"}},
+				"claimed":    "3110220000", "pending_cumulative": "4592881205",
+			},
+			map[string]any{
+				"vault": testLedgerVault, "no_id": 4294967297, "kind": "ctf", "label": "Capture the flag", "index": 3, "root_index": 0,
+				"cumulative": "48025660",
+				"proof":      []any{map[string]any{"hash": "0x" + strings.Repeat("43", 32), "sum": "96051320"}},
+				"claimed":    "0", "pending_cumulative": "124866716",
+			},
+		},
+		"unavailable_pools": []any{},
+	}
+}
+
+func testCtfLedgerAccounts() []*SnLedgerAccount {
+	return []*SnLedgerAccount{
+		{Vault: testLedgerVault, NoId: 1, Kind: SnLedgerPoolKindPool, Label: "Pool 1", Index: 6, FinalizedRao: 4_211_936_625, ClaimableRao: 1_101_716_625, PaidRao: 3_110_220_000, Pending: true, PendingRao: 4_592_881_205},
+		{Vault: testLedgerVault, NoId: 4294967297, Kind: SnLedgerPoolKindCtf, Label: "Capture the flag", Index: 3, FinalizedRao: 48_025_660, ClaimableRao: 48_025_660, Pending: true, PendingRao: 124_866_716},
+	}
+}
+
+// Each pool shows with its kind and label: the server's when it names them. A
+// server that names no kind serves only pools below 2^32, so a capture the flag
+// id without a kind is still ctf, and a kind the sdk does not know is a pool.
+func TestSnLedgerAccountsShowEachPoolKind(t *testing.T) {
+	alice, aliceSs58 := testAliceSs58(t)
+	_, server := newTestLedgerService(t, http.StatusOK, testLedgerJson(t, testCtfLedgerDocument(alice)))
+	result := testReadLedgerAt(t, server.URL, aliceSs58)
+	requireLedgerAccounts(t, result, testCtfLedgerAccounts())
+	if result.Partial || result.UnavailablePools == nil || result.UnavailablePools.Len() != 0 {
+		t.Fatalf("a whole answer read as partial: %+v", result)
+	}
+	raw := string(testLedgerJson(t, result))
+	for _, part := range []string{`"kind":"ctf","label":"Capture the flag"`, `"kind":"pool","label":"Pool 1"`, `"unavailable_pools":[]`, `"partial":false`} {
+		if !strings.Contains(raw, part) {
+			t.Errorf("%s lacks %s", raw, part)
+		}
+	}
+
+	for _, c := range []struct {
+		name      string
+		mutate    func(ctf map[string]any)
+		wantKind  string
+		wantLabel string
+	}{
+		{"no kind or label", func(ctf map[string]any) { delete(ctf, "kind"); delete(ctf, "label") }, SnLedgerPoolKindCtf, "Capture the flag"},
+		{"a null kind", func(ctf map[string]any) { ctf["kind"] = nil }, SnLedgerPoolKindCtf, "Capture the flag"},
+		{"a kind the sdk does not know", func(ctf map[string]any) { ctf["kind"] = "head"; delete(ctf, "label") }, SnLedgerPoolKindPool, "Pool 4294967297"},
+		{"an empty label", func(ctf map[string]any) { ctf["label"] = " " }, SnLedgerPoolKindCtf, "Capture the flag"},
+		{"a label of its own", func(ctf map[string]any) { ctf["label"] = " Flags " }, SnLedgerPoolKindCtf, "Flags"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			document := testCtfLedgerDocument(alice)
+			c.mutate(document["accounts"].([]any)[1].(map[string]any))
+			_, server := newTestLedgerService(t, http.StatusOK, testLedgerJson(t, document))
+			result := testReadLedgerAt(t, server.URL, aliceSs58)
+			if result.Error != nil || result.Accounts.Len() != 2 {
+				t.Fatalf("result %+v", result)
+			}
+			if ctf := result.Accounts.Get(1); ctf.Kind != c.wantKind || ctf.Label != c.wantLabel {
+				t.Fatalf("kind %q label %q, want %q %q", ctf.Kind, ctf.Label, c.wantKind, c.wantLabel)
+			}
+		})
+	}
+}
+
+// With partial=true a pool whose ledger the server cannot read is named in
+// unavailable_pools: it shows as unavailable, the others are shown, and the
+// answer says it is partial. A server that predates the field answers whole.
+func TestSnLedgerAccountsPartialAnswer(t *testing.T) {
+	alice, aliceSs58 := testAliceSs58(t)
+	document := testCtfLedgerDocument(alice)
+	document["accounts"] = document["accounts"].([]any)[:1]
+	document["unavailable_pools"] = []any{map[string]any{"vault": testLedgerVault, "no_id": 4294967297, "kind": "ctf", "label": "Capture the flag"}}
+	ledger, server := newTestLedgerService(t, http.StatusOK, testLedgerJson(t, document))
+	result := testReadLedgerAt(t, server.URL, aliceSs58)
+	requireLedgerAccounts(t, result, testCtfLedgerAccounts()[:1])
+	if !result.Partial || result.UnavailablePools.Len() != 1 {
+		t.Fatalf("partial %+v", result)
+	}
+	want := &SnLedgerUnavailablePool{Vault: testLedgerVault, NoId: 4294967297, Kind: SnLedgerPoolKindCtf, Label: "Capture the flag"}
+	if got := result.UnavailablePools.Get(0); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unavailable %+v, want %+v", got, want)
+	}
+	if requests := ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+aliceSs58+"&partial=true " {
+		t.Fatalf("requests %q", requests)
+	}
+	raw := string(testLedgerJson(t, result))
+	if !strings.Contains(raw, `"unavailable_pools":[{"vault":"`+testLedgerVault+`","no_id":4294967297,"kind":"ctf","label":"Capture the flag"}],"partial":true`) {
+		t.Fatalf("json %s", raw)
+	}
+
+	// both unavailable: no account, and still no error and no zero
+	document["accounts"] = []any{}
+	document["unavailable_pools"] = []any{
+		map[string]any{"vault": testLedgerVault, "no_id": 1},
+		map[string]any{"vault": testLedgerVault, "no_id": 4294967297},
+	}
+	ledger.answer(http.StatusOK, testLedgerJson(t, document))
+	result = testReadLedgerAt(t, server.URL, aliceSs58)
+	if result.Error != nil || result.Accounts.Len() != 0 || !result.Partial || result.UnavailablePools.Len() != 2 {
+		t.Fatalf("both unavailable %+v", result)
+	}
+	if first, second := result.UnavailablePools.Get(0), result.UnavailablePools.Get(1); first.Kind != SnLedgerPoolKindPool || first.Label != "Pool 1" || second.Kind != SnLedgerPoolKindCtf || second.Label != "Capture the flag" {
+		t.Fatalf("derived %+v %+v", first, second)
+	}
+
+	// a server from before the field: whole, as today
+	document = testCtfLedgerDocument(alice)
+	delete(document, "unavailable_pools")
+	ledger.answer(http.StatusOK, testLedgerJson(t, document))
+	result = testReadLedgerAt(t, server.URL, aliceSs58)
+	if result.Error != nil || result.Partial || result.UnavailablePools.Len() != 0 || result.Accounts.Len() != 2 {
+		t.Fatalf("old server %+v", result)
+	}
+}
+
+// A pool is answered once. An answer that lists a pool twice, or both as read
+// and as unavailable, or an unavailable pool that does not parse, is refused
+// whole, as any malformed part is.
+func TestSnLedgerAccountsRefuseAmbiguousPools(t *testing.T) {
+	alice, aliceSs58 := testAliceSs58(t)
+	for _, c := range []struct {
+		name   string
+		mutate func(document map[string]any)
+		want   string
+	}{
+		{"a pool twice", func(d map[string]any) {
+			accounts := d["accounts"].([]any)
+			d["accounts"] = append(accounts, accounts[1])
+		}, "account 2: pool 4294967297 is answered twice"},
+		{"a pool read and unavailable", func(d map[string]any) {
+			d["unavailable_pools"] = []any{map[string]any{"vault": testLedgerVault, "no_id": 1, "kind": "pool", "label": "Pool 1"}}
+		}, "unavailable pool 0: pool 1 is answered twice"},
+		{"an unavailable pool twice", func(d map[string]any) {
+			d["accounts"] = []any{}
+			pool := map[string]any{"vault": testLedgerVault, "no_id": 4294967297}
+			d["unavailable_pools"] = []any{pool, pool}
+		}, "unavailable pool 1: pool 4294967297 is answered twice"},
+		{"an unavailable pool's vault in upper case", func(d map[string]any) {
+			d["unavailable_pools"] = []any{map[string]any{"vault": "0x" + strings.Repeat("AB", 20), "no_id": 7}}
+		}, "unavailable pool 0: vault: "},
+		{"an unavailable pool without an id", func(d map[string]any) {
+			d["unavailable_pools"] = []any{map[string]any{"vault": testLedgerVault}}
+		}, "unavailable pool 0: no_id 0 out of range"},
+		{"unavailable pools that are not a list", func(d map[string]any) { d["unavailable_pools"] = "ctf" }, "unavailable_pools"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			document := testCtfLedgerDocument(alice)
+			c.mutate(document)
+			_, server := newTestLedgerService(t, http.StatusOK, testLedgerJson(t, document))
+			result := testReadLedgerAt(t, server.URL, aliceSs58)
+			requireLedgerUnavailable(t, result, c.want)
+			if result.Partial || result.UnavailablePools.Len() != 0 {
+				t.Fatalf("a refused answer named pools: %+v", result)
+			}
+		})
 	}
 }

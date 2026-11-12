@@ -799,6 +799,7 @@ export interface SnChainSettings {
   chain_id: number;
   vault_address: string;
   vault2_address: string;
+  claim_batcher_address: string;
   coordinator_address: string;
   no_id: string;
   netuid: number;
@@ -942,6 +943,8 @@ export interface SnClaimsResult {
 export interface SnLedgerAccount {
   vault: string;
   no_id: number;
+  kind: string;
+  label: string;
   index: number;
   finalized_rao: number;
   claimable_rao: number;
@@ -950,8 +953,17 @@ export interface SnLedgerAccount {
   pending_rao: number;
 }
 
+export interface SnLedgerUnavailablePool {
+  vault: string;
+  no_id: number;
+  kind: string;
+  label: string;
+}
+
 export interface SnLedgerAccountsResult {
   accounts: SnLedgerAccount[] | null;
+  unavailable_pools: SnLedgerUnavailablePool[] | null;
+  partial: boolean;
   coldkey_ss58?: string;
   error?: SnError | null;
 }
@@ -976,6 +988,75 @@ export interface SnLedgerUnsignedTx {
   value: string;
   amount_rao: number;
   gas: number;
+  vault: string;
+  batch: boolean;
+  items: SnLedgerClaimItem[] | null;
+}
+
+export interface SnLedgerClaimItem {
+  no_id: number;
+  index: number;
+  root_index: number;
+  kind: string;
+  label: string;
+  amount_rao: number;
+}
+
+export interface SnLedgerClaimOutcome {
+  no_id: number;
+  index: number;
+  status: string;
+  amount_rao: number;
+  message?: string;
+}
+
+export interface SnCtfClientRole {
+  role: string;
+  candidate: boolean;
+  reason?: string;
+  country?: string;
+  unit_family?: number;
+  presence_present: number;
+  presence_required: number;
+  presence_samples: number;
+  presence_excused: number;
+  units_in_draw?: number;
+  won: boolean;
+  rank?: number;
+  slot_rao: number;
+  pot_share_rao: number;
+  pending: boolean;
+  coldkey_ss58?: string;
+}
+
+export interface SnCtfClientEpoch {
+  epoch: number;
+  drawn: boolean;
+  root_status: string;
+  provider: SnCtfClientRole | null;
+  extender: SnCtfClientRole | null;
+}
+
+export interface SnCtfWin {
+  epoch: number;
+  role: string;
+  country: string;
+  rank: number;
+  slot_rao: number;
+  pot_share_rao: number;
+  amount_rao: number;
+  pending: boolean;
+  root_status: string;
+  coldkey_ss58: string;
+}
+
+export interface SnCtfClientResult {
+  client_id: string;
+  as_of_millis: number;
+  epochs: SnCtfClientEpoch[] | null;
+  wins: SnCtfWin[] | null;
+  latest_win?: SnCtfWin | null;
+  error?: SnError | null;
 }
 
 export interface SnEpochResult {
