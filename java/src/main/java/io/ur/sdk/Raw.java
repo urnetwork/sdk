@@ -1698,6 +1698,7 @@ public interface Raw extends Library {
   Pointer urnet_parse_vless_link(String a0);
   byte urnet_payment_method_allows_plan(String a0, String a1);
   Pointer urnet_payment_methods(String a0, String a1);
+  Pointer urnet_plan_account_name(String a0, byte a1);
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);

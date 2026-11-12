@@ -2902,6 +2902,7 @@ char* urnet_parse_id(const char* src, char** out_error);
 char* urnet_parse_vless_link(const char* link);
 bool urnet_payment_method_allows_plan(const char* method, const char* plan);
 char* urnet_payment_methods(const char* assets_json, const char* items_json);
+char* urnet_plan_account_name(const char* network_name, bool guest);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);

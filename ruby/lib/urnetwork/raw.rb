@@ -1697,6 +1697,7 @@ module URnetwork
       attach_function :urnet_parse_vless_link, [:string], :pointer, blocking: true
       attach_function :urnet_payment_method_allows_plan, [:string, :string], :bool, blocking: true
       attach_function :urnet_payment_methods, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_plan_account_name, [:string, :bool], :pointer, blocking: true
       attach_function :urnet_points_leaderboard_key_of, [:string], :pointer, blocking: true
       attach_function :urnet_points_leaderboard_scroll_label, [:int64, :int64], :pointer, blocking: true
       attach_function :urnet_points_to_nano_points, [:double], :int64, blocking: true
