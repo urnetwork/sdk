@@ -325,6 +325,26 @@ func applyMobileLowMemoryPlatformTransportSettingsForPlatform(
 	)
 }
 
+// applyMobileExtenderWebRtcDialSettingsForPlatform bounds the SCTP buffers of
+// a phone's webrtc extender dials (connect EXTENDER.md S8) to the device's p2p
+// budget (owner, 2026-11-12): each dial's receive window to
+// deviceLocalP2pReceiveBufferByteCount, the window every p2p connection of a
+// memory-targeted device takes, and its largest message to that window. A dial
+// is a peer connection of the device's own, the one stream a phone may carry
+// its platform connection over, and the carrier's defaults follow the process
+// memory target instead, which left a dial a 256-512 KiB window, two to four
+// times a p2p peer's. A desktop keeps the carrier's defaults.
+func applyMobileExtenderWebRtcDialSettingsForPlatform(
+	settings *connect.WebRtcSettings,
+	mobile bool,
+) {
+	if settings == nil || !mobile {
+		return
+	}
+	settings.ReceiveBufferSize = min(settings.ReceiveBufferSize, deviceLocalP2pReceiveBufferByteCount)
+	settings.MaxMessageSize = min(settings.MaxMessageSize, settings.ReceiveBufferSize)
+}
+
 // applyMobileLowMemoryClientSettings bounds the number and bytes of packets
 // one mobile exit can own before the shared per-device budgets take effect.
 // The shared budgets remain the aggregate safety net; smaller per-sequence

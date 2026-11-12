@@ -845,10 +845,24 @@ func newSpaceExtenderWebRtcDial(
 		return nil
 	}
 	signaling := connect.NewWebRtcExtenderDialSignaling(directory)
+	connectSettings.WebRtcExtenderCarrier = connect.NewWebRtcExtenderCarrier(
+		ctx,
+		newSpaceExtenderWebRtcDialSettings(log, mobileRuntime()),
+		signaling.Resolve,
+	)
+	return signaling
+}
+
+// The peer connection settings of a space's webrtc extender dials
+// (EXTENDER.md S8): the carrier's defaults (connect.
+// DefaultWebRtcExtenderSettings) under the space's log, and on a phone the
+// mobile policy's bound on their SCTP buffers
+// (applyMobileExtenderWebRtcDialSettingsForPlatform).
+func newSpaceExtenderWebRtcDialSettings(log connect.Logger, mobile bool) *connect.WebRtcSettings {
 	webRtcSettings := connect.DefaultWebRtcExtenderSettings()
 	webRtcSettings.Log = log
-	connectSettings.WebRtcExtenderCarrier = connect.NewWebRtcExtenderCarrier(ctx, webRtcSettings, signaling.Resolve)
-	return signaling
+	applyMobileExtenderWebRtcDialSettingsForPlatform(webRtcSettings, mobile)
+	return webRtcSettings
 }
 
 // Sets the client this device's webrtc extender dials signal through: its
