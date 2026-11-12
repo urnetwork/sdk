@@ -183,6 +183,7 @@ func generateTypes() ([]byte, error) {
 		sdk.SnLedgerUnsignedTx{},
 		sdk.SnLedgerClaimItem{},
 		sdk.SnLedgerClaimOutcome{},
+		sdk.SnLedgerClaimTransactionsResult{},
 		sdk.SnCtfClientRole{},
 		sdk.SnCtfClientEpoch{},
 		sdk.SnCtfWin{},
