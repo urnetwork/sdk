@@ -629,6 +629,53 @@ func TestSnLedgerClaimBatchAndSnClaimTakeTurnsAtTheNonce(t *testing.T) {
 	}
 }
 
+// A v2 claim the gas key can pay for only in part, beside a v1 claim: 0.039 TAO
+// pays for the batch of the two largest of alice's three accounts but not of all
+// three, so the batch sent is the smaller one, signed again with the nonce read
+// again (smallerBatch) within the same turn, and pool 1 alone then needs gas. In
+// either order the batch and the v1 claim land with the nonces 5 and 6.
+func TestSnLedgerClaimSmallerBatchAndSnClaimTakeTurnsAtTheNonce(t *testing.T) {
+	balance := int64(39_000_000_000_000_000)
+	for _, order := range testClaimOrders {
+		t.Run(order.name, func(t *testing.T) {
+			f := newTestGasKeyClaims(t, newTestV2ThreeGasKeyClaim(t, balance))
+			f.pool.pairNonceReads(time.Second)
+			f.pool.delayBroadcasts(200 * time.Millisecond)
+			v1, v2 := f.claimBoth(t, order.v1First)
+			landed := f.requireLanded(t, 2)
+			v1Tx, batch := landedTo(t, landed, f.v1.vault), landedTo(t, landed, testBatcherAddress)
+			if first := landed[0]; (first == v1Tx) != order.v1First {
+				t.Fatalf("nonce 5 went to %x, not to the claim that took the turn first", first.tx.to)
+			}
+			if _, claims, _, err := decodeTestClaimMany(batch.tx.data); err != nil || len(claims) != 2 {
+				t.Fatalf("the batch sent claims %d accounts, %v", len(claims), err)
+			}
+			key, err := f.device.snGasPrivateKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// the batch used 450,000 gas, and what is left pays for no claim alone
+			left := balance - (60_000+2*195_000)*testWeiPerGas
+			wantV1 := []testLedgerClaimEvent{
+				{kind: "sent", index: 7, txHash: v1Tx.hash},
+				{kind: "confirmed", index: 7, txHash: v1Tx.hash, amount: testV1Epoch7Rao},
+				{kind: "done"},
+			}
+			wantV2 := []testLedgerClaimEvent{
+				{kind: "sent", noId: 2, index: 0, txHash: batch.hash},
+				{kind: "sent", noId: testCtfNoId, index: 1, txHash: batch.hash},
+				{kind: "confirmed", noId: 2, index: 0, txHash: batch.hash, amount: testThreeAmounts[2]},
+				{kind: "confirmed", noId: testCtfNoId, index: 1, txHash: batch.hash, amount: testThreeAmounts[testCtfNoId]},
+				{kind: "failed", noId: 1, index: 2, message: snNeedsGasMessage(big.NewInt(testClaimAloneGas*testWeiPerGas), big.NewInt(left), snGasKeyInfo(key))},
+				{kind: "done"},
+			}
+			if !reflect.DeepEqual(v1, wantV1) || !reflect.DeepEqual(v2, wantV2) {
+				t.Fatalf("v1 claim %+v, want %+v; v2 claim %+v, want %+v", v1, wantV1, v2, wantV2)
+			}
+		})
+	}
+}
+
 // The turn ends when the node has answered the broadcast, not at the receipt:
 // here no receipt comes until both claims' transactions reached the pool, so a
 // turn held through the receipt wait would keep the second claim from sending
