@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"slices"
 	"strings"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -36,6 +38,13 @@ import (
 // A single account is claimed alone, as are all of them without a batcher whose
 // code is the release batcher's. An account is never in two transactions of one
 // claim, unless a mined batch provably did not attempt it.
+//
+// A payer that can pay for one claim but not the batch (about 3.5M gas for two
+// accounts against 2.6M for one) claims the largest account alone, and the
+// others stay claimable (the owner, 2026-11-11): the device's gas key claims the
+// accounts alone in turn, the largest first, and reports each it cannot pay for
+// as needs_gas; an external wallet is given the largest account's claim alone,
+// with the others named still claimable (SnLedgerClaimTransactionsForPayer).
 
 // SnLedgerClaimCallback receives the progress of SnLedgerClaim. Failed
 // messages start with an SnErrorCode* value followed by ": detail".
@@ -46,6 +55,8 @@ import (
 // whose ledger could not be read comes with its noId, index 0 and
 // SnErrorCodeLedgerUnavailable: its account is unknown, and the other pools are
 // claimed. The accounts of a batch are each Sent with the batch's txHash.
+// SnErrorCodeNeedsGas for an account means the gas key could not pay for its
+// claim and nothing was sent for it: it is still claimable.
 type SnLedgerClaimCallback interface {
 	Sent(noId int64, index int64, txHash string)
 	Confirmed(noId int64, index int64, txHash string, amountRao int64)
@@ -660,8 +671,22 @@ func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.Pri
 	return append(notAttempted, alone...)
 }
 
+// snLedgerLargestFirst orders accounts to claim alone in turn: the largest
+// amount first, ties in the ledger's order, so a payer that can pay for fewer
+// claims than there are accounts claims the most it can.
+func snLedgerLargestFirst(plans []*snLedgerClaimPlan) []*snLedgerClaimPlan {
+	ordered := slices.Clone(plans)
+	slices.SortStableFunc(ordered, func(a *snLedgerClaimPlan, b *snLedgerClaimPlan) int {
+		return cmp.Compare(b.amount, a.amount)
+	})
+	return ordered
+}
+
 // claim claims every account that has something to claim: two or more in one
-// batch when they can be, and each other alone, in turn.
+// batch when they can be, and each other alone, in turn, the largest first. A
+// gas key that cannot pay for the batch so claims the largest account first,
+// and each account it then cannot pay for is reported needs_gas, nothing sent
+// for it.
 func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey, callback SnLedgerClaimCallback) {
 	refused := false
 	planCtx, cancel := context.WithTimeout(ctx, snClaimsTimeout)
@@ -679,7 +704,7 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 	if 2 <= len(plans) {
 		plans = self.sendBatch(ctx, key, plans, callback)
 	}
-	for _, plan := range plans {
+	for _, plan := range snLedgerLargestFirst(plans) {
 		sendCtx, cancel := context.WithTimeout(ctx, snClaimTimeout)
 		self.send(sendCtx, key, plan, callback)
 		cancel()
@@ -746,6 +771,13 @@ func (self *snLedgerClaimPlan) claimItem() *SnLedgerClaimItem {
 // whose ledger could not be read among them), else that there is nothing to
 // claim.
 func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsignedTxList, error) {
+	list, _, err := self.claimTxs(ctx)
+	return list, err
+}
+
+// claimTxs is unsignedTxs with the plans its transactions claim, in the
+// ledger's order.
+func (self *snLedgerClaimEngine) claimTxs(ctx context.Context) (*SnLedgerUnsignedTxList, []*snLedgerClaimPlan, error) {
 	reason := ""
 	refuse := func(noId int64, index int64, message string) {
 		if reason == "" {
@@ -754,7 +786,7 @@ func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsi
 	}
 	plans, snErr := self.plans(ctx, refuse)
 	if snErr != nil {
-		return nil, errors.New(snErr.Code + ": " + snErr.Message)
+		return nil, nil, errors.New(snErr.Code + ": " + snErr.Message)
 	}
 	var passing []*snLedgerClaimPlan
 	for _, plan := range plans {
@@ -766,23 +798,150 @@ func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsi
 		passing = append(passing, plan)
 	}
 	list := NewSnLedgerUnsignedTxList()
+	alone := passing
 	if 2 <= len(passing) && self.batcherVerified(ctx) {
 		count, data, gas, err := self.sizeBatch(ctx, [20]byte{}, passing, snLedgerClaimGasFloor)
 		if err == nil && 2 <= count {
 			list.Add(self.batchTx(passing[:count], data, gas))
-			passing = passing[count:]
+			alone = passing[count:]
 		}
 	}
-	for _, plan := range passing {
+	for _, plan := range alone {
 		list.Add(self.unsignedTx(plan))
 	}
 	if list.Len() == 0 {
 		if reason == "" {
 			reason = snLedgerNothingToClaim
 		}
-		return nil, errors.New(reason)
+		return nil, nil, errors.New(reason)
 	}
-	return list, nil
+	return list, passing, nil
+}
+
+// SnLedgerClaimTransactionsResult is the claim transactions for an external
+// wallet that pays their gas itself, checked against what it holds. A wallet
+// that cannot pay for every transaction is given the largest account's claim
+// alone, and the other accounts are StillClaimable: no transaction claims
+// them, and a later claim does.
+type SnLedgerClaimTransactionsResult struct {
+	// the transactions to send, in order, each signed with exactly its Gas
+	Transactions *SnLedgerUnsignedTxList `json:"transactions"`
+	// the accounts claimable now that no transaction of Transactions claims,
+	// because the payer cannot pay for them with the others, in the ledger's
+	// order: Status SnLedgerClaimOutcomeStillClaimable, AmountRao what a claim
+	// pays it now, and Message "needs_gas: detail". Empty when Transactions
+	// claim every account
+	StillClaimable *SnLedgerClaimOutcomeList `json:"still_claimable"`
+	// lowercase 0x
+	PayerAddress string `json:"payer_address"`
+	// decimal wei
+	PayerBalanceWei string `json:"payer_balance_wei"`
+	// the price per gas the payer's balance is checked at, decimal wei: the
+	// higher of the most an EIP-1559 wallet offers by default, twice the latest
+	// base fee and the tip, and 1.1 × eth_gasPrice
+	FeePerGasWei string `json:"fee_per_gas_wei"`
+	// the most Transactions can cost: their gas limits × FeePerGasWei
+	MaxCostWei string `json:"max_cost_wei"`
+	// the most the transactions claiming every account can cost; MaxCostWei
+	// when nothing is StillClaimable
+	AllCostWei string `json:"all_cost_wei"`
+	// the payer cannot pay even for Transactions, then the largest account's
+	// claim alone: it needs MaxCostWei less PayerBalanceWei more. A wallet that
+	// prices gas lower may still send it
+	NeedsGas bool `json:"needs_gas"`
+}
+
+// feePerGas is the price per gas a payer's balance is checked at: the higher
+// of the most an EIP-1559 wallet offers by default (ethers', and the device's
+// with SnTxTypeEip1559: twice the latest base fee and the tip) and what a
+// legacy one does (the device's 1.1 × eth_gasPrice). The wallet sets its own
+// price, which is not known here; this is at least what common wallets offer.
+func (self *snLedgerClaimEngine) feePerGas(ctx context.Context) (*big.Int, error) {
+	gasPrice, err := self.client.GasPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fee := new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
+	// as snSignClaim, a chain without a readable base fee prices legacy only
+	if baseFee, err := self.client.LatestBaseFee(ctx); err == nil && baseFee != nil && baseFee.Sign() > 0 {
+		tip, err := self.client.MaxPriorityFeePerGas(ctx)
+		if err != nil || tip == nil {
+			tip = big.NewInt(1_000_000_000)
+		}
+		feeCap := new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), tip)
+		if fee.Cmp(feeCap) < 0 {
+			fee = feeCap
+		}
+	}
+	if fee.Sign() == 0 {
+		fee = big.NewInt(1)
+	}
+	return fee, nil
+}
+
+// snLedgerTxsCost is the most the transactions can cost at fee a gas.
+func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
+	cost := big.NewInt(0)
+	for _, tx := range txs {
+		cost.Add(cost, new(big.Int).Mul(big.NewInt(tx.Gas), fee))
+	}
+	return cost
+}
+
+// unsignedTxsForPayer is unsignedTxs for a wallet at payer that pays the gas:
+// every transaction when its balance pays for them all at feePerGas, else the
+// largest account's claim alone, the others still claimable. No account is in
+// two transactions.
+func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer [20]byte) (*SnLedgerClaimTransactionsResult, error) {
+	list, passing, err := self.claimTxs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	balance, err := self.client.Balance(ctx, payer)
+	if err != nil {
+		return nil, errors.New(snFailMessage(err))
+	}
+	fee, err := self.feePerGas(ctx)
+	if err != nil {
+		return nil, errors.New(snFailMessage(err))
+	}
+	allCost := snLedgerTxsCost(list.getAll(), fee)
+	result := &SnLedgerClaimTransactionsResult{
+		Transactions:    list,
+		StillClaimable:  NewSnLedgerClaimOutcomeList(),
+		PayerAddress:    "0x" + hex.EncodeToString(payer[:]),
+		PayerBalanceWei: balance.String(),
+		FeePerGasWei:    fee.String(),
+		MaxCostWei:      allCost.String(),
+		AllCostWei:      allCost.String(),
+		NeedsGas:        balance.Cmp(allCost) < 0,
+	}
+	if !result.NeedsGas || len(passing) < 2 {
+		// it pays for them all, or there is one account, whose claim alone
+		// it is
+		return result, nil
+	}
+	largest := snLedgerLargestFirst(passing)[0]
+	alone := self.unsignedTx(largest)
+	result.Transactions = NewSnLedgerUnsignedTxList()
+	result.Transactions.Add(alone)
+	maxCost := snLedgerTxsCost([]*SnLedgerUnsignedTx{alone}, fee)
+	result.MaxCostWei = maxCost.String()
+	result.NeedsGas = balance.Cmp(maxCost) < 0
+	message := fmt.Sprintf("%s: claiming every account together needs up to %s of gas and the wallet %s holds %s, so only the largest account is claimed now; claim again for this one", SnErrorCodeNeedsGas, snFormatTao(allCost), result.PayerAddress, snFormatTao(balance))
+	for _, plan := range passing {
+		if plan == largest {
+			continue
+		}
+		result.StillClaimable.Add(&SnLedgerClaimOutcome{
+			NoId:      plan.noId,
+			Index:     plan.index,
+			Status:    SnLedgerClaimOutcomeStillClaimable,
+			AmountRao: plan.amount,
+			Message:   message,
+		})
+	}
+	return result, nil
 }
 
 // device
@@ -802,8 +961,10 @@ func (self *snDevice) snLedgerClaimEngine() (*snLedgerClaimEngine, *SnError) {
 
 // SnLedgerClaim claims every finalized v2 account of the connected coldkey
 // that has something to claim, in every pool: two or more in one batcher
-// transaction when they can be, else one transaction per account in turn,
-// signed with the device gas key; then Done.
+// transaction when they can be, else one transaction per account in turn, the
+// largest first, signed with the device gas key; then Done. A gas key that
+// can pay for one claim but not the batch so claims the largest account, and
+// each other it then cannot pay for fails needs_gas, still claimable.
 func (self *snDevice) SnLedgerClaim(callback SnLedgerClaimCallback) {
 	go connect.HandleError(func() {
 		defer callback.Done()
@@ -833,6 +994,33 @@ func (self *snDevice) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, erro
 	return engine.unsignedTxs(ctx)
 }
 
+// SnLedgerClaimTransactionsForPayer builds the connected coldkey's v2 claim
+// transactions for an external wallet whose EVM address payerAddress pays
+// their gas: all of them when it holds enough, else the largest account's
+// claim alone, with the others StillClaimable.
+func (self *snDevice) SnLedgerClaimTransactionsForPayer(payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
+	payer, err := snLedgerPayer(payerAddress)
+	if err != nil {
+		return nil, err
+	}
+	engine, snErr := self.snLedgerClaimEngine()
+	if snErr != nil {
+		return nil, errors.New(snErr.Code + ": " + snErr.Message)
+	}
+	ctx, cancel := context.WithTimeout(self.ctx, snClaimsTimeout)
+	defer cancel()
+	return engine.unsignedTxsForPayer(ctx, payer)
+}
+
+// snLedgerPayer parses the EVM address of a wallet that pays for claims.
+func snLedgerPayer(payerAddress string) ([20]byte, error) {
+	payer, err := evm.ParseAddress(strings.TrimSpace(payerAddress))
+	if err != nil {
+		return [20]byte{}, fmt.Errorf("%s: the paying wallet %q is not an EVM address: %w", SnErrorCodeInvalidAddress, payerAddress, err)
+	}
+	return payer, nil
+}
+
 // hosts without a DeviceLocal (web)
 
 // SnLedgerClaimTransactionsFor builds a coldkey's v2 claim transactions with
@@ -851,6 +1039,30 @@ func SnLedgerClaimTransactionsFor(settings *SnChainSettings, coldkeySs58 string)
 	return engine.unsignedTxs(ctx)
 }
 
+// SnLedgerClaimTransactionsForPayer builds a coldkey's v2 claim transactions,
+// with explicit settings, for an injected browser wallet whose EVM address
+// payerAddress pays their gas: SnLedgerClaimTransactionsFor's when its balance
+// pays for them all at the chain's price, else the largest account's claim
+// alone, with the other accounts StillClaimable; NeedsGas when it cannot pay
+// even that. The ledger is read from the settings' artifact host, else the
+// default host.
+func SnLedgerClaimTransactionsForPayer(settings *SnChainSettings, coldkeySs58 string, payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
+	payer, err := snLedgerPayer(payerAddress)
+	if err != nil {
+		return nil, err
+	}
+	fetch := func(ctx context.Context, requestUrl string) ([]byte, error) {
+		return snHttpGet(ctx, requestUrl, "the ledger account")
+	}
+	engine, snErr := newSnLedgerClaimEngine(settings, coldkeySs58, "", fetch)
+	if snErr != nil {
+		return nil, errors.New(snErr.Code + ": " + snErr.Message)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), snClaimsTimeout)
+	defer cancel()
+	return engine.unsignedTxsForPayer(ctx, payer)
+}
+
 // What a mined transaction of SnLedgerClaimTransactionsFor did for one of its
 // accounts.
 const (
@@ -862,6 +1074,10 @@ const (
 	// the batch ran short of gas before it: it is claimable as before, and the
 	// transactions are built again to claim it
 	SnLedgerClaimOutcomeNotAttempted = "not_attempted"
+	// no transaction claims it now, because the paying wallet cannot pay for it
+	// with the others (SnLedgerClaimTransactionsResult.StillClaimable): it is
+	// claimable as before, and a later claim claims it
+	SnLedgerClaimOutcomeStillClaimable = "still_claimable"
 )
 
 // SnLedgerClaimOutcome is one account's outcome in a mined claim transaction.
@@ -870,7 +1086,8 @@ type SnLedgerClaimOutcome struct {
 	Index int64 `json:"index"`
 	// SnLedgerClaimOutcome*
 	Status string `json:"status"`
-	// what vault2's Claimed event paid, for confirmed
+	// what vault2's Claimed event paid, for confirmed; what a claim pays it
+	// now, for still_claimable
 	AmountRao int64  `json:"amount_rao"`
 	Message   string `json:"message,omitempty"`
 }

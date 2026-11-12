@@ -151,15 +151,17 @@ func TestSnLedgerClaimOneAccountAloneWithABatcher(t *testing.T) {
 }
 
 // requireClaimedAlone requires each of alice's two accounts claimed by its own
-// transaction to vault2, in turn.
+// transaction to vault2, in turn, the largest first: capture the flag's 0.048 α
+// before the pool's 0.023 α, though the pool is first in the ledger.
 func requireClaimedAlone(t *testing.T, f *testV2Claim, events []testLedgerClaimEvent) {
 	t.Helper()
 	sent := f.chain.sentTxs()
 	if len(sent) != 2 || sent[0].to != f.chain.vault2 || sent[1].to != f.chain.vault2 || len(events) != 4 {
 		t.Fatalf("events %+v, %d sent", events, len(sent))
 	}
-	if events[0].kind != "sent" || events[0].noId != 1 || events[1].kind != "confirmed" || events[2].kind != "sent" || events[2].noId != testCtfNoId ||
-		events[3].kind != "confirmed" || events[3].amount != testCtfCumulative || events[0].txHash == events[2].txHash {
+	if events[0].kind != "sent" || events[0].noId != testCtfNoId || events[1].kind != "confirmed" || events[1].amount != testCtfCumulative ||
+		events[2].kind != "sent" || events[2].noId != 1 || events[3].kind != "confirmed" || events[3].amount != testV2Cumulative-testV2Paid ||
+		events[0].txHash == events[2].txHash {
 		t.Fatalf("events %+v", events)
 	}
 }

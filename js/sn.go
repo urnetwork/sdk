@@ -16,10 +16,10 @@ import (
 // DeviceLocal: it reads a coldkey's entitlements straight from the chain
 // with explicit settings and signs claims with the reader's injected EVM
 // wallet, so only the settings, the claims scan, the v2 accounts, the v1 and
-// v2 unsigned transactions, what a mined v2 claim did, and the local address
-// check are exposed, with the claim relay's status and Claim now, and a
-// client's capture the flag wins, over what the page reads
-// (sn_claim_relay.go).
+// v2 unsigned transactions (checked against the paying wallet's balance), what
+// a mined v2 claim did, and the local address check are exposed, with the
+// claim relay's status and Claim now, and a client's or a network's capture
+// the flag wins, over what the page reads (sn_claim_relay.go).
 
 func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
 	handler := js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -412,6 +412,38 @@ func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
 	})
 }
 
+// URnetworkSnLedgerClaimTransactionsForPayer(settings, coldkeySs58, payerAddress) -> Promise<{transactions, still_claimable, payer_address, payer_balance_wei, fee_per_gas_wei, max_cost_wei, all_cost_wei, needs_gas}>
+//
+// The v2 claim transactions for the reader's wallet at payerAddress, which pays
+// their gas, checked against its balance at the chain's price: those of
+// URnetworkSnLedgerClaimTransactionsFor when it pays for them all, else the
+// largest account's claim alone, and every other account in still_claimable
+// ({no_id, index, status "still_claimable", amount_rao, message}): no
+// transaction claims it now, a later claim does. needs_gas: it cannot pay even
+// for transactions. Every key is snake_case, the sdk's json; a transactions
+// entry passes to URnetworkSnLedgerClaimOutcomes as it is. It rejects as
+// URnetworkSnLedgerClaimTransactionsFor does, and with
+// "invalid_ss58_address: ..." for a payer that is not an EVM address.
+func SnLedgerClaimTransactionsForPayer(this js.Value, args []js.Value) any {
+	return jsPromise(func(resolve func(any), reject func(error)) {
+		if len(args) < 3 || args[1].Type() != js.TypeString || args[2].Type() != js.TypeString {
+			reject(errors.New("settings, coldkey and the paying wallet's address are required"))
+			return
+		}
+		settings, err := parseSnChainSettings(args[0])
+		if err != nil {
+			reject(err)
+			return
+		}
+		result, err := sdk.SnLedgerClaimTransactionsForPayer(settings, args[1].String(), args[2].String())
+		if err != nil {
+			reject(err)
+			return
+		}
+		resolve(jsJson(result))
+	})
+}
+
 // The v2 claim transactions as a page reads them, with the Go field names.
 func jsSnLedgerUnsignedTxs(txs *sdk.SnLedgerUnsignedTxList) js.Value {
 	out := []any{}
@@ -530,26 +562,44 @@ func jsString(v js.Value) string {
 	return ""
 }
 
-// URnetworkSnCtfClientOf(answer) -> { client_id, as_of_millis, epochs, wins, latest_win, error }
+// URnetworkSnCtfClientOf(answer) -> { client_id, as_of_millis, epochs, wins, unclaimed_wins, latest_win, error }
 //
-// A client's capture the flag status and wins from GET /sn/ctf/client's json,
-// which the page read with its own client token (an object or its json text).
-// latest_win is the "flag captured" line's, null without a win; with an error
-// the status is unavailable, never "no wins". Synchronous, and no request
-// leaves the wasm.
+// A client's or a network's capture the flag wins from GET /sn/ctf/client's
+// json, which the page read with its own token (an object or its json text).
+// unclaimed_wins are the wins the "you won a slot" line shows, each with its
+// client_id; with an error the status is unavailable, never "no wins".
+// Synchronous, and no request leaves the wasm.
 func SnCtfClientOf(this js.Value, args []js.Value) any {
-	answer := ""
-	if 0 < len(args) {
-		switch args[0].Type() {
-		case js.TypeString:
-			answer = args[0].String()
-		default:
-			if raw, err := jsSnakeJson(args[0]); err == nil && raw != nil {
-				answer = string(raw)
-			}
-		}
+	return jsJson(sdk.SnCtfClientOf(jsCtfAnswer(args)))
+}
+
+// URnetworkSnCtfClientOfResponse(status, answer) -> as URnetworkSnCtfClientOf
+//
+// The page's read of GET /sn/ctf/client with the HTTP status it was answered
+// (a number): 200 reads answer as URnetworkSnCtfClientOf does; 401, a server
+// before the network answer refusing the network token, is no wins and never
+// a reason to sign out; any other status is unavailable. Synchronous.
+func SnCtfClientOfResponse(this js.Value, args []js.Value) any {
+	status := 0
+	if 0 < len(args) && args[0].Type() == js.TypeNumber {
+		status = args[0].Int()
 	}
-	return jsJson(sdk.SnCtfClientOf(answer))
+	return jsJson(sdk.SnCtfClientOfResponse(status, jsCtfAnswer(args[min(1, len(args)):])))
+}
+
+// jsCtfAnswer is the route's json a page passes first: its text, or an object
+// as json.
+func jsCtfAnswer(args []js.Value) string {
+	if len(args) == 0 {
+		return ""
+	}
+	if args[0].Type() == js.TypeString {
+		return args[0].String()
+	}
+	if raw, err := jsSnakeJson(args[0]); err == nil && raw != nil {
+		return string(raw)
+	}
+	return ""
 }
 
 // URnetworkSnGasBalanceFor(settings, address) -> Promise<{Address, Wei, Tao, Error}>
@@ -604,6 +654,7 @@ func registerSnExports() {
 	js.Global().Set("URnetworkSnLedgerAccountsFor", js.FuncOf(SnLedgerAccountsFor))
 	js.Global().Set("URnetworkSnClaimTransactionsFor", js.FuncOf(SnClaimTransactionsFor))
 	js.Global().Set("URnetworkSnLedgerClaimTransactionsFor", js.FuncOf(SnLedgerClaimTransactionsFor))
+	js.Global().Set("URnetworkSnLedgerClaimTransactionsForPayer", js.FuncOf(SnLedgerClaimTransactionsForPayer))
 	js.Global().Set("URnetworkSnLedgerClaimOutcomes", js.FuncOf(SnLedgerClaimOutcomes))
 	js.Global().Set("URnetworkSnGasBalanceFor", js.FuncOf(SnGasBalanceFor))
 	js.Global().Set("URnetworkFormatAlpha", js.FuncOf(FormatAlpha))
@@ -612,4 +663,5 @@ func registerSnExports() {
 	js.Global().Set("URnetworkSnClaimNow", js.FuncOf(SnClaimNow))
 	// capture the flag over what the page reads
 	js.Global().Set("URnetworkSnCtfClientOf", js.FuncOf(SnCtfClientOf))
+	js.Global().Set("URnetworkSnCtfClientOfResponse", js.FuncOf(SnCtfClientOfResponse))
 }

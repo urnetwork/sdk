@@ -1,15 +1,21 @@
 package sdk
 
-// sn_ctf_client.go — a client's capture the flag wins, the optional "flag
-// captured" line beside its earnings (sn CAPTURETHEFLAG.md §10). Each epoch the
-// operator draws up to five providers and five extenders per country from the
-// miners online there for half the epoch, and pays the winners into its
-// capture the flag pool, which the claim flow claims beside its pool. GET
-// /sn/ctf/client (sn api/operator.yml) answers the calling client's recent
-// epochs: per role, whether it was a candidate and why not, its country, and
-// whether it won, with its rank and amounts. It takes only a client token: a
-// network token is answered 401, so the device sends its client token and
-// nothing else.
+// sn_ctf_client.go — a client's or a network's capture the flag wins, the
+// "you won a slot" line beside its earnings (sn CAPTURETHEFLAG.md §10). Each
+// epoch the operator auctions up to five provider and five extender slots per
+// country among the miners online there for half the epoch, and pays the
+// winners into its capture the flag pool, which the claim flow claims beside
+// its pool. GET /sn/ctf/client (sn api/operator.yml) answers for the bearer:
+// a client token gets that client's recent epochs (per role, whether it was a
+// candidate and why not, its country, and whether it won) and its wins; a
+// network token gets the wins of every client the network has had. Each win
+// says whether its award has been claimed, and the line shows for every win
+// that has not.
+//
+// A server before the network answer refuses a network token with 401. No
+// answer of this route ever signs anyone out: its requests go over the plain
+// transport, never the seam that takes a 401 as the credential's rejection,
+// and a refused network token reads as no wins.
 
 import (
 	"cmp"
@@ -17,12 +23,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/urnetwork/connect"
+	"github.com/urnetwork/sdk/sn/evm"
 )
 
 // SnErrorCodeCtfUnavailable is SnCtfClientResult.Error's code when GET
@@ -120,11 +128,23 @@ func NewSnCtfClientEpochList() *SnCtfClientEpochList {
 	}
 }
 
-// SnCtfWin is one flag the client captured: a slot it won in a country and
+// Whether a win's award has been claimed from vault2 (SnCtfWin.ClaimState).
+const (
+	// not claimed yet: its root is pending, its pot share waits for the carry,
+	// or the coldkey's capture the flag account has not been claimed through
+	// it. The "you won a slot" line shows for it
+	SnCtfWinClaimStateUnclaimed = "unclaimed"
+	// claimed: the account's claim paid it
+	SnCtfWinClaimStateClaimed = "claimed"
+	// the server could not say: show it neither as claimed nor as unclaimed
+	SnCtfWinClaimStateUnknown = "unknown"
+)
+
+// SnCtfWin is one flag a client captured: a slot it won in a country and
 // role. Amounts are rao.
 type SnCtfWin struct {
 	Epoch int64 `json:"epoch"`
-	// SnCtfRole*
+	// SnCtfRole*; a role this sdk does not know is a slot of another kind
 	Role string `json:"role"`
 	// a lowercase ISO 3166-1 alpha-2 code
 	Country     string `json:"country"`
@@ -138,6 +158,10 @@ type SnCtfWin struct {
 	// "pending" or "finalized", as SnCtfClientEpoch.RootStatus
 	RootStatus  string `json:"root_status"`
 	ColdkeySs58 string `json:"coldkey_ss58"`
+	// the client that won it: a network's answer spans its clients
+	ClientId string `json:"client_id"`
+	// SnCtfWinClaimState*
+	ClaimState string `json:"claim_state"`
 }
 
 type SnCtfWinList struct {
@@ -150,19 +174,26 @@ func NewSnCtfWinList() *SnCtfWinList {
 	}
 }
 
-// SnCtfClientResult is the client's capture the flag status in its recent
-// epochs. With an Error it is unavailable: an app draws no line, never "no
-// wins".
+// SnCtfClientResult is a client's or a network's capture the flag status.
+// With an Error it is unavailable: an app draws no line, never "no wins".
 type SnCtfClientResult struct {
+	// the client answered for; "" for a network's answer, whose wins span its
+	// clients
 	ClientId string `json:"client_id"`
-	// when the answer was last changed, unix milliseconds
+	// when the capture the flag state was last changed, unix milliseconds
 	AsOfMillis int64 `json:"as_of_millis"`
-	// newest first; empty before the first capture the flag root
+	// the client's recent epochs, newest first; empty before the first capture
+	// the flag root, and for a network
 	Epochs *SnCtfClientEpochList `json:"epochs"`
-	// the flags it captured in those epochs, newest first, providers before
-	// extenders
+	// the flags captured: every win not claimed yet whatever its epoch, and
+	// every win of the recent epochs; newest first (epoch, then providers
+	// before extenders, then country, then rank). From a server before the
+	// network answer, the wins of Epochs
 	Wins *SnCtfWinList `json:"wins"`
-	// the newest win, the "flag captured" line; nil without one
+	// the wins whose award has not been claimed yet, in Wins' order: the "you
+	// won a slot" line shows for each. Never nil
+	UnclaimedWins *SnCtfWinList `json:"unclaimed_wins"`
+	// Wins' first, the newest win; nil without one
 	LatestWin *SnCtfWin `json:"latest_win,omitempty"`
 	Error     *SnError  `json:"error,omitempty"`
 }
@@ -170,11 +201,30 @@ type SnCtfClientResult struct {
 type SnCtfClientCallback connect.ApiCallback[*SnCtfClientResult]
 
 // GET /sn/ctf/client. Amounts are {alpha, rao}; a field the role has no value
-// for is null.
+// for is null. client_id is null and epochs [] for a network; wins is absent
+// from a server before the network answer.
 type snCtfClientJson struct {
 	AsOf     string                  `json:"as_of"`
 	ClientId string                  `json:"client_id"`
 	Epochs   []*snCtfClientEpochJson `json:"epochs"`
+	Wins     []*snCtfWinJson         `json:"wins"`
+}
+
+// a CtfClientWin; claimed is true, false or null
+type snCtfWinJson struct {
+	Epoch       *int64           `json:"epoch"`
+	Role        string           `json:"role"`
+	Country     string           `json:"country"`
+	Rank        *int64           `json:"rank"`
+	ClientId    string           `json:"client_id"`
+	Amount      *snCtfAmountJson `json:"amount"`
+	Slot        *snCtfAmountJson `json:"slot"`
+	PotShare    *snCtfAmountJson `json:"pot_share"`
+	Pending     bool             `json:"pending"`
+	RootStatus  string           `json:"root_status"`
+	Coldkey     *string          `json:"coldkey"`
+	ColdkeySs58 string           `json:"coldkey_ss58"`
+	Claimed     json.RawMessage  `json:"claimed"`
 }
 
 type snCtfClientEpochJson struct {
@@ -290,6 +340,98 @@ func (self *snCtfClientRoleJson) role(role string) (*SnCtfClientRole, error) {
 	return out, nil
 }
 
+// win checks one CtfClientWin. answerClientId is the answer's client, "" for
+// a network's answer.
+func (self *snCtfWinJson) win(answerClientId string) (*SnCtfWin, error) {
+	out := &SnCtfWin{Role: self.Role, Country: self.Country, Pending: self.Pending, RootStatus: self.RootStatus, ColdkeySs58: strings.TrimSpace(self.ColdkeySs58)}
+	switch {
+	case self.Epoch == nil || *self.Epoch < 0:
+		return nil, errors.New("a win without its epoch")
+	case !snCtfRolePattern.MatchString(self.Role):
+		return nil, fmt.Errorf("role %q", self.Role)
+	case !snCtfCountryPattern.MatchString(self.Country):
+		return nil, fmt.Errorf("country %q is not a lowercase ISO 3166-1 code", self.Country)
+	case self.Rank == nil || *self.Rank < 1 || 5 < *self.Rank:
+		return nil, errors.New("a win without a rank of 1 to 5")
+	case self.RootStatus != "pending" && self.RootStatus != "finalized":
+		return nil, fmt.Errorf("root status %q", self.RootStatus)
+	case self.Amount == nil || self.Slot == nil || self.PotShare == nil:
+		return nil, errors.New("a win without its amount, slot or pot share")
+	case !ValidateSs58(out.ColdkeySs58):
+		return nil, fmt.Errorf("a win paid to %q, not a coldkey", out.ColdkeySs58)
+	}
+	out.Epoch, out.Rank = *self.Epoch, *self.Rank
+	clientId, err := connect.ParseId(strings.TrimSpace(self.ClientId))
+	if err != nil {
+		return nil, fmt.Errorf("client %q: %w", self.ClientId, err)
+	}
+	out.ClientId = clientId.String()
+	if answerClientId != "" {
+		// a client's answer holds only its own wins
+		if answerId, err := connect.ParseId(answerClientId); err != nil || answerId != clientId {
+			return nil, fmt.Errorf("a win of client %s in the answer for %s", out.ClientId, answerClientId)
+		}
+	}
+	if out.SlotRao, err = self.Slot.rao(); err != nil {
+		return nil, fmt.Errorf("slot: %w", err)
+	}
+	if out.PotShareRao, err = self.PotShare.rao(); err != nil {
+		return nil, fmt.Errorf("pot share: %w", err)
+	}
+	if out.AmountRao, err = self.Amount.rao(); err != nil {
+		return nil, fmt.Errorf("amount: %w", err)
+	}
+	if out.AmountRao != out.SlotRao+out.PotShareRao {
+		return nil, fmt.Errorf("an amount of %d rao that is not its slot and pot share", out.AmountRao)
+	}
+	if self.Coldkey != nil {
+		coldkey, err := snColdkeyBytes(out.ColdkeySs58)
+		named, hexErr := evm.ParseHash32(strings.TrimSpace(*self.Coldkey))
+		if err != nil || hexErr != nil || coldkey != named {
+			return nil, fmt.Errorf("coldkey %q is not %s", *self.Coldkey, out.ColdkeySs58)
+		}
+	}
+	switch claimed := strings.TrimSpace(string(self.Claimed)); claimed {
+	case "true":
+		out.ClaimState = SnCtfWinClaimStateClaimed
+	case "false":
+		out.ClaimState = SnCtfWinClaimStateUnclaimed
+	case "", "null":
+		out.ClaimState = SnCtfWinClaimStateUnknown
+	default:
+		return nil, fmt.Errorf("claimed %s", claimed)
+	}
+	return out, nil
+}
+
+// a role: provider or extender, or one a later server adds
+var snCtfRolePattern = regexp.MustCompile(`^[a-z][a-z_]*$`)
+
+// snCtfRoleOrder puts providers before extenders, and any other role after.
+func snCtfRoleOrder(role string) int {
+	switch role {
+	case SnCtfRoleProvider:
+		return 0
+	case SnCtfRoleExtender:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// snCtfWinsNewestFirst orders wins as the route does: epoch descending, then
+// providers before extenders, then country, then rank.
+func snCtfWinsNewestFirst(wins []*SnCtfWin) {
+	slices.SortStableFunc(wins, func(a *SnCtfWin, b *SnCtfWin) int {
+		return cmp.Or(
+			cmp.Compare(b.Epoch, a.Epoch),
+			cmp.Compare(snCtfRoleOrder(a.Role), snCtfRoleOrder(b.Role)),
+			strings.Compare(a.Country, b.Country),
+			cmp.Compare(a.Rank, b.Rank),
+		)
+	})
+}
+
 // snParseCtfClient checks a GET /sn/ctf/client answer whole: any part that
 // does not parse refuses it, so no line is drawn from it.
 func snParseCtfClient(raw []byte) (*SnCtfClientResult, error) {
@@ -304,12 +446,9 @@ func snParseCtfClient(raw []byte) (*SnCtfClientResult, error) {
 	if answer.Epochs == nil {
 		return nil, errors.New("the answer has no epochs list")
 	}
-	result := &SnCtfClientResult{
-		ClientId:   answer.ClientId,
-		AsOfMillis: asOf.UnixMilli(),
-		Epochs:     NewSnCtfClientEpochList(),
-		Wins:       NewSnCtfWinList(),
-	}
+	result := snCtfNoWins()
+	result.ClientId = strings.TrimSpace(answer.ClientId)
+	result.AsOfMillis = asOf.UnixMilli()
 	var epochs []*SnCtfClientEpoch
 	for i, epochJson := range answer.Epochs {
 		if epochJson == nil || epochJson.Epoch == nil || epochJson.Providers == nil || epochJson.Extenders == nil {
@@ -334,26 +473,69 @@ func snParseCtfClient(raw []byte) (*SnCtfClientResult, error) {
 	slices.SortStableFunc(epochs, func(a *SnCtfClientEpoch, b *SnCtfClientEpoch) int {
 		return cmp.Compare(b.Epoch, a.Epoch)
 	})
+	var wins []*SnCtfWin
 	for i, epoch := range epochs {
 		if 0 < i && epochs[i-1].Epoch == epoch.Epoch {
 			return nil, fmt.Errorf("epoch %d is answered twice", epoch.Epoch)
 		}
 		result.Epochs.Add(epoch)
+		if answer.Wins != nil {
+			continue
+		}
+		// a server before the network answer lists no wins: they are the
+		// epochs'. A win whose root is pending is not claimable yet, so it is
+		// unclaimed; whether one in a finalized root is claimed is unknown
 		for _, role := range []*SnCtfClientRole{epoch.Provider, epoch.Extender} {
-			if role.Won {
-				result.Wins.Add(&SnCtfWin{
-					Epoch:       epoch.Epoch,
-					Role:        role.Role,
-					Country:     role.Country,
-					Rank:        role.Rank,
-					SlotRao:     role.SlotRao,
-					PotShareRao: role.PotShareRao,
-					AmountRao:   role.SlotRao + role.PotShareRao,
-					Pending:     role.Pending,
-					RootStatus:  epoch.RootStatus,
-					ColdkeySs58: role.ColdkeySs58,
-				})
+			if !role.Won {
+				continue
 			}
+			claimState := SnCtfWinClaimStateUnknown
+			if epoch.RootStatus == "pending" {
+				claimState = SnCtfWinClaimStateUnclaimed
+			}
+			wins = append(wins, &SnCtfWin{
+				Epoch:       epoch.Epoch,
+				Role:        role.Role,
+				Country:     role.Country,
+				Rank:        role.Rank,
+				SlotRao:     role.SlotRao,
+				PotShareRao: role.PotShareRao,
+				AmountRao:   role.SlotRao + role.PotShareRao,
+				Pending:     role.Pending,
+				RootStatus:  epoch.RootStatus,
+				ColdkeySs58: role.ColdkeySs58,
+				ClientId:    result.ClientId,
+				ClaimState:  claimState,
+			})
+		}
+	}
+	type winKey struct {
+		epoch    int64
+		role     string
+		clientId string
+	}
+	seen := map[winKey]bool{}
+	for i, winJson := range answer.Wins {
+		if winJson == nil {
+			return nil, fmt.Errorf("win %d: null", i)
+		}
+		win, err := winJson.win(result.ClientId)
+		if err != nil {
+			return nil, fmt.Errorf("win %d: %w", i, err)
+		}
+		// a client wins one slot of a role in an epoch at most
+		key := winKey{win.Epoch, win.Role, win.ClientId}
+		if seen[key] {
+			return nil, fmt.Errorf("win %d: client %s won epoch %d's %s draw twice", i, win.ClientId, win.Epoch, win.Role)
+		}
+		seen[key] = true
+		wins = append(wins, win)
+	}
+	snCtfWinsNewestFirst(wins)
+	for _, win := range wins {
+		result.Wins.Add(win)
+		if win.ClaimState == SnCtfWinClaimStateUnclaimed {
+			result.UnclaimedWins.Add(win)
 		}
 	}
 	if 0 < result.Wins.Len() {
@@ -362,15 +544,22 @@ func snParseCtfClient(raw []byte) (*SnCtfClientResult, error) {
 	return result, nil
 }
 
+// snCtfNoWins is an answer without a win.
+func snCtfNoWins() *SnCtfClientResult {
+	return &SnCtfClientResult{
+		Epochs:        NewSnCtfClientEpochList(),
+		Wins:          NewSnCtfWinList(),
+		UnclaimedWins: NewSnCtfWinList(),
+	}
+}
+
 // snCtfClientResultOf is the result of a read of GET /sn/ctf/client: raw, or
 // readErr when it could not be read.
 func snCtfClientResultOf(raw []byte, readErr error) *SnCtfClientResult {
 	unavailable := func(message string) *SnCtfClientResult {
-		return &SnCtfClientResult{
-			Epochs: NewSnCtfClientEpochList(),
-			Wins:   NewSnCtfWinList(),
-			Error:  newSnError(SnErrorCodeCtfUnavailable, message),
-		}
+		result := snCtfNoWins()
+		result.Error = newSnError(SnErrorCodeCtfUnavailable, message)
+		return result
 	}
 	if readErr != nil {
 		return unavailable(readErr.Error())
@@ -383,24 +572,69 @@ func snCtfClientResultOf(raw []byte, readErr error) *SnCtfClientResult {
 }
 
 // SnCtfClientOf reads a GET /sn/ctf/client answer that a page fetched with its
-// own client token. Pure.
+// own client or network token. Pure.
 func SnCtfClientOf(answerJson string) *SnCtfClientResult {
 	return snCtfClientResultOf([]byte(answerJson), nil)
 }
 
-// snCtfClient reads the device's client's status with the api's client token.
-// Any other credential is never sent: the route answers it 401, which the api
-// would take as that credential's rejection.
-func snCtfClient(ctx context.Context, api *Api) *SnCtfClientResult {
-	byJwt := api.GetByJwt()
-	if !credentialNamesClient(byJwt) {
-		return snCtfClientResultOf(nil, errors.New("the session has no client credential"))
+// SnCtfClientOfResponse reads a page's own GET /sn/ctf/client with the HTTP
+// status it was answered: 200 reads the body as SnCtfClientOf; 401 is no wins,
+// as a server before the network answer refuses a network token, and never a
+// reason to sign out; any other status, a 304 included, is unavailable (a page
+// that revalidates reads its kept body with SnCtfClientOf). Pure.
+func SnCtfClientOfResponse(statusCode int, answerJson string) *SnCtfClientResult {
+	switch statusCode {
+	case http.StatusOK:
+		return SnCtfClientOf(answerJson)
+	case http.StatusUnauthorized:
+		return snCtfNoWins()
+	default:
+		return snCtfClientResultOf(nil, fmt.Errorf("the capture the flag route answered %d", statusCode))
 	}
-	raw, err := api.getHttpGetRaw()(ctx, fmt.Sprintf("%s/sn/ctf/client", api.apiUrl), byJwt)
-	return snCtfClientResultOf(raw, err)
 }
 
-// SnCtfClient reads the device's capture the flag status and wins.
+// snCtfClientCredentials are the credentials the device asks with, in turn:
+// its network credential, which the route answers with the wins of all of the
+// network's clients, as ur.io reads them, then its client token, which a
+// server before the network answer takes, for that client's.
+func snCtfClientCredentials(api *Api) []string {
+	var credentials []string
+	if networkByJwt := api.networkCredential(); networkByJwt != "" {
+		credentials = append(credentials, networkByJwt)
+	}
+	if byJwt := api.GetByJwt(); credentialNamesClient(byJwt) {
+		credentials = append(credentials, byJwt)
+	}
+	return credentials
+}
+
+// snCtfClient reads the device's capture the flag wins. Its requests go over
+// the api's transport alone, never the seam that takes a 401 as the sent
+// credential's rejection, so no answer of the route signs anyone out. A 401 to
+// the network credential, a server before the network answer, asks again
+// with the client token, and without one reads as no wins.
+func snCtfClient(ctx context.Context, api *Api) *SnCtfClientResult {
+	credentials := snCtfClientCredentials(api)
+	if len(credentials) == 0 {
+		return snCtfClientResultOf(nil, errors.New("the session has no credential"))
+	}
+	get := api.transportHttpGetRaw()
+	ctx = api.clientInfoContext(ctx)
+	requestUrl := fmt.Sprintf("%s/sn/ctf/client", api.apiUrl)
+	for _, byJwt := range credentials {
+		raw, err := get(ctx, requestUrl, byJwt)
+		if err == nil {
+			return snCtfClientResultOf(raw, nil)
+		}
+		if !ConfirmedClientRefreshRejection(err) || !isNetworkCredential(byJwt) {
+			return snCtfClientResultOf(nil, err)
+		}
+	}
+	return snCtfNoWins()
+}
+
+// SnCtfClient reads the device's capture the flag wins: its network's when it
+// holds the network credential, else its client's.
 func (self *snDevice) SnCtfClient(callback SnCtfClientCallback) {
 	go connect.HandleError(func() {
 		ctx, cancel := context.WithTimeout(self.ctx, snCtfClientTimeout)

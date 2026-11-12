@@ -681,6 +681,9 @@ inline constexpr const char* SnCtfReasonOwnNetwork = "own_network";
 inline constexpr const char* SnCtfReasonPresence = "presence";
 inline constexpr const char* SnCtfRoleExtender = "extender";
 inline constexpr const char* SnCtfRoleProvider = "provider";
+inline constexpr const char* SnCtfWinClaimStateClaimed = "claimed";
+inline constexpr const char* SnCtfWinClaimStateUnclaimed = "unclaimed";
+inline constexpr const char* SnCtfWinClaimStateUnknown = "unknown";
 inline constexpr const char* SnErrorCodeAlreadyClaimed = "already_claimed";
 inline constexpr const char* SnErrorCodeArtifactUnavailable = "artifact_unavailable";
 inline constexpr const char* SnErrorCodeChainNotConfigured = "chain_not_configured";
@@ -750,6 +753,7 @@ inline constexpr const char* SnFleetRefusalStateUnreadable = "state_unreadable";
 inline constexpr const char* SnLedgerClaimOutcomeConfirmed = "confirmed";
 inline constexpr const char* SnLedgerClaimOutcomeFailed = "failed";
 inline constexpr const char* SnLedgerClaimOutcomeNotAttempted = "not_attempted";
+inline constexpr const char* SnLedgerClaimOutcomeStillClaimable = "still_claimable";
 inline constexpr int64_t SnLedgerCtfPoolIdBase = 4294967296;
 inline constexpr const char* SnLedgerPoolKindCtf = "ctf";
 inline constexpr const char* SnLedgerPoolKindPool = "pool";
@@ -1253,6 +1257,7 @@ struct SnLedgerAccount;
 struct SnLedgerAccountsResult;
 struct SnLedgerClaimItem;
 struct SnLedgerClaimOutcome;
+struct SnLedgerClaimTransactionsResult;
 struct SnLedgerUnavailablePool;
 struct SnLedgerUnsignedTx;
 struct SnNetworkConsentChallengeResult;
@@ -4273,6 +4278,8 @@ struct SnCtfWin {
 	bool pending{};
 	std::string root_status{};
 	std::string coldkey_ss58{};
+	std::string client_id{};
+	std::string claim_state{};
 };
 
 struct SnCtfClientResult {
@@ -4280,6 +4287,7 @@ struct SnCtfClientResult {
 	int64_t as_of_millis{};
 	std::optional<SnCtfClientEpochList> epochs;
 	std::optional<SnCtfWinList> wins;
+	std::optional<SnCtfWinList> unclaimed_wins;
 	std::optional<SnCtfWin> latest_win;
 	std::optional<SnError> error;
 };
@@ -4424,6 +4432,17 @@ struct SnLedgerClaimOutcome {
 	std::string status{};
 	int64_t amount_rao{};
 	std::optional<std::string> message;
+};
+
+struct SnLedgerClaimTransactionsResult {
+	std::optional<SnLedgerUnsignedTxList> transactions;
+	std::optional<SnLedgerClaimOutcomeList> still_claimable;
+	std::string payer_address{};
+	std::string payer_balance_wei{};
+	std::string fee_per_gas_wei{};
+	std::string max_cost_wei{};
+	std::string all_cost_wei{};
+	bool needs_gas{};
 };
 
 struct SnLedgerUnavailablePool {
@@ -5801,6 +5820,8 @@ inline void to_json(nlohmann::json& j, const SnLedgerClaimItem& v);
 inline void from_json(const nlohmann::json& j, SnLedgerClaimItem& v);
 inline void to_json(nlohmann::json& j, const SnLedgerClaimOutcome& v);
 inline void from_json(const nlohmann::json& j, SnLedgerClaimOutcome& v);
+inline void to_json(nlohmann::json& j, const SnLedgerClaimTransactionsResult& v);
+inline void from_json(const nlohmann::json& j, SnLedgerClaimTransactionsResult& v);
 inline void to_json(nlohmann::json& j, const SnLedgerUnavailablePool& v);
 inline void from_json(const nlohmann::json& j, SnLedgerUnavailablePool& v);
 inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v);
@@ -19054,6 +19075,8 @@ inline void to_json(nlohmann::json& j, const SnCtfWin& v) {
 	j["pending"] = v.pending;
 	j["root_status"] = v.root_status;
 	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["client_id"] = v.client_id;
+	j["claim_state"] = v.claim_state;
 }
 inline void from_json(const nlohmann::json& j, SnCtfWin& v) {
 	if (!j.is_object()) {
@@ -19089,6 +19112,12 @@ inline void from_json(const nlohmann::json& j, SnCtfWin& v) {
 	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
 		it->get_to(v.coldkey_ss58);
 	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.client_id);
+	}
+	if (auto it = j.find("claim_state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_state);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const SnCtfClientResult& v) {
@@ -19100,6 +19129,9 @@ inline void to_json(nlohmann::json& j, const SnCtfClientResult& v) {
 	}
 	if (v.wins) {
 		j["wins"] = *v.wins;
+	}
+	if (v.unclaimed_wins) {
+		j["unclaimed_wins"] = *v.unclaimed_wins;
 	}
 	if (v.latest_win) {
 		j["latest_win"] = *v.latest_win;
@@ -19127,6 +19159,11 @@ inline void from_json(const nlohmann::json& j, SnCtfClientResult& v) {
 		SnCtfWinList tmp{};
 		it->get_to(tmp);
 		v.wins = std::move(tmp);
+	}
+	if (auto it = j.find("unclaimed_wins"); it != j.end() && !it->is_null()) {
+		SnCtfWinList tmp{};
+		it->get_to(tmp);
+		v.unclaimed_wins = std::move(tmp);
 	}
 	if (auto it = j.find("latest_win"); it != j.end() && !it->is_null()) {
 		SnCtfWin tmp{};
@@ -19818,6 +19855,55 @@ inline void from_json(const nlohmann::json& j, SnLedgerClaimOutcome& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerClaimTransactionsResult& v) {
+	j = nlohmann::json::object();
+	if (v.transactions) {
+		j["transactions"] = *v.transactions;
+	}
+	if (v.still_claimable) {
+		j["still_claimable"] = *v.still_claimable;
+	}
+	j["payer_address"] = v.payer_address;
+	j["payer_balance_wei"] = v.payer_balance_wei;
+	j["fee_per_gas_wei"] = v.fee_per_gas_wei;
+	j["max_cost_wei"] = v.max_cost_wei;
+	j["all_cost_wei"] = v.all_cost_wei;
+	j["needs_gas"] = v.needs_gas;
+}
+inline void from_json(const nlohmann::json& j, SnLedgerClaimTransactionsResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("transactions"); it != j.end() && !it->is_null()) {
+		SnLedgerUnsignedTxList tmp{};
+		it->get_to(tmp);
+		v.transactions = std::move(tmp);
+	}
+	if (auto it = j.find("still_claimable"); it != j.end() && !it->is_null()) {
+		SnLedgerClaimOutcomeList tmp{};
+		it->get_to(tmp);
+		v.still_claimable = std::move(tmp);
+	}
+	if (auto it = j.find("payer_address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.payer_address);
+	}
+	if (auto it = j.find("payer_balance_wei"); it != j.end() && !it->is_null()) {
+		it->get_to(v.payer_balance_wei);
+	}
+	if (auto it = j.find("fee_per_gas_wei"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fee_per_gas_wei);
+	}
+	if (auto it = j.find("max_cost_wei"); it != j.end() && !it->is_null()) {
+		it->get_to(v.max_cost_wei);
+	}
+	if (auto it = j.find("all_cost_wei"); it != j.end() && !it->is_null()) {
+		it->get_to(v.all_cost_wei);
+	}
+	if (auto it = j.find("needs_gas"); it != j.end() && !it->is_null()) {
+		it->get_to(v.needs_gas);
 	}
 }
 
@@ -24010,6 +24096,7 @@ public:
 	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
 	void snLedgerClaim(SnLedgerClaimCallback callback) const;
 	std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactions() const;
+	std::optional<SnLedgerClaimTransactionsResult> snLedgerClaimTransactionsForPayer(const std::string& payer_address) const;
 	bool stallExit(const std::string& client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
@@ -24162,6 +24249,7 @@ public:
 	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
 	void snLedgerClaim(SnLedgerClaimCallback callback) const;
 	std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactions() const;
+	std::optional<SnLedgerClaimTransactionsResult> snLedgerClaimTransactionsForPayer(const std::string& payer_address) const;
 	bool stallExit(const std::string& exit_client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
@@ -35991,6 +36079,18 @@ inline std::optional<SnLedgerUnsignedTxList> DeviceLocal::snLedgerClaimTransacti
 	}
 	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
 }
+inline std::optional<SnLedgerClaimTransactionsResult> DeviceLocal::snLedgerClaimTransactionsForPayer(const std::string& payer_address) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_sn_ledger_claim_transactions_for_payer(handle(), payer_address.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimTransactionsResult>(r_s->c_str());
+}
 inline bool DeviceLocal::stallExit(const std::string& client_id, bool stalled) const {
 	bool r = urnet_device_local_stall_exit(handle(), client_id.c_str(), stalled);
 	return r;
@@ -36626,6 +36726,18 @@ inline std::optional<SnLedgerUnsignedTxList> DeviceRemote::snLedgerClaimTransact
 		return std::nullopt;
 	}
 	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
+}
+inline std::optional<SnLedgerClaimTransactionsResult> DeviceRemote::snLedgerClaimTransactionsForPayer(const std::string& payer_address) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_remote_sn_ledger_claim_transactions_for_payer(handle(), payer_address.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimTransactionsResult>(r_s->c_str());
 }
 inline bool DeviceRemote::stallExit(const std::string& exit_client_id, bool stalled) const {
 	bool r = urnet_device_remote_stall_exit(handle(), exit_client_id.c_str(), stalled);
@@ -41131,6 +41243,14 @@ inline std::optional<SnCtfClientResult> snCtfClientOf(const std::string& answer_
 	}
 	return detail::parseJson<SnCtfClientResult>(r_s->c_str());
 }
+inline std::optional<SnCtfClientResult> snCtfClientOfResponse(int64_t status_code, const std::string& answer_json) {
+	char* r_c = urnet_sn_ctf_client_of_response(status_code, answer_json.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnCtfClientResult>(r_s->c_str());
+}
 inline std::string snFleetBindingDigest(const std::string& binding_json) {
 	char* err_c = nullptr;
 	char* r_c = urnet_sn_fleet_binding_digest(binding_json.c_str(), &err_c);
@@ -41194,6 +41314,24 @@ inline std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactionsFor(const 
 		return std::nullopt;
 	}
 	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
+}
+inline std::optional<SnLedgerClaimTransactionsResult> snLedgerClaimTransactionsForPayer(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, const std::string& payer_address) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_sn_ledger_claim_transactions_for_payer(settings_c, coldkey_ss58.c_str(), payer_address.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimTransactionsResult>(r_s->c_str());
 }
 inline std::string snPayoutLeafHex(const std::string& coldkey_ss58, int64_t share_bps) {
 	char* r_c = urnet_sn_payout_leaf_hex(coldkey_ss58.c_str(), share_bps);

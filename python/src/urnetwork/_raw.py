@@ -1571,6 +1571,8 @@ def bind(lib):
     lib.urnet_device_local_sn_ledger_claim.restype = None
     lib.urnet_device_local_sn_ledger_claim_transactions.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_device_local_sn_ledger_claim_transactions.restype = c_void_p
+    lib.urnet_device_local_sn_ledger_claim_transactions_for_payer.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_device_local_sn_ledger_claim_transactions_for_payer.restype = c_void_p
     lib.urnet_device_local_stall_exit.argtypes = [c_uint64, c_char_p, c_bool]
     lib.urnet_device_local_stall_exit.restype = c_bool
     lib.urnet_device_local_start_probe_suite.argtypes = [c_uint64, c_char_p]
@@ -1805,6 +1807,8 @@ def bind(lib):
     lib.urnet_device_remote_sn_ledger_claim.restype = None
     lib.urnet_device_remote_sn_ledger_claim_transactions.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_device_remote_sn_ledger_claim_transactions.restype = c_void_p
+    lib.urnet_device_remote_sn_ledger_claim_transactions_for_payer.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_device_remote_sn_ledger_claim_transactions_for_payer.restype = c_void_p
     lib.urnet_device_remote_stall_exit.argtypes = [c_uint64, c_char_p, c_bool]
     lib.urnet_device_remote_stall_exit.restype = c_bool
     lib.urnet_device_remote_start_probe_suite.argtypes = [c_uint64, c_char_p]
@@ -3193,6 +3197,8 @@ def bind(lib):
     lib.urnet_sn_claims_for.restype = None
     lib.urnet_sn_ctf_client_of.argtypes = [c_char_p]
     lib.urnet_sn_ctf_client_of.restype = c_void_p
+    lib.urnet_sn_ctf_client_of_response.argtypes = [c_int64, c_char_p]
+    lib.urnet_sn_ctf_client_of_response.restype = c_void_p
     lib.urnet_sn_fleet_binding_digest.argtypes = [c_char_p, POINTER(c_void_p)]
     lib.urnet_sn_fleet_binding_digest.restype = c_void_p
     lib.urnet_sn_gas_balance_for.argtypes = [c_char_p, c_char_p, urnet_sn_gas_balance_cb, c_void_p]
@@ -3203,6 +3209,8 @@ def bind(lib):
     lib.urnet_sn_ledger_claim_outcomes_of.restype = c_void_p
     lib.urnet_sn_ledger_claim_transactions_for.argtypes = [c_char_p, c_char_p, POINTER(c_void_p)]
     lib.urnet_sn_ledger_claim_transactions_for.restype = c_void_p
+    lib.urnet_sn_ledger_claim_transactions_for_payer.argtypes = [c_char_p, c_char_p, c_char_p, POINTER(c_void_p)]
+    lib.urnet_sn_ledger_claim_transactions_for_payer.restype = c_void_p
     lib.urnet_sn_payout_leaf_hex.argtypes = [c_char_p, c_int64]
     lib.urnet_sn_payout_leaf_hex.restype = c_void_p
     lib.urnet_sn_testnet_chain_settings.argtypes = []

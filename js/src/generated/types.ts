@@ -1010,6 +1010,17 @@ export interface SnLedgerClaimOutcome {
   message?: string;
 }
 
+export interface SnLedgerClaimTransactionsResult {
+  transactions: SnLedgerUnsignedTx[] | null;
+  still_claimable: SnLedgerClaimOutcome[] | null;
+  payer_address: string;
+  payer_balance_wei: string;
+  fee_per_gas_wei: string;
+  max_cost_wei: string;
+  all_cost_wei: string;
+  needs_gas: boolean;
+}
+
 export interface SnCtfClientRole {
   role: string;
   candidate: boolean;
@@ -1048,6 +1059,8 @@ export interface SnCtfWin {
   pending: boolean;
   root_status: string;
   coldkey_ss58: string;
+  client_id: string;
+  claim_state: string;
 }
 
 export interface SnCtfClientResult {
@@ -1055,6 +1068,7 @@ export interface SnCtfClientResult {
   as_of_millis: number;
   epochs: SnCtfClientEpoch[] | null;
   wins: SnCtfWin[] | null;
+  unclaimed_wins: SnCtfWin[] | null;
   latest_win?: SnCtfWin | null;
   error?: SnError | null;
 }
