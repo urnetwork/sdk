@@ -85,6 +85,9 @@ type fakeNoncePool struct {
 	refuseMessage string
 	// nonce reads fail
 	nonceReadsFail bool
+	// a held transaction is mined no sooner than this after the pool took it,
+	// as at the next block
+	mineAfter time.Duration
 }
 
 type fakePoolTx struct {
@@ -288,6 +291,10 @@ func (self *fakeNoncePool) receipt(w http.ResponseWriter, req fakePoolRequest, b
 		self.answer(w, req.Id, nil, nil)
 		return
 	}
+	if held.minedBy == nil && time.Since(held.heldAt) < self.mineAfter {
+		self.answer(w, req.Id, nil, nil)
+		return
+	}
 	from := held.tx.from
 	for held.minedBy == nil {
 		next := self.held[from][self.minedOf(from)]
@@ -387,6 +394,28 @@ func (self *fakeNoncePool) failNonceReads(fail bool) {
 	self.nonceReadsFail = fail
 }
 
+// mineNoSoonerThan mines a held transaction no sooner than after after the pool
+// took it, as at the next block.
+func (self *fakeNoncePool) mineNoSoonerThan(after time.Duration) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.mineAfter = after
+}
+
+// dropNonce drops the transaction from `from` held with nonce, as a block does
+// one the key cannot pay for, and says whether one was held.
+func (self *fakeNoncePool) dropNonce(from [20]byte, nonce uint64) bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	held := self.held[from][nonce]
+	if held == nil {
+		return false
+	}
+	delete(self.byHash, held.hash)
+	delete(self.held[from], nonce)
+	return true
+}
+
 // drop drops the held transactions from `from`, as a pool drops one it will
 // never mine, and returns how many it dropped.
 func (self *fakeNoncePool) drop(from [20]byte) int {
@@ -473,8 +502,11 @@ func (self *recordingEpochClaimCallback) Failed(epoch int64, message string) {
 	self.add(testLedgerClaimEvent{kind: "failed", index: epoch, message: message})
 }
 
-// alice's share of v1 epoch 7: 1,234 basis points of 1 alpha
-const testV1Epoch7Rao = int64(123_400_000)
+// alice's shares of v1 epochs 7 and 8: 1,234 and 2,000 basis points of 1 alpha
+const (
+	testV1Epoch7Rao = int64(123_400_000)
+	testV1Epoch8Rao = int64(200_000_000)
+)
 
 // testGasKeyClaims is one device whose gas key claims both ways: alice's v1
 // share of epoch 7 (newTestV1Claim's) and her settlement v2 accounts (the v2
@@ -494,16 +526,19 @@ type testGasKeyClaims struct {
 func newTestGasKeyClaims(t *testing.T, v2 *testV2Claim) *testGasKeyClaims {
 	t.Helper()
 	raw7, hash7, root7 := buildTestArtifact(t, 7, 3, [][32]byte{v2.alice, testColdkey(0x40)}, []uint64{1234, 8766})
+	raw8, hash8, root8 := buildTestArtifact(t, 8, 3, [][32]byte{v2.alice, testColdkey(0x40)}, []uint64{2000, 8000})
 	vault, _ := evm.ParseAddress(testV1Vault)
 	coordinator, _ := evm.ParseAddress(testV1Coordinator)
 	v1 := &fakeChain{
 		t: t, block: 1000, currentEpoch: 9, vault: vault, coordinator: coordinator,
 		entitlements: map[int64]*evm.Entitlement{
 			7: {PayoutRoot: root7, ArtifactHash: hash7, Funded: big.NewInt(1_000_000_000), Total: big.NewInt(1_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+			8: {PayoutRoot: root8, ArtifactHash: hash8, Funded: big.NewInt(1_000_000_000), Total: big.NewInt(1_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
 		},
 		claimed:  map[string]bool{},
 		receipts: map[string]bool{},
 	}
+	artifacts := map[string][]byte{hex.EncodeToString(hash7[:]): raw7, hex.EncodeToString(hash8[:]): raw8}
 	pool := newFakeNoncePool(t, v1, v2.chain)
 	chainServer := httptest.NewServer(pool)
 	t.Cleanup(chainServer.Close)
@@ -512,12 +547,13 @@ func newTestGasKeyClaims(t *testing.T, v2 *testV2Claim) *testGasKeyClaims {
 			v2.ledger.ServeHTTP(w, r)
 			return
 		}
-		if strings.TrimPrefix(r.URL.Query().Get("hash"), "sha256:") != hex.EncodeToString(hash7[:]) {
+		raw, ok := artifacts[strings.TrimPrefix(r.URL.Query().Get("hash"), "sha256:")]
+		if !ok {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(raw7)
+		w.Write(raw)
 	})))
 	t.Cleanup(host.Close)
 
@@ -573,6 +609,19 @@ func (self *testGasKeyClaims) requireFloor(t *testing.T, want uint64, after stri
 	if floor := snGasKeyTurns.floor(self.keyId(), time.Now()); floor != want {
 		t.Fatalf("after %s the nonce floor is %d, want %d", after, floor, want)
 	}
+}
+
+// sentAt is when the gas key's one transaction still raising its nonce floor
+// was sent.
+func (self *testGasKeyClaims) sentAt(t *testing.T) time.Time {
+	t.Helper()
+	snGasKeyTurns.mutex.Lock()
+	defer snGasKeyTurns.mutex.Unlock()
+	sent := snGasKeyTurns.sent[self.keyId()]
+	if len(sent) != 1 {
+		t.Fatalf("%d sent transactions raise the floor, want 1", len(sent))
+	}
+	return sent[0].at
 }
 
 // setGasKeyInFlightSpan sets how long a sent transaction raises its key's
@@ -797,6 +846,72 @@ func TestSnLedgerClaimSmallerBatchAndSnClaimTakeTurnsAtTheNonce(t *testing.T) {
 				t.Fatalf("v1 claim %+v, want %+v; v2 claim %+v, want %+v", v1, wantV1, v2, wantV2)
 			}
 		})
+	}
+}
+
+// The span ends before a claim's own next send. A v1 claim of two epochs and a
+// v2 claim started together take the nonces 5 and 6, and the pool drops the v2
+// claim's transaction, as a block does when the key cannot pay for both. The v1
+// claim's receipt comes at its wait's second read, 3 s after its broadcast and
+// past the 2 s span of the v2 transaction, so its second epoch takes nonce 6
+// again and lands, where a floor lasting past the receipt poll would sign it 7,
+// above the gap.
+func TestAClaimsNextSendComesAfterTheSpanOfATransactionSentWithIt(t *testing.T) {
+	f := newTestGasKeyClaims(t, newTestV2Claim(t))
+	// the first receipt read, at once, finds no block yet
+	f.pool.mineNoSoonerThan(time.Second)
+	key, err := f.device.snGasPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, snErr := f.device.snLedgerClaimEngine()
+	if snErr != nil {
+		t.Fatal(snErr.Message)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	v2 := newRecordingLedgerClaimCallback()
+	v2Done := make(chan struct{})
+	f.pool.startAtFirstNonceRead(func() {
+		go func() {
+			defer close(v2Done)
+			engine.claim(ctx, key, v2)
+		}()
+	})
+	epochs := NewInt64List()
+	epochs.Add(7)
+	epochs.Add(8)
+	v1 := newRecordingEpochClaimCallback()
+	f.device.SnClaim(epochs, v1)
+	// both sent: the pool drops the v2 claim's transaction, nonce 6
+	deadline := time.Now().Add(30 * time.Second)
+	for f.pool.sentCount() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the claims did not both send: v2 %+v", v2.recorded())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !f.pool.dropNonce(f.gasKey, 6) {
+		t.Fatal("no transaction held with nonce 6")
+	}
+	events := v1.wait(t)
+	landed := f.requireLanded(t, 2)
+	want := []testLedgerClaimEvent{
+		{kind: "sent", index: 7, txHash: landed[0].hash},
+		{kind: "confirmed", index: 7, txHash: landed[0].hash, amount: testV1Epoch7Rao},
+		{kind: "sent", index: 8, txHash: landed[1].hash},
+		{kind: "confirmed", index: 8, txHash: landed[1].hash, amount: testV1Epoch8Rao},
+		{kind: "done"},
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("v1 claim %+v, want %+v", events, want)
+	}
+	// the v2 claim waits for a transaction that will never mine
+	cancel()
+	select {
+	case <-v2Done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the v2 claim went on after its wait was cancelled")
 	}
 }
 
@@ -1028,8 +1143,12 @@ func TestASentTransactionRaisesTheNonceFloorForItsSpanOnly(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// it waits for its receipt: nonce 5 raises the floor, and the turn is free
-	f.requireFloor(t, 6, "the first claim sent")
+	// it waits for its receipt: nonce 5 raises the floor from its broadcast,
+	// and the turn is free
+	sentAt := f.sentAt(t)
+	if floor := snGasKeyTurns.floor(f.keyId(), sentAt); floor != 6 {
+		t.Fatalf("the nonce floor at the broadcast is %d, want 6", floor)
+	}
 	f.requireTurnFree(t, "the first claim sent")
 	// the pool drops its transaction while the claim still waits
 	if dropped := f.pool.drop(f.gasKey); dropped != 1 {
@@ -1037,7 +1156,7 @@ func TestASentTransactionRaisesTheNonceFloorForItsSpanOnly(t *testing.T) {
 	}
 	// past the span the pending count is trusted again: the next claim takes
 	// nonce 5
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(time.Until(sentAt.Add(500*time.Millisecond + 50*time.Millisecond)))
 	f.requireFloor(t, 0, "the span")
 	f.pool.holdReceipts(0)
 	next := newRecordingLedgerClaimCallback()

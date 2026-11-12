@@ -90,22 +90,28 @@ func (self *snDevice) GetSnGasKey() *SnGasKey {
 // accepted a transaction, the key's next nonce is at least one past it
 // (snGasKeyTurn.sent), and a turn's nonce is that floor or the pending count,
 // whichever is higher (snGasKeyTurn.nonce). So:
-//   - two sends from a key less than the span apart, as two claims started
-//     together send, never share a nonce, whatever node answers the reads;
-//   - after the span the pending count is trusted again: gossip has brought
-//     the transaction, or it was mined, or the pool dropped it (as when a
-//     block leaves the key unable to pay for it), and then the next send takes
-//     its nonce again, so a dropped transaction holds back the sends after it
-//     for its span at most;
+//   - two sends from a key less than the span apart never share a nonce,
+//     whatever node answers the reads. Two claims started together send so:
+//     the second reads its nonce as the first gives up the turn;
+//   - after the span the pending count is trusted again. A node takes a
+//     transaction its peers announce at once, as their pools take it, but a
+//     node that missed that hears of it only at the next round of gossip,
+//     about 3 s on, so a send that comes 2 to 3 s after another, without
+//     having waited at the turn, can still read a count without it;
+//   - a transaction the pool drops (as when a block leaves the key unable to
+//     pay for it) leaves a gap under every send signed above it: those whose
+//     read counted it, by the floor for its span or by a node's pool until
+//     the drop. The floor adds no more than its span to that;
 //   - a transaction whose broadcast failed, refused or lost, raises no floor.
 // The turns are the process's, by the gas key's address and chain, so two
 // devices or windows in one process that share a gas key take turns too.
 
 // snGasKeyInFlightSpan is how long a transaction a node accepted raises the
-// floor of its key's next nonce: several times the gossip between nodes, which
-// pass a transaction on as their pool takes it, and less than the 3 s after
-// which a claim's own receipt wait first reads the receipt and the claim can
-// send again (snClaimReceiptPoll).
+// floor of its key's next nonce: longer than a node takes to have a
+// transaction its peers announce at once, and less than the 3 s after its
+// broadcast at which a claim's own receipt wait can first find a receipt
+// (snClaimReceiptPoll; its read at once comes before any block), so a claim's
+// next send never waits on the floor of a transaction broadcast with its own.
 const snGasKeyInFlightSpan = 2 * time.Second
 
 // snGasKeyId names a gas key's nonces: its address on one chain.
