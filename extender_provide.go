@@ -184,8 +184,18 @@ type ExtenderProvideStatus struct {
 	PortMappingUdpPort int
 	PortMappingDnsPort int
 	// Why nothing is mapped, or why a udp carrier is not, in the router's
-	// words where it gave some; empty otherwise.
+	// words where it gave some; empty otherwise. For the log and diagnostics
+	// only: the router's words can name its own or the gateway's address, so
+	// an app shows PortMapping and the two texts below instead.
 	PortMappingError string
+	// The method as an app names it, "PCP", "NAT-PMP" or "UPnP", the same in
+	// every language. Empty while nothing is mapped.
+	PortMappingMethodName string
+	// What the router forwards, the same in every language for an app to put
+	// in its own sentence: each carrier the router forwards, "TCP 443, UDP
+	// 443, UDP 4053", with an external port other than the bound one shown as
+	// "TCP 40443→443". Empty while nothing is mapped.
+	PortMappingPorts string
 	// Connections open over every carrier right now.
 	ConnectionCount int
 }
@@ -260,6 +270,8 @@ type extenderProvideState struct {
 	PortMappingUdpPort    int
 	PortMappingDnsPort    int
 	PortMappingError      string
+	PortMappingMethodName string
+	PortMappingPorts      string
 }
 
 func (self extenderProvideState) status(connectionCount int) *ExtenderProvideStatus {
@@ -271,6 +283,8 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 		PortMappingUdpPort:    self.PortMappingUdpPort,
 		PortMappingDnsPort:    self.PortMappingDnsPort,
 		PortMappingError:      self.PortMappingError,
+		PortMappingMethodName: self.PortMappingMethodName,
+		PortMappingPorts:      self.PortMappingPorts,
 		Enabled:               self.Enabled,
 		Listening:             self.Listening,
 		ListenError:           self.ListenError,

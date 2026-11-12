@@ -254,8 +254,10 @@ func TestDeviceLocalProviderExtenderMapsNothingByDefault(t *testing.T) {
 }
 
 // A role behind a router asks it for the carriers it holds, offers the external
-// ports the router gives in every post and in its mesh address, and reports
-// the mapping.
+// ports the router gives in every ipv4 post and in its ipv4 mesh address, and
+// reports the mapping. The router maps ipv4 alone, so to an operator that keeps
+// each address's ports the ipv6 posts and mesh address keep the bound ports,
+// where the v6 address answers (S10).
 func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	router := newTestExtenderRouter()
 	fixture := newTestPortMappingFixtureWithPorts(t, router, map[string]int{"tcp": 40443, "udp": 40444, "dns": 40053})
@@ -263,12 +265,17 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	fixture.waitPass()
 	for range 2 {
 		post := fixture.waitPost()
-		if post.args.TcpPort != 40443 || post.args.UdpPort != 40444 || post.args.DnsPort != 40053 {
-			t.Fatalf("v%d ports = %d/%d/%d, expected the router's 40443/40444/40053", post.ipVersion,
-				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort)
+		expectedTcpPort, expectedUdpPort, expectedDnsPort := 40443, 40444, 40053
+		if post.ipVersion == 6 {
+			expectedTcpPort, expectedUdpPort, expectedDnsPort = fixture.tcpPort, fixture.udpPort, fixture.dnsPort
 		}
-		if !slices.Equal(post.args.DnsPorts, []int{40053}) {
-			t.Fatalf("v%d dns ports = %v, expected the router's", post.ipVersion, post.args.DnsPorts)
+		if post.args.TcpPort != expectedTcpPort || post.args.UdpPort != expectedUdpPort || post.args.DnsPort != expectedDnsPort {
+			t.Fatalf("v%d ports = %d/%d/%d, expected %d/%d/%d", post.ipVersion,
+				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort,
+				expectedTcpPort, expectedUdpPort, expectedDnsPort)
+		}
+		if !slices.Equal(post.args.DnsPorts, []int{expectedDnsPort}) {
+			t.Fatalf("v%d dns ports = %v, expected [%d]", post.ipVersion, post.args.DnsPorts, expectedDnsPort)
 		}
 	}
 	status := fixture.waitStatus("mapped", func(status *ExtenderProvideStatus) bool {
@@ -279,23 +286,62 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 		status.PortMappingError != "" {
 		t.Fatalf("status = %+v, expected the router's mapping", status)
 	}
+	// what an app shows beside the switch, the same in every language
+	expectedPorts := fmt.Sprintf("TCP 40443→%d, UDP 40444→%d, UDP 40053→%d", fixture.tcpPort, fixture.udpPort, fixture.dnsPort)
+	if status.PortMappingMethodName != "NAT-PMP" || status.PortMappingPorts != expectedPorts {
+		t.Fatalf("method name %q, ports %q, expected NAT-PMP and %q",
+			status.PortMappingMethodName, status.PortMappingPorts, expectedPorts)
+	}
 	if held := router.held(); len(held) != 3 {
 		t.Fatalf("the router forwards %v, expected the three carriers", held)
 	}
 	fixture.assertOwnCarriersOnly(router)
-	// peers dial the mesh on the port the router forwards (D2)
+	// peers dial the mesh on the port the router forwards over ipv4, and on the
+	// bound port over ipv6 (D2)
 	fixture.waitNodeListenAddrs([]string{
 		fmt.Sprintf("/ip4/%s/tcp/%d", testProvideExtenderIpv4, 40443),
-		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, 40443),
+		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, fixture.tcpPort),
 	})
 }
 
+// To an operator that predates per-address ports, which keeps one port per
+// carrier for every address of an extender, every post offers the router's
+// ports, ipv6's too, as every post did before the families had their own: that
+// operator would publish each family on the other's (S10).
+func TestDeviceLocalProviderExtenderOffersOneSetOfPortsWithoutAddressPorts(t *testing.T) {
+	router := newTestExtenderRouter()
+	fixture := newTestPortMappingFixtureWithOperatorPorts(t, router, map[string]int{"tcp": 40443, "udp": 40444, "dns": 40053}, false)
+
+	fixture.waitPass()
+	for range 2 {
+		post := fixture.waitPost()
+		if post.args.TcpPort != 40443 || post.args.UdpPort != 40444 || post.args.DnsPort != 40053 ||
+			!slices.Equal(post.args.DnsPorts, []int{40053}) {
+			t.Fatalf("v%d ports = %d/%d/%d %v, expected the router's 40443/40444/40053", post.ipVersion,
+				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort, post.args.DnsPorts)
+		}
+	}
+}
+
 // newTestPortMappingFixture with the router giving each carrier the external
-// port named by "tcp", "udp" or "dns".
+// port named by "tcp", "udp" or "dns", to an operator that keeps each address's
+// ports.
 func newTestPortMappingFixtureWithPorts(
 	t *testing.T,
 	router *testExtenderRouter,
 	externalPorts map[string]int,
+) *testProvideExtenderFixture {
+	t.Helper()
+	return newTestPortMappingFixtureWithOperatorPorts(t, router, externalPorts, true)
+}
+
+// newTestPortMappingFixtureWithPorts to an operator that says it keeps each
+// address's ports, or that predates them.
+func newTestPortMappingFixtureWithOperatorPorts(
+	t *testing.T,
+	router *testExtenderRouter,
+	externalPorts map[string]int,
+	addressPorts bool,
 ) *testProvideExtenderFixture {
 	t.Helper()
 	router.install(t)
@@ -312,6 +358,9 @@ func newTestPortMappingFixtureWithPorts(
 			router.setExternalPort("tcp", fixture.tcpPort, externalPorts["tcp"])
 			router.setExternalPort("udp", fixture.udpPort, externalPorts["udp"])
 			router.setExternalPort("udp", fixture.dnsPort, externalPorts["dns"])
+			fixture.operator.stateLock.Lock()
+			defer fixture.operator.stateLock.Unlock()
+			fixture.operator.addressPorts = addressPorts
 		},
 	})
 }
@@ -413,16 +462,26 @@ func TestDeviceLocalProviderExtenderRemovesItsMappingsWhenItStops(t *testing.T) 
 }
 
 // A mapping the router moved at a renewal is posted at once, not at the tick,
-// so the record names the port the router forwards now.
+// so the record names the port the router forwards now. The ipv6 post keeps the
+// bound port either way.
 func TestDeviceLocalProviderExtenderPostsAMovedMapping(t *testing.T) {
 	router := newTestExtenderRouter()
 	fixture := newTestPortMappingFixtureWithPorts(t, router, map[string]int{"tcp": 40443})
-	fixture.waitPass()
-	for range 2 {
-		if post := fixture.waitPost(); post.args.TcpPort != 40443 {
-			t.Fatalf("v%d tcp port = %d, expected 40443", post.ipVersion, post.args.TcpPort)
+	expectTcpPorts := func(v4TcpPort int) {
+		t.Helper()
+		for range 2 {
+			post := fixture.waitPost()
+			expectedTcpPort := v4TcpPort
+			if post.ipVersion == 6 {
+				expectedTcpPort = fixture.tcpPort
+			}
+			if post.args.TcpPort != expectedTcpPort {
+				t.Fatalf("v%d tcp port = %d, expected %d", post.ipVersion, post.args.TcpPort, expectedTcpPort)
+			}
 		}
 	}
+	fixture.waitPass()
+	expectTcpPorts(40443)
 
 	// the router lost its table and gives another port at the renewal
 	router.setExternalPort("tcp", fixture.tcpPort, 41443)
@@ -431,11 +490,7 @@ func TestDeviceLocalProviderExtenderPostsAMovedMapping(t *testing.T) {
 		t.Fatalf("renewal wait = %s, expected half the hour", wait.wait)
 	}
 	wait.fire <- time.Now()
-	for range 2 {
-		if post := fixture.waitPost(); post.args.TcpPort != 41443 {
-			t.Fatalf("v%d tcp port after the move = %d, expected 41443", post.ipVersion, post.args.TcpPort)
-		}
-	}
+	expectTcpPorts(41443)
 	fixture.waitStatus("moved", func(status *ExtenderProvideStatus) bool {
 		return status.PortMappingTcpPort == 41443
 	})
@@ -462,5 +517,105 @@ func TestProvideExtenderPortMappingSettingPersists(t *testing.T) {
 	corrupt := &LocalState{localStorageDir: storageDir}
 	if _, stored := corrupt.getStoredProvideExtenderPortMapping(); stored {
 		t.Fatal("a corrupt file stores a setting")
+	}
+}
+
+// The ports text an app shows: the bound port alone when the router forwards it
+// on the same port, the router's port and the bound one when they differ, and
+// nothing for a carrier the router does not forward.
+func TestExtenderPortMappingPortsText(t *testing.T) {
+	for _, c := range []struct {
+		carriers []extenderPortMappingCarrier
+		text     string
+	}{
+		{
+			carriers: []extenderPortMappingCarrier{
+				{label: "TCP", boundPort: 443, externalPort: 443},
+				{label: "UDP", boundPort: 443, externalPort: 443},
+				{label: "UDP", boundPort: 4053, externalPort: 4053},
+			},
+			text: "TCP 443, UDP 443, UDP 4053",
+		},
+		{
+			carriers: []extenderPortMappingCarrier{
+				{label: "TCP", boundPort: 443, externalPort: 40443},
+				{label: "UDP", boundPort: 443, externalPort: 0},
+				{label: "UDP", boundPort: 4053, externalPort: 4053},
+			},
+			text: "TCP 40443→443, UDP 4053",
+		},
+		{carriers: nil, text: ""},
+	} {
+		if text := extenderPortMappingPortsText(c.carriers); text != c.text {
+			t.Errorf("%+v = %q, expected %q", c.carriers, text, c.text)
+		}
+	}
+	for method, name := range map[string]string{
+		portmap.MethodPcp:    "PCP",
+		portmap.MethodNatPmp: "NAT-PMP",
+		portmap.MethodUpnp:   "UPnP",
+	} {
+		if got := extenderPortMappingMethodName(method); got != name {
+			t.Errorf("%s = %q, expected %q", method, got, name)
+		}
+	}
+}
+
+// What a host's service writes on the space while no device runs (the windows
+// and linux services) is the setting the next device's role starts with: the
+// space's value wins over the device's default, which is off on every app.
+func TestDeviceLocalProviderExtenderMapsWhatTheServiceStored(t *testing.T) {
+	router := newTestExtenderRouter()
+	router.install(t)
+	fixture := newTestProvideExtenderFixtureWithOptions(t, &testProvideExtenderFixtureOptions{
+		configure: func(settings *deviceLocalExtenderSettings) {
+			settings.PortMappingPublicAddress = func() bool {
+				return false
+			}
+		},
+		prepare: func(fixture *testProvideExtenderFixture) {
+			localState := fixture.networkSpace.asyncLocalState.GetLocalState()
+			if localState.GetProvideExtenderPortMapping() {
+				t.Fatal("the space reads on before anything stored it")
+			}
+			if err := localState.SetProvideExtenderPortMapping(true); err != nil {
+				t.Fatal(err)
+			}
+		},
+	})
+	if !fixture.device.GetProvideExtenderPortMapping() {
+		t.Fatal("the device reads off, expected the space's stored on")
+	}
+	fixture.waitPass()
+	fixture.waitStatus("mapped", func(status *ExtenderProvideStatus) bool {
+		return status.PortMapping == ExtenderPortMappingMapped
+	})
+	if held := router.held(); len(held) != 3 {
+		t.Fatalf("the router forwards %v, expected the three carriers", held)
+	}
+}
+
+// The exported space setting reads off until stored, and a stored value reads
+// back through another LocalState over the same directory.
+func TestLocalStateProvideExtenderPortMapping(t *testing.T) {
+	storageDir := t.TempDir()
+	localState := &LocalState{localStorageDir: storageDir}
+	if localState.GetProvideExtenderPortMapping() {
+		t.Fatal("an empty space reads on, expected the apps' default off")
+	}
+	if err := localState.SetProvideExtenderPortMapping(true); err != nil {
+		t.Fatal(err)
+	}
+	if !localState.GetProvideExtenderPortMapping() {
+		t.Fatal("the stored value did not read back")
+	}
+	if !(&LocalState{localStorageDir: storageDir}).GetProvideExtenderPortMapping() {
+		t.Fatal("the stored value did not persist")
+	}
+	if err := localState.SetProvideExtenderPortMapping(false); err != nil {
+		t.Fatal(err)
+	}
+	if (&LocalState{localStorageDir: storageDir}).GetProvideExtenderPortMapping() {
+		t.Fatal("off did not persist")
 	}
 }

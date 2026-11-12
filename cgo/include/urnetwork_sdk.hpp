@@ -2783,6 +2783,8 @@ struct ExtenderProvideStatus {
 	int64_t PortMappingUdpPort{};
 	int64_t PortMappingDnsPort{};
 	std::string PortMappingError{};
+	std::string PortMappingMethodName{};
+	std::string PortMappingPorts{};
 	int64_t ConnectionCount{};
 };
 
@@ -12050,6 +12052,8 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["PortMappingUdpPort"] = v.PortMappingUdpPort;
 	j["PortMappingDnsPort"] = v.PortMappingDnsPort;
 	j["PortMappingError"] = v.PortMappingError;
+	j["PortMappingMethodName"] = v.PortMappingMethodName;
+	j["PortMappingPorts"] = v.PortMappingPorts;
 	j["ConnectionCount"] = v.ConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
@@ -12151,6 +12155,12 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("PortMappingError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PortMappingError);
+	}
+	if (auto it = j.find("PortMappingMethodName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingMethodName);
+	}
+	if (auto it = j.find("PortMappingPorts"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingPorts);
 	}
 	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectionCount);
@@ -24374,6 +24384,7 @@ public:
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	bool getProvideExtender() const;
+	bool getProvideExtenderPortMapping() const;
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
@@ -24416,6 +24427,7 @@ public:
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideExtender(bool provide_extender) const;
+	void setProvideExtenderPortMapping(bool port_mapping) const;
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& provide_network_mode) const;
 	void setProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
@@ -37216,6 +37228,10 @@ inline bool LocalState::getProvideExtender() const {
 	bool r = urnet_local_state_get_provide_extender(handle());
 	return r;
 }
+inline bool LocalState::getProvideExtenderPortMapping() const {
+	bool r = urnet_local_state_get_provide_extender_port_mapping(handle());
+	return r;
+}
 inline int64_t LocalState::getProvideMode() const {
 	int64_t r = urnet_local_state_get_provide_mode(handle());
 	return r;
@@ -37622,6 +37638,16 @@ inline void LocalState::setProvideExtender(bool provide_extender) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_provide_extender failed");
+	}
+}
+inline void LocalState::setProvideExtenderPortMapping(bool port_mapping) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_provide_extender_port_mapping(handle(), port_mapping, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_provide_extender_port_mapping failed");
 	}
 }
 inline void LocalState::setProvideMode(int64_t provide_mode) const {

@@ -83,14 +83,15 @@ import (
 // and never udp 53. The mapping is asked once the binds settle and before the
 // first activation, which waits for the router's first answer at most
 // PortMapWaitTimeout: a router that does not answer delays the first post by
-// that and nothing else. Each post offers the external port the router gives
-// each carrier (ExtenderActivatorSettings.OfferedPorts), and a mapping that
-// lands or moves after a post is posted at once. The record holds one port per
-// carrier for all of an extender's addresses, so a v6 address is offered the
-// mapped ports too, and is left out by the operator's probe unless it answers
-// on them. The mapper renews the mappings and removes them when the role
-// closes, which is what a setting turned off does (the provider replaces the
-// role).
+// that and nothing else. The mapping is the router's of the ipv4 default route,
+// so each ipv4 post offers the external port the router gives each carrier and
+// each ipv6 post the bound ports (ExtenderActivatorSettings.FamilyOfferedPorts),
+// which the operator keeps and signs per address; to an operator that predates
+// that, which keeps one port per carrier, every post offers the router's (the
+// family 0 answer), as before. The mesh address of each family follows its
+// post. A mapping that lands or moves after a post is posted at once. The
+// mapper renews the mappings and removes them when the role closes, which is
+// what a setting turned off does (the provider replaces the role).
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
@@ -1198,9 +1199,9 @@ func (self *deviceLocalExtender) portMapped() bool {
 		status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort) != nil
 }
 
-// The carrier ports the activation offers (S10): the external port the router
-// forwards to each carrier it maps, else the bound port. Read at each post
-// (ExtenderActivatorSettings.OfferedPorts).
+// The carrier ports the router forwards (S10): the external port of each
+// carrier it maps, else the bound port. What an ipv4 post offers
+// (familyOfferedPorts).
 func (self *deviceLocalExtender) offeredPorts() (tcpPort int, udpPort int, dnsPort int) {
 	tcpPort, udpPort, dnsPort = self.settings.TcpPort, self.settings.UdpPort, self.settings.DnsPort
 	status := self.portMapperStatus()
@@ -1224,7 +1225,31 @@ func (self *deviceLocalExtender) offeredPortsArray() [3]int {
 	return [3]int{tcpPort, udpPort, dnsPort}
 }
 
-// The dns ports the activation offers (L2, S10): the bound ports, with the dns
+// The carrier ports a post of the family offers (S10), read at each post
+// (ExtenderActivatorSettings.FamilyOfferedPorts): the router's for ipv4, the
+// family its mapping forwards; the bound ports for ipv6, which no mapping
+// forwards, so the operator probes and publishes the v6 address where it
+// answers. A post to the plain api url, family 0, offers the router's: the
+// operator derives the family from the caller address, and the mapping is
+// what an ipv4 caller needs.
+func (self *deviceLocalExtender) familyOfferedPorts(ipVersion int) (tcpPort int, udpPort int, dnsPort int) {
+	if ipVersion == 6 {
+		return self.settings.TcpPort, self.settings.UdpPort, self.settings.DnsPort
+	}
+	return self.offeredPorts()
+}
+
+// The dns ports a post of the family offers (L2, S10), beside
+// familyOfferedPorts: the bound ports, with the dns carrier's own port as the
+// router forwards it in an ipv4 post.
+func (self *deviceLocalExtender) familyOfferedDnsPorts(ipVersion int) []int {
+	if ipVersion == 6 {
+		return self.server.DnsPorts()
+	}
+	return self.offeredDnsPorts()
+}
+
+// The dns ports the router forwards (L2, S10): the bound ports, with the dns
 // carrier's own port as the router forwards it.
 func (self *deviceLocalExtender) offeredDnsPorts() []int {
 	dnsPorts := self.server.DnsPorts()
@@ -1287,6 +1312,54 @@ func (self *deviceLocalExtender) portMappingState(state *extenderProvideState) {
 	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
 		state.PortMappingDnsPort = mapping.ExternalPort
 	}
+	if state.PortMapping == ExtenderPortMappingMapped {
+		// what an app shows, the same in every language (F3)
+		state.PortMappingMethodName = extenderPortMappingMethodName(status.Method)
+		state.PortMappingPorts = extenderPortMappingPortsText([]extenderPortMappingCarrier{
+			{label: "TCP", boundPort: self.settings.TcpPort, externalPort: state.PortMappingTcpPort},
+			{label: "UDP", boundPort: self.settings.UdpPort, externalPort: state.PortMappingUdpPort},
+			{label: "UDP", boundPort: self.settings.DnsPort, externalPort: state.PortMappingDnsPort},
+		})
+	}
+}
+
+// The name an app shows for a port mapping method, the same in every language.
+func extenderPortMappingMethodName(method string) string {
+	switch method {
+	case portmap.MethodPcp:
+		return "PCP"
+	case portmap.MethodNatPmp:
+		return "NAT-PMP"
+	case portmap.MethodUpnp:
+		return "UPnP"
+	default:
+		return method
+	}
+}
+
+// One carrier of the ports text: its protocol as an app shows it, the port it
+// is bound on, and the port the router forwards to it, 0 for none.
+type extenderPortMappingCarrier struct {
+	label        string
+	boundPort    int
+	externalPort int
+}
+
+// What the router forwards as an app shows it, the same in every language:
+// "TCP 443, UDP 443, UDP 4053", each carrier the router forwards in order, an
+// external port other than the bound one as "TCP 40443→443".
+func extenderPortMappingPortsText(carriers []extenderPortMappingCarrier) string {
+	parts := []string{}
+	for _, carrier := range carriers {
+		switch {
+		case carrier.externalPort <= 0:
+		case carrier.externalPort == carrier.boundPort:
+			parts = append(parts, fmt.Sprintf("%s %d", carrier.label, carrier.boundPort))
+		default:
+			parts = append(parts, fmt.Sprintf("%s %d→%d", carrier.label, carrier.externalPort, carrier.boundPort))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // The mappings as one line for the log: "tcp 443 -> 443, udp 4053 -> 40053".
@@ -1383,9 +1456,10 @@ func (self *deviceLocalExtender) startActivator() {
 	settings.Carriers = self.server.Carriers
 	// the operator probes each port that actually bound and the record lists
 	// them, so a privileged bind that failed is never advertised (L2); a port
-	// the router forwards is offered as the router forwards it (S10)
-	settings.DnsPorts = self.offeredDnsPorts
-	settings.OfferedPorts = self.offeredPorts
+	// the router forwards is offered as the router forwards it in the posts of
+	// the family it forwards, and each address keeps its own (S10)
+	settings.FamilyDnsPorts = self.familyOfferedDnsPorts
+	settings.FamilyOfferedPorts = self.familyOfferedPorts
 	settings.Directory = self.directory()
 	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
 		// the activation carries the measurement certificate request, named by
@@ -1556,19 +1630,24 @@ func (self *deviceLocalExtender) meshListenAddrs() ([]ma.Multiaddr, error) {
 	if !slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp) {
 		return nil, nil
 	}
-	ips := []netip.Addr{}
+	listenAddrs := []ma.Multiaddr{}
 	for _, family := range self.activatorStatus().Families {
-		if family.Activated && family.Ip.IsValid() {
-			ips = append(ips, family.Ip)
+		if !family.Activated || !family.Ip.IsValid() {
+			continue
 		}
+		// the port peers dial, the one the family's post offered: the router's
+		// when it forwards the carrier (S10)
+		tcpPort, _, _ := self.familyOfferedPorts(family.IpVersion)
+		familyListenAddrs, err := gossip.ExtenderListenAddrs([]netip.Addr{family.Ip}, tcpPort)
+		if err != nil {
+			return nil, err
+		}
+		listenAddrs = append(listenAddrs, familyListenAddrs...)
 	}
-	if len(ips) == 0 {
+	if len(listenAddrs) == 0 {
 		return nil, nil
 	}
-	// the port peers dial, which is the router's when it forwards the carrier
-	// (S10)
-	tcpPort, _, _ := self.offeredPorts()
-	return gossip.ExtenderListenAddrs(ips, tcpPort)
+	return listenAddrs, nil
 }
 
 // Publishes the comparable half of the status, which notifies a watcher only

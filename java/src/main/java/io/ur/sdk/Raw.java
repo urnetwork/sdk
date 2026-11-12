@@ -1111,6 +1111,7 @@ public interface Raw extends Library {
   Pointer urnet_local_state_get_performance_profile(long a0);
   Pointer urnet_local_state_get_provide_control_mode(long a0);
   byte urnet_local_state_get_provide_extender(long a0);
+  byte urnet_local_state_get_provide_extender_port_mapping(long a0);
   long urnet_local_state_get_provide_mode(long a0);
   Pointer urnet_local_state_get_provide_network_mode(long a0);
   Pointer urnet_local_state_get_provide_secret_keys(long a0);
@@ -1153,6 +1154,7 @@ public interface Raw extends Library {
   byte urnet_local_state_set_performance_profile(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_provide_control_mode(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_provide_extender(long a0, byte a1, PointerByReference a2);
+  byte urnet_local_state_set_provide_extender_port_mapping(long a0, byte a1, PointerByReference a2);
   byte urnet_local_state_set_provide_mode(long a0, long a1, PointerByReference a2);
   byte urnet_local_state_set_provide_network_mode(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_provide_secret_keys(long a0, String a1, PointerByReference a2);

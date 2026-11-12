@@ -133,6 +133,10 @@ type testProvideExtenderOperator struct {
 	requireCamouflage bool
 	// the lifetime of a record, zero for the fixture's two weeks
 	recordLifetime time.Duration
+	// says on each activation that it keeps each address's ports
+	// (connect.ExtenderActivateResult.AddressPorts, connect EXTENDER.md S10), as
+	// an operator with them does; off says nothing, as one without does
+	addressPorts bool
 }
 
 func newTestProvideExtenderOperator(
@@ -286,6 +290,7 @@ func (self *testProvideExtenderOperator) activateResult(
 			requiredCapabilities = []string{connect.ExtenderCapabilityTcpCamouflageV1}
 		}
 	}
+	addressPorts := self.addressPorts
 	self.stateLock.Unlock()
 
 	expireTime := now.Add(recordLifetime)
@@ -332,6 +337,7 @@ func (self *testProvideExtenderOperator) activateResult(
 		ExpireTime:   &expireTime,
 		AllowedHosts: []string{testProvideExtenderHost, "*." + testProvideExtenderHost},
 		Record:       base64.StdEncoding.EncodeToString(recordBytes),
+		AddressPorts: addressPorts,
 	}, nil
 }
 
