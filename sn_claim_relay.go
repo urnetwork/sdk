@@ -144,8 +144,12 @@ type SnClaimRelayError struct {
 	Message string `json:"message"`
 }
 
-// SnClaimRelayResult is GET /sn/claim-relay. With an Error the balances could not
-// be read: they are unavailable, never zero.
+// SnClaimRelayResult is GET /sn/claim-relay?partial=true. With an Error the
+// balances could not be read: they are unavailable, never zero. With
+// partial=true a pool whose accounts the relay cannot read is named in
+// UnavailablePools while the others are answered; without it the server fails
+// the whole answer, so a client that predates the field never takes a partial
+// list for a whole one. A server that predates the parameter ignores it.
 type SnClaimRelayResult struct {
 	// no_key means no relayer key is configured yet; not_running that the relay
 	// has no recent pass
@@ -159,12 +163,17 @@ type SnClaimRelayResult struct {
 	// days between two Claim now of one coldkey
 	ClaimNowPeriodDays int64                    `json:"claim_now_period_days"`
 	Accounts           *SnClaimRelayAccountList `json:"accounts"`
-	// pools whose accounts the relay could not read, when it names them
+	// the pools whose accounts the relay could not read, each shown as
+	// unavailable; empty for a whole answer
 	UnavailablePools *SnLedgerUnavailablePoolList `json:"unavailable_pools"`
 	Error            *SnClaimRelayError           `json:"error,omitempty"`
 }
 
 type SnClaimRelayCallback connect.ApiCallback[*SnClaimRelayResult]
+
+// snClaimRelayPath asks for a partial answer: a pool the relay cannot read is
+// named, and the others are answered.
+const snClaimRelayPath = "/sn/claim-relay?partial=true"
 
 // Reads the relay's answer for the session's network.
 func (self *Api) SnClaimRelay(callback SnClaimRelayCallback) {
@@ -172,7 +181,7 @@ func (self *Api) SnClaimRelay(callback SnClaimRelayCallback) {
 		connect.HttpGetWithRawFunction(
 			self.ctx,
 			self.getHttpGetRaw(),
-			fmt.Sprintf("%s/sn/claim-relay", self.apiUrl),
+			self.apiUrl+snClaimRelayPath,
 			self.GetByJwt(),
 			&SnClaimRelayResult{},
 			callback,
@@ -185,7 +194,7 @@ func (self *Api) SnClaimRelaySyncWithContext(ctx context.Context) (*SnClaimRelay
 	return connect.HttpGetWithRawFunction(
 		ctx,
 		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/sn/claim-relay", self.apiUrl),
+		self.apiUrl+snClaimRelayPath,
 		self.GetByJwt(),
 		&SnClaimRelayResult{},
 		connect.NewNoopApiCallback[*SnClaimRelayResult](),
@@ -667,7 +676,7 @@ func snClaimAnyClaimable(relay *SnClaimRelayResult, coldkeySs58 string) bool {
 		return false
 	}
 	for _, account := range relay.Accounts.getAll() {
-		if account.ColdkeySs58 == coldkeySs58 && 0 < account.ClaimableRao {
+		if account != nil && account.ColdkeySs58 == coldkeySs58 && 0 < account.ClaimableRao {
 			return true
 		}
 	}

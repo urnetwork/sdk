@@ -23,8 +23,9 @@ import (
 
 // URnetworkSnClaimStatusOf({ relay, relayError, ledger, connectedSs58, selfClaimConfigured, settings }) -> status
 //
-//   - relay: GET /sn/claim-relay's json as the server sends it; null when the
-//     request failed, with relayError saying why
+//   - relay: GET /sn/claim-relay?partial=true's json as the server sends it,
+//     whose unavailable_pools are drawn as unavailable; null when the request
+//     failed, with relayError saying why
 //   - ledger: the connected wallet's v2 accounts, URnetworkSnLedgerAccountsFor's
 //     result or a page's normalized form of it ({ accounts, error }), which stand
 //     in for a relay answer without balances; null when not read

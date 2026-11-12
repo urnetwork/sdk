@@ -168,6 +168,7 @@ type testClaimRelayService struct {
 	nowBody      string
 	nowArgs      []string
 	authorized   []string
+	relayQueries []string
 	ledgerStatus int
 	ledgerBody   string
 }
@@ -178,6 +179,7 @@ func (self *testClaimRelayService) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	switch r.URL.Path {
 	case "/sn/claim-relay":
 		self.authorized = append(self.authorized, r.Header.Get("Authorization"))
+		self.relayQueries = append(self.relayQueries, r.URL.RawQuery)
 		w.WriteHeader(self.relayStatus)
 		io.WriteString(w, self.relayBody)
 	case "/sn/claim-relay/claim-now":
@@ -952,5 +954,40 @@ func TestSnClaimRelayResultReadsPools(t *testing.T) {
 	result = snClaimStatusBuild(&answer, "a", true, false)
 	if account := result.Accounts.Get(0); account.Kind != SnLedgerPoolKindPool || account.Label != "Pool 1" || result.Partial {
 		t.Fatalf("an old relay %+v %+v", result, account)
+	}
+}
+
+// A device asks the relay with partial=true, so a pool the relay cannot read is
+// named while the others are answered: each pool of the coldkey is a row with
+// its kind and label, and the unavailable pool is drawn as unavailable.
+func TestSnClaimStatusAsksTheRelayForEachPool(t *testing.T) {
+	_, aliceSs58 := testAliceSs58(t)
+	service := &testClaimRelayService{relayStatus: http.StatusOK, ledgerStatus: http.StatusInternalServerError, ledgerBody: "ledger down",
+		relayBody: fmt.Sprintf(`{"state":"running","transfer_floor_rao":24000000,"accounts":[
+			{"coldkey_ss58":%q,"no_id":1,"kind":"pool","label":"Pool 1","index":7,"claimable_rao":1000000000,"reason":"queued"}],
+			"unavailable_pools":[{"vault":"0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b","no_id":4294967297,"kind":"ctf","label":"Capture the flag"}]}`, aliceSs58)}
+	chain := &fakeChain{t: t, block: 1000, claimed: map[string]bool{}, receipts: map[string]bool{}}
+	device := testClaimRelayDevice(t, service, chain, "")
+	result := device.snClaimStatus(context.Background())
+	if len(service.relayQueries) != 1 || service.relayQueries[0] != "partial=true" {
+		t.Fatalf("relay queries %q", service.relayQueries)
+	}
+	if result.Error != nil || !result.Partial || result.UnavailablePools.Len() != 1 || result.UnavailablePools.Get(0).Kind != SnLedgerPoolKindCtf ||
+		result.ClaimableRao != 1_000_000_000 || result.Accounts.Len() != 1 || result.Accounts.Get(0).Label != "Pool 1" {
+		t.Fatalf("result %+v (%+v)", result, result.Error)
+	}
+}
+
+// A relay answer with a null account is read past it, on a device whose own
+// claim could pay, as on any other.
+func TestSnClaimStatusOfSkipsANullAccount(t *testing.T) {
+	relay := testClaimRelayAnswer("griefing_stop", nil, &SnClaimRelayAccount{ColdkeySs58: "a", ClaimableRao: 100_000_000, Reason: SnClaimReasonRelayPaused})
+	gasReads := 0
+	result := snClaimStatusOf(relay, nil, "a", true, nil, func() bool {
+		gasReads++
+		return false
+	}, nil)
+	if gasReads != 1 || result.Accounts.Len() != 1 || result.Action != SnClaimActionSelfClaim || result.ClaimableRao != 100_000_000 {
+		t.Fatalf("gas reads %d, result %+v", gasReads, result)
 	}
 }
