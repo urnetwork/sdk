@@ -485,6 +485,8 @@ typedef void (*urnet_verify_play_purchase_cb)(void* user_data, const char* resul
 void urnet_invoke_verify_play_purchase(urnet_verify_play_purchase_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_verify_seeker_nft_holder_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_verify_seeker_nft_holder(urnet_verify_seeker_nft_holder_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_verify_stripe_checkout_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_verify_stripe_checkout(urnet_verify_stripe_checkout_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_view_controller_close_cb)(void* user_data);
 void urnet_invoke_view_controller_close(urnet_view_controller_close_cb cb, void* user_data);
 typedef void (*urnet_view_controller_start_cb)(void* user_data);
