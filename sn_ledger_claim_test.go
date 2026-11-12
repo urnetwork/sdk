@@ -946,6 +946,8 @@ func newTestV2ClaimFor(t *testing.T, alice [32]byte) *testV2Claim {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// the fake chain's nonces start afresh for the key other tests send with
+	forgetGasKeySends()
 	return &testV2Claim{alice: alice, aliceSs58: aliceSs58, chain: chain, ledger: ledger, settings: settings, proofs: proofs, oldProofs: oldProofs, key: key}
 }
 
