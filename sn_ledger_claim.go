@@ -39,12 +39,16 @@ import (
 // code is the release batcher's. An account is never in two transactions of one
 // claim, unless a mined batch provably did not attempt it.
 //
-// A payer that can pay for one claim but not the batch (about 3.5M gas for two
-// accounts against 2.6M for one) claims the largest account alone, and the
-// others stay claimable (the owner, 2026-11-11): the device's gas key claims the
-// accounts alone in turn, the largest first, and reports each it cannot pay for
-// as needs_gas; an external wallet is given the largest account's claim alone,
-// with the others named still claimable (SnLedgerClaimTransactionsForPayer).
+// A payer that cannot pay for the batch of every account (about 3.5M gas for
+// two accounts against 2.6M for one alone) claims the most accounts it can pay
+// for, the largest first: the batch of the largest accounts that it can pay
+// for, else the largest account alone, and the others stay claimable (the
+// owner, 2026-11-11: of two accounts, the largest alone). The device's gas key
+// sends that batch, or none, and then claims the other accounts alone in turn,
+// the largest first, reporting each it cannot pay for as needs_gas; an external
+// wallet is given the transactions of that batch, or the largest account's
+// claim alone, with the others named still claimable
+// (SnLedgerClaimTransactionsForPayer).
 
 // SnLedgerClaimCallback receives the progress of SnLedgerClaim. Failed
 // messages start with an SnErrorCode* value followed by ": detail".
@@ -576,11 +580,13 @@ func (self *snLedgerClaimEngine) sizeBatch(ctx context.Context, from [20]byte, p
 
 // sendBatch claims two or more plans in one batcher transaction from the gas
 // key, and returns the plans to claim alone instead. A plan whose preflight
-// vault2 refuses is reported failed and left out. Every passing plan is
-// returned when the batch is not sent: no release batcher, fewer than two
-// passing, a batch that cannot be sized, or a gas key that cannot pay for the
-// batch, which a claim alone may still afford. Once the batch is sent its
-// accounts are claimed only by it, except those its mined receipt shows it
+// vault2 refuses is reported failed and left out. A gas key that cannot pay for
+// the batch of every passing plan sends the batch of the most plans it can pay
+// for, the largest first (smallerBatch), and the others are returned. Every
+// passing plan is returned when no batch is sent: no release batcher, fewer
+// than two passing, a batch that cannot be sized, or a gas key that cannot pay
+// for any batch, which a claim alone may still afford. Once the batch is sent
+// its accounts are claimed only by it, except those its mined receipt shows it
 // did not attempt, which are returned. The batch is prepared and sent within a
 // claim's time, and its receipt waited for within another, so a slow
 // preparation never cuts the wait short.
@@ -614,15 +620,21 @@ func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.Pri
 	if err != nil || count < 2 {
 		return passing
 	}
-	batch, alone := passing[:count], passing[count:]
+	batch := passing[:count]
 	balance, err := self.client.Balance(ctx, from)
 	if err != nil {
 		return passing
 	}
 	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.batcher, data, gas)
-	if err != nil || balance.Cmp(maxCost) < 0 {
+	if err != nil {
 		return passing
 	}
+	if balance.Cmp(maxCost) < 0 {
+		if batch, raw = self.smallerBatch(ctx, key, passing, count, gasPerClaim, balance); batch == nil {
+			return passing
+		}
+	}
+	_, alone := snLedgerSplit(passing, batch)
 	failAll := func(message string) {
 		for _, plan := range batch {
 			callback.Failed(plan.noId, plan.index, message)
@@ -671,9 +683,40 @@ func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.Pri
 	return append(notAttempted, alone...)
 }
 
-// snLedgerLargestFirst orders accounts to claim alone in turn: the largest
-// amount first, ties in the ledger's order, so a payer that can pay for fewer
-// claims than there are accounts claims the most it can.
+// smallerBatch is the batch of the most of plans, fewer than count, that the
+// gas key can pay for with balance, the largest accounts first, sized and
+// signed as sendBatch sends a batch: its plans, in the ledger's order, and the
+// signed transaction. nil when no batch of two or more can be paid for.
+func (self *snLedgerClaimEngine) smallerBatch(ctx context.Context, key *secp.PrivateKey, plans []*snLedgerClaimPlan, count int, gasPerClaim uint64, balance *big.Int) ([]*snLedgerClaimPlan, []byte) {
+	from := evm.AddressOf(key)
+	largestFirst := snLedgerLargestFirst(plans)
+	type signedBatch struct {
+		plans []*snLedgerClaimPlan
+		raw   []byte
+	}
+	paid := map[int]*signedBatch{}
+	n := snLedgerMostThatFit(count, func(n int) bool {
+		set, _ := snLedgerSplit(plans, largestFirst[:n])
+		fit, data, gas, err := self.sizeBatch(ctx, from, set, gasPerClaim)
+		if err != nil || fit < 2 {
+			return false
+		}
+		raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.batcher, data, gas)
+		if err != nil || balance.Cmp(maxCost) < 0 {
+			return false
+		}
+		paid[n] = &signedBatch{plans: set[:fit], raw: raw}
+		return true
+	})
+	if n < 2 {
+		return nil, nil
+	}
+	return paid[n].plans, paid[n].raw
+}
+
+// snLedgerLargestFirst orders accounts: the largest amount first, ties in the
+// ledger's order. A payer that can pay for fewer claims than there are
+// accounts claims the largest first, so it claims the most it can.
 func snLedgerLargestFirst(plans []*snLedgerClaimPlan) []*snLedgerClaimPlan {
 	ordered := slices.Clone(plans)
 	slices.SortStableFunc(ordered, func(a *snLedgerClaimPlan, b *snLedgerClaimPlan) int {
@@ -682,11 +725,48 @@ func snLedgerLargestFirst(plans []*snLedgerClaimPlan) []*snLedgerClaimPlan {
 	return ordered
 }
 
+// snLedgerMostThatFit is how many of count accounts, the largest first, a
+// payer that cannot pay for all of them claims: the most, from count − 1 down
+// to 2, whose claim together fits(n) says it can pay for, else 1, the largest
+// account alone, whatever it costs. Each account more only adds gas, so fits
+// holds for fewer accounts whenever it holds for more, and the counts are
+// searched by halving: about log2(count) of them are tried, never 1 or count.
+func snLedgerMostThatFit(count int, fits func(n int) bool) int {
+	low, high := 1, count-1
+	for low < high {
+		middle := low + (high-low+1)/2
+		if fits(middle) {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return low
+}
+
+// snLedgerSplit splits plans into those of some and the others, each in the
+// order of plans, the ledger's.
+func snLedgerSplit(plans []*snLedgerClaimPlan, some []*snLedgerClaimPlan) (in []*snLedgerClaimPlan, out []*snLedgerClaimPlan) {
+	named := map[*snLedgerClaimPlan]bool{}
+	for _, plan := range some {
+		named[plan] = true
+	}
+	for _, plan := range plans {
+		if named[plan] {
+			in = append(in, plan)
+		} else {
+			out = append(out, plan)
+		}
+	}
+	return in, out
+}
+
 // claim claims every account that has something to claim: two or more in one
 // batch when they can be, and each other alone, in turn, the largest first. A
-// gas key that cannot pay for the batch so claims the largest account first,
-// and each account it then cannot pay for is reported needs_gas, nothing sent
-// for it.
+// gas key that cannot pay for the batch of every account sends the batch of
+// the most it can pay for, the largest first, else none, and then claims the
+// others alone, the largest first: each it then cannot pay for is reported
+// needs_gas, nothing sent for it.
 func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey, callback SnLedgerClaimCallback) {
 	refused := false
 	planCtx, cancel := context.WithTimeout(ctx, snClaimsTimeout)
@@ -771,13 +851,13 @@ func (self *snLedgerClaimPlan) claimItem() *SnLedgerClaimItem {
 // whose ledger could not be read among them), else that there is nothing to
 // claim.
 func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsignedTxList, error) {
-	list, _, err := self.claimTxs(ctx)
+	list, _, _, err := self.claimTxs(ctx)
 	return list, err
 }
 
 // claimTxs is unsignedTxs with the plans its transactions claim, in the
-// ledger's order.
-func (self *snLedgerClaimEngine) claimTxs(ctx context.Context) (*SnLedgerUnsignedTxList, []*snLedgerClaimPlan, error) {
+// ledger's order, and whether the release batcher can claim them.
+func (self *snLedgerClaimEngine) claimTxs(ctx context.Context) (*SnLedgerUnsignedTxList, []*snLedgerClaimPlan, bool, error) {
 	reason := ""
 	refuse := func(noId int64, index int64, message string) {
 		if reason == "" {
@@ -786,7 +866,7 @@ func (self *snLedgerClaimEngine) claimTxs(ctx context.Context) (*SnLedgerUnsigne
 	}
 	plans, snErr := self.plans(ctx, refuse)
 	if snErr != nil {
-		return nil, nil, errors.New(snErr.Code + ": " + snErr.Message)
+		return nil, nil, false, errors.New(snErr.Code + ": " + snErr.Message)
 	}
 	var passing []*snLedgerClaimPlan
 	for _, plan := range plans {
@@ -797,32 +877,43 @@ func (self *snLedgerClaimEngine) claimTxs(ctx context.Context) (*SnLedgerUnsigne
 		}
 		passing = append(passing, plan)
 	}
+	batcher := 2 <= len(passing) && self.batcherVerified(ctx)
+	list := self.txsOf(ctx, passing, batcher)
+	if list.Len() == 0 {
+		if reason == "" {
+			reason = snLedgerNothingToClaim
+		}
+		return nil, nil, false, errors.New(reason)
+	}
+	return list, passing, batcher, nil
+}
+
+// txsOf is the transactions that claim exactly plans, for an external signer:
+// with batcher, one batch of two or more through it when it can be sized, and
+// each other plan alone, with snLedgerClaimGasFloor as its gas limit.
+func (self *snLedgerClaimEngine) txsOf(ctx context.Context, plans []*snLedgerClaimPlan, batcher bool) *SnLedgerUnsignedTxList {
 	list := NewSnLedgerUnsignedTxList()
-	alone := passing
-	if 2 <= len(passing) && self.batcherVerified(ctx) {
-		count, data, gas, err := self.sizeBatch(ctx, [20]byte{}, passing, snLedgerClaimGasFloor)
+	alone := plans
+	if batcher && 2 <= len(plans) {
+		count, data, gas, err := self.sizeBatch(ctx, [20]byte{}, plans, snLedgerClaimGasFloor)
 		if err == nil && 2 <= count {
-			list.Add(self.batchTx(passing[:count], data, gas))
-			alone = passing[count:]
+			list.Add(self.batchTx(plans[:count], data, gas))
+			alone = plans[count:]
 		}
 	}
 	for _, plan := range alone {
 		list.Add(self.unsignedTx(plan))
 	}
-	if list.Len() == 0 {
-		if reason == "" {
-			reason = snLedgerNothingToClaim
-		}
-		return nil, nil, errors.New(reason)
-	}
-	return list, passing, nil
+	return list
 }
 
 // SnLedgerClaimTransactionsResult is the claim transactions for an external
 // wallet that pays their gas itself, checked against what it holds. A wallet
-// that cannot pay for every transaction is given the largest account's claim
-// alone, and the other accounts are StillClaimable: no transaction claims
-// them, and a later claim does.
+// that cannot pay for every transaction is given the transactions of the most
+// accounts it can pay for, the largest first (a batch of them through the
+// release batcher when it can be), else the largest account's claim alone, and
+// the other accounts are StillClaimable: no transaction claims them, and a
+// later claim does. Of two accounts, it is the largest account's claim alone.
 type SnLedgerClaimTransactionsResult struct {
 	// the transactions to send, in order, each signed with exactly its Gas
 	Transactions *SnLedgerUnsignedTxList `json:"transactions"`
@@ -846,8 +937,8 @@ type SnLedgerClaimTransactionsResult struct {
 	// when nothing is StillClaimable
 	AllCostWei string `json:"all_cost_wei"`
 	// the payer cannot pay even for Transactions, then the largest account's
-	// claim alone: it needs MaxCostWei less PayerBalanceWei more. A wallet that
-	// prices gas lower may still send it
+	// claim alone (or the one account's): it needs MaxCostWei less
+	// PayerBalanceWei more. A wallet that prices gas lower may still send it
 	NeedsGas bool `json:"needs_gas"`
 }
 
@@ -879,6 +970,27 @@ func (self *snLedgerClaimEngine) feePerGas(ctx context.Context) (*big.Int, error
 	return fee, nil
 }
 
+// snLedgerAloneLargestFirst orders a list's claims alone the largest first,
+// after its batch, as the device's gas key claims them: a wallet that stops
+// part way, or prices gas above the price its balance was checked at and runs
+// out, then leaves the smaller accounts claimable.
+func snLedgerAloneLargestFirst(list *SnLedgerUnsignedTxList) *SnLedgerUnsignedTxList {
+	txs := list.getAll()
+	slices.SortStableFunc(txs, func(a *SnLedgerUnsignedTx, b *SnLedgerUnsignedTx) int {
+		switch {
+		case a.Batch == b.Batch:
+			return cmp.Compare(b.AmountRao, a.AmountRao)
+		case a.Batch:
+			return -1
+		default:
+			return 1
+		}
+	})
+	ordered := NewSnLedgerUnsignedTxList()
+	ordered.addAll(txs...)
+	return ordered
+}
+
 // snLedgerTxsCost is the most the transactions can cost at fee a gas.
 func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
 	cost := big.NewInt(0)
@@ -890,10 +1002,12 @@ func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
 
 // unsignedTxsForPayer is unsignedTxs for a wallet at payer that pays the gas:
 // every transaction when its balance pays for them all at feePerGas, else the
-// largest account's claim alone, the others still claimable. No account is in
-// two transactions.
+// transactions of the most accounts it pays for, the largest first, built as
+// unsignedTxs builds them for those accounts but with their claims alone the
+// largest first, else the largest account's claim alone; the others still
+// claimable. No account is in two transactions.
 func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer [20]byte) (*SnLedgerClaimTransactionsResult, error) {
-	list, passing, err := self.claimTxs(ctx)
+	list, passing, batcher, err := self.claimTxs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -921,18 +1035,33 @@ func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer 
 		// it is
 		return result, nil
 	}
-	largest := snLedgerLargestFirst(passing)[0]
-	alone := self.unsignedTx(largest)
-	result.Transactions = NewSnLedgerUnsignedTxList()
-	result.Transactions.Add(alone)
-	maxCost := snLedgerTxsCost([]*SnLedgerUnsignedTx{alone}, fee)
+	// the most accounts it pays for, the largest first, else the largest alone
+	largestFirst := snLedgerLargestFirst(passing)
+	txsOfLargest := map[int]*SnLedgerUnsignedTxList{1: self.txsOf(ctx, largestFirst[:1], false)}
+	n := snLedgerMostThatFit(len(largestFirst), func(n int) bool {
+		set, _ := snLedgerSplit(passing, largestFirst[:n])
+		txsOfLargest[n] = snLedgerAloneLargestFirst(self.txsOf(ctx, set, batcher))
+		return snLedgerTxsCost(txsOfLargest[n].getAll(), fee).Cmp(balance) <= 0
+	})
+	result.Transactions = txsOfLargest[n]
+	maxCost := snLedgerTxsCost(result.Transactions.getAll(), fee)
 	result.MaxCostWei = maxCost.String()
 	result.NeedsGas = balance.Cmp(maxCost) < 0
-	message := fmt.Sprintf("%s: claiming every account together needs up to %s of gas and the wallet %s holds %s, so only the largest account is claimed now; claim again for this one", SnErrorCodeNeedsGas, snFormatTao(allCost), result.PayerAddress, snFormatTao(balance))
-	for _, plan := range passing {
-		if plan == largest {
-			continue
-		}
+	// why no transaction claims an account now: the wallet pays for the n
+	// largest only, or for none, though the largest account's claim alone is
+	// given for a wallet that prices gas lower
+	var why string
+	switch {
+	case result.NeedsGas:
+		why = fmt.Sprintf("which is not enough even for the largest account's claim alone (up to %s), so this account is not claimed now; add TAO to the wallet and claim again", snFormatTao(maxCost))
+	case n == 1:
+		why = "so only the largest account is claimed now; claim again for this one"
+	default:
+		why = fmt.Sprintf("so only the %d largest accounts are claimed now; claim again for this one", n)
+	}
+	message := fmt.Sprintf("%s: claiming every account together needs up to %s of gas and the wallet %s holds %s, %s", SnErrorCodeNeedsGas, snFormatTao(allCost), result.PayerAddress, snFormatTao(balance), why)
+	_, still := snLedgerSplit(passing, largestFirst[:n])
+	for _, plan := range still {
 		result.StillClaimable.Add(&SnLedgerClaimOutcome{
 			NoId:      plan.noId,
 			Index:     plan.index,
@@ -963,8 +1092,9 @@ func (self *snDevice) snLedgerClaimEngine() (*snLedgerClaimEngine, *SnError) {
 // that has something to claim, in every pool: two or more in one batcher
 // transaction when they can be, else one transaction per account in turn, the
 // largest first, signed with the device gas key; then Done. A gas key that
-// can pay for one claim but not the batch so claims the largest account, and
-// each other it then cannot pay for fails needs_gas, still claimable.
+// cannot pay for the batch of every account sends the batch of the most it can
+// pay for, the largest first, else none, and then claims the others alone, the
+// largest first: each it then cannot pay for fails needs_gas, still claimable.
 func (self *snDevice) SnLedgerClaim(callback SnLedgerClaimCallback) {
 	go connect.HandleError(func() {
 		defer callback.Done()
@@ -996,8 +1126,9 @@ func (self *snDevice) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, erro
 
 // SnLedgerClaimTransactionsForPayer builds the connected coldkey's v2 claim
 // transactions for an external wallet whose EVM address payerAddress pays
-// their gas: all of them when it holds enough, else the largest account's
-// claim alone, with the others StillClaimable.
+// their gas: all of them when it holds enough, else those of the most accounts
+// it can pay for, the largest first, else the largest account's claim alone,
+// with the others StillClaimable.
 func (self *snDevice) SnLedgerClaimTransactionsForPayer(payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
 	payer, err := snLedgerPayer(payerAddress)
 	if err != nil {
@@ -1042,10 +1173,10 @@ func SnLedgerClaimTransactionsFor(settings *SnChainSettings, coldkeySs58 string)
 // SnLedgerClaimTransactionsForPayer builds a coldkey's v2 claim transactions,
 // with explicit settings, for an injected browser wallet whose EVM address
 // payerAddress pays their gas: SnLedgerClaimTransactionsFor's when its balance
-// pays for them all at the chain's price, else the largest account's claim
-// alone, with the other accounts StillClaimable; NeedsGas when it cannot pay
-// even that. The ledger is read from the settings' artifact host, else the
-// default host.
+// pays for them all at the chain's price, else those of the most accounts it
+// can pay for, the largest first, else the largest account's claim alone, with
+// the other accounts StillClaimable; NeedsGas when it cannot pay even that.
+// The ledger is read from the settings' artifact host, else the default host.
 func SnLedgerClaimTransactionsForPayer(settings *SnChainSettings, coldkeySs58 string, payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
 	payer, err := snLedgerPayer(payerAddress)
 	if err != nil {
@@ -1182,13 +1313,28 @@ func snClaimedIn(receipt *evm.Receipt, vault2 [20]byte, noId int64, index int64)
 
 // snLedgerBatchRefusalOf names why the batcher's call of an item's claim
 // reverted, from the first four bytes of its revert data, without the chain:
-// a zero selector is a call that ran out of its gas cap, as one the staking
-// precompile refuses does.
+// a zero selector is a call that ran out of its gas cap, or one the staking
+// precompile refused, the runtime's transfer floor among them, which only the
+// chain tells apart (SnLedgerClaimOutcomesFor).
 func snLedgerBatchRefusalOf(selector [4]byte) string {
 	if selector == ([4]byte{}) {
 		return SnErrorCodeClaimFailed + ": the staking precompile refused the transfer"
 	}
 	return snLedgerVaultRefusal(evm.DecodeRevert(selector[:]))
+}
+
+// snLedgerTxVault is the vault whose Claimed events say what tx paid: its
+// Vault, or for a claim alone without one, its To.
+func snLedgerTxVault(tx *SnLedgerUnsignedTx) ([20]byte, error) {
+	vaultHex := tx.Vault
+	if vaultHex == "" && !tx.Batch {
+		vaultHex = tx.To
+	}
+	vault2, err := evm.ParseAddress(vaultHex)
+	if err != nil {
+		return [20]byte{}, fmt.Errorf("vault: %w", err)
+	}
+	return vault2, nil
 }
 
 // SnLedgerClaimOutcomesOf reads what a mined transaction of
@@ -1197,17 +1343,75 @@ func snLedgerBatchRefusalOf(selector [4]byte) string {
 // for a batch the batcher's events say why an account was not paid, or that it
 // was not attempted. receiptJson is the transaction's receipt as JSON-RPC,
 // ethers or viem give it. Pure: a page reads the receipt with its own wallet.
+// Without the chain, a claim alone that reverted is claim_failed, and so is an
+// account the batch's call refused without a reason, as the staking precompile
+// refuses a transfer, even one under the runtime's transfer floor:
+// SnLedgerClaimOutcomesFor reads the chain to say why, as the device's claim
+// does.
 func SnLedgerClaimOutcomesOf(tx *SnLedgerUnsignedTx, receiptJson string) (*SnLedgerClaimOutcomeList, error) {
+	return snLedgerClaimOutcomes(tx, receiptJson, func(*SnLedgerClaimItem) string {
+		return SnErrorCodeClaimFailed + ": the claim transaction reverted"
+	}, func(_ *SnLedgerClaimItem, selector [4]byte) string {
+		return snLedgerBatchRefusalOf(selector)
+	})
+}
+
+// SnLedgerClaimOutcomesFor is SnLedgerClaimOutcomesOf with the reasons read
+// from the chain, as the device's claim reads them, so a host that sends the
+// claims with its own wallet shows each account as a device does: a claim
+// alone that reverted is called again, which says why (NothingToClaim, another
+// claim paid it first, is already_claimed); an account the batch's call
+// refused without a reason has vault2's transfer of its amount to coldkeySs58
+// simulated, and under the runtime's transfer floor it is not_claimable
+// (AmountTooLow), any other refusal claim_failed with the runtime's reason. A
+// reason the chain does not give is claim_failed. settings name the chain and
+// vault2, which must be the transaction's (its chain id, when it names one, and
+// its vault); coldkeySs58 is the coldkey the transactions were built for, the
+// simulated transfer's destination. Errors: as SnLedgerClaimOutcomesOf, and the
+// settings' or the coldkey's as SnLedgerClaimTransactionsFor's.
+func SnLedgerClaimOutcomesFor(settings *SnChainSettings, coldkeySs58 string, tx *SnLedgerUnsignedTx, receiptJson string) (*SnLedgerClaimOutcomeList, error) {
+	engine, snErr := newSnLedgerClaimEngine(settings, coldkeySs58, "", nil)
+	if snErr != nil {
+		return nil, errors.New(snErr.Code + ": " + snErr.Message)
+	}
+	if tx != nil {
+		if vault2, err := snLedgerTxVault(tx); err == nil && vault2 != engine.vault2 {
+			return nil, fmt.Errorf("the transaction claims from %s, not from the configured vault2 %s", "0x"+hex.EncodeToString(vault2[:]), engine.vault2Hex())
+		}
+		if tx.ChainId != 0 && tx.ChainId != settings.ChainId {
+			return nil, fmt.Errorf("the transaction is for chain %d, not the configured chain %d", tx.ChainId, settings.ChainId)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), snClaimsTimeout)
+	defer cancel()
+	plan := func(item *SnLedgerClaimItem) *snLedgerClaimPlan {
+		return &snLedgerClaimPlan{noId: item.NoId, index: item.Index, rootIndex: item.RootIndex, kind: item.Kind, label: item.Label, amount: item.AmountRao}
+	}
+	return snLedgerClaimOutcomes(tx, receiptJson, func(item *SnLedgerClaimItem) string {
+		// the reverted claim changed nothing, so the same call says why
+		data, err := evm.ParseHexBytes(tx.Data)
+		if err == nil {
+			if _, err := engine.client.EthCall(ctx, engine.vault2, data); err != nil {
+				return engine.refusal(ctx, plan(item), err)
+			}
+		}
+		return SnErrorCodeClaimFailed + ": the claim transaction reverted"
+	}, func(item *SnLedgerClaimItem, selector [4]byte) string {
+		return engine.batchRefusal(ctx, plan(item), selector)
+	})
+}
+
+// snLedgerClaimOutcomes reads what a mined transaction did for each account it
+// claims, as SnLedgerClaimOutcomesOf: reverted says why a claim alone whose
+// transaction reverted did not pay its account, and refused why the batch's
+// call of an item's claim reverted with revert data starting selector.
+func snLedgerClaimOutcomes(tx *SnLedgerUnsignedTx, receiptJson string, reverted func(item *SnLedgerClaimItem) string, refused func(item *SnLedgerClaimItem, selector [4]byte) string) (*SnLedgerClaimOutcomeList, error) {
 	if tx == nil || tx.Items == nil || tx.Items.Len() == 0 {
 		return nil, errors.New("the transaction names no account")
 	}
-	vaultHex := tx.Vault
-	if vaultHex == "" && !tx.Batch {
-		vaultHex = tx.To
-	}
-	vault2, err := evm.ParseAddress(vaultHex)
+	vault2, err := snLedgerTxVault(tx)
 	if err != nil {
-		return nil, fmt.Errorf("vault: %w", err)
+		return nil, err
 	}
 	receipt, err := snParseReceipt(receiptJson)
 	if err != nil {
@@ -1231,7 +1435,7 @@ func SnLedgerClaimOutcomesOf(tx *SnLedgerUnsignedTx, receiptJson string) (*SnLed
 		case !receipt.Status && tx.Batch:
 			outcome.Message = SnErrorCodeClaimFailed + ": the batch transaction reverted"
 		case !receipt.Status:
-			outcome.Message = SnErrorCodeClaimFailed + ": the claim transaction reverted"
+			outcome.Message = reverted(item)
 		case paid:
 			outcome.Status, outcome.AmountRao = SnLedgerClaimOutcomeConfirmed, amount
 		case !tx.Batch:
@@ -1241,7 +1445,7 @@ func SnLedgerClaimOutcomesOf(tx *SnLedgerUnsignedTx, receiptJson string) (*SnLed
 		case batchOutcomes[i].Outcome == evm.ClaimBatchNotAttempted:
 			outcome.Status = SnLedgerClaimOutcomeNotAttempted
 		case batchOutcomes[i].Outcome == evm.ClaimBatchRefused:
-			outcome.Message = snLedgerBatchRefusalOf(batchOutcomes[i].Selector)
+			outcome.Message = refused(item, batchOutcomes[i].Selector)
 		default:
 			outcome.Message = SnErrorCodeClaimFailed + ": the batch transaction has no Claimed event for this account"
 		}

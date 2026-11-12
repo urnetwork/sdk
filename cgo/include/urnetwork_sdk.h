@@ -2198,6 +2198,7 @@ bool urnet_local_state_get_measurements_enabled(uint64_t self);
 char* urnet_local_state_get_performance_profile(uint64_t self);
 char* urnet_local_state_get_provide_control_mode(uint64_t self);
 bool urnet_local_state_get_provide_extender(uint64_t self);
+bool urnet_local_state_get_provide_extender_port_mapping(uint64_t self);
 int64_t urnet_local_state_get_provide_mode(uint64_t self);
 char* urnet_local_state_get_provide_network_mode(uint64_t self);
 char* urnet_local_state_get_provide_secret_keys(uint64_t self);
@@ -2240,6 +2241,7 @@ bool urnet_local_state_set_measurements_enabled(uint64_t self, bool measurements
 bool urnet_local_state_set_performance_profile(uint64_t self, const char* profile_json, char** out_error);
 bool urnet_local_state_set_provide_control_mode(uint64_t self, const char* mode, char** out_error);
 bool urnet_local_state_set_provide_extender(uint64_t self, bool provide_extender, char** out_error);
+bool urnet_local_state_set_provide_extender_port_mapping(uint64_t self, bool port_mapping, char** out_error);
 bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, char** out_error);
 bool urnet_local_state_set_provide_network_mode(uint64_t self, const char* provide_network_mode, char** out_error);
 bool urnet_local_state_set_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json, char** out_error);
@@ -2925,10 +2927,11 @@ char* urnet_short_ss58(const char* address);
 char* urnet_sn_claim_transactions_for(const char* settings_json, const char* coldkey_ss58, const char* epochs_json, char** out_error);
 void urnet_sn_claims_for(const char* settings_json, const char* coldkey_ss58, int64_t from_epoch, urnet_sn_claims_cb callback_result, void* callback_user_data);
 char* urnet_sn_ctf_client_of(const char* answer_json);
-char* urnet_sn_ctf_client_of_response(int64_t status_code, const char* answer_json);
+char* urnet_sn_ctf_client_of_response(int64_t status_code, const char* answer_json, bool network_credential);
 char* urnet_sn_fleet_binding_digest(const char* binding_json, char** out_error);
 void urnet_sn_gas_balance_for(const char* settings_json, const char* address, urnet_sn_gas_balance_cb callback_result, void* callback_user_data);
 void urnet_sn_ledger_accounts_for(const char* settings_json, const char* coldkey_ss58, urnet_sn_ledger_accounts_cb callback_result, void* callback_user_data);
+char* urnet_sn_ledger_claim_outcomes_for(const char* settings_json, const char* coldkey_ss58, const char* tx_json, const char* receipt_json, char** out_error);
 char* urnet_sn_ledger_claim_outcomes_of(const char* tx_json, const char* receipt_json, char** out_error);
 char* urnet_sn_ledger_claim_transactions_for(const char* settings_json, const char* coldkey_ss58, char** out_error);
 char* urnet_sn_ledger_claim_transactions_for_payer(const char* settings_json, const char* coldkey_ss58, const char* payer_address, char** out_error);
@@ -4321,6 +4324,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PortMappingUdpPort: number
  *   PortMappingDnsPort: number
  *   PortMappingError: string
+ *   PortMappingMethodName: string
+ *   PortMappingPorts: string
  *   ConnectionCount: number
  */
 

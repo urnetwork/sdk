@@ -16908,6 +16908,17 @@ func urnet_local_state_get_provide_extender(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_local_state_get_provide_extender_port_mapping
+func urnet_local_state_get_provide_extender_port_mapping(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_local_state_get_provide_extender_port_mapping")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_provide_extender_port_mapping")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProvideExtenderPortMapping()
+	return C.bool(r0)
+}
+
 //export urnet_local_state_get_provide_mode
 func urnet_local_state_get_provide_mode(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_local_state_get_provide_mode")
@@ -17573,6 +17584,21 @@ func urnet_local_state_set_provide_extender(self C.uint64_t, provideExtender C.b
 		return C.bool(false)
 	}
 	err := self_.SetProvideExtender(bool(provideExtender))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_provide_extender_port_mapping
+func urnet_local_state_set_provide_extender_port_mapping(self C.uint64_t, portMapping C.bool, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_provide_extender_port_mapping")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_provide_extender_port_mapping")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetProvideExtenderPortMapping(bool(portMapping))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)
@@ -22075,9 +22101,9 @@ func urnet_sn_ctf_client_of(answerJson *C.char) *C.char {
 }
 
 //export urnet_sn_ctf_client_of_response
-func urnet_sn_ctf_client_of_response(statusCode C.int64_t, answerJson *C.char) *C.char {
+func urnet_sn_ctf_client_of_response(statusCode C.int64_t, answerJson *C.char, networkCredential C.bool) *C.char {
 	defer cgoGuard("urnet_sn_ctf_client_of_response")
-	r0 := sdk.SnCtfClientOfResponse(int(int64(statusCode)), goString(answerJson))
+	r0 := sdk.SnCtfClientOfResponse(int(int64(statusCode)), goString(answerJson), bool(networkCredential))
 	if r0 == nil {
 		return nil
 	}
@@ -22272,6 +22298,34 @@ func urnet_sn_ledger_accounts_for(settings *C.char, coldkeySs58 *C.char, callbac
 		callback_ = &cAdapterSnLedgerAccountsCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	sdk.SnLedgerAccountsFor(settings_, goString(coldkeySs58), callback_)
+}
+
+//export urnet_sn_ledger_claim_outcomes_for
+func urnet_sn_ledger_claim_outcomes_for(settings *C.char, coldkeySs58 *C.char, tx *C.char, receiptJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sn_ledger_claim_outcomes_for")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_sn_ledger_claim_outcomes_for") {
+			return nil
+		}
+	}
+	var tx_ *sdk.SnLedgerUnsignedTx
+	if tx != nil {
+		tx_ = &sdk.SnLedgerUnsignedTx{}
+		if !goJson(tx, tx_, "urnet_sn_ledger_claim_outcomes_for") {
+			return nil
+		}
+	}
+	r0, err := sdk.SnLedgerClaimOutcomesFor(settings_, goString(coldkeySs58), tx_, goString(receiptJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sn_ledger_claim_outcomes_for")
 }
 
 //export urnet_sn_ledger_claim_outcomes_of

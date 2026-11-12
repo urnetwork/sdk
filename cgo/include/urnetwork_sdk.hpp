@@ -2783,6 +2783,8 @@ struct ExtenderProvideStatus {
 	int64_t PortMappingUdpPort{};
 	int64_t PortMappingDnsPort{};
 	std::string PortMappingError{};
+	std::string PortMappingMethodName{};
+	std::string PortMappingPorts{};
 	int64_t ConnectionCount{};
 };
 
@@ -12050,6 +12052,8 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["PortMappingUdpPort"] = v.PortMappingUdpPort;
 	j["PortMappingDnsPort"] = v.PortMappingDnsPort;
 	j["PortMappingError"] = v.PortMappingError;
+	j["PortMappingMethodName"] = v.PortMappingMethodName;
+	j["PortMappingPorts"] = v.PortMappingPorts;
 	j["ConnectionCount"] = v.ConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
@@ -12151,6 +12155,12 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("PortMappingError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PortMappingError);
+	}
+	if (auto it = j.find("PortMappingMethodName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingMethodName);
+	}
+	if (auto it = j.find("PortMappingPorts"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingPorts);
 	}
 	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectionCount);
@@ -24374,6 +24384,7 @@ public:
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	bool getProvideExtender() const;
+	bool getProvideExtenderPortMapping() const;
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
@@ -24416,6 +24427,7 @@ public:
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideExtender(bool provide_extender) const;
+	void setProvideExtenderPortMapping(bool port_mapping) const;
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& provide_network_mode) const;
 	void setProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
@@ -37216,6 +37228,10 @@ inline bool LocalState::getProvideExtender() const {
 	bool r = urnet_local_state_get_provide_extender(handle());
 	return r;
 }
+inline bool LocalState::getProvideExtenderPortMapping() const {
+	bool r = urnet_local_state_get_provide_extender_port_mapping(handle());
+	return r;
+}
 inline int64_t LocalState::getProvideMode() const {
 	int64_t r = urnet_local_state_get_provide_mode(handle());
 	return r;
@@ -37622,6 +37638,16 @@ inline void LocalState::setProvideExtender(bool provide_extender) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_provide_extender failed");
+	}
+}
+inline void LocalState::setProvideExtenderPortMapping(bool port_mapping) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_provide_extender_port_mapping(handle(), port_mapping, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_provide_extender_port_mapping failed");
 	}
 }
 inline void LocalState::setProvideMode(int64_t provide_mode) const {
@@ -41217,8 +41243,8 @@ inline std::optional<SnCtfClientResult> snCtfClientOf(const std::string& answer_
 	}
 	return detail::parseJson<SnCtfClientResult>(r_s->c_str());
 }
-inline std::optional<SnCtfClientResult> snCtfClientOfResponse(int64_t status_code, const std::string& answer_json) {
-	char* r_c = urnet_sn_ctf_client_of_response(status_code, answer_json.c_str());
+inline std::optional<SnCtfClientResult> snCtfClientOfResponse(int64_t status_code, const std::string& answer_json, bool network_credential) {
+	char* r_c = urnet_sn_ctf_client_of_response(status_code, answer_json.c_str(), network_credential);
 	auto r_s = detail::takeStringOpt(r_c);
 	if (!r_s) {
 		return std::nullopt;
@@ -41252,6 +41278,30 @@ inline void snLedgerAccountsFor(const std::optional<SnChainSettings>& settings, 
 	}
 	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
 	urnet_sn_ledger_accounts_for(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline std::optional<SnLedgerClaimOutcomeList> snLedgerClaimOutcomesFor(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, const std::optional<SnLedgerUnsignedTx>& tx, const std::string& receipt_json) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::string tx_json;
+	const char* tx_c = nullptr;
+	if (tx) {
+		tx_json = nlohmann::json(*tx).dump();
+		tx_c = tx_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_sn_ledger_claim_outcomes_for(settings_c, coldkey_ss58.c_str(), tx_c, receipt_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimOutcomeList>(r_s->c_str());
 }
 inline std::optional<SnLedgerClaimOutcomeList> snLedgerClaimOutcomesOf(const std::optional<SnLedgerUnsignedTx>& tx, const std::string& receipt_json) {
 	std::string tx_json;

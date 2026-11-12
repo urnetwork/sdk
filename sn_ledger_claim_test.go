@@ -180,9 +180,11 @@ type fakeVault2 struct {
 	tip            *big.Int
 	balance        *big.Int
 	nonce          uint64
-	// run once, before the next claim eth_call or the next sent transaction
+	// run once, before the next claim eth_call, the next sent transaction or
+	// the next receipt read
 	beforeClaimCall func()
 	beforeMine      func()
+	beforeReceipt   func()
 	// a mined claim's receipt has no Claimed log
 	dropClaimedLog bool
 	// methods answered with an error
@@ -485,6 +487,11 @@ func (self *fakeVault2) handle(method string, params []json.RawMessage) (any, *e
 		}
 		return txHash, nil
 	case "eth_getTransactionReceipt":
+		if self.beforeReceipt != nil {
+			hook := self.beforeReceipt
+			self.beforeReceipt = nil
+			hook()
+		}
 		var txHash string
 		json.Unmarshal(params[0], &txHash)
 		return self.receipts[txHash], nil
@@ -507,7 +514,8 @@ func (self *fakeVault2) call(method string, call fakeVault2Call, data []byte) (a
 			gas = self.blockGasLimit
 		}
 		attempted := 0
-		for _, item := range self.runBatch(data, gas, 0, false) {
+		items, _ := self.runBatch(data, gas, 0, false)
+		for _, item := range items {
 			if item.outcome != evm.ClaimBatchNotAttempted {
 				attempted++
 			}
@@ -598,12 +606,13 @@ type fakeBatchItem struct {
 // runBatch runs STClaimBatcher.claimMany with gas, each paid item using extra
 // gas beyond the model's: an item is attempted only while the gas left covers
 // its cap, the 1/63 EIP-150 keeps and the bookkeeping. Its effects on vault2
-// stay only with effects.
-func (self *fakeVault2) runBatch(data []byte, gas uint64, extra uint64, effects bool) []*fakeBatchItem {
+// stay only with effects. It returns each item's outcome and the gas the batch
+// used.
+func (self *fakeVault2) runBatch(data []byte, gas uint64, extra uint64, effects bool) ([]*fakeBatchItem, uint64) {
 	vault, claims, gasPerClaim, err := decodeTestClaimMany(data)
 	if err != nil || vault != self.vault2 {
 		self.t.Errorf("claimMany of vault %x: %v", vault, err)
-		return nil
+		return nil, gas
 	}
 	saved := map[[2]int64]*big.Int{}
 	for key, value := range self.claimed {
@@ -635,7 +644,7 @@ func (self *fakeVault2) runBatch(data []byte, gas uint64, extra uint64, effects 
 	if !effects {
 		self.claimed = saved
 	}
-	return items
+	return items, uint64(int64(gas) - left)
 }
 
 // testClaimedLog is vault2's Claimed event of claim c paying amount, called by
@@ -667,7 +676,10 @@ func (self *fakeVault2) mineBatch(tx *fakeVault2Tx, txHash string) map[string]an
 	}
 	word := func(v int64) string { return strings.TrimPrefix(testWordHex(big.NewInt(v)), "0x") }
 	logs := []any{}
-	for i, item := range self.runBatch(tx.data, tx.gas, self.mineExtraGas, true) {
+	items, used := self.runBatch(tx.data, tx.gas, self.mineExtraGas, true)
+	// the gas the batch used, which chargeGas takes from the balance
+	receipt["gasUsed"] = evm.HexQuantity(new(big.Int).SetUint64(used))
+	for i, item := range items {
 		switch item.outcome {
 		case evm.ClaimBatchPaid:
 			if !self.dropClaimedLog {

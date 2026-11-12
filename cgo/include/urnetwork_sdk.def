@@ -975,6 +975,7 @@ EXPORTS
 	urnet_local_state_get_performance_profile
 	urnet_local_state_get_provide_control_mode
 	urnet_local_state_get_provide_extender
+	urnet_local_state_get_provide_extender_port_mapping
 	urnet_local_state_get_provide_mode
 	urnet_local_state_get_provide_network_mode
 	urnet_local_state_get_provide_secret_keys
@@ -1021,6 +1022,7 @@ EXPORTS
 	urnet_local_state_set_performance_profile
 	urnet_local_state_set_provide_control_mode
 	urnet_local_state_set_provide_extender
+	urnet_local_state_set_provide_extender_port_mapping
 	urnet_local_state_set_provide_mode
 	urnet_local_state_set_provide_network_mode
 	urnet_local_state_set_provide_secret_keys
@@ -1396,6 +1398,7 @@ EXPORTS
 	urnet_sn_fleet_device_start
 	urnet_sn_gas_balance_for
 	urnet_sn_ledger_accounts_for
+	urnet_sn_ledger_claim_outcomes_for
 	urnet_sn_ledger_claim_outcomes_of
 	urnet_sn_ledger_claim_transactions_for
 	urnet_sn_ledger_claim_transactions_for_payer
