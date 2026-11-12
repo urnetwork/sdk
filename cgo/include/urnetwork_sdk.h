@@ -592,6 +592,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ROUTING_TIER_FULL 2
 #define URNET_ROUTING_TIER_LIGHT 1
 #define URNET_ROUTING_TIER_OFF 0
+#define URNET_SHOWN_PLAN_FREE "free"
+#define URNET_SHOWN_PLAN_PRO "pro"
+#define URNET_SHOWN_PLAN_UNKNOWN "unknown"
 #define URNET_SN_ALPHA_SYMBOL "SN25α"
 #define URNET_SN_CHAIN_ID_MAINNET 964
 #define URNET_SN_CHAIN_ID_TESTNET 945
@@ -2641,6 +2644,7 @@ char* urnet_subscription_balance_view_controller_get_last_fetch_error(uint64_t s
 int64_t urnet_subscription_balance_view_controller_get_pending_byte_count(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_purchase_confirmation_state(uint64_t self);
+char* urnet_subscription_balance_view_controller_get_shown_plan(uint64_t self);
 int64_t urnet_subscription_balance_view_controller_get_start_balance_byte_count(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_subscription_balance_result(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_subscriptions(uint64_t self);
@@ -2658,8 +2662,11 @@ void urnet_subscription_balance_view_controller_stop(uint64_t self);
 
 /* ----- SubscriptionProTracker ----- */
 
+bool urnet_subscription_pro_tracker_balance_failed(uint64_t self);
 bool urnet_subscription_pro_tracker_balance_loaded(uint64_t self, bool server_is_pro);
 bool urnet_subscription_pro_tracker_get_is_pro(uint64_t self);
+bool urnet_subscription_pro_tracker_get_last_read_failed(uint64_t self);
+char* urnet_subscription_pro_tracker_get_shown_plan(uint64_t self);
 void urnet_subscription_pro_tracker_reset(uint64_t self);
 bool urnet_subscription_pro_tracker_set_jwt(uint64_t self, const char* by_jwt);
 

@@ -22800,6 +22800,17 @@ func urnet_subscription_balance_view_controller_get_purchase_confirmation_state(
 	return cString(string(r0))
 }
 
+//export urnet_subscription_balance_view_controller_get_shown_plan
+func urnet_subscription_balance_view_controller_get_shown_plan(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_subscription_balance_view_controller_get_shown_plan")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_get_shown_plan")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetShownPlan()
+	return cString(string(r0))
+}
+
 //export urnet_subscription_balance_view_controller_get_start_balance_byte_count
 func urnet_subscription_balance_view_controller_get_start_balance_byte_count(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_subscription_balance_view_controller_get_start_balance_byte_count")
@@ -22950,6 +22961,17 @@ func urnet_subscription_balance_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_subscription_pro_tracker_balance_failed
+func urnet_subscription_pro_tracker_balance_failed(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_subscription_pro_tracker_balance_failed")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_balance_failed")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.BalanceFailed()
+	return C.bool(r0)
+}
+
 //export urnet_subscription_pro_tracker_balance_loaded
 func urnet_subscription_pro_tracker_balance_loaded(self C.uint64_t, serverIsPro C.bool) C.bool {
 	defer cgoGuard("urnet_subscription_pro_tracker_balance_loaded")
@@ -22970,6 +22992,28 @@ func urnet_subscription_pro_tracker_get_is_pro(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetIsPro()
 	return C.bool(r0)
+}
+
+//export urnet_subscription_pro_tracker_get_last_read_failed
+func urnet_subscription_pro_tracker_get_last_read_failed(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_subscription_pro_tracker_get_last_read_failed")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_get_last_read_failed")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetLastReadFailed()
+	return C.bool(r0)
+}
+
+//export urnet_subscription_pro_tracker_get_shown_plan
+func urnet_subscription_pro_tracker_get_shown_plan(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_subscription_pro_tracker_get_shown_plan")
+	self_, ok := resolveHandle[*sdk.SubscriptionProTracker](uint64(self), "urnet_subscription_pro_tracker_get_shown_plan")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetShownPlan()
+	return cString(string(r0))
 }
 
 //export urnet_subscription_pro_tracker_reset

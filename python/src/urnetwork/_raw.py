@@ -2655,6 +2655,8 @@ def bind(lib):
     lib.urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason.restype = c_void_p
     lib.urnet_subscription_balance_view_controller_get_purchase_confirmation_state.argtypes = [c_uint64]
     lib.urnet_subscription_balance_view_controller_get_purchase_confirmation_state.restype = c_void_p
+    lib.urnet_subscription_balance_view_controller_get_shown_plan.argtypes = [c_uint64]
+    lib.urnet_subscription_balance_view_controller_get_shown_plan.restype = c_void_p
     lib.urnet_subscription_balance_view_controller_get_start_balance_byte_count.argtypes = [c_uint64]
     lib.urnet_subscription_balance_view_controller_get_start_balance_byte_count.restype = c_int64
     lib.urnet_subscription_balance_view_controller_get_subscription_balance_result.argtypes = [c_uint64]
@@ -2683,10 +2685,16 @@ def bind(lib):
     lib.urnet_subscription_balance_view_controller_start_purchase_confirmation.restype = None
     lib.urnet_subscription_balance_view_controller_stop.argtypes = [c_uint64]
     lib.urnet_subscription_balance_view_controller_stop.restype = None
+    lib.urnet_subscription_pro_tracker_balance_failed.argtypes = [c_uint64]
+    lib.urnet_subscription_pro_tracker_balance_failed.restype = c_bool
     lib.urnet_subscription_pro_tracker_balance_loaded.argtypes = [c_uint64, c_bool]
     lib.urnet_subscription_pro_tracker_balance_loaded.restype = c_bool
     lib.urnet_subscription_pro_tracker_get_is_pro.argtypes = [c_uint64]
     lib.urnet_subscription_pro_tracker_get_is_pro.restype = c_bool
+    lib.urnet_subscription_pro_tracker_get_last_read_failed.argtypes = [c_uint64]
+    lib.urnet_subscription_pro_tracker_get_last_read_failed.restype = c_bool
+    lib.urnet_subscription_pro_tracker_get_shown_plan.argtypes = [c_uint64]
+    lib.urnet_subscription_pro_tracker_get_shown_plan.restype = c_void_p
     lib.urnet_subscription_pro_tracker_reset.argtypes = [c_uint64]
     lib.urnet_subscription_pro_tracker_reset.restype = None
     lib.urnet_subscription_pro_tracker_set_jwt.argtypes = [c_uint64, c_char_p]

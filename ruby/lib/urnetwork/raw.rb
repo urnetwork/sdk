@@ -1452,6 +1452,7 @@ module URnetwork
       attach_function :urnet_subscription_balance_view_controller_get_pending_byte_count, [:uint64], :int64, blocking: true
       attach_function :urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason, [:uint64], :pointer, blocking: true
       attach_function :urnet_subscription_balance_view_controller_get_purchase_confirmation_state, [:uint64], :pointer, blocking: true
+      attach_function :urnet_subscription_balance_view_controller_get_shown_plan, [:uint64], :pointer, blocking: true
       attach_function :urnet_subscription_balance_view_controller_get_start_balance_byte_count, [:uint64], :int64, blocking: true
       attach_function :urnet_subscription_balance_view_controller_get_subscription_balance_result, [:uint64], :pointer, blocking: true
       attach_function :urnet_subscription_balance_view_controller_get_subscriptions, [:uint64], :pointer, blocking: true
@@ -1466,8 +1467,11 @@ module URnetwork
       attach_function :urnet_subscription_balance_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_subscription_balance_view_controller_start_purchase_confirmation, [:uint64], :void, blocking: true
       attach_function :urnet_subscription_balance_view_controller_stop, [:uint64], :void, blocking: true
+      attach_function :urnet_subscription_pro_tracker_balance_failed, [:uint64], :bool, blocking: true
       attach_function :urnet_subscription_pro_tracker_balance_loaded, [:uint64, :bool], :bool, blocking: true
       attach_function :urnet_subscription_pro_tracker_get_is_pro, [:uint64], :bool, blocking: true
+      attach_function :urnet_subscription_pro_tracker_get_last_read_failed, [:uint64], :bool, blocking: true
+      attach_function :urnet_subscription_pro_tracker_get_shown_plan, [:uint64], :pointer, blocking: true
       attach_function :urnet_subscription_pro_tracker_reset, [:uint64], :void, blocking: true
       attach_function :urnet_subscription_pro_tracker_set_jwt, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_tunnel_cancel, [:uint64], :void, blocking: true
