@@ -8,6 +8,7 @@ package sdk
 // no wins, never as a reason to sign out.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -526,5 +527,46 @@ func TestSnCtfClientResultOfAFailedRead(t *testing.T) {
 	result := snCtfClientResultOf(nil, errors.New("connection refused"))
 	if result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Error.Message != "connection refused" || result.Epochs == nil || result.Wins == nil || result.UnclaimedWins == nil {
 		t.Fatalf("result %+v", result)
+	}
+}
+
+// Through an installed transport, as a DeviceRemote's forwards a request to
+// its device and hands back the server's 401 as the same typed status: the
+// network credential refused, the client token asked next, and no credential
+// dropped.
+func TestSnCtfClientThroughAnInstalledTransport(t *testing.T) {
+	ctx, api := newTestApiForURL(t, "https://api.test")
+	clientJwt := testingJwt(map[string]any{"network_id": "00000000-0000-0000-0000-000000000001", "client_id": testCtfClientId})
+	networkJwt := testingNetworkAdminJwt("00000000-0000-0000-0000-000000000001")
+	var asked []string
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		asked = append(asked, requestUrl+" "+byJwt)
+		if !credentialNamesClient(byJwt) {
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(testCtfUnauthorized)}
+		}
+		return []byte(testCtfClientAnswer), nil
+	})
+	api.SetByJwt(clientJwt)
+	api.mutex.Lock()
+	api.networkByJwt = networkJwt
+	api.mutex.Unlock()
+	result := snCtfClient(ctx, api)
+	if result.Error != nil || result.ClientId != testCtfClientId || result.UnclaimedWins.Len() != 1 {
+		t.Fatalf("result %+v (%+v)", result, result.Error)
+	}
+	if len(asked) != 2 || asked[0] != "https://api.test/sn/ctf/client "+networkJwt || asked[1] != "https://api.test/sn/ctf/client "+clientJwt {
+		t.Fatalf("asked %q", asked)
+	}
+	if api.GetByJwt() != clientJwt || api.networkCredential() != networkJwt {
+		t.Fatal("a refused read dropped a credential")
+	}
+	// a failure that is not the server's 401 ends the read: unavailable
+	asked = nil
+	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
+		asked = append(asked, "")
+		return nil, errors.New("device rpc http concurrency limit reached")
+	})
+	if result = snCtfClient(ctx, api); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || len(asked) != 1 {
+		t.Fatalf("a failed read %+v, asked %d", result, len(asked))
 	}
 }
