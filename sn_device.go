@@ -96,6 +96,10 @@ func (self *DeviceLocal) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, e
 	return self.snDevice().SnLedgerClaimTransactions()
 }
 
+func (self *DeviceLocal) SnLedgerClaimTransactionsForPayer(payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
+	return self.snDevice().SnLedgerClaimTransactionsForPayer(payerAddress)
+}
+
 // claim relay
 
 func (self *DeviceLocal) SnClaimStatus(callback SnClaimStatusCallback) {
@@ -202,6 +206,10 @@ func (self *DeviceRemote) SnLedgerClaim(callback SnLedgerClaimCallback) {
 
 func (self *DeviceRemote) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, error) {
 	return self.snDevice().SnLedgerClaimTransactions()
+}
+
+func (self *DeviceRemote) SnLedgerClaimTransactionsForPayer(payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
+	return self.snDevice().SnLedgerClaimTransactionsForPayer(payerAddress)
 }
 
 // claim relay

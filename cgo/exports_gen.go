@@ -13630,6 +13630,24 @@ func urnet_device_local_sn_ledger_claim_transactions(self C.uint64_t, outError *
 	return cJson(r0, "urnet_device_local_sn_ledger_claim_transactions")
 }
 
+//export urnet_device_local_sn_ledger_claim_transactions_for_payer
+func urnet_device_local_sn_ledger_claim_transactions_for_payer(self C.uint64_t, payerAddress *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_device_local_sn_ledger_claim_transactions_for_payer")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_ledger_claim_transactions_for_payer")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.SnLedgerClaimTransactionsForPayer(goString(payerAddress))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_sn_ledger_claim_transactions_for_payer")
+}
+
 //export urnet_device_local_stall_exit
 func urnet_device_local_stall_exit(self C.uint64_t, clientId *C.char, stalled C.bool) C.bool {
 	defer cgoGuard("urnet_device_local_stall_exit")
@@ -15262,6 +15280,24 @@ func urnet_device_remote_sn_ledger_claim_transactions(self C.uint64_t, outError 
 		return nil
 	}
 	return cJson(r0, "urnet_device_remote_sn_ledger_claim_transactions")
+}
+
+//export urnet_device_remote_sn_ledger_claim_transactions_for_payer
+func urnet_device_remote_sn_ledger_claim_transactions_for_payer(self C.uint64_t, payerAddress *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_device_remote_sn_ledger_claim_transactions_for_payer")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_ledger_claim_transactions_for_payer")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.SnLedgerClaimTransactionsForPayer(goString(payerAddress))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_sn_ledger_claim_transactions_for_payer")
 }
 
 //export urnet_device_remote_stall_exit
@@ -22038,6 +22074,16 @@ func urnet_sn_ctf_client_of(answerJson *C.char) *C.char {
 	return cJson(r0, "urnet_sn_ctf_client_of")
 }
 
+//export urnet_sn_ctf_client_of_response
+func urnet_sn_ctf_client_of_response(statusCode C.int64_t, answerJson *C.char) *C.char {
+	defer cgoGuard("urnet_sn_ctf_client_of_response")
+	r0 := sdk.SnCtfClientOfResponse(int(int64(statusCode)), goString(answerJson))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sn_ctf_client_of_response")
+}
+
 //export urnet_sn_fleet_binding_digest
 func urnet_sn_fleet_binding_digest(bindingJson *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_sn_fleet_binding_digest")
@@ -22268,6 +22314,27 @@ func urnet_sn_ledger_claim_transactions_for(settings *C.char, coldkeySs58 *C.cha
 		return nil
 	}
 	return cJson(r0, "urnet_sn_ledger_claim_transactions_for")
+}
+
+//export urnet_sn_ledger_claim_transactions_for_payer
+func urnet_sn_ledger_claim_transactions_for_payer(settings *C.char, coldkeySs58 *C.char, payerAddress *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sn_ledger_claim_transactions_for_payer")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_sn_ledger_claim_transactions_for_payer") {
+			return nil
+		}
+	}
+	r0, err := sdk.SnLedgerClaimTransactionsForPayer(settings_, goString(coldkeySs58), goString(payerAddress))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sn_ledger_claim_transactions_for_payer")
 }
 
 //export urnet_sn_payout_leaf_hex

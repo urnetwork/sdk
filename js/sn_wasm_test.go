@@ -324,3 +324,82 @@ func TestSnCtfClientOfWasm(t *testing.T) {
 		t.Fatalf("no answer %v", result)
 	}
 }
+
+// A payer's claim transactions reach the site in the sdk's json, snake_case:
+// the transactions, the accounts still claimable, and the payer's balance
+// check. The export refuses a payer that is not an EVM address, and a missing
+// argument, before anything is read.
+func TestSnLedgerClaimTransactionsForPayerWasm(t *testing.T) {
+	items := sdk.NewSnLedgerClaimItemList()
+	items.Add(&sdk.SnLedgerClaimItem{NoId: 4294967297, Index: 1, RootIndex: 0, Kind: sdk.SnLedgerPoolKindCtf, Label: "Capture the flag", AmountRao: 48_025_660})
+	txs := sdk.NewSnLedgerUnsignedTxList()
+	txs.Add(&sdk.SnLedgerUnsignedTx{NoId: 4294967297, Index: 1, ChainId: 964, To: testCtfVault2, Data: "0xb7a6b907", Value: "0", AmountRao: 48_025_660, Gas: 2_600_000, Vault: testCtfVault2, Items: items})
+	still := sdk.NewSnLedgerClaimOutcomeList()
+	still.Add(&sdk.SnLedgerClaimOutcome{NoId: 1, Index: 2, Status: sdk.SnLedgerClaimOutcomeStillClaimable, AmountRao: 700, Message: "needs_gas: claim again for this one"})
+	result := jsonOf(t, jsJson(&sdk.SnLedgerClaimTransactionsResult{
+		Transactions: txs, StillClaimable: still, PayerAddress: "0x00000000000000000000000000000000000000a1",
+		PayerBalanceWei: "36000000000000000", FeePerGasWei: "11000000000", MaxCostWei: "28600000000000000", AllCostWei: "38500000000000000",
+	}))
+	wantFields(t, "result", result, map[string]any{"payer_address": "0x00000000000000000000000000000000000000a1", "payer_balance_wei": "36000000000000000",
+		"fee_per_gas_wei": "11000000000", "max_cost_wei": "28600000000000000", "all_cost_wei": "38500000000000000", "needs_gas": false})
+	transactions, _ := result["transactions"].([]any)
+	stillClaimable, _ := result["still_claimable"].([]any)
+	if len(transactions) != 1 || len(stillClaimable) != 1 {
+		t.Fatalf("result %v", result)
+	}
+	wantFields(t, "transaction", transactions[0].(map[string]any), map[string]any{"no_id": float64(4294967297), "to": testCtfVault2, "gas": float64(2_600_000), "batch": false})
+	wantFields(t, "still claimable", stillClaimable[0].(map[string]any), map[string]any{"no_id": float64(1), "index": float64(2), "status": "still_claimable", "amount_rao": float64(700)})
+
+	forPayer := snExport(t, "URnetworkSnLedgerClaimTransactionsForPayer")
+	settings := js.Global().Call("URnetworkDefaultSnChainSettings")
+	coldkey := "5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd"
+	for name, args := range map[string][]any{
+		"no payer":                       {settings, coldkey},
+		"a payer as a number":            {settings, coldkey, 161},
+		"a payer that is not an address": {settings, coldkey, "0x12"},
+	} {
+		_, rejected := awaitApiPromise(t, forPayer.Invoke(args...))
+		if rejected.IsUndefined() {
+			t.Fatalf("%s: resolved", name)
+		}
+		if message := rejected.Get("message").String(); name == "a payer that is not an address" && !strings.HasPrefix(message, sdk.SnErrorCodeInvalidAddress+": ") {
+			t.Fatalf("%s: %s", name, message)
+		}
+	}
+}
+
+// A network's wins read through the export with each win's client and claim
+// state, and the unclaimed ones the line shows; a page's read with its status
+// reads 401 as no wins.
+func TestSnCtfClientOfResponseWasm(t *testing.T) {
+	ofResponse := snExport(t, "URnetworkSnCtfClientOfResponse")
+	network := `{"as_of":"2026-12-11T22:24:12Z","client_id":null,"epochs":[],"wins":[` +
+		`{"epoch":9,"role":"provider","country":"is","rank":1,"client_id":"7d1e9a40-1b2c-4d3e-8f56-a1b2c3d4e5f6",` +
+		`"amount":{"alpha":"0.048025660","rao":48025660},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.000000000","rao":0},` +
+		`"pending":false,"root_status":"pending","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd","claimed":false},` +
+		`{"epoch":8,"role":"provider","country":"is","rank":2,"client_id":"7d1e9a40-1b2c-4d3e-8f56-a1b2c3d4e5f6",` +
+		`"amount":{"alpha":"0.048025660","rao":48025660},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.000000000","rao":0},` +
+		`"pending":false,"root_status":"finalized","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd","claimed":true}]}`
+	for name, value := range map[string]js.Value{
+		"of":          snExport(t, "URnetworkSnCtfClientOf").Invoke(jsonValue(network)),
+		"of response": ofResponse.Invoke(200, network),
+	} {
+		result := jsonOf(t, value)
+		unclaimed, _ := result["unclaimed_wins"].([]any)
+		wins, _ := result["wins"].([]any)
+		if result["error"] != nil || result["client_id"] != "" || len(wins) != 2 || len(unclaimed) != 1 {
+			t.Fatalf("%s: %v", name, result)
+		}
+		wantFields(t, name, unclaimed[0].(map[string]any), map[string]any{"epoch": float64(9), "client_id": "7d1e9a40-1b2c-4d3e-8f56-a1b2c3d4e5f6", "claim_state": "unclaimed"})
+		wantFields(t, name, wins[1].(map[string]any), map[string]any{"epoch": float64(8), "claim_state": "claimed"})
+	}
+	result := jsonOf(t, ofResponse.Invoke(401, jsonValue(`{"status":401,"code":"unauthorized"}`)))
+	if wins, _ := result["unclaimed_wins"].([]any); result["error"] != nil || wins == nil || len(wins) != 0 {
+		t.Fatalf("401 %v", result)
+	}
+	for _, args := range [][]any{{503, network}, {"200", network}, {}} {
+		if result := jsonOf(t, ofResponse.Invoke(args...)); result["error"] == nil {
+			t.Fatalf("%v: %v", args, result)
+		}
+	}
+}

@@ -911,6 +911,7 @@ public interface Raw extends Library {
   void urnet_device_local_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_local_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
   Pointer urnet_device_local_sn_ledger_claim_transactions(long a0, PointerByReference a1);
+  Pointer urnet_device_local_sn_ledger_claim_transactions_for_payer(long a0, String a1, PointerByReference a2);
   byte urnet_device_local_stall_exit(long a0, String a1, byte a2);
   byte urnet_device_local_start_probe_suite(long a0, String a1);
   void urnet_device_local_stop_probe_suite(long a0);
@@ -1028,6 +1029,7 @@ public interface Raw extends Library {
   void urnet_device_remote_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_remote_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
   Pointer urnet_device_remote_sn_ledger_claim_transactions(long a0, PointerByReference a1);
+  Pointer urnet_device_remote_sn_ledger_claim_transactions_for_payer(long a0, String a1, PointerByReference a2);
   byte urnet_device_remote_stall_exit(long a0, String a1, byte a2);
   byte urnet_device_remote_start_probe_suite(long a0, String a1);
   void urnet_device_remote_stop_probe_suite(long a0);
@@ -1720,11 +1722,13 @@ public interface Raw extends Library {
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);
   Pointer urnet_sn_ctf_client_of(String a0);
+  Pointer urnet_sn_ctf_client_of_response(long a0, String a1);
   Pointer urnet_sn_fleet_binding_digest(String a0, PointerByReference a1);
   void urnet_sn_gas_balance_for(String a0, String a1, urnet_sn_gas_balance_cb a2, Pointer a3);
   void urnet_sn_ledger_accounts_for(String a0, String a1, urnet_sn_ledger_accounts_cb a2, Pointer a3);
   Pointer urnet_sn_ledger_claim_outcomes_of(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_ledger_claim_transactions_for(String a0, String a1, PointerByReference a2);
+  Pointer urnet_sn_ledger_claim_transactions_for_payer(String a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
   Pointer urnet_suggest_emoji_tag(long a0);

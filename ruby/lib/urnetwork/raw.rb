@@ -910,6 +910,7 @@ module URnetwork
       attach_function :urnet_device_local_sn_ledger_accounts, [:uint64, :urnet_sn_ledger_accounts_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_ledger_claim, [:uint64, :urnet_sn_ledger_claim_confirmed_cb, :urnet_sn_ledger_claim_done_cb, :urnet_sn_ledger_claim_failed_cb, :urnet_sn_ledger_claim_sent_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_sn_ledger_claim_transactions, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_device_local_sn_ledger_claim_transactions_for_payer, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_stall_exit, [:uint64, :string, :bool], :bool, blocking: true
       attach_function :urnet_device_local_start_probe_suite, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_device_local_stop_probe_suite, [:uint64], :void, blocking: true
@@ -1027,6 +1028,7 @@ module URnetwork
       attach_function :urnet_device_remote_sn_ledger_accounts, [:uint64, :urnet_sn_ledger_accounts_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_ledger_claim, [:uint64, :urnet_sn_ledger_claim_confirmed_cb, :urnet_sn_ledger_claim_done_cb, :urnet_sn_ledger_claim_failed_cb, :urnet_sn_ledger_claim_sent_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_remote_sn_ledger_claim_transactions, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_device_remote_sn_ledger_claim_transactions_for_payer, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_device_remote_stall_exit, [:uint64, :string, :bool], :bool, blocking: true
       attach_function :urnet_device_remote_start_probe_suite, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_device_remote_stop_probe_suite, [:uint64], :void, blocking: true
@@ -1719,11 +1721,13 @@ module URnetwork
       attach_function :urnet_sn_claim_transactions_for, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_claims_for, [:string, :string, :int64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_ctf_client_of, [:string], :pointer, blocking: true
+      attach_function :urnet_sn_ctf_client_of_response, [:int64, :string], :pointer, blocking: true
       attach_function :urnet_sn_fleet_binding_digest, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_gas_balance_for, [:string, :string, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_ledger_accounts_for, [:string, :string, :urnet_sn_ledger_accounts_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_ledger_claim_outcomes_of, [:string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_ledger_claim_transactions_for, [:string, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sn_ledger_claim_transactions_for_payer, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_payout_leaf_hex, [:string, :int64], :pointer, blocking: true
       attach_function :urnet_sn_testnet_chain_settings, [], :pointer, blocking: true
       attach_function :urnet_suggest_emoji_tag, [:int64], :pointer, blocking: true
