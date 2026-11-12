@@ -3357,6 +3357,10 @@ type ProviderAdmission struct {
 // url_checks a share of loaded test sites with Count of Total, speed_test
 // bytes per second, latency milliseconds above the expected delay, weight_*
 // the relative selection weight, tier_* a tier (0 best, 3 past the cutoff).
+//
+// A provider the url checks downgraded (server FP2-PROTOCOL.md §5.5) is told
+// why on its url_checks number, and the decode derives the lines every app
+// shows for it (provider_status_reason.go).
 type ProviderRankingNumber struct {
 	Name        string  `json:"name"`
 	HasValue    bool    `json:"has_value"`
@@ -3369,6 +3373,21 @@ type ProviderRankingNumber struct {
 	Count       int     `json:"count"`
 	Total       int     `json:"total"`
 	Explanation string  `json:"explanation"`
+	// The server's English sentences, one per capability the url checks took
+	// away, the tcp one first. Explanation ends with the same text. "" when
+	// nothing was taken away, and from servers before it.
+	Reason string `json:"reason,omitempty"`
+	// The checks the tcp sentence counts: those that failed only over HTTP/3
+	// (UDP). At least 1 exactly when the provider is offered for TCP traffic
+	// only.
+	ReasonTcpCount int `json:"reason_tcp_count,omitempty"`
+	// The checks the ipv4 sentence counts: those that failed only over IPv6.
+	// At least 1 exactly when the provider's IPv6 was taken away and it is
+	// offered for IPv4 traffic only.
+	ReasonIpv4Count int `json:"reason_ipv4_count,omitempty"`
+	// What the apps show for the reason, in order. Derived from the reason
+	// fields when the number is decoded; a value on the wire is replaced.
+	ReasonLines *ProviderStatusReasonLineList `json:"reason_lines,omitempty"`
 }
 
 // The bound form of []*ProviderRankingNumber, in the order a status lists them.

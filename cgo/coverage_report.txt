@@ -2427,6 +2427,7 @@ NewProviderIdentityList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewProviderRankingNumberList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewProviderSpecList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewProviderStatusList: skipped: pattern ^New[A-Za-z0-9]*List$
+NewProviderStatusReasonLineList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewRedeemedBalanceCodeList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewReferralCodeViewControllerWithApi: unmappable: param ctx: external type context.Context
 NewRegionGroupList: skipped: pattern ^New[A-Za-z0-9]*List$
@@ -2534,6 +2535,8 @@ ProviderStatus: data: crosses as json
 ProviderStatusCountry: data: crosses as json
 ProviderStatusList: data: crosses as json
 ProviderStatusListener: callback interface: crosses as c function pointer
+ProviderStatusReasonLine: data: crosses as json
+ProviderStatusReasonLineList: data: crosses as json
 ProviderTransportSettingsChangeListener: callback interface: crosses as c function pointer
 ProviderTransportStatusChangeListener: callback interface: crosses as c function pointer
 ProxyAuthResult: data: crosses as json
