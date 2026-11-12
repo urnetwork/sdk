@@ -23,6 +23,8 @@ func testingProTrackerJwt(pro bool, issuedAt int64) string {
 	return fmt.Sprintf("%s.%s.", header, payload)
 }
 
+// The jwt refresh decision through the c abi, in the order a desktop store
+// calls it: one refresh for a stale claim, none for the same jwt again.
 func TestSubscriptionProTrackerThroughTheAbi(t *testing.T) {
 	tracker := socketABICall(urnet_new_subscription_pro_tracker)[0].Uint()
 	if tracker == 0 {
