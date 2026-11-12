@@ -535,7 +535,7 @@ func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 	refused := []string{
 		"github.com/urnetwork/sidecar/mcp",
 		"github.com/urnetwork/sidecar/cli",
-		"github.com/urnetwork/sidecar/sidecarctl",
+		"github.com/urnetwork/server/sidecarctl",
 	}
 	deviceRole := []string{
 		"github.com/urnetwork/sidecar/device",
