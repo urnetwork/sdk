@@ -690,6 +690,30 @@ func TestTheGasKeysTurnEndsAtTheBroadcast(t *testing.T) {
 	}
 }
 
+// testTurnWaitBudget is the time of a claim that waits for a turn another
+// holds: far more than its reads before the turn take, so its time runs out
+// while it waits.
+const testTurnWaitBudget = 3 * time.Second
+
+// runOutOfTime runs claim with a context that ends after testTurnWaitBudget,
+// and fails when the claim has not returned long after: a wait for the turn
+// that its context does not end.
+func runOutOfTime(t *testing.T, claim func(ctx context.Context)) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), testTurnWaitBudget)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		claim(ctx)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * testTurnWaitBudget):
+		t.Fatal("a claim waiting for the gas key's turn went on after its time ran out")
+	}
+}
+
 // A claim whose time runs out while another holds the gas key's turn sends
 // nothing and fails with why; once the turn is given back, a claim sends.
 func TestAClaimThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
@@ -708,10 +732,8 @@ func TestAClaimThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 	if snErr != nil {
 		t.Fatal(snErr.Message)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	v2 := newRecordingLedgerClaimCallback()
-	v2Engine.claim(ctx, key, v2)
-	cancel()
+	runOutOfTime(t, func(ctx context.Context) { v2Engine.claim(ctx, key, v2) })
 	if events := v2.recorded(); len(events) != 1 || events[0].kind != "failed" || events[0].noId != 1 || events[0].index != 2 || events[0].message != wantFailure {
 		t.Fatalf("v2 claim %+v, want one failure %q", events, wantFailure)
 	}
@@ -720,10 +742,8 @@ func TestAClaimThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 	if snErr != nil {
 		t.Fatal(snErr.Message)
 	}
-	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	v1 := newRecordingEpochClaimCallback()
-	v1Engine.send(ctx, key, 7, v1)
-	cancel()
+	runOutOfTime(t, func(ctx context.Context) { v1Engine.send(ctx, key, 7, v1) })
 	if events := v1.recorded(); len(events) != 1 || events[0].kind != "failed" || events[0].index != 7 || events[0].message != wantFailure {
 		t.Fatalf("v1 claim %+v, want one failure %q", events, wantFailure)
 	}
@@ -759,10 +779,8 @@ func TestABatchThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 	if snErr != nil {
 		t.Fatal(snErr.Message)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 	callback := newRecordingLedgerClaimCallback()
-	engine.claim(ctx, key, callback)
+	runOutOfTime(t, func(ctx context.Context) { engine.claim(ctx, key, callback) })
 	events := callback.recorded()
 	if len(events) != 2 || events[0].kind != "failed" || events[1].kind != "failed" || events[0].noId == events[1].noId {
 		t.Fatalf("events %+v, want each account failed", events)
@@ -789,11 +807,25 @@ func TestSnKeyTurns(t *testing.T) {
 	}
 
 	// a wait that ctx ends takes nothing
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if _, err := turns.take(ctx, a); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("a taken turn was taken again: %v", err)
+	waitEnds := func(what string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		ended := make(chan error, 1)
+		go func() {
+			_, err := turns.take(ctx, a)
+			ended <- err
+		}()
+		select {
+		case err := <-ended:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("%s: %v", what, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the wait went on after its context ended", what)
+		}
 	}
+	waitEnds("a taken turn was taken again")
 
 	// the next waits for the release
 	taken := make(chan func(), 1)
@@ -819,11 +851,7 @@ func TestSnKeyTurns(t *testing.T) {
 
 	// a second release of the first turn gives back nothing of the next's
 	releaseA()
-	ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if _, err := turns.take(ctx, a); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("a release called twice gave back the next turn: %v", err)
-	}
+	waitEnds("a release called twice gave back the next turn")
 	releaseNext()
 	if release, err := turns.take(context.Background(), a); err != nil {
 		t.Fatal(err)
