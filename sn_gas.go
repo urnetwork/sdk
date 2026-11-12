@@ -3,8 +3,10 @@ package sdk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/urnetwork/connect"
@@ -64,6 +66,64 @@ func (self *snDevice) GetSnGasKey() *SnGasKey {
 		return nil
 	}
 	return snGasKeyInfo(key)
+}
+
+// The gas key's turns. Each transaction the gas key sends takes its nonce
+// from the node's pending count, eth_getTransactionCount(pending), as it is
+// signed (snSignClaim). A v1 claim (SnClaim) and a v2 claim (SnLedgerClaim)
+// each send from their own goroutine, and so does a second claim of either
+// kind started meanwhile, so two of them could read the same pending nonce
+// before either was broadcast: one transaction then replaces the other, or
+// the node refuses it. So every send holds its gas key's turn from the nonce
+// read until the node has answered its broadcast (snSendClaim, and
+// snLedgerClaimEngine.broadcastBatch), and gives it up before the receipt
+// wait. The next send's nonce read then comes after the earlier transaction
+// reached the node's pool, whose pending count includes it, so it reads the
+// next nonce; a transaction the node refused holds no nonce, and the next
+// read is right without it. A claim waiting for the turn only starts its send
+// a little later: a turn lasts for the signing's few chain reads and the
+// broadcast (for a batch the gas key cannot pay for whole, the sizing of a
+// smaller one too), never for a block. Nothing is kept from one turn to the
+// next, so no nonce held here can go stale: a transaction the pool drops, or
+// one sent from the key in another process, is the node's to count. The turns
+// are the process's, by the gas key's address, so two devices or windows in
+// one process that share a gas key take turns too.
+
+type snKeyTurns struct {
+	mutex sync.Mutex
+	// one turn for each address that has sent, kept for the process (a device
+	// has one gas key): it holds a token while the turn is taken
+	turns map[[20]byte]chan struct{}
+}
+
+var snGasKeyTurns = &snKeyTurns{turns: map[[20]byte]chan struct{}{}}
+
+// take waits for address's turn and takes it. The release it returns gives
+// the turn back; calling it again does nothing. ctx ends the wait with its
+// error, and then no turn is taken.
+func (self *snKeyTurns) take(ctx context.Context, address [20]byte) (func(), error) {
+	self.mutex.Lock()
+	turn := self.turns[address]
+	if turn == nil {
+		turn = make(chan struct{}, 1)
+		self.turns[address] = turn
+	}
+	self.mutex.Unlock()
+	select {
+	case turn <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("waiting for another claim from the gas key to send: %w", ctx.Err())
+	}
+	var release sync.Once
+	return func() {
+		release.Do(func() { <-turn })
+	}, nil
+}
+
+// snGasKeyTurn waits for the gas key's turn to sign and send a transaction
+// (snKeyTurns.take).
+func snGasKeyTurn(ctx context.Context, key *secp.PrivateKey) (func(), error) {
+	return snGasKeyTurns.take(ctx, evm.AddressOf(key))
 }
 
 type SnGasBalanceResult struct {

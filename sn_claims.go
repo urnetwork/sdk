@@ -924,7 +924,9 @@ const snClaimGasFloor uint64 = 2_700_000
 // gas key, at the chain's current price: EIP-1559 at twice the base fee plus
 // the tip when txType asks for it and the chain has a base fee, else legacy
 // at 1.1 × eth_gasPrice. It returns the raw transaction and the most it can
-// cost, the gas limit × the price.
+// cost, the gas limit × the price. Its nonce is the node's pending count, read
+// here, so a claim that is sent is signed within the gas key's turn
+// (snGasKeyTurn), which lasts until the node has answered its broadcast.
 func snSignClaim(ctx context.Context, client *evm.Client, chainId *big.Int, txType string, key *secp.PrivateKey, to [20]byte, data []byte, gas uint64) ([]byte, *big.Int, error) {
 	var baseFee *big.Int
 	if txType == SnTxTypeEip1559 {
@@ -958,6 +960,32 @@ func snSignClaim(ctx context.Context, client *evm.Client, chainId *big.Int, txTy
 	tx := &evm.LegacyTx{Nonce: nonce, GasPrice: gasPrice, Gas: gas, To: to, Value: big.NewInt(0), Data: data}
 	raw, _, err := tx.Signed(chainId, key)
 	return raw, new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas)), err
+}
+
+// snSendClaim signs a claim (snSignClaim) and broadcasts it unless balance
+// cannot pay for it, within the gas key's turn (snGasKeyTurn): from the nonce
+// read until the node has answered the broadcast, and not while the caller
+// waits for the receipt. It returns the transaction's hash, or the message the
+// claim fails with and nothing sent: needs_gas when balance is less than the
+// gas limit × the price.
+func snSendClaim(ctx context.Context, client *evm.Client, chainId *big.Int, txType string, key *secp.PrivateKey, to [20]byte, data []byte, gas uint64, balance *big.Int) (txHash string, failure string) {
+	release, err := snGasKeyTurn(ctx, key)
+	if err != nil {
+		return "", snFailMessage(err)
+	}
+	defer release()
+	raw, maxCost, err := snSignClaim(ctx, client, chainId, txType, key, to, data, gas)
+	if err != nil {
+		return "", snFailMessage(err)
+	}
+	if balance.Cmp(maxCost) < 0 {
+		return "", snNeedsGasMessage(maxCost, balance, snGasKeyInfo(key))
+	}
+	txHash, err = client.SendRawTransaction(ctx, raw)
+	if err != nil {
+		return "", snFailMessage(err)
+	}
+	return txHash, ""
 }
 
 // send claims one epoch with the gas key and reports through the callback.
@@ -994,18 +1022,9 @@ func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch
 	}
 	// the estimate plus a quarter, and never less than a claim needs to pay
 	gas = max(gas+gas/4, snClaimGasFloor)
-	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault, data, gas)
-	if err != nil {
-		callback.Failed(epoch, snFailMessage(err))
-		return
-	}
-	if balance.Cmp(maxCost) < 0 {
-		callback.Failed(epoch, snNeedsGasMessage(maxCost, balance, gasKey))
-		return
-	}
-	txHash, err := self.client.SendRawTransaction(ctx, raw)
-	if err != nil {
-		callback.Failed(epoch, snFailMessage(err))
+	txHash, failure := snSendClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault, data, gas, balance)
+	if failure != "" {
+		callback.Failed(epoch, failure)
 		return
 	}
 	self.txHashes[epoch] = txHash
@@ -1096,7 +1115,9 @@ func (self *snDevice) SnClaims(callback SnClaimsCallback) {
 }
 
 // SnClaim sends claim transactions for the epochs, one after another,
-// signed with the device gas key.
+// signed with the device gas key. Claims from the same gas key take turns
+// to sign and send (snGasKeyTurn), so one started beside an SnLedgerClaim, or
+// beside another SnClaim, sends with the next nonce.
 func (self *snDevice) SnClaim(epochs *Int64List, callback SnClaimCallback) {
 	go connect.HandleError(func() {
 		defer callback.Done()
