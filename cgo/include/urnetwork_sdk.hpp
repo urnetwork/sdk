@@ -791,7 +791,6 @@ inline constexpr const char* StripeItemData10Tib = "data_10tib";
 inline constexpr const char* StripeItemData1Tib = "data_1tib";
 inline constexpr const char* StripeItemProMonthly = "pro_monthly";
 inline constexpr const char* StripeItemProYearly = "pro_yearly";
-inline constexpr int64_t StripePurchaseReportMaxAttempts = 8;
 inline constexpr const char* StripeRedirectOnCompletionNever = "never";
 inline constexpr const char* StripeUiModeEmbedded = "embedded";
 inline constexpr const char* StripeUiModeHosted = "hosted";

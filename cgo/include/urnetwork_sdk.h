@@ -740,7 +740,6 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_STRIPE_ITEM_DATA1_TIB "data_1tib"
 #define URNET_STRIPE_ITEM_PRO_MONTHLY "pro_monthly"
 #define URNET_STRIPE_ITEM_PRO_YEARLY "pro_yearly"
-#define URNET_STRIPE_PURCHASE_REPORT_MAX_ATTEMPTS 8
 #define URNET_STRIPE_REDIRECT_ON_COMPLETION_NEVER "never"
 #define URNET_STRIPE_UI_MODE_EMBEDDED "embedded"
 #define URNET_STRIPE_UI_MODE_HOSTED "hosted"

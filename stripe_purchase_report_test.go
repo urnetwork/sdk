@@ -1,6 +1,6 @@
 package sdk
 
-// ReportStripePurchase (stripe_purchase_report.go), support inbox 7247: a card
+// The card payment report (stripe_purchase_report.go), support inbox 7247: a card
 // payment is reported as soon as the checkout or the payment sheet finishes,
 // and the report retries a pending answer until it is terminal, so the credit
 // no longer waits only on Stripe's webhook. Deterministic: the server is a
@@ -76,6 +76,7 @@ func TestReportStripePurchaseRetriesUntilTerminal(t *testing.T) {
 	waits := []time.Duration{}
 	result, err := reportStripePurchase(
 		context.Background(),
+		defaultStripePurchaseReportSettings(),
 		&VerifyStripeCheckoutArgs{SubscriptionId: "sub_sheet"},
 		func(ctx context.Context, args *VerifyStripeCheckoutArgs) (*VerifyStorePurchaseResult, error) {
 			asked = append(asked, args)
@@ -101,8 +102,10 @@ func TestReportStripePurchaseRetriesUntilTerminal(t *testing.T) {
 // one never answered answers its last error.
 func TestReportStripePurchaseGivesUpAfterItsAttempts(t *testing.T) {
 	asked := 0
+	settings := defaultStripePurchaseReportSettings()
 	result, err := reportStripePurchase(
 		context.Background(),
+		settings,
 		&VerifyStripeCheckoutArgs{SessionId: "cs_test_pending"},
 		func(ctx context.Context, args *VerifyStripeCheckoutArgs) (*VerifyStorePurchaseResult, error) {
 			asked += 1
@@ -113,12 +116,13 @@ func TestReportStripePurchaseGivesUpAfterItsAttempts(t *testing.T) {
 	if err != nil || result == nil || result.Status != PurchaseReportStatusPending {
 		t.Fatalf("result = %+v err = %v, want the last pending answer", result, err)
 	}
-	if asked != StripePurchaseReportMaxAttempts {
-		t.Fatalf("asked %d times, want %d", asked, StripePurchaseReportMaxAttempts)
+	if asked != settings.MaxAttempts {
+		t.Fatalf("asked %d times, want %d", asked, settings.MaxAttempts)
 	}
 
 	result, err = reportStripePurchase(
 		context.Background(),
+		settings,
 		&VerifyStripeCheckoutArgs{SessionId: "cs_test_down"},
 		func(ctx context.Context, args *VerifyStripeCheckoutArgs) (*VerifyStorePurchaseResult, error) {
 			return nil, errors.New("synthetic outage")
@@ -140,6 +144,7 @@ func TestReportStripePurchaseStopsAndRefusesBadArgs(t *testing.T) {
 	}
 	result, err := reportStripePurchase(
 		context.Background(),
+		defaultStripePurchaseReportSettings(),
 		&VerifyStripeCheckoutArgs{SessionId: "cs_test_stopped"},
 		verify,
 		func(ctx context.Context, d time.Duration) bool { return false },
@@ -150,7 +155,7 @@ func TestReportStripePurchaseStopsAndRefusesBadArgs(t *testing.T) {
 
 	for _, args := range []*VerifyStripeCheckoutArgs{nil, {}, {SessionId: "cs_a", SubscriptionId: "sub_a"}, {SessionId: "  "}} {
 		asked = 0
-		result, err := reportStripePurchase(context.Background(), args, verify, func(ctx context.Context, d time.Duration) bool { return true })
+		result, err := reportStripePurchase(context.Background(), defaultStripePurchaseReportSettings(), args, verify, func(ctx context.Context, d time.Duration) bool { return true })
 		if result != nil || err == nil || asked != 0 {
 			t.Fatalf("args %+v: result = %+v err = %v asked = %d, want a refusal that asks nothing", args, result, err, asked)
 		}
