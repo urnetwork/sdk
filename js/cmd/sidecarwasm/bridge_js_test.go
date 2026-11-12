@@ -2,8 +2,9 @@
 
 // The page Worker's shell on its own leg (SDK-M4-04), in Node under test/sidecarwasm_harness.mjs with the fake
 // IndexedDB: the published calls answer through promises with JSON whose ids are strings, a Worker before open and an
-// unenrolled one answer each operation's refusal, enroll answers unavailable, and an operation over 50 ms hands the
-// thread to the event loop between its steps. test/sidecarwasm_ops.test.ts builds and runs them.
+// unenrolled one answer each operation's refusal, enroll answers unavailable, an operation over 50 ms hands the
+// thread to the event loop between its steps, and each network's Worker opens that network's own database
+// (SDK-M4-10, owner decision 217). test/sidecarwasm_ops.test.ts builds and runs them.
 
 package main
 
@@ -36,18 +37,34 @@ func testPageServiceUrls() *pageServiceUrls {
 	}
 }
 
-// A page Worker on a database of the test's own, closed at the end.
-func testPageWorker(t *testing.T) *pageWorker {
+// A page Worker naming its networks' databases under prefix, closed at the end.
+func testPageWorkerUnder(t *testing.T, prefix string) *pageWorker {
 	t.Helper()
 	testFakeIndexedDb(t)
 	worker := newPageWorker(context.Background())
-	worker.databaseName = "test-" + t.Name()
+	worker.databaseNamePrefix = prefix
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		worker.close(ctx)
 	})
 	return worker
+}
+
+// A page Worker on databases of the test's own, closed at the end.
+func testPageWorker(t *testing.T) *pageWorker {
+	t.Helper()
+	return testPageWorkerUnder(t, testDatabaseNamePrefix(t))
+}
+
+// Opens networkId on worker with a stack nothing dials.
+func testOpenNetwork(t *testing.T, worker *pageWorker, networkId sidecar.Id) *pageStatusView {
+	t.Helper()
+	status, err := worker.open(&pageOpenConfig{NetworkId: networkId.String(), Urls: testPageServiceUrls()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return status
 }
 
 // The reply to request's JSON.
@@ -120,6 +137,158 @@ func TestPageWorkerOpensUnenrolled(t *testing.T) {
 	}
 	if reply := testPageReply(t, worker, `{"id":"out","op":"sign_out"}`); !reply.Ok || reply.SignOut == nil || reply.SignOut.SidecarId != "" {
 		t.Errorf("a sign-out with nothing enrolled: %+v", reply)
+	}
+}
+
+// open names the network's database by the key origin's prefix and the parsed id's canonical text,
+// urnetwork-sidecar-v1-<network_id>, and that database holds the network's instance, its instance document and its
+// root key; the unsuffixed urnetwork-sidecar-v1 is never made; and an id written any other way than its canonical
+// text, worker.js's spelling of the network's lock, or the zero id, is refused before any database opens.
+func TestPageWorkerOpensItsNetworksOwnDatabase(t *testing.T) {
+	control := testFakeIndexedDb(t)
+	networkId := sidecar.NewId()
+	testOpenNetwork(t, testPageWorkerUnder(t, indexedDbNamePrefix), networkId)
+	name := "urnetwork-sidecar-v1-" + networkId.String()
+	databases := control.Get("databases")
+	if !databases.Call("has", name).Bool() {
+		t.Fatalf("no database %s", name)
+	}
+	for _, record := range []struct {
+		store string
+		key   string
+	}{
+		{store: indexedDbFilesStore, key: "sidecar.json"},
+		{store: indexedDbFilesStore, key: "unlock.wrap"},
+		{store: indexedDbKeysStore, key: webCryptoRootKeyName},
+	} {
+		if control.Call("raw", name, record.store, record.key).IsUndefined() {
+			t.Errorf("the network's database holds no %s", record.key)
+		}
+	}
+	if databases.Call("has", "urnetwork-sidecar-v1").Bool() {
+		t.Error("the unsuffixed database was made")
+	}
+	databaseCount := databases.Get("size").Int()
+	for _, spelling := range []string{
+		strings.ToUpper(networkId.String()),
+		strings.ReplaceAll(networkId.String(), "-", ""),
+		sidecar.Id{}.String(),
+	} {
+		other := testPageWorkerUnder(t, indexedDbNamePrefix)
+		if _, err := other.open(&pageOpenConfig{NetworkId: spelling, Urls: testPageServiceUrls()}); err == nil {
+			t.Errorf("open took %s", spelling)
+		}
+		if other.current() != nil {
+			t.Errorf("a refused %s left a network open", spelling)
+		}
+	}
+	if databases.Get("size").Int() != databaseCount {
+		t.Error("a refused open made a database")
+	}
+	// every database under the key origin's prefix is named by an id's canonical text
+	names := js.Global().Get("Array").Call("from", databases.Call("keys"))
+	for index := 0; index < names.Length(); index += 1 {
+		databaseName := names.Index(index).String()
+		if !strings.HasPrefix(databaseName, "urnetwork-sidecar") {
+			continue
+		}
+		suffix, prefixed := strings.CutPrefix(databaseName, indexedDbNamePrefix)
+		if parsed, err := sidecar.ParseId(suffix); !prefixed || err != nil || parsed.String() != suffix {
+			t.Errorf("a database named %s", databaseName)
+		}
+	}
+}
+
+// Two Workers of two networks open two databases, each its own instance with its own instance document and root
+// key, and what one Worker's network writes, an enrollment's record of the network and a secret in its key store,
+// changes nothing in the other's database or instance.
+func TestTwoNetworksWorkersShareNothing(t *testing.T) {
+	control := testFakeIndexedDb(t)
+	prefix := testDatabaseNamePrefix(t)
+	networkIds := []sidecar.Id{sidecar.NewId(), sidecar.NewId()}
+	workers := []*pageWorker{}
+	names := []string{}
+	for _, networkId := range networkIds {
+		worker := testPageWorkerUnder(t, prefix)
+		testOpenNetwork(t, worker, networkId)
+		workers = append(workers, worker)
+		names = append(names, indexedDbNetworkName(prefix, networkId))
+	}
+	if testInstanceId(t, control, names[0]) == testInstanceId(t, control, names[1]) {
+		t.Fatal("two networks' databases hold one instance")
+	}
+	for index, name := range names {
+		if !webCryptoIsRootKey(control.Call("raw", name, indexedDbKeysStore, webCryptoRootKeyName)) {
+			t.Errorf("network %d's database holds no root key", index)
+		}
+	}
+	other := testDatabaseRecords(control, names[1])
+	own := testDatabaseRecords(control, names[0])
+	if err := workers[0].current().instance.RecordNetwork(testNetworkRecord(networkIds[0])); err != nil {
+		t.Fatal(err)
+	}
+	database, err := openIndexedDb(names[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := newWebCryptoKeyStore(database).PutSecret("another", []byte("another secret")); status != sidecar.SidecarKeyStoreOk {
+		t.Fatal(status)
+	}
+	if testRecordsEqual(own, testDatabaseRecords(control, names[0])) {
+		t.Fatal("the first network's writes did not reach its database")
+	}
+	if !testRecordsEqual(other, testDatabaseRecords(control, names[1])) {
+		t.Error("the first network's writes changed the second network's database")
+	}
+	if networks := workers[1].current().instance.Networks(); len(networks) != 0 {
+		t.Errorf("the second network's instance records %+v", networks)
+	}
+	if networks := workers[0].current().instance.Networks(); len(networks) != 1 || networks[0].NetworkId != networkIds[0] {
+		t.Errorf("the first network's instance records %+v", networks)
+	}
+}
+
+// A Worker reopened on a network finds that network's own state, each network in turn: the instance its database
+// holds, opened by that database's own root key, with nothing made anew.
+func TestReopenedWorkerFindsItsOwnNetwork(t *testing.T) {
+	control := testFakeIndexedDb(t)
+	prefix := testDatabaseNamePrefix(t)
+	networkIds := []sidecar.Id{sidecar.NewId(), sidecar.NewId()}
+	names := []string{}
+	instanceIds := []string{}
+	for _, networkId := range networkIds {
+		worker := newPageWorker(context.Background())
+		worker.databaseNamePrefix = prefix
+		testOpenNetwork(t, worker, networkId)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := worker.close(ctx)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, indexedDbNetworkName(prefix, networkId))
+		instanceIds = append(instanceIds, testInstanceId(t, control, names[len(names)-1]))
+	}
+	if instanceIds[0] == instanceIds[1] {
+		t.Fatal("two networks' databases hold one instance")
+	}
+	// the second network first, so neither reopen finds the other's state by order
+	for index := len(networkIds) - 1; 0 <= index; index -= 1 {
+		before := testDatabaseRecords(control, names[index])
+		worker := testPageWorkerUnder(t, prefix)
+		status := testOpenNetwork(t, worker, networkIds[index])
+		if status.NetworkId != networkIds[index].String() {
+			t.Errorf("network %d reopened as %+v", index, status)
+		}
+		if state, _ := worker.current().instance.State(); state != sidecar.SidecarInstanceOpen {
+			t.Errorf("network %d's reopened instance: %v", index, state)
+		}
+		if instanceId := testInstanceId(t, control, names[index]); instanceId != instanceIds[index] {
+			t.Errorf("network %d reopened instance %s, was %s", index, instanceId, instanceIds[index])
+		}
+		if !testRecordsEqual(before, testDatabaseRecords(control, names[index])) {
+			t.Errorf("network %d's reopen wrote its database anew", index)
+		}
 	}
 }
 

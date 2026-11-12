@@ -1,7 +1,8 @@
 //go:build js && wasm && sidecar_http
 
-// The WebCrypto key store, row by row through §5.9's status table by D-SDK-15, and the instance's answers to it, in
-// Node under test/sidecarwasm_harness.mjs. test/sidecarwasm_keystore.test.ts builds and runs them.
+// The WebCrypto key store, row by row through §5.9's status table by D-SDK-15, the instance's answers to it, and each
+// network's database keeping its own root key, in Node under test/sidecarwasm_harness.mjs.
+// test/sidecarwasm_keystore.test.ts builds and runs them.
 
 package main
 
@@ -167,6 +168,40 @@ func TestWebCryptoFirstPutsMakeOneRootKey(t *testing.T) {
 	keys := control.Call("keys", testIndexedDbName(t), indexedDbKeysStore)
 	if keys.Length() != 3 {
 		t.Errorf("%d records, want one root and two secrets", keys.Length())
+	}
+}
+
+// Each network's database makes and keeps its own root key: a secret sealed in one network's database, moved into
+// another's under the same name, opens there as Failed, never as the other's secret, and each opens its own.
+func TestEachNetworkHasItsOwnRootKey(t *testing.T) {
+	control := testFakeIndexedDb(t)
+	prefix := testDatabaseNamePrefix(t)
+	names := []string{indexedDbNetworkName(prefix, sidecar.NewId()), indexedDbNetworkName(prefix, sidecar.NewId())}
+	keyStores := []*webCryptoKeyStore{}
+	for index, name := range names {
+		database, err := openIndexedDb(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keyStore := newWebCryptoKeyStore(database)
+		if status := keyStore.PutSecret("w", []byte{byte(index)}); status != sidecar.SidecarKeyStoreOk {
+			t.Fatalf("network %d's put: %v", index, status)
+		}
+		if !webCryptoIsRootKey(control.Call("raw", name, indexedDbKeysStore, webCryptoRootKeyName)) {
+			t.Fatalf("network %d's database holds no root key", index)
+		}
+		keyStores = append(keyStores, keyStore)
+	}
+	own := control.Call("raw", names[1], indexedDbKeysStore, webCryptoSecretPrefix+"w")
+	control.Call("setRaw", names[1], indexedDbKeysStore, webCryptoSecretPrefix+"w", control.Call("raw", names[0], indexedDbKeysStore, webCryptoSecretPrefix+"w"))
+	if value, status := keyStores[1].GetSecret("w"); status != sidecar.SidecarKeyStoreFailed || value != nil {
+		t.Errorf("the other network's secret opened: %v, %v", value, status)
+	}
+	control.Call("setRaw", names[1], indexedDbKeysStore, webCryptoSecretPrefix+"w", own)
+	for index, keyStore := range keyStores {
+		if value, status := keyStore.GetSecret("w"); status != sidecar.SidecarKeyStorePresent || !bytes.Equal(value, []byte{byte(index)}) {
+			t.Errorf("network %d reads its own secret as %v, %v", index, value, status)
+		}
 	}
 }
 

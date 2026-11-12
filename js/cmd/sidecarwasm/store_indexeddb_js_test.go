@@ -1,13 +1,15 @@
 //go:build js && wasm && sidecar_http
 
 // The page Worker's IndexedDB backend and host, in Node under test/sidecarwasm_harness.mjs, which installs the fake
-// IndexedDB (test/fake_indexeddb.mjs) these tests arm faults on. test/sidecarwasm_store.test.ts builds and runs them.
+// IndexedDB (test/fake_indexeddb.mjs) these tests arm faults on, and each network's database being its own instance
+// (owner decision 217). test/sidecarwasm_store.test.ts builds and runs them.
 
 package main
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"slices"
@@ -36,6 +38,94 @@ func testIndexedDb(t *testing.T) *indexedDb {
 		t.Fatal(err)
 	}
 	return database
+}
+
+// The prefix a test's networks' databases are named under, so tests share nothing.
+func testDatabaseNamePrefix(t *testing.T) string {
+	return "test-" + t.Name() + "-"
+}
+
+// The instance id databaseName's instance document holds, as stored.
+func testInstanceId(t *testing.T, control js.Value, databaseName string) string {
+	t.Helper()
+	encoded, ok := bytesFromJs(control.Call("raw", databaseName, indexedDbFilesStore, "sidecar.json"))
+	if !ok {
+		t.Fatalf("%s holds no instance document", databaseName)
+	}
+	document := struct {
+		InstanceId string `json:"instance_id"`
+	}{}
+	if err := json.Unmarshal(encoded, &document); err != nil || document.InstanceId == "" {
+		t.Fatalf("%s's instance document: %v", databaseName, err)
+	}
+	return document.InstanceId
+}
+
+// Every record of databaseName's object stores, by store and key, as the fake keeps them. A write replaces its
+// record's object, so the same objects under the same keys mean nothing was written.
+func testDatabaseRecords(control js.Value, databaseName string) map[string]js.Value {
+	records := map[string]js.Value{}
+	for _, store := range []string{indexedDbFilesStore, indexedDbKeysStore} {
+		keys := control.Call("keys", databaseName, store)
+		for index := 0; index < keys.Length(); index += 1 {
+			key := keys.Index(index).String()
+			records[store+"/"+key] = control.Call("raw", databaseName, store, key)
+		}
+	}
+	return records
+}
+
+// Whether two snapshots hold the same records, object for object.
+func testRecordsEqual(before map[string]js.Value, after map[string]js.Value) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	for key, value := range before {
+		if other, ok := after[key]; !ok || !value.Equal(other) {
+			return false
+		}
+	}
+	return true
+}
+
+// Loses databaseName alone, as indexedDB.deleteDatabase would: it leaves the bucket, and a connection still open on
+// it makes no more transactions, as the fake's evict has it for every database.
+func testLoseDatabase(control js.Value, databaseName string) {
+	databases := control.Get("databases")
+	control.Get("evicted").Call("add", databases.Call("get", databaseName))
+	databases.Call("delete", databaseName)
+}
+
+// A network's record, as an enrollment's last step writes it.
+func testNetworkRecord(networkId sidecar.Id) sidecar.SidecarNetworkRecord {
+	return sidecar.SidecarNetworkRecord{
+		NetworkId:         networkId,
+		ClientId:          sidecar.NewId(),
+		SidecarId:         sidecar.NewId(),
+		ConnectInstanceId: sidecar.NewId(),
+	}
+}
+
+// name's instance on a connection of its own, unlocked by its key store's wrap, with that connection.
+func testOpenPageInstance(t *testing.T, name string) (*indexedDb, *sidecar.SidecarInstance) {
+	t.Helper()
+	database, err := openIndexedDb(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := newPageInstance(context.Background(), database, newWebCryptoKeyStore(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Unlock(nil); err != nil {
+		instance.Close()
+		t.Fatal(err)
+	}
+	if state, _ := instance.State(); state != sidecar.SidecarInstanceOpen {
+		instance.Close()
+		t.Fatalf("%s's instance: %v", name, state)
+	}
+	return database, instance
 }
 
 // Writes content at path by the backend's steps.
@@ -230,38 +320,115 @@ func TestKeychainOpensAndReopens(t *testing.T) {
 	}
 }
 
-// A browser clears the bucket whole: the next Worker's database is empty, reads Absent with nothing recorded, and its
-// instance starts fresh.
+// One network's database lost alone starts that network fresh and leaves the other network's instance as it was; the
+// browser then clears the bucket whole, every network's database at once, and each network's next instance starts
+// fresh. A database gone reads Absent with nothing recorded through a new connection, and Failed through the old
+// one, never as nothing there.
 func TestEvictedStoreStartsFresh(t *testing.T) {
 	control := testFakeIndexedDb(t)
-	database := testIndexedDb(t)
-	instance, err := newPageInstance(context.Background(), database, newWebCryptoKeyStore(database))
+	prefix := testDatabaseNamePrefix(t)
+	names := []string{indexedDbNetworkName(prefix, sidecar.NewId()), indexedDbNetworkName(prefix, sidecar.NewId())}
+	connections := []*indexedDb{}
+	instanceIds := []string{}
+	for _, name := range names {
+		database, instance := testOpenPageInstance(t, name)
+		instance.Close()
+		connections = append(connections, database)
+		instanceIds = append(instanceIds, testInstanceId(t, control, name))
+	}
+	// the first network's database goes alone
+	left := testDatabaseRecords(control, names[1])
+	testLoseDatabase(control, names[0])
+	if _, err := testBackendRead(newIndexedDbStoreBackend(connections[0]), "unlock.wrap"); !errors.Is(err, sidecar.ErrSidecarStoreFailed) {
+		t.Errorf("the lost database's connection read %v", err)
+	}
+	fresh, err := openIndexedDb(names[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := instance.Unlock(nil); err != nil {
-		t.Fatal(err)
-	}
-	instance.Close()
-	control.Call("evict")
-	// the old connection can do nothing, so a read through it fails rather than reading as nothing there
-	if _, err := testBackendRead(newIndexedDbStoreBackend(database), "unlock.wrap"); !errors.Is(err, sidecar.ErrSidecarStoreFailed) {
-		t.Errorf("the evicted connection read %v", err)
-	}
-	fresh := testIndexedDb(t)
 	if _, err := testBackendRead(newIndexedDbStoreBackend(fresh), "unlock.wrap"); !errors.Is(err, sidecar.ErrSidecarStoreAbsent) {
-		t.Errorf("after the eviction: %v", err)
+		t.Errorf("the lost network's new database: %v", err)
 	}
-	next, err := newPageInstance(context.Background(), fresh, newWebCryptoKeyStore(fresh))
-	if err != nil {
-		t.Fatal(err)
+	_, instance := testOpenPageInstance(t, names[0])
+	instance.Close()
+	if instanceId := testInstanceId(t, control, names[0]); instanceId == instanceIds[0] {
+		t.Error("the lost network's instance came back")
+	} else {
+		instanceIds[0] = instanceId
 	}
-	defer next.Close()
-	if err := next.Unlock(nil); err != nil {
-		t.Fatal(err)
+	// the other network's is left: its connection still reads, and its instance reopens as it was by its own root key
+	if !testRecordsEqual(left, testDatabaseRecords(control, names[1])) {
+		t.Error("losing one network's database changed the other's")
 	}
-	if state, _ := next.State(); state != sidecar.SidecarInstanceOpen {
-		t.Errorf("the fresh instance: %v", state)
+	if _, err := testBackendRead(newIndexedDbStoreBackend(connections[1]), "unlock.wrap"); err != nil {
+		t.Errorf("the other network's connection read %v", err)
+	}
+	_, instance = testOpenPageInstance(t, names[1])
+	instance.Close()
+	if instanceId := testInstanceId(t, control, names[1]); instanceId != instanceIds[1] {
+		t.Errorf("the other network's instance is %s, was %s", instanceId, instanceIds[1])
+	}
+	// the browser's eviction takes the bucket whole: both networks start fresh
+	control.Call("evict")
+	if _, err := testBackendRead(newIndexedDbStoreBackend(connections[1]), "unlock.wrap"); !errors.Is(err, sidecar.ErrSidecarStoreFailed) {
+		t.Errorf("an evicted connection read %v", err)
+	}
+	for index, name := range names {
+		next, err := openIndexedDb(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := testBackendRead(newIndexedDbStoreBackend(next), "unlock.wrap"); !errors.Is(err, sidecar.ErrSidecarStoreAbsent) {
+			t.Errorf("network %d after the eviction: %v", index, err)
+		}
+		_, instance := testOpenPageInstance(t, name)
+		instance.Close()
+		if testInstanceId(t, control, name) == instanceIds[index] {
+			t.Errorf("network %d's instance survived the eviction", index)
+		}
+	}
+}
+
+// Two networks' instances, each loaded before either writes, each record their own network, as an enrollment in one
+// tab beside an enrollment in another does: both records stand, since each network's database holds its own instance
+// document. Over one document shared by both, the second write would have dropped the first one's network
+// (sdk-m4-04-instance-document-across-workers, owner decision 217).
+func TestNetworkDatabasesKeepTheirOwnInstances(t *testing.T) {
+	control := testFakeIndexedDb(t)
+	prefix := testDatabaseNamePrefix(t)
+	networkIds := []sidecar.Id{sidecar.NewId(), sidecar.NewId()}
+	instances := []*sidecar.SidecarInstance{}
+	for _, networkId := range networkIds {
+		_, instance := testOpenPageInstance(t, indexedDbNetworkName(prefix, networkId))
+		instances = append(instances, instance)
+	}
+	if testInstanceId(t, control, indexedDbNetworkName(prefix, networkIds[0])) == testInstanceId(t, control, indexedDbNetworkName(prefix, networkIds[1])) {
+		t.Fatal("two networks' databases hold one instance")
+	}
+	for index, instance := range instances {
+		if err := instance.RecordNetwork(testNetworkRecord(networkIds[index])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, instance := range instances {
+		instance.Close()
+	}
+	for index, networkId := range networkIds {
+		_, reopened := testOpenPageInstance(t, indexedDbNetworkName(prefix, networkId))
+		networks := reopened.Networks()
+		reopened.Close()
+		if len(networks) != 1 || networks[0].NetworkId != networkId {
+			t.Errorf("network %d's database records %+v", index, networks)
+		}
+	}
+}
+
+// The page Worker's instance takes this leg's settings, whose Argon2id cost is §5.9's wasm cost, 19 MiB, t=2, p=1, set
+// by the root's settings_http.go alone.
+func TestPageWorkerSettingsCarryTheWasmPassCost(t *testing.T) {
+	keychain := sidecar.DefaultSidecarSettings().KeychainSettings
+	if keychain.PassMemoryByteCount != 19*1024*1024 || keychain.PassIterationCount != 2 || keychain.PassThreadCount != 1 {
+		t.Errorf("Argon2id at %d B, t=%d, p=%d", keychain.PassMemoryByteCount, keychain.PassIterationCount, keychain.PassThreadCount)
 	}
 }
 

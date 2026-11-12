@@ -6,15 +6,22 @@
 // keychain.wrap and unlock.wrap run here unchanged (§5.9, CORE-M1-02), and the medium only ever holds ciphertext,
 // sidecar.json aside.
 //
-// One database per key origin, urnetwork-sidecar-v1, holds two object stores: files, keyed by the instance's paths,
-// and keys, the key store's. Each backend write is one readwrite transaction with durability strict, which commits
-// whole or not at all, so a killed tab leaves the old record or the new one (§22.9's no torn writes), and commits
-// only once the browser has the bytes on its disk. The search cache gets its own object store with SDK-M10-04
-// (D-SDK-24), never this one.
+// One database per network, urnetwork-sidecar-v1-<network_id>, each its own sidecar instance with its own instance
+// document, sidecar.json, and its own WebCrypto root key (§18.8's storage row, owner decision 217), so two networks'
+// Workers share nothing, and the network's Web Lock, which worker.js holds whenever the Worker has the network open
+// (§18.8's instance row), covers everything a Worker writes. The name is the canonical text of the id the Worker
+// parsed, never the string it was given, so one network has one database however a caller spelled its id. Nothing
+// shipped on the unsuffixed urnetwork-sidecar-v1, so nothing is migrated from it and nothing opens it.
 //
-// A browser clears an origin's storage bucket whole (§18.8's storage row), so an eviction takes the files and the key
-// store together, and reads as Absent with nothing recorded: the next Worker enrolls anew. A quota error, an abort or
-// a database that will not open is Failed, never Absent.
+// Each database holds two object stores: files, keyed by the instance's paths, and keys, the key store's. Each
+// backend write is one readwrite transaction with durability strict, which commits whole or not at all, so a killed
+// tab leaves the old record or the new one (§22.9's no torn writes), and commits only once the browser has the bytes
+// on its disk. The search cache gets its own object store with SDK-M10-04 (D-SDK-24), never this one.
+//
+// A browser clears an origin's storage bucket whole (§18.8's storage row), so an eviction takes every network's
+// database at once, each one's files and key store together, and each reads as Absent with nothing recorded: the
+// network's next Worker enrolls anew. A quota error, an abort or a database that will not open is Failed, never
+// Absent.
 //
 // Every call here waits on the browser, so none may run inside a js.FuncOf callback (async_js.go). Safe for
 // concurrent use from goroutines.
@@ -32,14 +39,21 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
-// The database and its object stores.
+// The databases and their object stores.
 const (
-	indexedDbName        = "urnetwork-sidecar-v1"
+	// a network's database is this and the network id's canonical text
+	indexedDbNamePrefix  = "urnetwork-sidecar-v1-"
 	indexedDbVersion     = 1
 	indexedDbFilesStore  = "files"
 	indexedDbKeysStore   = "keys"
 	indexedDbKeyRangeEnd = "￿"
 )
+
+// networkId's database under prefix, indexedDbNamePrefix or a test's own: the parsed id's canonical text, so no
+// caller's spelling of the id ever names a database.
+func indexedDbNetworkName(prefix string, networkId sidecar.Id) string {
+	return prefix + networkId.String()
+}
 
 // An open IndexedDB database. Safe for concurrent use.
 type indexedDb struct {
@@ -414,20 +428,13 @@ func (self *pageHost) TokenSource() sidecar.SidecarTokenSource {
 	return nil
 }
 
-// The page Worker's settings over the core's defaults: §5.9's Argon2id at 19 MiB, t=2, p=1, since js/wasm runs one
-// thread and a Worker has a phone's memory, not a desktop's.
-func applyPageWorkerSettings(settings *sidecar.SidecarSettings) {
-	settings.KeychainSettings.PassMemoryByteCount = 19 * 1024 * 1024
-	settings.KeychainSettings.PassIterationCount = 2
-	settings.KeychainSettings.PassThreadCount = 1
-}
-
-// An instance on database and keyStore, with the page Worker's settings. The caller opens database once, with
+// An instance on database, one network's, and keyStore, over the same database, with this leg's settings, whose
+// defaults carry §5.9's wasm cost for Argon2id, 19 MiB, t=2, p=1, since js/wasm runs one thread and a Worker has a
+// phone's memory, not a desktop's (the root's settings_http.go, its one source). The caller opens database once, with
 // openIndexedDb, and shares it with the key store; a database that will not open is an error there, never an empty
 // instance, so a Worker never enrolls anew over a store it merely failed to read.
 func newPageInstance(ctx context.Context, database *indexedDb, keyStore sidecar.SidecarKeyStore) (*sidecar.SidecarInstance, error) {
 	settings := sidecar.DefaultSidecarSettings()
-	applyPageWorkerSettings(settings)
 	return sidecar.NewSidecarInstance(ctx, &sidecar.SidecarInstanceArgs{
 		Backend:  newIndexedDbStoreBackend(database),
 		KeyStore: keyStore,

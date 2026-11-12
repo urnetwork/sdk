@@ -12,8 +12,9 @@
 //
 //	CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -tags sidecar_http -trimpath -o wasm/sidecar.wasm ./cmd/sidecarwasm
 //
-// The main is a thin shell (SDK-M4-04): it opens one network's state, IndexedDB's store and the WebCrypto key, an
-// instance on them and this leg's sidecar.Sidecar, with no components and no TokenSource, so §5.6's
+// The main is a thin shell (SDK-M4-04): it opens one network's state, from that network's own IndexedDB database,
+// urnetwork-sidecar-v1-<network_id> (store_indexeddb.go), its store and its WebCrypto root key, an instance on them
+// and this leg's sidecar.Sidecar, with no components and no TokenSource, so §5.6's
 // sidecarTokenManager refreshes over POST /sidecar/bind, GET /auth/refresh with the ClientKey's DPoP proof and the
 // token exchange for evs and gkm (§18.10's leg row). It runs no HeadCheck and raises no unwitnessed
 // (plan-SDK-small-readings #8). Everything a page asks goes to sidecarworker, whose seams this file fills: the
@@ -23,8 +24,11 @@
 // Worker), so evs reads answer unavailable, and with no config state verified here no statement judges as verified;
 // the record reader has no streams until RECORD-M3-12 binds them, so record_view answers unavailable too.
 //
-// worker.js opens the network only while it holds the network's Web Lock (SDK-M4-05), so one Worker a network ever
-// loads its keychain, token and MLS state.
+// worker.js opens the network only while it holds the network's Web Lock, urnetwork-sidecar-<network_id> (SDK-M4-05),
+// so one Worker a network ever loads its keychain, token and MLS state, and, each network being its own database and
+// instance, that lock covers everything the Worker writes (owner decision 217). The lock is named by the id worker.js
+// was given, so open takes a network id only in its canonical text: a Worker under a lock that names the id another
+// way could open the same database beside its holder.
 
 package main
 
@@ -84,8 +88,8 @@ type pageStatusView struct {
 // The page Worker: at most one opened network. Safe for concurrent use.
 type pageWorker struct {
 	ctx context.Context
-	// the key origin's database, indexedDbName; a test's own
-	databaseName string
+	// what a network's database is named under, before its id: indexedDbNamePrefix, or a test's own
+	databaseNamePrefix string
 
 	stateLock sync.Mutex
 	opened    *pageNetwork
@@ -93,7 +97,7 @@ type pageWorker struct {
 
 // A page Worker that opens nothing until worker.js asks.
 func newPageWorker(ctx context.Context) *pageWorker {
-	return &pageWorker{ctx: ctx, databaseName: indexedDbName}
+	return &pageWorker{ctx: ctx, databaseNamePrefix: indexedDbNamePrefix}
 }
 
 // One opened network: its instance, its Sidecar and the Worker over them.
@@ -116,12 +120,14 @@ func (self *pageWorker) current() *pageNetwork {
 	return self.opened
 }
 
-// Opens config's network, or answers the one already open: IndexedDB, the WebCrypto key, an instance on them and this
-// leg's Sidecar, unlocked by the key store's wrap as an app's is at start. A network the instance holds no record of
-// opens unenrolled. Another network than the one open is refused, since a Worker serves one (§18.8's instance row).
+// Opens config's network, or answers the one already open: the network's own IndexedDB database, its WebCrypto root
+// key, an instance on them and this leg's Sidecar, unlocked by the key store's wrap as an app's is at start. A network
+// the instance holds no record of opens unenrolled. Another network than the one open is refused, since a Worker
+// serves one (§18.8's instance row). The id must be a network's, in its canonical text, the spelling worker.js names
+// the network's lock by, and the database's name is built from the parsed id, never from the string given.
 func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	networkId, err := sidecar.ParseId(config.NetworkId)
-	if err != nil {
+	if err != nil || networkId == (sidecar.Id{}) || config.NetworkId != networkId.String() {
 		return nil, errors.New("open needs the network's id")
 	}
 	self.stateLock.Lock()
@@ -133,11 +139,10 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 		return self.opened.status(), nil
 	}
 	settings := sidecar.DefaultSidecarSettings()
-	applyPageWorkerSettings(settings)
 	if err := applyPageServiceUrls(settings, config.Urls); err != nil {
 		return nil, err
 	}
-	database, err := openIndexedDb(self.databaseName)
+	database, err := openIndexedDb(indexedDbNetworkName(self.databaseNamePrefix, networkId))
 	if err != nil {
 		return nil, err
 	}

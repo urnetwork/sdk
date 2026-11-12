@@ -1,11 +1,13 @@
 //go:build js && wasm && sidecar_http
 
-// The page Worker's SidecarKeyStore (§18.8, D-SDK-15): a non-extractable WebCrypto AES-GCM root key, kept in the
-// keys object store by structured clone, which wraps each secret the core puts here, W above all, which wraps U
-// (keys_unlock.go). The key's bytes never exist in Go or in script: generateKey makes it with extractable false, so
-// exportKey refuses it, and IndexedDB keeps the CryptoKey object itself. A secret comes back to Go in the Worker and
-// goes nowhere else: GetSecret's bytes never leave the Worker (§18.8), and the core reports W to the privacy harness
-// as it takes it (testHookSecret("W")), so nothing here repeats that.
+// The page Worker's SidecarKeyStore (§18.8, D-SDK-15): a non-extractable WebCrypto AES-GCM root key, kept by
+// structured clone in the keys object store of one network's database, which wraps each secret the core puts here, W
+// above all, which wraps U (keys_unlock.go). Each network's database is its own instance (store_indexeddb.go, owner
+// decision 217), so each has its own root key, made at its first put, and a secret sealed in one network's opens in no
+// other's. The key's bytes never exist in Go or in script: generateKey makes it with extractable false, so exportKey
+// refuses it, and IndexedDB keeps the CryptoKey object itself. A secret comes back to Go in the Worker and goes
+// nowhere else: GetSecret's bytes never leave the Worker (§18.8), and the core reports W to the privacy harness as it
+// takes it (testHookSecret("W")), so nothing here repeats that.
 //
 // A secret is stored as {iv, ciphertext}, AES-GCM with a fresh 12-byte iv and the item's name as additional data,
 // under "secret/<name>", so a record moved to another name fails to open.

@@ -17,11 +17,10 @@ func newMemoryKeyStore() sidecar.SidecarKeyStore {
 	return sidecar.NewSidecarMemoryKeyStore()
 }
 
-// A quick burner's instance: the core's memory backend and a memory key store, with the page Worker's settings, so it
-// writes nothing anywhere.
+// A quick burner's instance: the core's memory backend and a memory key store, with this leg's settings, as the page
+// Worker's (store_indexeddb.go's newPageInstance), so it writes nothing anywhere.
 func newBurnerInstance(ctx context.Context) (*sidecar.SidecarInstance, error) {
 	settings := sidecar.DefaultSidecarSettings()
-	applyPageWorkerSettings(settings)
 	return sidecar.NewSidecarInstance(ctx, &sidecar.SidecarInstanceArgs{
 		Backend:  sidecar.NewSidecarMemoryBackend(),
 		KeyStore: newMemoryKeyStore(),
