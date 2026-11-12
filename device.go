@@ -867,6 +867,19 @@ type Device interface {
 	// only when this is true.
 	GetSupportsExtenderPin() bool
 
+	// GetProvideExtenderPortMapping is the user's router port mapping setting
+	// (connect EXTENDER.md S10): whether the provider extender role asks the
+	// router, by PCP, NAT-PMP or UPnP, to forward its ports -- tcp 443, udp 443
+	// and udp 4053 -- to this device, which opens them on the router. Stored per
+	// network space; until the user sets it, the device default applies
+	// (DeviceLocalSettings.DefaultProvideExtenderPortMapping, off on every app
+	// and on in the sn miner).
+	GetProvideExtenderPortMapping() bool
+	// SetProvideExtenderPortMapping sets the router port mapping setting and
+	// applies it at once: a running role is replaced, so turning it off removes
+	// what the router forwards to this device.
+	SetProvideExtenderPortMapping(portMapping bool)
+
 	// GetMeasurementsEnabled is the owner's lag.dev measurements setting
 	// (lag.dev/PLAN.md C4, decision 18): whether the provider extender role
 	// serves the measurement API, stored per network space, or held by the

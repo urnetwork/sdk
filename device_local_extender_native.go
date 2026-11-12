@@ -22,6 +22,7 @@ import (
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/extender"
 	"github.com/urnetwork/connect/gossip"
+	"github.com/urnetwork/connect/portmap"
 )
 
 // device_local_extender_native.go — the provider extender role (EXTENDER.md G1
@@ -83,6 +84,23 @@ import (
 // (EXTENDER.md P7, phase 14c). The key derives from the identity seed, so there
 // is nothing more to keep, and a seed that cannot serve one is the start error.
 //
+// With the router port mapping setting on (EXTENDER.md S10, DeviceLocal.
+// SetProvideExtenderPortMapping), a role on a host with no public ipv4 address
+// asks the router, through connect/portmap, to forward the carriers it holds:
+// tcp 443 once it holds it, and each udp carrier that bound -- never a port it
+// does not hold, since the router would forward that one to whatever else does,
+// and never udp 53. The mapping is asked once the binds settle and before the
+// first activation, which waits for the router's first answer at most
+// PortMapWaitTimeout: a router that does not answer delays the first post by
+// that and nothing else. Each post offers the external port the router gives
+// each carrier (ExtenderActivatorSettings.OfferedPorts), and a mapping that
+// lands or moves after a post is posted at once. The record holds one port per
+// carrier for all of an extender's addresses, so a v6 address is offered the
+// mapped ports too, and is left out by the operator's probe unless it answers
+// on them. The mapper renews the mappings and removes them when the role
+// closes, which is what a setting turned off does (the provider replaces the
+// role).
+//
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
 
@@ -97,6 +115,16 @@ var configureExtenderLagLifecycle func(settings *extender.ExtenderLagLifecycleSe
 // When set, adjusts each role's server settings before the server is built.
 // Tests shorten a carrier's rebuild through it; production leaves it nil.
 var configureExtenderServer func(settings *extender.ExtenderSettings)
+
+// When set, adjusts each role's port mapper settings before the mapper is built
+// (EXTENDER.md S10). Tests install fake routers and a clock through it;
+// production leaves it nil.
+var configureExtenderPortMapper func(settings *portmap.PortMapperSettings)
+
+// The longest the first activation waits for the router's first answer to the
+// port mapping (EXTENDER.md S10). The mapper bounds its attempt itself, at 10
+// seconds, so this is only the backstop of that bound.
+const extenderPortMapWaitTimeout = 15 * time.Second
 
 // Budget of the wait for the carriers to bind before the role gives up on
 // activating. A bind that has not settled in this long is a bind that is not
@@ -226,6 +254,13 @@ type deviceLocalExtender struct {
 	// whether this role has asked for a key of the network's own (C2c), which
 	// it does at most once
 	keyRenewalRequested atomic.Bool
+
+	// The router port mapping of the carriers (S10): nil while the setting is
+	// off or before the binds settle, and on a host that needs none, which
+	// portMappingNotNeeded says. Set by the loop before the activator starts,
+	// under the state lock, since the activator and the status read it.
+	portMapper           *portmap.PortMapper
+	portMappingNotNeeded bool
 }
 
 // The role has started when this returns. When tcp 443 is free the server is
@@ -996,11 +1031,21 @@ func (self *deviceLocalExtender) run() {
 		<-self.ctx.Done()
 		return
 	}
+	// the router is asked for the carriers that bound, beside the camouflage's
+	// first verification, and the first post offers what it answered (S10)
+	self.startPortMapping()
 	if self.camouflage != nil {
 		// the first post carries the key when the names verify in good time (P5)
 		self.camouflage.WaitFirstVerification(self.ctx)
 	}
+	if !self.waitPortMapping() {
+		return
+	}
 	self.startActivator()
+	// what the posts offered, so a mapping that lands or moves after them is
+	// posted at once (S10)
+	offeredPorts := self.offeredPortsArray()
+	portMapped := self.portMapped()
 
 	// The server keeps its own carriers up (extender/extender_carrier.go). This
 	// reads what it serves: the tcp carrier's return is for the activation to
@@ -1024,6 +1069,28 @@ func (self *deviceLocalExtender) run() {
 		}
 		// the ping counts the status carries (GEOMAP §2.1)
 		_, pingerUpdate := self.peerPinger.StatusMonitor().Get()
+		// the router's answers (S10)
+		var portMapperUpdate chan struct{}
+		if portMapper := self.currentPortMapper(); portMapper != nil {
+			_, portMapperUpdate = portMapper.ChangeMonitor().Get()
+		}
+
+		if currentOfferedPorts, currentPortMapped := self.offeredPortsArray(), self.portMapped(); currentOfferedPorts != offeredPorts || currentPortMapped != portMapped {
+			// a mapping that landed or moved is posted now rather than at the
+			// tick, so the record names the ports the router forwards. One that
+			// was lost posts nothing: the bound ports reach nothing behind the
+			// router either
+			if currentPortMapped {
+				self.log.Infof(
+					"[extender]provide the router forwards tcp %d, udp %d and udp %d, posting them\n",
+					currentOfferedPorts[0],
+					currentOfferedPorts[1],
+					currentOfferedPorts[2],
+				)
+				self.currentActivator().Reactivate()
+			}
+			offeredPorts, portMapped = currentOfferedPorts, currentPortMapped
+		}
 
 		if serving := self.tcpCarrierServing(); serving != tcpServing {
 			tcpServing = serving
@@ -1046,6 +1113,7 @@ func (self *deviceLocalExtender) run() {
 		case <-activatorUpdate:
 		case <-directoryUpdate:
 		case <-pingerUpdate:
+		case <-portMapperUpdate:
 		case <-serverDone:
 			if self.ctx.Err() != nil {
 				return
@@ -1079,6 +1147,228 @@ func (self *deviceLocalExtender) requiredCarrierServing() bool {
 	carriers := self.server.Carriers()
 	return slices.Contains(carriers, connect.ExtenderCarrierTcp) ||
 		slices.Contains(carriers, connect.ExtenderCarrierWebRtc)
+}
+
+// Whether this role asks the router to forward its carriers (S10): the device's
+// setting as the role started. The provider replaces a role whose setting
+// changed.
+func (self *deviceLocalExtender) portMappingEnabled() bool {
+	return self.settings.PortMapping
+}
+
+// Asks the router to forward the carriers that bound (S10), unless the setting
+// is off or this host has a public ipv4 address, which needs no mapping. The
+// tcp carrier first, the one an extender requires, which decides whether a
+// method is used at all; then the udp carriers that bound. A carrier that did
+// not bind is not asked for: its port is not this role's, and the router would
+// forward it to whatever holds it.
+func (self *deviceLocalExtender) startPortMapping() {
+	if !self.settings.PortMapping {
+		return
+	}
+	public := self.settings.PortMappingPublicAddress
+	if public == nil {
+		public = func() bool {
+			return connect.FamilyPublic(4)
+		}
+	}
+	if public() {
+		self.log.Infof("[extender]provide port mapping not needed: this device has a public ipv4 address\n")
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.portMappingNotNeeded = true
+		}()
+		return
+	}
+
+	requests := []portmap.PortMapRequest{}
+	addRequest := func(protocol string, port int) {
+		request := portmap.PortMapRequest{Protocol: protocol, InternalPort: port}
+		if 0 < port && !slices.Contains(requests, request) {
+			requests = append(requests, request)
+		}
+	}
+	carriers := self.server.Carriers()
+	if !slices.Contains(carriers, connect.ExtenderCarrierTcp) {
+		// the role holds tcp 443 before anything else (G2), so this is a port
+		// lost as the binds settled; a role without it asks for nothing
+		return
+	}
+	addRequest(portmap.ProtocolTcp, self.settings.TcpPort)
+	if slices.Contains(carriers, connect.ExtenderCarrierQuic) {
+		addRequest(portmap.ProtocolUdp, self.settings.UdpPort)
+	}
+	if slices.Contains(carriers, connect.ExtenderCarrierDns) && slices.Contains(self.server.DnsPorts(), self.settings.DnsPort) {
+		addRequest(portmap.ProtocolUdp, self.settings.DnsPort)
+	}
+
+	mapperSettings := portmap.DefaultPortMapperSettings()
+	mapperSettings.Log = self.log
+	if configureExtenderPortMapper != nil {
+		configureExtenderPortMapper(mapperSettings)
+	}
+	portMapper := portmap.NewPortMapper(self.ctx, requests, mapperSettings)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.portMapper = portMapper
+	}()
+	self.log.Infof("[extender]provide port mapping asks the router for %v\n", requests)
+}
+
+// Waits for the router's first answer, at most PortMapWaitTimeout (S10). False
+// when the role closed first.
+func (self *deviceLocalExtender) waitPortMapping() bool {
+	portMapper := self.currentPortMapper()
+	if portMapper == nil {
+		return self.ctx.Err() == nil
+	}
+	timeout := self.settings.PortMapWaitTimeout
+	if timeout <= 0 {
+		timeout = extenderPortMapWaitTimeout
+	}
+	select {
+	case <-portMapper.Ready():
+	case <-self.ctx.Done():
+		return false
+	case <-time.After(timeout):
+		self.log.Infof("[extender]provide the router did not answer the port mapping within %s, activating without it\n", timeout)
+	}
+	status := portMapper.Status()
+	switch status.State {
+	case portmap.StateMapped:
+		self.log.Infof(
+			"[extender]provide port mapping by %s: %s\n",
+			status.Method,
+			extenderPortMappingsText(status.Mappings),
+		)
+	case portmap.StateFailed:
+		self.log.Infof("[extender]provide port mapping failed = %s\n", status.Error)
+	}
+	return self.ctx.Err() == nil
+}
+
+func (self *deviceLocalExtender) currentPortMapper() *portmap.PortMapper {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.portMapper
+}
+
+// The mapper's status, nil while the role maps nothing.
+func (self *deviceLocalExtender) portMapperStatus() *portmap.PortMapperStatus {
+	if portMapper := self.currentPortMapper(); portMapper != nil {
+		return portMapper.Status()
+	}
+	return nil
+}
+
+// Whether the router forwards the tcp carrier (S10).
+func (self *deviceLocalExtender) portMapped() bool {
+	status := self.portMapperStatus()
+	return status != nil &&
+		status.State == portmap.StateMapped &&
+		status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort) != nil
+}
+
+// The carrier ports the activation offers (S10): the external port the router
+// forwards to each carrier it maps, else the bound port. Read at each post
+// (ExtenderActivatorSettings.OfferedPorts).
+func (self *deviceLocalExtender) offeredPorts() (tcpPort int, udpPort int, dnsPort int) {
+	tcpPort, udpPort, dnsPort = self.settings.TcpPort, self.settings.UdpPort, self.settings.DnsPort
+	status := self.portMapperStatus()
+	if status == nil || status.State != portmap.StateMapped {
+		return
+	}
+	if mapping := status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort); mapping != nil {
+		tcpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.UdpPort); mapping != nil {
+		udpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
+		dnsPort = mapping.ExternalPort
+	}
+	return
+}
+
+func (self *deviceLocalExtender) offeredPortsArray() [3]int {
+	tcpPort, udpPort, dnsPort := self.offeredPorts()
+	return [3]int{tcpPort, udpPort, dnsPort}
+}
+
+// The dns ports the activation offers (L2, S10): the bound ports, with the dns
+// carrier's own port as the router forwards it.
+func (self *deviceLocalExtender) offeredDnsPorts() []int {
+	dnsPorts := self.server.DnsPorts()
+	_, _, offeredDnsPort := self.offeredPorts()
+	if offeredDnsPort == self.settings.DnsPort {
+		return dnsPorts
+	}
+	offeredDnsPorts := []int{}
+	for _, dnsPort := range dnsPorts {
+		if dnsPort == self.settings.DnsPort {
+			dnsPort = offeredDnsPort
+		}
+		if !slices.Contains(offeredDnsPorts, dnsPort) {
+			offeredDnsPorts = append(offeredDnsPorts, dnsPort)
+		}
+	}
+	return offeredDnsPorts
+}
+
+// The port mapping of the status (S10, F3).
+func (self *deviceLocalExtender) portMappingState(state *extenderProvideState) {
+	if !self.settings.PortMapping {
+		state.PortMapping = ExtenderPortMappingOff
+		return
+	}
+	notNeeded := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.portMappingNotNeeded
+	}()
+	if notNeeded {
+		state.PortMapping = ExtenderPortMappingNotNeeded
+		return
+	}
+	status := self.portMapperStatus()
+	if status == nil {
+		// the binds are settling
+		state.PortMapping = ExtenderPortMappingMapping
+		return
+	}
+	switch status.State {
+	case portmap.StateMapped:
+		state.PortMapping = ExtenderPortMappingMapped
+	case portmap.StateFailed:
+		state.PortMapping = ExtenderPortMappingFailed
+	default:
+		state.PortMapping = ExtenderPortMappingMapping
+	}
+	state.PortMappingMethod = status.Method
+	if status.ExternalIp.IsValid() && !status.ExternalIp.IsUnspecified() {
+		state.PortMappingExternalIp = status.ExternalIp.String()
+	}
+	state.PortMappingError = status.Error
+	if mapping := status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort); mapping != nil {
+		state.PortMappingTcpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.UdpPort); mapping != nil {
+		state.PortMappingUdpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
+		state.PortMappingDnsPort = mapping.ExternalPort
+	}
+}
+
+// The mappings as one line for the log: "tcp 443 -> 443, udp 4053 -> 40053".
+func extenderPortMappingsText(mappings []portmap.PortMapping) string {
+	parts := []string{}
+	for _, mapping := range mappings {
+		parts = append(parts, fmt.Sprintf("%s %d -> %d", mapping.Protocol, mapping.InternalPort, mapping.ExternalPort))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // What the status says of a role whose loop failed, until its replacement.
@@ -1165,8 +1455,10 @@ func (self *deviceLocalExtender) startActivator() {
 	}
 	settings.Carriers = self.server.Carriers
 	// the operator probes each port that actually bound and the record lists
-	// them, so a privileged bind that failed is never advertised (L2)
-	settings.DnsPorts = self.server.DnsPorts
+	// them, so a privileged bind that failed is never advertised (L2); a port
+	// the router forwards is offered as the router forwards it (S10)
+	settings.DnsPorts = self.offeredDnsPorts
+	settings.OfferedPorts = self.offeredPorts
 	settings.Directory = self.directory()
 	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
 		// the activation carries the measurement certificate request, named by
@@ -1346,7 +1638,10 @@ func (self *deviceLocalExtender) meshListenAddrs() ([]ma.Multiaddr, error) {
 	if len(ips) == 0 {
 		return nil, nil
 	}
-	return gossip.ExtenderListenAddrs(ips, self.settings.TcpPort)
+	// the port peers dial, which is the router's when it forwards the carrier
+	// (S10)
+	tcpPort, _, _ := self.offeredPorts()
+	return gossip.ExtenderListenAddrs(ips, tcpPort)
 }
 
 // Publishes the comparable half of the status, which notifies a watcher only
@@ -1431,6 +1726,9 @@ func (self *deviceLocalExtender) state() extenderProvideState {
 	admissionStats := self.server.AdmissionStats()
 	state.LimitedBySubnetsCount = int(admissionStats.LimitedBySubnetsCount)
 	state.LimitedBySourceCount = int(admissionStats.LimitedBySourceCount)
+
+	// the router port mapping (S10)
+	self.portMappingState(&state)
 	return state
 }
 
@@ -1522,6 +1820,11 @@ func (self *deviceLocalExtender) Close() {
 		self.cancelMeasurementOptOut()
 		if activator := self.currentActivator(); activator != nil {
 			activator.Close()
+		}
+		// what the router forwards to this role goes with it, within the
+		// mapper's removal timeout (S10)
+		if portMapper := self.currentPortMapper(); portMapper != nil {
+			portMapper.Close()
 		}
 		// a verification in flight dials through the server's splice
 		if self.camouflage != nil {

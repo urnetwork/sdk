@@ -58,6 +58,11 @@ func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorStat
 func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
 }
 
+// No role, so nothing to ask the router for (connect EXTENDER.md S10).
+func (self *deviceLocalExtender) portMappingEnabled() bool {
+	return false
+}
+
 // No role, so no key to replace (C2c).
 func (self *deviceLocalExtender) identityPublicKey() []byte {
 	return nil

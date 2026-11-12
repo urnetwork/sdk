@@ -432,6 +432,11 @@ inline constexpr const char* ExtenderGossipStateConnecting = "connecting";
 inline constexpr const char* ExtenderGossipStateDisconnected = "disconnected";
 inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_foreign_host";
 inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
+inline constexpr const char* ExtenderPortMappingFailed = "failed";
+inline constexpr const char* ExtenderPortMappingMapped = "mapped";
+inline constexpr const char* ExtenderPortMappingMapping = "mapping";
+inline constexpr const char* ExtenderPortMappingNotNeeded = "not_needed";
+inline constexpr const char* ExtenderPortMappingOff = "off";
 inline constexpr const char* ExtenderProvideErrorActivationFailed = "activation_failed";
 inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation_refused";
 inline constexpr const char* ExtenderProvideErrorActivationUnreachable = "activation_unreachable";
@@ -2505,6 +2510,7 @@ struct DeviceLocalSettings {
 	bool DefaultProvideExtender{};
 	bool ProvideExtenderDnsPrivilegedPort{};
 	bool ProvideExtenderWebRtc{};
+	bool DefaultProvideExtenderPortMapping{};
 	bool Verbose{};
 	bool MoveDeclineBackgroundOrMetered{};
 	bool EnableTransportDelay{};
@@ -2767,6 +2773,13 @@ struct ExtenderProvideStatus {
 	int64_t LastPeerPingTime{};
 	int64_t LimitedBySubnetsCount{};
 	int64_t LimitedBySourceCount{};
+	std::string PortMapping{};
+	std::string PortMappingMethod{};
+	std::string PortMappingExternalIp{};
+	int64_t PortMappingTcpPort{};
+	int64_t PortMappingUdpPort{};
+	int64_t PortMappingDnsPort{};
+	std::string PortMappingError{};
 	int64_t ConnectionCount{};
 };
 
@@ -10958,6 +10971,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["ProvideExtenderWebRtc"] = v.ProvideExtenderWebRtc;
+	j["DefaultProvideExtenderPortMapping"] = v.DefaultProvideExtenderPortMapping;
 	j["Verbose"] = v.Verbose;
 	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
 	j["EnableTransportDelay"] = v.EnableTransportDelay;
@@ -11069,6 +11083,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("ProvideExtenderWebRtc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProvideExtenderWebRtc);
+	}
+	if (auto it = j.find("DefaultProvideExtenderPortMapping"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DefaultProvideExtenderPortMapping);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -12012,6 +12029,13 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["LastPeerPingTime"] = v.LastPeerPingTime;
 	j["LimitedBySubnetsCount"] = v.LimitedBySubnetsCount;
 	j["LimitedBySourceCount"] = v.LimitedBySourceCount;
+	j["PortMapping"] = v.PortMapping;
+	j["PortMappingMethod"] = v.PortMappingMethod;
+	j["PortMappingExternalIp"] = v.PortMappingExternalIp;
+	j["PortMappingTcpPort"] = v.PortMappingTcpPort;
+	j["PortMappingUdpPort"] = v.PortMappingUdpPort;
+	j["PortMappingDnsPort"] = v.PortMappingDnsPort;
+	j["PortMappingError"] = v.PortMappingError;
 	j["ConnectionCount"] = v.ConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
@@ -12095,6 +12119,27 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("LimitedBySourceCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LimitedBySourceCount);
+	}
+	if (auto it = j.find("PortMapping"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMapping);
+	}
+	if (auto it = j.find("PortMappingMethod"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingMethod);
+	}
+	if (auto it = j.find("PortMappingExternalIp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingExternalIp);
+	}
+	if (auto it = j.find("PortMappingTcpPort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingTcpPort);
+	}
+	if (auto it = j.find("PortMappingUdpPort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingUdpPort);
+	}
+	if (auto it = j.find("PortMappingDnsPort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingDnsPort);
+	}
+	if (auto it = j.find("PortMappingError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PortMappingError);
 	}
 	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectionCount);
@@ -23309,6 +23354,7 @@ public:
 	std::string getProvideControlMode() const;
 	bool getProvideEnabled() const;
 	bool getProvideExtender() const;
+	bool getProvideExtenderPortMapping() const;
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	bool getProvidePaused() const;
@@ -23360,6 +23406,7 @@ public:
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& performance_profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideExtender(bool provide_extender) const;
+	void setProvideExtenderPortMapping(bool port_mapping) const;
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& mode) const;
 	void setProvidePaused(bool provide_paused) const;
@@ -32619,6 +32666,10 @@ inline bool Device::getProvideExtender() const {
 	bool r = urnet_device_get_provide_extender(handle());
 	return r;
 }
+inline bool Device::getProvideExtenderPortMapping() const {
+	bool r = urnet_device_get_provide_extender_port_mapping(handle());
+	return r;
+}
 inline int64_t Device::getProvideMode() const {
 	int64_t r = urnet_device_get_provide_mode(handle());
 	return r;
@@ -32920,6 +32971,9 @@ inline void Device::setProvideControlMode(const std::string& mode) const {
 }
 inline void Device::setProvideExtender(bool provide_extender) const {
 	urnet_device_set_provide_extender(handle(), provide_extender);
+}
+inline void Device::setProvideExtenderPortMapping(bool port_mapping) const {
+	urnet_device_set_provide_extender_port_mapping(handle(), port_mapping);
 }
 inline void Device::setProvideMode(int64_t provide_mode) const {
 	urnet_device_set_provide_mode(handle(), provide_mode);
