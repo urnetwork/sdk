@@ -58,7 +58,8 @@ func logSeverityOf(name string) string {
 }
 
 // LogInventory enumerates every log file under the recorded log root, across
-// every process that has written there.
+// every process that has written there: the glog files, and the app's exit
+// diagnostics file (exit_diagnostics.go) where there is one.
 //
 // Symlinks are skipped: glog maintains a <program>.<SEVERITY> symlink beside
 // each real file, and following it would list the same bytes twice.
@@ -143,7 +144,12 @@ func appendLogFilesIn(inventory *LogFileInfoList, dir string, source string) err
 		}
 		severity := logSeverityOf(entry.Name())
 		if severity == "" {
-			continue
+			// beside the glog files, only the app's exit diagnostics
+			// (exit_diagnostics.go), and only a regular file of that name
+			if entry.Name() != exitDiagnosticsFileName || !entry.Type().IsRegular() {
+				continue
+			}
+			severity = exitDiagnosticsSeverity
 		}
 		info, err := entry.Info()
 		if err != nil {

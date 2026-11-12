@@ -179,6 +179,9 @@ var skipFuncs = map[string]string{
 	"DecodeBase58":               "byte buffer result; manual export in exports_manual.go",
 	"DecryptData":                "byte buffer result; manual export in exports_manual.go",
 	"GenerateSharedSecret":       "byte buffer result; manual export in exports_manual.go",
+	// the apple apps' MetricKit payloads (exit_diagnostics_metrickit.go)
+	"LogMetricKitDiagnosticPayload": "apple MetricKit payloads (gomobile only): no MetricKit on windows or linux",
+	"LogMetricKitMetricPayload":     "apple MetricKit payloads (gomobile only): no MetricKit on windows or linux",
 }
 
 var skipFuncPatterns = []*regexp.Regexp{

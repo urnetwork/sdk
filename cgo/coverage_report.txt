@@ -1483,7 +1483,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1382) ==
+== skipped (1384) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2283,6 +2283,8 @@ LocationResultList: data: crosses as json
 LocationType: alias: crosses as its underlying c type
 LogFileInfo: data: crosses as json
 LogFileInfoList: data: crosses as json
+LogMetricKitDiagnosticPayload: skipped: apple MetricKit payloads (gomobile only): no MetricKit on windows or linux
+LogMetricKitMetricPayload: skipped: apple MetricKit payloads (gomobile only): no MetricKit on windows or linux
 ManageDevicesListener: callback interface: crosses as c function pointer
 ManageDevicesSignInRetry: callback interface: crosses as c function pointer
 ManageDevicesSnapshot: data: crosses as json
