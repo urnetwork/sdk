@@ -3193,7 +3193,7 @@ def bind(lib):
     lib.urnet_sn_claims_for.restype = None
     lib.urnet_sn_ctf_client_of.argtypes = [c_char_p]
     lib.urnet_sn_ctf_client_of.restype = c_void_p
-    lib.urnet_sn_ctf_client_of_response.argtypes = [c_int64, c_char_p]
+    lib.urnet_sn_ctf_client_of_response.argtypes = [c_int64, c_char_p, c_bool]
     lib.urnet_sn_ctf_client_of_response.restype = c_void_p
     lib.urnet_sn_fleet_binding_digest.argtypes = [c_char_p, POINTER(c_void_p)]
     lib.urnet_sn_fleet_binding_digest.restype = c_void_p
@@ -3201,6 +3201,8 @@ def bind(lib):
     lib.urnet_sn_gas_balance_for.restype = None
     lib.urnet_sn_ledger_accounts_for.argtypes = [c_char_p, c_char_p, urnet_sn_ledger_accounts_cb, c_void_p]
     lib.urnet_sn_ledger_accounts_for.restype = None
+    lib.urnet_sn_ledger_claim_outcomes_for.argtypes = [c_char_p, c_char_p, c_char_p, c_char_p, POINTER(c_void_p)]
+    lib.urnet_sn_ledger_claim_outcomes_for.restype = c_void_p
     lib.urnet_sn_ledger_claim_outcomes_of.argtypes = [c_char_p, c_char_p, POINTER(c_void_p)]
     lib.urnet_sn_ledger_claim_outcomes_of.restype = c_void_p
     lib.urnet_sn_ledger_claim_transactions_for.argtypes = [c_char_p, c_char_p, POINTER(c_void_p)]

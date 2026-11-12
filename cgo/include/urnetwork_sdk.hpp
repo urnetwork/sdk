@@ -41217,8 +41217,8 @@ inline std::optional<SnCtfClientResult> snCtfClientOf(const std::string& answer_
 	}
 	return detail::parseJson<SnCtfClientResult>(r_s->c_str());
 }
-inline std::optional<SnCtfClientResult> snCtfClientOfResponse(int64_t status_code, const std::string& answer_json) {
-	char* r_c = urnet_sn_ctf_client_of_response(status_code, answer_json.c_str());
+inline std::optional<SnCtfClientResult> snCtfClientOfResponse(int64_t status_code, const std::string& answer_json, bool network_credential) {
+	char* r_c = urnet_sn_ctf_client_of_response(status_code, answer_json.c_str(), network_credential);
 	auto r_s = detail::takeStringOpt(r_c);
 	if (!r_s) {
 		return std::nullopt;
@@ -41252,6 +41252,30 @@ inline void snLedgerAccountsFor(const std::optional<SnChainSettings>& settings, 
 	}
 	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
 	urnet_sn_ledger_accounts_for(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline std::optional<SnLedgerClaimOutcomeList> snLedgerClaimOutcomesFor(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, const std::optional<SnLedgerUnsignedTx>& tx, const std::string& receipt_json) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::string tx_json;
+	const char* tx_c = nullptr;
+	if (tx) {
+		tx_json = nlohmann::json(*tx).dump();
+		tx_c = tx_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_sn_ledger_claim_outcomes_for(settings_c, coldkey_ss58.c_str(), tx_c, receipt_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerClaimOutcomeList>(r_s->c_str());
 }
 inline std::optional<SnLedgerClaimOutcomeList> snLedgerClaimOutcomesOf(const std::optional<SnLedgerUnsignedTx>& tx, const std::string& receipt_json) {
 	std::string tx_json;

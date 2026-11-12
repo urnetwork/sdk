@@ -370,7 +370,8 @@ func TestSnLedgerClaimTransactionsForPayerWasm(t *testing.T) {
 
 // A network's wins read through the export with each win's client and claim
 // state, and the unclaimed ones the line shows; a page's read with its status
-// reads 401 as no wins.
+// reads a 401 to the network credential as no wins, and a 401 to a client
+// token, or from a page that does not say which it sent, as unavailable.
 func TestSnCtfClientOfResponseWasm(t *testing.T) {
 	ofResponse := snExport(t, "URnetworkSnCtfClientOfResponse")
 	network := `{"as_of":"2026-12-11T22:24:12Z","client_id":null,"epochs":[],"wins":[` +
@@ -381,8 +382,10 @@ func TestSnCtfClientOfResponseWasm(t *testing.T) {
 		`"amount":{"alpha":"0.048025660","rao":48025660},"slot":{"alpha":"0.048025660","rao":48025660},"pot_share":{"alpha":"0.000000000","rao":0},` +
 		`"pending":false,"root_status":"finalized","coldkey_ss58":"5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd","claimed":true}]}`
 	for name, value := range map[string]js.Value{
-		"of":          snExport(t, "URnetworkSnCtfClientOf").Invoke(jsonValue(network)),
-		"of response": ofResponse.Invoke(200, network),
+		"of":                                  snExport(t, "URnetworkSnCtfClientOf").Invoke(jsonValue(network)),
+		"of response, the network credential": ofResponse.Invoke(200, network, true),
+		"of response, a client token":         ofResponse.Invoke(200, network, false),
+		"of response, not saying":             ofResponse.Invoke(200, network),
 	} {
 		result := jsonOf(t, value)
 		unclaimed, _ := result["unclaimed_wins"].([]any)
@@ -393,13 +396,52 @@ func TestSnCtfClientOfResponseWasm(t *testing.T) {
 		wantFields(t, name, unclaimed[0].(map[string]any), map[string]any{"epoch": float64(9), "client_id": "7d1e9a40-1b2c-4d3e-8f56-a1b2c3d4e5f6", "claim_state": "unclaimed"})
 		wantFields(t, name, wins[1].(map[string]any), map[string]any{"epoch": float64(8), "claim_state": "claimed"})
 	}
-	result := jsonOf(t, ofResponse.Invoke(401, jsonValue(`{"status":401,"code":"unauthorized"}`)))
+	unauthorized := jsonValue(`{"status":401,"code":"unauthorized"}`)
+	result := jsonOf(t, ofResponse.Invoke(401, unauthorized, true))
 	if wins, _ := result["unclaimed_wins"].([]any); result["error"] != nil || wins == nil || len(wins) != 0 {
-		t.Fatalf("401 %v", result)
+		t.Fatalf("401 to the network credential %v", result)
 	}
-	for _, args := range [][]any{{503, network}, {"200", network}, {}} {
-		if result := jsonOf(t, ofResponse.Invoke(args...)); result["error"] == nil {
+	for _, args := range [][]any{{401, unauthorized, false}, {401, unauthorized}, {401, unauthorized, "true"}, {401, unauthorized, 1}, {503, network, true}, {"200", network, true}, {}} {
+		result := jsonOf(t, ofResponse.Invoke(args...))
+		if errorOf, ok := result["error"].(map[string]any); !ok || errorOf["code"] != sdk.SnErrorCodeCtfUnavailable {
 			t.Fatalf("%v: %v", args, result)
+		}
+	}
+}
+
+// What a mined batch did for each account, with the reasons read from the
+// chain: a confirmed account and vault2's own refusal need no chain read, and
+// the export refuses the settings' other vault2, a coldkey that is not one and
+// missing arguments.
+func TestSnLedgerClaimOutcomesForWasm(t *testing.T) {
+	outcomesFor := snExport(t, "URnetworkSnLedgerClaimOutcomesFor")
+	settings := js.ValueOf(map[string]any{"vault2_address": testCtfVault2})
+	coldkey := "5Hq5oMjMnNDPJyRUScRVkWoFxYRdNqkHsjMBCxhPtYAEcnTd"
+	receipt := js.ValueOf(map[string]any{"status": 1, "logs": []any{
+		testClaimedLog(1, 2, 700),
+		testBatcherLog("0xb0727183796e52c5bb00a257c1eb36d8e94dbee5d6d87e259287e3372ae39ace", testWordHex(0), testWordHex(700)),
+		testBatcherLog("0xf869308b71c9a01aff5b8d5408027b38b9076abea371ee96b2c875d292caf693", testWordHex(1), "969bf728"+strings.Repeat("0", 56)),
+	}})
+	value, rejected := awaitApiPromise(t, outcomesFor.Invoke(settings, coldkey, testCtfBatchTx(), receipt))
+	if !rejected.IsUndefined() {
+		t.Fatalf("rejected %v", rejected)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(js.Global().Get("JSON").Call("stringify", value).String()), &got); err != nil || len(got) != 2 {
+		t.Fatalf("outcomes %v, %v", got, err)
+	}
+	wantFields(t, "confirmed", got[0], map[string]any{"no_id": float64(1), "index": float64(2), "status": "confirmed", "amount_rao": float64(700)})
+	wantFields(t, "refused", got[1], map[string]any{"no_id": float64(4294967297), "index": float64(1), "status": "failed", "message": "already_claimed: NothingToClaim: another claim paid this account first"})
+
+	for name, args := range map[string][]any{
+		"the settings' other vault2": {js.Global().Call("URnetworkDefaultSnChainSettings"), coldkey, testCtfBatchTx(), receipt},
+		"a coldkey that is not one":  {settings, "5Hq5", testCtfBatchTx(), receipt},
+		"no coldkey":                 {settings},
+		"no transaction":             {settings, coldkey},
+		"no receipt":                 {settings, coldkey, testCtfBatchTx()},
+	} {
+		if _, rejected := awaitApiPromise(t, outcomesFor.Invoke(args...)); rejected.IsUndefined() {
+			t.Fatalf("%s: resolved", name)
 		}
 	}
 }

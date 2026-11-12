@@ -1396,6 +1396,7 @@ EXPORTS
 	urnet_sn_fleet_device_start
 	urnet_sn_gas_balance_for
 	urnet_sn_ledger_accounts_for
+	urnet_sn_ledger_claim_outcomes_for
 	urnet_sn_ledger_claim_outcomes_of
 	urnet_sn_ledger_claim_transactions_for
 	urnet_sn_ledger_claim_transactions_for_payer

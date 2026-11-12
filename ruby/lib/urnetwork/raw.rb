@@ -1721,10 +1721,11 @@ module URnetwork
       attach_function :urnet_sn_claim_transactions_for, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_claims_for, [:string, :string, :int64, :urnet_sn_claims_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_ctf_client_of, [:string], :pointer, blocking: true
-      attach_function :urnet_sn_ctf_client_of_response, [:int64, :string], :pointer, blocking: true
+      attach_function :urnet_sn_ctf_client_of_response, [:int64, :string, :bool], :pointer, blocking: true
       attach_function :urnet_sn_fleet_binding_digest, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_gas_balance_for, [:string, :string, :urnet_sn_gas_balance_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_ledger_accounts_for, [:string, :string, :urnet_sn_ledger_accounts_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sn_ledger_claim_outcomes_for, [:string, :string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_ledger_claim_outcomes_of, [:string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_ledger_claim_transactions_for, [:string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_ledger_claim_transactions_for_payer, [:string, :string, :string, :pointer], :pointer, blocking: true

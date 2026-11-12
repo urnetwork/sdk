@@ -1722,10 +1722,11 @@ public interface Raw extends Library {
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);
   Pointer urnet_sn_ctf_client_of(String a0);
-  Pointer urnet_sn_ctf_client_of_response(long a0, String a1);
+  Pointer urnet_sn_ctf_client_of_response(long a0, String a1, byte a2);
   Pointer urnet_sn_fleet_binding_digest(String a0, PointerByReference a1);
   void urnet_sn_gas_balance_for(String a0, String a1, urnet_sn_gas_balance_cb a2, Pointer a3);
   void urnet_sn_ledger_accounts_for(String a0, String a1, urnet_sn_ledger_accounts_cb a2, Pointer a3);
+  Pointer urnet_sn_ledger_claim_outcomes_for(String a0, String a1, String a2, String a3, PointerByReference a4);
   Pointer urnet_sn_ledger_claim_outcomes_of(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_ledger_claim_transactions_for(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_ledger_claim_transactions_for_payer(String a0, String a1, String a2, PointerByReference a3);
