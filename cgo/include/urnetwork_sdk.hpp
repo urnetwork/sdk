@@ -39677,6 +39677,10 @@ inline std::string buildSolanaPaymentUrl(const std::optional<SolanaPaymentUrlArg
 	}
 	return detail::takeString(r_c);
 }
+inline bool cantReachOnStall(const std::string& previous_stall_reason, const std::string& stall_reason) {
+	bool r = urnet_cant_reach_on_stall(previous_stall_reason.c_str(), stall_reason.c_str());
+	return r;
+}
 inline bool checkCryptoPaymentUri(const std::string& asset, const std::string& uri, const std::string& address) {
 	bool r = urnet_check_crypto_payment_uri(asset.c_str(), uri.c_str(), address.c_str());
 	return r;
@@ -40446,6 +40450,10 @@ inline std::optional<StringList> ingressPlainDnsServers(const std::string& count
 }
 inline bool isBalanceCodeFormatValid(const std::string& secret) {
 	bool r = urnet_is_balance_code_format_valid(secret.c_str());
+	return r;
+}
+inline bool isCantReachError(const std::string& error_message) {
+	bool r = urnet_is_cant_reach_error(error_message.c_str());
 	return r;
 }
 inline bool isCheckoutRedirect(const std::string& uri) {
