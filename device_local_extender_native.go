@@ -86,11 +86,12 @@ import (
 // that and nothing else. The mapping is the router's of the ipv4 default route,
 // so each ipv4 post offers the external port the router gives each carrier and
 // each ipv6 post the bound ports (ExtenderActivatorSettings.FamilyOfferedPorts),
-// which the operator keeps and signs per address; the mesh address of each
-// family follows its post. A mapping that lands or moves after a post is posted
-// at once. The mapper renews the mappings and removes them when the role
-// closes, which is what a setting turned off does (the provider replaces the
-// role).
+// which the operator keeps and signs per address; to an operator that predates
+// that, which keeps one port per carrier, every post offers the router's (the
+// family 0 answer), as before. The mesh address of each family follows its
+// post. A mapping that lands or moves after a post is posted at once. The
+// mapper renews the mappings and removes them when the role closes, which is
+// what a setting turned off does (the provider replaces the role).
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.

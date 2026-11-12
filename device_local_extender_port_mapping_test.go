@@ -255,8 +255,9 @@ func TestDeviceLocalProviderExtenderMapsNothingByDefault(t *testing.T) {
 
 // A role behind a router asks it for the carriers it holds, offers the external
 // ports the router gives in every ipv4 post and in its ipv4 mesh address, and
-// reports the mapping. The router maps ipv4 alone, so the ipv6 posts and mesh
-// address keep the bound ports, where the v6 address answers (S10).
+// reports the mapping. The router maps ipv4 alone, so to an operator that keeps
+// each address's ports the ipv6 posts and mesh address keep the bound ports,
+// where the v6 address answers (S10).
 func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	router := newTestExtenderRouter()
 	fixture := newTestPortMappingFixtureWithPorts(t, router, map[string]int{"tcp": 40443, "udp": 40444, "dns": 40053})
@@ -303,12 +304,44 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	})
 }
 
+// To an operator that predates per-address ports, which keeps one port per
+// carrier for every address of an extender, every post offers the router's
+// ports, ipv6's too, as every post did before the families had their own: that
+// operator would publish each family on the other's (S10).
+func TestDeviceLocalProviderExtenderOffersOneSetOfPortsWithoutAddressPorts(t *testing.T) {
+	router := newTestExtenderRouter()
+	fixture := newTestPortMappingFixtureWithOperatorPorts(t, router, map[string]int{"tcp": 40443, "udp": 40444, "dns": 40053}, false)
+
+	fixture.waitPass()
+	for range 2 {
+		post := fixture.waitPost()
+		if post.args.TcpPort != 40443 || post.args.UdpPort != 40444 || post.args.DnsPort != 40053 ||
+			!slices.Equal(post.args.DnsPorts, []int{40053}) {
+			t.Fatalf("v%d ports = %d/%d/%d %v, expected the router's 40443/40444/40053", post.ipVersion,
+				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort, post.args.DnsPorts)
+		}
+	}
+}
+
 // newTestPortMappingFixture with the router giving each carrier the external
-// port named by "tcp", "udp" or "dns".
+// port named by "tcp", "udp" or "dns", to an operator that keeps each address's
+// ports.
 func newTestPortMappingFixtureWithPorts(
 	t *testing.T,
 	router *testExtenderRouter,
 	externalPorts map[string]int,
+) *testProvideExtenderFixture {
+	t.Helper()
+	return newTestPortMappingFixtureWithOperatorPorts(t, router, externalPorts, true)
+}
+
+// newTestPortMappingFixtureWithPorts to an operator that says it keeps each
+// address's ports, or that predates them.
+func newTestPortMappingFixtureWithOperatorPorts(
+	t *testing.T,
+	router *testExtenderRouter,
+	externalPorts map[string]int,
+	addressPorts bool,
 ) *testProvideExtenderFixture {
 	t.Helper()
 	router.install(t)
@@ -325,6 +358,9 @@ func newTestPortMappingFixtureWithPorts(
 			router.setExternalPort("tcp", fixture.tcpPort, externalPorts["tcp"])
 			router.setExternalPort("udp", fixture.udpPort, externalPorts["udp"])
 			router.setExternalPort("udp", fixture.dnsPort, externalPorts["dns"])
+			fixture.operator.stateLock.Lock()
+			defer fixture.operator.stateLock.Unlock()
+			fixture.operator.addressPorts = addressPorts
 		},
 	})
 }
