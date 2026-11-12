@@ -41158,6 +41158,10 @@ inline std::optional<StringList> paymentMethods(const std::optional<CryptoPaymen
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline std::string planAccountName(const std::string& network_name, bool guest) {
+	char* r_c = urnet_plan_account_name(network_name.c_str(), guest);
+	return detail::takeString(r_c);
+}
 inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::optional<PointsLeaderboardRow>& row) {
 	std::string row_json;
 	const char* row_c = nullptr;

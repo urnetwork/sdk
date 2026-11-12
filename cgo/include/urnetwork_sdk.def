@@ -1248,6 +1248,7 @@ EXPORTS
 	urnet_peer_view_controller_get_peers
 	urnet_peer_view_controller_start
 	urnet_peer_view_controller_stop
+	urnet_plan_account_name
 	urnet_points_leaderboard_key_of
 	urnet_points_leaderboard_scroll_label
 	urnet_points_leaderboard_view_controller_add_points_leaderboard_listener

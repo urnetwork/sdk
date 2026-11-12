@@ -20650,6 +20650,13 @@ func urnet_peer_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_plan_account_name
+func urnet_plan_account_name(networkName *C.char, guest C.bool) *C.char {
+	defer cgoGuard("urnet_plan_account_name")
+	r0 := sdk.PlanAccountName(goString(networkName), bool(guest))
+	return cString(string(r0))
+}
+
 //export urnet_points_leaderboard_key_of
 func urnet_points_leaderboard_key_of(row *C.char) *C.char {
 	defer cgoGuard("urnet_points_leaderboard_key_of")

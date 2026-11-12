@@ -3152,6 +3152,8 @@ def bind(lib):
     lib.urnet_payment_method_allows_plan.restype = c_bool
     lib.urnet_payment_methods.argtypes = [c_char_p, c_char_p]
     lib.urnet_payment_methods.restype = c_void_p
+    lib.urnet_plan_account_name.argtypes = [c_char_p, c_bool]
+    lib.urnet_plan_account_name.restype = c_void_p
     lib.urnet_points_leaderboard_key_of.argtypes = [c_char_p]
     lib.urnet_points_leaderboard_key_of.restype = c_void_p
     lib.urnet_points_leaderboard_scroll_label.argtypes = [c_int64, c_int64]
