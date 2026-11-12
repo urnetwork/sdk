@@ -1110,6 +1110,7 @@ module URnetwork
       attach_function :urnet_local_state_get_performance_profile, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_provide_control_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_provide_extender, [:uint64], :bool, blocking: true
+      attach_function :urnet_local_state_get_provide_extender_port_mapping, [:uint64], :bool, blocking: true
       attach_function :urnet_local_state_get_provide_mode, [:uint64], :int64, blocking: true
       attach_function :urnet_local_state_get_provide_network_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_provide_secret_keys, [:uint64], :pointer, blocking: true
@@ -1152,6 +1153,7 @@ module URnetwork
       attach_function :urnet_local_state_set_performance_profile, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_control_mode, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_extender, [:uint64, :bool, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_set_provide_extender_port_mapping, [:uint64, :bool, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_mode, [:uint64, :int64, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_network_mode, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_secret_keys, [:uint64, :string, :pointer], :bool, blocking: true

@@ -229,6 +229,29 @@ func (self *LocalState) setProvideExtenderPortMapping(portMapping bool) error {
 	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
 }
 
+// The persisted router port mapping setting: the stored value, else off, which
+// is every app's default. A device reads the stored value itself instead
+// (DeviceLocal.GetProvideExtenderPortMapping), so that its own default -- on in
+// the sn miner -- applies where there is none. This is what a host's service
+// reads while no device runs on the space, as the windows and linux services
+// read the measurements setting.
+func (self *LocalState) GetProvideExtenderPortMapping() bool {
+	if portMapping, stored := self.getStoredProvideExtenderPortMapping(); stored {
+		return portMapping
+	}
+	return false
+}
+
+// Persists the router port mapping setting for the space, which a device on it
+// reads as its role starts (DeviceLocal.GetProvideExtenderPortMapping): what a
+// host's service writes while no device runs, so the user's choice is never
+// dropped. A running device takes a change through its own setter instead,
+// which also replaces its role. The cache takes the value whether or not the
+// write succeeds, and the write error is returned for the caller to log.
+func (self *LocalState) SetProvideExtenderPortMapping(portMapping bool) error {
+	return self.setProvideExtenderPortMapping(portMapping)
+}
+
 // The lag.dev measurements setting (lag.dev/PLAN.md C4, decision 18): whether
 // the provider extender role serves the measurement API. A file that is not
 // there is an owner that never opted out, and measurement is on.
