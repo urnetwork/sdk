@@ -2517,6 +2517,7 @@ struct DeviceLocalSettings {
 	bool ProvideExtenderEnabled{};
 	bool DefaultProvideExtender{};
 	bool ProvideExtenderDnsPrivilegedPort{};
+	bool ProvideExtenderWebRtc{};
 	bool DefaultProvideExtenderPortMapping{};
 	bool Verbose{};
 	bool MoveDeclineBackgroundOrMetered{};
@@ -2762,6 +2763,7 @@ struct ExtenderProvideStatus {
 	std::string StartError{};
 	std::string TcpUnavailableError{};
 	bool Listening{};
+	bool WebRtcCarrier{};
 	std::string ListenError{};
 	bool ActivatedV4{};
 	bool ActivatedV6{};
@@ -10994,6 +10996,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
+	j["ProvideExtenderWebRtc"] = v.ProvideExtenderWebRtc;
 	j["DefaultProvideExtenderPortMapping"] = v.DefaultProvideExtenderPortMapping;
 	j["Verbose"] = v.Verbose;
 	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
@@ -11103,6 +11106,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("ProvideExtenderDnsPrivilegedPort"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProvideExtenderDnsPrivilegedPort);
+	}
+	if (auto it = j.find("ProvideExtenderWebRtc"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderWebRtc);
 	}
 	if (auto it = j.find("DefaultProvideExtenderPortMapping"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultProvideExtenderPortMapping);
@@ -12031,6 +12037,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["StartError"] = v.StartError;
 	j["TcpUnavailableError"] = v.TcpUnavailableError;
 	j["Listening"] = v.Listening;
+	j["WebRtcCarrier"] = v.WebRtcCarrier;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
 	j["ActivatedV6"] = v.ActivatedV6;
@@ -12086,6 +12093,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);
+	}
+	if (auto it = j.find("WebRtcCarrier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WebRtcCarrier);
 	}
 	if (auto it = j.find("ListenError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ListenError);

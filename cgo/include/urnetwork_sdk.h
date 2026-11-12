@@ -4037,6 +4037,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProvideExtenderEnabled: boolean
  *   DefaultProvideExtender: boolean
  *   ProvideExtenderDnsPrivilegedPort: boolean
+ *   ProvideExtenderWebRtc: boolean
  *   DefaultProvideExtenderPortMapping: boolean
  *   Verbose: boolean
  *   MoveDeclineBackgroundOrMetered: boolean
@@ -4309,6 +4310,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   StartError: string
  *   TcpUnavailableError: string
  *   Listening: boolean
+ *   WebRtcCarrier: boolean
  *   ListenError: string
  *   ActivatedV4: boolean
  *   ActivatedV6: boolean
