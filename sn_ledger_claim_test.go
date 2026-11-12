@@ -139,6 +139,8 @@ type fakeVault2Call struct {
 	from     string
 	to       string
 	selector string
+	// the call's gas limit, 0 without one
+	gas uint64
 }
 
 // a transaction the fake received, decoded, with its recovered sender
@@ -192,6 +194,20 @@ type fakeVault2 struct {
 	calls         []fakeVault2Call
 	sent          []*fakeVault2Tx
 	receipts      map[string]any
+	// the claim batcher: its code, the release batcher's unless a test
+	// changes it, and its gas model. A paid claim uses claimGas in a batch,
+	// the batch spends batchOverhead besides its items, and a claim the
+	// runtime refuses uses its whole cap
+	batcher       [20]byte
+	batcherCode   []byte
+	blockGasLimit uint64
+	claimGas      uint64
+	batchOverhead uint64
+	// the gas each paid item uses once mined beyond its eth_call, as when
+	// third parties lengthen vault2's staking-hotkey list before inclusion
+	mineExtraGas uint64
+	// a mined batch reverts whole
+	batchReverts bool
 }
 
 func newFakeVault2(t *testing.T) *fakeVault2 {
@@ -201,21 +217,48 @@ func newFakeVault2(t *testing.T) *fakeVault2 {
 		t.Fatal(err)
 	}
 	return &fakeVault2{
-		t:           t,
-		vault2:      vault2,
-		escrow:      testColdkey(0x33),
-		selfColdkey: selfColdkey,
-		chainId:     big.NewInt(SnChainIdTestnet),
-		roots:       map[int64][]fakeVault2Root{},
-		claimed:     map[[2]int64]*big.Int{},
-		estimate:    2_514_273,
-		gasPrice:    big.NewInt(10_000_000_000),
-		tip:         big.NewInt(2_000_000_000),
-		balance:     new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil),
-		nonce:       5,
-		failing:     map[string]*evm.RpcError{},
-		bySelector:  map[string]fakeVault2Answer{},
-		receipts:    map[string]any{},
+		t:             t,
+		vault2:        vault2,
+		escrow:        testColdkey(0x33),
+		selfColdkey:   selfColdkey,
+		chainId:       big.NewInt(SnChainIdTestnet),
+		roots:         map[int64][]fakeVault2Root{},
+		claimed:       map[[2]int64]*big.Int{},
+		estimate:      2_514_273,
+		gasPrice:      big.NewInt(10_000_000_000),
+		tip:           big.NewInt(2_000_000_000),
+		balance:       new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil),
+		nonce:         5,
+		failing:       map[string]*evm.RpcError{},
+		bySelector:    map[string]fakeVault2Answer{},
+		receipts:      map[string]any{},
+		batcher:       testBatcherAddress,
+		batcherCode:   testClaimBatcherCode(t),
+		blockGasLimit: 75_000_000,
+		claimGas:      190_000,
+		batchOverhead: 60_000,
+	}
+}
+
+// the address of the fake's claim batcher
+var testBatcherAddress = [20]byte{0xb4, 19: 0x02}
+
+const testBatcher = "0xb400000000000000000000000000000000000002"
+
+// testClaimBatcherCode is the release claim batcher's runtime code (sn
+// miner/onchain/v2_batcher_code.go ClaimBatcherRuntime), the code at the
+// mainnet batcher.
+func testClaimBatcherCode(t *testing.T) []byte {
+	code, err := hex.DecodeString("6080806040526004361015610012575f80fd5b5f3560e01c9081633ff04c8d146100b0575063d77e363f14610032575f80fd5b346100ac5760603660031901126100ac576004356001600160a01b03811681036100ac5767ffffffffffffffff906024358281116100ac57366023820112156100ac5780600401359283116100ac573660248460051b830101116100ac576020926100a4926024604435930190610100565b604051908152f35b5f80fd5b346100ac575f3660031901126100ac5780614e2060209252f35b90601f8019910116810190811067ffffffffffffffff8211176100ec57604052565b634e487b7160e01b5f52604160045260245ffd5b90939291935f94603f840484018085116103e757614e2081018091116103e757939291905b808710610133575050505050565b9091929395865a106103b3578181101561039f578060051b83013560be19843603018112156100ac576040908401602060a082013536839003601e19018112156100ac578201803567ffffffffffffffff918282116100ac578301938160061b360385136100ac578a848793968c855193849263b7a6b90760e01b845260049a8060c486018d8a359088015260249a888b01358c8901528a01356044880152608060609a8b81013560648a01520135608488015260c060a4880152528c60e4860192915f915b81831061037057505050508391825f92039360018060a01b031690f15f9181610341575b5061030657503d156102d657503d9182116102c457509183917ff869308b71c9a01aff5b8d5408027b38b9076abea371ee96b2c875d292caf6939360019695519061027183601f19601f84011601836100ca565b81523d5f8383013e5b81815191015163ffffffff60e01b91828216948082106102b0575b5050508351928684521690820152a15b019593929190610125565b0360031b82901b16811692505f8080610295565b634e487b7160e01b5f90815260418552fd5b7ff869308b71c9a01aff5b8d5408027b38b9076abea371ee96b2c875d292caf6939492506001969593915061027a565b86518881529485015250600195947fb0727183796e52c5bb00a257c1eb36d8e94dbee5d6d87e259287e3372ae39ace945092915050a16102a5565b9091508581813d8311610369575b61035981836100ca565b810103126100ac5751905f61021d565b503d61034f565b9391965094508183929750600194503581528b8701358c82015201940192018f90938f92938a9587958e6101f9565b634e487b7160e01b5f52603260045260245ffd5b949550505050507f2f7b166a2d86f29c730e41cba281e1874a958f8195859df7db757d744e573a9c6020604051838152a190565b634e487b7160e01b5f52601160045260245ffdfea264697066735822122009b7b014c4d00acec1e12ea0a212bc739d0eb0bd690732b6d62e4ffd7ba336a064736f6c63430008180033")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code
+}
+
+func TestClaimBatcherReleaseCode(t *testing.T) {
+	if evm.Keccak256(testClaimBatcherCode(t)) != evm.ClaimBatcherRuntimeHash {
+		t.Fatal("the release batcher's code does not hash to ClaimBatcherRuntimeHash")
 	}
 }
 
@@ -369,12 +412,17 @@ func (self *fakeVault2) handle(method string, params []json.RawMessage) (any, *e
 			From string `json:"from"`
 			To   string `json:"to"`
 			Data string `json:"data"`
+			Gas  string `json:"gas"`
 		}
 		json.Unmarshal(params[0], &msg)
 		data, _ = evm.ParseHexBytes(msg.Data)
 		call.from, call.to = strings.ToLower(msg.From), strings.ToLower(msg.To)
 		if len(data) >= 4 {
 			call.selector = hex.EncodeToString(data[:4])
+		}
+		if msg.Gas != "" {
+			gas, _ := evm.ParseUint256(msg.Gas)
+			call.gas = gas.Uint64()
 		}
 	}
 	self.calls = append(self.calls, call)
@@ -390,8 +438,15 @@ func (self *fakeVault2) handle(method string, params []json.RawMessage) (any, *e
 		return evm.HexQuantity(self.balance), nil
 	case "eth_getTransactionCount":
 		return evm.HexQuantity(new(big.Int).SetUint64(self.nonce)), nil
+	case "eth_getCode":
+		var address string
+		json.Unmarshal(params[0], &address)
+		if strings.EqualFold(address, "0x"+hex.EncodeToString(self.batcher[:])) {
+			return "0x" + hex.EncodeToString(self.batcherCode), nil
+		}
+		return "0x", nil
 	case "eth_getBlockByNumber":
-		block := map[string]any{"number": "0x10", "timestamp": "0x1"}
+		block := map[string]any{"number": "0x10", "timestamp": "0x1", "gasLimit": evm.HexQuantity(new(big.Int).SetUint64(self.blockGasLimit))}
 		if self.baseFee != nil {
 			block["baseFeePerGas"] = evm.HexQuantity(self.baseFee)
 		}
@@ -431,6 +486,21 @@ func (self *fakeVault2) call(method string, call fakeVault2Call, data []byte) (a
 	}
 	vault2 := "0x" + hex.EncodeToString(self.vault2[:])
 	switch {
+	case call.to == "0x"+hex.EncodeToString(self.batcher[:]) && call.selector == "d77e363f":
+		if method != "eth_call" || len(self.batcherCode) == 0 {
+			return nil, testRevert(nil)
+		}
+		gas := call.gas
+		if gas == 0 {
+			gas = self.blockGasLimit
+		}
+		attempted := 0
+		for _, item := range self.runBatch(data, gas, 0, false) {
+			if item.outcome != evm.ClaimBatchNotAttempted {
+				attempted++
+			}
+		}
+		return testWordHex(big.NewInt(int64(attempted))), nil
 	case call.to == vault2 && call.selector == "0fc3cec0":
 		// roots(noId, rootIndex) panics past the pool's last root
 		noId, rootIndex := new(big.Int).SetBytes(data[4:36]).Int64(), new(big.Int).SetBytes(data[36:68]).Int64()
@@ -470,8 +540,145 @@ func (self *fakeVault2) call(method string, call fakeVault2Call, data []byte) (a
 	return nil, testRevert(nil)
 }
 
+// decodeTestClaimMany decodes claimMany(vault, claims, gasPerClaim) into the
+// vault and each item's claim calldata, requiring the canonical encoding.
+func decodeTestClaimMany(data []byte) ([20]byte, [][]byte, uint64, error) {
+	if len(data) < 4+4*32 || hex.EncodeToString(data[:4]) != "d77e363f" {
+		return [20]byte{}, nil, 0, errors.New("not claimMany calldata")
+	}
+	word := func(at int) *big.Int { return new(big.Int).SetBytes(data[at : at+32]) }
+	vault := [20]byte(data[4+12 : 4+32])
+	if word(4+32).Int64() != 3*32 {
+		return [20]byte{}, nil, 0, errors.New("claimMany calldata is not canonical")
+	}
+	gasPerClaim := word(4 + 64).Uint64()
+	base := 4 + 3*32
+	n := int(word(base).Int64())
+	elements := base + 32
+	var claims [][]byte
+	next := 32 * n
+	for i := 0; i < n; i++ {
+		if int(word(elements+32*i).Int64()) != next || len(data) < elements+next+7*32 {
+			return [20]byte{}, nil, 0, errors.New("claimMany calldata is not canonical")
+		}
+		start := elements + next
+		size := 7*32 + 64*int(word(start+6*32).Int64())
+		if len(data) < start+size {
+			return [20]byte{}, nil, 0, errors.New("claimMany calldata is truncated")
+		}
+		claims = append(claims, append(testSelectorData("claim(uint256,uint256,(uint256,bytes32,uint256),(bytes32,uint256)[])"), data[start:start+size]...))
+		next += size
+	}
+	if elements+next != len(data) {
+		return [20]byte{}, nil, 0, errors.New("claimMany calldata is not canonical")
+	}
+	return vault, claims, gasPerClaim, nil
+}
+
+// one item of a batch the fake ran
+type fakeBatchItem struct {
+	outcome  string
+	claim    *testLedgerClaimArgs
+	amount   *big.Int
+	selector []byte
+}
+
+// runBatch runs STClaimBatcher.claimMany with gas, each paid item using extra
+// gas beyond the model's: an item is attempted only while the gas left covers
+// its cap, the 1/63 EIP-150 keeps and the bookkeeping. Its effects on vault2
+// stay only with effects.
+func (self *fakeVault2) runBatch(data []byte, gas uint64, extra uint64, effects bool) []*fakeBatchItem {
+	vault, claims, gasPerClaim, err := decodeTestClaimMany(data)
+	if err != nil || vault != self.vault2 {
+		self.t.Errorf("claimMany of vault %x: %v", vault, err)
+		return nil
+	}
+	saved := map[[2]int64]*big.Int{}
+	for key, value := range self.claimed {
+		saved[key] = value
+	}
+	left := int64(gas) - int64(self.batchOverhead)
+	needed := int64(gasPerClaim + gasPerClaim/63 + evm.ClaimBatcherBookkeepingGas)
+	var items []*fakeBatchItem
+	for _, claimData := range claims {
+		if left < needed {
+			items = append(items, &fakeBatchItem{outcome: evm.ClaimBatchNotAttempted})
+			continue
+		}
+		c, amount, revert := self.runClaim(claimData)
+		switch {
+		case revert == nil:
+			self.claimed[[2]int64{c.noId, c.index}] = c.cumulative
+			left -= int64(self.claimGas + extra + 5_000)
+			items = append(items, &fakeBatchItem{outcome: evm.ClaimBatchPaid, claim: c, amount: amount})
+		case len(revert) == 0:
+			// the runtime refuses the transfer and consumes all the gas forwarded
+			left -= int64(gasPerClaim + 5_000)
+			items = append(items, &fakeBatchItem{outcome: evm.ClaimBatchRefused, selector: make([]byte, 4)})
+		default:
+			left -= 35_000
+			items = append(items, &fakeBatchItem{outcome: evm.ClaimBatchRefused, selector: revert[:4]})
+		}
+	}
+	if !effects {
+		self.claimed = saved
+	}
+	return items
+}
+
+// testClaimedLog is vault2's Claimed event of claim c paying amount, called by
+// caller.
+func (self *fakeVault2) testClaimedLog(address [20]byte, c *testLedgerClaimArgs, amount *big.Int, caller [20]byte) map[string]any {
+	data := ""
+	for _, v := range []*big.Int{big.NewInt(c.rootIndex), c.cumulative, amount, new(big.Int).SetBytes(caller[:])} {
+		data += strings.TrimPrefix(testWordHex(v), "0x")
+	}
+	return map[string]any{"address": "0x" + hex.EncodeToString(address[:]), "data": "0x" + data, "topics": []string{
+		"0x" + hex.EncodeToString(evm.LedgerClaimedTopic[:]), testWordHex(big.NewInt(c.noId)), testWordHex(big.NewInt(c.index)), "0x" + hex.EncodeToString(c.coldkey[:]),
+	}}
+}
+
+// mineBatch runs a sent batch: vault2's Claimed event for each paid item, and
+// the batcher's event for each item in order.
+func (self *fakeVault2) mineBatch(tx *fakeVault2Tx, txHash string) map[string]any {
+	receipt := map[string]any{"transactionHash": txHash, "status": "0x1", "blockNumber": "0x11", "gasUsed": "0x5b8d80", "logs": []any{}}
+	self.nonce++
+	if tx.value.Sign() != 0 {
+		self.t.Errorf("a batch with value %s", tx.value)
+	}
+	if self.batchReverts {
+		receipt["status"] = "0x0"
+		return receipt
+	}
+	batcherLog := func(topic [32]byte, words ...string) map[string]any {
+		return map[string]any{"address": "0x" + hex.EncodeToString(self.batcher[:]), "topics": []string{"0x" + hex.EncodeToString(topic[:])}, "data": "0x" + strings.Join(words, "")}
+	}
+	word := func(v int64) string { return strings.TrimPrefix(testWordHex(big.NewInt(v)), "0x") }
+	logs := []any{}
+	for i, item := range self.runBatch(tx.data, tx.gas, self.mineExtraGas, true) {
+		switch item.outcome {
+		case evm.ClaimBatchPaid:
+			if !self.dropClaimedLog {
+				logs = append(logs, self.testClaimedLog(self.vault2, item.claim, item.amount, self.batcher))
+			}
+			logs = append(logs, batcherLog(evm.ClaimPaidTopic, word(int64(i)), strings.TrimPrefix(testWordHex(item.amount), "0x")))
+		case evm.ClaimBatchRefused:
+			logs = append(logs, batcherLog(evm.ClaimRefusedTopic, word(int64(i)), hex.EncodeToString(item.selector)+strings.Repeat("0", 56)))
+		default:
+			logs = append(logs, batcherLog(evm.ClaimsNotAttemptedTopic, word(int64(i))))
+			receipt["logs"] = logs
+			return receipt
+		}
+	}
+	receipt["logs"] = logs
+	return receipt
+}
+
 // mine runs a sent claim: a refused one reverts with no effect and no log.
 func (self *fakeVault2) mine(tx *fakeVault2Tx, txHash string) map[string]any {
+	if tx.to == self.batcher && len(self.batcherCode) != 0 {
+		return self.mineBatch(tx, txHash)
+	}
 	receipt := map[string]any{"transactionHash": txHash, "status": "0x0", "blockNumber": "0x11", "gasUsed": "0x39992", "logs": []any{}}
 	if tx.to != self.vault2 || tx.value.Sign() != 0 {
 		self.t.Errorf("a transaction to %x with value %s", tx.to, tx.value)
@@ -1572,6 +1779,12 @@ func TestSnLedgerClaimNotConfigured(t *testing.T) {
 	}
 }
 
+func testClaimItems(items ...*SnLedgerClaimItem) *SnLedgerClaimItemList {
+	list := NewSnLedgerClaimItemList()
+	list.addAll(items...)
+	return list
+}
+
 // addPool2 gives alice a second account, in pool 2 of vault2, the only
 // account of a depth-0 tree, with nothing paid.
 func (self *testV2Claim) addPool2(t *testing.T) map[string]any {
@@ -1601,8 +1814,10 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	}
 	pool2Data, _ := evm.PackLedgerClaim(2, 0, 0, f.alice, big.NewInt(7_000_000_000), []merkle.LedgerNode{})
 	want := []*SnLedgerUnsignedTx{
-		{NoId: 1, Index: 2, RootIndex: 1, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(f.calldata(t, 1, testV2Cumulative, f.proofs[2])), Value: "0", AmountRao: testV2Cumulative - testV2Paid, Gas: 2_600_000},
-		{NoId: 2, Index: 0, RootIndex: 0, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(pool2Data), Value: "0", AmountRao: 7_000_000_000, Gas: 2_600_000},
+		{NoId: 1, Index: 2, RootIndex: 1, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(f.calldata(t, 1, testV2Cumulative, f.proofs[2])), Value: "0", AmountRao: testV2Cumulative - testV2Paid, Gas: 2_600_000,
+			Vault: testVault2, Items: testClaimItems(&SnLedgerClaimItem{NoId: 1, Index: 2, RootIndex: 1, Kind: SnLedgerPoolKindPool, Label: "Pool 1", AmountRao: testV2Cumulative - testV2Paid})},
+		{NoId: 2, Index: 0, RootIndex: 0, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(pool2Data), Value: "0", AmountRao: 7_000_000_000, Gas: 2_600_000,
+			Vault: testVault2, Items: testClaimItems(&SnLedgerClaimItem{NoId: 2, Index: 0, RootIndex: 0, Kind: SnLedgerPoolKindPool, Label: "Pool 2", AmountRao: 7_000_000_000})},
 	}
 	if got := txs.getAll(); !reflect.DeepEqual(got, want) {
 		gotJson, _ := json.Marshal(got)
@@ -1612,7 +1827,7 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	if calls := f.chain.claimCalls(); len(calls) != 2 || calls[0].from != "" || calls[1].from != "" || calls[0].method != "eth_call" || calls[1].method != "eth_call" {
 		t.Fatalf("preflights %+v", calls)
 	}
-	if requests := f.ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+f.aliceSs58+" " {
+	if requests := f.ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+f.aliceSs58+"&partial=true " {
 		t.Fatalf("ledger requests %q", requests)
 	}
 	if len(f.chain.sentTxs()) != 0 {
@@ -1620,7 +1835,7 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	}
 	// the json the apps read
 	raw, _ := json.Marshal(txs.Get(1))
-	if string(raw) != `{"no_id":2,"index":0,"root_index":0,"chain_id":945,"to":"`+testVault2+`","data":"0x`+hex.EncodeToString(pool2Data)+`","value":"0","amount_rao":7000000000,"gas":2600000}` {
+	if string(raw) != `{"no_id":2,"index":0,"root_index":0,"chain_id":945,"to":"`+testVault2+`","data":"0x`+hex.EncodeToString(pool2Data)+`","value":"0","amount_rao":7000000000,"gas":2600000,"vault":"`+testVault2+`","batch":false,"items":[{"no_id":2,"index":0,"root_index":0,"kind":"pool","label":"Pool 2","amount_rao":7000000000}]}` {
 		t.Fatalf("json %s", raw)
 	}
 

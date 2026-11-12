@@ -188,6 +188,7 @@ public interface Raw extends Library {
   interface urnet_sn_claim_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_claims_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_connect_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_ctf_client_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_epoch_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_fleet_claim_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
@@ -903,6 +904,7 @@ public interface Raw extends Library {
   void urnet_device_local_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_local_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_local_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
+  void urnet_device_local_sn_ctf_client(long a0, urnet_sn_ctf_client_cb a1, Pointer a2);
   void urnet_device_local_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
   void urnet_device_local_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_local_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
@@ -1019,6 +1021,7 @@ public interface Raw extends Library {
   void urnet_device_remote_sn_claim_status(long a0, urnet_sn_claim_status_cb a1, Pointer a2);
   Pointer urnet_device_remote_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
+  void urnet_device_remote_sn_ctf_client(long a0, urnet_sn_ctf_client_cb a1, Pointer a2);
   void urnet_device_remote_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
   void urnet_device_remote_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   void urnet_device_remote_sn_ledger_claim(long a0, urnet_sn_ledger_claim_confirmed_cb a1, urnet_sn_ledger_claim_done_cb a2, urnet_sn_ledger_claim_failed_cb a3, urnet_sn_ledger_claim_sent_cb a4, Pointer a5);
@@ -1714,9 +1717,11 @@ public interface Raw extends Library {
   Pointer urnet_short_ss58(String a0);
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);
+  Pointer urnet_sn_ctf_client_of(String a0);
   Pointer urnet_sn_fleet_binding_digest(String a0, PointerByReference a1);
   void urnet_sn_gas_balance_for(String a0, String a1, urnet_sn_gas_balance_cb a2, Pointer a3);
   void urnet_sn_ledger_accounts_for(String a0, String a1, urnet_sn_ledger_accounts_cb a2, Pointer a3);
+  Pointer urnet_sn_ledger_claim_outcomes_of(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_ledger_claim_transactions_for(String a0, String a1, PointerByReference a2);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
