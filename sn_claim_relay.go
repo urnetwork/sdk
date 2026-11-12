@@ -147,9 +147,12 @@ type SnClaimRelayError struct {
 // SnClaimRelayResult is GET /sn/claim-relay?partial=true. With an Error the
 // balances could not be read: they are unavailable, never zero. With
 // partial=true a pool whose accounts the relay cannot read is named in
-// UnavailablePools while the others are answered; without it the server fails
-// the whole answer, so a client that predates the field never takes a partial
-// list for a whole one. A server that predates the parameter ignores it.
+// UnavailablePools while the others are answered. Without it the server leaves
+// out a capture the flag pool it cannot read, answering the operator's pool and
+// the relay's State as before that pool existed, and answers an Error for any
+// other pool it cannot read, so a client that predates the field never takes a
+// partial list of the other pools for a whole one. A server that predates the
+// parameter ignores it.
 type SnClaimRelayResult struct {
 	// no_key means no relayer key is configured yet; not_running that the relay
 	// has no recent pass
