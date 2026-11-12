@@ -602,6 +602,9 @@ inline constexpr const char* ProviderStatusNumberWeightQuality = "weight_quality
 inline constexpr const char* ProviderStatusNumberWeightSpeed = "weight_speed";
 inline constexpr const char* ProviderStatusReasonEgressFailing = "egress_failing";
 inline constexpr const char* ProviderStatusReasonEgressUnprobed = "egress_unprobed";
+inline constexpr const char* ProviderStatusReasonLineIpv4 = "ipv4";
+inline constexpr const char* ProviderStatusReasonLineTcp = "tcp";
+inline constexpr const char* ProviderStatusReasonLineText = "text";
 inline constexpr const char* ProviderStatusReasonLocationInvalid = "location_invalid";
 inline constexpr const char* ProviderStatusReasonNetworkOnly = "network_only";
 inline constexpr const char* ProviderStatusReasonNone = "none";
@@ -1191,6 +1194,7 @@ struct ProviderRankingNumber;
 struct ProviderSpec;
 struct ProviderStatusCountry;
 struct ProviderStatus;
+struct ProviderStatusReasonLine;
 struct ProxyDeviceSettings;
 struct PublicAccountApiKey;
 struct RedeemBalanceCodeArgs;
@@ -1414,6 +1418,7 @@ using ProviderIdentityList = std::vector<ProviderIdentity>;
 using ProviderRankingNumberList = std::vector<ProviderRankingNumber>;
 using ProviderSpecList = std::vector<ProviderSpec>;
 using ProviderStatusList = std::vector<ProviderStatus>;
+using ProviderStatusReasonLineList = std::vector<ProviderStatusReasonLine>;
 using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
@@ -3822,6 +3827,10 @@ struct ProviderRankingNumber {
 	int64_t count{};
 	int64_t total{};
 	std::string explanation{};
+	std::optional<std::string> reason;
+	std::optional<int64_t> reason_tcp_count;
+	std::optional<int64_t> reason_ipv4_count;
+	std::optional<ProviderStatusReasonLineList> reason_lines;
 };
 
 struct ProviderSpec {
@@ -3847,6 +3856,12 @@ struct ProviderStatus {
 	std::optional<ProviderStatusCountry> country;
 	std::optional<std::string> evaluate_time;
 	std::optional<ProviderAppearanceHistogram> appearances;
+};
+
+struct ProviderStatusReasonLine {
+	std::string label{};
+	std::optional<int64_t> count;
+	std::optional<std::string> text;
 };
 
 struct ProxyDeviceSettings {
@@ -5697,6 +5712,8 @@ inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v);
 inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v);
 inline void to_json(nlohmann::json& j, const ProviderStatus& v);
 inline void from_json(const nlohmann::json& j, ProviderStatus& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusReasonLine& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusReasonLine& v);
 inline void to_json(nlohmann::json& j, const ProxyDeviceSettings& v);
 inline void from_json(const nlohmann::json& j, ProxyDeviceSettings& v);
 inline void to_json(nlohmann::json& j, const PublicAccountApiKey& v);
@@ -17056,6 +17073,18 @@ inline void to_json(nlohmann::json& j, const ProviderRankingNumber& v) {
 	j["count"] = v.count;
 	j["total"] = v.total;
 	j["explanation"] = v.explanation;
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.reason_tcp_count) {
+		j["reason_tcp_count"] = *v.reason_tcp_count;
+	}
+	if (v.reason_ipv4_count) {
+		j["reason_ipv4_count"] = *v.reason_ipv4_count;
+	}
+	if (v.reason_lines) {
+		j["reason_lines"] = *v.reason_lines;
+	}
 }
 inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v) {
 	if (!j.is_object()) {
@@ -17093,6 +17122,26 @@ inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v) {
 	}
 	if (auto it = j.find("explanation"); it != j.end() && !it->is_null()) {
 		it->get_to(v.explanation);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("reason_tcp_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.reason_tcp_count = std::move(tmp);
+	}
+	if (auto it = j.find("reason_ipv4_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.reason_ipv4_count = std::move(tmp);
+	}
+	if (auto it = j.find("reason_lines"); it != j.end() && !it->is_null()) {
+		ProviderStatusReasonLineList tmp{};
+		it->get_to(tmp);
+		v.reason_lines = std::move(tmp);
 	}
 }
 
@@ -17224,6 +17273,35 @@ inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
 		ProviderAppearanceHistogram tmp{};
 		it->get_to(tmp);
 		v.appearances = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderStatusReasonLine& v) {
+	j = nlohmann::json::object();
+	j["label"] = v.label;
+	if (v.count) {
+		j["count"] = *v.count;
+	}
+	if (v.text) {
+		j["text"] = *v.text;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusReasonLine& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("label"); it != j.end() && !it->is_null()) {
+		it->get_to(v.label);
+	}
+	if (auto it = j.find("count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.count = std::move(tmp);
+	}
+	if (auto it = j.find("text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.text = std::move(tmp);
 	}
 }
 
