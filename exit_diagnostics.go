@@ -8,7 +8,7 @@ package sdk
 // On Apple platforms the app process writes what MetricKit reports of it here
 // (exit_diagnostics_metrickit.go). The file is not a glog file, so glog's
 // retention (clearOldLogs) never removes it; it keeps itself small instead,
-// its newest whole lines within exitDiagnosticsMaxByteCount.
+// its newest whole lines within a bound (exitDiagnosticsSettings).
 //
 // It leaves the device only inside "send feedback with logs", which carries it
 // beside the glog files of the process directory it sits in
@@ -26,15 +26,6 @@ package sdk
 // name.
 const exitDiagnosticsFileName = "exit-diagnostics.txt"
 
-// The file keeps its newest whole lines within this many bytes, two hundred
-// lines or more.
-const exitDiagnosticsMaxByteCount = 64 * 1024
-
 // The severity the inventory gives the file, so that a picker that labels
 // files by severity has one to show: its lines are informational.
 const exitDiagnosticsSeverity = "INFO"
-
-// Whether a log file is a process's exit diagnostics file.
-func isExitDiagnosticsLogFile(logFileInfo *LogFileInfo) bool {
-	return logFileInfo.Name == exitDiagnosticsFileName
-}
