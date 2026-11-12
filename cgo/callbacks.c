@@ -961,6 +961,10 @@ void urnet_invoke_verify_seeker_nft_holder(urnet_verify_seeker_nft_holder_cb cb,
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_verify_stripe_checkout(urnet_verify_stripe_checkout_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_view_controller_close(urnet_view_controller_close_cb cb, void* user_data) {
 	cb(user_data);
 }

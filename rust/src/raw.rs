@@ -240,6 +240,7 @@ pub type urnet_validate_referral_code_cb = Option<unsafe extern "C" fn(*mut c_vo
 pub type urnet_verify_apple_transaction_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_verify_play_purchase_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_verify_seeker_nft_holder_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_verify_stripe_checkout_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_view_controller_close_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_view_controller_start_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_view_controller_stop_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
@@ -383,6 +384,7 @@ pub struct Raw {
     pub urnet_api_remove_network_client: unsafe extern "C" fn(u64, *const c_char, urnet_remove_network_client_cb, *mut c_void) -> (),
     pub urnet_api_remove_network_client_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_remove_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_remove_wallet_cb, *mut c_void) -> (),
+    pub urnet_api_report_stripe_purchase: unsafe extern "C" fn(u64, *const c_char, urnet_verify_stripe_checkout_cb, *mut c_void) -> (),
     pub urnet_api_request_jwt_refresh: unsafe extern "C" fn(u64) -> (),
     pub urnet_api_requote_crypto_payment: unsafe extern "C" fn(u64, *const c_char, urnet_crypto_payment_intent_cb, *mut c_void) -> (),
     pub urnet_api_revoke_network_session: unsafe extern "C" fn(u64, *const c_char, urnet_session_operation_cb, *mut c_void) -> (),
@@ -437,6 +439,7 @@ pub struct Raw {
     pub urnet_api_verify_play_purchase: unsafe extern "C" fn(u64, *const c_char, urnet_verify_play_purchase_cb, *mut c_void) -> (),
     pub urnet_api_verify_play_purchase_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_verify_seeker_holder: unsafe extern "C" fn(u64, *const c_char, urnet_verify_seeker_nft_holder_cb, *mut c_void) -> (),
+    pub urnet_api_verify_stripe_checkout: unsafe extern "C" fn(u64, *const c_char, urnet_verify_stripe_checkout_cb, *mut c_void) -> (),
     pub urnet_api_wallet_balance: unsafe extern "C" fn(u64, urnet_wallet_balance_cb, *mut c_void) -> (),
     pub urnet_api_wallet_circle_init: unsafe extern "C" fn(u64, urnet_wallet_circle_init_cb, *mut c_void) -> (),
     pub urnet_api_wallet_circle_transfer_out: unsafe extern "C" fn(u64, *const c_char, urnet_wallet_circle_transfer_out_cb, *mut c_void) -> (),
@@ -1900,6 +1903,7 @@ impl Raw {
             urnet_api_remove_network_client: unsafe { *library.get(b"urnet_api_remove_network_client\0")? },
             urnet_api_remove_network_client_sync: unsafe { *library.get(b"urnet_api_remove_network_client_sync\0")? },
             urnet_api_remove_wallet: unsafe { *library.get(b"urnet_api_remove_wallet\0")? },
+            urnet_api_report_stripe_purchase: unsafe { *library.get(b"urnet_api_report_stripe_purchase\0")? },
             urnet_api_request_jwt_refresh: unsafe { *library.get(b"urnet_api_request_jwt_refresh\0")? },
             urnet_api_requote_crypto_payment: unsafe { *library.get(b"urnet_api_requote_crypto_payment\0")? },
             urnet_api_revoke_network_session: unsafe { *library.get(b"urnet_api_revoke_network_session\0")? },
@@ -1954,6 +1958,7 @@ impl Raw {
             urnet_api_verify_play_purchase: unsafe { *library.get(b"urnet_api_verify_play_purchase\0")? },
             urnet_api_verify_play_purchase_sync: unsafe { *library.get(b"urnet_api_verify_play_purchase_sync\0")? },
             urnet_api_verify_seeker_holder: unsafe { *library.get(b"urnet_api_verify_seeker_holder\0")? },
+            urnet_api_verify_stripe_checkout: unsafe { *library.get(b"urnet_api_verify_stripe_checkout\0")? },
             urnet_api_wallet_balance: unsafe { *library.get(b"urnet_api_wallet_balance\0")? },
             urnet_api_wallet_circle_init: unsafe { *library.get(b"urnet_api_wallet_circle_init\0")? },
             urnet_api_wallet_circle_transfer_out: unsafe { *library.get(b"urnet_api_wallet_circle_transfer_out\0")? },

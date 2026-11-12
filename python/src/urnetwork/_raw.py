@@ -241,6 +241,7 @@ urnet_validate_referral_code_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_verify_apple_transaction_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_verify_play_purchase_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_verify_seeker_nft_holder_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_verify_stripe_checkout_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_view_controller_close_cb = CFUNCTYPE(None, c_void_p)
 urnet_view_controller_start_cb = CFUNCTYPE(None, c_void_p)
 urnet_view_controller_stop_cb = CFUNCTYPE(None, c_void_p)
@@ -515,6 +516,8 @@ def bind(lib):
     lib.urnet_api_remove_network_client_sync.restype = c_void_p
     lib.urnet_api_remove_wallet.argtypes = [c_uint64, c_char_p, urnet_remove_wallet_cb, c_void_p]
     lib.urnet_api_remove_wallet.restype = None
+    lib.urnet_api_report_stripe_purchase.argtypes = [c_uint64, c_char_p, urnet_verify_stripe_checkout_cb, c_void_p]
+    lib.urnet_api_report_stripe_purchase.restype = None
     lib.urnet_api_request_jwt_refresh.argtypes = [c_uint64]
     lib.urnet_api_request_jwt_refresh.restype = None
     lib.urnet_api_requote_crypto_payment.argtypes = [c_uint64, c_char_p, urnet_crypto_payment_intent_cb, c_void_p]
@@ -623,6 +626,8 @@ def bind(lib):
     lib.urnet_api_verify_play_purchase_sync.restype = c_void_p
     lib.urnet_api_verify_seeker_holder.argtypes = [c_uint64, c_char_p, urnet_verify_seeker_nft_holder_cb, c_void_p]
     lib.urnet_api_verify_seeker_holder.restype = None
+    lib.urnet_api_verify_stripe_checkout.argtypes = [c_uint64, c_char_p, urnet_verify_stripe_checkout_cb, c_void_p]
+    lib.urnet_api_verify_stripe_checkout.restype = None
     lib.urnet_api_wallet_balance.argtypes = [c_uint64, urnet_wallet_balance_cb, c_void_p]
     lib.urnet_api_wallet_balance.restype = None
     lib.urnet_api_wallet_circle_init.argtypes = [c_uint64, urnet_wallet_circle_init_cb, c_void_p]

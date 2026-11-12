@@ -3840,6 +3840,27 @@ func (self *cAdapterVerifySeekerNftHolderCallback) Result(result *sdk.VerifySeek
 	}
 }
 
+type cAdapterVerifyStripeCheckoutCallback struct {
+	cbResult C.urnet_verify_stripe_checkout_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterVerifyStripeCheckoutCallback) Result(result *sdk.VerifyStorePurchaseResult, errParam error) {
+	defer cgoGuard("urnet_verify_stripe_checkout_cb")
+	result_ := cJson(result, "urnet_verify_stripe_checkout_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_verify_stripe_checkout(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterViewController struct {
 	cbClose  C.urnet_view_controller_close_cb
 	cbStart  C.urnet_view_controller_start_cb
@@ -5670,6 +5691,27 @@ func urnet_api_remove_wallet(self C.uint64_t, removeWallet *C.char, callback_res
 	self_.RemoveWallet(removeWallet_, callback_)
 }
 
+//export urnet_api_report_stripe_purchase
+func urnet_api_report_stripe_purchase(self C.uint64_t, args *C.char, callback_result C.urnet_verify_stripe_checkout_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_report_stripe_purchase")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_report_stripe_purchase")
+	if !ok {
+		return
+	}
+	var args_ *sdk.VerifyStripeCheckoutArgs
+	if args != nil {
+		args_ = &sdk.VerifyStripeCheckoutArgs{}
+		if !goJson(args, args_, "urnet_api_report_stripe_purchase") {
+			return
+		}
+	}
+	var callback_ sdk.VerifyStripeCheckoutCallback
+	if callback_result != nil {
+		callback_ = &cAdapterVerifyStripeCheckoutCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ReportStripePurchase(args_, callback_)
+}
+
 //export urnet_api_request_jwt_refresh
 func urnet_api_request_jwt_refresh(self C.uint64_t) {
 	defer cgoGuard("urnet_api_request_jwt_refresh")
@@ -6675,6 +6717,27 @@ func urnet_api_verify_seeker_holder(self C.uint64_t, verify *C.char, callback_re
 		callback_ = &cAdapterVerifySeekerNftHolderCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.VerifySeekerHolder(verify_, callback_)
+}
+
+//export urnet_api_verify_stripe_checkout
+func urnet_api_verify_stripe_checkout(self C.uint64_t, args *C.char, callback_result C.urnet_verify_stripe_checkout_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_verify_stripe_checkout")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_verify_stripe_checkout")
+	if !ok {
+		return
+	}
+	var args_ *sdk.VerifyStripeCheckoutArgs
+	if args != nil {
+		args_ = &sdk.VerifyStripeCheckoutArgs{}
+		if !goJson(args, args_, "urnet_api_verify_stripe_checkout") {
+			return
+		}
+	}
+	var callback_ sdk.VerifyStripeCheckoutCallback
+	if callback_result != nil {
+		callback_ = &cAdapterVerifyStripeCheckoutCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.VerifyStripeCheckout(args_, callback_)
 }
 
 //export urnet_api_wallet_balance

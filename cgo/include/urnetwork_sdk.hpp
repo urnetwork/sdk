@@ -791,6 +791,7 @@ inline constexpr const char* StripeItemData10Tib = "data_10tib";
 inline constexpr const char* StripeItemData1Tib = "data_1tib";
 inline constexpr const char* StripeItemProMonthly = "pro_monthly";
 inline constexpr const char* StripeItemProYearly = "pro_yearly";
+inline constexpr int64_t StripePurchaseReportMaxAttempts = 8;
 inline constexpr const char* StripeRedirectOnCompletionNever = "never";
 inline constexpr const char* StripeUiModeEmbedded = "embedded";
 inline constexpr const char* StripeUiModeHosted = "hosted";
@@ -1344,6 +1345,7 @@ struct VerifySeekerNftHolderError;
 struct VerifySeekerNftHolderResult;
 struct VerifyServerKey;
 struct VerifyStorePurchaseResult;
+struct VerifyStripeCheckoutArgs;
 struct VlessLinkResult;
 struct WalletBalanceResult;
 struct WalletCircleInitError;
@@ -5077,6 +5079,11 @@ struct VerifyStorePurchaseResult {
 	std::optional<std::string> expiry_time;
 };
 
+struct VerifyStripeCheckoutArgs {
+	std::optional<std::string> session_id;
+	std::optional<std::string> subscription_id;
+};
+
 struct VlessLinkResult {
 	std::optional<VlessSettings> Settings;
 	std::string Error{};
@@ -5994,6 +6001,8 @@ inline void to_json(nlohmann::json& j, const VerifyServerKey& v);
 inline void from_json(const nlohmann::json& j, VerifyServerKey& v);
 inline void to_json(nlohmann::json& j, const VerifyStorePurchaseResult& v);
 inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v);
+inline void to_json(nlohmann::json& j, const VerifyStripeCheckoutArgs& v);
+inline void from_json(const nlohmann::json& j, VerifyStripeCheckoutArgs& v);
 inline void to_json(nlohmann::json& j, const VlessLinkResult& v);
 inline void from_json(const nlohmann::json& j, VlessLinkResult& v);
 inline void to_json(nlohmann::json& j, const WalletBalanceResult& v);
@@ -22753,6 +22762,31 @@ inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const VerifyStripeCheckoutArgs& v) {
+	j = nlohmann::json::object();
+	if (v.session_id) {
+		j["session_id"] = *v.session_id;
+	}
+	if (v.subscription_id) {
+		j["subscription_id"] = *v.subscription_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, VerifyStripeCheckoutArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("session_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.session_id = std::move(tmp);
+	}
+	if (auto it = j.find("subscription_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.subscription_id = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const VlessLinkResult& v) {
 	j = nlohmann::json::object();
 	if (v.Settings) {
@@ -23303,6 +23337,7 @@ using ValidateReferralCodeCallback = std::function<void(std::optional<ValidateRe
 using VerifyAppleTransactionCallback = std::function<void(std::optional<VerifyStorePurchaseResult> result, std::optional<std::string> err_param)>;
 using VerifyPlayPurchaseCallback = std::function<void(std::optional<VerifyStorePurchaseResult> result, std::optional<std::string> err_param)>;
 using VerifySeekerNftHolderCallback = std::function<void(std::optional<VerifySeekerNftHolderResult> result, std::optional<std::string> err_param)>;
+using VerifyStripeCheckoutCallback = std::function<void(std::optional<VerifyStorePurchaseResult> result, std::optional<std::string> err_param)>;
 struct ViewController {
 	std::function<void()> close;
 	std::function<void()> start;
@@ -23620,6 +23655,7 @@ public:
 	void removeNetworkClient(const std::optional<RemoveNetworkClientArgs>& args, RemoveNetworkClientCallback callback) const;
 	std::optional<RemoveNetworkClientResult> removeNetworkClientSync(const std::optional<RemoveNetworkClientArgs>& args) const;
 	void removeWallet(const std::optional<RemoveWalletArgs>& remove_wallet, RemoveWalletCallback callback) const;
+	void reportStripePurchase(const std::optional<VerifyStripeCheckoutArgs>& args, VerifyStripeCheckoutCallback callback) const;
 	void requestJwtRefresh() const;
 	void requoteCryptoPayment(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentIntentCallback callback) const;
 	void revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const;
@@ -23674,6 +23710,7 @@ public:
 	void verifyPlayPurchase(const std::optional<VerifyPlayPurchaseArgs>& args, VerifyPlayPurchaseCallback callback) const;
 	std::optional<VerifyStorePurchaseResult> verifyPlayPurchaseSync(const std::optional<VerifyPlayPurchaseArgs>& args) const;
 	void verifySeekerHolder(const std::optional<VerifySeekerNftHolderArgs>& verify, VerifySeekerNftHolderCallback callback) const;
+	void verifyStripeCheckout(const std::optional<VerifyStripeCheckoutArgs>& args, VerifyStripeCheckoutCallback callback) const;
 	void walletBalance(WalletBalanceCallback callback) const;
 	void walletCircleInit(WalletCircleInitCallback callback) const;
 	void walletCircleTransferOut(const std::optional<WalletCircleTransferOutArgs>& wallet_circle_transfer_out, WalletCircleTransferOutCallback callback) const;
@@ -31702,6 +31739,42 @@ inline void oneshot_verify_seeker_nft_holder(void* user_data, const char* result
 	delete f;
 }
 
+inline void retained_verify_stripe_checkout(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<VerifyStripeCheckoutCallback*>(user_data);
+	try {
+		std::optional<VerifyStorePurchaseResult> result_v;
+		if (result_json) {
+			result_v = parseJson<VerifyStorePurchaseResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_verify_stripe_checkout(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<VerifyStripeCheckoutCallback*>(user_data);
+	try {
+		std::optional<VerifyStorePurchaseResult> result_v;
+		if (result_json) {
+			result_v = parseJson<VerifyStorePurchaseResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_view_controller_close(void* user_data) {
 	auto* f = static_cast<ViewController*>(user_data);
 	try {
@@ -33880,6 +33953,16 @@ inline void Api::removeWallet(const std::optional<RemoveWalletArgs>& remove_wall
 	auto* callback_fn = callback ? new RemoveWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_remove_wallet(handle(), remove_wallet_c, callback_fn ? &detail::oneshot_remove_wallet : nullptr, callback_fn);
 }
+inline void Api::reportStripePurchase(const std::optional<VerifyStripeCheckoutArgs>& args, VerifyStripeCheckoutCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new VerifyStripeCheckoutCallback(std::move(callback)) : nullptr;
+	urnet_api_report_stripe_purchase(handle(), args_c, callback_fn ? &detail::oneshot_verify_stripe_checkout : nullptr, callback_fn);
+}
 inline void Api::requestJwtRefresh() const {
 	urnet_api_request_jwt_refresh(handle());
 }
@@ -34373,6 +34456,16 @@ inline void Api::verifySeekerHolder(const std::optional<VerifySeekerNftHolderArg
 	}
 	auto* callback_fn = callback ? new VerifySeekerNftHolderCallback(std::move(callback)) : nullptr;
 	urnet_api_verify_seeker_holder(handle(), verify_c, callback_fn ? &detail::oneshot_verify_seeker_nft_holder : nullptr, callback_fn);
+}
+inline void Api::verifyStripeCheckout(const std::optional<VerifyStripeCheckoutArgs>& args, VerifyStripeCheckoutCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new VerifyStripeCheckoutCallback(std::move(callback)) : nullptr;
+	urnet_api_verify_stripe_checkout(handle(), args_c, callback_fn ? &detail::oneshot_verify_stripe_checkout : nullptr, callback_fn);
 }
 inline void Api::walletBalance(WalletBalanceCallback callback) const {
 	auto* callback_fn = callback ? new WalletBalanceCallback(std::move(callback)) : nullptr;

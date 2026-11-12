@@ -241,6 +241,7 @@ module URnetwork
       callback :urnet_verify_apple_transaction_cb, [:pointer, :string, :string], :void
       callback :urnet_verify_play_purchase_cb, [:pointer, :string, :string], :void
       callback :urnet_verify_seeker_nft_holder_cb, [:pointer, :string, :string], :void
+      callback :urnet_verify_stripe_checkout_cb, [:pointer, :string, :string], :void
       callback :urnet_view_controller_close_cb, [:pointer], :void
       callback :urnet_view_controller_start_cb, [:pointer], :void
       callback :urnet_view_controller_stop_cb, [:pointer], :void
@@ -382,6 +383,7 @@ module URnetwork
       attach_function :urnet_api_remove_network_client, [:uint64, :string, :urnet_remove_network_client_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_remove_network_client_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_remove_wallet, [:uint64, :string, :urnet_remove_wallet_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_report_stripe_purchase, [:uint64, :string, :urnet_verify_stripe_checkout_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_request_jwt_refresh, [:uint64], :void, blocking: true
       attach_function :urnet_api_requote_crypto_payment, [:uint64, :string, :urnet_crypto_payment_intent_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_revoke_network_session, [:uint64, :string, :urnet_session_operation_cb, :pointer], :void, blocking: true
@@ -436,6 +438,7 @@ module URnetwork
       attach_function :urnet_api_verify_play_purchase, [:uint64, :string, :urnet_verify_play_purchase_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_verify_play_purchase_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_verify_seeker_holder, [:uint64, :string, :urnet_verify_seeker_nft_holder_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_verify_stripe_checkout, [:uint64, :string, :urnet_verify_stripe_checkout_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_wallet_balance, [:uint64, :urnet_wallet_balance_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_wallet_circle_init, [:uint64, :urnet_wallet_circle_init_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_wallet_circle_transfer_out, [:uint64, :string, :urnet_wallet_circle_transfer_out_cb, :pointer], :void, blocking: true

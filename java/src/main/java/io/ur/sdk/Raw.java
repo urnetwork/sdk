@@ -242,6 +242,7 @@ public interface Raw extends Library {
   interface urnet_verify_apple_transaction_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_verify_play_purchase_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_verify_seeker_nft_holder_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_verify_stripe_checkout_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_view_controller_close_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_view_controller_start_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_view_controller_stop_cb extends Callback { void invoke(Pointer a0); }
@@ -383,6 +384,7 @@ public interface Raw extends Library {
   void urnet_api_remove_network_client(long a0, String a1, urnet_remove_network_client_cb a2, Pointer a3);
   Pointer urnet_api_remove_network_client_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_remove_wallet(long a0, String a1, urnet_remove_wallet_cb a2, Pointer a3);
+  void urnet_api_report_stripe_purchase(long a0, String a1, urnet_verify_stripe_checkout_cb a2, Pointer a3);
   void urnet_api_request_jwt_refresh(long a0);
   void urnet_api_requote_crypto_payment(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
   void urnet_api_revoke_network_session(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
@@ -437,6 +439,7 @@ public interface Raw extends Library {
   void urnet_api_verify_play_purchase(long a0, String a1, urnet_verify_play_purchase_cb a2, Pointer a3);
   Pointer urnet_api_verify_play_purchase_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_verify_seeker_holder(long a0, String a1, urnet_verify_seeker_nft_holder_cb a2, Pointer a3);
+  void urnet_api_verify_stripe_checkout(long a0, String a1, urnet_verify_stripe_checkout_cb a2, Pointer a3);
   void urnet_api_wallet_balance(long a0, urnet_wallet_balance_cb a1, Pointer a2);
   void urnet_api_wallet_circle_init(long a0, urnet_wallet_circle_init_cb a1, Pointer a2);
   void urnet_api_wallet_circle_transfer_out(long a0, String a1, urnet_wallet_circle_transfer_out_cb a2, Pointer a3);

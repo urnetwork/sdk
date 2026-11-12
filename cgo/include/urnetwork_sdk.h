@@ -740,6 +740,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_STRIPE_ITEM_DATA1_TIB "data_1tib"
 #define URNET_STRIPE_ITEM_PRO_MONTHLY "pro_monthly"
 #define URNET_STRIPE_ITEM_PRO_YEARLY "pro_yearly"
+#define URNET_STRIPE_PURCHASE_REPORT_MAX_ATTEMPTS 8
 #define URNET_STRIPE_REDIRECT_ON_COMPLETION_NEVER "never"
 #define URNET_STRIPE_UI_MODE_EMBEDDED "embedded"
 #define URNET_STRIPE_UI_MODE_HOSTED "hosted"
@@ -1256,6 +1257,8 @@ typedef void (*urnet_verify_apple_transaction_cb)(void* user_data, const char* r
 typedef void (*urnet_verify_play_purchase_cb)(void* user_data, const char* result_json, const char* err_param);
 /* VerifySeekerNftHolderCallback */
 typedef void (*urnet_verify_seeker_nft_holder_cb)(void* user_data, const char* result_json, const char* err_param);
+/* VerifyStripeCheckoutCallback */
+typedef void (*urnet_verify_stripe_checkout_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ViewController */
 typedef void (*urnet_view_controller_close_cb)(void* user_data);
 typedef void (*urnet_view_controller_start_cb)(void* user_data);
@@ -1380,6 +1383,7 @@ void urnet_api_remove_auth(uint64_t self, const char* args_json, urnet_remove_au
 void urnet_api_remove_network_client(uint64_t self, const char* args_json, urnet_remove_network_client_cb callback_result, void* callback_user_data);
 char* urnet_api_remove_network_client_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_remove_wallet(uint64_t self, const char* remove_wallet_json, urnet_remove_wallet_cb callback_result, void* callback_user_data);
+void urnet_api_report_stripe_purchase(uint64_t self, const char* args_json, urnet_verify_stripe_checkout_cb callback_result, void* callback_user_data);
 void urnet_api_request_jwt_refresh(uint64_t self);
 void urnet_api_requote_crypto_payment(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_revoke_network_session(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
@@ -1434,6 +1438,7 @@ char* urnet_api_verify_keys_sync(uint64_t self, char** out_error);
 void urnet_api_verify_play_purchase(uint64_t self, const char* args_json, urnet_verify_play_purchase_cb callback_result, void* callback_user_data);
 char* urnet_api_verify_play_purchase_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_verify_seeker_holder(uint64_t self, const char* verify_json, urnet_verify_seeker_nft_holder_cb callback_result, void* callback_user_data);
+void urnet_api_verify_stripe_checkout(uint64_t self, const char* args_json, urnet_verify_stripe_checkout_cb callback_result, void* callback_user_data);
 void urnet_api_wallet_balance(uint64_t self, urnet_wallet_balance_cb callback_result, void* callback_user_data);
 void urnet_api_wallet_circle_init(uint64_t self, urnet_wallet_circle_init_cb callback_result, void* callback_user_data);
 void urnet_api_wallet_circle_transfer_out(uint64_t self, const char* wallet_circle_transfer_out_json, urnet_wallet_circle_transfer_out_cb callback_result, void* callback_user_data);
@@ -6887,6 +6892,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* VerifyStorePurchaseResult (json):
  *   status: string
  *   expiry_time?: string (rfc3339) | null
+ */
+
+/* VerifyStripeCheckoutArgs (json):
+ *   session_id?: string
+ *   subscription_id?: string
  */
 
 /* VlessLinkResult (json):
