@@ -826,6 +826,7 @@ module URnetwork
       attach_function :urnet_device_local_get_first_load_timeline_json, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_key_material, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_local_get_last_local_state_save_result, [:uint64], :uint64, blocking: true
+      attach_function :urnet_device_local_get_limited_window_size_fraction, [:uint64], :double, blocking: true
       attach_function :urnet_device_local_get_memory_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_pinned_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_probe_results, [:uint64], :pointer, blocking: true
@@ -875,6 +876,7 @@ module URnetwork
       attach_function :urnet_device_local_probe_suite_running, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_query_subprotocols, [:uint64, :string, :int64, :urnet_subprotocols_query_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_reconnect_checked, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_device_local_reset_limited_window_size_fraction, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_reset_reliability_metrics, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_reset_reliability_settings, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_save_key_material, [:uint64, :pointer], :bool, blocking: true
@@ -889,6 +891,7 @@ module URnetwork
       attach_function :urnet_device_local_set_default_location_checked, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_set_flow_owner_lookup, [:uint64, :urnet_flow_owner_lookup_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_set_key_material, [:uint64, :uint64], :void, blocking: true
+      attach_function :urnet_device_local_set_limited_window_size_fraction, [:uint64, :double], :void, blocking: true
       attach_function :urnet_device_local_set_network_metered, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_performance_degraded, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_reliability_settings, [:uint64, :string], :void, blocking: true

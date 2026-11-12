@@ -366,6 +366,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EVENT_STORE_STRIPE "stripe"
 #define URNET_EVENT_STORE_ZCASH "zcash"
 #define URNET_EVENT_WIDGET_ADDED "widget.added"
+#define URNET_EXIT_WINDOW_TYPE_LIMITED "limited"
 #define URNET_EXPERIMENT_SURFACE_EMAIL_SEQUENCE "email.sequence"
 #define URNET_EXPERIMENT_SURFACE_OFFER_ACCOUNT "offer.account"
 #define URNET_EXPERIMENT_SURFACE_OFFER_EMAIL "offer.email"
@@ -1888,6 +1889,7 @@ char* urnet_device_local_get_exits(uint64_t self);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
 uint64_t urnet_device_local_get_last_local_state_save_result(uint64_t self);
+double urnet_device_local_get_limited_window_size_fraction(uint64_t self);
 char* urnet_device_local_get_memory_stats(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
@@ -1937,6 +1939,7 @@ int64_t urnet_device_local_probe_all_exits(uint64_t self);
 bool urnet_device_local_probe_suite_running(uint64_t self);
 void urnet_device_local_query_subprotocols(uint64_t self, const char* destination_client_id, int64_t timeout_millis, urnet_subprotocols_query_cb callback_result, void* callback_user_data);
 bool urnet_device_local_reconnect_checked(uint64_t self, const char* location_json, char** out_error);
+void urnet_device_local_reset_limited_window_size_fraction(uint64_t self);
 void urnet_device_local_reset_reliability_metrics(uint64_t self);
 void urnet_device_local_reset_reliability_settings(uint64_t self);
 bool urnet_device_local_save_key_material(uint64_t self, char** out_error);
@@ -1951,6 +1954,7 @@ bool urnet_device_local_set_connect_location_checked(uint64_t self, const char* 
 bool urnet_device_local_set_default_location_checked(uint64_t self, const char* location_json, char** out_error);
 void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
+void urnet_device_local_set_limited_window_size_fraction(uint64_t self, double fraction);
 void urnet_device_local_set_network_metered(uint64_t self, bool metered);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
 void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
@@ -4233,6 +4237,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* Exit (json):
  *   ClientId: string (uuid) | null
  *   WindowType: string
+ *   CapabilityIp: string
+ *   CapabilityProtocol: string
+ *   OverflowStep: number
  *   Warning: boolean
  *   Quarantined: boolean
  *   WarningCause: string
@@ -7046,6 +7053,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProviderV4OnlyCount: number
  *   ProviderV6OnlyCount: number
  *   Ipv6Available: boolean
+ *   UdpAvailable: boolean
+ *   LimitedWindowSize: number
  *   StallReason: string
  *   Failed: boolean
  */

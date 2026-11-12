@@ -1402,6 +1402,8 @@ def bind(lib):
     lib.urnet_device_local_get_key_material.restype = c_uint64
     lib.urnet_device_local_get_last_local_state_save_result.argtypes = [c_uint64]
     lib.urnet_device_local_get_last_local_state_save_result.restype = c_uint64
+    lib.urnet_device_local_get_limited_window_size_fraction.argtypes = [c_uint64]
+    lib.urnet_device_local_get_limited_window_size_fraction.restype = c_double
     lib.urnet_device_local_get_memory_stats.argtypes = [c_uint64]
     lib.urnet_device_local_get_memory_stats.restype = c_void_p
     lib.urnet_device_local_get_pinned_app_ids.argtypes = [c_uint64]
@@ -1500,6 +1502,8 @@ def bind(lib):
     lib.urnet_device_local_query_subprotocols.restype = None
     lib.urnet_device_local_reconnect_checked.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_device_local_reconnect_checked.restype = c_bool
+    lib.urnet_device_local_reset_limited_window_size_fraction.argtypes = [c_uint64]
+    lib.urnet_device_local_reset_limited_window_size_fraction.restype = None
     lib.urnet_device_local_reset_reliability_metrics.argtypes = [c_uint64]
     lib.urnet_device_local_reset_reliability_metrics.restype = None
     lib.urnet_device_local_reset_reliability_settings.argtypes = [c_uint64]
@@ -1528,6 +1532,8 @@ def bind(lib):
     lib.urnet_device_local_set_flow_owner_lookup.restype = None
     lib.urnet_device_local_set_key_material.argtypes = [c_uint64, c_uint64]
     lib.urnet_device_local_set_key_material.restype = None
+    lib.urnet_device_local_set_limited_window_size_fraction.argtypes = [c_uint64, c_double]
+    lib.urnet_device_local_set_limited_window_size_fraction.restype = None
     lib.urnet_device_local_set_network_metered.argtypes = [c_uint64, c_bool]
     lib.urnet_device_local_set_network_metered.restype = None
     lib.urnet_device_local_set_performance_degraded.argtypes = [c_uint64, c_bool]

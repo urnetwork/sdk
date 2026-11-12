@@ -64,3 +64,28 @@ func TestToWindowStatusIpv6Available(t *testing.T) {
 		connect.AssertEqual(t, toWindowStatus(monitor).Ipv6Available, ipv6Available)
 	}
 }
+
+// UdpAvailable mirrors the merged window expand event exactly, beside
+// Ipv6Available and apart from it (server FP2-PROTOCOL.md §7.8): false before
+// any expand event, and whatever the event says afterwards.
+func TestToWindowStatusUdpAvailable(t *testing.T) {
+	monitor := connect.NewRemoteUserNatMultiClientMonitorWithDefaults()
+	connect.AssertEqual(t, toWindowStatus(monitor).UdpAvailable, false)
+	for _, availability := range []struct {
+		ipv6Available bool
+		udpAvailable  bool
+	}{
+		{ipv6Available: false, udpAvailable: true},
+		{ipv6Available: true, udpAvailable: false},
+		{ipv6Available: true, udpAvailable: true},
+		{ipv6Available: false, udpAvailable: false},
+	} {
+		monitor.AddWindowExpandEventWithAvailability(true, 1, availability.ipv6Available, availability.udpAvailable)
+		windowStatus := toWindowStatus(monitor)
+		connect.AssertEqual(t, windowStatus.UdpAvailable, availability.udpAvailable)
+		connect.AssertEqual(t, windowStatus.Ipv6Available, availability.ipv6Available)
+	}
+	// the older publisher says nothing of UDP, which reads as unavailable
+	monitor.AddWindowExpandEvent(true, 1, true)
+	connect.AssertEqual(t, toWindowStatus(monitor).UdpAvailable, false)
+}
