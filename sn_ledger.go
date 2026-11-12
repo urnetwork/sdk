@@ -31,8 +31,11 @@ import (
 // asks with partial=true (sn api/operator.yml): a pool whose ledger the server
 // cannot read is named in unavailable_pools while the others are answered, and
 // the apps show it as unavailable, never as zero and never hiding the others.
-// Without partial=true a server answers whole or not at all, so a client that
-// does not know unavailable_pools never takes a partial list for a whole one.
+// Without partial=true, as clients that predate unavailable_pools ask, a server
+// leaves out a capture the flag pool it cannot read and answers the other pools
+// as before that pool existed, and fails the whole answer for any other pool
+// it cannot read: such a client keeps the operator's pool's balance and never
+// takes a partial list of the other pools for a whole one.
 
 const snLedgerTimeout = 60 * time.Second
 
