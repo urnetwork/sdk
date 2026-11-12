@@ -669,11 +669,17 @@ func TestSnLedgerClaimOutcomesFor(t *testing.T) {
 	}
 	otherVault := *tx
 	otherVault.Vault = "0x" + strings.Repeat("99", 20)
+	otherChain := *tx
+	otherChain.ChainId = SnChainIdTestnet + 1
 	unconfigured := f.settings.Copy()
 	unconfigured.Vault2Address = ""
 	for name, read := range map[string]func() error{
 		"another vault2": func() error {
 			_, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, &otherVault, receipt)
+			return err
+		},
+		"another chain": func() error {
+			_, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, &otherChain, receipt)
 			return err
 		},
 		"a coldkey that is not one": func() error {

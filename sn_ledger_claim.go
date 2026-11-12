@@ -970,6 +970,27 @@ func (self *snLedgerClaimEngine) feePerGas(ctx context.Context) (*big.Int, error
 	return fee, nil
 }
 
+// snLedgerAloneLargestFirst orders a list's claims alone the largest first,
+// after its batch, as the device's gas key claims them: a wallet that stops
+// part way, or prices gas above the price its balance was checked at and runs
+// out, then leaves the smaller accounts claimable.
+func snLedgerAloneLargestFirst(list *SnLedgerUnsignedTxList) *SnLedgerUnsignedTxList {
+	txs := list.getAll()
+	slices.SortStableFunc(txs, func(a *SnLedgerUnsignedTx, b *SnLedgerUnsignedTx) int {
+		switch {
+		case a.Batch == b.Batch:
+			return cmp.Compare(b.AmountRao, a.AmountRao)
+		case a.Batch:
+			return -1
+		default:
+			return 1
+		}
+	})
+	ordered := NewSnLedgerUnsignedTxList()
+	ordered.addAll(txs...)
+	return ordered
+}
+
 // snLedgerTxsCost is the most the transactions can cost at fee a gas.
 func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
 	cost := big.NewInt(0)
@@ -982,8 +1003,9 @@ func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
 // unsignedTxsForPayer is unsignedTxs for a wallet at payer that pays the gas:
 // every transaction when its balance pays for them all at feePerGas, else the
 // transactions of the most accounts it pays for, the largest first, built as
-// unsignedTxs builds them for those accounts, else the largest account's claim
-// alone; the others still claimable. No account is in two transactions.
+// unsignedTxs builds them for those accounts but with their claims alone the
+// largest first, else the largest account's claim alone; the others still
+// claimable. No account is in two transactions.
 func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer [20]byte) (*SnLedgerClaimTransactionsResult, error) {
 	list, passing, batcher, err := self.claimTxs(ctx)
 	if err != nil {
@@ -1018,7 +1040,7 @@ func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer 
 	txsOfLargest := map[int]*SnLedgerUnsignedTxList{1: self.txsOf(ctx, largestFirst[:1], false)}
 	n := snLedgerMostThatFit(len(largestFirst), func(n int) bool {
 		set, _ := snLedgerSplit(passing, largestFirst[:n])
-		txsOfLargest[n] = self.txsOf(ctx, set, batcher)
+		txsOfLargest[n] = snLedgerAloneLargestFirst(self.txsOf(ctx, set, batcher))
 		return snLedgerTxsCost(txsOfLargest[n].getAll(), fee).Cmp(balance) <= 0
 	})
 	result.Transactions = txsOfLargest[n]
@@ -1343,8 +1365,9 @@ func SnLedgerClaimOutcomesOf(tx *SnLedgerUnsignedTx, receiptJson string) (*SnLed
 // simulated, and under the runtime's transfer floor it is not_claimable
 // (AmountTooLow), any other refusal claim_failed with the runtime's reason. A
 // reason the chain does not give is claim_failed. settings name the chain and
-// vault2, which must be the transaction's; coldkeySs58 is the coldkey the
-// transactions were built for. Errors: as SnLedgerClaimOutcomesOf, and the
+// vault2, which must be the transaction's (its chain id, when it names one, and
+// its vault); coldkeySs58 is the coldkey the transactions were built for, the
+// simulated transfer's destination. Errors: as SnLedgerClaimOutcomesOf, and the
 // settings' or the coldkey's as SnLedgerClaimTransactionsFor's.
 func SnLedgerClaimOutcomesFor(settings *SnChainSettings, coldkeySs58 string, tx *SnLedgerUnsignedTx, receiptJson string) (*SnLedgerClaimOutcomeList, error) {
 	engine, snErr := newSnLedgerClaimEngine(settings, coldkeySs58, "", nil)
@@ -1354,6 +1377,9 @@ func SnLedgerClaimOutcomesFor(settings *SnChainSettings, coldkeySs58 string, tx 
 	if tx != nil {
 		if vault2, err := snLedgerTxVault(tx); err == nil && vault2 != engine.vault2 {
 			return nil, fmt.Errorf("the transaction claims from %s, not from the configured vault2 %s", "0x"+hex.EncodeToString(vault2[:]), engine.vault2Hex())
+		}
+		if tx.ChainId != 0 && tx.ChainId != settings.ChainId {
+			return nil, fmt.Errorf("the transaction is for chain %d, not the configured chain %d", tx.ChainId, settings.ChainId)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), snClaimsTimeout)

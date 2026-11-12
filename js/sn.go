@@ -536,7 +536,7 @@ func SnLedgerClaimOutcomes(this js.Value, args []js.Value) any {
 // coldkeySs58 the coldkey they claim for. It rejects as
 // URnetworkSnLedgerClaimOutcomes does, and for settings or a coldkey
 // URnetworkSnLedgerClaimTransactionsFor refuses, or a transaction of another
-// vault2.
+// vault2 or chain.
 func SnLedgerClaimOutcomesFor(this js.Value, args []js.Value) any {
 	var txRaw []byte
 	var txErr error

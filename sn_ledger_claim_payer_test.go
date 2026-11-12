@@ -274,19 +274,22 @@ func TestSnLedgerClaimTransactionsForPayerPricesAndRefusals(t *testing.T) {
 }
 
 // newTestV2ThreeClaim is alice with three accounts, in the ledger's order pool
-// 1's 0.023 α, pool 2's 7 α and capture the flag's 0.048 α, and the batcher in
-// the settings. The largest first: pool 2, capture the flag, pool 1.
+// 1's 0.023 α, pool 2's 0.03 α and capture the flag's 0.048 α, and the batcher
+// in the settings. The largest first: capture the flag, pool 2, pool 1, so the
+// two largest are not the ledger's order.
 func newTestV2ThreeClaim(t *testing.T) *testV2Claim {
 	t.Helper()
 	f := newTestV2Claim(t)
 	f.settings.ClaimBatcherAddress = testBatcher
 	ctf, _ := f.addCtfPool(t)
-	f.answer(t, f.pool1Entry(), f.addPool2(t), ctf)
+	root, total, proofs := buildTestLedgerTree([]testLedgerLeaf{{f.alice, testThreeAmounts[2]}})
+	f.chain.roots[2] = []fakeVault2Root{{root, total, 1}}
+	f.answer(t, f.pool1Entry(), testLedgerClaimEntry(testVault2, 2, 0, 0, testThreeAmounts[2], proofs[0], 0), ctf)
 	return f
 }
 
 // the three accounts' amounts by pool
-var testThreeAmounts = map[int64]int64{1: testV2Cumulative - testV2Paid, 2: 7_000_000_000, testCtfNoId: testCtfCumulative}
+var testThreeAmounts = map[int64]int64{1: testV2Cumulative - testV2Paid, 2: 30_000_000, testCtfNoId: testCtfCumulative}
 
 // testTxPools is the pools of the accounts each transaction claims, as its
 // items name them, after checking each transaction's calldata claims exactly
@@ -324,13 +327,13 @@ func testTxPools(t *testing.T, f *testV2Claim, txs *SnLedgerUnsignedTxList) [][]
 }
 
 // With three accounts, an external wallet that cannot pay for the batch of all
-// three is given the batch of the two largest when it can pay for that (pool
-// 2's 7 α and capture the flag's 0.048 α, though pool 1 is first in the
-// ledger), else the largest account's claim alone, and the others are still
-// claimable, in the ledger's order; one that cannot pay even for that is given
-// it with NeedsGas, and the others' message says nothing is claimed for them.
-// Without a batcher, the claims alone of the most accounts it can pay for, the
-// largest first.
+// three is given the batch of the two largest when it can pay for that (capture
+// the flag's 0.048 α and pool 2's 0.03 α, though pool 1 is first in the
+// ledger; the batch's items in the ledger's order), else the largest account's
+// claim alone, and the others are still claimable, in the ledger's order; one
+// that cannot pay even for that is given it with NeedsGas, and the others'
+// message says nothing is claimed for them. Without a batcher, the claims alone
+// of the most accounts it can pay for, the largest first.
 func TestSnLedgerClaimTransactionsForPayerTheMostItCanPayFor(t *testing.T) {
 	const (
 		threeAlone = 3 * 2_600_000 * testWeiPerGas
@@ -349,13 +352,15 @@ func TestSnLedgerClaimTransactionsForPayerTheMostItCanPayFor(t *testing.T) {
 		// the batch of three is about 3.73M gas, of two about 3.5M, at 11 gwei
 		{"all three", true, 1_000_000_000_000_000_000, [][]int64{{1, 2, testCtfNoId}}, nil, false, ""},
 		{"two", true, 40_000_000_000_000_000, [][]int64{{2, testCtfNoId}}, []int64{1}, false, "so only the 2 largest accounts are claimed now; claim again for this one"},
-		{"one", true, 30_000_000_000_000_000, [][]int64{{2}}, []int64{1, testCtfNoId}, false, "so only the largest account is claimed now; claim again for this one"},
-		{"none", true, 10_000_000_000_000_000, [][]int64{{2}}, []int64{1, testCtfNoId}, true,
+		{"one", true, 30_000_000_000_000_000, [][]int64{{testCtfNoId}}, []int64{1, 2}, false, "so only the largest account is claimed now; claim again for this one"},
+		{"none", true, 10_000_000_000_000_000, [][]int64{{testCtfNoId}}, []int64{1, 2}, true,
 			"which is not enough even for the largest account's claim alone (up to 0.028600 TAO), so this account is not claimed now; add TAO to the wallet and claim again"},
+		// every claim alone, in the ledger's order, as SnLedgerClaimTransactionsFor
+		// builds them; fewer, the largest first
 		{"all three alone", false, threeAlone, [][]int64{{1}, {2}, {testCtfNoId}}, nil, false, ""},
-		{"two alone", false, threeAlone - 1, [][]int64{{2}, {testCtfNoId}}, []int64{1}, false, "so only the 2 largest accounts are claimed now; claim again for this one"},
-		{"one alone", false, twoAlone - 1, [][]int64{{2}}, []int64{1, testCtfNoId}, false, "so only the largest account is claimed now; claim again for this one"},
-		{"none alone", false, oneAlone - 1, [][]int64{{2}}, []int64{1, testCtfNoId}, true,
+		{"two alone", false, threeAlone - 1, [][]int64{{testCtfNoId}, {2}}, []int64{1}, false, "so only the 2 largest accounts are claimed now; claim again for this one"},
+		{"one alone", false, twoAlone - 1, [][]int64{{testCtfNoId}}, []int64{1, 2}, false, "so only the largest account is claimed now; claim again for this one"},
+		{"none alone", false, oneAlone - 1, [][]int64{{testCtfNoId}}, []int64{1, 2}, true,
 			"which is not enough even for the largest account's claim alone (up to 0.028600 TAO), so this account is not claimed now; add TAO to the wallet and claim again"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -417,11 +422,11 @@ func newTestV2ThreeGasKeyClaim(t *testing.T, balance int64) *testV2Claim {
 }
 
 // The device's gas key with three accounts: the batch of all three when it can
-// pay for it; else the batch of the two largest when it can pay for that (pool
-// 2 and capture the flag, though pool 1 is first in the ledger), then pool 1
-// alone, needs_gas when what is left after the batch cannot pay for it; else
-// the accounts alone, the largest first, each it cannot pay for needs_gas with
-// nothing sent for it, still claimable.
+// pay for it; else the batch of the two largest when it can pay for that
+// (capture the flag and pool 2, though pool 1 is first in the ledger), then
+// pool 1 alone, needs_gas when what is left after the batch cannot pay for it;
+// else the accounts alone, the largest first, each it cannot pay for needs_gas
+// with nothing sent for it, still claimable.
 func TestSnLedgerClaimTheMostTheGasKeyCanPayFor(t *testing.T) {
 	gasKey := snGasKeyInfo(newTestV2Claim(t).key)
 	aloneCost := big.NewInt(testClaimAloneGas * testWeiPerGas)
@@ -484,8 +489,8 @@ func TestSnLedgerClaimTheMostTheGasKeyCanPayFor(t *testing.T) {
 	}
 	f.requireClaimable(t)
 
-	// one: 0.036 TAO pays for no batch, but for pool 2's claim alone; what is
-	// left then pays for no other claim
+	// one: 0.036 TAO pays for no batch, but for capture the flag's claim alone;
+	// what is left then pays for no other claim
 	balance = 36_000_000_000_000_000
 	f = newTestV2ThreeGasKeyClaim(t, balance)
 	events = f.claim(t)
@@ -495,9 +500,9 @@ func TestSnLedgerClaimTheMostTheGasKeyCanPayFor(t *testing.T) {
 	}
 	left := balance - testClaimAloneUsed*testWeiPerGas
 	want = []testLedgerClaimEvent{
-		{kind: "sent", noId: 2, index: 0, txHash: events[0].txHash},
-		{kind: "confirmed", noId: 2, index: 0, txHash: events[0].txHash, amount: testThreeAmounts[2]},
-		{kind: "failed", noId: testCtfNoId, index: 1, message: needsGas(left)},
+		{kind: "sent", noId: testCtfNoId, index: 1, txHash: events[0].txHash},
+		{kind: "confirmed", noId: testCtfNoId, index: 1, txHash: events[0].txHash, amount: testThreeAmounts[testCtfNoId]},
+		{kind: "failed", noId: 2, index: 0, message: needsGas(left)},
 		{kind: "failed", noId: 1, index: 2, message: needsGas(left)},
 	}
 	if !reflect.DeepEqual(events, want) {
@@ -510,8 +515,8 @@ func TestSnLedgerClaimTheMostTheGasKeyCanPayFor(t *testing.T) {
 	f = newTestV2ThreeGasKeyClaim(t, balance)
 	events = f.claim(t)
 	want = []testLedgerClaimEvent{
-		{kind: "failed", noId: 2, index: 0, message: needsGas(balance)},
 		{kind: "failed", noId: testCtfNoId, index: 1, message: needsGas(balance)},
+		{kind: "failed", noId: 2, index: 0, message: needsGas(balance)},
 		{kind: "failed", noId: 1, index: 2, message: needsGas(balance)},
 	}
 	if !reflect.DeepEqual(events, want) || len(f.chain.sentTxs()) != 0 {
