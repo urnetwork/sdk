@@ -17,10 +17,12 @@ import (
 // desktop services: the app's DeviceRemote is bound to the app's space, and
 // the device runs in a second space of its own, as the tunnel process imports
 // one, the two paired over the real rpc on a free port with their own key
-// material. The first three use only the apps' own calls (the space setters),
-// so they ran on the code before the fix, where the tunnel's space kept the
-// values it started with.
+// material. The app changes its space with the setters the apps call. The
+// tunnel space's own change callback is the barrier: it fires when the device
+// applies the values, so each test waits for that event and then reads the
+// state, and the deadline only bounds a failure.
 
+// Bounds a wait for an event that should come; a passing run never waits it.
 const ingressDnsTestWait = 10 * time.Second
 
 // An app process and a tunnel process: the app's space, the tunnel's own
@@ -28,7 +30,7 @@ const ingressDnsTestWait = 10 * time.Second
 // once the device is up and before the app's remote exists.
 func newIngressDnsTestTunnel(
 	t *testing.T,
-	beforeAttach func(appSpace *NetworkSpace),
+	beforeAttach func(appSpace *NetworkSpace, tunnelSpace *NetworkSpace),
 ) (appSpace *NetworkSpace, tunnelSpace *NetworkSpace, deviceRemote *DeviceRemote) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,7 +70,7 @@ func newIngressDnsTestTunnel(
 	}
 
 	if beforeAttach != nil {
-		beforeAttach(appSpace)
+		beforeAttach(appSpace, tunnelSpace)
 	}
 
 	settings := defaultDeviceRpcSettings()
@@ -91,16 +93,39 @@ func newIngressDnsTestTunnel(
 	return
 }
 
-// Waits for `done`, which reads state another goroutine sets; the wait ends at
-// the first true, so a passing run takes only as long as the hand-off.
-func waitForIngressDnsTest(t *testing.T, what string, done func() bool) {
+// The ingress dns snapshots a space takes in place from now on, in order.
+func ingressDnsTestChanges(t *testing.T, networkSpace *NetworkSpace) chan *DeviceRemoteIngressDns {
 	t.Helper()
-	deadline := time.Now().Add(ingressDnsTestWait)
-	for !done() {
-		if deadline.Before(time.Now()) {
-			t.Fatalf("timed out waiting for %s", what)
+	changes := make(chan *DeviceRemoteIngressDns, 16)
+	unsub := networkSpace.addIngressDnsChangeCallback(func(ingressDns *DeviceRemoteIngressDns, revision uint64) {
+		// a callback must not block; the tests make fewer changes than fit
+		select {
+		case changes <- ingressDns:
+		default:
 		}
-		time.Sleep(10 * time.Millisecond)
+	})
+	t.Cleanup(unsub)
+	return changes
+}
+
+// Waits for the change `want` accepts. Changes before it are skipped.
+func waitForIngressDnsTestChange(
+	t *testing.T,
+	changes chan *DeviceRemoteIngressDns,
+	what string,
+	want func(ingressDns *DeviceRemoteIngressDns) bool,
+) {
+	t.Helper()
+	deadline := time.After(ingressDnsTestWait)
+	for {
+		select {
+		case ingressDns := <-changes:
+			if want(ingressDns) {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("the tunnel's space never took %s", what)
+		}
 	}
 }
 
@@ -120,20 +145,19 @@ func TestDeviceRemoteHandsTheConnectionRegionToARunningTunnel(t *testing.T) {
 		t.Fatalf("the tunnel starts with region %q, expected undisclosed", countryCode)
 	}
 	tunnelStrategy := tunnelSpace.clientStrategy
+	tunnelChanges := ingressDnsTestChanges(t, tunnelSpace)
 
 	if countryCode := appSpace.SetIngressCountryCode("cn"); countryCode != "cn" {
 		t.Fatalf("stored region = %q", countryCode)
 	}
-
-	waitForIngressDnsTest(t, "the running tunnel's strategy to take China", func() bool {
-		return tunnelSpace.clientStrategy.DohSettings().IngressCountryCode == "cn"
+	waitForIngressDnsTestChange(t, tunnelChanges, "China", func(ingressDns *DeviceRemoteIngressDns) bool {
+		return ingressDns.CountryCode == "cn"
 	})
-	if countryCode := tunnelSpace.GetIngressCountryCode(); countryCode != "cn" {
-		t.Fatalf("the tunnel's space region = %q", countryCode)
+	if countryCode := tunnelSpace.clientStrategy.DohSettings().IngressCountryCode; countryCode != "cn" {
+		t.Fatalf("the tunnel's strategy region = %q", countryCode)
 	}
-	if !slices.Equal(tunnelSpace.clientStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4, ingressDnsTestChinaDohUrlsIpv4()) {
-		t.Fatalf("the tunnel resolves its names over %v, expected China's servers",
-			tunnelSpace.clientStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4)
+	if dohUrlsIpv4 := tunnelSpace.clientStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4; !slices.Equal(dohUrlsIpv4, ingressDnsTestChinaDohUrlsIpv4()) {
+		t.Fatalf("the tunnel resolves its names over %v, expected China's servers", dohUrlsIpv4)
 	}
 	if tunnelSpace.clientStrategy != tunnelStrategy {
 		t.Fatal("the tunnel's strategy was replaced: the change must apply in place")
@@ -141,10 +165,12 @@ func TestDeviceRemoteHandsTheConnectionRegionToARunningTunnel(t *testing.T) {
 
 	// back to undisclosed, which the tunnel takes the same way
 	appSpace.SetIngressCountryCode("")
-	waitForIngressDnsTest(t, "the running tunnel to go back to undisclosed", func() bool {
-		return tunnelSpace.clientStrategy.DohSettings().IngressCountryCode == "" &&
-			tunnelSpace.GetIngressCountryCode() == ""
+	waitForIngressDnsTestChange(t, tunnelChanges, "undisclosed", func(ingressDns *DeviceRemoteIngressDns) bool {
+		return ingressDns.CountryCode == ""
 	})
+	if countryCode := tunnelSpace.clientStrategy.DohSettings().IngressCountryCode; countryCode != "" {
+		t.Fatalf("the tunnel's strategy region = %q, expected undisclosed", countryCode)
+	}
 }
 
 // The same for the bootstrap DoH servers a user names: they reach the
@@ -153,36 +179,41 @@ func TestDeviceRemoteHandsTheBootstrapDohServersToARunningTunnel(t *testing.T) {
 	appSpace, tunnelSpace, _ := newIngressDnsTestTunnel(t, nil)
 	dohUrlsIpv4 := []string{"https://192.0.2.1/dns-query", "https://192.0.2.2/dns-query"}
 	dohUrlIpv6 := "https://[2001:db8::1]/dns-query"
+	tunnelChanges := ingressDnsTestChanges(t, tunnelSpace)
 
 	if errorId := appSpace.SetControlDohUrls(testStringList(append(slices.Clone(dohUrlsIpv4), dohUrlIpv6)...)); errorId != "" {
 		t.Fatal(errorId)
 	}
-
-	waitForIngressDnsTest(t, "the running tunnel to take the bootstrap servers", func() bool {
-		return slices.Equal(tunnelSpace.GetControlDohUrlsIpv4().getAll(), dohUrlsIpv4) &&
-			slices.Equal(tunnelSpace.GetControlDohUrlsIpv6().getAll(), []string{dohUrlIpv6})
+	waitForIngressDnsTestChange(t, tunnelChanges, "the bootstrap servers", func(ingressDns *DeviceRemoteIngressDns) bool {
+		return slices.Equal(ingressDns.ControlDohUrlsIpv4, dohUrlsIpv4) &&
+			slices.Equal(ingressDns.ControlDohUrlsIpv6, []string{dohUrlIpv6})
 	})
-	inForce := tunnelSpace.clientStrategy.DohSettings().DnsResolverSettings
-	if len(inForce.RemoteDohUrlsIpv4) < len(dohUrlsIpv4) || !slices.Equal(inForce.RemoteDohUrlsIpv4[:len(dohUrlsIpv4)], dohUrlsIpv4) {
-		t.Fatalf("the tunnel's v4 servers in force = %v, expected %v first", inForce.RemoteDohUrlsIpv4, dohUrlsIpv4)
+	inForceSettings := tunnelSpace.clientStrategy.DohSettings().DnsResolverSettings
+	if len(inForceSettings.RemoteDohUrlsIpv4) < len(dohUrlsIpv4) || !slices.Equal(inForceSettings.RemoteDohUrlsIpv4[:len(dohUrlsIpv4)], dohUrlsIpv4) {
+		t.Fatalf("the tunnel's v4 servers in force = %v, expected %v first", inForceSettings.RemoteDohUrlsIpv4, dohUrlsIpv4)
 	}
-	if len(inForce.RemoteDohUrlsIpv6) < 1 || inForce.RemoteDohUrlsIpv6[0] != dohUrlIpv6 {
-		t.Fatalf("the tunnel's v6 servers in force = %v, expected %s first", inForce.RemoteDohUrlsIpv6, dohUrlIpv6)
+	if len(inForceSettings.RemoteDohUrlsIpv6) < 1 || inForceSettings.RemoteDohUrlsIpv6[0] != dohUrlIpv6 {
+		t.Fatalf("the tunnel's v6 servers in force = %v, expected %s first", inForceSettings.RemoteDohUrlsIpv6, dohUrlIpv6)
 	}
 }
 
 // An app that attaches to a tunnel already running (a relaunch, or the rpc
 // reconnecting) gives it the region the app saved meanwhile: the tunnel
-// started before the change and never saw it.
+// started before the change and never saw it. The first sync applies it, so
+// the change is in when the helper's sync returns.
 func TestDeviceRemoteGivesARunningTunnelTheRegionSavedBeforeItAttached(t *testing.T) {
-	_, tunnelSpace, _ := newIngressDnsTestTunnel(t, func(appSpace *NetworkSpace) {
+	var tunnelChanges chan *DeviceRemoteIngressDns
+	_, tunnelSpace, _ := newIngressDnsTestTunnel(t, func(appSpace *NetworkSpace, tunnelSpace *NetworkSpace) {
+		tunnelChanges = ingressDnsTestChanges(t, tunnelSpace)
 		if countryCode := appSpace.SetIngressCountryCode("cn"); countryCode != "cn" {
 			t.Fatalf("stored region = %q", countryCode)
 		}
 	})
 
-	waitForIngressDnsTest(t, "the attached tunnel to take China", func() bool {
-		return tunnelSpace.clientStrategy.DohSettings().IngressCountryCode == "cn" &&
-			tunnelSpace.GetIngressCountryCode() == "cn"
+	waitForIngressDnsTestChange(t, tunnelChanges, "China", func(ingressDns *DeviceRemoteIngressDns) bool {
+		return ingressDns.CountryCode == "cn"
 	})
+	if countryCode := tunnelSpace.clientStrategy.DohSettings().IngressCountryCode; countryCode != "cn" {
+		t.Fatalf("the attached tunnel's strategy region = %q", countryCode)
+	}
 }

@@ -350,7 +350,10 @@ type NetworkSpace struct {
 	// DoH servers -- changed in place (applyControlDohValues). A DeviceRemote
 	// bound to the space hands the change to its device, whose process runs
 	// its own copy of the space (device_remote_ingress_dns.go)
-	ingressDnsChangeCallbacks *connect.CallbackList[func()]
+	ingressDnsChangeCallbacks *connect.CallbackList[ingressDnsChangeCallback]
+	// counts the ingress dns changes, so a callback can tell the newest
+	// snapshot from a stale one. Guarded by stateLock
+	ingressDnsRevision uint64
 	// The seed bootstrap (extender_seed.go), set once at construction under
 	// stateLock. Nil for a space that runs none: no directory, or the space a
 	// cloud host shares among its hosted devices.
@@ -436,27 +439,28 @@ func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
 // bootstrap queries the new servers from its next pass. Returns whether the
 // servers changed.
 //
-// The ingress dns callbacks run after the swap, outside the space's lock: a
-// DeviceRemote bound to the space hands the new values to its device
-// (device_remote_ingress_dns.go).
+// The ingress dns callbacks run after the swap, outside the space's lock, with
+// the snapshot and revision taken with the change: a DeviceRemote bound to the
+// space hands the new values to its device (device_remote_ingress_dns.go).
 func (self *NetworkSpace) applyControlDohValues(values *NetworkSpaceValues) bool {
-	changed, closed := func() (bool, bool) {
+	changed, closed, ingressDns, ingressDnsRevision := func() (bool, bool, *DeviceRemoteIngressDns, uint64) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if !controlDohValuesChanged(&self.values, values) {
-			return false, self.closed
+			return false, self.closed, nil, 0
 		}
 		self.values.ControlDohUrlsIpv4 = slices.Clone(values.ControlDohUrlsIpv4)
 		self.values.ControlDohUrlsIpv6 = slices.Clone(values.ControlDohUrlsIpv6)
 		self.values.IngressCountryCode = values.IngressCountryCode
-		return true, self.closed
+		self.ingressDnsRevision += 1
+		return true, self.closed, newDeviceRemoteIngressDns(&self.values), self.ingressDnsRevision
 	}()
 	if !changed || closed {
 		return changed
 	}
 	current := self.valuesCopy()
 	self.clientStrategy.SetInternalDohSettings(spaceControlDohSettings(&current))
-	self.ingressDnsChanged()
+	self.ingressDnsChanged(ingressDns, ingressDnsRevision)
 	return true
 }
 
@@ -783,7 +787,7 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 		extenderDirectory:             extenderDirectory,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
-		ingressDnsChangeCallbacks:     connect.NewCallbackList[func()](),
+		ingressDnsChangeCallbacks:     connect.NewCallbackList[ingressDnsChangeCallback](),
 	}
 	// a reset the values bring that this storage has not applied -- one made
 	// in the app, for the space a tunnel process imports -- is applied before
@@ -1442,7 +1446,7 @@ func NewNetworkSpaceWithUrls(
 		extenderDirectory:             extenderDirectory,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
-		ingressDnsChangeCallbacks:     connect.NewCallbackList[func()](),
+		ingressDnsChangeCallbacks:     connect.NewCallbackList[ingressDnsChangeCallback](),
 	}
 	if extenderDirectory != nil {
 		role := extenderRole(extenderGossipMode(nil))
