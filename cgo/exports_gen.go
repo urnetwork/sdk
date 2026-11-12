@@ -7897,6 +7897,13 @@ func urnet_build_solana_payment_url(args *C.char, outError **C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_cant_reach_on_stall
+func urnet_cant_reach_on_stall(previousStallReason *C.char, stallReason *C.char) C.bool {
+	defer cgoGuard("urnet_cant_reach_on_stall")
+	r0 := sdk.CantReachOnStall(goString(previousStallReason), goString(stallReason))
+	return C.bool(r0)
+}
+
 //export urnet_check_crypto_payment_uri
 func urnet_check_crypto_payment_uri(asset *C.char, uri *C.char, address *C.char) C.bool {
 	defer cgoGuard("urnet_check_crypto_payment_uri")
@@ -16433,6 +16440,13 @@ func urnet_ingress_plain_dns_servers(countryCode *C.char) *C.char {
 func urnet_is_balance_code_format_valid(secret *C.char) C.bool {
 	defer cgoGuard("urnet_is_balance_code_format_valid")
 	r0 := sdk.IsBalanceCodeFormatValid(goString(secret))
+	return C.bool(r0)
+}
+
+//export urnet_is_cant_reach_error
+func urnet_is_cant_reach_error(errorMessage *C.char) C.bool {
+	defer cgoGuard("urnet_is_cant_reach_error")
+	r0 := sdk.IsCantReachError(goString(errorMessage))
 	return C.bool(r0)
 }
 
