@@ -416,13 +416,14 @@ func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
 //
 // The v2 claim transactions for the reader's wallet at payerAddress, which pays
 // their gas, checked against its balance at the chain's price: those of
-// URnetworkSnLedgerClaimTransactionsFor when it pays for them all, else the
-// largest account's claim alone, and every other account in still_claimable
-// ({no_id, index, status "still_claimable", amount_rao, message}): no
-// transaction claims it now, a later claim does. needs_gas: it cannot pay even
-// for transactions. Every key is snake_case, the sdk's json; a transactions
-// entry passes to URnetworkSnLedgerClaimOutcomes as it is. It rejects as
-// URnetworkSnLedgerClaimTransactionsFor does, and with
+// URnetworkSnLedgerClaimTransactionsFor when it pays for them all, else those
+// of the most accounts it can pay for, the largest first (a batch when they
+// can be), else the largest account's claim alone, and every other account in
+// still_claimable ({no_id, index, status "still_claimable", amount_rao,
+// message}): no transaction claims it now, a later claim does. needs_gas: it
+// cannot pay even for transactions. Every key is snake_case, the sdk's json;
+// a transactions entry passes to URnetworkSnLedgerClaimOutcomes as it is. It
+// rejects as URnetworkSnLedgerClaimTransactionsFor does, and with
 // "invalid_ss58_address: ..." for a payer that is not an EVM address.
 func SnLedgerClaimTransactionsForPayer(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
@@ -522,6 +523,58 @@ func SnLedgerClaimOutcomes(this js.Value, args []js.Value) any {
 	})
 }
 
+// URnetworkSnLedgerClaimOutcomesFor(settings, coldkeySs58, tx, receipt) -> Promise<[{no_id, index, status, amount_rao, message}]>
+//
+// URnetworkSnLedgerClaimOutcomes with the reasons read from the chain, as the
+// device's claim reads them: an account a batch's call refused without a
+// reason has vault2's transfer of its amount to coldkeySs58 simulated, and
+// under the runtime's transfer floor it is "failed" with "not_claimable:
+// AmountTooLow: ..." (Below the claim minimum), any other refusal
+// "claim_failed: <the runtime's reason>"; a claim alone that reverted is
+// called again, which says why (already_claimed when another claim paid it
+// first). settings are the chain settings the transactions were built with,
+// coldkeySs58 the coldkey they claim for. It rejects as
+// URnetworkSnLedgerClaimOutcomes does, and for settings or a coldkey
+// URnetworkSnLedgerClaimTransactionsFor refuses, or a transaction of another
+// vault2 or chain.
+func SnLedgerClaimOutcomesFor(this js.Value, args []js.Value) any {
+	var txRaw []byte
+	var txErr error
+	if 2 < len(args) {
+		txRaw, txErr = jsSnakeJson(args[2])
+	}
+	receiptJson, receiptErr := jsReceiptJson(firstJsArg(args[min(3, len(args)):]))
+	return jsPromise(func(resolve func(any), reject func(error)) {
+		switch {
+		case len(args) < 2 || args[1].Type() != js.TypeString:
+			reject(errors.New("settings and coldkey are required"))
+			return
+		case txErr != nil || txRaw == nil:
+			reject(errors.New("the transaction is required"))
+			return
+		case receiptErr != nil:
+			reject(receiptErr)
+			return
+		}
+		settings, err := parseSnChainSettings(args[0])
+		if err != nil {
+			reject(err)
+			return
+		}
+		var tx sdk.SnLedgerUnsignedTx
+		if err := json.Unmarshal(txRaw, &tx); err != nil {
+			reject(err)
+			return
+		}
+		outcomes, err := sdk.SnLedgerClaimOutcomesFor(settings, args[1].String(), &tx, receiptJson)
+		if err != nil {
+			reject(err)
+			return
+		}
+		resolve(jsJson(outcomes))
+	})
+}
+
 // jsReceiptJson is a wallet's receipt as json of its status and logs only, so
 // the bigints of ethers and viem receipts never reach JSON.stringify.
 func jsReceiptJson(receipt js.Value) (receiptJson string, err error) {
@@ -573,18 +626,23 @@ func SnCtfClientOf(this js.Value, args []js.Value) any {
 	return jsJson(sdk.SnCtfClientOf(jsCtfAnswer(args)))
 }
 
-// URnetworkSnCtfClientOfResponse(status, answer) -> as URnetworkSnCtfClientOf
+// URnetworkSnCtfClientOfResponse(status, answer, networkCredential) -> as URnetworkSnCtfClientOf
 //
 // The page's read of GET /sn/ctf/client with the HTTP status it was answered
-// (a number): 200 reads answer as URnetworkSnCtfClientOf does; 401, a server
-// before the network answer refusing the network token, is no wins and never
-// a reason to sign out; any other status is unavailable. Synchronous.
+// (a number), and whether it asked with the network's own credential, its JWT
+// or an API key (networkCredential, the boolean true), or with a client token:
+// 200 reads answer as URnetworkSnCtfClientOf does; a 401 to the network
+// credential, a server before the network answer refusing it, is no wins and
+// never a reason to sign out; a 401 when networkCredential is not true (a
+// client token, or a page that does not say) is unavailable, and so is any
+// other status. Synchronous.
 func SnCtfClientOfResponse(this js.Value, args []js.Value) any {
 	status := 0
 	if 0 < len(args) && args[0].Type() == js.TypeNumber {
 		status = args[0].Int()
 	}
-	return jsJson(sdk.SnCtfClientOfResponse(status, jsCtfAnswer(args[min(1, len(args)):])))
+	networkCredential := 2 < len(args) && args[2].Type() == js.TypeBoolean && args[2].Bool()
+	return jsJson(sdk.SnCtfClientOfResponse(status, jsCtfAnswer(args[min(1, len(args)):]), networkCredential))
 }
 
 // jsCtfAnswer is the route's json a page passes first: its text, or an object
@@ -656,6 +714,7 @@ func registerSnExports() {
 	js.Global().Set("URnetworkSnLedgerClaimTransactionsFor", js.FuncOf(SnLedgerClaimTransactionsFor))
 	js.Global().Set("URnetworkSnLedgerClaimTransactionsForPayer", js.FuncOf(SnLedgerClaimTransactionsForPayer))
 	js.Global().Set("URnetworkSnLedgerClaimOutcomes", js.FuncOf(SnLedgerClaimOutcomes))
+	js.Global().Set("URnetworkSnLedgerClaimOutcomesFor", js.FuncOf(SnLedgerClaimOutcomesFor))
 	js.Global().Set("URnetworkSnGasBalanceFor", js.FuncOf(SnGasBalanceFor))
 	js.Global().Set("URnetworkFormatAlpha", js.FuncOf(FormatAlpha))
 	// the claim relay over what the page reads (sn_claim_relay.go)

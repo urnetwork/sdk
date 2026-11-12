@@ -12,10 +12,13 @@ package sdk
 // says whether its award has been claimed, and the line shows for every win
 // that has not.
 //
-// A server before the network answer refuses a network token with 401. No
-// answer of this route ever signs anyone out: its requests go over the plain
-// transport, never the seam that takes a 401 as the credential's rejection,
-// and a refused network token reads as no wins.
+// A server before the network answer refuses a network token with 401. A
+// device asks with its network credential first and, when that read fails in
+// any way, with its client token, whose wins are a correct subset of the
+// network's. No answer of this route ever signs anyone out: its requests go
+// over the plain transport, never the seam that takes a 401 as the
+// credential's rejection, and a refused network token without a client token
+// to ask with reads as no wins.
 
 import (
 	"cmp"
@@ -578,63 +581,93 @@ func SnCtfClientOf(answerJson string) *SnCtfClientResult {
 }
 
 // SnCtfClientOfResponse reads a page's own GET /sn/ctf/client with the HTTP
-// status it was answered: 200 reads the body as SnCtfClientOf; 401 is no wins,
-// as a server before the network answer refuses a network token, and never a
-// reason to sign out; any other status, a 304 included, is unavailable (a page
-// that revalidates reads its kept body with SnCtfClientOf). Pure.
-func SnCtfClientOfResponse(statusCode int, answerJson string) *SnCtfClientResult {
-	switch statusCode {
-	case http.StatusOK:
+// status it was answered and whether the page asked with the network's own
+// credential, its JWT or an API key (networkCredential), or with a client
+// token. 200 reads the body as SnCtfClientOf. A 401 to the network credential
+// is no wins, as a server before the network answer refuses one, and never a
+// reason to sign out; a 401 to a client token is unavailable, never "no
+// wins", as is any other status, a 304 included (a page that revalidates reads
+// its kept body with SnCtfClientOf). Pure.
+func SnCtfClientOfResponse(statusCode int, answerJson string, networkCredential bool) *SnCtfClientResult {
+	switch {
+	case statusCode == http.StatusOK:
 		return SnCtfClientOf(answerJson)
-	case http.StatusUnauthorized:
+	case statusCode == http.StatusUnauthorized && networkCredential:
 		return snCtfNoWins()
+	case statusCode == http.StatusUnauthorized:
+		return snCtfClientResultOf(nil, errors.New("the capture the flag route refused the client token"))
 	default:
 		return snCtfClientResultOf(nil, fmt.Errorf("the capture the flag route answered %d", statusCode))
 	}
 }
 
-// snCtfClientCredentials are the credentials the device asks with, in turn:
-// its network credential, which the route answers with the wins of all of the
-// network's clients, as ur.io reads them, then its client token, which a
-// server before the network answer takes, for that client's.
-func snCtfClientCredentials(api *Api) []string {
-	var credentials []string
-	if networkByJwt := api.networkCredential(); networkByJwt != "" {
-		credentials = append(credentials, networkByJwt)
-	}
-	if byJwt := api.GetByJwt(); credentialNamesClient(byJwt) {
-		credentials = append(credentials, byJwt)
-	}
-	return credentials
-}
-
-// snCtfClient reads the device's capture the flag wins. Its requests go over
-// the api's transport alone, never the seam that takes a 401 as the sent
-// credential's rejection, so no answer of the route signs anyone out. A 401 to
-// the network credential, a server before the network answer, asks again
-// with the client token, and without one reads as no wins.
+// snCtfClient reads the device's capture the flag wins: with its network
+// credential, which the route answers with the wins of all of the network's
+// clients, as ur.io reads them, and when that read fails in any way (a 401
+// from a server before the network answer, a 5xx, an answer over the
+// transport's size limit, no answer in its time, or an answer that does not
+// parse), with its client token, for that client's wins, a correct subset of
+// the network's. The network read has half of the time left, so the client
+// token's read has the other half. Without a client token a 401 to the
+// network credential reads as no wins, and any other failure is unavailable.
+// Its requests go over the api's transport alone, never the seam that takes a
+// 401 as the sent credential's rejection, so no answer of the route signs
+// anyone out or drops a credential.
 func snCtfClient(ctx context.Context, api *Api) *SnCtfClientResult {
-	credentials := snCtfClientCredentials(api)
-	if len(credentials) == 0 {
+	networkByJwt := api.networkCredential()
+	clientByJwt := api.GetByJwt()
+	if !credentialNamesClient(clientByJwt) {
+		clientByJwt = ""
+	}
+	if networkByJwt == "" && clientByJwt == "" {
 		return snCtfClientResultOf(nil, errors.New("the session has no credential"))
 	}
 	get := api.transportHttpGetRaw()
 	ctx = api.clientInfoContext(ctx)
 	requestUrl := fmt.Sprintf("%s/sn/ctf/client", api.apiUrl)
-	for _, byJwt := range credentials {
+	read := func(ctx context.Context, byJwt string) (*SnCtfClientResult, error) {
 		raw, err := get(ctx, requestUrl, byJwt)
-		if err == nil {
-			return snCtfClientResultOf(raw, nil)
+		if err != nil {
+			return nil, err
 		}
-		if !ConfirmedClientRefreshRejection(err) || !isNetworkCredential(byJwt) {
+		result, err := snParseCtfClient(raw)
+		if err != nil {
+			return nil, fmt.Errorf("refused the capture the flag answer: %w", err)
+		}
+		return result, nil
+	}
+	if networkByJwt != "" {
+		networkCtx, cancel := ctx, context.CancelFunc(func() {})
+		if clientByJwt != "" {
+			timeout := snCtfClientTimeout / 2
+			if deadline, ok := ctx.Deadline(); ok {
+				timeout = time.Until(deadline) / 2
+			}
+			networkCtx, cancel = context.WithTimeout(ctx, timeout)
+		}
+		result, err := read(networkCtx, networkByJwt)
+		cancel()
+		switch {
+		case err == nil:
+			return result
+		case clientByJwt != "":
+			// the client token's wins
+		case ConfirmedClientRefreshRejection(err):
+			// a server before the network answer
+			return snCtfNoWins()
+		default:
 			return snCtfClientResultOf(nil, err)
 		}
 	}
-	return snCtfNoWins()
+	result, err := read(ctx, clientByJwt)
+	if err != nil {
+		return snCtfClientResultOf(nil, err)
+	}
+	return result
 }
 
 // SnCtfClient reads the device's capture the flag wins: its network's when it
-// holds the network credential, else its client's.
+// holds the network credential, else, or when that read fails, its client's.
 func (self *snDevice) SnCtfClient(callback SnCtfClientCallback) {
 	go connect.HandleError(func() {
 		ctx, cancel := context.WithTimeout(self.ctx, snCtfClientTimeout)

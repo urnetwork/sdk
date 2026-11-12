@@ -254,20 +254,29 @@ func TestSnCtfClientOfRefusesMalformedWins(t *testing.T) {
 	}
 }
 
-// A page's own read with its status: 200 reads the body, 401 (an older server
-// refusing a network token) is no wins, and anything else is unavailable.
+// A page's own read with its status and the kind of token it sent: 200 reads
+// the body whichever it sent; a 401 to the network credential (an older server
+// refusing a network token) is no wins, and a 401 to a client token is
+// unavailable, never no wins; anything else is unavailable.
 func TestSnCtfClientOfResponse(t *testing.T) {
-	if result := SnCtfClientOfResponse(http.StatusOK, testCtfClientAnswer); result.Error != nil || result.Wins.Len() != 2 {
-		t.Fatalf("200 %+v", result)
-	}
-	result := SnCtfClientOfResponse(http.StatusUnauthorized, `{"type":"about:blank","title":"Unauthorized","status":401,"code":"unauthorized"}`)
-	if raw := string(testLedgerJson(t, result)); result.Error != nil || raw != `{"client_id":"","as_of_millis":0,"epochs":[],"wins":[],"unclaimed_wins":[]}` {
-		t.Fatalf("401 %s", raw)
-	}
-	for _, status := range []int{http.StatusNotModified, http.StatusBadRequest, http.StatusServiceUnavailable, 0} {
-		if result := SnCtfClientOfResponse(status, testCtfClientAnswer); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Wins.Len() != 0 {
-			t.Fatalf("%d %+v", status, result)
+	for _, networkCredential := range []bool{true, false} {
+		if result := SnCtfClientOfResponse(http.StatusOK, testCtfClientAnswer, networkCredential); result.Error != nil || result.Wins.Len() != 2 {
+			t.Fatalf("200 (network credential %t) %+v", networkCredential, result)
 		}
+		for _, status := range []int{http.StatusNotModified, http.StatusBadRequest, http.StatusServiceUnavailable, 0} {
+			if result := SnCtfClientOfResponse(status, testCtfClientAnswer, networkCredential); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Wins.Len() != 0 {
+				t.Fatalf("%d (network credential %t) %+v", status, networkCredential, result)
+			}
+		}
+	}
+	result := SnCtfClientOfResponse(http.StatusUnauthorized, testCtfUnauthorized, true)
+	if raw := string(testLedgerJson(t, result)); result.Error != nil || raw != `{"client_id":"","as_of_millis":0,"epochs":[],"wins":[],"unclaimed_wins":[]}` {
+		t.Fatalf("401 to the network credential %s", raw)
+	}
+	result = SnCtfClientOfResponse(http.StatusUnauthorized, testCtfUnauthorized, false)
+	if result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Error.Message != "the capture the flag route refused the client token" ||
+		result.Wins.Len() != 0 || result.UnclaimedWins.Len() != 0 || result.LatestWin != nil {
+		t.Fatalf("401 to a client token %+v (%+v)", result, result.Error)
 	}
 }
 
@@ -522,6 +531,129 @@ func TestSnCtfClientOnADevice(t *testing.T) {
 	}
 }
 
+// testCtfDeviceRead is one SnCtfClient of the device.
+func testCtfDeviceRead(t *testing.T, device *snDevice) *SnCtfClientResult {
+	t.Helper()
+	results := make(chan *SnCtfClientResult, 1)
+	device.SnCtfClient(connect.NewApiCallback[*SnCtfClientResult](func(result *SnCtfClientResult, err error) {
+		if err != nil {
+			t.Error(err)
+		}
+		results <- result
+	}))
+	select {
+	case result := <-results:
+		return result
+	case <-time.After(70 * time.Second):
+		t.Fatal("the read did not call back")
+		return nil
+	}
+}
+
+// A device holding both credentials asks with its client token when the
+// network credential's read fails in any way, not only with a 401: an answer
+// over the transport's 2 MiB limit, a 503 or a 500, an answer that does not
+// parse. The client token's wins are a correct subset of the network's.
+// Holding the network credential alone, the same failures are unavailable,
+// never no wins. No read signs anyone out or drops a credential.
+func TestSnCtfClientFallsBackToTheClientToken(t *testing.T) {
+	service := &testCtfClientService{}
+	server := httptest.NewServer(testApiHandler(service))
+	defer server.Close()
+	ctx, api := newTestApiForURL(t, server.URL)
+	logouts, signInsRequired := 0, 0
+	api.AddAuthLogoutListener(authLogoutListenerFunc(func() { logouts += 1 }))
+	api.AddAccountSignInRequiredListener(testSignInRequired{&signInsRequired})
+	device := &snDevice{ctx: ctx, api: func() *Api { return api }, clientId: connect.NewId(), state: newDeviceSn()}
+	clientJwt := testingJwt(map[string]any{"network_id": "00000000-0000-0000-0000-000000000001", "client_id": testCtfClientId})
+	networkJwt := testingNetworkAdminJwt("00000000-0000-0000-0000-000000000001")
+	withBoth := func() {
+		api.SetByJwt(clientJwt)
+		api.mutex.Lock()
+		api.networkByJwt = networkJwt
+		api.mutex.Unlock()
+	}
+	oversized := testCtfNetworkAnswerOver(t, int(connect.DefaultClientStrategySettings().MaxHttpResponseBodyBytes))
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+		// connect's transport tries an answer over its limit three times, for
+		// about 15 seconds, before it fails: the reads after the first, of the
+		// same failure as the others', are left to them
+		once bool
+	}{
+		{"an answer over the 2 MiB limit", http.StatusOK, oversized, true},
+		{"a 503", http.StatusServiceUnavailable, `{"type":"about:blank","title":"Service Unavailable","status":503,"code":"unavailable"}`, false},
+		{"a 500", http.StatusInternalServerError, `{"type":"about:blank","title":"Internal Server Error","status":500}`, false},
+		{"an answer that does not parse", http.StatusOK, `{"as_of":"2026-12-11T22:24:12Z","client_id":null,"wins":[]}`, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			networkAsked := 0
+			service.mutex.Lock()
+			service.answer = func(byJwt string) (int, string) {
+				if credentialNamesClient(byJwt) {
+					return http.StatusOK, testCtfClientAnswer
+				}
+				networkAsked += 1
+				return c.status, c.body
+			}
+			service.mutex.Unlock()
+
+			// both held: the network credential first (again when the
+			// transport retries a 503), then the client token, for its wins
+			withBoth()
+			result := testCtfDeviceRead(t, device)
+			if result.Error != nil || result.ClientId != testCtfClientId || result.Epochs.Len() != 2 || result.UnclaimedWins.Len() != 1 || result.UnclaimedWins.Get(0).ClientId != testCtfClientId {
+				t.Fatalf("both %+v (%+v)", result, result.Error)
+			}
+			requests := service.take()
+			if len(requests) < 2 || requests[0] != "GET /sn/ctf/client Bearer "+networkJwt || requests[len(requests)-1] != "GET /sn/ctf/client Bearer "+clientJwt || networkAsked != len(requests)-1 {
+				t.Fatalf("both requests %q", requests)
+			}
+			if api.GetByJwt() != clientJwt || api.networkCredential() != networkJwt {
+				t.Fatal("a failed read dropped a credential")
+			}
+			if c.once {
+				return
+			}
+
+			// the client token refused too: unavailable
+			service.mutex.Lock()
+			service.answer = func(byJwt string) (int, string) {
+				if credentialNamesClient(byJwt) {
+					return http.StatusUnauthorized, testCtfUnauthorized
+				}
+				return c.status, c.body
+			}
+			service.mutex.Unlock()
+			if result = testCtfDeviceRead(t, device); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Wins.Len() != 0 {
+				t.Fatalf("both refused %+v", result)
+			}
+			if requests := service.take(); requests[len(requests)-1] != "GET /sn/ctf/client Bearer "+clientJwt {
+				t.Fatalf("both refused requests %q", requests)
+			}
+
+			// the network credential alone: unavailable, never no wins
+			api.SetByJwt(networkJwt)
+			if result = testCtfDeviceRead(t, device); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || result.Wins.Len() != 0 || result.LatestWin != nil {
+				t.Fatalf("network alone %+v", result)
+			}
+			for _, request := range service.take() {
+				if request != "GET /sn/ctf/client Bearer "+networkJwt {
+					t.Fatalf("network alone request %q", request)
+				}
+			}
+			if api.GetByJwt() != networkJwt || api.networkCredential() != networkJwt {
+				t.Fatal("a failed read dropped the network credential")
+			}
+		})
+	}
+	if logouts != 0 || signInsRequired != 0 {
+		t.Fatalf("%d sign-outs and %d sign-ins required from capture the flag reads", logouts, signInsRequired)
+	}
+}
+
 // snCtfClientResultOf: a read that failed is unavailable.
 func TestSnCtfClientResultOfAFailedRead(t *testing.T) {
 	result := snCtfClientResultOf(nil, errors.New("connection refused"))
@@ -560,14 +692,109 @@ func TestSnCtfClientThroughAnInstalledTransport(t *testing.T) {
 	if api.GetByJwt() != clientJwt || api.networkCredential() != networkJwt {
 		t.Fatal("a refused read dropped a credential")
 	}
-	// a failure that is not the server's 401 ends the read: unavailable
+	// a failure that is not the server's 401 asks the client token too, and
+	// both failing is unavailable
 	asked = nil
-	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
-		asked = append(asked, "")
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		asked = append(asked, byJwt)
 		return nil, errors.New("device rpc http concurrency limit reached")
 	})
-	if result = snCtfClient(ctx, api); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || len(asked) != 1 {
-		t.Fatalf("a failed read %+v, asked %d", result, len(asked))
+	if result = snCtfClient(ctx, api); result.Error == nil || result.Error.Code != SnErrorCodeCtfUnavailable || !reflect.DeepEqual(asked, []string{networkJwt, clientJwt}) {
+		t.Fatalf("a failed read %+v, asked %q", result, asked)
+	}
+
+	// the device forwards an answer over its rpc's 2 MiB limit as the device
+	// process's error: the client token's wins
+	oversized := testCtfNetworkAnswerOver(t, defaultDeviceRpcSettings().HttpMaxBodyBytes)
+	asked = nil
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		asked = append(asked, byJwt)
+		if credentialNamesClient(byJwt) {
+			return []byte(testCtfClientAnswer), nil
+		}
+		return nil, newDeviceRemoteHttpResponseWithLimit(connect.NewId(), []byte(oversized), nil, 0).toError()
+	})
+	if result = snCtfClient(ctx, api); result.Error != nil || result.ClientId != testCtfClientId || result.UnclaimedWins.Len() != 1 || !reflect.DeepEqual(asked, []string{networkJwt, clientJwt}) {
+		t.Fatalf("an oversized forwarded answer %+v (%+v), asked %q", result, result.Error, asked)
+	}
+	if api.GetByJwt() != clientJwt || api.networkCredential() != networkJwt {
+		t.Fatal("a failed read dropped a credential")
+	}
+}
+
+// testCtfNetworkAnswerOver is a network's answer, valid in every part, of more
+// than limit bytes: unclaimed wins of one client, two in each epoch.
+func testCtfNetworkAnswerOver(t *testing.T, limit int) string {
+	t.Helper()
+	var wins []any
+	for epoch := 1; ; epoch++ {
+		wins = append(wins,
+			testCtfWin(epoch, "provider", "is", 1, testCtfClientId, 48_025_660, 0, "finalized", false),
+			testCtfWin(epoch, "extender", "is", 2, testCtfClientId, 48_025_660, 0, "finalized", false))
+		if epoch%500 != 0 {
+			continue
+		}
+		answer := string(testLedgerJson(t, map[string]any{"as_of": "2026-12-11T22:24:12Z", "client_id": nil, "epochs": []any{}, "wins": wins}))
+		if limit < len(answer) {
+			if result := SnCtfClientOf(answer); result.Error != nil || result.UnclaimedWins.Len() != len(wins) {
+				t.Fatalf("the oversized answer does not read: %+v", result.Error)
+			}
+			return answer
+		}
+	}
+}
+
+// A network read that gets no answer in its time leaves the client token the
+// other half of the time left: its wins, read before the read's deadline.
+func TestSnCtfClientNetworkReadOutOfTime(t *testing.T) {
+	_, api := newTestApiForURL(t, "https://api.test")
+	clientJwt := testingJwt(map[string]any{"network_id": "00000000-0000-0000-0000-000000000001", "client_id": testCtfClientId})
+	networkJwt := testingNetworkAdminJwt("00000000-0000-0000-0000-000000000001")
+	api.SetByJwt(clientJwt)
+	api.mutex.Lock()
+	api.networkByJwt = networkJwt
+	api.mutex.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	var mutex sync.Mutex
+	var asked []string
+	var networkDeadline time.Time
+	var clientLeft time.Duration
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		mutex.Lock()
+		asked = append(asked, byJwt)
+		mutex.Unlock()
+		if credentialNamesClient(byJwt) {
+			clientDeadline, _ := ctx.Deadline()
+			mutex.Lock()
+			clientLeft = time.Until(clientDeadline)
+			mutex.Unlock()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return []byte(testCtfClientAnswer), nil
+		}
+		// no answer: the read's own deadline ends it
+		mutex.Lock()
+		networkDeadline, _ = ctx.Deadline()
+		mutex.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	result := snCtfClient(ctx, api)
+	mutex.Lock()
+	defer mutex.Unlock()
+	if result.Error != nil || result.ClientId != testCtfClientId || result.UnclaimedWins.Len() != 1 || !reflect.DeepEqual(asked, []string{networkJwt, clientJwt}) {
+		t.Fatalf("result %+v (%+v), asked %q", result, result.Error, asked)
+	}
+	// the network read's deadline is about half way, and the client token's
+	// read has the rest
+	if left := deadline.Sub(networkDeadline); left < time.Second || 3*time.Second < left {
+		t.Fatalf("the network read ended %s before the read's deadline", left)
+	}
+	if clientLeft < time.Second {
+		t.Fatalf("the client token's read had %s", clientLeft)
 	}
 }
 
