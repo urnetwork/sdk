@@ -1479,7 +1479,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1381) ==
+== skipped (1382) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2098,6 +2098,7 @@ DeviceRemoteExtenderStatus: data: crosses as json
 DeviceRemoteHttpRequest: data: crosses as json
 DeviceRemoteHttpResponse: data: crosses as json
 DeviceRemoteHttpResponseError: data: crosses as json
+DeviceRemoteIngressDns: data: crosses as json
 DeviceRemoteLocalOverrideAppIds: data: crosses as json
 DeviceRemoteNetworkPeers: data: crosses as json
 DeviceRemoteOfflineChangeEvent: data: crosses as json
