@@ -39,8 +39,12 @@ type SnChainSettings struct {
 	VaultAddress string `json:"vault_address"`
 	// the settlement v2 vault (STSettlementVault2), lowercase 0x; v2 claims
 	// go only to this address. "" = v2 claims are not configured
-	Vault2Address      string `json:"vault2_address"`
-	CoordinatorAddress string `json:"coordinator_address"`
+	Vault2Address string `json:"vault2_address"`
+	// the claim batcher (STClaimBatcher) that claims two or more v2 accounts
+	// in one transaction, lowercase 0x; used only when its code is the
+	// release batcher's. "" = every account is claimed alone
+	ClaimBatcherAddress string `json:"claim_batcher_address"`
+	CoordinatorAddress  string `json:"coordinator_address"`
 	// URnetwork's network-operator id in the coordinator (decimal or 0x hex)
 	NoId   string `json:"no_id"`
 	Netuid int64  `json:"netuid"`
@@ -58,17 +62,18 @@ type SnChainSettings struct {
 }
 
 type snChainSettingsJson struct {
-	ChainId            int64    `json:"chain_id"`
-	VaultAddress       string   `json:"vault_address"`
-	Vault2Address      string   `json:"vault2_address"`
-	CoordinatorAddress string   `json:"coordinator_address"`
-	NoId               string   `json:"no_id"`
-	Netuid             int64    `json:"netuid"`
-	ExplorerTxUrl      string   `json:"explorer_tx_url"`
-	ArtifactBaseUrl    string   `json:"artifact_base_url"`
-	TxType             string   `json:"tx_type"`
-	LookbackEpochs     int64    `json:"lookback_epochs"`
-	RpcUrls            []string `json:"rpc_urls"`
+	ChainId             int64    `json:"chain_id"`
+	VaultAddress        string   `json:"vault_address"`
+	Vault2Address       string   `json:"vault2_address"`
+	ClaimBatcherAddress string   `json:"claim_batcher_address"`
+	CoordinatorAddress  string   `json:"coordinator_address"`
+	NoId                string   `json:"no_id"`
+	Netuid              int64    `json:"netuid"`
+	ExplorerTxUrl       string   `json:"explorer_tx_url"`
+	ArtifactBaseUrl     string   `json:"artifact_base_url"`
+	TxType              string   `json:"tx_type"`
+	LookbackEpochs      int64    `json:"lookback_epochs"`
+	RpcUrls             []string `json:"rpc_urls"`
 }
 
 func NewSnChainSettings() *SnChainSettings {
@@ -84,15 +89,19 @@ func NewSnChainSettings() *SnChainSettings {
 // /sn/epoch never sets it: a claim target comes from the release or the
 // network space's explicit sn_chain settings. Claims remain unavailable until
 // an account has finalized, claimable v2 funds.
+//
+// ClaimBatcherAddress pins the deployed mainnet STClaimBatcher, whose code is
+// the release batcher's (keccak 0x2964c288…2c26).
 func DefaultSnChainSettings() *SnChainSettings {
 	return &SnChainSettings{
-		Vault2Address:  "0xe4865eb1bebdf5c6a10c9d37f3ccdd59aee8f20c",
-		ChainId:        SnChainIdMainnet,
-		Netuid:         25,
-		ExplorerTxUrl:  "https://evm.taostats.io/tx/%s",
-		TxType:         SnTxTypeLegacy,
-		LookbackEpochs: snDefaultLookbackEpochs,
-		rpcUrls:        []string{"https://lite.chain.opentensor.ai"},
+		Vault2Address:       "0xe4865eb1bebdf5c6a10c9d37f3ccdd59aee8f20c",
+		ClaimBatcherAddress: snMainnetClaimBatcher,
+		ChainId:             SnChainIdMainnet,
+		Netuid:              25,
+		ExplorerTxUrl:       "https://evm.taostats.io/tx/%s",
+		TxType:              SnTxTypeLegacy,
+		LookbackEpochs:      snDefaultLookbackEpochs,
+		rpcUrls:             []string{"https://lite.chain.opentensor.ai"},
 	}
 }
 
@@ -158,6 +167,9 @@ func (self *SnChainSettings) Merge(overrides *SnChainSettings) *SnChainSettings 
 	}
 	if overrides.Vault2Address != "" {
 		merged.Vault2Address = overrides.Vault2Address
+	}
+	if overrides.ClaimBatcherAddress != "" {
+		merged.ClaimBatcherAddress = overrides.ClaimBatcherAddress
 	}
 	if overrides.CoordinatorAddress != "" {
 		merged.CoordinatorAddress = overrides.CoordinatorAddress
@@ -227,17 +239,18 @@ func (self *SnChainSettings) ExplorerUrlForTx(txHash string) string {
 
 func (self *SnChainSettings) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&snChainSettingsJson{
-		ChainId:            self.ChainId,
-		VaultAddress:       self.VaultAddress,
-		Vault2Address:      self.Vault2Address,
-		CoordinatorAddress: self.CoordinatorAddress,
-		NoId:               self.NoId,
-		Netuid:             self.Netuid,
-		ExplorerTxUrl:      self.ExplorerTxUrl,
-		ArtifactBaseUrl:    self.ArtifactBaseUrl,
-		TxType:             self.TxType,
-		LookbackEpochs:     self.LookbackEpochs,
-		RpcUrls:            self.rpcUrls,
+		ChainId:             self.ChainId,
+		VaultAddress:        self.VaultAddress,
+		Vault2Address:       self.Vault2Address,
+		ClaimBatcherAddress: self.ClaimBatcherAddress,
+		CoordinatorAddress:  self.CoordinatorAddress,
+		NoId:                self.NoId,
+		Netuid:              self.Netuid,
+		ExplorerTxUrl:       self.ExplorerTxUrl,
+		ArtifactBaseUrl:     self.ArtifactBaseUrl,
+		TxType:              self.TxType,
+		LookbackEpochs:      self.LookbackEpochs,
+		RpcUrls:             self.rpcUrls,
 	})
 }
 
@@ -247,17 +260,18 @@ func (self *SnChainSettings) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*self = SnChainSettings{
-		ChainId:            j.ChainId,
-		VaultAddress:       j.VaultAddress,
-		Vault2Address:      j.Vault2Address,
-		CoordinatorAddress: j.CoordinatorAddress,
-		NoId:               j.NoId,
-		Netuid:             j.Netuid,
-		ExplorerTxUrl:      j.ExplorerTxUrl,
-		ArtifactBaseUrl:    j.ArtifactBaseUrl,
-		TxType:             j.TxType,
-		LookbackEpochs:     j.LookbackEpochs,
-		rpcUrls:            j.RpcUrls,
+		ChainId:             j.ChainId,
+		VaultAddress:        j.VaultAddress,
+		Vault2Address:       j.Vault2Address,
+		ClaimBatcherAddress: j.ClaimBatcherAddress,
+		CoordinatorAddress:  j.CoordinatorAddress,
+		NoId:                j.NoId,
+		Netuid:              j.Netuid,
+		ExplorerTxUrl:       j.ExplorerTxUrl,
+		ArtifactBaseUrl:     j.ArtifactBaseUrl,
+		TxType:              j.TxType,
+		LookbackEpochs:      j.LookbackEpochs,
+		rpcUrls:             j.RpcUrls,
 	}
 	return nil
 }
@@ -276,6 +290,22 @@ func (self *SnChainSettings) vault2() ([20]byte, error) {
 		err = errors.New("the zero address")
 	}
 	return address, err
+}
+
+// The mainnet claim batcher (sn VERSION2-FINAL.md §10.2), the address the
+// server's claim relay batches through.
+const snMainnetClaimBatcher = "0x14174e7c5671ce1499aef9c68d74bebffa58c41a"
+
+// claimBatcher parses ClaimBatcherAddress; false when none is set.
+func (self *SnChainSettings) claimBatcher() ([20]byte, bool, error) {
+	if self.ClaimBatcherAddress == "" {
+		return [20]byte{}, false, nil
+	}
+	address, err := evm.ParseAddress(self.ClaimBatcherAddress)
+	if err == nil && address == ([20]byte{}) {
+		err = errors.New("the zero address")
+	}
+	return address, err == nil, err
 }
 
 func (self *SnChainSettings) coordinator() ([20]byte, error) {

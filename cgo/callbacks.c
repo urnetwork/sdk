@@ -745,6 +745,10 @@ void urnet_invoke_sn_connect_wallet(urnet_sn_connect_wallet_cb cb, void* user_da
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sn_ctf_client(urnet_sn_ctf_client_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sn_epoch(urnet_sn_epoch_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
