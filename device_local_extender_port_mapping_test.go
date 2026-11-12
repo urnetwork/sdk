@@ -254,8 +254,9 @@ func TestDeviceLocalProviderExtenderMapsNothingByDefault(t *testing.T) {
 }
 
 // A role behind a router asks it for the carriers it holds, offers the external
-// ports the router gives in every post and in its mesh address, and reports
-// the mapping.
+// ports the router gives in every ipv4 post and in its ipv4 mesh address, and
+// reports the mapping. The router maps ipv4 alone, so the ipv6 posts and mesh
+// address keep the bound ports, where the v6 address answers (S10).
 func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	router := newTestExtenderRouter()
 	fixture := newTestPortMappingFixtureWithPorts(t, router, map[string]int{"tcp": 40443, "udp": 40444, "dns": 40053})
@@ -263,12 +264,17 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 	fixture.waitPass()
 	for range 2 {
 		post := fixture.waitPost()
-		if post.args.TcpPort != 40443 || post.args.UdpPort != 40444 || post.args.DnsPort != 40053 {
-			t.Fatalf("v%d ports = %d/%d/%d, expected the router's 40443/40444/40053", post.ipVersion,
-				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort)
+		expectedTcpPort, expectedUdpPort, expectedDnsPort := 40443, 40444, 40053
+		if post.ipVersion == 6 {
+			expectedTcpPort, expectedUdpPort, expectedDnsPort = fixture.tcpPort, fixture.udpPort, fixture.dnsPort
 		}
-		if !slices.Equal(post.args.DnsPorts, []int{40053}) {
-			t.Fatalf("v%d dns ports = %v, expected the router's", post.ipVersion, post.args.DnsPorts)
+		if post.args.TcpPort != expectedTcpPort || post.args.UdpPort != expectedUdpPort || post.args.DnsPort != expectedDnsPort {
+			t.Fatalf("v%d ports = %d/%d/%d, expected %d/%d/%d", post.ipVersion,
+				post.args.TcpPort, post.args.UdpPort, post.args.DnsPort,
+				expectedTcpPort, expectedUdpPort, expectedDnsPort)
+		}
+		if !slices.Equal(post.args.DnsPorts, []int{expectedDnsPort}) {
+			t.Fatalf("v%d dns ports = %v, expected [%d]", post.ipVersion, post.args.DnsPorts, expectedDnsPort)
 		}
 	}
 	status := fixture.waitStatus("mapped", func(status *ExtenderProvideStatus) bool {
@@ -289,10 +295,11 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 		t.Fatalf("the router forwards %v, expected the three carriers", held)
 	}
 	fixture.assertOwnCarriersOnly(router)
-	// peers dial the mesh on the port the router forwards (D2)
+	// peers dial the mesh on the port the router forwards over ipv4, and on the
+	// bound port over ipv6 (D2)
 	fixture.waitNodeListenAddrs([]string{
 		fmt.Sprintf("/ip4/%s/tcp/%d", testProvideExtenderIpv4, 40443),
-		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, 40443),
+		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, fixture.tcpPort),
 	})
 }
 
@@ -419,16 +426,26 @@ func TestDeviceLocalProviderExtenderRemovesItsMappingsWhenItStops(t *testing.T) 
 }
 
 // A mapping the router moved at a renewal is posted at once, not at the tick,
-// so the record names the port the router forwards now.
+// so the record names the port the router forwards now. The ipv6 post keeps the
+// bound port either way.
 func TestDeviceLocalProviderExtenderPostsAMovedMapping(t *testing.T) {
 	router := newTestExtenderRouter()
 	fixture := newTestPortMappingFixtureWithPorts(t, router, map[string]int{"tcp": 40443})
-	fixture.waitPass()
-	for range 2 {
-		if post := fixture.waitPost(); post.args.TcpPort != 40443 {
-			t.Fatalf("v%d tcp port = %d, expected 40443", post.ipVersion, post.args.TcpPort)
+	expectTcpPorts := func(v4TcpPort int) {
+		t.Helper()
+		for range 2 {
+			post := fixture.waitPost()
+			expectedTcpPort := v4TcpPort
+			if post.ipVersion == 6 {
+				expectedTcpPort = fixture.tcpPort
+			}
+			if post.args.TcpPort != expectedTcpPort {
+				t.Fatalf("v%d tcp port = %d, expected %d", post.ipVersion, post.args.TcpPort, expectedTcpPort)
+			}
 		}
 	}
+	fixture.waitPass()
+	expectTcpPorts(40443)
 
 	// the router lost its table and gives another port at the renewal
 	router.setExternalPort("tcp", fixture.tcpPort, 41443)
@@ -437,11 +454,7 @@ func TestDeviceLocalProviderExtenderPostsAMovedMapping(t *testing.T) {
 		t.Fatalf("renewal wait = %s, expected half the hour", wait.wait)
 	}
 	wait.fire <- time.Now()
-	for range 2 {
-		if post := fixture.waitPost(); post.args.TcpPort != 41443 {
-			t.Fatalf("v%d tcp port after the move = %d, expected 41443", post.ipVersion, post.args.TcpPort)
-		}
-	}
+	expectTcpPorts(41443)
 	fixture.waitStatus("moved", func(status *ExtenderProvideStatus) bool {
 		return status.PortMappingTcpPort == 41443
 	})
