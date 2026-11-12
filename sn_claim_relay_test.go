@@ -285,7 +285,7 @@ func TestSnClaimMaxFeePerGasIsWhatSigningPays(t *testing.T) {
 	ctx := context.Background()
 	for _, txType := range []string{SnTxTypeLegacy, SnTxTypeEip1559} {
 		const gas = uint64(2_600_000)
-		turn, err := newSnKeyTurns().take(ctx, evm.AddressOf(key))
+		turn, err := newSnKeyTurns().take(ctx, snGasKeyId{chainId: 945, address: evm.AddressOf(key)})
 		if err != nil {
 			t.Fatal(err)
 		}

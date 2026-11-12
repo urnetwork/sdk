@@ -472,13 +472,11 @@ func (self *snLedgerClaimEngine) send(ctx context.Context, key *secp.PrivateKey,
 		failed(snFailMessage(err))
 		return
 	}
-	txHash, settle, failure := snSendClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault2, plan.data, gas, balance)
+	txHash, failure := snSendClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault2, plan.data, gas, balance)
 	if failure != "" {
 		failed(failure)
 		return
 	}
-	// in flight until the wait for its receipt ends
-	defer settle()
 	callback.Sent(plan.noId, plan.index, txHash)
 	receipt, err := self.client.WaitReceipt(ctx, txHash, snClaimReceiptPoll, snClaimReceiptTimeout)
 	if err != nil {
@@ -620,12 +618,10 @@ func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.Pri
 	if err != nil {
 		return passing
 	}
-	batch, txHash, settle, err := self.broadcastBatch(ctx, key, passing, count, data, gas, gasPerClaim, balance)
+	batch, txHash, err := self.broadcastBatch(ctx, key, passing, count, data, gas, gasPerClaim, balance)
 	if batch == nil {
 		return passing
 	}
-	// in flight until the wait for its receipt ends
-	defer settle()
 	_, alone := snLedgerSplit(passing, batch)
 	failAll := func(message string) {
 		for _, plan := range batch {
@@ -680,32 +676,31 @@ func (self *snLedgerClaimEngine) sendBatch(parent context.Context, key *secp.Pri
 // the gas key's turn (snGasKeyTurn): from the nonce read until a node has
 // answered the broadcast, and not while sendBatch waits for the receipt. It
 // returns the plans of the batch it broadcast, in the ledger's order, with the
-// transaction's hash and the settle sendBatch calls when its wait for the
-// receipt ends (the transaction is in flight until then), or with the
-// broadcast's error and a settle that does nothing. No plans when it sent
-// nothing: the wait for the turn ended, the batch could not be signed, or
-// balance pays for no batch of two or more.
-func (self *snLedgerClaimEngine) broadcastBatch(ctx context.Context, key *secp.PrivateKey, passing []*snLedgerClaimPlan, count int, data []byte, gas uint64, gasPerClaim uint64, balance *big.Int) ([]*snLedgerClaimPlan, string, func(), error) {
-	turn, err := snTakeGasKeyTurn(ctx, key)
+// transaction's hash or the broadcast's error. No plans when it sent nothing:
+// the wait for the turn ended, the batch could not be signed, or balance pays
+// for no batch of two or more.
+func (self *snLedgerClaimEngine) broadcastBatch(ctx context.Context, key *secp.PrivateKey, passing []*snLedgerClaimPlan, count int, data []byte, gas uint64, gasPerClaim uint64, balance *big.Int) ([]*snLedgerClaimPlan, string, error) {
+	turn, err := snTakeGasKeyTurn(ctx, self.chainId, key)
 	if err != nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	defer turn.release()
 	batch := passing[:count]
 	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, turn, key, self.batcher, data, gas)
 	if err != nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	if balance.Cmp(maxCost) < 0 {
 		if batch, raw = self.smallerBatch(ctx, turn, key, passing, count, gasPerClaim, balance); batch == nil {
-			return nil, "", nil, nil
+			return nil, "", nil
 		}
 	}
 	txHash, err := self.client.SendRawTransaction(ctx, raw)
 	if err != nil {
-		return batch, "", func() {}, err
+		return batch, "", err
 	}
-	return batch, txHash, turn.sent(), nil
+	turn.sent()
+	return batch, txHash, nil
 }
 
 // smallerBatch is the batch of the most of plans, fewer than count, that the

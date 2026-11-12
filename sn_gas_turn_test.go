@@ -8,9 +8,9 @@ package sdk
 // transaction pool checks nonces as a node's does, also when its nonce reads
 // come from a node that has not seen the first transaction yet. The turn ends
 // at the broadcast, so neither claim waits for the other's receipt, and every
-// way a claim ends gives it back. A transaction holds its nonce only while its
-// claim waits for the receipt, a refused one never; and a claim whose time
-// runs out while it waits for the turn sends nothing.
+// way a claim ends gives it back. A transaction raises its key's nonce floor
+// for its span only, a refused one never; and a claim whose time runs out while
+// it waits for the turn sends nothing.
 
 import (
 	"bytes"
@@ -68,8 +68,10 @@ type fakeNoncePool struct {
 	pairWait time.Duration
 	paired   bool
 	waiting  chan uint64
-	// no receipt is answered until this many transactions are held or mined
+	// no receipt is answered until this many broadcasts were tried, taken or
+	// refused
 	receiptsAfter int
+	sendAttempts  int
 	// each broadcast takes this long to reach the pool, and a nonce read
 	// meanwhile does not count it
 	broadcastDelay time.Duration
@@ -235,6 +237,7 @@ func (self *fakeNoncePool) send(params []json.RawMessage) (any, *evm.RpcError) {
 		self.t.Errorf("sent transaction: %v", err)
 		return nil, &evm.RpcError{Code: -32000, Message: err.Error()}
 	}
+	self.sendAttempts++
 	hash := evm.Keccak256(raw)
 	txHash := "0x" + hex.EncodeToString(hash[:])
 	refuse := func(message string) (any, *evm.RpcError) {
@@ -281,7 +284,7 @@ func (self *fakeNoncePool) receipt(w http.ResponseWriter, req fakePoolRequest, b
 	var txHash string
 	json.Unmarshal(req.Params[0], &txHash)
 	held := self.byHash[strings.ToLower(txHash)]
-	if held == nil || len(self.byHash) < self.receiptsAfter {
+	if held == nil || self.sendAttempts < self.receiptsAfter {
 		self.answer(w, req.Id, nil, nil)
 		return
 	}
@@ -412,7 +415,8 @@ func (self *fakeNoncePool) delayBroadcasts(delay time.Duration) {
 	self.broadcastDelay = delay
 }
 
-// holdReceipts answers no receipt until count transactions are held or mined.
+// holdReceipts answers no receipt until count broadcasts were tried, taken or
+// refused.
 func (self *fakeNoncePool) holdReceipts(count int) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -545,20 +549,44 @@ func (self *testGasKeyClaims) anotherDevice() *snDevice {
 	return &snDevice{ctx: self.device.ctx, networkSpace: self.space, api: func() *Api { return self.api }, clientId: connect.NewId(), state: newDeviceSn()}
 }
 
-// requireTurnFree requires the gas key's turn to be free and nothing of the
-// key's to be in flight.
+// the gas key's nonces on the fixture's chain
+func (self *testGasKeyClaims) keyId() snGasKeyId {
+	return snGasKeyId{chainId: SnChainIdTestnet, address: self.gasKey}
+}
+
+// requireTurnFree requires the gas key's turn to be free.
 func (self *testGasKeyClaims) requireTurnFree(t *testing.T, after string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	turn, err := snGasKeyTurns.take(ctx, self.gasKey)
+	turn, err := snGasKeyTurns.take(ctx, self.keyId())
 	if err != nil {
 		t.Fatalf("after %s the gas key's turn was still taken: %v", after, err)
 	}
 	turn.release()
-	if floor := snGasKeyTurns.floor(self.gasKey); floor != 0 {
-		t.Fatalf("after %s the nonce %d is still in flight", after, floor-1)
+}
+
+// requireFloor requires the gas key's nonce floor to be want: one past the
+// highest nonce it sent less than the span ago, 0 with none.
+func (self *testGasKeyClaims) requireFloor(t *testing.T, want uint64, after string) {
+	t.Helper()
+	if floor := snGasKeyTurns.floor(self.keyId(), time.Now()); floor != want {
+		t.Fatalf("after %s the nonce floor is %d, want %d", after, floor, want)
 	}
+}
+
+// setGasKeyInFlightSpan sets how long a sent transaction raises its key's
+// nonce floor, for the test.
+func setGasKeyInFlightSpan(t *testing.T, span time.Duration) {
+	snGasKeyTurns.mutex.Lock()
+	before := snGasKeyTurns.span
+	snGasKeyTurns.span = span
+	snGasKeyTurns.mutex.Unlock()
+	t.Cleanup(func() {
+		snGasKeyTurns.mutex.Lock()
+		defer snGasKeyTurns.mutex.Unlock()
+		snGasKeyTurns.span = before
+	})
 }
 
 // claimBoth starts a v1 claim of epoch 7 and a v2 claim on the device, the
@@ -804,6 +832,7 @@ func TestClaimsTakeTurnsWhenNonceReadsLagTheBroadcasts(t *testing.T) {
 	} {
 		order := struct{ v1First bool }{c.order}
 		t.Run(c.name, func(t *testing.T) {
+			setGasKeyInFlightSpan(t, time.Minute)
 			f := newTestGasKeyClaims(t, c.v2(t))
 			f.pool.lagReads(time.Hour)
 			f.pool.holdReceipts(2)
@@ -896,11 +925,12 @@ func TestTwoDevicesSharingAGasKeyTakeTurns(t *testing.T) {
 	}
 }
 
-// Every way a claim ends gives the gas key's turn back and leaves nothing of it
-// in flight: confirmed, short of gas, its nonce unreadable, its broadcast
-// refused, and a batch the gas key cannot pay for, whose accounts are then
-// claimed alone.
+// Every way a claim ends gives the gas key's turn back, and only a transaction
+// a node accepted raises the nonce floor: confirmed, short of gas, its nonce
+// unreadable, its broadcast refused, and a batch the gas key cannot pay for,
+// whose accounts are then claimed alone.
 func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
+	setGasKeyInFlightSpan(t, time.Minute)
 	epochs := NewInt64List()
 	epochs.Add(7)
 	claimV1 := func(t *testing.T, f *testGasKeyClaims) []testLedgerClaimEvent {
@@ -925,18 +955,20 @@ func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
 		// the claims and what each must have reported
 		claims []func(t *testing.T, f *testGasKeyClaims) []testLedgerClaimEvent
 		want   []string
+		// the nonce floor after them: one past the last sent, 0 with none
+		floor uint64
 	}{
 		{"confirmed", newTestV2Claim, func(*testGasKeyClaims) {},
-			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{"confirmed", "confirmed"}},
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{"confirmed", "confirmed"}, 7},
 		{"short of gas", newTestV2Claim, func(f *testGasKeyClaims) { setBalance(f, 10_000_000_000_000_000) },
-			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeNeedsGas + ": ", SnErrorCodeNeedsGas + ": "}},
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeNeedsGas + ": ", SnErrorCodeNeedsGas + ": "}, 0},
 		{"the nonce unreadable", newTestV2Claim, func(f *testGasKeyClaims) { f.pool.failNonceReads(true) },
-			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": nonce unavailable", SnErrorCodeClaimFailed + ": nonce unavailable"}},
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": nonce unavailable", SnErrorCodeClaimFailed + ": nonce unavailable"}, 0},
 		{"the broadcast refused", newTestV2Claim, func(f *testGasKeyClaims) { f.pool.refuse(2, "transaction underpriced") },
-			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": transaction underpriced", SnErrorCodeClaimFailed + ": transaction underpriced"}},
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV1, claimV2}, []string{SnErrorCodeClaimFailed + ": transaction underpriced", SnErrorCodeClaimFailed + ": transaction underpriced"}, 0},
 		// 0.036 TAO pays for one claim alone (0.0346 TAO) but not for the batch
 		{"a batch the gas key cannot pay for", func(t *testing.T) *testV2Claim { f, _ := newTestV2BatchClaim(t); return f }, func(f *testGasKeyClaims) { setBalance(f, 36_000_000_000_000_000) },
-			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV2}, []string{"confirmed"}},
+			[]func(*testing.T, *testGasKeyClaims) []testLedgerClaimEvent{claimV2}, []string{"confirmed"}, 7},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newTestGasKeyClaims(t, c.v2(t))
@@ -949,6 +981,7 @@ func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
 				}
 				f.requireTurnFree(t, fmt.Sprintf("claim %d", i))
 			}
+			f.requireFloor(t, c.floor, "the claims")
 			// the batch was not sent: each account went alone
 			landed, _ := f.pool.results(f.gasKey)
 			for _, held := range landed {
@@ -960,11 +993,13 @@ func TestEveryClaimGivesTheGasKeysTurnBack(t *testing.T) {
 	}
 }
 
-// A transaction a node accepted holds its nonce while its claim waits for the
-// receipt, with the turn free for another claim, and not after: a claim whose
-// wait ends early leaves nothing in flight, so once the pool drops its
-// transaction, which never mines, the next claim sends with the same nonce.
-func TestATransactionHoldsItsNonceOnlyWhileItsClaimWaitsForItsReceipt(t *testing.T) {
+// A transaction a node accepted raises its key's nonce floor for the span
+// after its broadcast, with the turn free for another claim, and not after,
+// whether or not its claim still waits for the receipt: once the pool drops
+// it, as when a block leaves the key unable to pay for it, the next claim
+// after the span takes its nonce again.
+func TestASentTransactionRaisesTheNonceFloorForItsSpanOnly(t *testing.T) {
+	setGasKeyInFlightSpan(t, 500*time.Millisecond)
 	f := newTestGasKeyClaims(t, newTestV2Claim(t))
 	f.pool.holdReceipts(1_000)
 	key, err := f.device.snGasPrivateKey()
@@ -990,33 +1025,17 @@ func TestATransactionHoldsItsNonceOnlyWhileItsClaimWaitsForItsReceipt(t *testing
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// it waits for its receipt: nonce 5 is in flight and the turn is free
-	if floor := snGasKeyTurns.floor(f.gasKey); floor != 6 {
-		t.Fatalf("in flight below %d, want nonce 5", floor)
-	}
-	turnCtx, turnCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	turn, err := snGasKeyTurns.take(turnCtx, f.gasKey)
-	turnCancel()
-	if err != nil {
-		t.Fatalf("the turn was held through the receipt wait: %v", err)
-	}
-	turn.release()
-	// its wait ends early: nothing is in flight any more
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("the claim went on after its wait was cancelled")
-	}
-	if events := callback.recorded(); len(events) != 2 || events[1].kind != "failed" {
-		t.Fatalf("events %+v", events)
-	}
-	f.requireTurnFree(t, "the claim's wait ended")
-	// the pool drops its transaction, which never mines: the next claim takes
-	// nonce 5
+	// it waits for its receipt: nonce 5 raises the floor, and the turn is free
+	f.requireFloor(t, 6, "the first claim sent")
+	f.requireTurnFree(t, "the first claim sent")
+	// the pool drops its transaction while the claim still waits
 	if dropped := f.pool.drop(f.gasKey); dropped != 1 {
 		t.Fatalf("dropped %d", dropped)
 	}
+	// past the span the pending count is trusted again: the next claim takes
+	// nonce 5
+	time.Sleep(600 * time.Millisecond)
+	f.requireFloor(t, 0, "the span")
 	f.pool.holdReceipts(0)
 	next := newRecordingLedgerClaimCallback()
 	f.device.SnLedgerClaim(next)
@@ -1024,6 +1043,16 @@ func TestATransactionHoldsItsNonceOnlyWhileItsClaimWaitsForItsReceipt(t *testing
 		t.Fatalf("the next claim %+v", events)
 	}
 	f.requireLanded(t, 1)
+	// the first claim still waits for a transaction that will never mine
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the claim went on after its wait was cancelled")
+	}
+	if events := callback.recorded(); len(events) != 2 || events[1].kind != "failed" {
+		t.Fatalf("the first claim %+v", events)
+	}
 }
 
 // testTurnWaitBudget is the time of a claim that waits for a turn another
@@ -1058,7 +1087,7 @@ func TestAClaimThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, err := snGasKeyTurns.take(context.Background(), f.gasKey)
+	held, err := snGasKeyTurns.take(context.Background(), f.keyId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1106,7 +1135,7 @@ func TestABatchThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, err := snGasKeyTurns.take(context.Background(), f.gasKey)
+	held, err := snGasKeyTurns.take(context.Background(), f.keyId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1131,7 +1160,7 @@ func TestABatchThatCannotGetTheGasKeysTurnSendsNothing(t *testing.T) {
 // gives back only its own turn.
 func TestSnKeyTurns(t *testing.T) {
 	turns := newSnKeyTurns()
-	a, b := [20]byte{0xa}, [20]byte{0xb}
+	a, b := snGasKeyId{chainId: SnChainIdTestnet, address: [20]byte{0xa}}, snGasKeyId{chainId: SnChainIdTestnet, address: [20]byte{0xb}}
 	turnA, err := turns.take(context.Background(), a)
 	if err != nil {
 		t.Fatal(err)
@@ -1205,5 +1234,31 @@ func TestSnKeyTurns(t *testing.T) {
 		t.Fatal(err)
 	} else {
 		turn.release()
+	}
+
+	// a transaction sent raises its key's nonce floor on its chain for the
+	// span, and nothing of the same key's on another chain, whose turn is its
+	// own too
+	turn, err := turns.take(context.Background(), a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn.nonceRead, turn.nonceNext = true, 9
+	turn.sent()
+	mainnet := snGasKeyId{chainId: SnChainIdMainnet, address: a.address}
+	if other, err := turns.take(context.Background(), mainnet); err != nil {
+		t.Fatalf("another chain's turn waited: %v", err)
+	} else {
+		other.release()
+	}
+	turn.release()
+	if floor := turns.floor(a, time.Now()); floor != 10 {
+		t.Fatalf("the floor %d, want 10", floor)
+	}
+	if floor := turns.floor(mainnet, time.Now()); floor != 0 {
+		t.Fatalf("another chain's floor %d", floor)
+	}
+	if floor := turns.floor(a, time.Now().Add(turns.span)); floor != 0 {
+		t.Fatalf("the floor %d past the span", floor)
 	}
 }

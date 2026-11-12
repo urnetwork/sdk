@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/urnetwork/connect"
@@ -76,65 +77,85 @@ func (self *snDevice) GetSnGasKey() *SnGasKey {
 // transaction then replaced the other, or a node refused it.
 //
 // So a transaction from the gas key is signed and sent within the key's turn
-// (snGasKeyTurn): one at a time for a key, from the nonce read until a node
-// has answered the broadcast, and never through the receipt wait, so a claim
-// waiting for the turn only starts its send a little later. A turn lasts for
-// the signing's chain reads and the broadcast, and for a batch the gas key
-// cannot pay for whole, the sizing of a smaller one too (smallerBatch).
+// (snGasKeyTurn): one at a time for a key on a chain, from the nonce read
+// until a node has answered the broadcast, and never through the receipt wait,
+// so a claim waiting for the turn only starts its send a little later. A turn
+// lasts for the signing's chain reads and the broadcast, and for a batch the
+// gas key cannot pay for whole, the sizing of a smaller one too (smallerBatch).
 //
-// A transaction a node accepted stays in flight until its claim's receipt
-// wait ends (snGasKeyTurn.sent), and a turn's nonce is the node's pending count
-// or one past the highest nonce in flight from the key, whichever is higher
-// (snGasKeyTurn.nonce). So:
-//   - two claims whose transactions are in flight together never share a
-//     nonce, whatever node answers the reads: the later turn starts after the
-//     earlier one recorded its transaction, which a node other than the one
-//     that took the broadcast may not count yet (behind a load balancer,
-//     after a failover to the next rpc url), nor a node just starting;
-//   - a transaction a node refused holds no nonce and is not recorded, so the
-//     next claim reads the pending count alone and takes the nonce again;
-//   - nothing is kept past a receipt wait: a transaction the pool dropped holds
-//     back the nonces after it only until its claim stops waiting for it, and
-//     a transaction mined, or one sent from the key in another process, is the
-//     node's to count.
-// The turns are the process's, by the gas key's address, so two devices or
-// windows in one process that share a gas key take turns too.
+// A node's pending count counts what its own pool holds, but a node other than
+// the one that took a broadcast (behind a load balancer, after a failover to
+// the next rpc url) counts it only once gossip brings it, and a node just
+// starting may count it later still. So for snGasKeyInFlightSpan after a node
+// accepted a transaction, the key's next nonce is at least one past it
+// (snGasKeyTurn.sent), and a turn's nonce is that floor or the pending count,
+// whichever is higher (snGasKeyTurn.nonce). So:
+//   - two sends from a key less than the span apart, as two claims started
+//     together send, never share a nonce, whatever node answers the reads;
+//   - after the span the pending count is trusted again: gossip has brought
+//     the transaction, or it was mined, or the pool dropped it (as when a
+//     block leaves the key unable to pay for it), and then the next send takes
+//     its nonce again, so a dropped transaction holds back the sends after it
+//     for its span at most;
+//   - a transaction whose broadcast failed, refused or lost, raises no floor.
+// The turns are the process's, by the gas key's address and chain, so two
+// devices or windows in one process that share a gas key take turns too.
+
+// snGasKeyInFlightSpan is how long a transaction a node accepted raises the
+// floor of its key's next nonce: several times the gossip between nodes, which
+// pass a transaction on as their pool takes it, and less than the 3 s after
+// which a claim's own receipt wait first reads the receipt and the claim can
+// send again (snClaimReceiptPoll).
+const snGasKeyInFlightSpan = 2 * time.Second
+
+// snGasKeyId names a gas key's nonces: its address on one chain.
+type snGasKeyId struct {
+	chainId int64
+	address [20]byte
+}
 
 type snKeyTurns struct {
 	mutex sync.Mutex
-	// one turn for each address that has sent, kept for the process (a device
-	// has one gas key): it holds a token while the turn is taken
-	turns map[[20]byte]chan struct{}
-	// the nonces of the transactions from each address that a node accepted
-	// and whose claims still wait for their receipts
-	inFlight map[[20]byte]map[uint64]bool
+	// one turn for each key that has sent, kept for the process (a device has
+	// one gas key): it holds a token while the turn is taken
+	turns map[snGasKeyId]chan struct{}
+	// the transactions from each key that a node accepted less than span ago
+	sent map[snGasKeyId][]snSentNonce
+	// snGasKeyInFlightSpan, which tests change
+	span time.Duration
+}
+
+type snSentNonce struct {
+	nonce uint64
+	at    time.Time
 }
 
 var snGasKeyTurns = newSnKeyTurns()
 
 func newSnKeyTurns() *snKeyTurns {
 	return &snKeyTurns{
-		turns:    map[[20]byte]chan struct{}{},
-		inFlight: map[[20]byte]map[uint64]bool{},
+		turns: map[snGasKeyId]chan struct{}{},
+		sent:  map[snGasKeyId][]snSentNonce{},
+		span:  snGasKeyInFlightSpan,
 	}
 }
 
-// snGasKeyTurn is an address's turn, taken (snKeyTurns.take). Its
-// transaction is signed with nonce and recorded with sent once a node accepted
-// it, and release gives the turn back.
+// snGasKeyTurn is a key's turn, taken (snKeyTurns.take). Its transaction is
+// signed with nonce, recorded with sent once a node accepted it, and release
+// gives the turn back.
 type snGasKeyTurn struct {
-	turns   *snKeyTurns
-	address [20]byte
-	token   chan struct{}
-	once    sync.Once
+	turns *snKeyTurns
+	id    snGasKeyId
+	token chan struct{}
+	once  sync.Once
 	// the turn's nonce, read once
 	nonceRead bool
 	nonceNext uint64
 }
 
-// take waits for address's turn and takes it. ctx ends the wait with its
-// error, and then no turn is taken, even a free one.
-func (self *snKeyTurns) take(ctx context.Context, address [20]byte) (*snGasKeyTurn, error) {
+// take waits for id's turn and takes it. ctx ends the wait with its error,
+// and then no turn is taken, even a free one.
+func (self *snKeyTurns) take(ctx context.Context, id snGasKeyId) (*snGasKeyTurn, error) {
 	waitErr := func() error {
 		return fmt.Errorf("waiting for another claim from the gas key to send: %w", ctx.Err())
 	}
@@ -142,10 +163,10 @@ func (self *snKeyTurns) take(ctx context.Context, address [20]byte) (*snGasKeyTu
 		return nil, waitErr()
 	}
 	self.mutex.Lock()
-	token := self.turns[address]
+	token := self.turns[id]
 	if token == nil {
 		token = make(chan struct{}, 1)
-		self.turns[address] = token
+		self.turns[id] = token
 	}
 	self.mutex.Unlock()
 	select {
@@ -153,65 +174,72 @@ func (self *snKeyTurns) take(ctx context.Context, address [20]byte) (*snGasKeyTu
 	case <-ctx.Done():
 		return nil, waitErr()
 	}
-	return &snGasKeyTurn{turns: self, address: address, token: token}, nil
+	return &snGasKeyTurn{turns: self, id: id, token: token}, nil
 }
 
-// floor is one past the highest nonce in flight from address, 0 with none.
-func (self *snKeyTurns) floor(address [20]byte) uint64 {
+// forget drops id's sends the span or more before now. Locked.
+func (self *snKeyTurns) forget(id snGasKeyId, now time.Time) {
+	var kept []snSentNonce
+	for _, sent := range self.sent[id] {
+		if now.Sub(sent.at) < self.span {
+			kept = append(kept, sent)
+		}
+	}
+	if len(kept) == 0 {
+		delete(self.sent, id)
+	} else {
+		self.sent[id] = kept
+	}
+}
+
+// floor is one past the highest nonce id sent less than the span before now,
+// 0 with none.
+func (self *snKeyTurns) floor(id snGasKeyId, now time.Time) uint64 {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	self.forget(id, now)
 	floor := uint64(0)
-	for nonce := range self.inFlight[address] {
-		floor = max(floor, nonce+1)
+	for _, sent := range self.sent[id] {
+		floor = max(floor, sent.nonce+1)
 	}
 	return floor
 }
 
-// snTakeGasKeyTurn waits for the gas key's turn (snKeyTurns.take).
-func snTakeGasKeyTurn(ctx context.Context, key *secp.PrivateKey) (*snGasKeyTurn, error) {
-	return snGasKeyTurns.take(ctx, evm.AddressOf(key))
+// snTakeGasKeyTurn waits for the gas key's turn on the chain chainId
+// (snKeyTurns.take).
+func snTakeGasKeyTurn(ctx context.Context, chainId *big.Int, key *secp.PrivateKey) (*snGasKeyTurn, error) {
+	return snGasKeyTurns.take(ctx, snGasKeyId{chainId: chainId.Int64(), address: evm.AddressOf(key)})
 }
 
 // nonce is the nonce of the turn's transaction: the node's pending count, or
-// one past the highest nonce in flight from the key, whichever is higher. It is
-// read once a turn; the turn's every signature uses it.
+// one past the highest nonce the key sent less than the span ago, whichever is
+// higher. It is read once a turn; the turn's every signature uses it.
 func (self *snGasKeyTurn) nonce(ctx context.Context, client *evm.Client) (uint64, error) {
 	if self.nonceRead {
 		return self.nonceNext, nil
 	}
-	pending, err := client.Nonce(ctx, self.address)
+	// the floor first: a send that ages out of it meanwhile still counts
+	floor := self.turns.floor(self.id, time.Now())
+	pending, err := client.Nonce(ctx, self.id.address)
 	if err != nil {
 		return 0, err
 	}
-	self.nonceRead, self.nonceNext = true, max(pending, self.turns.floor(self.address))
+	self.nonceRead, self.nonceNext = true, max(pending, floor)
 	return self.nonceNext, nil
 }
 
 // sent records that a node accepted the turn's transaction, before the turn
-// is given back. The settle it returns ends the record, at the end of the
-// claim's receipt wait whatever came of it; calling it again does nothing.
-func (self *snGasKeyTurn) sent() (settle func()) {
+// is given back: for the span after, the key's next nonce is at least one past
+// it.
+func (self *snGasKeyTurn) sent() {
 	if !self.nonceRead {
-		return func() {}
+		return
 	}
-	nonce := self.nonceNext
+	now := time.Now()
 	self.turns.mutex.Lock()
-	if self.turns.inFlight[self.address] == nil {
-		self.turns.inFlight[self.address] = map[uint64]bool{}
-	}
-	self.turns.inFlight[self.address][nonce] = true
-	self.turns.mutex.Unlock()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			self.turns.mutex.Lock()
-			defer self.turns.mutex.Unlock()
-			delete(self.turns.inFlight[self.address], nonce)
-			if len(self.turns.inFlight[self.address]) == 0 {
-				delete(self.turns.inFlight, self.address)
-			}
-		})
-	}
+	defer self.turns.mutex.Unlock()
+	self.turns.forget(self.id, now)
+	self.turns.sent[self.id] = append(self.turns.sent[self.id], snSentNonce{nonce: self.nonceNext, at: now})
 }
 
 // release gives the turn back; calling it again does nothing.
