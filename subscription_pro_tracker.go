@@ -81,6 +81,8 @@ type SubscriptionProTracker struct {
 	refreshRequested bool
 }
 
+// A tracker with no jwt and no balance: the plan is unknown until a jwt or a
+// balance arrives.
 func NewSubscriptionProTracker() *SubscriptionProTracker {
 	return &SubscriptionProTracker{}
 }
@@ -168,7 +170,7 @@ func (self *SubscriptionProTracker) GetIsPro() bool {
 	return self.planWithLock() == ShownPlanPro
 }
 
-// caller holds stateLock
+// The plan to show, by the rule of GetShownPlan. The caller holds stateLock.
 func (self *SubscriptionProTracker) planWithLock() string {
 	switch {
 	case self.loaded && self.serverIsPro:

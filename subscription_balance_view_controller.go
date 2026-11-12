@@ -585,7 +585,7 @@ func (self *SubscriptionBalanceViewController) isProLocked() bool {
 	return self.proTracker.GetIsPro()
 }
 
-// GetShownPlan is the plan to show, one of the ShownPlan* values
+// The plan to show, one of the ShownPlan* values
 // (SubscriptionProTracker.GetShownPlan): the server's answer once a snapshot
 // has loaded; before that Pro when the jwt's claim is, else unknown, while the
 // first fetch is on its way and after it failed (GetLastFetchError), never

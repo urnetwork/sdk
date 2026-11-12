@@ -8,12 +8,12 @@ import (
 )
 
 // The plan an app shows when the balance read fails (support inbox 4074). In
-// December 2025 GET /subscription/balance failed under database load, and the
-// apps of the time showed the failed read as Free: nine networks that had paid
-// wrote in, again and again, while their paid windows ran on Main. A balance
-// read that failed or has not come back yet now shows Pro by the jwt's claim,
-// or unknown, which the apps show as a loading placeholder or a retry: never
-// Free, and never an upgrade prompt. Only the server says Free.
+// December 2025 the balance read (/subscription/balance) failed under database
+// load, and the apps of the time showed the failed read as Free: nine networks
+// that had paid wrote in, again and again, while their paid windows ran on
+// Main. A balance read that failed or has not come back yet now shows Pro by
+// the jwt's claim, or unknown, which the apps show as a loading placeholder or
+// a retry: never Free, and never an upgrade prompt. Only the server says Free.
 
 // The plan the apps showed before this change: Pro from the decision, and Free
 // whenever it was not Pro.
@@ -24,6 +24,8 @@ func shownPlanBefore(isPro bool) string {
 	return ShownPlanFree
 }
 
+// A network that just paid, whose stored claim still says Free, while its
+// balance reads fail: unknown, never Free, until the server answers.
 func TestSubscriptionProTrackerAFailedReadIsNeverFree(t *testing.T) {
 	// a network that just paid: the stored jwt was minted before the
 	// purchase, so its claim says Free
@@ -59,6 +61,8 @@ func TestSubscriptionProTrackerAFailedReadIsNeverFree(t *testing.T) {
 	connect.AssertEqual(t, tracker.BalanceLoaded(true), false)
 }
 
+// Free comes from the server's answer alone; a Pro claim stays Pro until the
+// server answers, also through a failed read.
 func TestSubscriptionProTrackerOnlyTheServerSaysFree(t *testing.T) {
 	// no jwt yet: unknown, also after a failed read
 	tracker := NewSubscriptionProTracker()
@@ -100,6 +104,8 @@ func TestSubscriptionProTrackerOnlyTheServerSaysFree(t *testing.T) {
 	connect.AssertEqual(t, tracker.GetShownPlan(), ShownPlanUnknown)
 }
 
+// A failed read belongs to its session: another network's jwt and a sign out
+// forget it.
 func TestSubscriptionProTrackerAnotherSessionForgetsAFailedRead(t *testing.T) {
 	tracker := NewSubscriptionProTracker()
 	tracker.SetJwt(testNetworkJwt(t, testTrackerNetworkA, false, 1))
@@ -121,6 +127,8 @@ func TestSubscriptionProTrackerAnotherSessionForgetsAFailedRead(t *testing.T) {
 	connect.AssertEqual(t, tracker.GetShownPlan(), ShownPlanUnknown)
 }
 
+// The controller, driven by hand against a failing fetch, shows the same plan
+// as the tracker: unknown until a fetch answers, the snapshot's plan after.
 func TestBalanceControllerAFailedFetchIsNeverFree(t *testing.T) {
 	// the network paid; its stored jwt still says Free; the balance read
 	// fails, as on 2025-12-04
