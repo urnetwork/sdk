@@ -1453,6 +1453,7 @@ public interface Raw extends Library {
   long urnet_subscription_balance_view_controller_get_pending_byte_count(long a0);
   Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(long a0);
   Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_state(long a0);
+  Pointer urnet_subscription_balance_view_controller_get_shown_plan(long a0);
   long urnet_subscription_balance_view_controller_get_start_balance_byte_count(long a0);
   Pointer urnet_subscription_balance_view_controller_get_subscription_balance_result(long a0);
   Pointer urnet_subscription_balance_view_controller_get_subscriptions(long a0);
@@ -1467,8 +1468,11 @@ public interface Raw extends Library {
   void urnet_subscription_balance_view_controller_start(long a0);
   void urnet_subscription_balance_view_controller_start_purchase_confirmation(long a0);
   void urnet_subscription_balance_view_controller_stop(long a0);
+  byte urnet_subscription_pro_tracker_balance_failed(long a0);
   byte urnet_subscription_pro_tracker_balance_loaded(long a0, byte a1);
   byte urnet_subscription_pro_tracker_get_is_pro(long a0);
+  byte urnet_subscription_pro_tracker_get_last_read_failed(long a0);
+  Pointer urnet_subscription_pro_tracker_get_shown_plan(long a0);
   void urnet_subscription_pro_tracker_reset(long a0);
   byte urnet_subscription_pro_tracker_set_jwt(long a0, String a1);
   void urnet_tunnel_cancel(long a0);

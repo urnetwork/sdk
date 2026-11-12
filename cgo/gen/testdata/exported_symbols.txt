@@ -181,3 +181,15 @@ urnet_device_add_transport_delay_change_listener
 # cant_reach.go; support inbox 7956, 7973)
 urnet_is_cant_reach_error
 urnet_cant_reach_on_stall
+
+# the plan the desktop apps show and their jwt refresh (sdk
+# subscription_pro_tracker.go; support inbox 8211, 4074): a failed or pending
+# balance read is never Free
+urnet_new_subscription_pro_tracker
+urnet_subscription_pro_tracker_set_jwt
+urnet_subscription_pro_tracker_balance_loaded
+urnet_subscription_pro_tracker_balance_failed
+urnet_subscription_pro_tracker_get_shown_plan
+urnet_subscription_pro_tracker_get_last_read_failed
+urnet_subscription_pro_tracker_get_is_pro
+urnet_subscription_pro_tracker_reset

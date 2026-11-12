@@ -81,3 +81,49 @@ func TestSubscriptionProTrackerThroughTheAbi(t *testing.T) {
 		t.Fatal("Pro after reset")
 	}
 }
+
+// The plan the desktop stores show, through the c abi (support inbox 4074): a
+// failed or pending balance read with a claim of Free is unknown, never Free,
+// and the server's answer replaces it.
+func TestSubscriptionProTrackerShownPlanThroughTheAbi(t *testing.T) {
+	tracker := socketABICall(urnet_new_subscription_pro_tracker)[0].Uint()
+	if tracker == 0 {
+		t.Fatal("no tracker handle")
+	}
+	defer handleRelease(tracker)
+
+	shownPlan := func() string {
+		t.Helper()
+		result := socketABICall(urnet_subscription_pro_tracker_get_shown_plan, tracker)[0]
+		plan := goStringAt(result.UnsafePointer())
+		socketABICall(urnet_free_string, result)
+		return plan
+	}
+	lastReadFailed := func() bool {
+		t.Helper()
+		return socketABICall(urnet_subscription_pro_tracker_get_last_read_failed, tracker)[0].Bool()
+	}
+
+	byJwtC := cString(testingProTrackerJwt(false, 1))
+	defer cStringFree(byJwtC)
+	socketABICall(urnet_subscription_pro_tracker_set_jwt, tracker, byJwtC)
+	if plan := shownPlan(); plan != "unknown" {
+		t.Fatalf("plan %q before the first read, want unknown", plan)
+	}
+
+	if !socketABICall(urnet_subscription_pro_tracker_balance_failed, tracker)[0].Bool() {
+		t.Fatal("the first failed read did not change the read state")
+	}
+	if plan := shownPlan(); plan != "unknown" || !lastReadFailed() {
+		t.Fatalf("plan %q, failed %t after a failed read, want unknown and failed", plan, lastReadFailed())
+	}
+
+	socketABICall(urnet_subscription_pro_tracker_balance_loaded, tracker, true)
+	if plan := shownPlan(); plan != "pro" || lastReadFailed() {
+		t.Fatalf("plan %q, failed %t after the server said Pro", plan, lastReadFailed())
+	}
+	socketABICall(urnet_subscription_pro_tracker_balance_loaded, tracker, false)
+	if plan := shownPlan(); plan != "free" {
+		t.Fatalf("plan %q after the server said Free", plan)
+	}
+}
