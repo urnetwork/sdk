@@ -48,7 +48,10 @@ import (
 // the largest first, reporting each it cannot pay for as needs_gas; an external
 // wallet is given the transactions of that batch, or the largest account's
 // claim alone, with the others named still claimable
-// (SnLedgerClaimTransactionsForPayer).
+// (SnLedgerClaimTransactionsForPayer). A wallet that cannot pay even for the
+// largest account's claim alone is given no transaction, and every account is
+// named still claimable, needs_gas, as the gas key sends nothing it cannot
+// pay for.
 
 // SnLedgerClaimCallback receives the progress of SnLedgerClaim. Failed
 // messages start with an SnErrorCode* value followed by ": detail".
@@ -728,9 +731,10 @@ func snLedgerLargestFirst(plans []*snLedgerClaimPlan) []*snLedgerClaimPlan {
 // snLedgerMostThatFit is how many of count accounts, the largest first, a
 // payer that cannot pay for all of them claims: the most, from count − 1 down
 // to 2, whose claim together fits(n) says it can pay for, else 1, the largest
-// account alone, whatever it costs. Each account more only adds gas, so fits
-// holds for fewer accounts whenever it holds for more, and the counts are
-// searched by halving: about log2(count) of them are tried, never 1 or count.
+// account alone, which is not tried here: the caller checks whether the payer
+// can pay even for that. Each account more only adds gas, so fits holds for
+// fewer accounts whenever it holds for more, and the counts are searched by
+// halving: about log2(count) of them are tried, never 1 or count.
 func snLedgerMostThatFit(count int, fits func(n int) bool) int {
 	low, high := 1, count-1
 	for low < high {
@@ -914,14 +918,19 @@ func (self *snLedgerClaimEngine) txsOf(ctx context.Context, plans []*snLedgerCla
 // release batcher when it can be), else the largest account's claim alone, and
 // the other accounts are StillClaimable: no transaction claims them, and a
 // later claim does. Of two accounts, it is the largest account's claim alone.
+// A wallet that cannot pay even for that is given no transaction, and every
+// account is StillClaimable (NeedsGas), as the device's gas key sends nothing
+// it cannot pay for.
 type SnLedgerClaimTransactionsResult struct {
-	// the transactions to send, in order, each signed with exactly its Gas
+	// the transactions to send, in order, each signed with exactly its Gas;
+	// none under NeedsGas
 	Transactions *SnLedgerUnsignedTxList `json:"transactions"`
 	// the accounts claimable now that no transaction of Transactions claims,
-	// because the payer cannot pay for them with the others, in the ledger's
-	// order: Status SnLedgerClaimOutcomeStillClaimable, AmountRao what a claim
-	// pays it now, and Message "needs_gas: detail". Empty when Transactions
-	// claim every account
+	// because the payer cannot pay for them with the others (under NeedsGas,
+	// every account), in the ledger's order: Status
+	// SnLedgerClaimOutcomeStillClaimable, AmountRao what a claim pays it now,
+	// and Message "needs_gas: detail". Empty when Transactions claim every
+	// account
 	StillClaimable *SnLedgerClaimOutcomeList `json:"still_claimable"`
 	// lowercase 0x
 	PayerAddress string `json:"payer_address"`
@@ -931,14 +940,16 @@ type SnLedgerClaimTransactionsResult struct {
 	// higher of the most an EIP-1559 wallet offers by default, twice the latest
 	// base fee and the tip, and 1.1 × eth_gasPrice
 	FeePerGasWei string `json:"fee_per_gas_wei"`
-	// the most Transactions can cost: their gas limits × FeePerGasWei
+	// the most Transactions can cost: their gas limits × FeePerGasWei. Under
+	// NeedsGas, what the largest account's claim alone can cost, the least
+	// the payer must hold to claim any account
 	MaxCostWei string `json:"max_cost_wei"`
 	// the most the transactions claiming every account can cost; MaxCostWei
 	// when nothing is StillClaimable
 	AllCostWei string `json:"all_cost_wei"`
-	// the payer cannot pay even for Transactions, then the largest account's
-	// claim alone (or the one account's): it needs MaxCostWei less
-	// PayerBalanceWei more. A wallet that prices gas lower may still send it
+	// the payer cannot pay even for the largest account's claim alone (or the
+	// one account's): Transactions is empty, every account is StillClaimable,
+	// and it needs MaxCostWei less PayerBalanceWei more
 	NeedsGas bool `json:"needs_gas"`
 }
 
@@ -1005,7 +1016,11 @@ func snLedgerTxsCost(txs []*SnLedgerUnsignedTx, fee *big.Int) *big.Int {
 // transactions of the most accounts it pays for, the largest first, built as
 // unsignedTxs builds them for those accounts but with their claims alone the
 // largest first, else the largest account's claim alone; the others still
-// claimable. No account is in two transactions.
+// claimable. A wallet that cannot pay even for the largest account's claim
+// alone (of one account, its claim) is given none, and every account is still
+// claimable, NeedsGas: the device's gas key sends nothing it cannot pay for,
+// and a wallet sent a claim it cannot pay for refuses it in its own words. No
+// account is in two transactions.
 func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer [20]byte) (*SnLedgerClaimTransactionsResult, error) {
 	list, passing, batcher, err := self.claimTxs(ctx)
 	if err != nil {
@@ -1028,14 +1043,13 @@ func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer 
 		FeePerGasWei:    fee.String(),
 		MaxCostWei:      allCost.String(),
 		AllCostWei:      allCost.String(),
-		NeedsGas:        balance.Cmp(allCost) < 0,
 	}
-	if !result.NeedsGas || len(passing) < 2 {
-		// it pays for them all, or there is one account, whose claim alone
-		// it is
+	if allCost.Cmp(balance) <= 0 {
+		// it pays for them all
 		return result, nil
 	}
-	// the most accounts it pays for, the largest first, else the largest alone
+	// the most accounts it pays for, the largest first, else the largest
+	// alone (of one account, its claim)
 	largestFirst := snLedgerLargestFirst(passing)
 	txsOfLargest := map[int]*SnLedgerUnsignedTxList{1: self.txsOf(ctx, largestFirst[:1], false)}
 	n := snLedgerMostThatFit(len(largestFirst), func(n int) bool {
@@ -1046,21 +1060,29 @@ func (self *snLedgerClaimEngine) unsignedTxsForPayer(ctx context.Context, payer 
 	result.Transactions = txsOfLargest[n]
 	maxCost := snLedgerTxsCost(result.Transactions.getAll(), fee)
 	result.MaxCostWei = maxCost.String()
-	result.NeedsGas = balance.Cmp(maxCost) < 0
+	claimed := largestFirst[:n]
 	// why no transaction claims an account now: the wallet pays for the n
-	// largest only, or for none, though the largest account's claim alone is
-	// given for a wallet that prices gas lower
+	// largest only, or for none
 	var why string
 	switch {
-	case result.NeedsGas:
-		why = fmt.Sprintf("which is not enough even for the largest account's claim alone (up to %s), so this account is not claimed now; add TAO to the wallet and claim again", snFormatTao(maxCost))
+	case balance.Cmp(maxCost) < 0:
+		// not even for the largest account's claim alone: no transaction,
+		// and every account is still claimable
+		result.NeedsGas = true
+		result.Transactions = NewSnLedgerUnsignedTxList()
+		claimed = nil
+		why = fmt.Sprintf("which is not enough even for the largest account's claim alone (up to %s), so no account is claimed now; add TAO to the wallet and claim again", snFormatTao(maxCost))
 	case n == 1:
 		why = "so only the largest account is claimed now; claim again for this one"
 	default:
 		why = fmt.Sprintf("so only the %d largest accounts are claimed now; claim again for this one", n)
 	}
 	message := fmt.Sprintf("%s: claiming every account together needs up to %s of gas and the wallet %s holds %s, %s", SnErrorCodeNeedsGas, snFormatTao(allCost), result.PayerAddress, snFormatTao(balance), why)
-	_, still := snLedgerSplit(passing, largestFirst[:n])
+	if len(passing) == 1 {
+		// its claim is every account's, and the wallet cannot pay for it
+		message = fmt.Sprintf("%s: claiming this account needs up to %s of gas and the wallet %s holds %s, so it is not claimed now; add TAO to the wallet and claim again", SnErrorCodeNeedsGas, snFormatTao(maxCost), result.PayerAddress, snFormatTao(balance))
+	}
+	_, still := snLedgerSplit(passing, claimed)
 	for _, plan := range still {
 		result.StillClaimable.Add(&SnLedgerClaimOutcome{
 			NoId:      plan.noId,
@@ -1128,7 +1150,8 @@ func (self *snDevice) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, erro
 // transactions for an external wallet whose EVM address payerAddress pays
 // their gas: all of them when it holds enough, else those of the most accounts
 // it can pay for, the largest first, else the largest account's claim alone,
-// with the others StillClaimable.
+// with the others StillClaimable; none, with every account StillClaimable and
+// NeedsGas, when it cannot pay even for that.
 func (self *snDevice) SnLedgerClaimTransactionsForPayer(payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
 	payer, err := snLedgerPayer(payerAddress)
 	if err != nil {
@@ -1175,8 +1198,9 @@ func SnLedgerClaimTransactionsFor(settings *SnChainSettings, coldkeySs58 string)
 // payerAddress pays their gas: SnLedgerClaimTransactionsFor's when its balance
 // pays for them all at the chain's price, else those of the most accounts it
 // can pay for, the largest first, else the largest account's claim alone, with
-// the other accounts StillClaimable; NeedsGas when it cannot pay even that.
-// The ledger is read from the settings' artifact host, else the default host.
+// the other accounts StillClaimable; NeedsGas, with no transaction and every
+// account StillClaimable, when it cannot pay even for that. The ledger is read
+// from the settings' artifact host, else the default host.
 func SnLedgerClaimTransactionsForPayer(settings *SnChainSettings, coldkeySs58 string, payerAddress string) (*SnLedgerClaimTransactionsResult, error) {
 	payer, err := snLedgerPayer(payerAddress)
 	if err != nil {
@@ -1206,8 +1230,9 @@ const (
 	// transactions are built again to claim it
 	SnLedgerClaimOutcomeNotAttempted = "not_attempted"
 	// no transaction claims it now, because the paying wallet cannot pay for it
-	// with the others (SnLedgerClaimTransactionsResult.StillClaimable): it is
-	// claimable as before, and a later claim claims it
+	// with the others, or cannot pay even for the largest account's claim
+	// alone (SnLedgerClaimTransactionsResult.StillClaimable): it is claimable
+	// as before, and a later claim claims it
 	SnLedgerClaimOutcomeStillClaimable = "still_claimable"
 )
 

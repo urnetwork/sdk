@@ -421,9 +421,11 @@ func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
 // can be), else the largest account's claim alone, and every other account in
 // still_claimable ({no_id, index, status "still_claimable", amount_rao,
 // message}): no transaction claims it now, a later claim does. needs_gas: it
-// cannot pay even for transactions. Every key is snake_case, the sdk's json;
-// a transactions entry passes to URnetworkSnLedgerClaimOutcomes as it is. It
-// rejects as URnetworkSnLedgerClaimTransactionsFor does, and with
+// cannot pay even for the largest account's claim alone, so transactions is []
+// and every account is in still_claimable, with max_cost_wei what that claim
+// can cost. Every key is snake_case, the sdk's json; a transactions entry
+// passes to URnetworkSnLedgerClaimOutcomes as it is. It rejects as
+// URnetworkSnLedgerClaimTransactionsFor does, and with
 // "invalid_ss58_address: ..." for a payer that is not an EVM address.
 func SnLedgerClaimTransactionsForPayer(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
