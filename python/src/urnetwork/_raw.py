@@ -1967,6 +1967,8 @@ def bind(lib):
     lib.urnet_local_state_get_provide_control_mode.restype = c_void_p
     lib.urnet_local_state_get_provide_extender.argtypes = [c_uint64]
     lib.urnet_local_state_get_provide_extender.restype = c_bool
+    lib.urnet_local_state_get_provide_extender_port_mapping.argtypes = [c_uint64]
+    lib.urnet_local_state_get_provide_extender_port_mapping.restype = c_bool
     lib.urnet_local_state_get_provide_mode.argtypes = [c_uint64]
     lib.urnet_local_state_get_provide_mode.restype = c_int64
     lib.urnet_local_state_get_provide_network_mode.argtypes = [c_uint64]
@@ -2051,6 +2053,8 @@ def bind(lib):
     lib.urnet_local_state_set_provide_control_mode.restype = c_bool
     lib.urnet_local_state_set_provide_extender.argtypes = [c_uint64, c_bool, POINTER(c_void_p)]
     lib.urnet_local_state_set_provide_extender.restype = c_bool
+    lib.urnet_local_state_set_provide_extender_port_mapping.argtypes = [c_uint64, c_bool, POINTER(c_void_p)]
+    lib.urnet_local_state_set_provide_extender_port_mapping.restype = c_bool
     lib.urnet_local_state_set_provide_mode.argtypes = [c_uint64, c_int64, POINTER(c_void_p)]
     lib.urnet_local_state_set_provide_mode.restype = c_bool
     lib.urnet_local_state_set_provide_network_mode.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]

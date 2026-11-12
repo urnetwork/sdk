@@ -279,6 +279,12 @@ func TestDeviceLocalProviderExtenderOffersTheRoutersPorts(t *testing.T) {
 		status.PortMappingError != "" {
 		t.Fatalf("status = %+v, expected the router's mapping", status)
 	}
+	// what an app shows beside the switch, the same in every language
+	expectedPorts := fmt.Sprintf("TCP 40443→%d, UDP 40444→%d, UDP 40053→%d", fixture.tcpPort, fixture.udpPort, fixture.dnsPort)
+	if status.PortMappingMethodName != "NAT-PMP" || status.PortMappingPorts != expectedPorts {
+		t.Fatalf("method name %q, ports %q, expected NAT-PMP and %q",
+			status.PortMappingMethodName, status.PortMappingPorts, expectedPorts)
+	}
 	if held := router.held(); len(held) != 3 {
 		t.Fatalf("the router forwards %v, expected the three carriers", held)
 	}
@@ -462,5 +468,105 @@ func TestProvideExtenderPortMappingSettingPersists(t *testing.T) {
 	corrupt := &LocalState{localStorageDir: storageDir}
 	if _, stored := corrupt.getStoredProvideExtenderPortMapping(); stored {
 		t.Fatal("a corrupt file stores a setting")
+	}
+}
+
+// The ports text an app shows: the bound port alone when the router forwards it
+// on the same port, the router's port and the bound one when they differ, and
+// nothing for a carrier the router does not forward.
+func TestExtenderPortMappingPortsText(t *testing.T) {
+	for _, c := range []struct {
+		carriers []extenderPortMappingCarrier
+		text     string
+	}{
+		{
+			carriers: []extenderPortMappingCarrier{
+				{label: "TCP", boundPort: 443, externalPort: 443},
+				{label: "UDP", boundPort: 443, externalPort: 443},
+				{label: "UDP", boundPort: 4053, externalPort: 4053},
+			},
+			text: "TCP 443, UDP 443, UDP 4053",
+		},
+		{
+			carriers: []extenderPortMappingCarrier{
+				{label: "TCP", boundPort: 443, externalPort: 40443},
+				{label: "UDP", boundPort: 443, externalPort: 0},
+				{label: "UDP", boundPort: 4053, externalPort: 4053},
+			},
+			text: "TCP 40443→443, UDP 4053",
+		},
+		{carriers: nil, text: ""},
+	} {
+		if text := extenderPortMappingPortsText(c.carriers); text != c.text {
+			t.Errorf("%+v = %q, expected %q", c.carriers, text, c.text)
+		}
+	}
+	for method, name := range map[string]string{
+		portmap.MethodPcp:    "PCP",
+		portmap.MethodNatPmp: "NAT-PMP",
+		portmap.MethodUpnp:   "UPnP",
+	} {
+		if got := extenderPortMappingMethodName(method); got != name {
+			t.Errorf("%s = %q, expected %q", method, got, name)
+		}
+	}
+}
+
+// What a host's service writes on the space while no device runs (the windows
+// and linux services) is the setting the next device's role starts with: the
+// space's value wins over the device's default, which is off on every app.
+func TestDeviceLocalProviderExtenderMapsWhatTheServiceStored(t *testing.T) {
+	router := newTestExtenderRouter()
+	router.install(t)
+	fixture := newTestProvideExtenderFixtureWithOptions(t, &testProvideExtenderFixtureOptions{
+		configure: func(settings *deviceLocalExtenderSettings) {
+			settings.PortMappingPublicAddress = func() bool {
+				return false
+			}
+		},
+		prepare: func(fixture *testProvideExtenderFixture) {
+			localState := fixture.networkSpace.asyncLocalState.GetLocalState()
+			if localState.GetProvideExtenderPortMapping() {
+				t.Fatal("the space reads on before anything stored it")
+			}
+			if err := localState.SetProvideExtenderPortMapping(true); err != nil {
+				t.Fatal(err)
+			}
+		},
+	})
+	if !fixture.device.GetProvideExtenderPortMapping() {
+		t.Fatal("the device reads off, expected the space's stored on")
+	}
+	fixture.waitPass()
+	fixture.waitStatus("mapped", func(status *ExtenderProvideStatus) bool {
+		return status.PortMapping == ExtenderPortMappingMapped
+	})
+	if held := router.held(); len(held) != 3 {
+		t.Fatalf("the router forwards %v, expected the three carriers", held)
+	}
+}
+
+// The exported space setting reads off until stored, and a stored value reads
+// back through another LocalState over the same directory.
+func TestLocalStateProvideExtenderPortMapping(t *testing.T) {
+	storageDir := t.TempDir()
+	localState := &LocalState{localStorageDir: storageDir}
+	if localState.GetProvideExtenderPortMapping() {
+		t.Fatal("an empty space reads on, expected the apps' default off")
+	}
+	if err := localState.SetProvideExtenderPortMapping(true); err != nil {
+		t.Fatal(err)
+	}
+	if !localState.GetProvideExtenderPortMapping() {
+		t.Fatal("the stored value did not read back")
+	}
+	if !(&LocalState{localStorageDir: storageDir}).GetProvideExtenderPortMapping() {
+		t.Fatal("the stored value did not persist")
+	}
+	if err := localState.SetProvideExtenderPortMapping(false); err != nil {
+		t.Fatal(err)
+	}
+	if (&LocalState{localStorageDir: storageDir}).GetProvideExtenderPortMapping() {
+		t.Fatal("off did not persist")
 	}
 }

@@ -2192,6 +2192,7 @@ bool urnet_local_state_get_measurements_enabled(uint64_t self);
 char* urnet_local_state_get_performance_profile(uint64_t self);
 char* urnet_local_state_get_provide_control_mode(uint64_t self);
 bool urnet_local_state_get_provide_extender(uint64_t self);
+bool urnet_local_state_get_provide_extender_port_mapping(uint64_t self);
 int64_t urnet_local_state_get_provide_mode(uint64_t self);
 char* urnet_local_state_get_provide_network_mode(uint64_t self);
 char* urnet_local_state_get_provide_secret_keys(uint64_t self);
@@ -2234,6 +2235,7 @@ bool urnet_local_state_set_measurements_enabled(uint64_t self, bool measurements
 bool urnet_local_state_set_performance_profile(uint64_t self, const char* profile_json, char** out_error);
 bool urnet_local_state_set_provide_control_mode(uint64_t self, const char* mode, char** out_error);
 bool urnet_local_state_set_provide_extender(uint64_t self, bool provide_extender, char** out_error);
+bool urnet_local_state_set_provide_extender_port_mapping(uint64_t self, bool port_mapping, char** out_error);
 bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, char** out_error);
 bool urnet_local_state_set_provide_network_mode(uint64_t self, const char* provide_network_mode, char** out_error);
 bool urnet_local_state_set_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json, char** out_error);
@@ -4313,6 +4315,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PortMappingUdpPort: number
  *   PortMappingDnsPort: number
  *   PortMappingError: string
+ *   PortMappingMethodName: string
+ *   PortMappingPorts: string
  *   ConnectionCount: number
  */
 

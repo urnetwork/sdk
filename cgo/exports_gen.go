@@ -16872,6 +16872,17 @@ func urnet_local_state_get_provide_extender(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_local_state_get_provide_extender_port_mapping
+func urnet_local_state_get_provide_extender_port_mapping(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_local_state_get_provide_extender_port_mapping")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_provide_extender_port_mapping")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProvideExtenderPortMapping()
+	return C.bool(r0)
+}
+
 //export urnet_local_state_get_provide_mode
 func urnet_local_state_get_provide_mode(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_local_state_get_provide_mode")
@@ -17537,6 +17548,21 @@ func urnet_local_state_set_provide_extender(self C.uint64_t, provideExtender C.b
 		return C.bool(false)
 	}
 	err := self_.SetProvideExtender(bool(provideExtender))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_provide_extender_port_mapping
+func urnet_local_state_set_provide_extender_port_mapping(self C.uint64_t, portMapping C.bool, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_provide_extender_port_mapping")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_provide_extender_port_mapping")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetProvideExtenderPortMapping(bool(portMapping))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

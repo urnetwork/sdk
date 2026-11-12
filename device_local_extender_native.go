@@ -1287,6 +1287,54 @@ func (self *deviceLocalExtender) portMappingState(state *extenderProvideState) {
 	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
 		state.PortMappingDnsPort = mapping.ExternalPort
 	}
+	if state.PortMapping == ExtenderPortMappingMapped {
+		// what an app shows, the same in every language (F3)
+		state.PortMappingMethodName = extenderPortMappingMethodName(status.Method)
+		state.PortMappingPorts = extenderPortMappingPortsText([]extenderPortMappingCarrier{
+			{label: "TCP", boundPort: self.settings.TcpPort, externalPort: state.PortMappingTcpPort},
+			{label: "UDP", boundPort: self.settings.UdpPort, externalPort: state.PortMappingUdpPort},
+			{label: "UDP", boundPort: self.settings.DnsPort, externalPort: state.PortMappingDnsPort},
+		})
+	}
+}
+
+// The name an app shows for a port mapping method, the same in every language.
+func extenderPortMappingMethodName(method string) string {
+	switch method {
+	case portmap.MethodPcp:
+		return "PCP"
+	case portmap.MethodNatPmp:
+		return "NAT-PMP"
+	case portmap.MethodUpnp:
+		return "UPnP"
+	default:
+		return method
+	}
+}
+
+// One carrier of the ports text: its protocol as an app shows it, the port it
+// is bound on, and the port the router forwards to it, 0 for none.
+type extenderPortMappingCarrier struct {
+	label        string
+	boundPort    int
+	externalPort int
+}
+
+// What the router forwards as an app shows it, the same in every language:
+// "TCP 443, UDP 443, UDP 4053", each carrier the router forwards in order, an
+// external port other than the bound one as "TCP 40443→443".
+func extenderPortMappingPortsText(carriers []extenderPortMappingCarrier) string {
+	parts := []string{}
+	for _, carrier := range carriers {
+		switch {
+		case carrier.externalPort <= 0:
+		case carrier.externalPort == carrier.boundPort:
+			parts = append(parts, fmt.Sprintf("%s %d", carrier.label, carrier.boundPort))
+		default:
+			parts = append(parts, fmt.Sprintf("%s %d→%d", carrier.label, carrier.externalPort, carrier.boundPort))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // The mappings as one line for the log: "tcp 443 -> 443, udp 4053 -> 40053".
