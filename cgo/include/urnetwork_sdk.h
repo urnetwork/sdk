@@ -526,6 +526,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDER_STATUS_NUMBER_WEIGHT_SPEED "weight_speed"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_FAILING "egress_failing"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_UNPROBED "egress_unprobed"
+#define URNET_PROVIDER_STATUS_REASON_LINE_IPV4 "ipv4"
+#define URNET_PROVIDER_STATUS_REASON_LINE_TCP "tcp"
+#define URNET_PROVIDER_STATUS_REASON_LINE_TEXT "text"
 #define URNET_PROVIDER_STATUS_REASON_LOCATION_INVALID "location_invalid"
 #define URNET_PROVIDER_STATUS_REASON_NETWORK_ONLY "network_only"
 #define URNET_PROVIDER_STATUS_REASON_NONE "none"
@@ -5392,6 +5395,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   count: number
  *   total: number
  *   explanation: string
+ *   reason?: string
+ *   reason_tcp_count?: number
+ *   reason_ipv4_count?: number
+ *   reason_lines?: ProviderStatusReasonLineList | null
  */
 
 /* ProviderRankingNumberList (json):
@@ -5429,6 +5436,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ProviderStatusList (json):
  *   = ProviderStatus | null[]
+ */
+
+/* ProviderStatusReasonLine (json):
+ *   label: string
+ *   count?: number
+ *   text?: string
+ */
+
+/* ProviderStatusReasonLineList (json):
+ *   = ProviderStatusReasonLine | null[]
  */
 
 /* ProxyAuthResult (json):
