@@ -12501,6 +12501,17 @@ func urnet_device_local_get_last_local_state_save_result(self C.uint64_t) C.uint
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_get_limited_window_size_fraction
+func urnet_device_local_get_limited_window_size_fraction(self C.uint64_t) C.double {
+	defer cgoGuard("urnet_device_local_get_limited_window_size_fraction")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_limited_window_size_fraction")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetLimitedWindowSizeFraction()
+	return C.double(r0)
+}
+
 //export urnet_device_local_get_memory_stats
 func urnet_device_local_get_memory_stats(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_memory_stats")
@@ -13163,6 +13174,16 @@ func urnet_device_local_reconnect_checked(self C.uint64_t, location *C.char, out
 	return C.bool(true)
 }
 
+//export urnet_device_local_reset_limited_window_size_fraction
+func urnet_device_local_reset_limited_window_size_fraction(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_reset_limited_window_size_fraction")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_reset_limited_window_size_fraction")
+	if !ok {
+		return
+	}
+	self_.ResetLimitedWindowSizeFraction()
+}
+
 //export urnet_device_local_reset_reliability_metrics
 func urnet_device_local_reset_reliability_metrics(self C.uint64_t) {
 	defer cgoGuard("urnet_device_local_reset_reliability_metrics")
@@ -13355,6 +13376,16 @@ func urnet_device_local_set_key_material(self C.uint64_t, keyMaterial C.uint64_t
 		}
 	}
 	self_.SetKeyMaterial(keyMaterial_)
+}
+
+//export urnet_device_local_set_limited_window_size_fraction
+func urnet_device_local_set_limited_window_size_fraction(self C.uint64_t, fraction C.double) {
+	defer cgoGuard("urnet_device_local_set_limited_window_size_fraction")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_limited_window_size_fraction")
+	if !ok {
+		return
+	}
+	self_.SetLimitedWindowSizeFraction(float64(fraction))
 }
 
 //export urnet_device_local_set_network_metered

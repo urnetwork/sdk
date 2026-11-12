@@ -417,6 +417,7 @@ inline constexpr const char* EventStoreSolana = "solana";
 inline constexpr const char* EventStoreStripe = "stripe";
 inline constexpr const char* EventStoreZcash = "zcash";
 inline constexpr const char* EventWidgetAdded = "widget.added";
+inline constexpr const char* ExitWindowTypeLimited = "limited";
 inline constexpr const char* ExperimentSurfaceEmailSequence = "email.sequence";
 inline constexpr const char* ExperimentSurfaceOfferAccount = "offer.account";
 inline constexpr const char* ExperimentSurfaceOfferEmail = "offer.email";
@@ -2691,6 +2692,9 @@ struct EmojiTagValidation {
 struct Exit {
 	std::optional<std::string> ClientId;
 	std::string WindowType{};
+	std::string CapabilityIp{};
+	std::string CapabilityProtocol{};
+	int32_t OverflowStep{};
 	bool Warning{};
 	bool Quarantined{};
 	std::string WarningCause{};
@@ -5153,6 +5157,8 @@ struct WindowStatus {
 	int64_t ProviderV4OnlyCount{};
 	int64_t ProviderV6OnlyCount{};
 	bool Ipv6Available{};
+	bool UdpAvailable{};
+	int64_t LimitedWindowSize{};
 	std::string StallReason{};
 	bool Failed{};
 };
@@ -11779,6 +11785,9 @@ inline void to_json(nlohmann::json& j, const Exit& v) {
 		j["ClientId"] = *v.ClientId;
 	}
 	j["WindowType"] = v.WindowType;
+	j["CapabilityIp"] = v.CapabilityIp;
+	j["CapabilityProtocol"] = v.CapabilityProtocol;
+	j["OverflowStep"] = v.OverflowStep;
 	j["Warning"] = v.Warning;
 	j["Quarantined"] = v.Quarantined;
 	j["WarningCause"] = v.WarningCause;
@@ -11811,6 +11820,15 @@ inline void from_json(const nlohmann::json& j, Exit& v) {
 	}
 	if (auto it = j.find("WindowType"); it != j.end() && !it->is_null()) {
 		it->get_to(v.WindowType);
+	}
+	if (auto it = j.find("CapabilityIp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CapabilityIp);
+	}
+	if (auto it = j.find("CapabilityProtocol"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CapabilityProtocol);
+	}
+	if (auto it = j.find("OverflowStep"); it != j.end() && !it->is_null()) {
+		it->get_to(v.OverflowStep);
 	}
 	if (auto it = j.find("Warning"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Warning);
@@ -23047,6 +23065,8 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j["ProviderV4OnlyCount"] = v.ProviderV4OnlyCount;
 	j["ProviderV6OnlyCount"] = v.ProviderV6OnlyCount;
 	j["Ipv6Available"] = v.Ipv6Available;
+	j["UdpAvailable"] = v.UdpAvailable;
+	j["LimitedWindowSize"] = v.LimitedWindowSize;
 	j["StallReason"] = v.StallReason;
 	j["Failed"] = v.Failed;
 }
@@ -23089,6 +23109,12 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	}
 	if (auto it = j.find("Ipv6Available"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Ipv6Available);
+	}
+	if (auto it = j.find("UdpAvailable"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UdpAvailable);
+	}
+	if (auto it = j.find("LimitedWindowSize"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LimitedWindowSize);
 	}
 	if (auto it = j.find("StallReason"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StallReason);
@@ -24058,6 +24084,7 @@ public:
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	DeviceLocalSaveResult getLastLocalStateSaveResult() const;
+	double getLimitedWindowSizeFraction() const;
 	std::optional<MemoryStats> getMemoryStats() const;
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
@@ -24107,6 +24134,7 @@ public:
 	bool probeSuiteRunning() const;
 	void querySubprotocols(const std::string& destination_client_id, int64_t timeout_millis, SubprotocolsQueryCallback callback) const;
 	void reconnectChecked(const std::optional<ConnectLocation>& location) const;
+	void resetLimitedWindowSizeFraction() const;
 	void resetReliabilityMetrics() const;
 	void resetReliabilitySettings() const;
 	void saveKeyMaterial() const;
@@ -24121,6 +24149,7 @@ public:
 	void setDefaultLocationChecked(const std::optional<ConnectLocation>& location) const;
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
+	void setLimitedWindowSizeFraction(double fraction) const;
 	void setNetworkMetered(bool metered) const;
 	void setPerformanceDegraded(bool degraded) const;
 	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
@@ -35676,6 +35705,10 @@ inline DeviceLocalSaveResult DeviceLocal::getLastLocalStateSaveResult() const {
 	DeviceLocalSaveResult r(urnet_device_local_get_last_local_state_save_result(handle()));
 	return r;
 }
+inline double DeviceLocal::getLimitedWindowSizeFraction() const {
+	double r = urnet_device_local_get_limited_window_size_fraction(handle());
+	return r;
+}
 inline std::optional<MemoryStats> DeviceLocal::getMemoryStats() const {
 	char* r_c = urnet_device_local_get_memory_stats(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -35925,6 +35958,9 @@ inline void DeviceLocal::reconnectChecked(const std::optional<ConnectLocation>& 
 		throw Error("urnet: urnet_device_local_reconnect_checked failed");
 	}
 }
+inline void DeviceLocal::resetLimitedWindowSizeFraction() const {
+	urnet_device_local_reset_limited_window_size_fraction(handle());
+}
 inline void DeviceLocal::resetReliabilityMetrics() const {
 	urnet_device_local_reset_reliability_metrics(handle());
 }
@@ -36023,6 +36059,9 @@ inline void DeviceLocal::setFlowOwnerLookup(FlowOwnerLookup lookup) const {
 }
 inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const {
 	urnet_device_local_set_key_material(handle(), key_material.handle());
+}
+inline void DeviceLocal::setLimitedWindowSizeFraction(double fraction) const {
+	urnet_device_local_set_limited_window_size_fraction(handle(), fraction);
 }
 inline void DeviceLocal::setNetworkMetered(bool metered) const {
 	urnet_device_local_set_network_metered(handle(), metered);

@@ -439,11 +439,25 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	}
 }
 
+// The window of an Exit that holds the providers offered only for the traffic
+// they can carry (server FP2-PROTOCOL.md §7.4). Its rank mode follows the
+// performance profile, so the window, not a rank mode, names it.
+const ExitWindowTypeLimited = "limited"
+
 // Exit is one provider channel, as shown in the developer menu.
 type Exit struct {
 	ClientId *Id
-	// WindowType is "quality", "speed", or "" for auto
+	// "quality", "speed", ExitWindowTypeLimited, or "" for auto
 	WindowType string
+	// The labels the server's network checks gave the provider (server
+	// FP2-PROTOCOL.md §5.2): "dualstack" or "ipv4", and "dualproto" or "tcp".
+	// An exit found without labels (an older server, a fixed destination)
+	// reads its address family and dualproto.
+	CapabilityIp       string
+	CapabilityProtocol string
+	// 1 when the provider was given as overflow, a tcp provider filling a
+	// window that asked for dualproto (§6.3); 0 otherwise
+	OverflowStep int32
 	// Warning marks an exit new flows already avoid -- unhealthy, or past its
 	// lifetime and draining
 	Warning bool
@@ -588,6 +602,57 @@ func (self *DeviceLocal) ResetReliabilitySettings() {
 	}
 }
 
+// The limited window's size as a fraction of the largest normal window's
+// target (server FP2-PROTOCOL.md §7.4): the current window's, or while
+// disconnected what the next window takes, the runtime override when one is
+// set and connect's default otherwise. The limited window holds
+// max(1, floor(fraction × target)) clients, and none at or below 0.
+func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
+	if multi, ok := self.multiClient(); ok {
+		return multi.LimitedWindowSizeFraction()
+	}
+	var override *float64
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		override = self.limitedWindowSizeFraction
+	}()
+	if override != nil {
+		return *override
+	}
+	return connect.DefaultMultiClientSettings().LimitedWindowSizeFraction
+}
+
+// Overrides the limited window's fraction at runtime, for testing, as the
+// reliability controls do: the current window resizes without a reconnect,
+// and the override is stored on the device and built into every window after
+// it. At or below 0 the limited window holds none. The low-memory bound
+// (DeviceLocalSettings) still applies. Safe while disconnected: it is stored
+// now and applied when a window is built.
+func (self *DeviceLocal) SetLimitedWindowSizeFraction(fraction float64) {
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.limitedWindowSizeFraction = &fraction
+	}()
+	if multi, ok := self.multiClient(); ok {
+		multi.SetLimitedWindowSizeFraction(fraction)
+	}
+}
+
+// Clears the limited window's override: the current window returns to
+// connect's default fraction, and so does every window after it.
+func (self *DeviceLocal) ResetLimitedWindowSizeFraction() {
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.limitedWindowSizeFraction = nil
+	}()
+	if multi, ok := self.multiClient(); ok {
+		multi.SetLimitedWindowSizeFraction(connect.DefaultMultiClientSettings().LimitedWindowSizeFraction)
+	}
+}
+
 // The developer readout of one connect exit. The fields are copied one by one,
 // so every connect ExitInfo field must be carried here or named as left out in
 // TestExitFromConnectCarriesEveryExitInfoField.
@@ -604,9 +669,17 @@ func exitFromConnect(exit *connect.ExitInfo) *Exit {
 	// the provider sends any uint64 and gomobile binds no unsigned type, so a
 	// value past int64 saturates: still the newest, never negative
 	providerSecurityPolicyGeneration := int64(min(exit.ProviderSecurityPolicyGeneration, math.MaxInt64))
+	// the limited window has no rank mode of its own
+	windowType := exit.WindowType.RankMode()
+	if exit.WindowType == connect.WindowTypeLimited {
+		windowType = ExitWindowTypeLimited
+	}
 	return &Exit{
 		ClientId:                         newId(exit.ClientId),
-		WindowType:                       exit.WindowType.RankMode(),
+		WindowType:                       windowType,
+		CapabilityIp:                     string(exit.CapabilityIp),
+		CapabilityProtocol:               string(exit.CapabilityProtocol),
+		OverflowStep:                     int32(exit.OverflowStep),
 		Warning:                          exit.Warning,
 		Quarantined:                      exit.Quarantined,
 		WarningCause:                     exit.WarningCause,

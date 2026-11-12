@@ -193,3 +193,9 @@ urnet_subscription_pro_tracker_get_shown_plan
 urnet_subscription_pro_tracker_get_last_read_failed
 urnet_subscription_pro_tracker_get_is_pro
 urnet_subscription_pro_tracker_reset
+
+# the limited window's fraction for the desktop apps' developer pages (sdk
+# reliability_controls.go; server FP2-PROTOCOL.md §7.8, §10)
+urnet_device_local_get_limited_window_size_fraction
+urnet_device_local_set_limited_window_size_fraction
+urnet_device_local_reset_limited_window_size_fraction

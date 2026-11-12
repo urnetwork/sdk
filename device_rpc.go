@@ -9187,6 +9187,9 @@ type DeviceRemoteReliabilityMetricsRpc struct {
 type ExitRpc struct {
 	ClientId                         connect.Id
 	WindowType                       string
+	CapabilityIp                     string
+	CapabilityProtocol               string
+	OverflowStep                     int32
 	Warning                          bool
 	Quarantined                      bool
 	WarningCause                     string
@@ -9215,6 +9218,9 @@ func newExitRpc(exit *Exit) *ExitRpc {
 	}
 	exitRpc := &ExitRpc{
 		WindowType:                       exit.WindowType,
+		CapabilityIp:                     exit.CapabilityIp,
+		CapabilityProtocol:               exit.CapabilityProtocol,
+		OverflowStep:                     exit.OverflowStep,
 		Warning:                          exit.Warning,
 		Quarantined:                      exit.Quarantined,
 		WarningCause:                     exit.WarningCause,
@@ -9249,6 +9255,9 @@ func (self *ExitRpc) toExit() *Exit {
 	return &Exit{
 		ClientId:                         newId(self.ClientId),
 		WindowType:                       self.WindowType,
+		CapabilityIp:                     self.CapabilityIp,
+		CapabilityProtocol:               self.CapabilityProtocol,
+		OverflowStep:                     self.OverflowStep,
 		Warning:                          self.Warning,
 		Quarantined:                      self.Quarantined,
 		WarningCause:                     self.WarningCause,

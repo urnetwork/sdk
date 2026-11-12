@@ -404,11 +404,14 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShareByteCount)
 	}
 	return &DeviceLocalSettings{
-		MemoryTargetByteCount:       memoryTargetByteCount,
-		LowMemoryProfile:            lowMemoryProfile,
-		defaultH1ReceiveCount:       clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
-		hasDefaultH1ReceiveCount:    true,
-		ProviderSendBorrowByteCount: 0,
+		MemoryTargetByteCount: memoryTargetByteCount,
+		LowMemoryProfile:      lowMemoryProfile,
+		// the steady-memory gate has not failed: the limited window follows
+		// connect's fraction (D11.5; set 1 here if it fails)
+		lowMemoryLimitedWindowSizeMax: 0,
+		defaultH1ReceiveCount:         clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
+		hasDefaultH1ReceiveCount:      true,
+		ProviderSendBorrowByteCount:   0,
 		// a strict window hands a drained slot to its replacement instead of
 		// building candidates its hard max refuses (see the field)
 		StrictWindowHandover: true,
@@ -722,6 +725,14 @@ type DeviceLocalSettings struct {
 	// or changes the process Go limit/message pools. Zero target still opts
 	// out of per-device sizing; actual mobile hosts retain their policy.
 	LowMemoryProfile bool
+	// The most clients the limited window holds under the low-memory policy
+	// (server FP2-PROTOCOL.md §7.4, D11.5). The steady-memory gate decides it
+	// before each client release, with every window filled against the
+	// device's memory target: 0 while the gate has not failed, which leaves
+	// the window to connect's fraction of the largest normal window, and 1
+	// once it fails. Non-positive is no bound. Unexported, so the bound
+	// settings and the c abi json do not change.
+	lowMemoryLimitedWindowSizeMax int
 	// Preserve constructor provenance when a caller overrides the target.
 	// A different H1 count is an explicit caller cap, including zero.
 	defaultH1ReceiveCount    int
@@ -1438,6 +1449,10 @@ type DeviceLocal struct {
 	// developer-menu experiment set before connecting -- or simply surviving
 	// a reconnect -- would evaporate silently
 	reliabilitySettings *connect.ReliabilitySettings
+	// the runtime limited window fraction, nil when none is set; built into
+	// every multi client's settings for the same reason as the reliability
+	// override (SetLimitedWindowSizeFraction)
+	limitedWindowSizeFraction *float64
 	// routingTier is the persisted RoutingTier dial (off/light/full, see
 	// routing_tier.go), stored as a bare int for the same reason
 	// SetRoutingTier takes one. Zero value is RoutingTierOff, so a device that
@@ -5518,6 +5533,17 @@ func (self *DeviceLocal) applyDestination(
 				self.settings.MemoryTargetByteCount,
 				self.settings.LowMemoryProfile,
 			)
+			applyMobileLimitedWindowSettingsForPlatform(
+				settings,
+				self.settings.lowMemoryLimitedWindowSizeMax,
+				self.settings.MemoryTargetByteCount,
+				self.settings.LowMemoryProfile,
+			)
+			// a developer-menu fraction outlives the window it was set on
+			// (SetLimitedWindowSizeFraction stores it here)
+			if self.limitedWindowSizeFraction != nil {
+				settings.LimitedWindowSizeFraction = *self.limitedWindowSizeFraction
+			}
 			settings.WindowSizeLimit = windowSizeLimit
 			settings.Log = self.log
 			settings.LocalDialContextSettings = self.settings.LocalDialContextSettings
@@ -5639,6 +5665,9 @@ func (self *DeviceLocal) applyDestination(
 			connectionGeneration := self.connectionGeneration
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 				windowStatus := toWindowStatus(monitor)
+				// the limited window is outside the monitor; read it as of
+				// this normal-window change
+				windowStatus.LimitedWindowSize = multi.LimitedWindowSize()
 				windowStatus.ConnectionGeneration = connectionGeneration
 				changed := false
 				current := false
@@ -5753,30 +5782,38 @@ func (self *DeviceLocal) applyDestination(
 	}, nil
 }
 
+// The client and its generation are read together under the state lock, and
+// the client is asked for its status after the lock is released.
 func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
-	var windowStatus *WindowStatus
+	var remoteUserNatClient connect.UserNatClient
+	var connectionGeneration int64
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-
-		switch v := self.remoteUserNatClient.(type) {
-		case *connect.RemoteUserNatClient:
-			n := len(v.DestinationIds())
-			windowStatus = &WindowStatus{
-				TargetSize:         n,
-				ProviderStateAdded: n,
-				MinSatisfied:       true,
-				// fixed destinations bypass discovery, so their category is
-				// legacy, which reads as v4-only
-				ProviderV4OnlyCount: n,
-			}
-		case *connect.RemoteUserNatMultiClient:
-			windowStatus = toWindowStatus(v.Monitor())
-		default:
-			windowStatus = &WindowStatus{}
-		}
-		windowStatus.ConnectionGeneration = self.connectionGeneration
+		remoteUserNatClient = self.remoteUserNatClient
+		connectionGeneration = self.connectionGeneration
 	}()
+
+	var windowStatus *WindowStatus
+	switch v := remoteUserNatClient.(type) {
+	case *connect.RemoteUserNatClient:
+		n := len(v.DestinationIds())
+		windowStatus = &WindowStatus{
+			TargetSize:         n,
+			ProviderStateAdded: n,
+			MinSatisfied:       true,
+			// fixed destinations bypass discovery, so their category is
+			// legacy, which reads as v4-only and dualproto
+			ProviderV4OnlyCount: n,
+			UdpAvailable:        0 < n,
+		}
+	case *connect.RemoteUserNatMultiClient:
+		windowStatus = toWindowStatus(v.Monitor())
+		windowStatus.LimitedWindowSize = v.LimitedWindowSize()
+	default:
+		windowStatus = &WindowStatus{}
+	}
+	windowStatus.ConnectionGeneration = connectionGeneration
 	return windowStatus
 }
 
@@ -5788,6 +5825,7 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 		StallReason:   windowExpandEvent.Reason,
 		Failed:        windowExpandEvent.Failed,
 		Ipv6Available: windowExpandEvent.Ipv6Available,
+		UdpAvailable:  windowExpandEvent.UdpAvailable,
 	}
 	for _, providerEvent := range providerEvents {
 		switch providerEvent.State {

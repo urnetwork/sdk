@@ -427,6 +427,18 @@ type WindowStatus struct {
 	// tunnel answers AAAA queries empty and refuses v6 flows with an ICMPv6
 	// no-route reply, so apps connect over v4 at once (connect/IPV6.md B6).
 	Ipv6Available bool
+	// True while a window client can carry UDP: the server's network checks
+	// label it dualproto (server FP2-PROTOCOL.md §7.2). While false after the
+	// window has formed, the tunnel answers UDP with an ICMP port unreachable,
+	// so QUIC falls back to TCP at once (§7.7). A fixed destination carries
+	// every flow, as a legacy provider reads dualproto.
+	UdpAvailable bool
+	// How many clients the limited window holds: providers whose network
+	// checks failed only over UDP, offered for the TCP flows they can carry
+	// (§7.4). They are not in the Provider* counts, which stay on the normal
+	// windows, and a change to them alone sends no window status. 0 for a
+	// fixed destination.
+	LimitedWindowSize int
 	// StallReason is the machine-readable diagnosis while the window is still
 	// forming: evaluating | platform-unreachable | providers-unresponsive |
 	// rate-limited | auth-failing (the connect WindowStall* constants).

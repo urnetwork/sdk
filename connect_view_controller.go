@@ -1306,8 +1306,9 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					point.Active = providerEvent.State.IsActive()
 					providerGridPointChanged = true
 				}
-				// the category can change on a live point: a dualstack exit
-				// whose v6 dials keep failing is downgraded locally (IPV6.md B5)
+				// the category of a live point follows its event. Connect no
+				// longer downgrades an exit's v6 locally (IPV6.md B5 retired by
+				// server FP2-PROTOCOL.md D11.8), but an event may still re-label it
 				if ipFamily := ipFamilyValue(providerEvent.IpFamily); point.IpFamily != ipFamily {
 					point.IpFamily = ipFamily
 					point.IpFamilyLabel = ipFamilyLabel(providerEvent.IpFamily)

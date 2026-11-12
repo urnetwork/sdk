@@ -827,6 +827,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_get_first_load_timeline_json(long a0);
   long urnet_device_local_get_key_material(long a0);
   long urnet_device_local_get_last_local_state_save_result(long a0);
+  double urnet_device_local_get_limited_window_size_fraction(long a0);
   Pointer urnet_device_local_get_memory_stats(long a0);
   Pointer urnet_device_local_get_pinned_app_ids(long a0);
   Pointer urnet_device_local_get_probe_results(long a0);
@@ -876,6 +877,7 @@ public interface Raw extends Library {
   byte urnet_device_local_probe_suite_running(long a0);
   void urnet_device_local_query_subprotocols(long a0, String a1, long a2, urnet_subprotocols_query_cb a3, Pointer a4);
   byte urnet_device_local_reconnect_checked(long a0, String a1, PointerByReference a2);
+  void urnet_device_local_reset_limited_window_size_fraction(long a0);
   void urnet_device_local_reset_reliability_metrics(long a0);
   void urnet_device_local_reset_reliability_settings(long a0);
   byte urnet_device_local_save_key_material(long a0, PointerByReference a1);
@@ -890,6 +892,7 @@ public interface Raw extends Library {
   byte urnet_device_local_set_default_location_checked(long a0, String a1, PointerByReference a2);
   void urnet_device_local_set_flow_owner_lookup(long a0, urnet_flow_owner_lookup_cb a1, Pointer a2);
   void urnet_device_local_set_key_material(long a0, long a1);
+  void urnet_device_local_set_limited_window_size_fraction(long a0, double a1);
   void urnet_device_local_set_network_metered(long a0, byte a1);
   void urnet_device_local_set_performance_degraded(long a0, byte a1);
   void urnet_device_local_set_reliability_settings(long a0, String a1);

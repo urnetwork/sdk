@@ -61,6 +61,9 @@ type mobileMemorySample struct {
 
 	QualityClientCount int64 `json:"quality_clients"`
 	SpeedClientCount   int64 `json:"speed_clients"`
+	// the limited window's clients (server FP2-PROTOCOL.md §7.4), which the
+	// mobile steady-memory gate measures with every window filled (§9)
+	LimitedClientCount int64 `json:"limited_clients"`
 	FlowCount          int64 `json:"flows"`
 
 	PackHandoffDropCount                   int64 `json:"pack_handoff_drops"`
@@ -456,6 +459,7 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 		PackQueueCapacityByteCount:             int64(packQueueCapacityByteCount),
 		QualityClientCount:                     int64(topology.QualityClientCount),
 		SpeedClientCount:                       int64(topology.SpeedClientCount),
+		LimitedClientCount:                     int64(topology.LimitedClientCount),
 		FlowCount:                              int64(topology.FlowCount),
 		PackHandoffDropCount:                   int64(topology.PackHandoffDropCount),
 		PackHandoffDropByteCount:               int64(topology.PackHandoffDropByteCount),
