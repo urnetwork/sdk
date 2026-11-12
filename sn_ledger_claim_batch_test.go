@@ -530,6 +530,194 @@ func TestSnLedgerClaimOutcomesOf(t *testing.T) {
 	}
 }
 
+// testSendAsTheWallet sends tx as the reader's wallet does, signed with its
+// gas limit, and returns its receipt as JSON-RPC gives it.
+func testSendAsTheWallet(t *testing.T, f *testV2Claim, tx *SnLedgerUnsignedTx) string {
+	t.Helper()
+	data, err := evm.ParseHexBytes(tx.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := evm.ParseAddress(tx.To)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, _, err := (&evm.LegacyTx{Nonce: 0, GasPrice: big.NewInt(11_000_000_000), Gas: uint64(tx.Gas), To: to, Value: big.NewInt(0), Data: data}).Signed(big.NewInt(SnChainIdTestnet), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txHash, err := f.engine(t).client.SendRawTransaction(context.Background(), signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.chain.mutex.Lock()
+	defer f.chain.mutex.Unlock()
+	receipt, err := json.Marshal(f.chain.receipts[txHash])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(receipt)
+}
+
+// A host that sends the claims with its own wallet reads why an account was
+// not paid from the chain, as the device's claim does, so it shows the same
+// outcome: the runtime refusing a mined batch's transfer under its transfer
+// floor reads not_claimable (Below the claim minimum), not claim_failed as the
+// pure reader must read it; another refusal of the runtime reads claim_failed
+// with its reason, and one the chain no longer gives claim_failed. A claim
+// alone that reverted is called again: AmountTooLow is not_claimable there
+// too, and NothingToClaim already_claimed.
+func TestSnLedgerClaimOutcomesFor(t *testing.T) {
+	floor := SnErrorCodeNotClaimable + ": AmountTooLow: the claim is below the runtime's transfer floor"
+	simulation := fakeVault2Call{method: "eth_call", from: testVault2, to: "0x0000000000000000000000000000000000000805", selector: "17ce5f62"}
+	for _, c := range []struct {
+		name string
+		// the runtime's refusal once the batch is mined, and when the outcomes
+		// are read
+		mined, read string
+		want        string
+	}{
+		{"the transfer floor", "AmountTooLow", "AmountTooLow", floor},
+		{"too many staking hotkeys", "TooManyStakingHotkeys", "TooManyStakingHotkeys", SnErrorCodeClaimFailed + ": TooManyStakingHotkeys"},
+		{"a refusal the chain no longer gives", "AmountTooLow", "", SnErrorCodeClaimFailed + ": the claim reverted without a reason"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, _ := newTestV2BatchClaim(t)
+			txs, err := SnLedgerClaimTransactionsFor(f.settings, f.aliceSs58)
+			if err != nil || txs.Len() != 1 || !txs.Get(0).Batch {
+				t.Fatalf("transactions %+v, %v", txs, err)
+			}
+			tx := txs.Get(0)
+			// the runtime refuses the first transfer, which consumes its cap, and
+			// the batch does not attempt the second
+			f.chain.beforeMine = func() { f.chain.runtimeRefusal = c.mined }
+			receipt := testSendAsTheWallet(t, f, tx)
+			f.chain.runtimeRefusal = c.read
+
+			pure, err := SnLedgerClaimOutcomesOf(tx, receipt)
+			want := []*SnLedgerClaimOutcome{
+				{NoId: 1, Index: 2, Status: SnLedgerClaimOutcomeFailed, Message: SnErrorCodeClaimFailed + ": the staking precompile refused the transfer"},
+				{NoId: testCtfNoId, Index: 1, Status: SnLedgerClaimOutcomeNotAttempted},
+			}
+			if err != nil || !reflect.DeepEqual(pure.getAll(), want) {
+				t.Fatalf("pure outcomes %+v, %v", pure, err)
+			}
+			outcomes, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, tx, receipt)
+			want[0].Message = c.want
+			if err != nil || !reflect.DeepEqual(outcomes.getAll(), want) {
+				t.Fatalf("outcomes %+v, %v", outcomes, err)
+			}
+			// the reason is vault2's transfer of the amount to alice on the escrow
+			// hotkey, simulated
+			if calls := f.chain.calls; calls[len(calls)-1] != simulation {
+				t.Fatalf("last call %+v", calls[len(calls)-1])
+			}
+			f.requireClaimable(t)
+
+			// the device's claim in the same case reads the same
+			f, _ = newTestV2BatchClaim(t)
+			f.chain.beforeMine = func() { f.chain.runtimeRefusal = c.mined }
+			events := f.claimReadingAt(t, c.read)
+			if len(events) < 3 || events[2].kind != "failed" || events[2].noId != 1 || events[2].message != c.want {
+				t.Fatalf("the device's claim %+v, want %q", events, c.want)
+			}
+		})
+	}
+
+	// a claim alone that reverted is called again
+	for _, c := range []struct {
+		name   string
+		revert func(f *testV2Claim)
+		want   string
+	}{
+		{"under the transfer floor", func(f *testV2Claim) { f.chain.runtimeRefusal = "AmountTooLow" }, floor},
+		{"paid first by another claim", func(f *testV2Claim) { f.chain.setClaimed(1, 2, testV2Cumulative) }, SnErrorCodeAlreadyClaimed + ": NothingToClaim: another claim paid this account first"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newTestV2Claim(t)
+			txs, err := SnLedgerClaimTransactionsFor(f.settings, f.aliceSs58)
+			if err != nil || txs.Len() != 1 || txs.Get(0).Batch {
+				t.Fatalf("transactions %+v, %v", txs, err)
+			}
+			tx := txs.Get(0)
+			f.chain.beforeMine = func() { c.revert(f) }
+			receipt := testSendAsTheWallet(t, f, tx)
+			if pure, err := SnLedgerClaimOutcomesOf(tx, receipt); err != nil || pure.Get(0).Message != SnErrorCodeClaimFailed+": the claim transaction reverted" {
+				t.Fatalf("pure outcomes %+v, %v", pure, err)
+			}
+			outcomes, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, tx, receipt)
+			want := []*SnLedgerClaimOutcome{{NoId: 1, Index: 2, Status: SnLedgerClaimOutcomeFailed, Message: c.want}}
+			if err != nil || !reflect.DeepEqual(outcomes.getAll(), want) {
+				t.Fatalf("outcomes %+v, %v", outcomes, err)
+			}
+		})
+	}
+
+	// a confirmed claim reads no reason from the chain, and the inputs are
+	// checked before the receipt is read
+	f, _ := newTestV2BatchClaim(t)
+	txs, err := SnLedgerClaimTransactionsFor(f.settings, f.aliceSs58)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := txs.Get(0)
+	receipt := testSendAsTheWallet(t, f, tx)
+	calls := len(f.chain.methods())
+	outcomes, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, tx, receipt)
+	if err != nil || outcomes.Len() != 2 || outcomes.Get(0).Status != SnLedgerClaimOutcomeConfirmed || outcomes.Get(1).Status != SnLedgerClaimOutcomeConfirmed || len(f.chain.methods()) != calls {
+		t.Fatalf("confirmed %+v, %v, %d calls", outcomes, err, len(f.chain.methods())-calls)
+	}
+	otherVault := *tx
+	otherVault.Vault = "0x" + strings.Repeat("99", 20)
+	unconfigured := f.settings.Copy()
+	unconfigured.Vault2Address = ""
+	for name, read := range map[string]func() error{
+		"another vault2": func() error {
+			_, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, &otherVault, receipt)
+			return err
+		},
+		"a coldkey that is not one": func() error {
+			_, err := SnLedgerClaimOutcomesFor(f.settings, "5Hq5", tx, receipt)
+			return err
+		},
+		"no vault2 configured": func() error {
+			_, err := SnLedgerClaimOutcomesFor(unconfigured, f.aliceSs58, tx, receipt)
+			return err
+		},
+		"no transaction": func() error {
+			_, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, nil, receipt)
+			return err
+		},
+		"no receipt": func() error {
+			_, err := SnLedgerClaimOutcomesFor(f.settings, f.aliceSs58, tx, "")
+			return err
+		},
+	} {
+		if err := read(); err == nil {
+			t.Errorf("%s: read", name)
+		}
+	}
+	if len(f.chain.methods()) != calls {
+		t.Fatal("a refused read called the chain")
+	}
+}
+
+// claimReadingAt runs one claim of the gas key, the runtime refusing with
+// refusal by the time the device reads why a mined batch did not pay an
+// account.
+func (self *testV2Claim) claimReadingAt(t *testing.T, refusal string) []testLedgerClaimEvent {
+	t.Helper()
+	mined := self.chain.beforeMine
+	self.chain.beforeMine = func() {
+		if mined != nil {
+			mined()
+		}
+		// the device reads the receipt, then simulates: the refusal by then
+		self.chain.beforeReceipt = func() { self.chain.runtimeRefusal = refusal }
+	}
+	return self.claim(t)
+}
+
 // The batcher is in the settings' json beside vault2, pinned on mainnet to the
 // release batcher and empty on testnet, overlaid by Merge and read from the
 // network space's sn_chain values.
