@@ -786,12 +786,12 @@ func TestTheGasKeysTurnEndsAtTheBroadcast(t *testing.T) {
 	}
 }
 
-// Nonce reads from another node than the broadcasts', one that counts a held
-// transaction only 500 ms after the pool took it, as behind a load balancer or
+// Nonce reads from another node than the broadcasts', one that has not seen
+// the pool's transactions, only what is mined, as behind a load balancer or
 // after a failover to the next rpc url: the second claim's read does not count
-// the first claim's transaction yet. The first's nonce in flight makes the
-// second's the next one, in either order. No receipt comes until both are
-// sent, so the first is not mined before the second reads.
+// the first claim's transaction. The first's nonce in flight makes the
+// second's the next one, whichever claim goes first. No receipt comes until
+// both are sent, so the first is not mined before the second reads.
 func TestClaimsTakeTurnsWhenNonceReadsLagTheBroadcasts(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -805,7 +805,7 @@ func TestClaimsTakeTurnsWhenNonceReadsLagTheBroadcasts(t *testing.T) {
 		order := struct{ v1First bool }{c.order}
 		t.Run(c.name, func(t *testing.T) {
 			f := newTestGasKeyClaims(t, c.v2(t))
-			f.pool.lagReads(500 * time.Millisecond)
+			f.pool.lagReads(time.Hour)
 			f.pool.holdReceipts(2)
 			v1, v2 := f.claimBoth(t, order.v1First)
 			landed := f.requireLanded(t, 2)
