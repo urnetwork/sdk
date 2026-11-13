@@ -18,7 +18,7 @@ import (
 	"syscall/js"
 	"unicode"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // URnetworkSnClaimStatusOf({ relay, relayError, ledger, connectedSs58, selfClaimConfigured, settings }) -> status
