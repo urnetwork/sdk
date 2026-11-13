@@ -4978,6 +4978,31 @@ func urnet_api_get_leaderboard(self C.uint64_t, args *C.char, callback_result C.
 	self_.GetLeaderboard(args_, callback_)
 }
 
+//export urnet_api_get_mail_locale_time_zone
+func urnet_api_get_mail_locale_time_zone(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_api_get_mail_locale_time_zone")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_mail_locale_time_zone")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetMailLocaleTimeZone()
+	return cString(string(r0))
+}
+
+//export urnet_api_get_mail_locales
+func urnet_api_get_mail_locales(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_api_get_mail_locales")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_mail_locales")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetMailLocales()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_get_mail_locales")
+}
+
 //export urnet_api_get_network_blocked_locations
 func urnet_api_get_network_blocked_locations(self C.uint64_t, callback_result C.urnet_get_network_blocked_locations_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_get_network_blocked_locations")
@@ -5818,6 +5843,23 @@ func urnet_api_set_emoji_tag(self C.uint64_t, args *C.char, callback_result C.ur
 		callback_ = &cAdapterSetEmojiTagCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SetEmojiTag(args_, callback_)
+}
+
+//export urnet_api_set_mail_locale
+func urnet_api_set_mail_locale(self C.uint64_t, timeZone *C.char, locales *C.char) {
+	defer cgoGuard("urnet_api_set_mail_locale")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_set_mail_locale")
+	if !ok {
+		return
+	}
+	var locales_ *sdk.StringList
+	if locales != nil {
+		locales_ = &sdk.StringList{}
+		if !goJson(locales, locales_, "urnet_api_set_mail_locale") {
+			return
+		}
+	}
+	self_.SetMailLocale(goString(timeZone), locales_)
 }
 
 //export urnet_api_set_network_credential_store

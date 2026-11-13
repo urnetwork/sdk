@@ -1613,6 +1613,8 @@ struct AuthLoginArgs {
 	std::optional<WalletAuthArgs> wallet_auth;
 	std::optional<std::string> seedphrase;
 	std::optional<bool> result_errors;
+	std::optional<std::string> time_zone;
+	std::optional<StringList> locales;
 };
 
 struct AuthLoginResultError {
@@ -1638,6 +1640,8 @@ struct AuthLoginWithPasswordArgs {
 	std::string user_auth{};
 	std::string password{};
 	std::optional<bool> verify_otp_numeric;
+	std::optional<std::string> time_zone;
+	std::optional<StringList> locales;
 };
 
 struct AuthLoginWithPasswordResultNetwork {
@@ -1735,6 +1739,7 @@ struct AuthNetworkClientArgs {
 	std::optional<ProxyConfig> proxy_config;
 	std::optional<std::string> time_zone;
 	std::optional<std::string> locale;
+	std::optional<StringList> locales;
 	std::optional<bool> provide_intent;
 };
 
@@ -1816,6 +1821,8 @@ struct AuthPasswordResetResult {
 struct AuthVerifyArgs {
 	std::string user_auth{};
 	std::string verify_code{};
+	std::optional<std::string> time_zone;
+	std::optional<StringList> locales;
 };
 
 struct AuthVerifyResultNetwork {
@@ -3445,6 +3452,8 @@ struct NetworkCreateArgs {
 	std::optional<std::string> balance_code;
 	std::optional<WalletAuthArgs> wallet_auth;
 	std::optional<bool> result_errors;
+	std::optional<std::string> time_zone;
+	std::optional<StringList> locales;
 	std::optional<bool> product_updates;
 };
 
@@ -6812,6 +6821,12 @@ inline void to_json(nlohmann::json& j, const AuthLoginArgs& v) {
 	if (v.result_errors) {
 		j["result_errors"] = *v.result_errors;
 	}
+	if (v.time_zone) {
+		j["time_zone"] = *v.time_zone;
+	}
+	if (v.locales) {
+		j["locales"] = *v.locales;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 	if (!j.is_object()) {
@@ -6846,6 +6861,16 @@ inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.result_errors = std::move(tmp);
+	}
+	if (auto it = j.find("time_zone"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.time_zone = std::move(tmp);
+	}
+	if (auto it = j.find("locales"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.locales = std::move(tmp);
 	}
 }
 
@@ -6955,6 +6980,12 @@ inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordArgs& v) {
 	if (v.verify_otp_numeric) {
 		j["verify_otp_numeric"] = *v.verify_otp_numeric;
 	}
+	if (v.time_zone) {
+		j["time_zone"] = *v.time_zone;
+	}
+	if (v.locales) {
+		j["locales"] = *v.locales;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordArgs& v) {
 	if (!j.is_object()) {
@@ -6970,6 +7001,16 @@ inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordArgs& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.verify_otp_numeric = std::move(tmp);
+	}
+	if (auto it = j.find("time_zone"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.time_zone = std::move(tmp);
+	}
+	if (auto it = j.find("locales"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.locales = std::move(tmp);
 	}
 }
 
@@ -7440,6 +7481,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientArgs& v) {
 	if (v.locale) {
 		j["locale"] = *v.locale;
 	}
+	if (v.locales) {
+		j["locales"] = *v.locales;
+	}
 	if (v.provide_intent) {
 		j["provide_intent"] = *v.provide_intent;
 	}
@@ -7488,6 +7532,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.locale = std::move(tmp);
+	}
+	if (auto it = j.find("locales"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.locales = std::move(tmp);
 	}
 	if (auto it = j.find("provide_intent"); it != j.end() && !it->is_null()) {
 		bool tmp{};
@@ -7916,6 +7965,12 @@ inline void to_json(nlohmann::json& j, const AuthVerifyArgs& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
 	j["verify_code"] = v.verify_code;
+	if (v.time_zone) {
+		j["time_zone"] = *v.time_zone;
+	}
+	if (v.locales) {
+		j["locales"] = *v.locales;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthVerifyArgs& v) {
 	if (!j.is_object()) {
@@ -7926,6 +7981,16 @@ inline void from_json(const nlohmann::json& j, AuthVerifyArgs& v) {
 	}
 	if (auto it = j.find("verify_code"); it != j.end() && !it->is_null()) {
 		it->get_to(v.verify_code);
+	}
+	if (auto it = j.find("time_zone"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.time_zone = std::move(tmp);
+	}
+	if (auto it = j.find("locales"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.locales = std::move(tmp);
 	}
 }
 
@@ -15029,6 +15094,12 @@ inline void to_json(nlohmann::json& j, const NetworkCreateArgs& v) {
 	if (v.result_errors) {
 		j["result_errors"] = *v.result_errors;
 	}
+	if (v.time_zone) {
+		j["time_zone"] = *v.time_zone;
+	}
+	if (v.locales) {
+		j["locales"] = *v.locales;
+	}
 	if (v.product_updates) {
 		j["product_updates"] = *v.product_updates;
 	}
@@ -15097,6 +15168,16 @@ inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.result_errors = std::move(tmp);
+	}
+	if (auto it = j.find("time_zone"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.time_zone = std::move(tmp);
+	}
+	if (auto it = j.find("locales"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.locales = std::move(tmp);
 	}
 	if (auto it = j.find("product_updates"); it != j.end() && !it->is_null()) {
 		bool tmp{};
@@ -23713,6 +23794,8 @@ public:
 	void getCryptoPaymentAssets(CryptoPaymentAssetsCallback callback) const;
 	void getCryptoPaymentStatus(const std::optional<CryptoPaymentStatusArgs>& args, CryptoPaymentStatusCallback callback) const;
 	void getLeaderboard(const std::optional<GetLeaderboardArgs>& args, GetLeaderboardCallback callback) const;
+	std::string getMailLocaleTimeZone() const;
+	std::optional<StringList> getMailLocales() const;
 	void getNetworkBlockedLocations(GetNetworkBlockedLocationsCallback callback) const;
 	void getNetworkClients(GetNetworkClientsCallback callback) const;
 	void getNetworkLeaderboardRanking(GetNetworkLeaderboardRankingCallback callback) const;
@@ -23762,6 +23845,7 @@ public:
 	void setByJwt(const std::string& by_jwt) const;
 	void setClientInfo(const std::optional<ClientInfo>& info) const;
 	void setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmojiTagCallback callback) const;
+	void setMailLocale(const std::string& time_zone, const std::optional<StringList>& locales) const;
 	void setNetworkCredentialStore(const LocalState& store) const;
 	void setNetworkLeaderboardPublic(const std::optional<SetNetworkRankingPublicArgs>& args, SetNetworkLeaderboardPublicCallback callback) const;
 	void setNetworkReferral(const std::optional<SetNetworkReferralArgs>& args, SetNetworkReferralCallback callback) const;
@@ -33675,6 +33759,18 @@ inline void Api::getLeaderboard(const std::optional<GetLeaderboardArgs>& args, G
 	auto* callback_fn = callback ? new GetLeaderboardCallback(std::move(callback)) : nullptr;
 	urnet_api_get_leaderboard(handle(), args_c, callback_fn ? &detail::oneshot_get_leaderboard : nullptr, callback_fn);
 }
+inline std::string Api::getMailLocaleTimeZone() const {
+	char* r_c = urnet_api_get_mail_locale_time_zone(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<StringList> Api::getMailLocales() const {
+	char* r_c = urnet_api_get_mail_locales(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline void Api::getNetworkBlockedLocations(GetNetworkBlockedLocationsCallback callback) const {
 	auto* callback_fn = callback ? new GetNetworkBlockedLocationsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_network_blocked_locations(handle(), callback_fn ? &detail::oneshot_get_network_blocked_locations : nullptr, callback_fn);
@@ -34033,6 +34129,15 @@ inline void Api::setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmoj
 	}
 	auto* callback_fn = callback ? new SetEmojiTagCallback(std::move(callback)) : nullptr;
 	urnet_api_set_emoji_tag(handle(), args_c, callback_fn ? &detail::oneshot_set_emoji_tag : nullptr, callback_fn);
+}
+inline void Api::setMailLocale(const std::string& time_zone, const std::optional<StringList>& locales) const {
+	std::string locales_json;
+	const char* locales_c = nullptr;
+	if (locales) {
+		locales_json = nlohmann::json(*locales).dump();
+		locales_c = locales_json.c_str();
+	}
+	urnet_api_set_mail_locale(handle(), time_zone.c_str(), locales_c);
 }
 inline void Api::setNetworkCredentialStore(const LocalState& store) const {
 	urnet_api_set_network_credential_store(handle(), store.handle());

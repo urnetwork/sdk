@@ -322,6 +322,8 @@ export interface AuthLoginWithPasswordArgs {
   user_auth: string;
   password: string;
   verify_otp_numeric?: boolean;
+  time_zone?: string;
+  locales?: string[] | null;
 }
 
 export interface AuthLoginWithPasswordResult {
@@ -347,6 +349,8 @@ export interface AuthLoginArgs {
   wallet_auth?: WalletAuthArgs | null;
   seedphrase?: string;
   result_errors?: boolean;
+  time_zone?: string;
+  locales?: string[] | null;
 }
 
 export interface NetworkCheckArgs {
@@ -371,6 +375,8 @@ export interface NetworkCreateArgs {
   balance_code?: string;
   wallet_auth?: WalletAuthArgs | null;
   result_errors?: boolean;
+  time_zone?: string;
+  locales?: string[] | null;
 }
 
 export interface NetworkCreateResult {
@@ -569,6 +575,8 @@ export interface AuthLoginResultNetwork {
 export interface AuthVerifyArgs {
   user_auth: string;
   verify_code: string;
+  time_zone?: string;
+  locales?: string[] | null;
 }
 
 export interface AuthVerifyResult {
@@ -628,6 +636,7 @@ export interface AuthNetworkClientArgs {
   proxy_config?: ProxyConfig | null;
   time_zone?: string;
   locale?: string;
+  locales?: string[] | null;
   provide_intent?: boolean;
 }
 

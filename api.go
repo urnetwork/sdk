@@ -16,9 +16,13 @@ import (
 // the api is asychronous, which is the most natural for the target platforms
 
 type Api struct {
-	credentialPersistenceError     error
-	networkSessionsListeners       *connect.CallbackList[NetworkSessionsChangeListener]
-	clientInfo                     connect.ClientInfo
+	credentialPersistenceError error
+	networkSessionsListeners   *connect.CallbackList[NetworkSessionsChangeListener]
+	clientInfo                 connect.ClientInfo
+	// the device's zone and languages the api sends with sign-up, sign-in
+	// and auth-client (api_mail_locale.go); guarded by mutex
+	mailTimeZone                   string
+	mailLocales                    []string
 	accountSignInRequiredListeners *connect.CallbackList[AccountSignInRequiredListener]
 	ctx                            context.Context
 	cancel                         context.CancelFunc
@@ -185,6 +189,7 @@ func (self *Api) newSession(ctx context.Context) *Api {
 func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
 	session := newApi(ctx, strategy, self.apiUrl)
 	session.SetClientInfo(self.GetClientInfo())
+	session.setMailLocale(self.getMailLocale())
 	session.setHttpPostRaw(self.transportHttpPostRaw())
 	session.setHttpGetRaw(self.transportHttpGetRaw())
 	session.setHttpPostStreamRaw(self.transportHttpPostStreamRaw())
@@ -499,6 +504,12 @@ type AuthLoginArgs struct {
 	// another account, WalletAuthErrorCodeSignatureMismatch) in the result
 	// `Error` instead of an HTTP 401 error, so the apps can read the code
 	ResultErrors bool `json:"result_errors,omitempty"`
+	// TimeZone is the device's IANA zone and Locales its languages, most
+	// preferred first: the campaign emails are placed in the reader's day and
+	// written in their language from them. Left empty, the api fills both
+	// from SetMailLocale.
+	TimeZone string      `json:"time_zone,omitempty"`
+	Locales  *StringList `json:"locales,omitempty"`
 }
 
 // The `Code` of a wallet sign-in, network create or add-auth refusal for a
@@ -544,6 +555,7 @@ type AuthLoginResultNetwork struct {
 }
 
 func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
+	authLogin = self.authLoginArgsWithMailLocale(authLogin)
 	if authLogin != nil && authLogin.UserAuth != "" && callback != nil {
 		originalCallback := callback
 		callback = connect.NewApiCallback(func(result *AuthLoginResult, err error) {
@@ -635,6 +647,12 @@ type AuthLoginWithPasswordArgs struct {
 	UserAuth         string `json:"user_auth"`
 	Password         string `json:"password"`
 	VerifyOtpNumeric bool   `json:"verify_otp_numeric,omitempty"`
+	// TimeZone is the device's IANA zone and Locales its languages, most
+	// preferred first: the campaign emails are placed in the reader's day and
+	// written in their language from them. Left empty, the api fills both
+	// from SetMailLocale.
+	TimeZone string      `json:"time_zone,omitempty"`
+	Locales  *StringList `json:"locales,omitempty"`
 }
 
 type AuthLoginWithPasswordResult struct {
@@ -656,6 +674,7 @@ type AuthLoginWithPasswordResultNetwork struct {
 }
 
 func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
+	authLoginWithPassword = self.authLoginWithPasswordArgsWithMailLocale(authLoginWithPassword)
 	runAsyncApiRequest[*AuthLoginWithPasswordResult](callback, func(callback connect.ApiCallback[*AuthLoginWithPasswordResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
@@ -671,6 +690,7 @@ func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPassw
 
 //gomobile:noexport
 func (self *Api) AuthLoginWithPasswordSyncWithContext(ctx context.Context, args *AuthLoginWithPasswordArgs) (*AuthLoginWithPasswordResult, error) {
+	args = self.authLoginWithPasswordArgsWithMailLocale(args)
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),
@@ -687,6 +707,12 @@ type AuthVerifyCallback connect.ApiCallback[*AuthVerifyResult]
 type AuthVerifyArgs struct {
 	UserAuth   string `json:"user_auth"`
 	VerifyCode string `json:"verify_code"`
+	// TimeZone is the device's IANA zone and Locales its languages, most
+	// preferred first: the campaign emails are placed in the reader's day and
+	// written in their language from them. Left empty, the api fills both
+	// from SetMailLocale.
+	TimeZone string      `json:"time_zone,omitempty"`
+	Locales  *StringList `json:"locales,omitempty"`
 }
 
 type AuthVerifyResult struct {
@@ -699,6 +725,7 @@ type AuthVerifyResultNetwork struct {
 }
 
 func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
+	authVerify = self.authVerifyArgsWithMailLocale(authVerify)
 	runAsyncApiRequest[*AuthVerifyResult](callback, func(callback connect.ApiCallback[*AuthVerifyResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
@@ -846,6 +873,12 @@ type NetworkCreateArgs struct {
 	// the apps can read the code in `Error`. The status stays a refusal: the
 	// server's signup monitor counts every 2xx create as a created network.
 	ResultErrors bool `json:"result_errors,omitempty"`
+	// TimeZone is the device's IANA zone and Locales its languages, most
+	// preferred first: the campaign emails are placed in the reader's day and
+	// written in their language from them. Left empty, the api fills both
+	// from SetMailLocale.
+	TimeZone string      `json:"time_zone,omitempty"`
+	Locales  *StringList `json:"locales,omitempty"`
 }
 
 type NetworkCreateResult struct {
@@ -881,6 +914,7 @@ type NetworkCreateResultError struct {
 }
 
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
+	networkCreate = self.networkCreateArgsWithMailLocale(networkCreate)
 	runAsyncApiRequest[*NetworkCreateResult](callback, func(callback connect.ApiCallback[*NetworkCreateResult]) {
 		httpPostRaw := self.getHttpPostRaw()
 		if networkCreate != nil && networkCreate.ResultErrors {
@@ -969,12 +1003,15 @@ type AuthNetworkClientArgs struct {
 
 	ProxyConfig *ProxyConfig `json:"proxy_config,omitempty"`
 
-	// TimeZone is the device's IANA zone ("America/Chicago") and Locale its
-	// BCP 47 tag ("pt-BR"): the onboarding campaign sends in the user's local
-	// morning and picks the email template's language from them
-	// (mmm/onboarding/PLAN.md). Optional; the apps set both on every call.
-	TimeZone string `json:"time_zone,omitempty"`
-	Locale   string `json:"locale,omitempty"`
+	// TimeZone is the device's IANA zone ("America/Chicago"), Locale its
+	// BCP 47 tag ("pt-BR") and Locales its languages, most preferred first:
+	// the campaign emails are placed in the reader's day and written in their
+	// language from them (server controller/mail_context.go). Left empty, the
+	// api fills them from SetMailLocale, Locale as the first language; a
+	// derived client (SourceClientId) carries none.
+	TimeZone string      `json:"time_zone,omitempty"`
+	Locale   string      `json:"locale,omitempty"`
+	Locales  *StringList `json:"locales,omitempty"`
 
 	// Creates a provider install: a client that only provides publicly, such
 	// as an embedded provider. A new top-level client created with it is
@@ -1066,6 +1103,7 @@ func withAuthNetworkClientPrompt(result *AuthNetworkClientResult) *AuthNetworkCl
 // A refusal carries its ClientLimitPrompt, and a 402 reads as the refusal it
 // stands for (authNetworkClientRefusalHttpPostRaw).
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
+	authNetworkClient = self.authNetworkClientArgsWithMailLocale(authNetworkClient)
 	byJwt, networkGeneration := func() (string, uint64) {
 		self.mutex.Lock()
 		defer self.mutex.Unlock()
@@ -1097,6 +1135,7 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 //
 //gomobile:noexport
 func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
+	authNetworkClient = self.authNetworkClientArgsWithMailLocale(authNetworkClient)
 	result, err := connect.HttpPostWithRawFunction(
 		ctx,
 		authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw()),

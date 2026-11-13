@@ -434,6 +434,10 @@ def bind(lib):
     lib.urnet_api_get_crypto_payment_status.restype = None
     lib.urnet_api_get_leaderboard.argtypes = [c_uint64, c_char_p, urnet_get_leaderboard_cb, c_void_p]
     lib.urnet_api_get_leaderboard.restype = None
+    lib.urnet_api_get_mail_locale_time_zone.argtypes = [c_uint64]
+    lib.urnet_api_get_mail_locale_time_zone.restype = c_void_p
+    lib.urnet_api_get_mail_locales.argtypes = [c_uint64]
+    lib.urnet_api_get_mail_locales.restype = c_void_p
     lib.urnet_api_get_network_blocked_locations.argtypes = [c_uint64, urnet_get_network_blocked_locations_cb, c_void_p]
     lib.urnet_api_get_network_blocked_locations.restype = None
     lib.urnet_api_get_network_clients.argtypes = [c_uint64, urnet_get_network_clients_cb, c_void_p]
@@ -532,6 +536,8 @@ def bind(lib):
     lib.urnet_api_set_client_info.restype = None
     lib.urnet_api_set_emoji_tag.argtypes = [c_uint64, c_char_p, urnet_set_emoji_tag_cb, c_void_p]
     lib.urnet_api_set_emoji_tag.restype = None
+    lib.urnet_api_set_mail_locale.argtypes = [c_uint64, c_char_p, c_char_p]
+    lib.urnet_api_set_mail_locale.restype = None
     lib.urnet_api_set_network_credential_store.argtypes = [c_uint64, c_uint64]
     lib.urnet_api_set_network_credential_store.restype = None
     lib.urnet_api_set_network_leaderboard_public.argtypes = [c_uint64, c_char_p, urnet_set_network_leaderboard_public_cb, c_void_p]

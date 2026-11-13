@@ -340,6 +340,8 @@ module URnetwork
       attach_function :urnet_api_get_crypto_payment_assets, [:uint64, :urnet_crypto_payment_assets_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_crypto_payment_status, [:uint64, :string, :urnet_crypto_payment_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_leaderboard, [:uint64, :string, :urnet_get_leaderboard_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_get_mail_locale_time_zone, [:uint64], :pointer, blocking: true
+      attach_function :urnet_api_get_mail_locales, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_network_blocked_locations, [:uint64, :urnet_get_network_blocked_locations_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_network_clients, [:uint64, :urnet_get_network_clients_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_network_leaderboard_ranking, [:uint64, :urnet_get_network_leaderboard_ranking_cb, :pointer], :void, blocking: true
@@ -389,6 +391,7 @@ module URnetwork
       attach_function :urnet_api_set_by_jwt, [:uint64, :string], :void, blocking: true
       attach_function :urnet_api_set_client_info, [:uint64, :string], :void, blocking: true
       attach_function :urnet_api_set_emoji_tag, [:uint64, :string, :urnet_set_emoji_tag_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_set_mail_locale, [:uint64, :string, :string], :void, blocking: true
       attach_function :urnet_api_set_network_credential_store, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_api_set_network_leaderboard_public, [:uint64, :string, :urnet_set_network_leaderboard_public_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_set_network_referral, [:uint64, :string, :urnet_set_network_referral_cb, :pointer], :void, blocking: true
