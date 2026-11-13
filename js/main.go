@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // js conversion notes:

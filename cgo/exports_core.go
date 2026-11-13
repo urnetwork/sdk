@@ -10,7 +10,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // core exports that are part of the abi contract rather than the sdk surface.

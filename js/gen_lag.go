@@ -42,9 +42,9 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/protocol"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/connect/v2026/protocol"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 const (

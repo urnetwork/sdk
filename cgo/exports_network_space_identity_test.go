@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // The actual generated export resolves separate handles before pointer identity.
