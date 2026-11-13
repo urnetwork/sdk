@@ -605,8 +605,9 @@ func (self *DeviceLocal) ResetReliabilitySettings() {
 // The limited window's size as a fraction of the largest normal window's
 // target (server FP2-PROTOCOL.md §7.4): the current window's, or while
 // disconnected what the next window takes, the runtime override when one is
-// set and connect's default otherwise. The limited window holds
-// max(1, floor(fraction × target)) clients, and none at or below 0.
+// set and connect's default otherwise, 1, the same size (D8). The limited
+// window holds max(1, floor(fraction × target)) clients, and none at or
+// below 0.
 func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
 	if multi, ok := self.multiClient(); ok {
 		return multi.LimitedWindowSizeFraction()

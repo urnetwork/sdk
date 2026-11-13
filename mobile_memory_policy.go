@@ -579,10 +579,10 @@ func applyMobileLowMemoryMultiClientSettingsForPlatform(
 }
 
 // Bounds the limited window of a memory-targeted mobile device (server
-// FP2-PROTOCOL.md §7.4, D11.5). The
-// window otherwise follows connect's fraction of the largest normal window's
-// target: half, which is 2 of the quality window's 5 at the 32-MiB iOS and
-// hosted target and 5 of its 10 at Android's 64 MiB. The steady-memory gate
+// FP2-PROTOCOL.md §7.4, D11.5). The window otherwise follows connect's
+// fraction of the largest normal window's target: 1, the same size (D8),
+// which is 5 beside the quality window's 5 at the 32-MiB iOS and hosted
+// target and 10 beside its 10 at Android's 64 MiB. The steady-memory gate
 // decides before each client release whether that fits; when it does not,
 // the device settings carry the bound (lowMemoryLimitedWindowSizeMax), 1 for
 // D11.5, and this installs it. Non-positive leaves the window to the

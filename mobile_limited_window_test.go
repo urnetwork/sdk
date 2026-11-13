@@ -45,8 +45,8 @@ func TestMobileLimitedWindowPolicyBoundsTheWindowWhenTheGateFails(t *testing.T) 
 }
 
 // Every platform's default leaves the window to the fraction: the gate has
-// not failed. Connect's fraction is the owner's half (D8), and its default
-// bounds nothing.
+// not failed. Connect's fraction is 1, the owner's "same size as the normal
+// window" (D8, 2026-11-13), and its default bounds nothing.
 func TestDefaultDeviceLocalSettingsLeaveTheLimitedWindowToTheFraction(t *testing.T) {
 	for _, goos := range []string{"ios", "android", "darwin", "windows", "linux"} {
 		if limitedSizeMax := defaultDeviceLocalSettingsForPlatform(goos).lowMemoryLimitedWindowSizeMax; limitedSizeMax != 0 {
@@ -57,8 +57,8 @@ func TestDefaultDeviceLocalSettingsLeaveTheLimitedWindowToTheFraction(t *testing
 		t.Errorf("low-memory profile: limited window max = %d, want 0", limitedSizeMax)
 	}
 	defaultSettings := connect.DefaultMultiClientSettings()
-	if defaultSettings.LimitedWindowSizeFraction != 0.5 {
-		t.Errorf("connect's limited window fraction = %v, want 0.5 (D8)", defaultSettings.LimitedWindowSizeFraction)
+	if defaultSettings.LimitedWindowSizeFraction != 1 {
+		t.Errorf("connect's limited window fraction = %v, want 1 (D8)", defaultSettings.LimitedWindowSizeFraction)
 	}
 	if defaultSettings.LimitedWindowSizeMax != 0 {
 		t.Errorf("connect's limited window max = %d, want 0", defaultSettings.LimitedWindowSizeMax)
@@ -68,8 +68,9 @@ func TestDefaultDeviceLocalSettingsLeaveTheLimitedWindowToTheFraction(t *testing
 // The sizes this gives each low-memory device, by connect's rule for the
 // limited window's target, min(max(1, floor(fraction × S)), max) with S the
 // largest normal target, here the policy's quality window. Connect's own tests
-// pin the rule; this pins what the sdk's sizes make of it: 2 on iOS and
-// hosted devices and 5 on Android until the gate fails, then 1 on each.
+// pin the rule; this pins what the sdk's sizes make of it: the quality
+// window's size, 5 on iOS and hosted devices and 10 on Android, until the
+// gate fails, then 1 on each.
 func TestMobileLimitedWindowSizesFollowTheQualityWindow(t *testing.T) {
 	limitedTarget := func(settings *connect.MultiClientSettings) int {
 		largestNormalTarget := 0
@@ -88,9 +89,9 @@ func TestMobileLimitedWindowSizesFollowTheQualityWindow(t *testing.T) {
 		limitedSizeMax int
 		expectedSize   int
 	}{
-		{name: "ios and hosted", target: LowMemoryDeviceTargetByteCount, limitedSizeMax: 0, expectedSize: 2},
-		{name: "android", target: 64 * 1024 * 1024, limitedSizeMax: 0, expectedSize: 5},
-		{name: "calibrated target", target: mobileSteadyMemoryTargetByteCount, limitedSizeMax: 0, expectedSize: 2},
+		{name: "ios and hosted", target: LowMemoryDeviceTargetByteCount, limitedSizeMax: 0, expectedSize: 5},
+		{name: "android", target: 64 * 1024 * 1024, limitedSizeMax: 0, expectedSize: 10},
+		{name: "calibrated target", target: mobileSteadyMemoryTargetByteCount, limitedSizeMax: 0, expectedSize: 4},
 		{name: "ios and hosted, gate failed", target: LowMemoryDeviceTargetByteCount, limitedSizeMax: 1, expectedSize: 1},
 		{name: "android, gate failed", target: 64 * 1024 * 1024, limitedSizeMax: 1, expectedSize: 1},
 	}
