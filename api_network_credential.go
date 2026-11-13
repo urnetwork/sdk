@@ -74,6 +74,9 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /network/unblock-location":          apiRouteAccessAppAdmin,
 	"POST /preferences/set-preferences":       apiRouteAccessAppAdmin,
 	"POST /stripe/customer-portal":            apiRouteAccessAppAdmin,
+	// the server's class for the USDC payout wallet routes, which the sdk no
+	// longer calls since USDC payouts ended (2026-11-12); drop these with the
+	// server's routes
 	"POST /account/payout-wallet":             apiRouteAccessAppAdmin,
 	"GET /account/payout-wallet":              apiRouteAccessAppAdmin,
 	"POST /account/wallet":                    apiRouteAccessAppAdmin,

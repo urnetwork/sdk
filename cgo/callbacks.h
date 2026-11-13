@@ -193,8 +193,6 @@ typedef void (*urnet_get_network_sessions_cb)(void* user_data, uint64_t result, 
 void urnet_invoke_get_network_sessions(urnet_get_network_sessions_cb cb, void* user_data, uint64_t result, const char* err_param);
 typedef void (*urnet_get_network_user_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_network_user(urnet_get_network_user_cb cb, void* user_data, const char* result_json, const char* err_param);
-typedef void (*urnet_get_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
-void urnet_invoke_get_payout_wallet(urnet_get_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_points_leaderboard_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_provider_status_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -207,8 +205,6 @@ typedef void (*urnet_grid_cb)(void* user_data);
 void urnet_invoke_grid(urnet_grid_cb cb, void* user_data);
 typedef void (*urnet_io_loop_done_cb)(void* user_data);
 void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data);
-typedef void (*urnet_is_creating_external_wallet_cb)(void* user_data, bool p0);
-void urnet_invoke_is_creating_external_wallet(urnet_is_creating_external_wallet_cb cb, void* user_data, bool p0);
 typedef void (*urnet_is_network_user_loading_cb)(void* user_data, bool p0);
 void urnet_invoke_is_network_user_loading(urnet_is_network_user_loading_cb cb, void* user_data, bool p0);
 typedef void (*urnet_is_network_user_updating_cb)(void* user_data, bool p0);
@@ -273,8 +269,6 @@ typedef void (*urnet_parse_by_jwt_cb)(void* user_data, const char* result_json, 
 void urnet_invoke_parse_by_jwt(urnet_parse_by_jwt_cb cb, void* user_data, const char* result_json, bool ok_param);
 typedef void (*urnet_payments_cb)(void* user_data);
 void urnet_invoke_payments(urnet_payments_cb cb, void* user_data);
-typedef void (*urnet_payout_wallet_cb)(void* user_data, const char* p0);
-void urnet_invoke_payout_wallet(urnet_payout_wallet_cb cb, void* user_data, const char* p0);
 typedef void (*urnet_peers_cb)(void* user_data, const char* peers_json);
 void urnet_invoke_peers(urnet_peers_cb cb, void* user_data, const char* peers_json);
 typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char* performance_profile_json);
@@ -351,8 +345,6 @@ typedef void (*urnet_set_network_leaderboard_public_cb)(void* user_data, const c
 void urnet_invoke_set_network_leaderboard_public(urnet_set_network_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_set_network_referral_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_set_network_referral(urnet_set_network_referral_cb cb, void* user_data, const char* result_json, const char* err_param);
-typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
-void urnet_invoke_set_payout_wallet(urnet_set_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_set_points_leaderboard_public(urnet_set_points_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);

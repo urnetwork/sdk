@@ -669,8 +669,8 @@ func (self *SubscriptionBalanceViewController) GetSubscriptions() *SubscriptionL
 
 // GetSubscriptionBalanceResult is the last successful fetch, whole: the plan
 // fields the derived accessors do not cover (price tier, welcome offer,
-// experiments, active balances, pending payout). nil before the first
-// successful fetch and after Stop.
+// experiments, active balances). nil before the first successful fetch and
+// after Stop.
 func (self *SubscriptionBalanceViewController) GetSubscriptionBalanceResult() *SubscriptionBalanceResult {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
