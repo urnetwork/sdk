@@ -620,6 +620,10 @@ func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
 	if override != nil {
 		return *override
 	}
+	// a host that disabled the limited window builds every window with none
+	if self.limitedWindowDisabled() {
+		return 0
+	}
 	return connect.DefaultMultiClientSettings().LimitedWindowSizeFraction
 }
 
@@ -628,8 +632,13 @@ func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
 // and the override is stored on the device and built into every window after
 // it. At or below 0 the limited window holds none. The low-memory bound
 // (DeviceLocalSettings) still applies. Safe while disconnected: it is stored
-// now and applied when a window is built.
+// now and applied when a window is built. A no-op on a device whose host
+// disabled the limited window (DeviceLocalSettings.DisableLimitedWindow): the
+// override must not give a hosted device the window back.
 func (self *DeviceLocal) SetLimitedWindowSizeFraction(fraction float64) {
+	if self.limitedWindowDisabled() {
+		return
+	}
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -641,8 +650,13 @@ func (self *DeviceLocal) SetLimitedWindowSizeFraction(fraction float64) {
 }
 
 // Clears the limited window's override: the current window returns to
-// connect's default fraction, and so does every window after it.
+// connect's default fraction, and so does every window after it. A no-op on a
+// device whose host disabled the limited window, which connect's default would
+// otherwise turn back on.
 func (self *DeviceLocal) ResetLimitedWindowSizeFraction() {
+	if self.limitedWindowDisabled() {
+		return
+	}
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -651,6 +665,12 @@ func (self *DeviceLocal) ResetLimitedWindowSizeFraction() {
 	if multi, ok := self.multiClient(); ok {
 		multi.SetLimitedWindowSizeFraction(connect.DefaultMultiClientSettings().LimitedWindowSizeFraction)
 	}
+}
+
+// Whether the host disabled the limited window
+// (DeviceLocalSettings.DisableLimitedWindow).
+func (self *DeviceLocal) limitedWindowDisabled() bool {
+	return self.settings != nil && self.settings.DisableLimitedWindow
 }
 
 // The developer readout of one connect exit. The fields are copied one by one,
