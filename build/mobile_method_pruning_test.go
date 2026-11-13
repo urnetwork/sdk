@@ -48,7 +48,7 @@ func TestMobileBindingsLinkNothingThatKeepsEveryMethod(t *testing.T) {
 				t.Fatalf("list SDK dependencies: %v\n%s", err, output)
 			}
 			packages := strings.Fields(string(output))
-			if !slices.Contains(packages, "github.com/urnetwork/sdk") {
+			if !slices.Contains(packages, "github.com/urnetwork/sdk/v2026") {
 				t.Fatalf("the list is not the SDK's:\n%s", output)
 			}
 			for _, forbidden := range []string{"net/rpc", "html/template", "text/template"} {
