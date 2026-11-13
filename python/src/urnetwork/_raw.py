@@ -3218,6 +3218,8 @@ def bind(lib):
     lib.urnet_sn_payout_leaf_hex.restype = c_void_p
     lib.urnet_sn_testnet_chain_settings.argtypes = []
     lib.urnet_sn_testnet_chain_settings.restype = c_void_p
+    lib.urnet_solana_wallet_failure_for.argtypes = [c_char_p, c_char_p, c_char_p]
+    lib.urnet_solana_wallet_failure_for.restype = c_void_p
     lib.urnet_suggest_emoji_tag.argtypes = [c_int64]
     lib.urnet_suggest_emoji_tag.restype = c_void_p
     lib.urnet_transport_settings_auto_modes.argtypes = [c_char_p]

@@ -1732,6 +1732,7 @@ module URnetwork
       attach_function :urnet_sn_ledger_claim_transactions_for_payer, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_payout_leaf_hex, [:string, :int64], :pointer, blocking: true
       attach_function :urnet_sn_testnet_chain_settings, [], :pointer, blocking: true
+      attach_function :urnet_solana_wallet_failure_for, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_suggest_emoji_tag, [:int64], :pointer, blocking: true
       attach_function :urnet_transport_settings_auto_modes, [:string], :pointer, blocking: true
       attach_function :urnet_transport_settings_enabled_transport_types, [:string], :pointer, blocking: true
