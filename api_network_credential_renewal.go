@@ -21,7 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -80,7 +80,7 @@ func networkRenewalJitter(interval time.Duration) time.Duration {
 	if interval <= 0 {
 		return 0
 	}
-	return time.Duration(mathrand.Int63n(int64(interval)))
+	return time.Duration(mathrand.Int64N(int64(interval)))
 }
 
 // renewableNetworkCredential reports whether the server renews a credential on
