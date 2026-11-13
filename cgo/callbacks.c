@@ -377,10 +377,6 @@ void urnet_invoke_get_network_user(urnet_get_network_user_cb cb, void* user_data
 	cb(user_data, result_json, err_param);
 }
 
-void urnet_invoke_get_payout_wallet(urnet_get_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
-	cb(user_data, result_json, err_param);
-}
-
 void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -403,10 +399,6 @@ void urnet_invoke_grid(urnet_grid_cb cb, void* user_data) {
 
 void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data) {
 	cb(user_data);
-}
-
-void urnet_invoke_is_creating_external_wallet(urnet_is_creating_external_wallet_cb cb, void* user_data, bool p0) {
-	cb(user_data, p0);
 }
 
 void urnet_invoke_is_network_user_loading(urnet_is_network_user_loading_cb cb, void* user_data, bool p0) {
@@ -535,10 +527,6 @@ void urnet_invoke_parse_by_jwt(urnet_parse_by_jwt_cb cb, void* user_data, const 
 
 void urnet_invoke_payments(urnet_payments_cb cb, void* user_data) {
 	cb(user_data);
-}
-
-void urnet_invoke_payout_wallet(urnet_payout_wallet_cb cb, void* user_data, const char* p0) {
-	cb(user_data, p0);
 }
 
 void urnet_invoke_peers(urnet_peers_cb cb, void* user_data, const char* peers_json) {
@@ -690,10 +678,6 @@ void urnet_invoke_set_network_leaderboard_public(urnet_set_network_leaderboard_p
 }
 
 void urnet_invoke_set_network_referral(urnet_set_network_referral_cb cb, void* user_data, const char* result_json, const char* err_param) {
-	cb(user_data, result_json, err_param);
-}
-
-void urnet_invoke_set_payout_wallet(urnet_set_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
 
@@ -958,6 +942,10 @@ void urnet_invoke_verify_play_purchase(urnet_verify_play_purchase_cb cb, void* u
 }
 
 void urnet_invoke_verify_seeker_nft_holder(urnet_verify_seeker_nft_holder_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_verify_stripe_checkout(urnet_verify_stripe_checkout_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
 

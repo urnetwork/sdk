@@ -166,7 +166,8 @@ func (self *confirmationBudgetTracker) expiredAt(now time.Time) bool {
 // It owns:
 //
 //   - The latest SubscriptionBalanceResult and its derivations: IsPro
-//     (current_subscription != nil, the server's source of truth), the used
+//     (current_subscription != nil, the server's source of truth), the Plan
+//     to show (Pro, Free, or unknown before the server answers), the used
 //     balance (start - available - pending, clamped at 0), the multi-store
 //     Subscriptions list, and the normalized store family of the current
 //     subscription (ClassifySubscriptionStore).
@@ -584,6 +585,17 @@ func (self *SubscriptionBalanceViewController) isProLocked() bool {
 	return self.proTracker.GetIsPro()
 }
 
+// The plan to show, one of the ShownPlan* values
+// (SubscriptionProTracker.GetShownPlan): the server's answer once a snapshot
+// has loaded; before that Pro when the jwt's claim is, else unknown, while the
+// first fetch is on its way and after it failed (GetLastFetchError), never
+// Free.
+func (self *SubscriptionBalanceViewController) GetShownPlan() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.proTracker.GetShownPlan()
+}
+
 // GetIsGuest reports a legacy guest network, one with no login method: the
 // server's `guest` once a snapshot has loaded, or the jwt's guest_mode claim.
 // The claim alone is not enough: every token refresh signs the jwt without it,
@@ -657,8 +669,8 @@ func (self *SubscriptionBalanceViewController) GetSubscriptions() *SubscriptionL
 
 // GetSubscriptionBalanceResult is the last successful fetch, whole: the plan
 // fields the derived accessors do not cover (price tier, welcome offer,
-// experiments, active balances, pending payout). nil before the first
-// successful fetch and after Stop.
+// experiments, active balances). nil before the first successful fetch and
+// after Stop.
 func (self *SubscriptionBalanceViewController) GetSubscriptionBalanceResult() *SubscriptionBalanceResult {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -950,6 +962,9 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 		if self.confirming {
 			self.confirmationLastFetchFailed = true
 		}
+		// the plan stays the server's last answer, or before one Pro by the
+		// claim or unknown: never Free (GetShownPlan)
+		self.proTracker.BalanceFailed()
 		self.stateLock.Unlock()
 		self.balanceFetchFailed(message)
 		self.scheduleWake()

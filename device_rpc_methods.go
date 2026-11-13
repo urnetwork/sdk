@@ -204,6 +204,7 @@ var deviceLocalRpcMethods = sync.OnceValue(func() map[string]*deviceRpcMethod {
 		"SetDefaultLocation":                                 (*DeviceLocalRpc).SetDefaultLocation,
 		"SetDestination":                                     (*DeviceLocalRpc).SetDestination,
 		"SetDnsResolverSettings":                             (*DeviceLocalRpc).SetDnsResolverSettings,
+		"SetIngressDns":                                      (*DeviceLocalRpc).SetIngressDns,
 		"SetLogVerbosity":                                    (*DeviceLocalRpc).SetLogVerbosity,
 		"SetMeasurementsEnabled":                             (*DeviceLocalRpc).SetMeasurementsEnabled,
 		"SetOffline":                                         (*DeviceLocalRpc).SetOffline,

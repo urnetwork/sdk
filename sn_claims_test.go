@@ -470,11 +470,12 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 		t.Fatalf("claimed epoch built a tx: %v", err)
 	}
 
-	// send with a gas key against the fake chain
+	// send with a gas key against the fake chain, whose nonces start afresh
 	key, err := evm.PrivateKeyFromHex("0x4646464646464646464646464646464646464646464646464646464646464646")
 	if err != nil {
 		t.Fatal(err)
 	}
+	forgetGasKeySends()
 	cb := &recordingClaimCallback{}
 	engine.send(context.Background(), key, 7, cb)
 	if len(cb.failed) != 0 || len(cb.sent) != 1 || len(cb.confirmed) != 1 || cb.confirmed[0].amount != 123_400_000 {
@@ -548,6 +549,8 @@ func newTestV1Claim(t *testing.T) *testV1Claim {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// the fake chain's nonces start afresh for the key other tests send with
+	forgetGasKeySends()
 	return &testV1Claim{engine: engine, chain: chain, key: key}
 }
 

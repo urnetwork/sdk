@@ -1,0 +1,10 @@
+[
+  {"name": "the signed-in network's name", "network_name": "alice", "guest": false, "want": "alice"},
+  {"name": "trimmed", "network_name": "  alice-pro  ", "guest": false, "want": "alice-pro"},
+  {"name": "no name known", "network_name": "", "guest": false, "want": ""},
+  {"name": "a guest the app knows of", "network_name": "alice", "guest": true, "want": ""},
+  {"name": "a legacy guest name: g and the network id without dashes", "network_name": "g0123456789abcdef0123456789abcdef", "guest": false, "want": ""},
+  {"name": "a legacy guest name with the id's dashes", "network_name": "g01234567-89ab-cdef-0123-456789abcdef", "guest": false, "want": ""},
+  {"name": "a name that only starts like a guest's", "network_name": "g0123abcd", "guest": false, "want": "g0123abcd"},
+  {"name": "a name with a g and 32 letters that are not hex", "network_name": "gzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "guest": false, "want": "gzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}
+]

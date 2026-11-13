@@ -322,6 +322,15 @@ func apiCredentialCases() []apiCredentialCase {
 			_, err := api.VerifyAppleTransactionSyncWithContext(ctx, &VerifyAppleTransactionArgs{})
 			return err
 		}},
+		{"VerifyStripeCheckout", "POST /subscription/verify-stripe-checkout", "/subscription/verify-stripe-checkout", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*VerifyStorePurchaseResult]) {
+				api.VerifyStripeCheckout(&VerifyStripeCheckoutArgs{}, cb)
+			})
+		}},
+		{"VerifyStripeCheckoutSyncWithContext", "POST /subscription/verify-stripe-checkout", "/subscription/verify-stripe-checkout", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.VerifyStripeCheckoutSyncWithContext(ctx, &VerifyStripeCheckoutArgs{})
+			return err
+		}},
 		{"OnboardingOfferIssue", "POST /onboarding/offer/issue", "/onboarding/offer/issue", sendsCurrent, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*OnboardingOfferIssueResult]) {
 				api.OnboardingOfferIssue(&OnboardingOfferIssueArgs{}, cb)
@@ -541,12 +550,6 @@ func apiCredentialCases() []apiCredentialCase {
 			return awaitApiCall(func(cb connect.ApiCallback[*StripeCreateCustomerPortalResult]) {
 				api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, cb)
 			})
-		}},
-		{"SetPayoutWallet", "POST /account/payout-wallet", "/account/payout-wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
-			return awaitApiCall(func(cb connect.ApiCallback[*SetPayoutWalletResult]) { api.SetPayoutWallet(&SetPayoutWalletArgs{}, cb) })
-		}},
-		{"GetPayoutWallet", "GET /account/payout-wallet", "/account/payout-wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
-			return awaitApiCall(func(cb connect.ApiCallback[*GetPayoutWalletIdResult]) { api.GetPayoutWallet(cb) })
 		}},
 		{"CreateAccountWallet", "POST /account/wallet", "/account/wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*CreateAccountWalletResult]) {

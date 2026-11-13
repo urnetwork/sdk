@@ -255,6 +255,17 @@ type DeviceRemote struct {
 
 	networkSpace *NetworkSpace
 	byJwt        string
+	// removes this remote's ingress dns callback from its network space, nil
+	// when it registered none (device_remote_ingress_dns.go). Set once in the
+	// constructor and taken under closeOnce
+	ingressDnsUnsub func()
+	// the newest ingress dns the space handed this remote and its space
+	// revision, which the hand-off loop sends. Guarded by stateLock
+	ingressDns         *DeviceRemoteIngressDns
+	ingressDnsRevision uint64
+	// the revision of the newest queued ingress dns, watched by the hand-off
+	// loop. Nil when the remote registered no callback
+	ingressDnsRevisionMonitor *connect.MonitorValue[uint64]
 	// why the server ended this remote's sign-in, set before its AuthLogout
 	// listeners run (GetAuthLogoutCause). A rejection the device process
 	// answered over rpc carries its typed status (DeviceRemoteHttpResponseError).
@@ -677,6 +688,10 @@ func newDeviceRemoteWithOverrides(
 	// queued for the device the same way: the device does not keep them
 	// (device_remote_saved_settings.go)
 	deviceRemote.queueSavedSettings()
+	// the app's connection region and bootstrap DoH servers, queued for the
+	// device's own copy of the space, and handed to it again whenever the app
+	// changes them (device_remote_ingress_dns.go)
+	deviceRemote.queueIngressDns()
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
@@ -1068,6 +1083,12 @@ func (self *DeviceRemote) run() {
 					// A real runtime override survives every successful reconnect.
 					// A nil value is a one-shot reset and is deliberately cleared.
 					self.state.ReliabilitySettings = syncRequest.State.ReliabilitySettings
+				}
+				if !self.state.IngressDns.IsSet && syncRequest.State.IngressDns.IsSet {
+					// the app's ingress dns, kept for the next device as the
+					// reliability override is; a newer value the app queued
+					// during this sync stands (device_remote_ingress_dns.go)
+					self.state.IngressDns = syncRequest.State.IngressDns
 				}
 				self.syncMonitor.NotifyAll()
 			}()
@@ -4147,6 +4168,10 @@ func (self *DeviceRemote) Close() {
 		self.cancel()
 		if self.securityPolicyMonitor != nil {
 			self.securityPolicyMonitor.Close()
+		}
+		if self.ingressDnsUnsub != nil {
+			self.ingressDnsUnsub()
+			self.ingressDnsUnsub = nil
 		}
 
 		if self.apiJwtRefreshSub != nil {
@@ -7771,6 +7796,13 @@ type DeviceRemoteState struct {
 	// Nothing copies response state into request state, which is what keeps
 	// the two readings from colliding.
 	ReliabilitySettings deviceRemoteValue[*ReliabilitySettings]
+	// the app's ingress dns: its connection region and bootstrap DoH servers,
+	// for the device's own copy of the network space. Request only, and kept
+	// queued across syncs like the reliability override: the device applies it
+	// in place and persists nothing, and applying the values it already has is
+	// a no-op (device_remote_ingress_dns.go). A device that predates the field
+	// ignores it.
+	IngressDns deviceRemoteValue[*DeviceRemoteIngressDns]
 
 	// only last known state
 
@@ -7829,6 +7861,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.TransportStatus.Merge(update.TransportStatus)
 	self.ProviderTransportStatus.Merge(update.ProviderTransportStatus)
 	self.ReliabilitySettings.Merge(update.ReliabilitySettings)
+	self.IngressDns.Merge(update.IngressDns)
 	self.ConnectEnabled.Merge(update.ConnectEnabled)
 	self.ProvideEnabled.Merge(update.ProvideEnabled)
 	self.EgressSecurityPolicyStats.Merge(update.EgressSecurityPolicyStats)
@@ -7838,8 +7871,9 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 }
 
 // Reports queued request state, including a reliability reset. A successfully
-// applied non-nil reliability override is preserved only after this check, so
-// it does not create an endless resync loop.
+// applied non-nil reliability override, and the app's ingress dns, are
+// preserved only after this check, so they do not create an endless resync
+// loop.
 func (self *DeviceRemoteState) hasPendingSyncState() bool {
 	return self.CanShowRatingDialog.IsSet ||
 		self.CanPromptIntroFunnel.IsSet ||
@@ -7874,7 +7908,8 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.DnsResolverSettings.IsSet ||
 		self.TransportSettings.IsSet ||
 		self.ProviderTransportSettings.IsSet ||
-		self.ReliabilitySettings.IsSet
+		self.ReliabilitySettings.IsSet ||
+		self.IngressDns.IsSet
 }
 
 /*
@@ -9152,6 +9187,9 @@ type DeviceRemoteReliabilityMetricsRpc struct {
 type ExitRpc struct {
 	ClientId                         connect.Id
 	WindowType                       string
+	CapabilityIp                     string
+	CapabilityProtocol               string
+	OverflowStep                     int32
 	Warning                          bool
 	Quarantined                      bool
 	WarningCause                     string
@@ -9180,6 +9218,9 @@ func newExitRpc(exit *Exit) *ExitRpc {
 	}
 	exitRpc := &ExitRpc{
 		WindowType:                       exit.WindowType,
+		CapabilityIp:                     exit.CapabilityIp,
+		CapabilityProtocol:               exit.CapabilityProtocol,
+		OverflowStep:                     exit.OverflowStep,
 		Warning:                          exit.Warning,
 		Quarantined:                      exit.Quarantined,
 		WarningCause:                     exit.WarningCause,
@@ -9214,6 +9255,9 @@ func (self *ExitRpc) toExit() *Exit {
 	return &Exit{
 		ClientId:                         newId(self.ClientId),
 		WindowType:                       self.WindowType,
+		CapabilityIp:                     self.CapabilityIp,
+		CapabilityProtocol:               self.CapabilityProtocol,
+		OverflowStep:                     self.OverflowStep,
 		Warning:                          self.Warning,
 		Quarantined:                      self.Quarantined,
 		WarningCause:                     self.WarningCause,
@@ -10894,6 +10938,13 @@ func (self *DeviceLocalRpc) Sync(
 		} else {
 			self.deviceLocal.ResetReliabilitySettings()
 		}
+	}
+	if state.IngressDns.IsSet && !hostedIncompatible {
+		// the app's connection region and bootstrap DoH servers, applied in
+		// place to this device's copy of the space, persisting nothing; the
+		// values the space already has are a no-op
+		// (device_remote_ingress_dns.go)
+		self.deviceLocal.applyIngressDns(state.IngressDns.Value)
 	}
 
 	// if state.RefreshToken.IsSet {

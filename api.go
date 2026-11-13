@@ -1693,8 +1693,10 @@ type Blockchain = string
 const (
 	SOL   string = "SOL"
 	MATIC string = "MATIC"
-	// TAO (bittensor) wallets are recorded for future use only: they cannot
-	// be the payout wallet (payouts are USDC on Solana/Polygon)
+	// TAO (bittensor) account wallets are recorded for future use only. They
+	// never received payouts: USDC payouts went to Solana/Polygon wallets until
+	// they ended on 2026-11-12, and SN25α is paid to the coldkey of the network
+	// consent (sn_wallet), not to an account wallet
 	TAO string = "TAO"
 )
 
@@ -1725,31 +1727,10 @@ func (self *Api) CreateAccountWallet(createAccountWallet *CreateAccountWalletArg
 	})
 }
 
-/**
- * Set payout wallet
- */
-
-type SetPayoutWalletArgs struct {
-	WalletId *Id `json:"wallet_id"`
-}
-
-type SetPayoutWalletResult struct{}
-
-type SetPayoutWalletCallback connect.ApiCallback[*SetPayoutWalletResult]
-
-func (self *Api) SetPayoutWallet(payoutWallet *SetPayoutWalletArgs, callback SetPayoutWalletCallback) {
-	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/account/payout-wallet", self.apiUrl),
-			payoutWallet,
-			self.GetByJwt(),
-			&SetPayoutWalletResult{},
-			callback,
-		)
-	})
-}
+// The USDC payout wallet routes (`GET` and `POST /account/payout-wallet`) have
+// no client here: USDC provider payouts ended on 2026-11-12, so there is no
+// payout wallet to read or set. SN25α earnings go to the network consent's
+// coldkey (sn_wallet).
 
 type GetAccountWalletsResult struct {
 	Wallets *AccountWalletsList `json:"wallets"`
@@ -1765,25 +1746,6 @@ func (self *Api) GetAccountWallets(callback GetAccountWalletsCallback) {
 			fmt.Sprintf("%s/account/wallets", self.apiUrl),
 			self.GetByJwt(),
 			&GetAccountWalletsResult{},
-			callback,
-		)
-	})
-}
-
-type GetPayoutWalletIdResult struct {
-	WalletId *Id `json:"wallet_id"`
-}
-
-type GetPayoutWalletCallback connect.ApiCallback[*GetPayoutWalletIdResult]
-
-func (self *Api) GetPayoutWallet(callback GetPayoutWalletCallback) {
-	go connect.HandleError(func() {
-		connect.HttpGetWithRawFunction(
-			self.ctx,
-			self.getHttpGetRaw(),
-			fmt.Sprintf("%s/account/payout-wallet", self.apiUrl),
-			self.GetByJwt(),
-			&GetPayoutWalletIdResult{},
 			callback,
 		)
 	})
@@ -1825,6 +1787,10 @@ func (self *Api) WalletBalance(callback WalletBalanceCallback) {
 }
 
 type GetAccountPaymentsCallback connect.ApiCallback[*GetNetworkAccountPaymentsResult]
+
+// The network's past USDC payouts. USDC provider payouts ended on 2026-11-12
+// and every unsent payout was closed, so a payment that is not completed is
+// not paid and never will be: read the list as history, never as pending.
 
 type GetNetworkAccountPaymentsError struct {
 	Message string `json:"message"`
@@ -1960,10 +1926,12 @@ type SubscriptionBalanceResult struct {
 	 * A list rather than a slice because gomobile binds neither slices of struct
 	 * pointers nor slices of slices (same reason as ActiveTransferBalances).
 	 */
-	Subscriptions             *SubscriptionList    `json:"subscriptions,omitempty"`
-	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
-	PendingPayoutUsdNanoCents int64                `json:"pending_payout_usd_nano_cents"`
-	UpdateTime                string               `json:"update_time"`
+	Subscriptions          *SubscriptionList    `json:"subscriptions,omitempty"`
+	ActiveTransferBalances *TransferBalanceList `json:"active_transfer_balances,omitempty"`
+	// The server's `pending_payout_usd_nano_cents` is not read: it was the USDC
+	// not yet paid out, and USDC provider payouts ended on 2026-11-12 with every
+	// unsent payout closed, so no app may show it as pending.
+	UpdateTime string `json:"update_time"`
 	/**
 	 * Guest - the network has no login method (a legacy guest network). The
 	 * server reads it from the live auth methods, so unlike the jwt's
@@ -3357,6 +3325,10 @@ type ProviderAdmission struct {
 // url_checks a share of loaded test sites with Count of Total, speed_test
 // bytes per second, latency milliseconds above the expected delay, weight_*
 // the relative selection weight, tier_* a tier (0 best, 3 past the cutoff).
+//
+// A provider the url checks downgraded (server FP2-PROTOCOL.md §5.5) is told
+// why on its url_checks number, and the decode derives the lines every app
+// shows for it (provider_status_reason.go).
 type ProviderRankingNumber struct {
 	Name        string  `json:"name"`
 	HasValue    bool    `json:"has_value"`
@@ -3369,6 +3341,21 @@ type ProviderRankingNumber struct {
 	Count       int     `json:"count"`
 	Total       int     `json:"total"`
 	Explanation string  `json:"explanation"`
+	// The server's English sentences, one per capability the url checks took
+	// away, the tcp one first. Explanation ends with the same text. "" when
+	// nothing was taken away, and from servers before it.
+	Reason string `json:"reason,omitempty"`
+	// The checks the tcp sentence counts: those that failed only over HTTP/3
+	// (UDP). At least 1 exactly when the provider is offered for TCP traffic
+	// only.
+	ReasonTcpCount int `json:"reason_tcp_count,omitempty"`
+	// The checks the ipv4 sentence counts: those that failed only over IPv6.
+	// At least 1 exactly when the provider's IPv6 was taken away and it is
+	// offered for IPv4 traffic only.
+	ReasonIpv4Count int `json:"reason_ipv4_count,omitempty"`
+	// What the apps show for the reason, in order. Derived from the reason
+	// fields when the number is decoded; a value on the wire is replaced.
+	ReasonLines *ProviderStatusReasonLineList `json:"reason_lines,omitempty"`
 }
 
 // The bound form of []*ProviderRankingNumber, in the order a status lists them.

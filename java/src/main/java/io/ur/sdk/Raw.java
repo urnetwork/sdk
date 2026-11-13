@@ -97,13 +97,11 @@ public interface Raw extends Library {
   interface urnet_get_network_reliability_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_get_network_sessions_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
   interface urnet_get_network_user_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
-  interface urnet_get_payout_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_get_points_leaderboard_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_get_provider_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_get_referral_network_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_get_transfer_stats_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_grid_cb extends Callback { void invoke(Pointer a0); }
-  interface urnet_is_creating_external_wallet_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_is_network_user_loading_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_is_network_user_updating_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_is_removing_wallet_cb extends Callback { void invoke(Pointer a0, byte a1); }
@@ -136,7 +134,6 @@ public interface Raw extends Library {
   interface urnet_packet_stats_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_parse_by_jwt_cb extends Callback { void invoke(Pointer a0, String a1, byte a2); }
   interface urnet_payments_cb extends Callback { void invoke(Pointer a0); }
-  interface urnet_payout_wallet_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_peers_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
@@ -175,7 +172,6 @@ public interface Raw extends Library {
   interface urnet_set_emoji_tag_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_set_network_leaderboard_public_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_set_network_referral_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
-  interface urnet_set_payout_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_set_points_leaderboard_public_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_setup_new_device_cb extends Callback { byte invoke(Pointer a0, long a1, String a2); }
   interface urnet_sn_claim_confirmed_cb extends Callback { void invoke(Pointer a0, long a1, String a2, long a3); }
@@ -242,6 +238,7 @@ public interface Raw extends Library {
   interface urnet_verify_apple_transaction_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_verify_play_purchase_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_verify_seeker_nft_holder_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_verify_stripe_checkout_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_view_controller_close_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_view_controller_start_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_view_controller_stop_cb extends Callback { void invoke(Pointer a0); }
@@ -353,7 +350,6 @@ public interface Raw extends Library {
   void urnet_api_get_network_session_operation(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
   void urnet_api_get_network_sessions(long a0, urnet_get_network_sessions_cb a1, Pointer a2);
   void urnet_api_get_network_user(long a0, urnet_get_network_user_cb a1, Pointer a2);
-  void urnet_api_get_payout_wallet(long a0, urnet_get_payout_wallet_cb a1, Pointer a2);
   void urnet_api_get_points_leaderboard(long a0, String a1, urnet_get_points_leaderboard_cb a2, Pointer a3);
   void urnet_api_get_provider_locations(long a0, urnet_find_locations_cb a1, Pointer a2);
   void urnet_api_get_provider_status(long a0, urnet_get_provider_status_cb a1, Pointer a2);
@@ -383,6 +379,7 @@ public interface Raw extends Library {
   void urnet_api_remove_network_client(long a0, String a1, urnet_remove_network_client_cb a2, Pointer a3);
   Pointer urnet_api_remove_network_client_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_remove_wallet(long a0, String a1, urnet_remove_wallet_cb a2, Pointer a3);
+  void urnet_api_report_stripe_purchase(long a0, String a1, urnet_verify_stripe_checkout_cb a2, Pointer a3);
   void urnet_api_request_jwt_refresh(long a0);
   void urnet_api_requote_crypto_payment(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
   void urnet_api_revoke_network_session(long a0, String a1, urnet_session_operation_cb a2, Pointer a3);
@@ -396,7 +393,6 @@ public interface Raw extends Library {
   void urnet_api_set_network_credential_store(long a0, long a1);
   void urnet_api_set_network_leaderboard_public(long a0, String a1, urnet_set_network_leaderboard_public_cb a2, Pointer a3);
   void urnet_api_set_network_referral(long a0, String a1, urnet_set_network_referral_cb a2, Pointer a3);
-  void urnet_api_set_payout_wallet(long a0, String a1, urnet_set_payout_wallet_cb a2, Pointer a3);
   void urnet_api_set_points_leaderboard_public(long a0, String a1, urnet_set_points_leaderboard_public_cb a2, Pointer a3);
   void urnet_api_sign_out(long a0, urnet_session_sign_out_cb a1, Pointer a2);
   void urnet_api_sn_claim_relay(long a0, urnet_sn_claim_relay_cb a1, Pointer a2);
@@ -437,6 +433,7 @@ public interface Raw extends Library {
   void urnet_api_verify_play_purchase(long a0, String a1, urnet_verify_play_purchase_cb a2, Pointer a3);
   Pointer urnet_api_verify_play_purchase_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_verify_seeker_holder(long a0, String a1, urnet_verify_seeker_nft_holder_cb a2, Pointer a3);
+  void urnet_api_verify_stripe_checkout(long a0, String a1, urnet_verify_stripe_checkout_cb a2, Pointer a3);
   void urnet_api_wallet_balance(long a0, urnet_wallet_balance_cb a1, Pointer a2);
   void urnet_api_wallet_circle_init(long a0, urnet_wallet_circle_init_cb a1, Pointer a2);
   void urnet_api_wallet_circle_transfer_out(long a0, String a1, urnet_wallet_circle_transfer_out_cb a2, Pointer a3);
@@ -824,6 +821,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_get_first_load_timeline_json(long a0);
   long urnet_device_local_get_key_material(long a0);
   long urnet_device_local_get_last_local_state_save_result(long a0);
+  double urnet_device_local_get_limited_window_size_fraction(long a0);
   Pointer urnet_device_local_get_memory_stats(long a0);
   Pointer urnet_device_local_get_pinned_app_ids(long a0);
   Pointer urnet_device_local_get_probe_results(long a0);
@@ -873,6 +871,7 @@ public interface Raw extends Library {
   byte urnet_device_local_probe_suite_running(long a0);
   void urnet_device_local_query_subprotocols(long a0, String a1, long a2, urnet_subprotocols_query_cb a3, Pointer a4);
   byte urnet_device_local_reconnect_checked(long a0, String a1, PointerByReference a2);
+  void urnet_device_local_reset_limited_window_size_fraction(long a0);
   void urnet_device_local_reset_reliability_metrics(long a0);
   void urnet_device_local_reset_reliability_settings(long a0);
   byte urnet_device_local_save_key_material(long a0, PointerByReference a1);
@@ -887,6 +886,7 @@ public interface Raw extends Library {
   byte urnet_device_local_set_default_location_checked(long a0, String a1, PointerByReference a2);
   void urnet_device_local_set_flow_owner_lookup(long a0, urnet_flow_owner_lookup_cb a1, Pointer a2);
   void urnet_device_local_set_key_material(long a0, long a1);
+  void urnet_device_local_set_limited_window_size_fraction(long a0, double a1);
   void urnet_device_local_set_network_metered(long a0, byte a1);
   void urnet_device_local_set_performance_degraded(long a0, byte a1);
   void urnet_device_local_set_reliability_settings(long a0, String a1);
@@ -1453,6 +1453,7 @@ public interface Raw extends Library {
   long urnet_subscription_balance_view_controller_get_pending_byte_count(long a0);
   Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(long a0);
   Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_state(long a0);
+  Pointer urnet_subscription_balance_view_controller_get_shown_plan(long a0);
   long urnet_subscription_balance_view_controller_get_start_balance_byte_count(long a0);
   Pointer urnet_subscription_balance_view_controller_get_subscription_balance_result(long a0);
   Pointer urnet_subscription_balance_view_controller_get_subscriptions(long a0);
@@ -1467,37 +1468,32 @@ public interface Raw extends Library {
   void urnet_subscription_balance_view_controller_start(long a0);
   void urnet_subscription_balance_view_controller_start_purchase_confirmation(long a0);
   void urnet_subscription_balance_view_controller_stop(long a0);
+  byte urnet_subscription_pro_tracker_balance_failed(long a0);
   byte urnet_subscription_pro_tracker_balance_loaded(long a0, byte a1);
   byte urnet_subscription_pro_tracker_get_is_pro(long a0);
+  byte urnet_subscription_pro_tracker_get_last_read_failed(long a0);
+  Pointer urnet_subscription_pro_tracker_get_shown_plan(long a0);
   void urnet_subscription_pro_tracker_reset(long a0);
   byte urnet_subscription_pro_tracker_set_jwt(long a0, String a1);
   void urnet_tunnel_cancel(long a0);
   void urnet_tunnel_close(long a0);
   byte urnet_tunnel_get_done(long a0);
   long urnet_wallet_view_controller_add_account_wallets_listener(long a0, urnet_account_wallets_cb a1, Pointer a2);
-  void urnet_wallet_view_controller_add_external_wallet(long a0, String a1, String a2);
-  long urnet_wallet_view_controller_add_is_creating_external_wallet_listener(long a0, urnet_is_creating_external_wallet_cb a1, Pointer a2);
   long urnet_wallet_view_controller_add_is_removing_wallet_listener(long a0, urnet_is_removing_wallet_cb a1, Pointer a2);
   long urnet_wallet_view_controller_add_payments_listener(long a0, urnet_payments_cb a1, Pointer a2);
-  long urnet_wallet_view_controller_add_payout_wallet_listener(long a0, urnet_payout_wallet_cb a1, Pointer a2);
   long urnet_wallet_view_controller_add_unpaid_byte_count_listener(long a0, urnet_unpaid_byte_count_cb a1, Pointer a2);
   void urnet_wallet_view_controller_close(long a0);
   void urnet_wallet_view_controller_fetch_account_wallets(long a0);
   void urnet_wallet_view_controller_fetch_payments(long a0);
-  void urnet_wallet_view_controller_fetch_payout_wallet(long a0);
   void urnet_wallet_view_controller_fetch_transfer_stats(long a0);
   Pointer urnet_wallet_view_controller_filter_wallets_by_id(long a0, String a1);
   Pointer urnet_wallet_view_controller_get_account_payments(long a0);
-  Pointer urnet_wallet_view_controller_get_next_payout_date(long a0);
-  Pointer urnet_wallet_view_controller_get_payout_wallet_id(long a0);
   long urnet_wallet_view_controller_get_unpaid_byte_count(long a0);
   Pointer urnet_wallet_view_controller_get_wallets(long a0);
   void urnet_wallet_view_controller_remove_wallet(long a0, String a1);
   void urnet_wallet_view_controller_set_is_polling_account_wallets(long a0, byte a1);
-  void urnet_wallet_view_controller_set_is_polling_payout_wallet(long a0, byte a1);
   void urnet_wallet_view_controller_start(long a0);
   void urnet_wallet_view_controller_stop(long a0);
-  byte urnet_wallet_view_controller_update_payout_wallet(long a0, String a1, PointerByReference a2);
   void urnet_wallet_view_controller_validate_address(long a0, String a1, String a2, urnet_validate_address_cb a3, Pointer a4);
   byte urnet_websocket_device_rpc_listener_close(long a0, PointerByReference a1);
   double urnet_alpha_from_rao(long a0);
@@ -1517,6 +1513,7 @@ public interface Raw extends Library {
   Pointer urnet_build_checkout_bridge_url_with_redirect(String a0, String a1);
   Pointer urnet_build_inline_checkout_bridge_url(String a0);
   Pointer urnet_build_solana_payment_url(String a0, PointerByReference a1);
+  byte urnet_cant_reach_on_stall(String a0, String a1);
   byte urnet_check_crypto_payment_uri(String a0, String a1, String a2);
   Pointer urnet_classify_balance_code_redeem(String a0, String a1, String a2);
   Pointer urnet_classify_subscription_store(String a0);
@@ -1615,6 +1612,7 @@ public interface Raw extends Library {
   Pointer urnet_ingress_doh_urls(String a0);
   Pointer urnet_ingress_plain_dns_servers(String a0);
   byte urnet_is_balance_code_format_valid(String a0);
+  byte urnet_is_cant_reach_error(String a0);
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
@@ -1693,6 +1691,7 @@ public interface Raw extends Library {
   Pointer urnet_parse_vless_link(String a0);
   byte urnet_payment_method_allows_plan(String a0, String a1);
   Pointer urnet_payment_methods(String a0, String a1);
+  Pointer urnet_plan_account_name(String a0, byte a1);
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);
@@ -1734,6 +1733,7 @@ public interface Raw extends Library {
   Pointer urnet_sn_ledger_claim_transactions_for_payer(String a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
+  Pointer urnet_solana_wallet_failure_for(String a0, String a1, String a2);
   Pointer urnet_suggest_emoji_tag(long a0);
   Pointer urnet_transport_settings_auto_modes(String a0);
   Pointer urnet_transport_settings_enabled_transport_types(String a0);

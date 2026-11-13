@@ -99,8 +99,15 @@ func TestSubscriptionBalanceDecode(t *testing.T) {
 	if got := result.ActiveTransferBalances.Get(0).NetRevenue; got != 5000000000 {
 		t.Errorf("net revenue = %d, want 5000000000", got)
 	}
-	if result.PendingPayoutUsdNanoCents != 123 {
-		t.Errorf("pending payout = %d", result.PendingPayoutUsdNanoCents)
+	// USDC payouts ended on 2026-11-12: a server that still sends the pending
+	// USDC payout decodes, and the figure reaches no app. The desktop apps get
+	// this result as json over the c abi, so the re-encoding is what they see.
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "pending_payout") {
+		t.Errorf("the pending USDC payout reaches the apps: %s", encoded)
 	}
 }
 

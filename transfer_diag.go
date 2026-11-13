@@ -75,6 +75,7 @@ type transferDiagState struct {
 	LocationClientID    string      `json:"location_client_id,omitempty"`
 	QualityClientCount  int         `json:"quality_client_count"`
 	SpeedClientCount    int         `json:"speed_client_count"`
+	LimitedClientCount  int         `json:"limited_client_count"`
 	WindowClientCount   int         `json:"window_client_count"`
 	// Window-lifetime evidence includes retired peers; never substitutes for live totals.
 	QualityAckRouteWriteLifetimeFailures *connect.AckRouteWriteFailureStatsSnapshot `json:"quality_ack_route_write_lifetime_failures,omitempty"`
@@ -410,11 +411,16 @@ func (self *DeviceLocal) collectTransferDiag(millis int64) []any {
 		memory := multi.MemorySnapshot()
 		state.QualityClientCount = memory.QualityClientCount
 		state.SpeedClientCount = memory.SpeedClientCount
+		state.LimitedClientCount = memory.LimitedClientCount
 		state.QualityAckRouteWriteLifetimeFailures, state.SpeedAckRouteWriteLifetimeFailures = multi.AckRouteWriteLifetimeFailures()
 		for _, stats := range multi.ClientTransferStats() {
 			window := "speed"
-			if stats.WindowType == connect.WindowTypeQuality {
+			switch stats.WindowType {
+			case connect.WindowTypeQuality:
 				window = "quality"
+			case connect.WindowTypeLimited:
+				// it has no rank mode of its own (server FP2-PROTOCOL.md §7.4)
+				window = ExitWindowTypeLimited
 			}
 			destination := stats.Destination.String()
 			state.WindowClientCount += 1

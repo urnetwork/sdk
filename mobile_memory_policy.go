@@ -325,6 +325,26 @@ func applyMobileLowMemoryPlatformTransportSettingsForPlatform(
 	)
 }
 
+// applyMobileExtenderWebRtcDialSettingsForPlatform bounds the SCTP buffers of
+// a phone's webrtc extender dials (connect EXTENDER.md S8) to the device's p2p
+// budget (owner, 2026-11-12): each dial's receive window to
+// deviceLocalP2pReceiveBufferByteCount, the window every p2p connection of a
+// memory-targeted device takes, and its largest message to that window. A dial
+// is a peer connection of the device's own, the one stream a phone may carry
+// its platform connection over, and the carrier's defaults follow the process
+// memory target instead, which left a dial a 256-512 KiB window, two to four
+// times a p2p peer's. A desktop keeps the carrier's defaults.
+func applyMobileExtenderWebRtcDialSettingsForPlatform(
+	settings *connect.WebRtcSettings,
+	mobile bool,
+) {
+	if settings == nil || !mobile {
+		return
+	}
+	settings.ReceiveBufferSize = min(settings.ReceiveBufferSize, deviceLocalP2pReceiveBufferByteCount)
+	settings.MaxMessageSize = min(settings.MaxMessageSize, settings.ReceiveBufferSize)
+}
+
 // applyMobileLowMemoryClientSettings bounds the number and bytes of packets
 // one mobile exit can own before the shared per-device budgets take effect.
 // The shared budgets remain the aggregate safety net; smaller per-sequence
@@ -556,4 +576,26 @@ func applyMobileLowMemoryMultiClientSettingsForPlatform(
 		FixedWindowSize:          speedWindowSize,
 		WindowSizeReconnectScale: 1,
 	}
+}
+
+// Bounds the limited window of a memory-targeted mobile device (server
+// FP2-PROTOCOL.md §7.4, D11.5). The
+// window otherwise follows connect's fraction of the largest normal window's
+// target: half, which is 2 of the quality window's 5 at the 32-MiB iOS and
+// hosted target and 5 of its 10 at Android's 64 MiB. The steady-memory gate
+// decides before each client release whether that fits; when it does not,
+// the device settings carry the bound (lowMemoryLimitedWindowSizeMax), 1 for
+// D11.5, and this installs it. Non-positive leaves the window to the
+// fraction, and desktop and server never pass the platform gate.
+func applyMobileLimitedWindowSettingsForPlatform(
+	settings *connect.MultiClientSettings,
+	limitedWindowSizeMax int,
+	memoryTargetByteCount ByteCount,
+	mobile bool,
+) {
+	if settings == nil || limitedWindowSizeMax <= 0 ||
+		!mobileMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+		return
+	}
+	settings.LimitedWindowSizeMax = limitedWindowSizeMax
 }
