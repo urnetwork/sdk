@@ -542,8 +542,19 @@ func TestNetworkCredentialRenewalOutlivesTheDevice(t *testing.T) {
 	networkJwt := renewalTestNetworkJwt(t, renewalTestBaseTime.Add(-time.Hour), renewalTestBaseTime.Add(30*day-time.Hour), "sign-in")
 	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
 	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt)
+	// Force the worker to schedule before its startup caller returns. A wake
+	// sent after start would then cancel and re-arm that unchanged schedule.
+	var startupWake <-chan struct{}
+	r.api.networkRenewer.testingAfterStart = func() {
+		r.clock.requireArmed(t, 15*day-time.Hour)
+		startupWake = r.api.networkRenewer.monitor.NotifyChannel()
+	}
 	owner := r.startDevice(t, localState, clientJwt)
-	r.clock.requireArmed(t, 15*day-time.Hour)
+	select {
+	case <-startupWake:
+		t.Fatal("startup woke a renewer that had already scheduled the credential")
+	default:
+	}
 
 	r.api.closeDeviceOwner(owner)
 	connect.AssertEqual(t, r.api.GetByJwt(), "")

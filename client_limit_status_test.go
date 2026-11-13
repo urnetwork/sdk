@@ -29,6 +29,8 @@ import (
 type testingClientLimitPlatformConnection struct {
 	provideIntent string
 	conn          connect.H1MessageConn
+	// closes after the platform reader has observed the connection ending
+	done chan struct{}
 }
 
 // closeForClientLimit sends the platform's client limit close: the close
@@ -71,6 +73,7 @@ func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 		defer handlers.Done()
 		connection := testingClientLimitPlatformConnection{
 			provideIntent: r.Header.Get(connect.HeaderProvideIntent),
+			done:          make(chan struct{}),
 		}
 		if r.Header.Get("Upgrade") == connect.H1FramerProtocol {
 			raw, err := connect.AcceptFramedUpgrade(w, r, connect.H1FramerProtocol, time.Second)
@@ -91,6 +94,7 @@ func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 			}
 			connection.conn = ws
 		}
+		defer close(connection.done)
 		defer connection.conn.Close()
 		select {
 		case platform.connections <- connection:
@@ -113,8 +117,8 @@ func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 	return platform
 }
 
-// nextConnectionDeclaring skips connections until one declares provideIntent
-// ("" for none), or fails.
+// Skips retired connections and declarations other than provideIntent ("" for
+// none). A connected provider may have replaced a socket still in the queue.
 func (self *testingClientLimitPlatform) nextConnectionDeclaring(
 	t *testing.T,
 	provideIntent string,
@@ -125,6 +129,11 @@ func (self *testingClientLimitPlatform) nextConnectionDeclaring(
 		select {
 		case connection := <-self.connections:
 			if connection.provideIntent == provideIntent {
+				select {
+				case <-connection.done:
+					continue
+				default:
+				}
 				return connection
 			}
 		case <-deadline:
@@ -214,9 +223,8 @@ func newTestingClientLimitDevice(
 	return networkSpace, device
 }
 
-// waitProviderSettled waits until no migration is in flight and the provider's
-// current transports are connected, so a close lands on the generation the
-// test means.
+// Waits until no migration is in flight and the provider's current transports
+// are connected. Queued sockets still need their own retirement check.
 func waitProviderSettled(t *testing.T, device *DeviceLocal) {
 	t.Helper()
 	provider := func() *deviceLocalProvider {
@@ -691,6 +699,63 @@ func TestDeviceRemoteRetryClientLimit(t *testing.T) {
 	if deviceRemote.RetryClientLimitAfterChange() {
 		t.Fatal("a remote retry after a change with no device process ended a hold")
 	}
+}
+
+// A connection can retire after its upgrade was queued while a replacement
+// connects. A connected provider does not make that older socket current.
+func TestDeviceRemoteClientLimitSkipsRetiredPlatformConnection(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	strategySettings := testOfflineClientStrategySettings()
+	strategySettings.Log = connect.NewNoopLogger()
+	strategySettings.EnableNormal = true
+	strategySettings.EnableResilient = false
+	networkSpace := NewNetworkSpaceWithUrls(ctx, "https://api.client-limit.example", platform.url, strategySettings)
+	defer networkSpace.Close()
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.ProvideExtenderEnabled = false
+			settings.DnsPumpHost = "pump.client-limit.example"
+		},
+	)
+	listener := newTestingClientLimitListener()
+	sub := deviceRemote.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	first := platform.nextConnectionDeclaring(t, "")
+	waitProviderSettled(t, deviceLocal)
+	// Keep the accepted socket queued, as when the test has not selected it yet.
+	platform.connections <- first
+	transport := func() *connect.FamilyPlatformTransportGroup {
+		deviceLocal.stateLock.Lock()
+		provider := deviceLocal.provider
+		deviceLocal.stateLock.Unlock()
+		provider.stateLock.Lock()
+		defer provider.stateLock.Unlock()
+		return provider.platformTransport.(*connect.FamilyPlatformTransportGroup)
+	}().StandbyTransport()
+	transport.Kick()
+	select {
+	case <-first.done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the kicked platform connection did not retire")
+	}
+
+	current := platform.nextConnectionDeclaring(t, "")
+	if current.conn == first.conn {
+		t.Fatal("the platform selected a retired connection for the client limit close")
+	}
+	waitProviderSettled(t, deviceLocal)
+	current.closeForClientLimit()
+	var status *ClientLimitStatus
+	for status == nil || status.Status != ClientLimitStatusExceeded {
+		status = listener.next(t, "the current connection's close reached no remote listener")
+	}
+	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), deviceLocal.GetClientLimitStatus())
 }
 
 // The notice of a hold, the same on every platform: it shows only while a

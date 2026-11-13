@@ -601,9 +601,8 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 			self.bridge.receiveBatchCount.Load(),
 		)
 	}
-	// SendPacketBatch refuses policy blocks and redundant TCP packets already
-	// covered by Transfer. The two workloads have no fixed count relationship;
-	// require every refusal to have a measured cause instead of a guessed tail.
+	// Native input may also refuse a not-yet-ready route or queue. Count that
+	// actual admission outcome separately from policy and duplicate prevention.
 	clientStats := self.remote.GetPacketStats()
 	rejected := self.bridge.droppedPacketCount.Load()
 	blocked := int64(0)
@@ -615,8 +614,9 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 		t.Fatal("synthetic route does not expose multi-client packet accounting")
 	}
 	collapsed := int64(multi.TcpCollapseDropCount())
-	t.Logf("compact packet route refusals: rejected=%d blocked=%d collapsed=%d", rejected, blocked, collapsed)
-	if err := syntheticPacketRejectionError(rejected, blocked, collapsed); err != nil {
+	nativeRefused := int64(multi.NativeAdmissionRefusalCount())
+	t.Logf("compact packet route refusals: rejected=%d blocked=%d collapsed=%d native-refused=%d", rejected, blocked, collapsed, nativeRefused)
+	if err := syntheticPacketRejectionError(rejected, blocked, collapsed, nativeRefused); err != nil {
 		t.Error(err)
 	}
 	for _, port := range []int{80, 443, 465, 587} {
@@ -672,13 +672,14 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 }
 
 // Reconciles the compact ABI's refusal count against intentional route outcomes.
-func syntheticPacketRejectionError(rejected int64, blocked int64, collapsed int64) error {
-	if rejected != blocked+collapsed {
+func syntheticPacketRejectionError(rejected int64, blocked int64, collapsed int64, nativeRefused int64) error {
+	if rejected != blocked+collapsed+nativeRefused {
 		return fmt.Errorf(
-			"compact packet route rejections are unexplained: rejected=%d blocked=%d collapsed=%d",
+			"compact packet route rejections are unexplained: rejected=%d blocked=%d collapsed=%d native-refused=%d",
 			rejected,
 			blocked,
 			collapsed,
+			nativeRefused,
 		)
 	}
 	return nil
