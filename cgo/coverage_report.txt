@@ -1483,7 +1483,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1384) ==
+== skipped (1385) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2548,6 +2548,7 @@ ReceivePackets: callback interface: crosses as c function pointer
 RedeemBalanceCodeArgs: data: crosses as json
 RedeemBalanceCodeCallback: callback interface: crosses as c function pointer
 RedeemBalanceCodeError: data: crosses as json
+RedeemBalanceCodePro: data: crosses as json
 RedeemBalanceCodeResult: data: crosses as json
 RedeemBalanceCodeTransferBalance: data: crosses as json
 RedeemedBalanceCode: data: crosses as json

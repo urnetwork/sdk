@@ -236,7 +236,7 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		})
 	})
 	// redeemBalanceCodeOutcome(secret): redeem and classify (api_error.go).
-	// Resolves { outcome, transfer_balance?, error?, transport_error? } with
+	// Resolves { outcome, transfer_balance?, pro?, error?, transport_error? } with
 	// outcome redeemed | already_redeemed | invalid | unknown; never rejects
 	// for a failed call, since a failed call may still have credited the code.
 	m["redeemBalanceCodeOutcome"] = promiseMethod(func(args []js.Value) js.Value {

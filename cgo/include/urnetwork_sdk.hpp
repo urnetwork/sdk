@@ -150,6 +150,8 @@ inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* AuthLogoutCauseSessionRevoked = "session_revoked";
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
 inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
+inline constexpr const char* BalanceCodeKindData = "data";
+inline constexpr const char* BalanceCodeKindProGift = "pro_gift";
 inline constexpr int64_t BalanceCodeLength = 26;
 inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
@@ -824,6 +826,7 @@ inline constexpr int64_t SubprotocolReservedLimit = 1024;
 inline constexpr const char* SubscriptionPlanSupporter = "supporter";
 inline constexpr const char* SubscriptionStoreApple = "apple";
 inline constexpr const char* SubscriptionStoreCrypto = "crypto";
+inline constexpr const char* SubscriptionStoreGift = "gift";
 inline constexpr const char* SubscriptionStoreGoogle = "google";
 inline constexpr const char* SubscriptionStoreOther = "other";
 inline constexpr const char* SubscriptionStoreStripe = "stripe";
@@ -1217,6 +1220,7 @@ struct ProxyDeviceSettings;
 struct PublicAccountApiKey;
 struct RedeemBalanceCodeArgs;
 struct RedeemBalanceCodeError;
+struct RedeemBalanceCodePro;
 struct RedeemBalanceCodeTransferBalance;
 struct RedeemBalanceCodeResult;
 struct RedeemedBalanceCode;
@@ -2103,6 +2107,9 @@ struct CheckBalanceCodeError {
 
 struct CheckBalanceCodeResult {
 	std::optional<CheckBalanceCodeBalance> balance;
+	std::optional<std::string> kind;
+	std::optional<int64_t> pro_days;
+	std::optional<std::string> redeem_by;
 	std::optional<CheckBalanceCodeError> error;
 };
 
@@ -3905,6 +3912,12 @@ struct RedeemBalanceCodeError {
 	std::string message{};
 };
 
+struct RedeemBalanceCodePro {
+	std::optional<std::string> start_time;
+	std::optional<std::string> end_time;
+	bool queued{};
+};
+
 struct RedeemBalanceCodeTransferBalance {
 	std::optional<std::string> transfer_balance_id;
 	std::optional<std::string> start_time;
@@ -3914,6 +3927,7 @@ struct RedeemBalanceCodeTransferBalance {
 
 struct RedeemBalanceCodeResult {
 	std::optional<RedeemBalanceCodeTransferBalance> transfer_balance;
+	std::optional<RedeemBalanceCodePro> pro;
 	std::optional<RedeemBalanceCodeError> error;
 };
 
@@ -3923,6 +3937,8 @@ struct RedeemedBalanceCode {
 	std::optional<std::string> redeem_time;
 	std::optional<std::string> end_time;
 	std::string secret{};
+	std::string kind{};
+	int64_t pro_days{};
 };
 
 struct RefreshJwtResultError {
@@ -5740,6 +5756,8 @@ inline void to_json(nlohmann::json& j, const RedeemBalanceCodeArgs& v);
 inline void from_json(const nlohmann::json& j, RedeemBalanceCodeArgs& v);
 inline void to_json(nlohmann::json& j, const RedeemBalanceCodeError& v);
 inline void from_json(const nlohmann::json& j, RedeemBalanceCodeError& v);
+inline void to_json(nlohmann::json& j, const RedeemBalanceCodePro& v);
+inline void from_json(const nlohmann::json& j, RedeemBalanceCodePro& v);
 inline void to_json(nlohmann::json& j, const RedeemBalanceCodeTransferBalance& v);
 inline void from_json(const nlohmann::json& j, RedeemBalanceCodeTransferBalance& v);
 inline void to_json(nlohmann::json& j, const RedeemBalanceCodeResult& v);
@@ -9208,6 +9226,15 @@ inline void to_json(nlohmann::json& j, const CheckBalanceCodeResult& v) {
 	if (v.balance) {
 		j["balance"] = *v.balance;
 	}
+	if (v.kind) {
+		j["kind"] = *v.kind;
+	}
+	if (v.pro_days) {
+		j["pro_days"] = *v.pro_days;
+	}
+	if (v.redeem_by) {
+		j["redeem_by"] = *v.redeem_by;
+	}
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -9220,6 +9247,21 @@ inline void from_json(const nlohmann::json& j, CheckBalanceCodeResult& v) {
 		CheckBalanceCodeBalance tmp{};
 		it->get_to(tmp);
 		v.balance = std::move(tmp);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.kind = std::move(tmp);
+	}
+	if (auto it = j.find("pro_days"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.pro_days = std::move(tmp);
+	}
+	if (auto it = j.find("redeem_by"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.redeem_by = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		CheckBalanceCodeError tmp{};
@@ -17448,6 +17490,35 @@ inline void from_json(const nlohmann::json& j, RedeemBalanceCodeError& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const RedeemBalanceCodePro& v) {
+	j = nlohmann::json::object();
+	if (v.start_time) {
+		j["start_time"] = *v.start_time;
+	}
+	if (v.end_time) {
+		j["end_time"] = *v.end_time;
+	}
+	j["queued"] = v.queued;
+}
+inline void from_json(const nlohmann::json& j, RedeemBalanceCodePro& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("start_time"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.start_time = std::move(tmp);
+	}
+	if (auto it = j.find("end_time"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.end_time = std::move(tmp);
+	}
+	if (auto it = j.find("queued"); it != j.end() && !it->is_null()) {
+		it->get_to(v.queued);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const RedeemBalanceCodeTransferBalance& v) {
 	j = nlohmann::json::object();
 	if (v.transfer_balance_id) {
@@ -17490,6 +17561,9 @@ inline void to_json(nlohmann::json& j, const RedeemBalanceCodeResult& v) {
 	if (v.transfer_balance) {
 		j["transfer_balance"] = *v.transfer_balance;
 	}
+	if (v.pro) {
+		j["pro"] = *v.pro;
+	}
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -17502,6 +17576,11 @@ inline void from_json(const nlohmann::json& j, RedeemBalanceCodeResult& v) {
 		RedeemBalanceCodeTransferBalance tmp{};
 		it->get_to(tmp);
 		v.transfer_balance = std::move(tmp);
+	}
+	if (auto it = j.find("pro"); it != j.end() && !it->is_null()) {
+		RedeemBalanceCodePro tmp{};
+		it->get_to(tmp);
+		v.pro = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		RedeemBalanceCodeError tmp{};
@@ -17523,6 +17602,8 @@ inline void to_json(nlohmann::json& j, const RedeemedBalanceCode& v) {
 		j["end_time"] = *v.end_time;
 	}
 	j["secret"] = v.secret;
+	j["kind"] = v.kind;
+	j["pro_days"] = v.pro_days;
 }
 inline void from_json(const nlohmann::json& j, RedeemedBalanceCode& v) {
 	if (!j.is_object()) {
@@ -17548,6 +17629,12 @@ inline void from_json(const nlohmann::json& j, RedeemedBalanceCode& v) {
 	}
 	if (auto it = j.find("secret"); it != j.end() && !it->is_null()) {
 		it->get_to(v.secret);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("pro_days"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pro_days);
 	}
 }
 

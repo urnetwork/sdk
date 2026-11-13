@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,18 @@ func TestClassifySubscriptionStore(t *testing.T) {
 		{"bitcoin", SubscriptionStoreCrypto},
 		{"Bitcoin", SubscriptionStoreCrypto},
 		{"ethereum", SubscriptionStoreCrypto},
+		// a redeemed gift code's year of Pro: exactly "gift" in any case,
+		// "other" before gift codes
+		{"gift", SubscriptionStoreGift},
+		{"Gift", SubscriptionStoreGift},
+		{"GIFT", SubscriptionStoreGift},
+		// a store id that only contains "gift" keeps its family
+		{"stripe_gift", SubscriptionStoreStripe},
+		{"gift_play", SubscriptionStoreGoogle},
+		{"gift-solana", SubscriptionStoreCrypto},
+		{"gifts", SubscriptionStoreOther},
+		{"giftcard", SubscriptionStoreOther},
+		{" gift", SubscriptionStoreOther},
 		// unknown but non-empty
 		{"coinbase", SubscriptionStoreOther},
 		{"manual", SubscriptionStoreOther},
@@ -88,6 +101,22 @@ func TestClassifySubscriptionStore(t *testing.T) {
 	for _, c := range cases {
 		if got := ClassifySubscriptionStore(c.store); got != c.expected {
 			t.Errorf("ClassifySubscriptionStore(%q) = %q, want %q", c.store, got, c.expected)
+		}
+	}
+}
+
+// The gift store is a family of its own: none of the substring families
+// matches it, so the exact check that comes first takes no store from them.
+func TestClassifySubscriptionStoreGiftIsNoOtherFamilys(t *testing.T) {
+	families := map[string]*regexp.Regexp{
+		SubscriptionStoreStripe: subscriptionStoreStripeRe,
+		SubscriptionStoreApple:  subscriptionStoreAppleRe,
+		SubscriptionStoreGoogle: subscriptionStoreGoogleRe,
+		SubscriptionStoreCrypto: subscriptionStoreCryptoRe,
+	}
+	for family, re := range families {
+		if re.MatchString(SubscriptionStoreGift) {
+			t.Errorf("the %s family matches the store %q", family, SubscriptionStoreGift)
 		}
 	}
 }
@@ -298,6 +327,13 @@ func TestIsBalanceCodeFormatValid(t *testing.T) {
 		{valid26 + "A", false},
 		{"", false},
 		{"   ", false},
+		// as a gift card prints it, and as people type that
+		{"ABCD EFGH IJKL MNOP QRST UVWX YZ", true},
+		{"ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", true},
+		{"abcd\u2013efgh\u2013ijkl\u2013mnop\u2013qrst\u2013uvwx\u2013yz", true},
+		{"ABCD.EFGH.IJKL.MNOP.QRST.UVWX.YZ", true},
+		{"ABCD EFGH IJKL MNOP QRST UVWX", false},
+		{"ABCD EFGH IJKL MNOP QRST UVWX YZA", false},
 	}
 	for _, c := range cases {
 		if got := IsBalanceCodeFormatValid(c.secret); got != c.expected {
@@ -354,5 +390,66 @@ func TestClassifyBalanceCodeRedeem(t *testing.T) {
 	// secrets compare trimmed and case-insensitively (users retype codes)
 	if got := ClassifyBalanceCodeRedeem(unknownCode, redeemedByUs, "  "+strings.ToLower(secret)+" "); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
 		t.Errorf("lenient secret compare: got %q", got)
+	}
+
+	// a code typed as a gift card prints it, whose answer was lost after the
+	// server committed: the list still proves the credit, as the server's
+	// fallback reads the typed code
+	giftSecret := "K7Q4M2XDOIBA2345673ABCDEFG"
+	redeemedGift := NewRedeemedBalanceCodeList()
+	redeemedGift.Add(&RedeemedBalanceCode{Secret: giftSecret, Kind: BalanceCodeKindProGift, ProDays: 365})
+	for _, typed := range []string{
+		"K7Q4 M2XD OIBA 2345 673A BCDE FG",
+		"K7Q4-M2XD-OIBA-2345-673A-BCDE-FG",
+		"k7q4 m2xd oiba 2345 673a bcde fg",
+		"K7Q4\u2014M2XD\u2014OIBA\u20142345\u2014673A\u2014BCDE\u2014FG",
+		"K7Q4.M2XD.OIBA.2345.673A.BCDE.FG",
+		// 0, 1 and 8 typed for the O, I and B they look like on the card
+		"K7Q4 M2XD 0I8A 2345 673A BCDE FG",
+		"K7Q4 M2XD O18A 2345 673A BCDE FG",
+	} {
+		if got := ClassifyBalanceCodeRedeem(nil, redeemedGift, typed); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
+			t.Errorf("lost answer, typed %q: got %q, want %q", typed, got, BalanceCodeRedeemOutcomeAlreadyRedeemed)
+		}
+		if got := ClassifyBalanceCodeRedeem(unknownCode, redeemedGift, typed); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
+			t.Errorf("retry after commit, typed %q: got %q, want %q", typed, got, BalanceCodeRedeemOutcomeAlreadyRedeemed)
+		}
+	}
+	// another code, however typed, is not ours
+	for _, typed := range []string{"K7Q4 M2XD OIBA 2345 673A BCDE FH", "K7Q4-M2XD-OIBA-2345-673A-BCDE"} {
+		if got := ClassifyBalanceCodeRedeem(nil, redeemedGift, typed); got != BalanceCodeRedeemOutcomeUnknown {
+			t.Errorf("lost answer, other code %q: got %q, want %q", typed, got, BalanceCodeRedeemOutcomeUnknown)
+		}
+	}
+	// a legacy secret with digits still matches itself, however grouped
+	legacy := NewRedeemedBalanceCodeList()
+	legacy.Add(&RedeemedBalanceCode{Secret: "legacy-code-1080"})
+	if got := ClassifyBalanceCodeRedeem(nil, legacy, "LEGACY CODE 1080"); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
+		t.Errorf("legacy secret: got %q", got)
+	}
+	// nothing typed is never an earlier redeem, even of an empty secret
+	empty := NewRedeemedBalanceCodeList()
+	empty.Add(&RedeemedBalanceCode{Secret: ""})
+	if got := ClassifyBalanceCodeRedeem(nil, empty, " - "); got != BalanceCodeRedeemOutcomeUnknown {
+		t.Errorf("empty secret: got %q", got)
+	}
+}
+
+// A typed code reads as the server's fallback lookup reads it (server model
+// normalizeBalanceCodeSecret and unconfuseBalanceCodeSecret): whitespace,
+// dashes and dots removed, upper case, then 0, 1 and 8 as O, I and B.
+func TestNormalizeBalanceCodeSecret(t *testing.T) {
+	for typed, want := range map[string]string{
+		"K7Q4M2XDOIBA2345673ABCDEFG":                             "K7Q4M2XDOIBA2345673ABCDEFG",
+		" k7q4 m2xd\toiba\n2345 ":                                "K7Q4M2XDOIBA2345",
+		"K7Q4-M2XD\u2010OIBA\u2011A\u2012B\u2013C\u2014D\u2015E": "K7Q4M2XDOIBAABCDE",
+		"K7Q4.M2XD":            "K7Q4M2XD",
+		"0123456789":           "OI234567B9",
+		"\u00a0K7Q4\u3000M2XD": "K7Q4M2XD",
+		"":                     "",
+	} {
+		if got := normalizeBalanceCodeSecret(typed); got != want {
+			t.Errorf("normalizeBalanceCodeSecret(%q) = %q, want %q", typed, got, want)
+		}
 	}
 }

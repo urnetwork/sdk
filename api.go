@@ -3800,7 +3800,12 @@ type RedeemBalanceCodeArgs struct {
 
 type RedeemBalanceCodeResult struct {
 	TransferBalance *RedeemBalanceCodeTransferBalance `json:"transfer_balance,omitempty"`
-	Error           *RedeemBalanceCodeError           `json:"error,omitempty"`
+	// Pro is set when the code was a gift code (kind "pro_gift"): the year of
+	// Pro it granted. A gift answer still carries TransferBalance, with
+	// BalanceByteCount 0 and the year's window, so ClassifyBalanceCodeRedeem
+	// counts it as redeemed. Nil for a data code.
+	Pro   *RedeemBalanceCodePro   `json:"pro,omitempty"`
+	Error *RedeemBalanceCodeError `json:"error,omitempty"`
 }
 
 type RedeemBalanceCodeTransferBalance struct {
@@ -3808,6 +3813,16 @@ type RedeemBalanceCodeTransferBalance struct {
 	StartTime         *Time `json:"start_time"`
 	EndTime           *Time `json:"end_time"`
 	BalanceByteCount  int64 `json:"balance_byte_count"`
+}
+
+// RedeemBalanceCodePro is the year of Pro a redeemed gift code granted, from
+// StartTime to EndTime. Queued is true when the year starts after the
+// network's current paid Pro period instead of now; the app then says when
+// the gift year starts (StartTime).
+type RedeemBalanceCodePro struct {
+	StartTime *Time `json:"start_time"`
+	EndTime   *Time `json:"end_time"`
+	Queued    bool  `json:"queued"`
 }
 
 type RedeemBalanceCodeError struct {
@@ -3854,9 +3869,25 @@ type CheckBalanceCodeError struct {
 	Message string `json:"message"`
 }
 
+// Balance code kinds (CheckBalanceCodeResult.Kind).
+const (
+	// BalanceCodeKindData: the code adds data.
+	BalanceCodeKindData = "data"
+	// BalanceCodeKindProGift: a gift code. It grants a year of Pro from when
+	// it is redeemed, queued after a paid Pro period.
+	BalanceCodeKindProGift = "pro_gift"
+)
+
 type CheckBalanceCodeResult struct {
 	Balance *CheckBalanceCodeBalance `json:"balance,omitempty"`
-	Error   *CheckBalanceCodeError   `json:"error,omitempty"`
+	// Kind is BalanceCodeKindData or BalanceCodeKindProGift; empty from a
+	// server that predates gift codes, whose codes all add data.
+	Kind string `json:"kind,omitempty"`
+	// ProDays is the days of Pro a gift code grants (365); 0 for a data code.
+	ProDays int64 `json:"pro_days,omitempty"`
+	// RedeemBy is the last time the code can be redeemed.
+	RedeemBy *Time                  `json:"redeem_by,omitempty"`
+	Error    *CheckBalanceCodeError `json:"error,omitempty"`
 }
 
 type CheckBalanceCodeCallback connect.ApiCallback[*CheckBalanceCodeResult]

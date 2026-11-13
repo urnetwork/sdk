@@ -268,10 +268,11 @@ entries:
     copyright: Copyright (C) The libsecret authors
     text_file: texts/LGPL-2.1-or-later.txt
 
-  # Open fonts served by ur.io (react/public/fonts; Manrope and Urbanist are
-  # the hashed-name files). The brand fonts (ABC Gravity, PP NeueBit, PP Neue
-  # Montreal) are commercially licensed and carry no publication requirement,
-  # so they are not listed.
+  # Open fonts served by ur.io (react/public/fonts and astro/public/fonts;
+  # Manrope and Urbanist are the hashed-name files, Caveat is the gift
+  # dialog's handwritten note and JetBrains Mono the docs' code face). The
+  # brand fonts (ABC Gravity, PP NeueBit, PP Neue Montreal) are commercially
+  # licensed and carry no publication requirement, so they are not listed.
   - name: Geist
     kind: font
     origin: font
@@ -327,6 +328,22 @@ entries:
     url: https://github.com/coreyhu/Urbanist
     spdx: OFL-1.1
     copyright: Copyright 2022 The Urbanist Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Caveat
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/googlefonts/caveat
+    spdx: OFL-1.1
+    copyright: Copyright 2014 The Caveat Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: JetBrains Mono
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/JetBrains/JetBrainsMono
+    spdx: OFL-1.1
+    copyright: Copyright 2020 The JetBrains Mono Project Authors
     text_file: texts/OFL-1.1.txt
 
 # Go modules the collector does not list (each needs an entry above that

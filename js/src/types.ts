@@ -1210,6 +1210,13 @@ export interface BalanceCodeRedeemOutcome {
     end_time: string;
     balance_byte_count: number;
   };
+  /**
+   * a gift code's year of Pro, when the redeem granted one (the code's kind is
+   * pro_gift, and transfer_balance carries 0 bytes over the same window).
+   * queued: the year starts after the network's current paid Pro period, at
+   * start_time, instead of now.
+   */
+  pro?: { start_time: string; end_time: string; queued: boolean };
   /** the server's rejection, when it answered */
   error?: { message: string };
   /** the redeem call's own failure, when it got no answer */

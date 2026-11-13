@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Payment catalog, checkout bridge envelope, and balance-code client rules.
@@ -74,7 +75,7 @@ const StripeRedirectOnCompletionNever = "never"
 // Normalized store families for Subscription.Store. The raw store value is a
 // server-side store id; each family maps to the place the subscription must be
 // cancelled (Apple subscriptions page, Play subscriptions page, the Stripe
-// billing portal), or says there is nothing to cancel.
+// billing portal), or says there is nothing to cancel (crypto, gift).
 const (
 	SubscriptionStoreApple  = "apple"
 	SubscriptionStoreGoogle = "google"
@@ -86,6 +87,10 @@ const (
 	// renew" and shows the renewal notice when the paid term ends
 	// (CryptoTermNoticeDue).
 	SubscriptionStoreCrypto = "crypto"
+	// SubscriptionStoreGift is a redeemed gift code's year of Pro, on the
+	// store "gift". Someone else paid for it and it never renews, so there is
+	// nothing to cancel or manage.
+	SubscriptionStoreGift = "gift"
 	// SubscriptionStoreOther is any non-empty store id that matches no known
 	// family (e.g. manual, x402, coinbase). There is no per-store manage link
 	// for it.
@@ -114,14 +119,19 @@ var (
 // ClassifySubscriptionStore maps a raw Subscription.Store id to one of the
 // SubscriptionStore* families, or "" for an empty store. Matching is
 // case-insensitive substring matching, ported from the web app's normStore
-// (mmm/ur.io react/src/app/screens/Subscription.jsx). Before Zcash and Monero,
-// "solana" classified as SubscriptionStoreOther, and before TAO, Bitcoin and
-// ETH, "bittensor", "bitcoin" and "ethereum" did.
+// (mmm/ur.io react/src/app/screens/Subscription.jsx), except the gift store:
+// exactly "gift", case-insensitive, checked before the other families, so no
+// other family claims it and a store id that only contains "gift" keeps its
+// family. Before Zcash and Monero, "solana" classified as
+// SubscriptionStoreOther, and before TAO, Bitcoin and ETH, "bittensor",
+// "bitcoin" and "ethereum" did; before gift codes, "gift" did.
 func ClassifySubscriptionStore(store string) string {
 	s := strings.ToLower(store)
 	switch {
 	case s == "":
 		return ""
+	case s == SubscriptionStoreGift:
+		return SubscriptionStoreGift
 	case subscriptionStoreStripeRe.MatchString(s):
 		return SubscriptionStoreStripe
 	case subscriptionStoreAppleRe.MatchString(s):
@@ -296,17 +306,43 @@ func ParseCheckoutRedirect(uri string) (*CheckoutRedirect, error) {
 // (kBalanceCodeLength) and macOS RedeemBalanceCodeSheet.
 const BalanceCodeLength = 26
 
-// IsBalanceCodeFormatValid reports whether the (whitespace-trimmed) secret
-// has the exact balance-code length. It is a cheap pre-submit gate only; the
-// server is the authority on whether the code exists.
+// IsBalanceCodeFormatValid reports whether the secret, read as the server
+// reads a typed code (normalizeBalanceCodeSecret: in groups, with dashes or
+// dots, in any case), has the exact balance-code length. It is a cheap
+// pre-submit gate only; the server is the authority on whether the code
+// exists. Send the code as typed.
 func IsBalanceCodeFormatValid(secret string) bool {
-	return len(strings.TrimSpace(secret)) == BalanceCodeLength
+	return len(normalizeBalanceCodeSecret(secret)) == BalanceCodeLength
 }
+
+// normalizeBalanceCodeSecret is a typed code as the server's fallback lookup
+// reads it (server model balanceCodeSecretCandidates): without whitespace,
+// dashes or dots, in upper case, and with the digits base32 (A-Z, 2-7) never
+// has read as the letters they pass for on a card: 0 as O, 1 as I, 8 as B.
+// Gift cards print a code in groups. It is for comparing and classifying
+// only: a client sends the code exactly as typed, which the server tries
+// first.
+func normalizeBalanceCodeSecret(secret string) string {
+	var normalized strings.Builder
+	for _, r := range secret {
+		if unicode.IsSpace(r) || unicode.Is(unicode.Pd, r) || r == '.' {
+			continue
+		}
+		normalized.WriteRune(r)
+	}
+	return balanceCodeSecretLookalikes.Replace(strings.ToUpper(normalized.String()))
+}
+
+// The digits a base32 secret never has, as the letters they look like in the
+// cards' monospace face.
+var balanceCodeSecretLookalikes = strings.NewReplacer("0", "O", "1", "I", "8", "B")
 
 // Outcomes of a balance-code redeem attempt, for ClassifyBalanceCodeRedeem.
 const (
 	// BalanceCodeRedeemOutcomeRedeemed: the redeem succeeded and the balance
-	// was credited to this network.
+	// was credited to this network. A gift code's redeem is one too: its
+	// answer carries transfer_balance (0 bytes) beside the year of Pro in
+	// RedeemBalanceCodeResult.Pro, which the UI confirms instead of data.
 	BalanceCodeRedeemOutcomeRedeemed = "redeemed"
 	// BalanceCodeRedeemOutcomeAlreadyRedeemed: this network already redeemed
 	// the code (it appears in the network's own redeemed-code list). The most
@@ -339,7 +375,10 @@ const (
 //     (Api.GetNetworkRedeemedBalanceCodes), used to distinguish "already
 //     redeemed by this network" from "invalid". Pass nil if unavailable; the
 //     classification then cannot detect already_redeemed.
-//   - secret is the code the user submitted.
+//   - secret is the code the user submitted. It is compared with the list
+//     as the server reads a typed code (normalizeBalanceCodeSecret), so a
+//     code typed in groups, with dashes, in lower case or with 0, 1 or 8 for
+//     O, I or B still finds its own earlier redeem.
 //
 // The server's redeem error payload is a single string ("Unknown balance
 // code.") for both a nonexistent code and an already-redeemed one, so the
@@ -353,11 +392,10 @@ func ClassifyBalanceCodeRedeem(
 	if result != nil && result.TransferBalance != nil {
 		return BalanceCodeRedeemOutcomeRedeemed
 	}
-	if redeemedCodes != nil {
-		trimmed := strings.TrimSpace(secret)
+	if typed := normalizeBalanceCodeSecret(secret); redeemedCodes != nil && typed != "" {
 		for i := 0; i < redeemedCodes.Len(); i += 1 {
 			code := redeemedCodes.Get(i)
-			if code != nil && strings.EqualFold(strings.TrimSpace(code.Secret), trimmed) {
+			if code != nil && normalizeBalanceCodeSecret(code.Secret) == typed {
 				return BalanceCodeRedeemOutcomeAlreadyRedeemed
 			}
 		}

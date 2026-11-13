@@ -1051,7 +1051,7 @@ func (g *generator) operation(path string, m string, opNode *yaml.Node, pathPara
 				case p.key == "text/plain" || p.key == "application/x-ndjson":
 					op.responseType = "text"
 					op.responseTS = "string"
-				case strings.HasPrefix(p.key, "image/") || p.key == "application/octet-stream":
+				case strings.HasPrefix(p.key, "image/") || p.key == "application/octet-stream" || p.key == "application/pdf":
 					op.responseType = "blob"
 					op.responseTS = "Blob"
 				default:

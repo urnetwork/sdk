@@ -151,3 +151,87 @@ func TestRedeemBalanceCodeOutcome(t *testing.T) {
 		}
 	}
 }
+
+// A gift code's redeem answer carries its year of Pro (`pro`), and the
+// outcome the pages read passes it through beside transfer_balance; a data
+// code's outcome has none (GIFTOFPRIVACY.md 10.2).
+func TestRedeemBalanceCodeOutcomeCarriesTheGiftYear(t *testing.T) {
+	start := time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC)
+	gift := &sdk.RedeemBalanceCodeResult{
+		TransferBalance: &sdk.RedeemBalanceCodeTransferBalance{
+			StartTime: sdk.NewTimeUnixMilli(start.UnixMilli()),
+			EndTime:   sdk.NewTimeUnixMilli(end.UnixMilli()),
+		},
+		Pro: &sdk.RedeemBalanceCodePro{
+			StartTime: sdk.NewTimeUnixMilli(start.UnixMilli()),
+			EndTime:   sdk.NewTimeUnixMilli(end.UnixMilli()),
+			Queued:    true,
+		},
+	}
+	data := &sdk.RedeemBalanceCodeResult{TransferBalance: &sdk.RedeemBalanceCodeTransferBalance{BalanceByteCount: 1 << 30}}
+	unused := &sdk.GetNetworkRedeemedBalanceCodesResult{BalanceCodes: redeemedList()}
+
+	listCalls := 0
+	outcome := redeemBalanceCodeOutcome(testBalanceCodeSecret, fakeRedeem(gift, nil), fakeRedeemedCodes(unused, nil, &listCalls))
+	if outcome.Outcome != sdk.BalanceCodeRedeemOutcomeRedeemed {
+		t.Fatalf("outcome %q, want %q", outcome.Outcome, sdk.BalanceCodeRedeemOutcomeRedeemed)
+	}
+	if outcome.Pro != gift.Pro {
+		t.Fatalf("pro = %+v, want the answer's", outcome.Pro)
+	}
+	// as the page reads it: the promise resolves with the outcome's json
+	page := jsJson(outcome)
+	pro := page.Get("pro")
+	if pro.IsUndefined() || !pro.Get("queued").Truthy() {
+		t.Fatalf("pro on the page = %v", pro)
+	}
+	for name, want := range map[string]time.Time{"start_time": start, "end_time": end} {
+		got, err := time.Parse(time.RFC3339, pro.Get(name).String())
+		if err != nil || !got.Equal(want) {
+			t.Fatalf("pro.%s = %q, want %s", name, pro.Get(name).String(), want.Format(time.RFC3339))
+		}
+	}
+	if page.Get("transfer_balance").IsUndefined() {
+		t.Fatal("the gift outcome lost transfer_balance")
+	}
+
+	outcome = redeemBalanceCodeOutcome(testBalanceCodeSecret, fakeRedeem(data, nil), fakeRedeemedCodes(unused, nil, &listCalls))
+	if outcome.Outcome != sdk.BalanceCodeRedeemOutcomeRedeemed || outcome.Pro != nil {
+		t.Fatalf("data outcome %q with pro %+v", outcome.Outcome, outcome.Pro)
+	}
+	if !jsJson(outcome).Get("pro").IsUndefined() {
+		t.Fatal("a data code's outcome carries pro on the page")
+	}
+	if listCalls != 0 {
+		t.Fatalf("a credited redeem fetched the redeemed list %d times", listCalls)
+	}
+}
+
+// A code typed as a gift card prints it (in groups, with dashes, in lower
+// case, or with 0, 1 and 8 for O, I and B), whose answer was lost after the
+// server committed, still reads "already redeemed" from the list. The redeem
+// sends the code exactly as typed.
+func TestRedeemBalanceCodeOutcomeTypedInGroups(t *testing.T) {
+	listed := &sdk.GetNetworkRedeemedBalanceCodesResult{BalanceCodes: redeemedList(testBalanceCodeSecret)}
+	lost := errors.New("http request failed")
+	for _, typed := range []string{
+		"ABCD EFGH IJKL MNOP QRST UVWX YZ",
+		"abcd-efgh-ijkl-mnop-qrst-uvwx-yz",
+		"ABCD EFGH 1JKL MN0P QRST UVWX YZ",
+	} {
+		sent := ""
+		redeem := func(args *sdk.RedeemBalanceCodeArgs, callback sdk.RedeemBalanceCodeCallback) {
+			sent = args.Secret
+			go callback.Result(nil, lost)
+		}
+		listCalls := 0
+		outcome := redeemBalanceCodeOutcome(typed, redeem, fakeRedeemedCodes(listed, nil, &listCalls))
+		if outcome.Outcome != sdk.BalanceCodeRedeemOutcomeAlreadyRedeemed {
+			t.Fatalf("%q: outcome %q, want %q", typed, outcome.Outcome, sdk.BalanceCodeRedeemOutcomeAlreadyRedeemed)
+		}
+		if sent != typed {
+			t.Fatalf("sent %q, want the code as typed, %q", sent, typed)
+		}
+	}
+}
