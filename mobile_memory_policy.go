@@ -578,24 +578,31 @@ func applyMobileLowMemoryMultiClientSettingsForPlatform(
 	}
 }
 
-// Bounds the limited window of a memory-targeted mobile device (server
-// FP2-PROTOCOL.md §7.4, D11.5). The window otherwise follows connect's
-// fraction of the largest normal window's target: 1, the same size (D8),
-// which is 5 beside the quality window's 5 at the 32-MiB iOS and hosted
-// target and 10 beside its 10 at Android's 64 MiB. The steady-memory gate
-// decides before each client release whether that fits; when it does not,
-// the device settings carry the bound (lowMemoryLimitedWindowSizeMax), 1 for
-// D11.5, and this installs it. Non-positive leaves the window to the
-// fraction, and desktop and server never pass the platform gate.
+// Sizes the limited window of a memory-targeted mobile device (server
+// FP2-PROTOCOL.md §7.4, D8, D11.5). Connect's fraction of the largest normal
+// window's target is 1, the same size (D8), which is 10 beside the quality
+// window's 10 at Android's 64 MiB. At or below the 32-MiB target of iOS and
+// the hosted proxies, the device's own fraction replaces it
+// (lowMemoryLimitedWindowSizeFraction, 0.5): 2 beside the quality window's 5,
+// held there until the owner decides. The steady-memory gate decides before
+// each client release whether the window fits; when it does not, the device
+// settings carry the bound (lowMemoryLimitedWindowSizeMax), 1 for D11.5, and
+// this installs it. Non-positive values leave connect's, and desktop and
+// server never pass the platform gate.
 func applyMobileLimitedWindowSettingsForPlatform(
 	settings *connect.MultiClientSettings,
 	limitedWindowSizeMax int,
+	limitedWindowSizeFraction float64,
 	memoryTargetByteCount ByteCount,
 	mobile bool,
 ) {
-	if settings == nil || limitedWindowSizeMax <= 0 ||
-		!mobileMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+	if settings == nil || !mobileMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
 		return
 	}
-	settings.LimitedWindowSizeMax = limitedWindowSizeMax
+	if 0 < limitedWindowSizeFraction && memoryTargetByteCount <= LowMemoryDeviceTargetByteCount {
+		settings.LimitedWindowSizeFraction = limitedWindowSizeFraction
+	}
+	if 0 < limitedWindowSizeMax {
+		settings.LimitedWindowSizeMax = limitedWindowSizeMax
+	}
 }

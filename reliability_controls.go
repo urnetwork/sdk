@@ -605,9 +605,9 @@ func (self *DeviceLocal) ResetReliabilitySettings() {
 // The limited window's size as a fraction of the largest normal window's
 // target (server FP2-PROTOCOL.md §7.4): the current window's, or while
 // disconnected what the next window takes, the runtime override when one is
-// set and connect's default otherwise, 1, the same size (D8). The limited
-// window holds max(1, floor(fraction × target)) clients, and none at or
-// below 0.
+// set and the device's default otherwise (defaultLimitedWindowSizeFraction).
+// The limited window holds max(1, floor(fraction × target)) clients, and none
+// at or below 0.
 func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
 	if multi, ok := self.multiClient(); ok {
 		return multi.LimitedWindowSizeFraction()
@@ -621,7 +621,24 @@ func (self *DeviceLocal) GetLimitedWindowSizeFraction() float64 {
 	if override != nil {
 		return *override
 	}
-	return connect.DefaultMultiClientSettings().LimitedWindowSizeFraction
+	return self.defaultLimitedWindowSizeFraction()
+}
+
+// The fraction this device builds a window with when no override is set:
+// connect's default, 1, the same size (D8), except at or below the 32-MiB
+// low-memory target, which keeps its own (see
+// DeviceLocalSettings.lowMemoryLimitedWindowSizeFraction). The settings are
+// immutable once the device is built.
+func (self *DeviceLocal) defaultLimitedWindowSizeFraction() float64 {
+	settings := connect.DefaultMultiClientSettings()
+	applyMobileLimitedWindowSettingsForPlatform(
+		settings,
+		0,
+		self.settings.lowMemoryLimitedWindowSizeFraction,
+		self.settings.MemoryTargetByteCount,
+		self.settings.LowMemoryProfile,
+	)
+	return settings.LimitedWindowSizeFraction
 }
 
 // Overrides the limited window's fraction at runtime, for testing, as the
@@ -641,8 +658,9 @@ func (self *DeviceLocal) SetLimitedWindowSizeFraction(fraction float64) {
 	}
 }
 
-// Clears the limited window's override: the current window returns to
-// connect's default fraction, and so does every window after it.
+// Clears the limited window's override: the current window returns to the
+// device's default fraction (defaultLimitedWindowSizeFraction), and so does
+// every window after it.
 func (self *DeviceLocal) ResetLimitedWindowSizeFraction() {
 	func() {
 		self.stateLock.Lock()
@@ -650,7 +668,7 @@ func (self *DeviceLocal) ResetLimitedWindowSizeFraction() {
 		self.limitedWindowSizeFraction = nil
 	}()
 	if multi, ok := self.multiClient(); ok {
-		multi.SetLimitedWindowSizeFraction(connect.DefaultMultiClientSettings().LimitedWindowSizeFraction)
+		multi.SetLimitedWindowSizeFraction(self.defaultLimitedWindowSizeFraction())
 	}
 }
 
