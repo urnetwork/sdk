@@ -1733,6 +1733,7 @@ public interface Raw extends Library {
   Pointer urnet_sn_ledger_claim_transactions_for_payer(String a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
+  Pointer urnet_solana_wallet_failure_for(String a0, String a1, String a2);
   Pointer urnet_suggest_emoji_tag(long a0);
   Pointer urnet_transport_settings_auto_modes(String a0);
   Pointer urnet_transport_settings_enabled_transport_types(String a0);

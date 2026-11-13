@@ -740,6 +740,25 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_SESSION_NOT_FOUND "session_not_found"
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
+#define URNET_SOLANA_WALLET_FAILURE_EXTENSION_NOT_FOUND "extension_not_found"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_EXTENSION_NOT_FOUND "bittensor_error_extension_not_found"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_NO_ACCOUNT "bittensor_error_no_account"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_NO_WALLET "no_wallets_found_alert_content"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_SESSION_NOT_FOUND "solana_wallet_error_session_not_found"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_USER_REJECTED "bittensor_error_user_rejected"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_WALLET "bittensor_error_wallet_failed"
+#define URNET_SOLANA_WALLET_FAILURE_MESSAGE_WALLET_APP_NOT_FOUND "couldnt_open_wallet"
+#define URNET_SOLANA_WALLET_FAILURE_NO_ACCOUNT "no_account"
+#define URNET_SOLANA_WALLET_FAILURE_NO_WALLET "no_wallet"
+#define URNET_SOLANA_WALLET_FAILURE_SESSION_NOT_FOUND "session_not_found"
+#define URNET_SOLANA_WALLET_FAILURE_SOURCE_APP "app"
+#define URNET_SOLANA_WALLET_FAILURE_SOURCE_BRIDGE "bridge"
+#define URNET_SOLANA_WALLET_FAILURE_SOURCE_BROWSER "browser"
+#define URNET_SOLANA_WALLET_FAILURE_SOURCE_MOBILE_WALLET_ADAPTER "mobile_wallet_adapter"
+#define URNET_SOLANA_WALLET_FAILURE_SOURCE_WALLET_APP "wallet_app"
+#define URNET_SOLANA_WALLET_FAILURE_USER_REJECTED "user_rejected"
+#define URNET_SOLANA_WALLET_FAILURE_WALLET "wallet_error"
+#define URNET_SOLANA_WALLET_FAILURE_WALLET_APP_NOT_FOUND "wallet_app_not_found"
 #define URNET_STRIPE_CUSTOMER_PORTAL_FLOW_PAYMENT_METHOD_UPDATE "payment_method_update"
 #define URNET_STRIPE_INTENT_TYPE_PAYMENT "payment"
 #define URNET_STRIPE_INTENT_TYPE_SETUP "setup"
@@ -2940,6 +2959,7 @@ char* urnet_sn_ledger_claim_transactions_for(const char* settings_json, const ch
 char* urnet_sn_ledger_claim_transactions_for_payer(const char* settings_json, const char* coldkey_ss58, const char* payer_address, char** out_error);
 char* urnet_sn_payout_leaf_hex(const char* coldkey_ss58, int64_t share_bps);
 char* urnet_sn_testnet_chain_settings(void);
+char* urnet_solana_wallet_failure_for(const char* source, const char* code, const char* wallet_name);
 char* urnet_suggest_emoji_tag(int64_t count);
 char* urnet_transport_settings_auto_modes(const char* settings_json);
 char* urnet_transport_settings_enabled_transport_types(const char* settings_json);
@@ -6490,6 +6510,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   reference: string
  *   label?: string
  *   message?: string
+ */
+
+/* SolanaWalletFailure (json):
+ *   failure: string
+ *   message_key: string
+ *   wallet_name?: string
  */
 
 /* StringList (json):

@@ -22567,6 +22567,16 @@ func urnet_socket_write(self C.uint64_t, data *C.uint8_t, data_len C.int32_t, ou
 	return C.int64_t(r0)
 }
 
+//export urnet_solana_wallet_failure_for
+func urnet_solana_wallet_failure_for(source *C.char, code *C.char, walletName *C.char) *C.char {
+	defer cgoGuard("urnet_solana_wallet_failure_for")
+	r0 := sdk.SolanaWalletFailureFor(goString(source), goString(code), goString(walletName))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_solana_wallet_failure_for")
+}
+
 //export urnet_sub_close
 func urnet_sub_close(self C.uint64_t) {
 	defer cgoGuard("urnet_sub_close")

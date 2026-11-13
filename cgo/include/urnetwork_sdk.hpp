@@ -791,6 +791,25 @@ inline constexpr const char* SolanaWalletBridgeErrorNoAccount = "no_account";
 inline constexpr const char* SolanaWalletBridgeErrorSessionNotFound = "session_not_found";
 inline constexpr const char* SolanaWalletBridgeErrorUserRejected = "user_rejected";
 inline constexpr const char* SolanaWalletBridgeErrorWallet = "wallet_error";
+inline constexpr const char* SolanaWalletFailureExtensionNotFound = "extension_not_found";
+inline constexpr const char* SolanaWalletFailureMessageExtensionNotFound = "bittensor_error_extension_not_found";
+inline constexpr const char* SolanaWalletFailureMessageNoAccount = "bittensor_error_no_account";
+inline constexpr const char* SolanaWalletFailureMessageNoWallet = "no_wallets_found_alert_content";
+inline constexpr const char* SolanaWalletFailureMessageSessionNotFound = "solana_wallet_error_session_not_found";
+inline constexpr const char* SolanaWalletFailureMessageUserRejected = "bittensor_error_user_rejected";
+inline constexpr const char* SolanaWalletFailureMessageWallet = "bittensor_error_wallet_failed";
+inline constexpr const char* SolanaWalletFailureMessageWalletAppNotFound = "couldnt_open_wallet";
+inline constexpr const char* SolanaWalletFailureNoAccount = "no_account";
+inline constexpr const char* SolanaWalletFailureNoWallet = "no_wallet";
+inline constexpr const char* SolanaWalletFailureSessionNotFound = "session_not_found";
+inline constexpr const char* SolanaWalletFailureSourceApp = "app";
+inline constexpr const char* SolanaWalletFailureSourceBridge = "bridge";
+inline constexpr const char* SolanaWalletFailureSourceBrowser = "browser";
+inline constexpr const char* SolanaWalletFailureSourceMobileWalletAdapter = "mobile_wallet_adapter";
+inline constexpr const char* SolanaWalletFailureSourceWalletApp = "wallet_app";
+inline constexpr const char* SolanaWalletFailureUserRejected = "user_rejected";
+inline constexpr const char* SolanaWalletFailureWallet = "wallet_error";
+inline constexpr const char* SolanaWalletFailureWalletAppNotFound = "wallet_app_not_found";
 inline constexpr const char* StripeCustomerPortalFlowPaymentMethodUpdate = "payment_method_update";
 inline constexpr const char* StripeIntentTypePayment = "payment";
 inline constexpr const char* StripeIntentTypeSetup = "setup";
@@ -1292,6 +1311,7 @@ struct SolanaPaymentIntentArgs;
 struct SolanaPaymentIntentError;
 struct SolanaPaymentIntentResult;
 struct SolanaPaymentUrlArgs;
+struct SolanaWalletFailure;
 struct StripeCreateCheckoutSessionArgs;
 struct StripeCreateCheckoutSessionError;
 struct StripeCreateCheckoutSessionResult;
@@ -4715,6 +4735,12 @@ struct SolanaPaymentUrlArgs {
 	std::optional<std::string> message;
 };
 
+struct SolanaWalletFailure {
+	std::string failure{};
+	std::string message_key{};
+	std::optional<std::string> wallet_name;
+};
+
 struct StripeCreateCheckoutSessionArgs {
 	std::string item_id{};
 	std::optional<std::string> ui_mode;
@@ -5893,6 +5919,8 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentUrlArgs& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v);
+inline void to_json(nlohmann::json& j, const SolanaWalletFailure& v);
+inline void from_json(const nlohmann::json& j, SolanaWalletFailure& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v);
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v);
@@ -21106,6 +21134,31 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SolanaWalletFailure& v) {
+	j = nlohmann::json::object();
+	j["failure"] = v.failure;
+	j["message_key"] = v.message_key;
+	if (v.wallet_name) {
+		j["wallet_name"] = *v.wallet_name;
+	}
+}
+inline void from_json(const nlohmann::json& j, SolanaWalletFailure& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("failure"); it != j.end() && !it->is_null()) {
+		it->get_to(v.failure);
+	}
+	if (auto it = j.find("message_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message_key);
+	}
+	if (auto it = j.find("wallet_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.wallet_name = std::move(tmp);
 	}
 }
 
@@ -41365,6 +41418,14 @@ inline std::optional<SnChainSettings> snTestnetChainSettings() {
 		return std::nullopt;
 	}
 	return detail::parseJson<SnChainSettings>(r_s->c_str());
+}
+inline std::optional<SolanaWalletFailure> solanaWalletFailureFor(const std::string& source, const std::string& code, const std::string& wallet_name) {
+	char* r_c = urnet_solana_wallet_failure_for(source.c_str(), code.c_str(), wallet_name.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SolanaWalletFailure>(r_s->c_str());
 }
 inline std::string suggestEmojiTag(int64_t count) {
 	char* r_c = urnet_suggest_emoji_tag(count);
