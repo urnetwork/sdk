@@ -95,13 +95,11 @@ pub type urnet_get_network_referral_code_cb = Option<unsafe extern "C" fn(*mut c
 pub type urnet_get_network_reliability_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_get_network_sessions_cb = Option<unsafe extern "C" fn(*mut c_void, u64, *const c_char) -> ()>;
 pub type urnet_get_network_user_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
-pub type urnet_get_payout_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_get_points_leaderboard_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_get_provider_status_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_get_referral_network_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_get_transfer_stats_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_grid_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
-pub type urnet_is_creating_external_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_is_network_user_loading_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_is_network_user_updating_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_is_removing_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
@@ -134,7 +132,6 @@ pub type urnet_onboarding_offer_issue_cb = Option<unsafe extern "C" fn(*mut c_vo
 pub type urnet_packet_stats_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_parse_by_jwt_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, bool) -> ()>;
 pub type urnet_payments_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
-pub type urnet_payout_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_peers_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_performance_profile_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_points_leaderboard_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
@@ -173,7 +170,6 @@ pub type urnet_session_sign_out_cb = Option<unsafe extern "C" fn(*mut c_void, u6
 pub type urnet_set_emoji_tag_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_set_network_leaderboard_public_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_set_network_referral_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
-pub type urnet_set_payout_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_set_points_leaderboard_public_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_setup_new_device_cb = Option<unsafe extern "C" fn(*mut c_void, u64, *const c_char) -> bool>;
 pub type urnet_sn_claim_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char, i64) -> ()>;
@@ -354,7 +350,6 @@ pub struct Raw {
     pub urnet_api_get_network_session_operation: unsafe extern "C" fn(u64, *const c_char, urnet_session_operation_cb, *mut c_void) -> (),
     pub urnet_api_get_network_sessions: unsafe extern "C" fn(u64, urnet_get_network_sessions_cb, *mut c_void) -> (),
     pub urnet_api_get_network_user: unsafe extern "C" fn(u64, urnet_get_network_user_cb, *mut c_void) -> (),
-    pub urnet_api_get_payout_wallet: unsafe extern "C" fn(u64, urnet_get_payout_wallet_cb, *mut c_void) -> (),
     pub urnet_api_get_points_leaderboard: unsafe extern "C" fn(u64, *const c_char, urnet_get_points_leaderboard_cb, *mut c_void) -> (),
     pub urnet_api_get_provider_locations: unsafe extern "C" fn(u64, urnet_find_locations_cb, *mut c_void) -> (),
     pub urnet_api_get_provider_status: unsafe extern "C" fn(u64, urnet_get_provider_status_cb, *mut c_void) -> (),
@@ -398,7 +393,6 @@ pub struct Raw {
     pub urnet_api_set_network_credential_store: unsafe extern "C" fn(u64, u64) -> (),
     pub urnet_api_set_network_leaderboard_public: unsafe extern "C" fn(u64, *const c_char, urnet_set_network_leaderboard_public_cb, *mut c_void) -> (),
     pub urnet_api_set_network_referral: unsafe extern "C" fn(u64, *const c_char, urnet_set_network_referral_cb, *mut c_void) -> (),
-    pub urnet_api_set_payout_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_set_payout_wallet_cb, *mut c_void) -> (),
     pub urnet_api_set_points_leaderboard_public: unsafe extern "C" fn(u64, *const c_char, urnet_set_points_leaderboard_public_cb, *mut c_void) -> (),
     pub urnet_api_sign_out: unsafe extern "C" fn(u64, urnet_session_sign_out_cb, *mut c_void) -> (),
     pub urnet_api_sn_claim_relay: unsafe extern "C" fn(u64, urnet_sn_claim_relay_cb, *mut c_void) -> (),
@@ -1482,29 +1476,21 @@ pub struct Raw {
     pub urnet_tunnel_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_tunnel_get_done: unsafe extern "C" fn(u64) -> bool,
     pub urnet_wallet_view_controller_add_account_wallets_listener: unsafe extern "C" fn(u64, urnet_account_wallets_cb, *mut c_void) -> u64,
-    pub urnet_wallet_view_controller_add_external_wallet: unsafe extern "C" fn(u64, *const c_char, *const c_char) -> (),
-    pub urnet_wallet_view_controller_add_is_creating_external_wallet_listener: unsafe extern "C" fn(u64, urnet_is_creating_external_wallet_cb, *mut c_void) -> u64,
     pub urnet_wallet_view_controller_add_is_removing_wallet_listener: unsafe extern "C" fn(u64, urnet_is_removing_wallet_cb, *mut c_void) -> u64,
     pub urnet_wallet_view_controller_add_payments_listener: unsafe extern "C" fn(u64, urnet_payments_cb, *mut c_void) -> u64,
-    pub urnet_wallet_view_controller_add_payout_wallet_listener: unsafe extern "C" fn(u64, urnet_payout_wallet_cb, *mut c_void) -> u64,
     pub urnet_wallet_view_controller_add_unpaid_byte_count_listener: unsafe extern "C" fn(u64, urnet_unpaid_byte_count_cb, *mut c_void) -> u64,
     pub urnet_wallet_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_wallet_view_controller_fetch_account_wallets: unsafe extern "C" fn(u64) -> (),
     pub urnet_wallet_view_controller_fetch_payments: unsafe extern "C" fn(u64) -> (),
-    pub urnet_wallet_view_controller_fetch_payout_wallet: unsafe extern "C" fn(u64) -> (),
     pub urnet_wallet_view_controller_fetch_transfer_stats: unsafe extern "C" fn(u64) -> (),
     pub urnet_wallet_view_controller_filter_wallets_by_id: unsafe extern "C" fn(u64, *const c_char) -> *mut c_char,
     pub urnet_wallet_view_controller_get_account_payments: unsafe extern "C" fn(u64) -> *mut c_char,
-    pub urnet_wallet_view_controller_get_next_payout_date: unsafe extern "C" fn(u64) -> *mut c_char,
-    pub urnet_wallet_view_controller_get_payout_wallet_id: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_wallet_view_controller_get_unpaid_byte_count: unsafe extern "C" fn(u64) -> i64,
     pub urnet_wallet_view_controller_get_wallets: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_wallet_view_controller_remove_wallet: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_wallet_view_controller_set_is_polling_account_wallets: unsafe extern "C" fn(u64, bool) -> (),
-    pub urnet_wallet_view_controller_set_is_polling_payout_wallet: unsafe extern "C" fn(u64, bool) -> (),
     pub urnet_wallet_view_controller_start: unsafe extern "C" fn(u64) -> (),
     pub urnet_wallet_view_controller_stop: unsafe extern "C" fn(u64) -> (),
-    pub urnet_wallet_view_controller_update_payout_wallet: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> bool,
     pub urnet_wallet_view_controller_validate_address: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_validate_address_cb, *mut c_void) -> (),
     pub urnet_websocket_device_rpc_listener_close: unsafe extern "C" fn(u64, *mut *mut c_char) -> bool,
     pub urnet_alpha_from_rao: unsafe extern "C" fn(i64) -> f64,
@@ -1878,7 +1864,6 @@ impl Raw {
             urnet_api_get_network_session_operation: unsafe { *library.get(b"urnet_api_get_network_session_operation\0")? },
             urnet_api_get_network_sessions: unsafe { *library.get(b"urnet_api_get_network_sessions\0")? },
             urnet_api_get_network_user: unsafe { *library.get(b"urnet_api_get_network_user\0")? },
-            urnet_api_get_payout_wallet: unsafe { *library.get(b"urnet_api_get_payout_wallet\0")? },
             urnet_api_get_points_leaderboard: unsafe { *library.get(b"urnet_api_get_points_leaderboard\0")? },
             urnet_api_get_provider_locations: unsafe { *library.get(b"urnet_api_get_provider_locations\0")? },
             urnet_api_get_provider_status: unsafe { *library.get(b"urnet_api_get_provider_status\0")? },
@@ -1922,7 +1907,6 @@ impl Raw {
             urnet_api_set_network_credential_store: unsafe { *library.get(b"urnet_api_set_network_credential_store\0")? },
             urnet_api_set_network_leaderboard_public: unsafe { *library.get(b"urnet_api_set_network_leaderboard_public\0")? },
             urnet_api_set_network_referral: unsafe { *library.get(b"urnet_api_set_network_referral\0")? },
-            urnet_api_set_payout_wallet: unsafe { *library.get(b"urnet_api_set_payout_wallet\0")? },
             urnet_api_set_points_leaderboard_public: unsafe { *library.get(b"urnet_api_set_points_leaderboard_public\0")? },
             urnet_api_sign_out: unsafe { *library.get(b"urnet_api_sign_out\0")? },
             urnet_api_sn_claim_relay: unsafe { *library.get(b"urnet_api_sn_claim_relay\0")? },
@@ -3006,29 +2990,21 @@ impl Raw {
             urnet_tunnel_close: unsafe { *library.get(b"urnet_tunnel_close\0")? },
             urnet_tunnel_get_done: unsafe { *library.get(b"urnet_tunnel_get_done\0")? },
             urnet_wallet_view_controller_add_account_wallets_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_account_wallets_listener\0")? },
-            urnet_wallet_view_controller_add_external_wallet: unsafe { *library.get(b"urnet_wallet_view_controller_add_external_wallet\0")? },
-            urnet_wallet_view_controller_add_is_creating_external_wallet_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_is_creating_external_wallet_listener\0")? },
             urnet_wallet_view_controller_add_is_removing_wallet_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_is_removing_wallet_listener\0")? },
             urnet_wallet_view_controller_add_payments_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_payments_listener\0")? },
-            urnet_wallet_view_controller_add_payout_wallet_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_payout_wallet_listener\0")? },
             urnet_wallet_view_controller_add_unpaid_byte_count_listener: unsafe { *library.get(b"urnet_wallet_view_controller_add_unpaid_byte_count_listener\0")? },
             urnet_wallet_view_controller_close: unsafe { *library.get(b"urnet_wallet_view_controller_close\0")? },
             urnet_wallet_view_controller_fetch_account_wallets: unsafe { *library.get(b"urnet_wallet_view_controller_fetch_account_wallets\0")? },
             urnet_wallet_view_controller_fetch_payments: unsafe { *library.get(b"urnet_wallet_view_controller_fetch_payments\0")? },
-            urnet_wallet_view_controller_fetch_payout_wallet: unsafe { *library.get(b"urnet_wallet_view_controller_fetch_payout_wallet\0")? },
             urnet_wallet_view_controller_fetch_transfer_stats: unsafe { *library.get(b"urnet_wallet_view_controller_fetch_transfer_stats\0")? },
             urnet_wallet_view_controller_filter_wallets_by_id: unsafe { *library.get(b"urnet_wallet_view_controller_filter_wallets_by_id\0")? },
             urnet_wallet_view_controller_get_account_payments: unsafe { *library.get(b"urnet_wallet_view_controller_get_account_payments\0")? },
-            urnet_wallet_view_controller_get_next_payout_date: unsafe { *library.get(b"urnet_wallet_view_controller_get_next_payout_date\0")? },
-            urnet_wallet_view_controller_get_payout_wallet_id: unsafe { *library.get(b"urnet_wallet_view_controller_get_payout_wallet_id\0")? },
             urnet_wallet_view_controller_get_unpaid_byte_count: unsafe { *library.get(b"urnet_wallet_view_controller_get_unpaid_byte_count\0")? },
             urnet_wallet_view_controller_get_wallets: unsafe { *library.get(b"urnet_wallet_view_controller_get_wallets\0")? },
             urnet_wallet_view_controller_remove_wallet: unsafe { *library.get(b"urnet_wallet_view_controller_remove_wallet\0")? },
             urnet_wallet_view_controller_set_is_polling_account_wallets: unsafe { *library.get(b"urnet_wallet_view_controller_set_is_polling_account_wallets\0")? },
-            urnet_wallet_view_controller_set_is_polling_payout_wallet: unsafe { *library.get(b"urnet_wallet_view_controller_set_is_polling_payout_wallet\0")? },
             urnet_wallet_view_controller_start: unsafe { *library.get(b"urnet_wallet_view_controller_start\0")? },
             urnet_wallet_view_controller_stop: unsafe { *library.get(b"urnet_wallet_view_controller_stop\0")? },
-            urnet_wallet_view_controller_update_payout_wallet: unsafe { *library.get(b"urnet_wallet_view_controller_update_payout_wallet\0")? },
             urnet_wallet_view_controller_validate_address: unsafe { *library.get(b"urnet_wallet_view_controller_validate_address\0")? },
             urnet_websocket_device_rpc_listener_close: unsafe { *library.get(b"urnet_websocket_device_rpc_listener_close\0")? },
             urnet_alpha_from_rao: unsafe { *library.get(b"urnet_alpha_from_rao\0")? },

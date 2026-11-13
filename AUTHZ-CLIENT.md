@@ -120,7 +120,7 @@ The "before" column describes an app with a running device.
 
 | Server class | SDK calls | Before | Now |
 |---|---|---|---|
-| App admin (27; the SDK calls all of them) | `NetworkDelete`, `AuthCodeCreate`, `AddAuth`, `RemoveAuth`, `GenerateSeedphrase`, `RegenerateSeedphrase`, `GetNetworkClients` (DevicesViewController), `GetNetworkUser` (NetworkUserViewController), `SetNetworkLeaderboardPublic`, `SetPointsLeaderboardPublic`, `SetEmojiTag`, `NetworkBlockLocation`, `NetworkUnblockLocation`, `AccountPreferencesUpdate` (AccountPreferencesViewController), `StripeCreateCustomerPortal`, `SetPayoutWallet`, `GetPayoutWallet`, `CreateAccountWallet`, `GetAccountWallets`, `RemoveWallet` (WalletViewController), `VerifySeekerHolder`, `GetAccountPayments`, `UnlinkReferralNetwork`, `SetNetworkReferral`, `ChangeNetworkName`, `ClaimNetworkName`, `GetNetworkRedeemedBalanceCodes` | client token | **network credential** |
+| App admin (27; the SDK calls 25 of them: `GET` and `POST /account/payout-wallet` have no SDK call since USDC payouts ended on 2026-11-12) | `NetworkDelete`, `AuthCodeCreate`, `AddAuth`, `RemoveAuth`, `GenerateSeedphrase`, `RegenerateSeedphrase`, `GetNetworkClients` (DevicesViewController), `GetNetworkUser` (NetworkUserViewController), `SetNetworkLeaderboardPublic`, `SetPointsLeaderboardPublic`, `SetEmojiTag`, `NetworkBlockLocation`, `NetworkUnblockLocation`, `AccountPreferencesUpdate` (AccountPreferencesViewController), `StripeCreateCustomerPortal`, `CreateAccountWallet`, `GetAccountWallets`, `RemoveWallet` (WalletViewController), `VerifySeekerHolder`, `GetAccountPayments`, `UnlinkReferralNetwork`, `SetNetworkReferral`, `ChangeNetworkName`, `ClaimNetworkName`, `GetNetworkRedeemedBalanceCodes` | client token | **network credential** |
 | Network only (9 the SDK calls) | `WalletCircleInit`, `WalletBalance`, `WalletCircleTransferOut`, `NetworkUserUpdate` (NetworkUserViewController.UpdateNetworkUser), `CreateApiKey`, `ListApiKeys`, `DeleteApiKey`, `SnNetworkWalletMappingChallengeSync[WithContext]`, `RegisterNetworkClientSyncWithContext` | client token (server 403) | **network credential** |
 | Network only (renewal) | the renewer's `POST /auth/network-refresh` (internal) | none (new) | **the network token it renews** |
 | Own client payout | `SnWalletMappingChallengeSync[WithContext]`, `SnSetWallet[Sync[WithContext]]`, `SnGetWallet[SyncWithContext]` | client token | client token. These are the provider's own client. The server refuses them only for an Embed network's client token, and an Embed backend never sends one there |
@@ -132,7 +132,7 @@ An `Api` that holds only a network credential sends it on every route, as
 before. That covers the sign-in phase before a device starts, the ur.io
 account host and remotes, and backends.
 
-`api_network_credential_test.go` pins every row: 107 calls, each with its
+`api_network_credential_test.go` pins every row: 133 calls, each with its
 route and credential. `TestApiCredentialCasesCoverEverySdkRoute` fails for
 any SDK route without a row. `TestApiAdminRoutesMatchTheServer` compares the
 SDK's table with `../server/api/route_authz.go`, class by class, and fails on

@@ -551,12 +551,6 @@ func apiCredentialCases() []apiCredentialCase {
 				api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, cb)
 			})
 		}},
-		{"SetPayoutWallet", "POST /account/payout-wallet", "/account/payout-wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
-			return awaitApiCall(func(cb connect.ApiCallback[*SetPayoutWalletResult]) { api.SetPayoutWallet(&SetPayoutWalletArgs{}, cb) })
-		}},
-		{"GetPayoutWallet", "GET /account/payout-wallet", "/account/payout-wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
-			return awaitApiCall(func(cb connect.ApiCallback[*GetPayoutWalletIdResult]) { api.GetPayoutWallet(cb) })
-		}},
 		{"CreateAccountWallet", "POST /account/wallet", "/account/wallet", sendsNetwork, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*CreateAccountWalletResult]) {
 				api.CreateAccountWallet(&CreateAccountWalletArgs{}, cb)

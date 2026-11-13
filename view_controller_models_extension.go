@@ -33,6 +33,7 @@ type AccountWallet struct {
 	HasSeekerToken   bool       `json:"has_seeker_token"`
 }
 
+// One past USDC payout, history only (see wallet_view_controller.go).
 type AccountPayment struct {
 	PaymentId       *Id   `json:"payment_id"`
 	PaymentPlanId   *Id   `json:"payment_plan_id"`

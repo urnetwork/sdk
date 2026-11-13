@@ -1535,27 +1535,6 @@ func (self *cAdapterGetNetworkUserCallback) Result(result *sdk.GetNetworkUserRes
 	}
 }
 
-type cAdapterGetPayoutWalletCallback struct {
-	cbResult C.urnet_get_payout_wallet_cb
-	userData unsafe.Pointer
-}
-
-func (self *cAdapterGetPayoutWalletCallback) Result(result *sdk.GetPayoutWalletIdResult, errParam error) {
-	defer cgoGuard("urnet_get_payout_wallet_cb")
-	result_ := cJson(result, "urnet_get_payout_wallet_cb")
-	var errParam_ *C.char
-	if errParam != nil {
-		errParam_ = cString(errParam.Error())
-	}
-	C.urnet_invoke_get_payout_wallet(self.cbResult, self.userData, result_, errParam_)
-	if result_ != nil {
-		cStringFree(result_)
-	}
-	if errParam_ != nil {
-		cStringFree(errParam_)
-	}
-}
-
 type cAdapterGetPointsLeaderboardCallback struct {
 	cbResult C.urnet_get_points_leaderboard_cb
 	userData unsafe.Pointer
@@ -1648,16 +1627,6 @@ type cAdapterGridListener struct {
 func (self *cAdapterGridListener) GridChanged() {
 	defer cgoGuard("urnet_grid_cb")
 	C.urnet_invoke_grid(self.cbGridChanged, self.userData)
-}
-
-type cAdapterIsCreatingExternalWalletListener struct {
-	cbStateChanged C.urnet_is_creating_external_wallet_cb
-	userData       unsafe.Pointer
-}
-
-func (self *cAdapterIsCreatingExternalWalletListener) StateChanged(p0 bool) {
-	defer cgoGuard("urnet_is_creating_external_wallet_cb")
-	C.urnet_invoke_is_creating_external_wallet(self.cbStateChanged, self.userData, C.bool(bool(p0)))
 }
 
 type cAdapterIsNetworkUserLoadingListener struct {
@@ -2118,20 +2087,6 @@ type cAdapterPaymentsListener struct {
 func (self *cAdapterPaymentsListener) PaymentsChanged() {
 	defer cgoGuard("urnet_payments_cb")
 	C.urnet_invoke_payments(self.cbPaymentsChanged, self.userData)
-}
-
-type cAdapterPayoutWalletListener struct {
-	cbPayoutWalletChanged C.urnet_payout_wallet_cb
-	userData              unsafe.Pointer
-}
-
-func (self *cAdapterPayoutWalletListener) PayoutWalletChanged(p0 *sdk.Id) {
-	defer cgoGuard("urnet_payout_wallet_cb")
-	p0_ := cId(p0)
-	C.urnet_invoke_payout_wallet(self.cbPayoutWalletChanged, self.userData, p0_)
-	if p0_ != nil {
-		cStringFree(p0_)
-	}
 }
 
 type cAdapterPeersListener struct {
@@ -2690,27 +2645,6 @@ func (self *cAdapterSetNetworkReferralCallback) Result(result *sdk.SetNetworkRef
 		errParam_ = cString(errParam.Error())
 	}
 	C.urnet_invoke_set_network_referral(self.cbResult, self.userData, result_, errParam_)
-	if result_ != nil {
-		cStringFree(result_)
-	}
-	if errParam_ != nil {
-		cStringFree(errParam_)
-	}
-}
-
-type cAdapterSetPayoutWalletCallback struct {
-	cbResult C.urnet_set_payout_wallet_cb
-	userData unsafe.Pointer
-}
-
-func (self *cAdapterSetPayoutWalletCallback) Result(result *sdk.SetPayoutWalletResult, errParam error) {
-	defer cgoGuard("urnet_set_payout_wallet_cb")
-	result_ := cJson(result, "urnet_set_payout_wallet_cb")
-	var errParam_ *C.char
-	if errParam != nil {
-		errParam_ = cString(errParam.Error())
-	}
-	C.urnet_invoke_set_payout_wallet(self.cbResult, self.userData, result_, errParam_)
 	if result_ != nil {
 		cStringFree(result_)
 	}
@@ -5170,20 +5104,6 @@ func urnet_api_get_network_user(self C.uint64_t, callback_result C.urnet_get_net
 	self_.GetNetworkUser(callback_)
 }
 
-//export urnet_api_get_payout_wallet
-func urnet_api_get_payout_wallet(self C.uint64_t, callback_result C.urnet_get_payout_wallet_cb, callback_user_data unsafe.Pointer) {
-	defer cgoGuard("urnet_api_get_payout_wallet")
-	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_payout_wallet")
-	if !ok {
-		return
-	}
-	var callback_ sdk.GetPayoutWalletCallback
-	if callback_result != nil {
-		callback_ = &cAdapterGetPayoutWalletCallback{cbResult: callback_result, userData: callback_user_data}
-	}
-	self_.GetPayoutWallet(callback_)
-}
-
 //export urnet_api_get_points_leaderboard
 func urnet_api_get_points_leaderboard(self C.uint64_t, args *C.char, callback_result C.urnet_get_points_leaderboard_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_get_points_leaderboard")
@@ -5958,27 +5878,6 @@ func urnet_api_set_network_referral(self C.uint64_t, args *C.char, callback_resu
 		callback_ = &cAdapterSetNetworkReferralCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SetNetworkReferral(args_, callback_)
-}
-
-//export urnet_api_set_payout_wallet
-func urnet_api_set_payout_wallet(self C.uint64_t, payoutWallet *C.char, callback_result C.urnet_set_payout_wallet_cb, callback_user_data unsafe.Pointer) {
-	defer cgoGuard("urnet_api_set_payout_wallet")
-	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_set_payout_wallet")
-	if !ok {
-		return
-	}
-	var payoutWallet_ *sdk.SetPayoutWalletArgs
-	if payoutWallet != nil {
-		payoutWallet_ = &sdk.SetPayoutWalletArgs{}
-		if !goJson(payoutWallet, payoutWallet_, "urnet_api_set_payout_wallet") {
-			return
-		}
-	}
-	var callback_ sdk.SetPayoutWalletCallback
-	if callback_result != nil {
-		callback_ = &cAdapterSetPayoutWalletCallback{cbResult: callback_result, userData: callback_user_data}
-	}
-	self_.SetPayoutWallet(payoutWallet_, callback_)
 }
 
 //export urnet_api_set_points_leaderboard_public
@@ -23414,31 +23313,6 @@ func urnet_wallet_view_controller_add_account_wallets_listener(self C.uint64_t, 
 	return C.uint64_t(newHandle(r0))
 }
 
-//export urnet_wallet_view_controller_add_external_wallet
-func urnet_wallet_view_controller_add_external_wallet(self C.uint64_t, address *C.char, blockchain *C.char) {
-	defer cgoGuard("urnet_wallet_view_controller_add_external_wallet")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_add_external_wallet")
-	if !ok {
-		return
-	}
-	self_.AddExternalWallet(goString(address), goString(blockchain))
-}
-
-//export urnet_wallet_view_controller_add_is_creating_external_wallet_listener
-func urnet_wallet_view_controller_add_is_creating_external_wallet_listener(self C.uint64_t, listener_state_changed C.urnet_is_creating_external_wallet_cb, listener_user_data unsafe.Pointer) C.uint64_t {
-	defer cgoGuard("urnet_wallet_view_controller_add_is_creating_external_wallet_listener")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_add_is_creating_external_wallet_listener")
-	if !ok {
-		return 0
-	}
-	var listener_ sdk.IsCreatingExternalWalletListener
-	if listener_state_changed != nil {
-		listener_ = &cAdapterIsCreatingExternalWalletListener{cbStateChanged: listener_state_changed, userData: listener_user_data}
-	}
-	r0 := self_.AddIsCreatingExternalWalletListener(listener_)
-	return C.uint64_t(newHandle(r0))
-}
-
 //export urnet_wallet_view_controller_add_is_removing_wallet_listener
 func urnet_wallet_view_controller_add_is_removing_wallet_listener(self C.uint64_t, listener_state_changed C.urnet_is_removing_wallet_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_wallet_view_controller_add_is_removing_wallet_listener")
@@ -23466,21 +23340,6 @@ func urnet_wallet_view_controller_add_payments_listener(self C.uint64_t, listene
 		listener_ = &cAdapterPaymentsListener{cbPaymentsChanged: listener_payments_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddPaymentsListener(listener_)
-	return C.uint64_t(newHandle(r0))
-}
-
-//export urnet_wallet_view_controller_add_payout_wallet_listener
-func urnet_wallet_view_controller_add_payout_wallet_listener(self C.uint64_t, listener_payout_wallet_changed C.urnet_payout_wallet_cb, listener_user_data unsafe.Pointer) C.uint64_t {
-	defer cgoGuard("urnet_wallet_view_controller_add_payout_wallet_listener")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_add_payout_wallet_listener")
-	if !ok {
-		return 0
-	}
-	var listener_ sdk.PayoutWalletListener
-	if listener_payout_wallet_changed != nil {
-		listener_ = &cAdapterPayoutWalletListener{cbPayoutWalletChanged: listener_payout_wallet_changed, userData: listener_user_data}
-	}
-	r0 := self_.AddPayoutWalletListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -23529,16 +23388,6 @@ func urnet_wallet_view_controller_fetch_payments(self C.uint64_t) {
 	self_.FetchPayments()
 }
 
-//export urnet_wallet_view_controller_fetch_payout_wallet
-func urnet_wallet_view_controller_fetch_payout_wallet(self C.uint64_t) {
-	defer cgoGuard("urnet_wallet_view_controller_fetch_payout_wallet")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_fetch_payout_wallet")
-	if !ok {
-		return
-	}
-	self_.FetchPayoutWallet()
-}
-
 //export urnet_wallet_view_controller_fetch_transfer_stats
 func urnet_wallet_view_controller_fetch_transfer_stats(self C.uint64_t) {
 	defer cgoGuard("urnet_wallet_view_controller_fetch_transfer_stats")
@@ -23575,28 +23424,6 @@ func urnet_wallet_view_controller_get_account_payments(self C.uint64_t) *C.char 
 		return nil
 	}
 	return cJson(r0, "urnet_wallet_view_controller_get_account_payments")
-}
-
-//export urnet_wallet_view_controller_get_next_payout_date
-func urnet_wallet_view_controller_get_next_payout_date(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_wallet_view_controller_get_next_payout_date")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_get_next_payout_date")
-	if !ok {
-		return nil
-	}
-	r0 := self_.GetNextPayoutDate()
-	return cString(string(r0))
-}
-
-//export urnet_wallet_view_controller_get_payout_wallet_id
-func urnet_wallet_view_controller_get_payout_wallet_id(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_wallet_view_controller_get_payout_wallet_id")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_get_payout_wallet_id")
-	if !ok {
-		return nil
-	}
-	r0 := self_.GetPayoutWalletId()
-	return cId(r0)
 }
 
 //export urnet_wallet_view_controller_get_unpaid_byte_count
@@ -23644,16 +23471,6 @@ func urnet_wallet_view_controller_set_is_polling_account_wallets(self C.uint64_t
 	self_.SetIsPollingAccountWallets(bool(isPolling))
 }
 
-//export urnet_wallet_view_controller_set_is_polling_payout_wallet
-func urnet_wallet_view_controller_set_is_polling_payout_wallet(self C.uint64_t, isPolling C.bool) {
-	defer cgoGuard("urnet_wallet_view_controller_set_is_polling_payout_wallet")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_set_is_polling_payout_wallet")
-	if !ok {
-		return
-	}
-	self_.SetIsPollingPayoutWallet(bool(isPolling))
-}
-
 //export urnet_wallet_view_controller_start
 func urnet_wallet_view_controller_start(self C.uint64_t) {
 	defer cgoGuard("urnet_wallet_view_controller_start")
@@ -23672,21 +23489,6 @@ func urnet_wallet_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
-}
-
-//export urnet_wallet_view_controller_update_payout_wallet
-func urnet_wallet_view_controller_update_payout_wallet(self C.uint64_t, walletId *C.char, outError **C.char) C.bool {
-	defer cgoGuard("urnet_wallet_view_controller_update_payout_wallet")
-	self_, ok := resolveHandle[*sdk.WalletViewController](uint64(self), "urnet_wallet_view_controller_update_payout_wallet")
-	if !ok {
-		return C.bool(false)
-	}
-	err := self_.UpdatePayoutWallet(goId(walletId, "urnet_wallet_view_controller_update_payout_wallet"))
-	if err != nil {
-		setErrorOut(outError, err)
-		return C.bool(false)
-	}
-	return C.bool(true)
 }
 
 //export urnet_wallet_view_controller_validate_address

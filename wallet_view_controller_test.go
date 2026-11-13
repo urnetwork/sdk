@@ -1,7 +1,8 @@
 //go:build !ios_extension
 
-// The wallet view controller's removal path against a fake wallet api: a
-// removal refetches the payout wallet, and a failed one ends the removing
+// The wallet view controller against a fake wallet api. USDC provider payouts
+// ended on 2026-11-12, so the controller has no USDC payout wallet surface, a
+// removal refetches only the wallets, and a failed removal ends the removing
 // state.
 package sdk
 
@@ -10,7 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -26,16 +30,6 @@ type testing_walletDevice struct {
 // The fake wallet api.
 func (self *testing_walletDevice) GetApi() *Api {
 	return self.api
-}
-
-// Hands each payout wallet change to the test.
-type testing_payoutWalletListener struct {
-	changed chan *Id
-}
-
-// Sends the new payout wallet id to the test.
-func (self *testing_payoutWalletListener) PayoutWalletChanged(id *Id) {
-	self.changed <- id
 }
 
 // Hands each removing state change to the test.
@@ -59,64 +53,110 @@ func newTestWalletViewController(
 	ctx, api := newTestApi(t, http.NotFoundHandler())
 	// the wallet routes administer the account: they need the network credential
 	api.SetByJwt("test-network-jwt")
+	pathOf := func(requestUrl string) string {
+		u, err := url.Parse(requestUrl)
+		if err != nil {
+			return requestUrl
+		}
+		return u.Path
+	}
 	api.setHttpPostRaw(func(_ context.Context, requestUrl string, _ []byte, _ string) ([]byte, error) {
-		return post(requestUrl[strings.Index(requestUrl, "/account/"):])
+		return post(pathOf(requestUrl))
 	})
 	api.setHttpGetRaw(func(_ context.Context, requestUrl string, _ string) ([]byte, error) {
-		return get(requestUrl[strings.Index(requestUrl, "/account/"):])
+		return get(pathOf(requestUrl))
 	})
 	vc := newWalletViewController(ctx, &testing_walletDevice{api: api})
 	t.Cleanup(vc.Close)
 	return vc
 }
 
-// Removing the payout wallet can make another wallet the payout wallet on
-// the server, so a successful removal refetches the payout wallet along with
-// the wallets. Before, only the wallets were refetched and the removed wallet
-// stayed the payout wallet in the app.
-func TestWalletViewControllerRemoveWalletRefetchesPayoutWallet(t *testing.T) {
+// USDC payouts ended on 2026-11-12, so no app can read, set, poll or schedule
+// a USDC payout wallet through the sdk, or add one: the gomobile and c abi
+// surfaces are the exported methods, and none of these remain. The pending
+// USDC payout is not on the balance result either (TestSubscriptionBalanceDecode
+// checks the wire side).
+func TestWalletViewControllerHasNoUsdcPayoutWallet(t *testing.T) {
+	retired := func(name string) bool {
+		return strings.Contains(name, "PayoutWallet") ||
+			strings.Contains(name, "NextPayoutDate") ||
+			strings.Contains(name, "ExternalWallet")
+	}
+	for _, typ := range []reflect.Type{
+		reflect.TypeOf(&WalletViewController{}),
+		reflect.TypeOf(&Api{}),
+	} {
+		for i := 0; i < typ.NumMethod(); i += 1 {
+			if name := typ.Method(i).Name; retired(name) {
+				t.Errorf("%s.%s is a USDC payout wallet surface", typ.Elem().Name(), name)
+			}
+		}
+	}
+	balance := reflect.TypeOf(SubscriptionBalanceResult{})
+	for i := 0; i < balance.NumField(); i += 1 {
+		field := balance.Field(i)
+		if strings.Contains(field.Name, "PendingPayout") || strings.Contains(field.Tag.Get("json"), "pending_payout") {
+			t.Errorf("SubscriptionBalanceResult.%s carries the pending USDC payout", field.Name)
+		}
+	}
+}
+
+// A successful removal refetches the wallets, which ends the removing state.
+// It reads nothing else: there is no payout wallet to refetch since USDC
+// payouts ended (before, the payout wallet was read again here).
+func TestWalletViewControllerRemoveWalletRefetchesTheWallets(t *testing.T) {
 	removed := NewId()
-	promoted := NewId()
+	remaining := NewId()
+	var stateLock sync.Mutex
+	var gets []string
 	vc := newTestWalletViewController(
 		t,
 		func(path string) ([]byte, error) {
 			if path != "/account/wallets/remove" {
 				return nil, fmt.Errorf("unexpected post %s", path)
 			}
-			return []byte(fmt.Sprintf(`{"success":true,"payout_wallet_id":%q}`, promoted.IdStr)), nil
+			return []byte(`{"success":true}`), nil
 		},
 		func(path string) ([]byte, error) {
-			switch path {
-			case "/account/wallets":
-				return []byte(fmt.Sprintf(`{"wallets":[{"wallet_id":%q,"blockchain":"SOL","wallet_address":"synthetic-promoted","active":true}]}`, promoted.IdStr)), nil
-			case "/account/payout-wallet":
-				return []byte(fmt.Sprintf(`{"wallet_id":%q}`, promoted.IdStr)), nil
-			default:
+			func() {
+				stateLock.Lock()
+				defer stateLock.Unlock()
+				gets = append(gets, path)
+			}()
+			if path != "/account/wallets" {
 				return nil, fmt.Errorf("unexpected get %s", path)
 			}
+			return []byte(fmt.Sprintf(`{"wallets":[{"wallet_id":%q,"blockchain":"SOL","wallet_address":"synthetic-remaining","active":true}]}`, remaining.IdStr)), nil
 		},
 	)
-	func() {
-		vc.stateLock.Lock()
-		defer vc.stateLock.Unlock()
-		vc.payoutWalletId = removed
-	}()
-	listener := &testing_payoutWalletListener{changed: make(chan *Id, 4)}
-	vc.AddPayoutWalletListener(listener)
+	listener := &testing_isRemovingWalletListener{changed: make(chan bool, 4)}
+	vc.AddIsRemovingWalletListener(listener)
 
 	vc.RemoveWallet(removed)
 
-	select {
-	case id := <-listener.changed:
-		if id == nil || id.Cmp(promoted) != 0 {
-			t.Fatalf("payout wallet changed to %v, want %s", id, promoted.IdStr)
+	for _, want := range []bool{true, false} {
+		select {
+		case isRemoving := <-listener.changed:
+			if isRemoving != want {
+				t.Fatalf("removing state %v, want %v", isRemoving, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("removing state did not change to %v", want)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatalf("payout wallet not refetched after the removal; still %v", vc.GetPayoutWalletId())
 	}
-	if id := vc.GetPayoutWalletId(); id == nil || id.Cmp(promoted) != 0 {
-		t.Fatalf("payout wallet %v, want %s", id, promoted.IdStr)
+	wallets := vc.GetWallets()
+	if wallets.Len() != 1 || wallets.Get(0).WalletId.Cmp(remaining) != 0 {
+		t.Fatalf("wallets after the removal: %d, want only %s", wallets.Len(), remaining.IdStr)
 	}
+	func() {
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		for _, path := range gets {
+			if path != "/account/wallets" {
+				t.Errorf("the removal read %s", path)
+			}
+		}
+	}()
 }
 
 // A removal that fails or answers no result ends the removing state. Before,

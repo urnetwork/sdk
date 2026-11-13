@@ -981,8 +981,6 @@ typedef void (*urnet_get_network_reliability_cb)(void* user_data, const char* re
 typedef void (*urnet_get_network_sessions_cb)(void* user_data, uint64_t result, const char* err_param);
 /* GetNetworkUserCallback */
 typedef void (*urnet_get_network_user_cb)(void* user_data, const char* result_json, const char* err_param);
-/* GetPayoutWalletCallback */
-typedef void (*urnet_get_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetPointsLeaderboardCallback */
 typedef void (*urnet_get_points_leaderboard_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetProviderStatusCallback */
@@ -993,8 +991,6 @@ typedef void (*urnet_get_referral_network_cb)(void* user_data, const char* resul
 typedef void (*urnet_get_transfer_stats_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GridListener */
 typedef void (*urnet_grid_cb)(void* user_data);
-/* IsCreatingExternalWalletListener */
-typedef void (*urnet_is_creating_external_wallet_cb)(void* user_data, bool p0);
 /* IsNetworkUserLoadingListener */
 typedef void (*urnet_is_network_user_loading_cb)(void* user_data, bool p0);
 /* IsNetworkUserUpdatingListener */
@@ -1059,8 +1055,6 @@ typedef void (*urnet_packet_stats_change_cb)(void* user_data, const char* packet
 typedef void (*urnet_parse_by_jwt_cb)(void* user_data, const char* result_json, bool ok_param);
 /* PaymentsListener */
 typedef void (*urnet_payments_cb)(void* user_data);
-/* PayoutWalletListener */
-typedef void (*urnet_payout_wallet_cb)(void* user_data, const char* p0);
 /* PeersListener */
 typedef void (*urnet_peers_cb)(void* user_data, const char* peers_json);
 /* PerformanceProfileChangeListener */
@@ -1137,8 +1131,6 @@ typedef void (*urnet_set_emoji_tag_cb)(void* user_data, const char* result_json,
 typedef void (*urnet_set_network_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetNetworkReferralCallback */
 typedef void (*urnet_set_network_referral_cb)(void* user_data, const char* result_json, const char* err_param);
-/* SetPayoutWalletCallback */
-typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetPointsLeaderboardPublicCallback */
 typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetupNewDeviceCallback */
@@ -1358,7 +1350,6 @@ void urnet_api_get_network_reliability(uint64_t self, urnet_get_network_reliabil
 void urnet_api_get_network_session_operation(uint64_t self, const char* operation_id, urnet_session_operation_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_sessions(uint64_t self, urnet_get_network_sessions_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_user(uint64_t self, urnet_get_network_user_cb callback_result, void* callback_user_data);
-void urnet_api_get_payout_wallet(uint64_t self, urnet_get_payout_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_get_points_leaderboard(uint64_t self, const char* args_json, urnet_get_points_leaderboard_cb callback_result, void* callback_user_data);
 void urnet_api_get_provider_locations(uint64_t self, urnet_find_locations_cb callback_result, void* callback_user_data);
 void urnet_api_get_provider_status(uint64_t self, urnet_get_provider_status_cb callback_result, void* callback_user_data);
@@ -1402,7 +1393,6 @@ void urnet_api_set_emoji_tag(uint64_t self, const char* args_json, urnet_set_emo
 void urnet_api_set_network_credential_store(uint64_t self, uint64_t store);
 void urnet_api_set_network_leaderboard_public(uint64_t self, const char* args_json, urnet_set_network_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_set_network_referral(uint64_t self, const char* args_json, urnet_set_network_referral_cb callback_result, void* callback_user_data);
-void urnet_api_set_payout_wallet(uint64_t self, const char* payout_wallet_json, urnet_set_payout_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_set_points_leaderboard_public(uint64_t self, const char* args_json, urnet_set_points_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_sign_out(uint64_t self, urnet_session_sign_out_cb callback_result, void* callback_user_data);
 void urnet_api_sn_claim_relay(uint64_t self, urnet_sn_claim_relay_cb callback_result, void* callback_user_data);
@@ -2686,29 +2676,21 @@ bool urnet_tunnel_get_done(uint64_t self);
 /* ----- WalletViewController ----- */
 
 uint64_t urnet_wallet_view_controller_add_account_wallets_listener(uint64_t self, urnet_account_wallets_cb listener_account_wallets_changed, void* listener_user_data);
-void urnet_wallet_view_controller_add_external_wallet(uint64_t self, const char* address, const char* blockchain);
-uint64_t urnet_wallet_view_controller_add_is_creating_external_wallet_listener(uint64_t self, urnet_is_creating_external_wallet_cb listener_state_changed, void* listener_user_data);
 uint64_t urnet_wallet_view_controller_add_is_removing_wallet_listener(uint64_t self, urnet_is_removing_wallet_cb listener_state_changed, void* listener_user_data);
 uint64_t urnet_wallet_view_controller_add_payments_listener(uint64_t self, urnet_payments_cb listener_payments_changed, void* listener_user_data);
-uint64_t urnet_wallet_view_controller_add_payout_wallet_listener(uint64_t self, urnet_payout_wallet_cb listener_payout_wallet_changed, void* listener_user_data);
 uint64_t urnet_wallet_view_controller_add_unpaid_byte_count_listener(uint64_t self, urnet_unpaid_byte_count_cb listener_state_changed, void* listener_user_data);
 void urnet_wallet_view_controller_close(uint64_t self);
 void urnet_wallet_view_controller_fetch_account_wallets(uint64_t self);
 void urnet_wallet_view_controller_fetch_payments(uint64_t self);
-void urnet_wallet_view_controller_fetch_payout_wallet(uint64_t self);
 void urnet_wallet_view_controller_fetch_transfer_stats(uint64_t self);
 char* urnet_wallet_view_controller_filter_wallets_by_id(uint64_t self, const char* id_str);
 char* urnet_wallet_view_controller_get_account_payments(uint64_t self);
-char* urnet_wallet_view_controller_get_next_payout_date(uint64_t self);
-char* urnet_wallet_view_controller_get_payout_wallet_id(uint64_t self);
 int64_t urnet_wallet_view_controller_get_unpaid_byte_count(uint64_t self);
 char* urnet_wallet_view_controller_get_wallets(uint64_t self);
 void urnet_wallet_view_controller_remove_wallet(uint64_t self, const char* wallet_id);
 void urnet_wallet_view_controller_set_is_polling_account_wallets(uint64_t self, bool is_polling);
-void urnet_wallet_view_controller_set_is_polling_payout_wallet(uint64_t self, bool is_polling);
 void urnet_wallet_view_controller_start(uint64_t self);
 void urnet_wallet_view_controller_stop(uint64_t self);
-bool urnet_wallet_view_controller_update_payout_wallet(uint64_t self, const char* wallet_id, char** out_error);
 void urnet_wallet_view_controller_validate_address(uint64_t self, const char* address, const char* blockchain, urnet_validate_address_cb callback_send_result, void* callback_user_data);
 
 /* ----- WebsocketDeviceRpcListener ----- */
@@ -4626,10 +4608,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: GetNetworkUserError | null
  */
 
-/* GetPayoutWalletIdResult (json):
- *   wallet_id: string (uuid) | null
- */
-
 /* GetPointsLeaderboardArgs (json):
  *   sort: string
  *   cursor?: string
@@ -5825,13 +5803,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: SetNetworkReferralError | null
  */
 
-/* SetPayoutWalletArgs (json):
- *   wallet_id: string (uuid) | null
- */
-
-/* SetPayoutWalletResult (json):
- */
-
 /* SetPointsLeaderboardPublicArgs (json):
  *   public: boolean
  */
@@ -6642,7 +6613,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   current_subscription?: Subscription | null
  *   subscriptions?: SubscriptionList | null
  *   active_transfer_balances?: TransferBalanceList | null
- *   pending_payout_usd_nano_cents: number
  *   update_time: string
  *   guest?: boolean
  *   price_tier?: PriceTier | null
