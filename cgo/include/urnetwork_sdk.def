@@ -63,6 +63,8 @@ EXPORTS
 	urnet_api_get_crypto_payment_assets
 	urnet_api_get_crypto_payment_status
 	urnet_api_get_leaderboard
+	urnet_api_get_mail_locale_time_zone
+	urnet_api_get_mail_locales
 	urnet_api_get_network_blocked_locations
 	urnet_api_get_network_clients
 	urnet_api_get_network_leaderboard_ranking
@@ -112,6 +114,7 @@ EXPORTS
 	urnet_api_set_by_jwt
 	urnet_api_set_client_info
 	urnet_api_set_emoji_tag
+	urnet_api_set_mail_locale
 	urnet_api_set_network_credential_store
 	urnet_api_set_network_leaderboard_public
 	urnet_api_set_network_referral

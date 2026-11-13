@@ -1361,6 +1361,8 @@ bool urnet_api_get_credential_persistence_error(uint64_t self, char** out_error)
 void urnet_api_get_crypto_payment_assets(uint64_t self, urnet_crypto_payment_assets_cb callback_result, void* callback_user_data);
 void urnet_api_get_crypto_payment_status(uint64_t self, const char* args_json, urnet_crypto_payment_status_cb callback_result, void* callback_user_data);
 void urnet_api_get_leaderboard(uint64_t self, const char* args_json, urnet_get_leaderboard_cb callback_result, void* callback_user_data);
+char* urnet_api_get_mail_locale_time_zone(uint64_t self);
+char* urnet_api_get_mail_locales(uint64_t self);
 void urnet_api_get_network_blocked_locations(uint64_t self, urnet_get_network_blocked_locations_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_clients(uint64_t self, urnet_get_network_clients_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_leaderboard_ranking(uint64_t self, urnet_get_network_leaderboard_ranking_cb callback_result, void* callback_user_data);
@@ -1410,6 +1412,7 @@ void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urne
 void urnet_api_set_by_jwt(uint64_t self, const char* by_jwt);
 void urnet_api_set_client_info(uint64_t self, const char* info_json);
 void urnet_api_set_emoji_tag(uint64_t self, const char* args_json, urnet_set_emoji_tag_cb callback_result, void* callback_user_data);
+void urnet_api_set_mail_locale(uint64_t self, const char* time_zone, const char* locales_json);
 void urnet_api_set_network_credential_store(uint64_t self, uint64_t store);
 void urnet_api_set_network_leaderboard_public(uint64_t self, const char* args_json, urnet_set_network_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_set_network_referral(uint64_t self, const char* args_json, urnet_set_network_referral_cb callback_result, void* callback_user_data);
@@ -3152,6 +3155,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   wallet_auth?: WalletAuthArgs | null
  *   seedphrase?: string
  *   result_errors?: boolean
+ *   time_zone?: string
+ *   locales?: StringList | null
  */
 
 /* AuthLoginResult (json):
@@ -3177,6 +3182,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   user_auth: string
  *   password: string
  *   verify_otp_numeric?: boolean
+ *   time_zone?: string
+ *   locales?: StringList | null
  */
 
 /* AuthLoginWithPasswordResult (json):
@@ -3205,6 +3212,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_config?: ProxyConfig | null
  *   time_zone?: string
  *   locale?: string
+ *   locales?: StringList | null
  *   provide_intent?: boolean
  */
 
@@ -3236,6 +3244,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthVerifyArgs (json):
  *   user_auth: string
  *   verify_code: string
+ *   time_zone?: string
+ *   locales?: StringList | null
  */
 
 /* AuthVerifyResult (json):
@@ -4953,6 +4963,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   balance_code?: string
  *   wallet_auth?: WalletAuthArgs | null
  *   result_errors?: boolean
+ *   time_zone?: string
+ *   locales?: StringList | null
  */
 
 /* NetworkCreateResult (json):

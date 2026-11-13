@@ -341,6 +341,8 @@ public interface Raw extends Library {
   void urnet_api_get_crypto_payment_assets(long a0, urnet_crypto_payment_assets_cb a1, Pointer a2);
   void urnet_api_get_crypto_payment_status(long a0, String a1, urnet_crypto_payment_status_cb a2, Pointer a3);
   void urnet_api_get_leaderboard(long a0, String a1, urnet_get_leaderboard_cb a2, Pointer a3);
+  Pointer urnet_api_get_mail_locale_time_zone(long a0);
+  Pointer urnet_api_get_mail_locales(long a0);
   void urnet_api_get_network_blocked_locations(long a0, urnet_get_network_blocked_locations_cb a1, Pointer a2);
   void urnet_api_get_network_clients(long a0, urnet_get_network_clients_cb a1, Pointer a2);
   void urnet_api_get_network_leaderboard_ranking(long a0, urnet_get_network_leaderboard_ranking_cb a1, Pointer a2);
@@ -390,6 +392,7 @@ public interface Raw extends Library {
   void urnet_api_set_by_jwt(long a0, String a1);
   void urnet_api_set_client_info(long a0, String a1);
   void urnet_api_set_emoji_tag(long a0, String a1, urnet_set_emoji_tag_cb a2, Pointer a3);
+  void urnet_api_set_mail_locale(long a0, String a1, String a2);
   void urnet_api_set_network_credential_store(long a0, long a1);
   void urnet_api_set_network_leaderboard_public(long a0, String a1, urnet_set_network_leaderboard_public_cb a2, Pointer a3);
   void urnet_api_set_network_referral(long a0, String a1, urnet_set_network_referral_cb a2, Pointer a3);
