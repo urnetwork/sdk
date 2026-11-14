@@ -2879,6 +2879,9 @@ func applyPlatformTransportMemoryUsage(
 // limited window. Applied after the developer override of the limited
 // window's fraction, so a host's DisableLimitedWindow outranks it.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
+	// an app's windows leave a stalled exit in seconds
+	// (app_window_exit_timers.go)
+	applyAppWindowAckTimeout(settings, deviceLocalSettings)
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
 	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
 	settings.OutOfBalanceRefillProbe = deviceLocalSettings.OutOfBalanceRefillProbe
@@ -5545,6 +5548,9 @@ func (self *DeviceLocal) applyDestination(
 						)
 						clientSettings.WebRtcSettings.UseEgressOnlyIceInterfaces =
 							self.settings.WebRtcSettings.UseEgressOnlyIceInterfaces
+						// an app's windows leave a gap-wedged exit in seconds
+						// (app_window_exit_timers.go)
+						applyAppWindowGapTimeout(clientSettings, self.settings)
 						return clientSettings
 					},
 					apiGeneratorSettings,

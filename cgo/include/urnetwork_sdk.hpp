@@ -4011,6 +4011,7 @@ struct ReliabilitySettings {
 	bool DialFailureRerace{};
 	int64_t TcpCollapseMaxHoldMillis{};
 	int64_t SendStallTimeoutMillis{};
+	int64_t ReceiveGapStallTimeoutMillis{};
 	bool ClusterAffinityFallback{};
 	bool ServerNameAffinityBridge{};
 	int64_t SequenceIdleTimeoutMillis{};
@@ -17900,6 +17901,7 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["DialFailureRerace"] = v.DialFailureRerace;
 	j["TcpCollapseMaxHoldMillis"] = v.TcpCollapseMaxHoldMillis;
 	j["SendStallTimeoutMillis"] = v.SendStallTimeoutMillis;
+	j["ReceiveGapStallTimeoutMillis"] = v.ReceiveGapStallTimeoutMillis;
 	j["ClusterAffinityFallback"] = v.ClusterAffinityFallback;
 	j["ServerNameAffinityBridge"] = v.ServerNameAffinityBridge;
 	j["SequenceIdleTimeoutMillis"] = v.SequenceIdleTimeoutMillis;
@@ -17965,6 +17967,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("SendStallTimeoutMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SendStallTimeoutMillis);
+	}
+	if (auto it = j.find("ReceiveGapStallTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ReceiveGapStallTimeoutMillis);
 	}
 	if (auto it = j.find("ClusterAffinityFallback"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClusterAffinityFallback);

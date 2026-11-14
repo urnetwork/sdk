@@ -49,6 +49,9 @@ func testDeviceLocalWindowProfileIndependentOfHost(t *testing.T, target ByteCoun
 	expected.ReceiveBufferSettings.PackQueueBudget = device.settings.ReceiveBufferSettings.PackQueueBudget
 	applyMobileLowMemoryClientSettingsForPlatform(expected, target, true)
 	applyMobileH1PerformanceClientSettingsForPlatform(expected, target, true, true)
+	// an app device's window clients run the app's gap timeout and a hosted
+	// device's keep connect's (app_window_exit_timers.go)
+	applyAppWindowGapTimeout(expected, settings)
 	// Independent candidate expectations supplement the unchanged generic
 	// transforms; the new product projection is never called on the oracle.
 	wantPhysical, wantWire, wantRoot, wantH1 := ByteCount(7633633), ByteCount(2181038), ByteCount(21810380), 256

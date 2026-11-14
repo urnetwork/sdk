@@ -1105,11 +1105,31 @@ export interface AccountEpoch {
   points: number;
   share_bps: number;
   rank?: number;
+  served_byte_count: number;
+}
+
+export interface AccountCurrentEpoch {
+  epoch: number;
+  start_millis: number;
+  end_millis: number;
+  served_byte_count: number;
+  as_of_millis: number;
+}
+
+export interface AccountCurrentBlock {
+  block_number: number;
+  start_millis: number;
+  end_millis: number;
+  served_byte_count: number;
+  as_of_millis: number;
+  epoch: number;
 }
 
 export interface AccountEpochsResult {
   epochs: AccountEpoch[] | null;
   total_points?: number;
+  current_epoch?: AccountCurrentEpoch | null;
+  current_block?: AccountCurrentBlock | null;
   error?: SnError | null;
 }
 
