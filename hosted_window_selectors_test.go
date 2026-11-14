@@ -68,7 +68,8 @@ func (self *hostedWindowSelectorsTestDiscovery) recorded() ([]connect.FindProvid
 // No device setting changes a window's selectors or limited window by
 // default, so apps keep connect's; the hosted settings carry ipv4 and any and
 // a fraction of 0 into the multi client's settings, applied after the
-// developer override so that they outrank it.
+// low-memory tier's own fraction and the developer override so that they
+// outrank both.
 func TestDeviceLocalWindowClientSettingsCarryTheHostedPolicy(t *testing.T) {
 	for _, deviceLocalSettings := range []*DeviceLocalSettings{DefaultDeviceLocalSettings(), DefaultLowMemoryDeviceLocalSettings()} {
 		if deviceLocalSettings.NormalWindowSelectors != nil || deviceLocalSettings.DisableLimitedWindow {
@@ -90,6 +91,24 @@ func TestDeviceLocalWindowClientSettingsCarryTheHostedPolicy(t *testing.T) {
 	applyDeviceLocalWindowClientSettings(settings, hosted)
 	connect.AssertEqual(t, settings.NormalWindowSelectors, *hostedWindowSelectorsTestSelectors())
 	connect.AssertEqual(t, settings.LimitedWindowSizeFraction, 0.0)
+
+	// the 32-MiB tier that iOS and the hosted proxies share takes its own
+	// fraction first, as a window build does; the hosted policy still gives
+	// none
+	held := connect.DefaultMultiClientSettings()
+	applyMobileLimitedWindowSettingsForPlatform(
+		held,
+		hosted.lowMemoryLimitedWindowSizeMax,
+		hosted.lowMemoryLimitedWindowSizeFraction,
+		LowMemoryDeviceTargetByteCount,
+		true,
+	)
+	if held.LimitedWindowSizeFraction <= 0 {
+		t.Fatalf("the 32-MiB tier builds a fraction of %v before the host's policy, want a limited window", held.LimitedWindowSizeFraction)
+	}
+	applyDeviceLocalWindowClientSettings(held, hosted)
+	connect.AssertEqual(t, held.LimitedWindowSizeFraction, 0.0)
+	connect.AssertEqual(t, held.NormalWindowSelectors, *hostedWindowSelectorsTestSelectors())
 }
 
 // A device whose host disabled the limited window reads a fraction of 0,
