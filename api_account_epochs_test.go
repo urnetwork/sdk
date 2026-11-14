@@ -45,10 +45,10 @@ func readTestAccountEpochs(t *testing.T, response string) *AccountEpochsResult {
 	}
 }
 
-// Each epoch's served_byte_count and the open epoch, past 2^53 bytes so a
-// lossy float decode would show.
-func TestApiAccountEpochsDecodesServedBytesAndTheCurrentEpoch(t *testing.T) {
-	const response = `{"epochs":[{"epoch":6,"start_millis":1794938940000,"end_millis":1795543740000,"points":12.5,"share_bps":40,"amount_rao":"700","served_byte_count":9007199254740993}],"current_epoch":{"epoch":7,"start_millis":1795543740000,"end_millis":1796148540000,"served_byte_count":1099511627776,"as_of_millis":1795636800000}}`
+// Each epoch's served_byte_count, the open epoch and the open block, past
+// 2^53 bytes so a lossy float decode would show.
+func TestApiAccountEpochsDecodesServedBytesAndTheRunningFigures(t *testing.T) {
+	const response = `{"epochs":[{"epoch":6,"start_millis":1794938940000,"end_millis":1795543740000,"points":12.5,"share_bps":40,"amount_rao":"700","served_byte_count":9007199254740993}],"current_epoch":{"epoch":7,"start_millis":1795543740000,"end_millis":1796148540000,"served_byte_count":1099511627776,"as_of_millis":1795636800000},"current_block":{"block_number":21,"start_millis":1794700800000,"end_millis":1795305600000,"served_byte_count":9007199254740995,"as_of_millis":1795636800000,"epoch":8}}`
 	result := readTestAccountEpochs(t, response)
 	if result.Epochs == nil || result.Epochs.Len() != 1 {
 		t.Fatalf("epochs = %+v", result.Epochs)
@@ -62,16 +62,20 @@ func TestApiAccountEpochsDecodesServedBytesAndTheCurrentEpoch(t *testing.T) {
 	if result.CurrentEpoch == nil || *result.CurrentEpoch != wantCurrent {
 		t.Fatalf("current epoch = %+v, want %+v", result.CurrentEpoch, wantCurrent)
 	}
+	wantBlock := AccountCurrentBlock{BlockNumber: 21, StartMillis: 1794700800000, EndMillis: 1795305600000, ServedByteCount: 9007199254740995, AsOfMillis: 1795636800000, Epoch: 8}
+	if result.CurrentBlock == nil || *result.CurrentBlock != wantBlock {
+		t.Fatalf("current block = %+v, want %+v", result.CurrentBlock, wantBlock)
+	}
 }
 
-// A server that predates the fields: zero bytes and no current epoch.
+// A server that predates the fields: zero bytes and no running figures.
 func TestApiAccountEpochsDecodesAServerWithoutServedBytes(t *testing.T) {
 	const response = `{"epochs":[{"epoch":4,"start_millis":1793729340000,"end_millis":1794334140000,"points":3,"share_bps":0}]}`
 	result := readTestAccountEpochs(t, response)
 	if result.Epochs == nil || result.Epochs.Len() != 1 || result.Epochs.Get(0).ServedByteCount != 0 || result.Epochs.Get(0).Points != 3 {
 		t.Fatalf("epochs = %+v", result.Epochs)
 	}
-	if result.CurrentEpoch != nil {
-		t.Fatalf("current epoch = %+v, want none", result.CurrentEpoch)
+	if result.CurrentEpoch != nil || result.CurrentBlock != nil {
+		t.Fatalf("current epoch = %+v and block = %+v, want none", result.CurrentEpoch, result.CurrentBlock)
 	}
 }

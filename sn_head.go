@@ -47,6 +47,21 @@ type AccountCurrentEpoch struct {
 	AsOfMillis int64 `json:"as_of_millis"`
 }
 
+// AccountCurrentBlock is the open weekly operator block, Sunday 00:00 UTC to
+// the next, and the bytes served in it so far: a figure that grows all week.
+// The block counts in Epoch once it ends, the epoch whose window holds its
+// end; while that is the open epoch, these bytes are part of
+// AccountCurrentEpoch's figure too.
+type AccountCurrentBlock struct {
+	BlockNumber     int64 `json:"block_number"`
+	StartMillis     int64 `json:"start_millis"`
+	EndMillis       int64 `json:"end_millis"`
+	ServedByteCount int64 `json:"served_byte_count"`
+	// the traffic is counted through this time
+	AsOfMillis int64 `json:"as_of_millis"`
+	Epoch      int64 `json:"epoch"`
+}
+
 type AccountEpochList struct {
 	exportedList[*AccountEpoch]
 }
@@ -62,6 +77,8 @@ type AccountEpochsResult struct {
 	TotalPoints float64           `json:"total_points,omitempty"`
 	// nil when the server reports no open epoch
 	CurrentEpoch *AccountCurrentEpoch `json:"current_epoch,omitempty"`
+	// nil when the server reports no open block
+	CurrentBlock *AccountCurrentBlock `json:"current_block,omitempty"`
 	Error        *SnError             `json:"error,omitempty"`
 }
 
