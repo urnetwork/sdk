@@ -29,6 +29,22 @@ type AccountEpoch struct {
 	ShareBps int64 `json:"share_bps"`
 	// leaderboard rank for the epoch when the server reports it
 	Rank int64 `json:"rank,omitempty"`
+	// the bytes the network served behind the epoch's points: the weekly
+	// operator blocks that end in the epoch (0 from a server that predates
+	// the field)
+	ServedByteCount int64 `json:"served_byte_count"`
+}
+
+// AccountCurrentEpoch is the open epoch, not yet finalized, and the bytes
+// served so far that count toward it, by the rule of AccountEpoch.
+type AccountCurrentEpoch struct {
+	Epoch       int64 `json:"epoch"`
+	StartMillis int64 `json:"start_millis"`
+	// projected: the epoch is still open
+	EndMillis       int64 `json:"end_millis"`
+	ServedByteCount int64 `json:"served_byte_count"`
+	// the traffic is counted through this time
+	AsOfMillis int64 `json:"as_of_millis"`
 }
 
 type AccountEpochList struct {
@@ -44,7 +60,9 @@ func NewAccountEpochList() *AccountEpochList {
 type AccountEpochsResult struct {
 	Epochs      *AccountEpochList `json:"epochs"`
 	TotalPoints float64           `json:"total_points,omitempty"`
-	Error       *SnError          `json:"error,omitempty"`
+	// nil when the server reports no open epoch
+	CurrentEpoch *AccountCurrentEpoch `json:"current_epoch,omitempty"`
+	Error        *SnError             `json:"error,omitempty"`
 }
 
 type AccountEpochsCallback connect.ApiCallback[*AccountEpochsResult]
