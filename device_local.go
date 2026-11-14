@@ -1048,6 +1048,23 @@ type DeviceLocalSettings struct {
 	// device.
 	//gomobile:noexport Go-only host activity reader.
 	UserActivitySince func(since time.Time) bool `json:"-"`
+	// The capabilities the device's normal windows ask find-providers2 for
+	// (`connect.MultiClientSettings.NormalWindowSelectors`). Nil keeps
+	// connect's default, dualstack and dualproto, which apps keep. The proxy
+	// service sets ipv4 and any for its hosted devices: their windows take
+	// every provider by rank alone and build no limited window (owner,
+	// 2026-11-13). Out of the settings json.
+	//gomobile:noexport a pointer to another package's struct, which gomobile
+	// does not bind. Go/headless hosts only.
+	NormalWindowSelectors *connect.ProviderSelectors `json:"-"`
+	// Gives the device's multi clients no limited window: a fraction of 0
+	// (`connect.MultiClientSettings.LimitedWindowSizeFraction`) in place of
+	// connect's default, which the developer override
+	// (SetLimitedWindowSizeFraction, ResetLimitedWindowSizeFraction) does not
+	// change. Off by default, as apps keep it. The proxy service turns it on
+	// beside NormalWindowSelectors ipv4 and any. Out of the settings json.
+	//gomobile:noexport Go-only hosted window policy.
+	DisableLimitedWindow bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2857,14 +2874,22 @@ func applyPlatformTransportMemoryUsage(
 // The window policy the host chose for every multi client of the device: the
 // process counters its windows count into, whether its strict windows hand
 // drained slots over, whether its windows hold their refill while the payer is
-// out of balance or while no user is active, and whose record of user activity
-// they read.
+// out of balance or while no user is active, whose record of user activity
+// they read, which providers its normal windows ask for, and whether it has a
+// limited window. Applied after the developer override of the limited
+// window's fraction, so a host's DisableLimitedWindow outranks it.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
 	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
 	settings.OutOfBalanceRefillProbe = deviceLocalSettings.OutOfBalanceRefillProbe
 	settings.IdleRefillHold = deviceLocalSettings.IdleRefillHold
 	settings.UserActivitySince = deviceLocalSettings.UserActivitySince
+	if deviceLocalSettings.NormalWindowSelectors != nil {
+		settings.NormalWindowSelectors = *deviceLocalSettings.NormalWindowSelectors
+	}
+	if deviceLocalSettings.DisableLimitedWindow {
+		settings.LimitedWindowSizeFraction = 0
+	}
 }
 
 // Keeps an absent/reset window unknown instead of manufacturing readiness.
