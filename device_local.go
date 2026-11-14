@@ -409,9 +409,12 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// the steady-memory gate has not failed: the limited window follows
 		// connect's fraction (D11.5; set 1 here if it fails)
 		lowMemoryLimitedWindowSizeMax: 0,
-		defaultH1ReceiveCount:         clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
-		hasDefaultH1ReceiveCount:      true,
-		ProviderSendBorrowByteCount:   0,
+		// the 32-MiB tier keeps half its quality window while connect's
+		// default is the full size (see the field)
+		lowMemoryLimitedWindowSizeFraction: 0.5,
+		defaultH1ReceiveCount:              clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
+		hasDefaultH1ReceiveCount:           true,
+		ProviderSendBorrowByteCount:        0,
 		// a strict window hands a drained slot to its replacement instead of
 		// building candidates its hard max refuses (see the field)
 		StrictWindowHandover: true,
@@ -733,6 +736,18 @@ type DeviceLocalSettings struct {
 	// once it fails. Non-positive is no bound. Unexported, so the bound
 	// settings and the c abi json do not change.
 	lowMemoryLimitedWindowSizeMax int
+	// The limited window's fraction of the largest normal window under the
+	// low-memory policy at or below LowMemoryDeviceTargetByteCount: iOS and
+	// the hosted proxies that share its 32-MiB target. Connect's default is 1,
+	// the normal window's size (server FP2-PROTOCOL.md D8, 2026-11-13); this
+	// tier keeps 0.5, 2 limited clients beside its quality window of 5, until
+	// the owner decides (hold of 2026-11-13). Its iOS extension already runs
+	// its Go heap at the 32-MiB soft limit and 35-40 MiB of phys_footprint
+	// with 8 window clients, under frequent memory-pressure frees, and the
+	// full size would make 11. A larger target, Android's 64 MiB, and desktop
+	// take connect's. Non-positive takes connect's everywhere. A
+	// developer-menu fraction overrides it. Unexported, like the bound.
+	lowMemoryLimitedWindowSizeFraction float64
 	// Preserve constructor provenance when a caller overrides the target.
 	// A different H1 count is an explicit caller cap, including zero.
 	defaultH1ReceiveCount    int
@@ -5561,6 +5576,7 @@ func (self *DeviceLocal) applyDestination(
 			applyMobileLimitedWindowSettingsForPlatform(
 				settings,
 				self.settings.lowMemoryLimitedWindowSizeMax,
+				self.settings.lowMemoryLimitedWindowSizeFraction,
 				self.settings.MemoryTargetByteCount,
 				self.settings.LowMemoryProfile,
 			)
