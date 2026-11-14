@@ -50,6 +50,10 @@ type SidecarSettings struct {
 	// §18.4's host class: ios, android or desktop. Empty is this build's platform's: ios and android on those, desktop
 	// everywhere else.
 	HostClass string `json:"host_class,omitempty"`
+	// The remote backend alone: the directory that holds the daemon's socket where the instance's own (§5.9) is out of
+	// reach, which is a sandboxed macOS app's app-group container (§5.8's Pairing). Absolute. Empty dials §5.9's
+	// socket path for the instance.
+	DaemonSocketDir string `json:"daemon_socket_dir,omitempty"`
 }
 
 // The defaults: the default instance, no components, and the core's budget.

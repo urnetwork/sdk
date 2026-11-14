@@ -1,7 +1,8 @@
 //go:build !ios_extension && !js
 
 // sdk.Sidecar (§18.5, D-SDK-2): one network's sidecar for an app. The local backend runs the core in this process (the
-// Android and iOS apps); the remote one forwards to `ur daemon`'s control mode (§5.8; SDK-M8-02's NewSidecarRemote).
+// Android and iOS apps); the remote one forwards to `ur daemon`'s control mode (§5.8; NewSidecarRemote in
+// sidecar_remote.go, over sidecar_backend.go's sidecarBackend).
 // Only bound types cross: no sidecar-package value but the Go-only Core and CloseAndWait, which gobind skips. Every
 // exported call runs under trace, since a panic that crosses gobind exits the app (R-SDK-5).
 //
@@ -27,17 +28,6 @@ import (
 
 	"github.com/urnetwork/sidecar"
 )
-
-// The control-mode client a remote-mode Sidecar forwards each call to (§5.8). SDK-M8-02 builds it and grows it; nil
-// on the local backend.
-type sidecarRemote interface {
-	// The daemon's sidecar_id, nil before it has one.
-	sidecarId() *Id
-	// The daemon's state and its reason (§18.5's State), as GetState names them.
-	state() (state string, reason string)
-	// Ends the control session.
-	close()
-}
 
 // What a test adjusts in a local Sidecar. Production passes the zero value.
 type sidecarLocalOptions struct {
@@ -95,7 +85,8 @@ type Sidecar struct {
 	local     *sidecar.Sidecar
 	// the local backend's instance, closed once the core's run loop has ended
 	instance *sidecar.SidecarInstance
-	remote   sidecarRemote
+	// the remote backend (sidecar_backend.go, sidecar_remote.go); nil on the local one
+	remote sidecarBackend
 	// ends the core's event callback
 	removeEventCallback func()
 	closed              bool
@@ -313,6 +304,7 @@ func checkedSidecarSettingsWith(settings *SidecarSettings, needsStateDir bool, f
 		Components:            NewStringList(),
 		MemoryBudgetByteCount: settings.MemoryBudgetByteCount,
 		HostClass:             settings.HostClass,
+		DaemonSocketDir:       settings.DaemonSocketDir,
 	}
 	if _, err := sidecarHostClassOf(settings.HostClass); err != nil {
 		return nil, err
@@ -346,7 +338,7 @@ func checkedSidecarSettingsWith(settings *SidecarSettings, needsStateDir bool, f
 }
 
 // The backends, under the lock.
-func (self *Sidecar) backends() (*sidecar.Sidecar, sidecarRemote) {
+func (self *Sidecar) backends() (*sidecar.Sidecar, sidecarBackend) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.local, self.remote
@@ -398,7 +390,7 @@ func (self *Sidecar) Close() {
 	trace(func() {
 		var local *sidecar.Sidecar
 		var instance *sidecar.SidecarInstance
-		var remote sidecarRemote
+		var remote sidecarBackend
 		var removeEventCallback func()
 		var evs *SidecarEvs
 		alreadyClosed := func() bool {

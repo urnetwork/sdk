@@ -7,6 +7,7 @@ package sdk
 // its daemon's state and refuses to unlock.
 
 import (
+	"context"
 	"testing"
 
 	"github.com/urnetwork/sidecar"
@@ -29,6 +30,22 @@ func (self *testSidecarRemote) state() (string, string) {
 
 func (self *testSidecarRemote) close() {
 	self.closed = true
+}
+
+func (self *testSidecarRemote) generation() int64 {
+	return 0
+}
+
+func (self *testSidecarRemote) refresh(ctx context.Context) error {
+	return nil
+}
+
+func (self *testSidecarRemote) pair(ctx context.Context, childJwt string) (*sidecarControlPairReply, error) {
+	return nil, errSidecarRemoteOffline
+}
+
+func (self *testSidecarRemote) call(ctx context.Context, method string, params any, confirmed bool, result any) error {
+	return errSidecarRemoteOffline
 }
 
 // A local Sidecar's state is its core's: unenrolled before enrollment, and locked while the key store is.

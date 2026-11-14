@@ -12,7 +12,7 @@
 // becomes the host's TokenSource before the enrollment runs, so the generation that enrollment starts finds it; a
 // refused enrollment drops it and keeps the session that was there. The device's Api never holds the child's token.
 //
-// The remote backend pairs instead (§5.8's pairing, SDK-M8-02), and forwarding's setup for the app's VPN component
+// The remote backend pairs instead (§5.8's pairing; pairWithDeviceApi in sidecar_remote.go), and forwarding's setup for the app's VPN component
 // after an enrollment is SDK-M8-07's wiring (DESIGN-DETAILS 4.7).
 
 package sdk
@@ -26,9 +26,6 @@ import (
 
 	"github.com/urnetwork/sidecar"
 )
-
-// The remote backend pairs with its daemon rather than enroll a child here.
-var errSidecarRemoteEnroll = errors.New("a remote-mode sidecar pairs with its daemon (§5.8)")
 
 // The child client's description and spec, as api lists them beside the device's.
 const (
@@ -78,7 +75,8 @@ func (self *Sidecar) enrollWithDeviceApi(ctx context.Context, deviceApi *Api) (s
 	local, remote := self.backends()
 	switch {
 	case remote != nil:
-		return "", errSidecarRemoteEnroll
+		// §5.8's pairing: the device mints the child and gives it to the daemon (sidecar_remote.go)
+		return self.pairWithDeviceApi(ctx, remote, deviceApi)
 	case local == nil || self.host == nil:
 		return "", sidecar.ErrSidecarClosed
 	case deviceApi == nil || deviceApi.GetByJwt() == "":

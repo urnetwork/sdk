@@ -9,7 +9,6 @@ package sdk
 // and the core's; the platform is a closed loopback port, so nothing leaves the machine.
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -170,8 +169,4 @@ func TestEnrollWithDeviceKeepsNothingFromARefusedMint(t *testing.T) {
 		t.Fatalf("the state after a refused enrollment: %s", state)
 	}
 
-	remote := &Sidecar{ctx: context.Background(), remote: &testSidecarRemote{}}
-	if _, err := remote.enrollWithDeviceApi(ctx, deviceApi); err != errSidecarRemoteEnroll {
-		t.Fatalf("a remote backend enrolled: %v", err)
-	}
 }
