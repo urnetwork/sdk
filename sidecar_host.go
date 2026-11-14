@@ -14,6 +14,7 @@
 package sdk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -135,8 +136,14 @@ func sidecarServiceUrlOf(apiUrl string, apiLabel string, serviceLabel string) (s
 	return serviceUrl.String(), nil
 }
 
-// Builds a component of a local Sidecar from its core, which it attaches to (sidecar.Sidecar.AddComponent).
-type sidecarComponentFactory func(local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error)
+// Builds a component of a local Sidecar from its core, which it attaches to (sidecar.Sidecar.AddComponent). ctx ends
+// with the Sidecar. A factory that needs the network the core enrolls in answers errSidecarComponentNotEnrolled while
+// there is none, and the Sidecar builds it again once EnrollWithDevice has enrolled it.
+type sidecarComponentFactory func(ctx context.Context, local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error)
+
+// What a factory answers, wrapped, before the core is enrolled in a network: the component waits for the enrollment
+// rather than refuse the Sidecar, since an app opens its Sidecar before its first EnrollWithDevice.
+var errSidecarComponentNotEnrolled = errors.New("the component needs an enrolled network")
 
 // The factories the wrappers register by component name (SDK-M8-03's evs and sockets, SDK-M8-04's mail, ...). A name
 // with none is refused by NewSidecarLocal: the shell binds no component of its own.

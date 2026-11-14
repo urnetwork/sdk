@@ -50,6 +50,20 @@ type sidecarLocalOptions struct {
 	// Nil: the core scans this host's stores for a readable network credential (D-TRUST-3), as an app's does. A test
 	// sets what the scan finds, so the build machine's own app state never decides it.
 	hostCredentialStores func() []sidecar.SidecarHostCredentialStore
+	// Factories by component name that a test puts in place of the registered ones. Nil takes the registry's.
+	componentFactories map[string]sidecarComponentFactory
+	// Nil: defaultSidecarEvsSettings.
+	evsSettings *sidecarEvsSettings
+	// Nil: defaultSidecarSocketsSettings.
+	socketsSettings *sidecarSocketsSettings
+}
+
+// The factory of name: a test's in place of the registry's.
+func (self *sidecarLocalOptions) componentFactoryOf(name string) (sidecarComponentFactory, bool) {
+	if factory, ok := self.componentFactories[name]; ok {
+		return factory, true
+	}
+	return sidecarComponentFactoryOf(name)
 }
 
 // A host whose credential scan a test set (sidecarLocalOptions.hostCredentialStores).
@@ -85,6 +99,18 @@ type Sidecar struct {
 	// ends the core's event callback
 	removeEventCallback func()
 	closed              bool
+	// the components the factories built, by name, each attached to the core
+	components map[string]sidecar.SidecarComponent
+	// the names whose factories wait for the core's enrollment, in the settings' order
+	deferredComponents []string
+	// what builds a component by name: the registry's factories, or a test's
+	componentFactoryOf func(name string) (sidecarComponentFactory, bool)
+	// the wrappers' tunables
+	evsSettings     *sidecarEvsSettings
+	socketsSettings *sidecarSocketsSettings
+	// the wrappers, made at their first Get
+	evs     *SidecarEvs
+	sockets *SidecarSockets
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -110,7 +136,7 @@ func newSidecarLocal(
 	if keyStore == nil {
 		return nil, errors.New("a local sidecar needs the app's key store")
 	}
-	settings, err := checkedSidecarSettings(settings, options.backend == nil)
+	settings, err := checkedSidecarSettingsWith(settings, options.backend == nil, options.componentFactoryOf)
 	if err != nil {
 		return nil, err
 	}
@@ -169,34 +195,38 @@ func newSidecarLocal(
 	if eventSettings == nil {
 		eventSettings = defaultSidecarEventSettings()
 	}
+	evsSettings := options.evsSettings
+	if evsSettings == nil {
+		evsSettings = defaultSidecarEvsSettings()
+	}
+	socketsSettings := options.socketsSettings
+	if socketsSettings == nil {
+		socketsSettings = defaultSidecarSocketsSettings()
+	}
 	self := &Sidecar{
-		ctx:            cancelCtx,
-		cancel:         cancel,
-		settings:       settings,
-		presenceSigner: presenceSigner,
-		events:         newSidecarEventDispatch(cancelCtx, eventSettings),
-		host:           host,
-		hostClass:      hostClass,
-		closeDone:      make(chan struct{}),
-		local:          local,
-		instance:       instance,
+		ctx:                cancelCtx,
+		cancel:             cancel,
+		settings:           settings,
+		presenceSigner:     presenceSigner,
+		events:             newSidecarEventDispatch(cancelCtx, eventSettings),
+		host:               host,
+		hostClass:          hostClass,
+		closeDone:          make(chan struct{}),
+		local:              local,
+		instance:           instance,
+		components:         map[string]sidecar.SidecarComponent{},
+		componentFactoryOf: options.componentFactoryOf,
+		evsSettings:        evsSettings,
+		socketsSettings:    socketsSettings,
 	}
 	self.removeEventCallback = local.AddEventCallback(self.events.offer)
 	for _, name := range components {
-		factory, _ := sidecarComponentFactoryOf(name)
-		component, err := traceWithReturnError(func() (sidecar.SidecarComponent, error) {
-			return factory(local, settings)
-		})
-		if err == nil && component == nil {
-			err = errors.New("its factory built nothing")
-		}
-		if err == nil {
-			if _, addErr := local.AddComponent(component); addErr != nil {
-				component.Close()
-				err = addErr
+		if err := self.addComponent(local, name); err != nil {
+			if errors.Is(err, errSidecarComponentNotEnrolled) {
+				// built once EnrollWithDevice has enrolled the core (addDeferredComponents)
+				self.deferredComponents = append(self.deferredComponents, name)
+				continue
 			}
-		}
-		if err != nil {
 			self.Close()
 			return nil, fmt.Errorf("component %s: %w", name, err)
 		}
@@ -207,10 +237,73 @@ func newSidecarLocal(
 	return self, nil
 }
 
+// Builds name's component by its factory and attaches it to local, keeping it by name. A factory's refusal, its
+// errSidecarComponentNotEnrolled among them, attaches nothing.
+func (self *Sidecar) addComponent(local *sidecar.Sidecar, name string) error {
+	factory, ok := self.componentFactoryOf(name)
+	if !ok {
+		return fmt.Errorf("the sidecar component %q is not bound in this sdk yet", name)
+	}
+	component, err := traceWithReturnError(func() (sidecar.SidecarComponent, error) {
+		return factory(self.ctx, local, self.settings)
+	})
+	if err != nil {
+		return err
+	}
+	if component == nil {
+		return errors.New("its factory built nothing")
+	}
+	if _, err := local.AddComponent(component); err != nil {
+		component.Close()
+		return err
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.components[name] = component
+	return nil
+}
+
+// Builds and attaches each component that waited for the enrollment, once EnrollWithDevice has enrolled the core. One
+// that still refuses waits on for the next enrollment, its wrapper answering unavailable meanwhile, and the enrollment
+// stands: it answers the names that wait.
+func (self *Sidecar) addDeferredComponents(local *sidecar.Sidecar) []string {
+	names := func() []string {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		names := self.deferredComponents
+		self.deferredComponents = nil
+		return names
+	}()
+	waiting := []string{}
+	for _, name := range names {
+		if err := self.addComponent(local, name); err != nil {
+			waiting = append(waiting, name)
+		}
+	}
+	if 0 < len(waiting) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.deferredComponents = append(waiting, self.deferredComponents...)
+	}
+	return waiting
+}
+
+// The component the factories built under name, nil while none is attached.
+func (self *Sidecar) component(name string) sidecar.SidecarComponent {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.components[name]
+}
+
 // A copy of settings that NewSidecarLocal can run: the default instance for an empty one, an instance name the core
 // takes, an absolute StateDir where one is needed, no negative budget, and only components this sdk binds, each
 // once.
 func checkedSidecarSettings(settings *SidecarSettings, needsStateDir bool) (*SidecarSettings, error) {
+	return checkedSidecarSettingsWith(settings, needsStateDir, sidecarComponentFactoryOf)
+}
+
+// checkedSidecarSettings with the factories of factoryOf.
+func checkedSidecarSettingsWith(settings *SidecarSettings, needsStateDir bool, factoryOf func(name string) (sidecarComponentFactory, bool)) (*SidecarSettings, error) {
 	if settings == nil {
 		return nil, errors.New("a local sidecar needs settings")
 	}
@@ -243,7 +336,7 @@ func checkedSidecarSettings(settings *SidecarSettings, needsStateDir bool) (*Sid
 			if checked.Components.Contains(name) {
 				return nil, fmt.Errorf("the sidecar component %q is named twice", name)
 			}
-			if _, ok := sidecarComponentFactoryOf(name); !ok {
+			if _, ok := factoryOf(name); !ok {
 				return nil, fmt.Errorf("the sidecar component %q is not bound in this sdk yet", name)
 			}
 			checked.Components.Add(name)
@@ -307,6 +400,7 @@ func (self *Sidecar) Close() {
 		var instance *sidecar.SidecarInstance
 		var remote sidecarRemote
 		var removeEventCallback func()
+		var evs *SidecarEvs
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -315,6 +409,7 @@ func (self *Sidecar) Close() {
 			}
 			self.closed = true
 			local, instance, remote, removeEventCallback = self.local, self.instance, self.remote, self.removeEventCallback
+			evs = self.evs
 			return false
 		}()
 		if alreadyClosed {
@@ -324,6 +419,10 @@ func (self *Sidecar) Close() {
 			removeEventCallback()
 		}
 		self.events.close()
+		// no repo change reaches a listener after Close returns, as no event does
+		if evs != nil {
+			evs.close()
+		}
 		if remote != nil {
 			remote.close()
 		}

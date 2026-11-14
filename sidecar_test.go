@@ -203,7 +203,7 @@ func TestNewSidecarLocalRefusesWhatItCannotRun(t *testing.T) {
 		{name: "no state dir", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.StateDir = "" })},
 		{name: "negative budget", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.MemoryBudgetByteCount = -1 })},
 		{name: "unknown component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add("ntp") })},
-		{name: "unbound component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add(SidecarComponentEvs) })},
+		{name: "unbound component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add(SidecarComponentTls) })},
 		{name: "an address for the api", space: newTestSidecarSpace("https://192.0.2.1", "wss://192.0.2.1"), keyStore: world.keyStore, settings: newSettings(nil)},
 		{name: "an api host without the api label", space: newTestSidecarSpace("https://gateway.sdktest.example", "wss://connect.sdktest.example"), keyStore: world.keyStore, settings: newSettings(nil)},
 	}
@@ -304,7 +304,7 @@ func withTestSidecarComponentFactory(t *testing.T, name string, factory sidecarC
 func TestComponentsAttachByName(t *testing.T) {
 	component := &testSidecarComponent{name: SidecarComponentTls, closed: make(chan struct{})}
 	var builtFrom *sidecar.Sidecar
-	withTestSidecarComponentFactory(t, SidecarComponentTls, func(local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
+	withTestSidecarComponentFactory(t, SidecarComponentTls, func(ctx context.Context, local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
 		builtFrom = local
 		return component, nil
 	})
@@ -325,7 +325,7 @@ func TestComponentsAttachByName(t *testing.T) {
 		t.Error("the component outlived the Sidecar")
 	}
 
-	withTestSidecarComponentFactory(t, SidecarComponentMail, func(local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
+	withTestSidecarComponentFactory(t, SidecarComponentMail, func(ctx context.Context, local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
 		return nil, errors.New("synthetic factory refusal")
 	})
 	failing := DefaultSidecarSettings()

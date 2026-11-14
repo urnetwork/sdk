@@ -111,6 +111,8 @@ func (self *Sidecar) enrollWithDeviceApi(ctx context.Context, deviceApi *Api) (s
 	if err != nil {
 		return "", err
 	}
+	// the components that waited for a network, sockets among them, now the enrollment has given one
+	self.addDeferredComponents(local)
 	return identity.SidecarId.String(), nil
 }
 

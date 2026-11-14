@@ -123,14 +123,7 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		VerifiedSinceMillis: sidecarMillisOf(event.VerifiedSince),
 	}
 	if erasure := event.Erasure; erasure != nil {
-		bound.Erasure = &SidecarErasure{
-			ErasureId:     newId([16]byte(erasure.ErasureId)),
-			State:         erasure.State,
-			ObjectsLeft:   erasure.ObjectsLeft,
-			BytesLeft:     erasure.BytesLeft,
-			NextTryMillis: sidecarMillisOf(erasure.NextTry),
-			FinishMillis:  sidecarMillisOf(erasure.Finish),
-		}
+		bound.Erasure = sidecarErasureOf(erasure)
 	}
 	return bound
 }

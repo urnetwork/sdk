@@ -1394,7 +1394,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1348) ==
+== skipped (1364) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -2295,6 +2295,8 @@ NewRedeemedBalanceCodeList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewReferralCodeViewControllerWithApi: unmappable: param ctx: external type context.Context
 NewRegionGroupList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewRegionalDnsServerList: skipped: pattern ^New[A-Za-z0-9]*List$
+NewSidecarErasureList: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+NewSidecarHistoryVersionList: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 NewSidecarLocal: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 NewSimClient: unmappable: param ctx: external type context.Context
 NewSimProvider: unmappable: param ctx: external type context.Context
@@ -2485,14 +2487,24 @@ SetPointsLeaderboardPublicError: data: crosses as json
 SetPointsLeaderboardPublicResult: data: crosses as json
 SetupNewDeviceCallback: callback interface: crosses as c function pointer
 Sidecar: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarBytes: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarBytesCallback: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarComponentBridge: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarComponentEvs: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarComponentMail: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarComponentSockets: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarComponentTls: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarErasure: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarErasureList: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarErasures: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarErasuresCallback: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarEvent: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarEventListener: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarEvs: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarHistory: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarHistoryCallback: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarHistoryVersion: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarHistoryVersionList: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarHostClassAndroid: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarHostClassDesktop: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarHostClassIos: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
@@ -2503,6 +2515,8 @@ SidecarKeyStoreOk: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's
 SidecarPresenceSigner: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarPushPlatformApns: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarPushPlatformFcm: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarRepoChange: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarRepoChangeListener: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarResult: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarResultCallback: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarSecret: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
@@ -2511,6 +2525,8 @@ SidecarSecretFailed: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5
 SidecarSecretLocked: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarSecretPresent: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SidecarSettings: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarSocketListener: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
+SidecarSockets: skipped: sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)
 SimClient: data: crosses as json
 SimClientConfig: data: crosses as json
 SimProvider: data: crosses as json
