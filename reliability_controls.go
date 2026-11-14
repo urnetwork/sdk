@@ -71,6 +71,9 @@ type ReliabilitySettings struct {
 	// before it is treated as failed and removed. 0 waits for the 30s ack
 	// timeout instead, which is what freezes a flow until the app retries
 	SendStallTimeoutMillis int64
+	// How long a hole in an exit's return stream may stay open before new
+	// flows avoid the exit until it fills. 0 disables the hold
+	ReceiveGapStallTimeoutMillis int64
 	// ClusterAffinityFallback groups a site's ips when no hostname is known
 	ClusterAffinityFallback bool
 	// ServerNameAffinityBridge converges late-named flows onto the exit an
@@ -330,6 +333,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		DialFailureRerace:             reliabilitySettings.DialFailureRerace,
 		TcpCollapseMaxHoldMillis:      reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
 		SendStallTimeoutMillis:        reliabilitySettings.SendStallTimeout.Milliseconds(),
+		ReceiveGapStallTimeoutMillis:  reliabilitySettings.ReceiveGapStallTimeout.Milliseconds(),
 		ClusterAffinityFallback:       reliabilitySettings.ClusterAffinityFallback,
 		ServerNameAffinityBridge:      reliabilitySettings.ServerNameAffinityBridge,
 		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
@@ -388,6 +392,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		DialFailureRerace:          self.DialFailureRerace,
 		TcpCollapseMaxHold:         millis(self.TcpCollapseMaxHoldMillis),
 		SendStallTimeout:           millis(self.SendStallTimeoutMillis),
+		ReceiveGapStallTimeout:     millis(self.ReceiveGapStallTimeoutMillis),
 		ClusterAffinityFallback:    self.ClusterAffinityFallback,
 		ServerNameAffinityBridge:   self.ServerNameAffinityBridge,
 		SequenceIdleTimeout:        millis(self.SequenceIdleTimeoutMillis),
