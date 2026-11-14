@@ -203,7 +203,8 @@ func TestNewSidecarLocalRefusesWhatItCannotRun(t *testing.T) {
 		{name: "no state dir", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.StateDir = "" })},
 		{name: "negative budget", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.MemoryBudgetByteCount = -1 })},
 		{name: "unknown component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add("ntp") })},
-		{name: "unbound component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add(SidecarComponentTls) })},
+		// an app lists no bridge, since forwarding is its VPN component's (§18.5), so no factory binds it
+		{name: "unbound component", space: world.space, keyStore: world.keyStore, settings: newSettings(func(settings *SidecarSettings) { settings.Components.Add(SidecarComponentBridge) })},
 		{name: "an address for the api", space: newTestSidecarSpace("https://192.0.2.1", "wss://192.0.2.1"), keyStore: world.keyStore, settings: newSettings(nil)},
 		{name: "an api host without the api label", space: newTestSidecarSpace("https://gateway.sdktest.example", "wss://connect.sdktest.example"), keyStore: world.keyStore, settings: newSettings(nil)},
 	}
@@ -288,13 +289,25 @@ func (self *testSidecarComponent) Close() {
 	})
 }
 
-// Registers factory for name until the test ends, as a wrapper registers at init.
+// Puts factory in place for name until the test ends, as a wrapper registers at init, then puts back what was there:
+// the factory of a component a wrapper binds, tls's among them, which the test stands in for, or none.
 func withTestSidecarComponentFactory(t *testing.T, name string, factory sidecarComponentFactory) {
 	t.Helper()
-	registerSidecarComponentFactory(name, factory)
+	previous, bound := sidecarComponentFactoryOf(name)
+	if bound {
+		sidecarComponentFactories.stateLock.Lock()
+		sidecarComponentFactories.factories[name] = factory
+		sidecarComponentFactories.stateLock.Unlock()
+	} else {
+		registerSidecarComponentFactory(name, factory)
+	}
 	t.Cleanup(func() {
 		sidecarComponentFactories.stateLock.Lock()
 		defer sidecarComponentFactories.stateLock.Unlock()
+		if bound {
+			sidecarComponentFactories.factories[name] = previous
+			return
+		}
 		delete(sidecarComponentFactories.factories, name)
 	})
 }

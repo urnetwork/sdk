@@ -9,7 +9,8 @@
 // take the space's api url with its api label swapped for the label §18.9's host table gives each service, keeping
 // an env's prefix, port and path (api.<host> gives evs.<host>, test-api.<host> test-evs.<host>), as connect's label
 // rule takes alt from connect. A test or staging space never reaches production's services (QD-119), and an api url
-// with no api label to swap, an address or a single label, refuses rather than guess.
+// with no api label to swap, an address or a single label, refuses rather than guess. certs' audience, which a
+// certificate order's service token names, takes the label certs the same way, as an origin with no path.
 
 package sdk
 
@@ -98,6 +99,10 @@ func applySidecarServiceUrls(networkSpace *NetworkSpace, settings *sidecar.Sidec
 		}
 		urls[service] = serviceUrl
 	}
+	certsResource, err := sidecarCertsResourceOf(apiUrl, apiLabel)
+	if err != nil {
+		return err
+	}
 	settings.ApiUrl = apiUrl
 	settings.PlatformUrl = networkSpace.GetPlatformUrl()
 	settings.AuthUrl = urls[sidecar.SidecarHostServiceAuth]
@@ -105,7 +110,26 @@ func applySidecarServiceUrls(networkSpace *NetworkSpace, settings *sidecar.Sidec
 	settings.GkmUrl = urls[sidecar.SidecarHostServiceGkm]
 	settings.SocketsUrl = urls[sidecar.SidecarHostServiceSockets]
 	settings.DnsUrl = urls[sidecar.SidecarHostServiceDns]
+	settings.Tls.CertsResource = certsResource
 	return nil
+}
+
+// The label of certs' service audience (§7.8, §13.8): a certificate order's service token names
+// https://certs.<domain>, which no row of the host table names, since certs' routes answer at api and no app dials it.
+const sidecarCertsLabel = "certs"
+
+// The audience a certificate order's service token names (SidecarTlsSettings.CertsResource, TLS-M8-01): the api url
+// with its api label swapped for certs as the services' are, with no path, since an audience is an origin.
+func sidecarCertsResourceOf(apiUrl string, apiLabel string) (string, error) {
+	certsUrl, err := sidecarServiceUrlOf(apiUrl, apiLabel, sidecarCertsLabel)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(certsUrl)
+	if err != nil {
+		return "", err
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String(), nil
 }
 
 // apiUrl with its first label's apiLabel swapped for serviceLabel, an env's "<env>-" prefix, the port and the path

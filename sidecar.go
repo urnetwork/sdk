@@ -46,6 +46,9 @@ type sidecarLocalOptions struct {
 	evsSettings *sidecarEvsSettings
 	// Nil: defaultSidecarSocketsSettings.
 	socketsSettings *sidecarSocketsSettings
+	// Called once the components that waited for the core's identity have been built for it
+	// (addDeferredComponentsOnceIdentified). Nil calls nothing.
+	deferredComponentsBuilt func()
 }
 
 // The factory of name: a test's in place of the registry's.
@@ -80,6 +83,9 @@ type Sidecar struct {
 	hostClass *sidecarHostClass
 	// closed once Close's teardown has finished
 	closeDone chan struct{}
+	// held across one build of the waiting components, so a second waits for the first to finish: an
+	// EnrollWithDevice that returns finds them built, whichever started them. Taken before stateLock, never inside it.
+	deferredBuildLock sync.Mutex
 
 	stateLock sync.Mutex
 	local     *sidecar.Sidecar
@@ -214,7 +220,8 @@ func newSidecarLocal(
 	for _, name := range components {
 		if err := self.addComponent(local, name); err != nil {
 			if errors.Is(err, errSidecarComponentNotEnrolled) {
-				// built once EnrollWithDevice has enrolled the core (addDeferredComponents)
+				// built once EnrollWithDevice has enrolled the core, or once a restart's unlock gives it its identity
+				// (addDeferredComponents)
 				self.deferredComponents = append(self.deferredComponents, name)
 				continue
 			}
@@ -225,7 +232,24 @@ func newSidecarLocal(
 	// the key store's wrap of U, as ur daemon opens it at start. A store that is locked, failed or lost creates
 	// nothing and leaves the core Locked or Unenrolled(keystore_lost); the app calls Unlock("") once it can answer
 	local.Unlock(nil)
+	if 0 < len(self.deferredComponents) {
+		go self.addDeferredComponentsOnceIdentified(local, options.deferredComponentsBuilt)
+	}
 	return self, nil
+}
+
+// Builds the components that waited, once the core holds an identity, unless the Sidecar ends first, then calls built
+// when it is set: at a restart the keychain's opening, by the Unlock above or the app's own, gives the core its
+// identity with no EnrollWithDevice to build them, and a component that needs the identity, tls among them, waits for
+// it (TLS-M8-01). A first enrollment builds them in EnrollWithDevice as well; whichever comes second finds none left.
+func (self *Sidecar) addDeferredComponentsOnceIdentified(local *sidecar.Sidecar, built func()) {
+	if _, err := awaitSidecarIdentity(self.ctx, local); err != nil {
+		return
+	}
+	self.addDeferredComponents(local)
+	if built != nil {
+		built()
+	}
 }
 
 // Builds name's component by its factory and attaches it to local, keeping it by name. A factory's refusal, its
@@ -256,8 +280,10 @@ func (self *Sidecar) addComponent(local *sidecar.Sidecar, name string) error {
 
 // Builds and attaches each component that waited for the enrollment, once EnrollWithDevice has enrolled the core. One
 // that still refuses waits on for the next enrollment, its wrapper answering unavailable meanwhile, and the enrollment
-// stands: it answers the names that wait.
+// stands: it answers the names that wait. A build already running finishes before this one looks.
 func (self *Sidecar) addDeferredComponents(local *sidecar.Sidecar) []string {
+	self.deferredBuildLock.Lock()
+	defer self.deferredBuildLock.Unlock()
 	names := func() []string {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()

@@ -10,6 +10,10 @@
 // worker thread too, waiting at most its timeout. ListenContext is Go only: a net.Listener for an app's own Go server,
 // which gobind skips and mobileexports names (SDK-M8-06).
 //
+// A tls/ name is the tls component's (sidecar_tls.go): its visitors' TLS ends on this device's key in §13.7's front,
+// which hands Accept only what an audience check passed, as plain HTTP/1.1, so the app never sees the edge's
+// ciphertext. Without the tls component named, a tls/ Listen answers that the sidecar runs none.
+//
 // Listening follows §18.4's table: on iOS and Android in the foreground, the sidecar role running only while the app
 // is open (owner decision 197), and never on a Worker, whose build links no sdk.Sidecar (this file is !js). An app
 // reports its foreground through SDK-M10-02's host calls; until those land this file rests on the role's own rule,
@@ -95,8 +99,11 @@ func (self *sidecarSocketsCoreBackend) Dial(ctx context.Context, address string)
 	return conn, nil
 }
 
-// See sidecarSocketsBackend.
+// See sidecarSocketsBackend. A tls/ name goes through the tls component's front (sidecar_tls.go).
 func (self *sidecarSocketsCoreBackend) Listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error) {
+	if sidecarTlsAddress(address) {
+		return listenSidecarTls(ctx, self.local, address, weight)
+	}
 	listener, err := self.local.Listen(ctx, address, &sidecar.SocketListenSettings{Weight: weight})
 	if err != nil {
 		return nil, err
