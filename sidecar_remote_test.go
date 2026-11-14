@@ -980,6 +980,10 @@ func TestRemoteSettingsAndClose(t *testing.T) {
 	if err := backend.refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// no wrapper reaches the daemon's engines yet, and no core runs here
+	if remote.GetEvs() != nil || remote.GetSockets() != nil || remote.Core() != nil {
+		t.Fatal("a remote sidecar answered a wrapper or a core")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), testSidecarTimeout)
 	defer cancel()
 	if err := remote.CloseAndWait(ctx); err != nil {
