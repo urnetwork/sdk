@@ -349,7 +349,9 @@ func (self *Api) requestByJwt(method string, requestUrl string, byJwt string) (s
 // The request seams every API call goes through. Each sends the credential
 // requestByJwt selects for its route over the installed transport. A confirmed
 // rejection of the network credential it sent rejects that credential, with
-// the response's cause (api_auth_logout_cause.go).
+// the response's cause (api_auth_logout_cause.go). Each reports its result to
+// the can't-reach rule (cant_reach.go), for which an answer ends a run of
+// failures.
 
 // An invocation-bound request supplies its credential generation so dispatch
 // cannot attribute its rejection to a later sign-in with equal token bytes.
@@ -366,6 +368,7 @@ func (self *Api) getHttpPostRaw(expectedNetworkGeneration ...uint64) connect.Htt
 		}
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		noteCantReachApiResult(requestErr)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
 			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
@@ -385,6 +388,7 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 		target, tracked := self.networkRequestTarget(byJwt)
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpGetRaw(ctx, requestUrl, byJwt)
+		noteCantReachApiResult(requestErr)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
 			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
@@ -404,6 +408,7 @@ func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 		target, tracked := self.networkRequestTarget(byJwt)
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpPostStreamRaw(ctx, requestUrl, body, byJwt)
+		noteCantReachApiResult(requestErr)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
 			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
