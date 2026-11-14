@@ -8,7 +8,7 @@ import (
 
 	// "fmt"
 	"math"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"sync"
 	"time"
 
@@ -1336,8 +1336,8 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 
 					for range 8 {
 						c := gridPointCoord{
-							X: mathrand.Intn(self.sideLength),
-							Y: mathrand.Intn(self.sideLength),
+							X: mathrand.IntN(self.sideLength),
+							Y: mathrand.IntN(self.sideLength),
 						}
 						if gridPoint, ok := self.gridPoints[c]; ok && gridPoint.Plottable && !gridPoint.Occupied {
 							return gridPoint
@@ -1353,7 +1353,7 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					if len(unoccupiedGridPoints) == 0 {
 						return nil
 					}
-					return unoccupiedGridPoints[mathrand.Intn(len(unoccupiedGridPoints))]
+					return unoccupiedGridPoints[mathrand.IntN(len(unoccupiedGridPoints))]
 				}
 
 				self.resize()
