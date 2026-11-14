@@ -15,9 +15,9 @@ package sdk
 // drifted, so the same failure raised the prompt on one platform and not on
 // another; and only Windows raised it for a signed-in stall (support inbox
 // 7956, 7973: mainland China, where the platform's own names are blocked).
-// The apps now ask the sdk, and keep only what is truly theirs: their own
-// transport exceptions (an Android UnknownHostException, an Apple
-// NSURLErrorDomain code) and the screens.
+// The apps now ask the sdk about every failure, their own transport failures
+// too (an Android UnknownHostException by its text, an Apple NSURLErrorDomain
+// code), and keep only the screens.
 //
 // Neither changes the connection region: the prompt only opens the picker.
 //
@@ -25,7 +25,9 @@ package sdk
 // up again and again on a working iOS tunnel). A signed-in window publishes
 // platform-unreachable only once its diagnosis has held for
 // connect.MultiClientSettings.WindowPlatformUnreachableHold, so the
-// transport reconnect after a connect server restart never turns it. An api
+// transport reconnect after a connect server restart never turns it, and the
+// connection's reason turns only when every trying window says it (connect
+// MergedMultiClientMonitor), so one window's lone exit never does. An api
 // failure raises the prompt only when can't-reach failures have kept coming
 // for cantReachSettings.ApiFailureHold with no answer from URnetwork between
 // them (cantReachRule), unless its text alone settles it: a name URnetwork's
@@ -130,6 +132,7 @@ var cantReachAppExceptionMarkers = []string{
 // is not URnetwork's settle it alone, as "no such host" and "x509: " do.
 const cantReachAppleUrlErrorDomain = "nsurlerrordomain"
 
+// each can't-reach code, and whether it settles it alone
 var cantReachAppleUrlErrorCodes = map[int]bool{
 	// NSURLErrorTimedOut
 	-1001: false,
