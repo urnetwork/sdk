@@ -152,6 +152,51 @@ func TestCheckBalanceCode(t *testing.T) {
 	if r.Result.Error != nil {
 		t.Errorf("unexpected error: %+v", r.Result.Error)
 	}
+	// a server that predates gift codes sends no kind: a data code
+	if r.Result.Kind != "" || r.Result.ProDays != 0 || r.Result.RedeemBy != nil {
+		t.Errorf("gift fields of a data answer = %q/%d/%v", r.Result.Kind, r.Result.ProDays, r.Result.RedeemBy)
+	}
+}
+
+// A gift code's check answer names its kind, the days of Pro it grants and
+// the last day it can be redeemed (GIFTOFPRIVACY.md 10.2).
+func TestCheckBalanceCodeGift(t *testing.T) {
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"balance": {
+				"start_time": "2026-11-13T00:00:00Z",
+				"end_time": "2027-11-13T00:00:00Z",
+				"balance_byte_count": 0
+			},
+			"kind": "pro_gift",
+			"pro_days": 365,
+			"redeem_by": "2027-11-13T00:00:00Z"
+		}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*CheckBalanceCodeResult](context.Background())
+	api.CheckBalanceCode(&CheckBalanceCodeArgs{Secret: "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}, callback)
+	r := awaitApiResult(t, c, "CheckBalanceCode never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if r.Result.Kind != BalanceCodeKindProGift {
+		t.Errorf("kind = %q", r.Result.Kind)
+	}
+	if r.Result.ProDays != 365 {
+		t.Errorf("pro days = %d", r.Result.ProDays)
+	}
+	redeemBy := time.Date(2027, 11, 13, 0, 0, 0, 0, time.UTC)
+	if r.Result.RedeemBy == nil || r.Result.RedeemBy.UnixMilli() != redeemBy.UnixMilli() {
+		t.Errorf("redeem by = %v", r.Result.RedeemBy)
+	}
+	if r.Result.Balance == nil || r.Result.Balance.BalanceByteCount != 0 {
+		t.Errorf("balance = %+v", r.Result.Balance)
+	}
+	if r.Result.Error != nil {
+		t.Errorf("unexpected error: %+v", r.Result.Error)
+	}
 }
 
 func TestCheckBalanceCodeUnknownCode(t *testing.T) {
@@ -191,6 +236,9 @@ func TestRedeemBalanceCodeDecodeAndClassify(t *testing.T) {
 	if got := path.Load(); got != "/subscription/redeem-balance-code" {
 		t.Errorf("path = %v", got)
 	}
+	if r.Result.Pro != nil {
+		t.Errorf("a refusal carries pro = %+v", r.Result.Pro)
+	}
 	// without the redeemed-code list the payload can only classify as invalid
 	if got := ClassifyBalanceCodeRedeem(r.Result, nil, secret); got != BalanceCodeRedeemOutcomeInvalid {
 		t.Errorf("classified %q", got)
@@ -201,6 +249,238 @@ func TestRedeemBalanceCodeDecodeAndClassify(t *testing.T) {
 	redeemed.Add(&RedeemedBalanceCode{Secret: secret})
 	if got := ClassifyBalanceCodeRedeem(r.Result, redeemed, secret); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
 		t.Errorf("classified %q", got)
+	}
+}
+
+// A gift code's redeem answer carries the year of Pro in `pro` beside a
+// transfer_balance of 0 bytes over the same window (GIFTOFPRIVACY.md 10.2),
+// so it classifies as redeemed, as it does in apps that predate `pro`. A data
+// code's answer carries no `pro`.
+func TestRedeemBalanceCodeGiftDecodeAndClassify(t *testing.T) {
+	cases := []struct {
+		name   string
+		answer string
+		// the answer carries pro
+		gift      bool
+		queued    bool
+		start     time.Time
+		end       time.Time
+		byteCount int64
+	}{
+		{
+			name: "gift, starts now",
+			answer: `{
+				"transfer_balance": {
+					"transfer_balance_id": "00000000-0000-0000-0000-000000000051",
+					"start_time": "2026-11-13T18:00:00Z",
+					"end_time": "2027-11-13T18:00:00Z",
+					"balance_byte_count": 0
+				},
+				"pro": {
+					"start_time": "2026-11-13T18:00:00Z",
+					"end_time": "2027-11-13T18:00:00Z",
+					"queued": false
+				}
+			}`,
+			gift:  true,
+			start: time.Date(2026, 11, 13, 18, 0, 0, 0, time.UTC),
+			end:   time.Date(2027, 11, 13, 18, 0, 0, 0, time.UTC),
+		},
+		{
+			// the network already pays for Pro until 2027-03-01: the gift
+			// year starts after it
+			name: "gift, queued after a paid period",
+			answer: `{
+				"transfer_balance": {
+					"transfer_balance_id": "00000000-0000-0000-0000-000000000052",
+					"start_time": "2027-03-01T00:00:00Z",
+					"end_time": "2028-02-29T00:00:00Z",
+					"balance_byte_count": 0
+				},
+				"pro": {
+					"start_time": "2027-03-01T00:00:00Z",
+					"end_time": "2028-02-29T00:00:00Z",
+					"queued": true
+				}
+			}`,
+			gift:   true,
+			queued: true,
+			start:  time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC),
+			end:    time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "data",
+			answer: `{
+				"transfer_balance": {
+					"transfer_balance_id": "00000000-0000-0000-0000-000000000053",
+					"start_time": "2026-11-13T18:00:00Z",
+					"end_time": "2027-11-13T18:00:00Z",
+					"balance_byte_count": 1099511627776
+				}
+			}`,
+			start:     time.Date(2026, 11, 13, 18, 0, 0, 0, time.UTC),
+			end:       time.Date(2027, 11, 13, 18, 0, 0, 0, time.UTC),
+			byteCount: 1099511627776,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, tc.answer)
+			})
+
+			secret := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			callback, c := connect.NewBlockingApiCallback[*RedeemBalanceCodeResult](context.Background())
+			api.RedeemBalanceCode(&RedeemBalanceCodeArgs{Secret: secret}, callback)
+			r := awaitApiResult(t, c, "RedeemBalanceCode never returned")
+			if r.Error != nil {
+				t.Fatal(r.Error)
+			}
+			transferBalance := r.Result.TransferBalance
+			if transferBalance == nil {
+				t.Fatal("transfer_balance did not decode")
+			}
+			if transferBalance.BalanceByteCount != tc.byteCount {
+				t.Errorf("balance byte count = %d, want %d", transferBalance.BalanceByteCount, tc.byteCount)
+			}
+			if transferBalance.StartTime == nil || transferBalance.StartTime.UnixMilli() != tc.start.UnixMilli() ||
+				transferBalance.EndTime == nil || transferBalance.EndTime.UnixMilli() != tc.end.UnixMilli() {
+				t.Errorf("transfer balance window = %v to %v", transferBalance.StartTime, transferBalance.EndTime)
+			}
+			pro := r.Result.Pro
+			if !tc.gift {
+				if pro != nil {
+					t.Errorf("a data answer carries pro = %+v", pro)
+				}
+			} else {
+				if pro == nil {
+					t.Fatal("pro did not decode")
+				}
+				if pro.Queued != tc.queued {
+					t.Errorf("queued = %v, want %v", pro.Queued, tc.queued)
+				}
+				if pro.StartTime == nil || pro.StartTime.UnixMilli() != tc.start.UnixMilli() ||
+					pro.EndTime == nil || pro.EndTime.UnixMilli() != tc.end.UnixMilli() {
+					t.Errorf("pro window = %v to %v", pro.StartTime, pro.EndTime)
+				}
+			}
+			if r.Result.Error != nil {
+				t.Errorf("unexpected error: %+v", r.Result.Error)
+			}
+			// redeemed, with or without the redeemed-code list
+			if got := ClassifyBalanceCodeRedeem(r.Result, nil, secret); got != BalanceCodeRedeemOutcomeRedeemed {
+				t.Errorf("classified %q without the list", got)
+			}
+			redeemed := NewRedeemedBalanceCodeList()
+			redeemed.Add(&RedeemedBalanceCode{Secret: secret})
+			if got := ClassifyBalanceCodeRedeem(r.Result, redeemed, secret); got != BalanceCodeRedeemOutcomeRedeemed {
+				t.Errorf("classified %q with the list", got)
+			}
+		})
+	}
+}
+
+// The network's redeemed codes name each code's kind: a data code, or a gift
+// code's year of Pro with its days (GIFTOFPRIVACY.md 10.6).
+func TestGetNetworkRedeemedBalanceCodesKinds(t *testing.T) {
+	var path atomic.Value
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		path.Store(r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"balance_codes": [
+			{
+				"balance_code_id": "00000000-0000-0000-0000-000000000061",
+				"balance_byte_count": 1099511627776,
+				"redeem_time": "2026-11-01T00:00:00Z",
+				"end_time": "2027-11-01T00:00:00Z",
+				"secret": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+				"kind": "data",
+				"pro_days": 0
+			},
+			{
+				"balance_code_id": "00000000-0000-0000-0000-000000000062",
+				"balance_byte_count": 0,
+				"redeem_time": "2026-11-13T18:00:00Z",
+				"end_time": "2028-02-29T00:00:00Z",
+				"secret": "BBBBBBBBBBBBBBBBBBBBBBBBBB",
+				"kind": "pro_gift",
+				"pro_days": 365
+			}
+		]}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*GetNetworkRedeemedBalanceCodesResult](context.Background())
+	api.GetNetworkRedeemedBalanceCodes(callback)
+	r := awaitApiResult(t, c, "GetNetworkRedeemedBalanceCodes never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if got := path.Load(); got != "/account/balance-codes" {
+		t.Errorf("path = %v", got)
+	}
+	codes := r.Result.BalanceCodes
+	if codes == nil || codes.Len() != 2 {
+		t.Fatalf("balance codes = %+v", codes)
+	}
+	data := codes.Get(0)
+	if data.Kind != BalanceCodeKindData || data.ProDays != 0 || data.BalanceByteCount != 1099511627776 {
+		t.Errorf("data code = %q/%d/%d", data.Kind, data.ProDays, data.BalanceByteCount)
+	}
+	gift := codes.Get(1)
+	if gift.Kind != BalanceCodeKindProGift || gift.ProDays != 365 || gift.BalanceByteCount != 0 {
+		t.Errorf("gift code = %q/%d/%d", gift.Kind, gift.ProDays, gift.BalanceByteCount)
+	}
+	if gift.EndTime == nil || gift.EndTime.UnixMilli() != time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC).UnixMilli() {
+		t.Errorf("gift end time = %v", gift.EndTime)
+	}
+	// a gift redeemed by this network is already redeemed, as a data code is
+	if got := ClassifyBalanceCodeRedeem(nil, codes, "BBBBBBBBBBBBBBBBBBBBBBBBBB"); got != BalanceCodeRedeemOutcomeAlreadyRedeemed {
+		t.Errorf("classified %q", got)
+	}
+}
+
+// A server that predates gift codes sends no kind and no days: every code it
+// lists adds data, and reads as a data code here and in the json the desktop
+// apps get over the c abi.
+func TestGetNetworkRedeemedBalanceCodesWithoutKindReadsAsData(t *testing.T) {
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"balance_codes": [
+			{
+				"balance_code_id": "00000000-0000-0000-0000-000000000063",
+				"balance_byte_count": 1099511627776,
+				"redeem_time": "2026-08-07T00:00:00Z",
+				"end_time": "2027-08-07T00:00:00Z",
+				"secret": "CCCCCCCCCCCCCCCCCCCCCCCCCC"
+			}
+		]}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*GetNetworkRedeemedBalanceCodesResult](context.Background())
+	api.GetNetworkRedeemedBalanceCodes(callback)
+	r := awaitApiResult(t, c, "GetNetworkRedeemedBalanceCodes never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	codes := r.Result.BalanceCodes
+	if codes == nil || codes.Len() != 1 {
+		t.Fatalf("balance codes = %+v", codes)
+	}
+	code := codes.Get(0)
+	if code.Kind != BalanceCodeKindData || code.ProDays != 0 {
+		t.Errorf("code = %q/%d, want a data code", code.Kind, code.ProDays)
+	}
+	if code.Secret != "CCCCCCCCCCCCCCCCCCCCCCCCCC" || code.BalanceByteCount != 1099511627776 ||
+		code.BalanceCodeId == nil || code.RedeemTime == nil || code.EndTime == nil {
+		t.Errorf("the other fields did not decode: %+v", code)
+	}
+	encoded, err := json.Marshal(r.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"kind":"data"`) || !strings.Contains(string(encoded), `"pro_days":0`) {
+		t.Errorf("re-encoded = %s", encoded)
 	}
 }
 

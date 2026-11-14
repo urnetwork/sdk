@@ -4507,6 +4507,14 @@ entries:
     spdx: Apache-2.0
     copyright: Copyright (c) ZXing authors and the zxing-cpp contributors
     text: 074e6e32c86a
+  - name: Caveat
+    kind: font
+    origin: extra
+    apps: [web]
+    url: https://github.com/googlefonts/caveat
+    spdx: OFL-1.1
+    copyright: Copyright 2014 The Caveat Project Authors
+    text: 8eea8287e587
   - name: Chakra Petch
     kind: font
     origin: extra
@@ -4546,6 +4554,14 @@ entries:
     url: https://rsms.me/inter/
     spdx: OFL-1.1
     copyright: Copyright 2016 The Inter Project Authors
+    text: 8eea8287e587
+  - name: JetBrains Mono
+    kind: font
+    origin: extra
+    apps: [web]
+    url: https://github.com/JetBrains/JetBrainsMono
+    spdx: OFL-1.1
+    copyright: Copyright 2020 The JetBrains Mono Project Authors
     text: 8eea8287e587
   - name: Manrope
     kind: font

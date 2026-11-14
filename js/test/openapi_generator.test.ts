@@ -132,6 +132,36 @@ for (const [name, parameters, components, message] of refused) {
   });
 }
 
+// A PDF download (/pay/gift/cards.pdf) is a binary body like an image: the
+// client answers it with a Blob.
+test("an application/pdf response is a Blob", t => {
+  const run = generate(t, `openapi: "3.1.0"
+info:
+  title: fixture
+  version: "1.0.0"
+paths:
+  /cards.pdf:
+    get:
+      operationId: getCardsPdf
+      security: []
+      responses:
+        "200":
+          description: The cards.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+components:
+  schemas: {}
+`);
+  if (!run) return;
+  assert.equal(run.result.status, 0, run.result.stderr);
+  const client = readFileSync(join(run.dir, "src/generated/client.ts"), "utf8");
+  assert.match(client, /getCardsPdf\(options\?: RequestOptions\): Promise<Blob>/);
+  assert.match(client, /path: "\/cards\.pdf", auth: "none", response: "blob"/);
+});
+
 // The client is the public api, as ur.io publishes the spec: an operation
 // marked x-internal (on itself or on its path item) is left out, and so is
 // every schema nothing published reaches. A schema a published operation

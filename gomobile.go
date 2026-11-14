@@ -466,11 +466,36 @@ type StripePaymentIntentList struct {
 }
 
 type RedeemedBalanceCode struct {
-	BalanceCodeId    *Id    `json:"balance_code_id"`
-	BalanceByteCount int64  `json:"balance_byte_count"`
-	RedeemTime       *Time  `json:"redeem_time"`
-	EndTime          *Time  `json:"end_time"`
-	Secret           string `json:"secret"`
+	BalanceCodeId    *Id   `json:"balance_code_id"`
+	BalanceByteCount int64 `json:"balance_byte_count"`
+	RedeemTime       *Time `json:"redeem_time"`
+	// for a gift code, the end of its year of Pro, which may be queued after
+	// a paid Pro period
+	EndTime *Time  `json:"end_time"`
+	Secret  string `json:"secret"`
+	// Kind is what the code granted: BalanceCodeKindData, or
+	// BalanceCodeKindProGift for a gift code's year of Pro (with
+	// BalanceByteCount 0). A code from a server that predates gift codes
+	// decodes as BalanceCodeKindData.
+	Kind string `json:"kind"`
+	// ProDays is the days of Pro a gift code granted (365); 0 for a data code.
+	ProDays int64 `json:"pro_days"`
+}
+
+// UnmarshalJSON reads a code without `kind`, from a server that predates
+// gift codes, as a data code.
+func (self *RedeemedBalanceCode) UnmarshalJSON(b []byte) error {
+	// plain has the fields and none of the methods
+	type plain RedeemedBalanceCode
+	var code plain
+	if err := json.Unmarshal(b, &code); err != nil {
+		return err
+	}
+	if code.Kind == "" {
+		code.Kind = BalanceCodeKindData
+	}
+	*self = RedeemedBalanceCode(code)
+	return nil
 }
 
 type RedeemedBalanceCodeList struct {

@@ -99,6 +99,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_AUTH_LOGOUT_CAUSE_SESSION_REVOKED "session_revoked"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_RATE_LIMITED "verify_rate_limited"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_SEND_FAILED "verify_send_failed"
+#define URNET_BALANCE_CODE_KIND_DATA "data"
+#define URNET_BALANCE_CODE_KIND_PRO_GIFT "pro_gift"
 #define URNET_BALANCE_CODE_LENGTH 26
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_ALREADY_REDEEMED "already_redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
@@ -773,6 +775,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SUBSCRIPTION_PLAN_SUPPORTER "supporter"
 #define URNET_SUBSCRIPTION_STORE_APPLE "apple"
 #define URNET_SUBSCRIPTION_STORE_CRYPTO "crypto"
+#define URNET_SUBSCRIPTION_STORE_GIFT "gift"
 #define URNET_SUBSCRIPTION_STORE_GOOGLE "google"
 #define URNET_SUBSCRIPTION_STORE_OTHER "other"
 #define URNET_SUBSCRIPTION_STORE_STRIPE "stripe"
@@ -3539,6 +3542,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* CheckBalanceCodeResult (json):
  *   balance?: CheckBalanceCodeBalance | null
+ *   kind?: string
+ *   pro_days?: number
+ *   redeem_by?: string (rfc3339) | null
  *   error?: CheckBalanceCodeError | null
  */
 
@@ -5573,8 +5579,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   message: string
  */
 
+/* RedeemBalanceCodePro (json):
+ *   start_time: string (rfc3339) | null
+ *   end_time: string (rfc3339) | null
+ *   queued: boolean
+ */
+
 /* RedeemBalanceCodeResult (json):
  *   transfer_balance?: RedeemBalanceCodeTransferBalance | null
+ *   pro?: RedeemBalanceCodePro | null
  *   error?: RedeemBalanceCodeError | null
  */
 
@@ -5591,6 +5604,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   redeem_time: string (rfc3339) | null
  *   end_time: string (rfc3339) | null
  *   secret: string
+ *   kind: string
+ *   pro_days: number
  */
 
 /* RedeemedBalanceCodeList (json):

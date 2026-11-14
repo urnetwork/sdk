@@ -113,6 +113,8 @@ func newApiErrorInfo(err error) *apiErrorInfo {
 type balanceCodeRedeemOutcome struct {
 	Outcome         string                                `json:"outcome"`
 	TransferBalance *sdk.RedeemBalanceCodeTransferBalance `json:"transfer_balance,omitempty"`
+	// a gift code's year of Pro, when the redeem granted one
+	Pro *sdk.RedeemBalanceCodePro `json:"pro,omitempty"`
 	// the server's rejection, when it answered
 	Error *sdk.RedeemBalanceCodeError `json:"error,omitempty"`
 	// the redeem call's own failure, when it got no answer
@@ -151,6 +153,7 @@ func redeemBalanceCodeOutcome(
 		result = r.result
 		if result != nil {
 			outcome.TransferBalance = result.TransferBalance
+			outcome.Pro = result.Pro
 			outcome.Error = result.Error
 		}
 	}
