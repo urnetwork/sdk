@@ -2,10 +2,7 @@ module github.com/urnetwork/sdk/build
 
 go 1.27.4
 
-require (
-	github.com/urnetwork/sdk v0.0.0
-	golang.org/x/tools v0.51.0
-)
+require golang.org/x/tools v0.51.0
 
 require (
 	github.com/ChainSafe/go-schnorrkel v1.1.0 // indirect
@@ -81,9 +78,10 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
-	github.com/urnetwork/connect v0.0.0 // indirect
-	github.com/urnetwork/glog v0.0.0 // indirect
-	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/connect/v2026 v2026.11.14-1098469290
+	github.com/urnetwork/glog/v2026 v2026.11.14-1098469290
+	github.com/urnetwork/goidenticons/v2026 v2026.11.14-1098469290
+	github.com/urnetwork/sdk/v2026 v2026.11.14-1098469290
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
@@ -101,17 +99,9 @@ require (
 	src.agwa.name/tlshacks v0.0.4 // indirect
 )
 
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
 replace github.com/pion/sctp => ../../connect/sctp
 
-replace github.com/urnetwork/glog => ../../glog
-
-replace github.com/urnetwork/goidenticons => ../../goidenticons
-
-replace gvisor.dev/gvisor => ../../gvisor
+replace gvisor.dev/gvisor => github.com/urnetwork/gvisor v0.0.0-20261114080954-551b6e3f1252
 
 tool (
 	golang.org/x/mobile/cmd/gobind
