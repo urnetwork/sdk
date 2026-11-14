@@ -566,6 +566,29 @@ func TestPairRefusesAChildWithoutMarks(t *testing.T) {
 		t.Fatalf("the unkept child was not removed: %v", paths)
 	}
 
+	// a pairing whose session dies before its answer may have bound the child, so the child is left
+	lost := newTestRemoteDeviceApi(t, testRemoteBothMarks)
+	daemon.stateLock.Lock()
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		if request.Method != sidecar.DaemonMethodPair {
+			return nil, nil, false
+		}
+		for _, conn := range daemon.conns {
+			conn.Close()
+		}
+		return nil, nil, true
+	}
+	daemon.stateLock.Unlock()
+	if _, err := remote.enrollWithDeviceApi(lost.ctx, lost.api); !errors.Is(err, errSidecarRemoteOffline) {
+		t.Fatalf("a pairing whose session died: %v", err)
+	}
+	if paths := lost.seenPaths(); len(paths) != 1 || paths[0] != "/network/auth-client" {
+		t.Fatalf("a child of unknown outcome was removed: %v", paths)
+	}
+	if state := remote.GetState(); state != "offline" {
+		t.Fatalf("the state after the session died: %s", state)
+	}
+
 	// no device token: nothing is minted
 	device.api.SetByJwt("")
 	if _, err := remote.enrollWithDeviceApi(device.ctx, device.api); err == nil || len(device.seenPaths()) != 2 {

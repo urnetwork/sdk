@@ -9,7 +9,8 @@
 //	pairing    EnrollWithDevice: the app's device token mints the child, admin_refused and strict_exp, the app gives
 //	           it to the daemon through pair, and the daemon binds generation n+1 under the sidecar_id it has (§5.8).
 //	           The daemon never holds the device's token, and the app keeps no copy of the child's. A child the
-//	           daemon did not take is removed with the device's token
+//	           daemon refused is removed with the device's token; one whose pairing lost its session is left, since
+//	           the daemon may have bound it
 //	Unlock     refused: the daemon unlocks its own keychain (§5.9), so no pass ever crosses this backend
 //	push       refused: the daemon registers no app wake token (sidecar_push.go)
 //	events     state alone, from the status reads, each naming its generation; §5.8 has no method that carries the
@@ -155,7 +156,11 @@ func (self *Sidecar) pairWithDeviceApi(ctx context.Context, remote sidecarBacken
 	// the daemon holds the child's token now, or nobody does
 	child.ByClientJwt = ""
 	if err != nil {
-		removeChild()
+		// a session that died mid-call leaves the outcome unknown: the daemon may have bound the child, so it is
+		// removed only on the daemon's own refusal, and one nobody bound ends at its exp
+		if !errors.Is(err, errSidecarRemoteOffline) && !errors.Is(err, errSidecarRemoteClosed) {
+			removeChild()
+		}
 		return "", err
 	}
 	if err := remote.refresh(ctx); err != nil {
