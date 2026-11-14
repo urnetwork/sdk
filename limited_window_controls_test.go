@@ -39,10 +39,10 @@ func requireLimitedWindowTestMulti(t *testing.T, device *DeviceLocal) *connect.R
 }
 
 // While disconnected the fraction is the one the next window takes: the
-// override when set, else connect's.
+// override when set, else the device's, here the 32-MiB tier's half.
 func TestLimitedWindowSizeFractionWhileDisconnected(t *testing.T) {
 	device := newH3PolicyDevice(t, LowMemoryDeviceTargetByteCount)
-	defaultFraction := connect.DefaultMultiClientSettings().LimitedWindowSizeFraction
+	defaultFraction := DefaultLowMemoryDeviceLocalSettings().lowMemoryLimitedWindowSizeFraction
 	connect.AssertEqual(t, device.GetLimitedWindowSizeFraction(), defaultFraction)
 	device.SetLimitedWindowSizeFraction(0.25)
 	connect.AssertEqual(t, device.GetLimitedWindowSizeFraction(), 0.25)
@@ -54,11 +54,12 @@ func TestLimitedWindowSizeFractionWhileDisconnected(t *testing.T) {
 
 // An override set before connecting builds the first window; one set while
 // connected reaches the live window and survives the reconnect; a reset
-// returns the live window and the next to connect's fraction.
+// returns the live window and the next to the device's fraction, here the
+// 32-MiB tier's half.
 func TestLimitedWindowSizeFractionReachesTheLiveAndTheNextWindow(t *testing.T) {
 	device := newH3PolicyDevice(t, LowMemoryDeviceTargetByteCount)
 	location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
-	defaultFraction := connect.DefaultMultiClientSettings().LimitedWindowSizeFraction
+	defaultFraction := DefaultLowMemoryDeviceLocalSettings().lowMemoryLimitedWindowSizeFraction
 
 	device.SetLimitedWindowSizeFraction(0.25)
 	if err := device.SetConnectLocationChecked(location); err != nil {
@@ -90,6 +91,39 @@ func TestLimitedWindowSizeFractionReachesTheLiveAndTheNextWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect.AssertEqual(t, requireLimitedWindowTestMulti(t, device).LimitedWindowSizeFraction(), defaultFraction)
+}
+
+// A device builds its window with its tier's fraction (server FP2-PROTOCOL.md
+// §7.4, D8): at or below the 32-MiB target of iOS and the hosted proxies, the
+// half the tier holds until the owner decides; at Android's 64 MiB, connect's
+// full size. Before the hold, the 32-MiB tier's window took connect's 1 too.
+func TestLimitedWindowSizeFractionFollowsTheMemoryTier(t *testing.T) {
+	location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
+	cases := []struct {
+		name   string
+		target ByteCount
+		want   float64
+	}{
+		{name: "ios and hosted, 32 MiB", target: LowMemoryDeviceTargetByteCount, want: 0.5},
+		{name: "android, 64 MiB", target: 64 * 1024 * 1024, want: connect.DefaultMultiClientSettings().LimitedWindowSizeFraction},
+	}
+	if connect.DefaultMultiClientSettings().LimitedWindowSizeFraction != 1 {
+		t.Fatalf("connect's fraction = %v, want 1", connect.DefaultMultiClientSettings().LimitedWindowSizeFraction)
+	}
+	for _, c := range cases {
+		device := newH3PolicyDevice(t, c.target)
+		if got := device.GetLimitedWindowSizeFraction(); got != c.want {
+			t.Errorf("%s: disconnected fraction = %v, want %v", c.name, got, c.want)
+		}
+		if err := device.SetConnectLocationChecked(location); err != nil {
+			t.Fatal(err)
+		}
+		multi := requireLimitedWindowTestMulti(t, device)
+		if got := multi.LimitedWindowSizeFraction(); got != c.want {
+			t.Errorf("%s: the window's fraction = %v, want %v", c.name, got, c.want)
+		}
+		disconnectLimitedWindowTestDevice(t, device, multi)
+	}
 }
 
 // A connected device reports its limited window beside the normal windows:

@@ -5,7 +5,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"syscall/js"
@@ -34,8 +34,9 @@ func TestSnClaimStatusOfAnswersTheSdkOverGeneratedInputs(t *testing.T) {
 	connected := []string{"", "", "a", "b", "z", " a "}
 	floors := []int64{0, 24_000_000}
 
-	random := rand.New(rand.NewSource(25))
-	pick := func(n int) int { return random.Intn(n) }
+	// a fixed seed, so a failing input replays
+	random := rand.New(rand.NewPCG(25, 0))
+	pick := func(n int) int { return random.IntN(n) }
 	// what the inputs reached, so the comparison is not of nothing
 	seen := map[string]int{}
 	defer func() {

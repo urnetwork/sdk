@@ -409,9 +409,12 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// the steady-memory gate has not failed: the limited window follows
 		// connect's fraction (D11.5; set 1 here if it fails)
 		lowMemoryLimitedWindowSizeMax: 0,
-		defaultH1ReceiveCount:         clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
-		hasDefaultH1ReceiveCount:      true,
-		ProviderSendBorrowByteCount:   0,
+		// the 32-MiB tier keeps half its quality window while connect's
+		// default is the full size (see the field)
+		lowMemoryLimitedWindowSizeFraction: 0.5,
+		defaultH1ReceiveCount:              clientSettings.ReceiveBufferSettings.H1SequenceBufferSize,
+		hasDefaultH1ReceiveCount:           true,
+		ProviderSendBorrowByteCount:        0,
 		// a strict window hands a drained slot to its replacement instead of
 		// building candidates its hard max refuses (see the field)
 		StrictWindowHandover: true,
@@ -733,6 +736,18 @@ type DeviceLocalSettings struct {
 	// once it fails. Non-positive is no bound. Unexported, so the bound
 	// settings and the c abi json do not change.
 	lowMemoryLimitedWindowSizeMax int
+	// The limited window's fraction of the largest normal window under the
+	// low-memory policy at or below LowMemoryDeviceTargetByteCount: iOS and
+	// the hosted proxies that share its 32-MiB target. Connect's default is 1,
+	// the normal window's size (server FP2-PROTOCOL.md D8, 2026-11-13); this
+	// tier keeps 0.5, 2 limited clients beside its quality window of 5, until
+	// the owner decides (hold of 2026-11-13). Its iOS extension already runs
+	// its Go heap at the 32-MiB soft limit and 35-40 MiB of phys_footprint
+	// with 8 window clients, under frequent memory-pressure frees, and the
+	// full size would make 11. A larger target, Android's 64 MiB, and desktop
+	// take connect's. Non-positive takes connect's everywhere. A
+	// developer-menu fraction overrides it. Unexported, like the bound.
+	lowMemoryLimitedWindowSizeFraction float64
 	// Preserve constructor provenance when a caller overrides the target.
 	// A different H1 count is an explicit caller cap, including zero.
 	defaultH1ReceiveCount    int
@@ -1033,6 +1048,23 @@ type DeviceLocalSettings struct {
 	// device.
 	//gomobile:noexport Go-only host activity reader.
 	UserActivitySince func(since time.Time) bool `json:"-"`
+	// The capabilities the device's normal windows ask find-providers2 for
+	// (`connect.MultiClientSettings.NormalWindowSelectors`). Nil keeps
+	// connect's default, dualstack and dualproto, which apps keep. The proxy
+	// service sets ipv4 and any for its hosted devices: their windows take
+	// every provider by rank alone and build no limited window (owner,
+	// 2026-11-13). Out of the settings json.
+	//gomobile:noexport a pointer to another package's struct, which gomobile
+	// does not bind. Go/headless hosts only.
+	NormalWindowSelectors *connect.ProviderSelectors `json:"-"`
+	// Gives the device's multi clients no limited window: a fraction of 0
+	// (`connect.MultiClientSettings.LimitedWindowSizeFraction`) in place of
+	// connect's default, which the developer override
+	// (SetLimitedWindowSizeFraction, ResetLimitedWindowSizeFraction) does not
+	// change. Off by default, as apps keep it. The proxy service turns it on
+	// beside NormalWindowSelectors ipv4 and any. Out of the settings json.
+	//gomobile:noexport Go-only hosted window policy.
+	DisableLimitedWindow bool `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2842,14 +2874,22 @@ func applyPlatformTransportMemoryUsage(
 // The window policy the host chose for every multi client of the device: the
 // process counters its windows count into, whether its strict windows hand
 // drained slots over, whether its windows hold their refill while the payer is
-// out of balance or while no user is active, and whose record of user activity
-// they read.
+// out of balance or while no user is active, whose record of user activity
+// they read, which providers its normal windows ask for, and whether it has a
+// limited window. Applied after the developer override of the limited
+// window's fraction, so a host's DisableLimitedWindow outranks it.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	settings.WindowClientStats = deviceLocalSettings.WindowClientStats
 	settings.StrictWindowHandover = deviceLocalSettings.StrictWindowHandover
 	settings.OutOfBalanceRefillProbe = deviceLocalSettings.OutOfBalanceRefillProbe
 	settings.IdleRefillHold = deviceLocalSettings.IdleRefillHold
 	settings.UserActivitySince = deviceLocalSettings.UserActivitySince
+	if deviceLocalSettings.NormalWindowSelectors != nil {
+		settings.NormalWindowSelectors = *deviceLocalSettings.NormalWindowSelectors
+	}
+	if deviceLocalSettings.DisableLimitedWindow {
+		settings.LimitedWindowSizeFraction = 0
+	}
 }
 
 // Keeps an absent/reset window unknown instead of manufacturing readiness.
@@ -5536,6 +5576,7 @@ func (self *DeviceLocal) applyDestination(
 			applyMobileLimitedWindowSettingsForPlatform(
 				settings,
 				self.settings.lowMemoryLimitedWindowSizeMax,
+				self.settings.lowMemoryLimitedWindowSizeFraction,
 				self.settings.MemoryTargetByteCount,
 				self.settings.LowMemoryProfile,
 			)
