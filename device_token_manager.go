@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -504,7 +504,7 @@ func (self *apiTokenManager) nextRetryTimeout() time.Duration {
 	if self.settings.RefreshRetryTimeout <= 0 {
 		return 0
 	}
-	return time.Duration(mathrand.Int63n(int64(self.settings.RefreshRetryTimeout)))
+	return time.Duration(mathrand.Int64N(int64(self.settings.RefreshRetryTimeout)))
 }
 
 // The point of `byJwt` in its refresh window (jwtRefreshDraw), or the test's.
