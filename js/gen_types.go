@@ -190,6 +190,8 @@ func generateTypes() ([]byte, error) {
 		sdk.SnCtfClientResult{},
 		sdk.SnEpochResult{},
 		sdk.AccountEpoch{},
+		sdk.AccountCurrentEpoch{},
+		sdk.AccountCurrentBlock{},
 		sdk.AccountEpochsResult{},
 		sdk.SnHeadResult{},
 	}
