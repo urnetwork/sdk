@@ -340,3 +340,75 @@ func TestApiRequestSeamsReportAnswersToCantReach(t *testing.T) {
 		}
 	}
 }
+
+// The apps' own transport failures, as each app passes them to
+// IsCantReachError: an Apple URL loading error by domain and code, an Android
+// exception by its text (Throwable.toString). The apps raised the prompt at
+// once on any of these, on their own, because the sdk's rule could not read
+// them: before this, the sustained failures below never raised it through the
+// sdk.
+var cantReachTestAppTransportFailures = []string{
+	"NSURLErrorDomain -1001",
+	"NSURLErrorDomain -1004",
+	"NSURLErrorDomain -1005",
+	"NSURLErrorDomain -1006",
+	"NSURLErrorDomain -1009",
+	"NSURLErrorDomain -1200",
+	"NSURLErrorDomain -2000",
+	"Error Domain=NSURLErrorDomain Code=-1001 \"The request timed out.\" UserInfo={NSErrorFailingURLStringKey=https://api.example/network/clients}",
+	"java.net.SocketTimeoutException: timeout",
+	"java.net.SocketTimeoutException: failed to connect to api.example/192.0.2.1 (port 443) from /198.51.100.2 (port 50000) after 10000ms",
+	"java.net.UnknownHostException: Unable to resolve host \"api.example\": No address associated with hostname",
+	"java.net.ConnectException: Failed to connect to api.example/192.0.2.1:443",
+	"java.net.NoRouteToHostException: No route to host",
+}
+
+// One app transport failure raises nothing; failures that last the hold
+// raise the prompt, as any other can't-reach failure does.
+func TestAppTransportFailureRaisesOnlyWhenFailuresLast(t *testing.T) {
+	t0 := time.Unix(1_000_000, 0)
+	for _, message := range cantReachTestAppTransportFailures {
+		rule := newCantReachRule(defaultCantReachSettings())
+		if rule.apiFailure(message, t0) {
+			t.Errorf("one app transport failure raised the prompt at once: %q", message)
+		}
+		if !rule.apiFailure(message, t0.Add(20*time.Second)) {
+			t.Errorf("app transport failures lasting the hold did not raise the prompt: %q", message)
+		}
+	}
+}
+
+// An Apple URL error that settles it alone raises at once, as "no such host"
+// and "x509: " do: a host name that does not exist, and a certificate that is
+// not URnetwork's.
+func TestAppleUrlErrorsThatSettleItRaiseAtOnce(t *testing.T) {
+	t0 := time.Unix(1_000_000, 0)
+	for _, message := range []string{
+		"NSURLErrorDomain -1003",
+		"NSURLErrorDomain -1201",
+		"NSURLErrorDomain -1202",
+		"Error Domain=NSURLErrorDomain Code=-1203 \"The certificate for this server was signed by an unknown certifying authority.\"",
+	} {
+		rule := newCantReachRule(defaultCantReachSettings())
+		if !rule.apiFailure(message, t0) {
+			t.Errorf("not raised at once: %q", message)
+		}
+	}
+}
+
+// Any other Apple URL error, a cancelled request among them, is not a
+// can't-reach failure, however long it lasts.
+func TestOtherAppleUrlErrorsAreNotCantReach(t *testing.T) {
+	t0 := time.Unix(1_000_000, 0)
+	for _, message := range []string{
+		"NSURLErrorDomain -999",
+		"NSURLErrorDomain -1011",
+		"NSURLErrorDomain",
+	} {
+		rule := newCantReachRule(defaultCantReachSettings())
+		rule.apiFailure(message, t0)
+		if rule.apiFailure(message, t0.Add(30*time.Second)) {
+			t.Errorf("raised the prompt: %q", message)
+		}
+	}
+}
