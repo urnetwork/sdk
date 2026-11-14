@@ -127,6 +127,9 @@ type sidecarControlForwardingWitnessReply struct {
 	SetupDue string `json:"setup_due,omitempty"`
 }
 
+// The daemon's code for a call that needs a person's confirmation and came without one (D-CORE-13).
+const sidecarControlCodeConfirmationRequired = -32001
+
 // The daemon's refusal of one call: its JSON-RPC error.
 type sidecarControlError struct {
 	Code    int
@@ -168,14 +171,20 @@ type sidecarRemoteSettings struct {
 	CallTimeout time.Duration
 	// The bound of a pairing, which binds on the server.
 	PairTimeout time.Duration
+	// js: the longest reply joined from a native host's chunks, the bound the root's DaemonClient reads a line to.
+	AnswerMaxByteCount int64
+	// js: how many events wait for the listeners before one is dropped.
+	EventQueueSize int
 }
 
-// The defaults: a status read every 2 s, 30 s a call, 60 s a pairing.
+// The defaults: a status read every 2 s, 30 s a call, 60 s a pairing, a 64 MiB reply and 256 queued events.
 func defaultSidecarRemoteSettings() *sidecarRemoteSettings {
 	return &sidecarRemoteSettings{
 		StatusPollInterval: 2 * time.Second,
 		CallTimeout:        30 * time.Second,
 		PairTimeout:        60 * time.Second,
+		AnswerMaxByteCount: 64 * 1024 * 1024,
+		EventQueueSize:     256,
 	}
 }
 

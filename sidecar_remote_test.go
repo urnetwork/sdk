@@ -13,6 +13,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"net"
 	"net/http"
 	"os"
@@ -885,6 +889,9 @@ func TestRemoteWireMatchesTheDaemon(t *testing.T) {
 			t.Errorf("%q is the daemon's %q", own, daemons)
 		}
 	}
+	if sidecarControlCodeConfirmationRequired != sidecar.DaemonRpcConfirmationRequired {
+		t.Errorf("the confirmation code %d is the daemon's %d", sidecarControlCodeConfirmationRequired, sidecar.DaemonRpcConfirmationRequired)
+	}
 	// each message through the other side's type and back, losing nothing
 	crossings := []struct {
 		name    string
@@ -1019,5 +1026,70 @@ func TestRemoteStatusPoll(t *testing.T) {
 	}
 	if state := remote.GetState(); state != "locked" {
 		t.Fatalf("the polled state: %s", state)
+	}
+}
+
+// The top-level declarations of files, by name, each printed without its comments: a type, a constant or variable
+// with its value, a function with its body.
+func testSidecarDeclarations(t *testing.T, files ...string) map[string]string {
+	t.Helper()
+	declarations := map[string]string{}
+	fileSet := token.NewFileSet()
+	printed := func(node any) string {
+		out := &bytes.Buffer{}
+		if err := printer.Fprint(out, fileSet, node); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	for _, file := range files {
+		parsed, err := parser.ParseFile(fileSet, file, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			switch declaration := declaration.(type) {
+			case *ast.FuncDecl:
+				if declaration.Recv == nil {
+					declaration.Doc = nil
+					declarations[declaration.Name.Name] = printed(declaration)
+				}
+			case *ast.GenDecl:
+				for _, spec := range declaration.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						spec.Doc, spec.Comment = nil, nil
+						declarations[spec.Name.Name] = printed(spec)
+					case *ast.ValueSpec:
+						spec.Doc, spec.Comment = nil, nil
+						for _, name := range spec.Names {
+							declarations[name.Name] = printed(spec)
+						}
+					}
+				}
+			}
+		}
+	}
+	return declarations
+}
+
+// The js leg repeats the bound types the other legs declare beside code that links the sidecar root
+// (sidecar_types_js.go): each must be the other legs' own, so an app sees one Sidecar surface on every leg.
+func TestJsBoundTypesMatch(t *testing.T) {
+	js := testSidecarDeclarations(t, "sidecar_types_js.go")
+	native := testSidecarDeclarations(t, "sidecar_types.go", "sidecar_keystore.go", "sidecar_events.go")
+	for _, name := range []string{
+		"SidecarSettings", "DefaultSidecarSettings", "SidecarResult", "SidecarResultCallback", "SidecarKeyStore", "SidecarSecret",
+		"SidecarPresenceSigner", "SidecarEvent", "SidecarErasure", "SidecarEventListener", "sidecarComponentNames",
+		"SidecarComponentEvs", "SidecarKeyStoreOk", "SidecarSecretPresent",
+	} {
+		if _, ok := js[name]; !ok {
+			t.Errorf("the js leg declares no %s", name)
+		}
+	}
+	for name, declaration := range js {
+		if other, ok := native[name]; !ok || other != declaration {
+			t.Errorf("the js leg's %s is not the other legs':\n%s\n%s", name, declaration, other)
+		}
 	}
 }
