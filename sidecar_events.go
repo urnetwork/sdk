@@ -26,7 +26,8 @@ type SidecarEvent struct {
 	// The core's kind: state, approval_pending, member_added, member_removed, key_changed, refused, admission_alarm,
 	// recovery_rebind, recovery_window, recovery_unseen, admissions_near_cap, head_alarm, index_mismatch,
 	// index_malformed, search_alarm, history_drop, access_request, access_decided, directory_erasure, erasure,
-	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, and any a later component adds.
+	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, and any a later
+	// component adds.
 	Kind string
 	// The client generation it comes from (§18.5's State block).
 	Generation int64
@@ -74,6 +75,12 @@ type SidecarEvent struct {
 	EvsAlarm string
 	// evs_gap: the newest re-pin past the catch-up budget, in unix milliseconds; 0 for none.
 	VerifiedSinceMillis int64
+	// record_alarm: what the record found, one of the core's closed set (chain_gap, chain_fork, bad_entry, ...).
+	RecordAlarm string
+	// bridge_alarm: what the bridge found (block_conflict, state_unverified, map_refused, ...).
+	BridgeAlarm string
+	// dns_alarm: what the zone watch found (split, unrequested, zone_mismatch, ...).
+	DnsAlarm string
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait).
@@ -121,6 +128,9 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		SecondEvidence:      sidecarBytesOf(event.Evidence[1]),
 		EvsAlarm:            string(event.EvsAlarm),
 		VerifiedSinceMillis: sidecarMillisOf(event.VerifiedSince),
+		RecordAlarm:         string(event.RecordAlarm),
+		BridgeAlarm:         string(event.BridgeAlarm),
+		DnsAlarm:            string(event.DnsAlarm),
 	}
 	if erasure := event.Erasure; erasure != nil {
 		bound.Erasure = sidecarErasureOf(erasure)

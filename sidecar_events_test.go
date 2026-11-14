@@ -112,6 +112,9 @@ func testFullSidecarEvent(kind string) *sidecar.SidecarEvent {
 		Erasure:       &sidecar.SidecarErasure{ErasureId: *id(0x90), State: "waiting", ObjectsLeft: 3, BytesLeft: 4096, NextTry: at.Add(time.Second), Finish: at.Add(time.Hour)},
 		EvsAlarm:      sidecar.SidecarEvsAlarmTamper,
 		VerifiedSince: at.Add(time.Minute),
+		RecordAlarm:   sidecar.SidecarRecordAlarmChainGap,
+		BridgeAlarm:   sidecar.SidecarBridgeAlarmStateUnverified,
+		DnsAlarm:      sidecar.SidecarDnsAlarmZoneMismatch,
 	}
 }
 
@@ -122,7 +125,8 @@ func TestEveryEventKindMaps(t *testing.T) {
 		"Kind": true, "Generation": true, "State": true, "Reason": true, "GroupId": true, "SidecarId": true,
 		"RepoId": true, "RefId": true, "Path": true, "DropId": true, "DropState": true, "NotBefore": true,
 		"SearchAlarm": true, "RequestId": true, "Outcome": true, "SendId": true, "ApprovalId": true, "HeadAlarm": true,
-		"Evidence": true, "Erasure": true, "EvsAlarm": true, "VerifiedSince": true,
+		"Evidence": true, "Erasure": true, "EvsAlarm": true, "VerifiedSince": true, "RecordAlarm": true, "BridgeAlarm": true,
+		"DnsAlarm": true,
 	}
 	eventType := reflect.TypeFor[sidecar.SidecarEvent]()
 	for i := 0; i < eventType.NumField(); i += 1 {
@@ -153,7 +157,9 @@ func TestEveryEventKindMaps(t *testing.T) {
 		if bound.Kind != kind || bound.Generation != core.Generation || bound.State != string(core.State) ||
 			bound.Reason != string(core.Reason) || bound.Path != core.Path || bound.DropState != string(core.DropState) ||
 			bound.SearchAlarm != string(core.SearchAlarm) || bound.Outcome != core.Outcome ||
-			bound.HeadAlarm != string(core.HeadAlarm) || bound.EvsAlarm != string(core.EvsAlarm) {
+			bound.HeadAlarm != string(core.HeadAlarm) || bound.EvsAlarm != string(core.EvsAlarm) ||
+			bound.RecordAlarm != string(core.RecordAlarm) || bound.BridgeAlarm != string(core.BridgeAlarm) ||
+			bound.DnsAlarm != string(core.DnsAlarm) {
 			t.Errorf("%s: the strings mapped as %+v", kind, bound)
 		}
 		if !sameId(bound.GroupId, core.GroupId) || !sameId(bound.SidecarId, core.SidecarId) || !sameId(bound.RepoId, core.RepoId) ||
