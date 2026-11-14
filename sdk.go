@@ -625,8 +625,16 @@ func SetNetworkCountryCode(countryCode string) {
 	connect.SetNetworkCountryCode(countryCode)
 }
 
-// FreeMemory drops recoverable memory in response to host memory pressure
+// FreeMemory drops recoverable memory in response to host memory pressure.
+// Calls closer together than freeMemorySettings.MinInterval are coalesced
+// into the release before them (memoryRelease): a host calls it from the
+// OS's memory pressure callback, which iOS sends tens of times a second while
+// the packet tunnel sits at its warning line.
 func FreeMemory() {
+	coalescedCount, admitted := processMemoryRelease.admit(time.Now())
+	if !admitted {
+		return
+	}
 	startTime := time.Now()
 	totalByteCountBefore := runtimeTotalByteCount()
 	// drop recoverable caches (resolver caches, pooled DoH connections, affinity maps)
@@ -635,11 +643,68 @@ func FreeMemory() {
 	connect.ClearMessagePools()
 	debug.FreeOSMemory()
 	glog.Infof(
-		"[mem]free memory %.1fmib -> %.1fmib (%dms)",
+		"[mem]free memory %.1fmib -> %.1fmib (%dms, %d coalesced)",
 		float64(totalByteCountBefore)/float64(1024*1024),
 		float64(runtimeTotalByteCount())/float64(1024*1024),
 		time.Since(startTime)/time.Millisecond,
+		coalescedCount,
 	)
+}
+
+// Tunes how often FreeMemory releases.
+type freeMemorySettings struct {
+	// The least time between two releases. On 2026-11-13 an iOS packet
+	// tunnel near its 40-MiB warning line got 349 releases in 19 minutes, up
+	// to 42 in one second. Each one forced a full collection (11-17ms) that
+	// freed little the one before had not, and shed the tunnel's DNS
+	// answers, its pooled DoH connections and its affinity maps, so the
+	// lookups and flows after it started cold. 30s lets the first warning of
+	// a burst release everything and a pressure that lasts release again,
+	// twice a minute instead of tens of times a second; the releases after
+	// the first freed about 0.15 MiB each. Non-positive releases on every
+	// call.
+	MinInterval time.Duration
+}
+
+func defaultFreeMemorySettings() *freeMemorySettings {
+	return &freeMemorySettings{
+		MinInterval: 30 * time.Second,
+	}
+}
+
+// Admits FreeMemory's releases. Safe for concurrent use.
+type memoryRelease struct {
+	settings *freeMemorySettings
+
+	stateLock       sync.Mutex
+	lastReleaseTime time.Time
+	// calls coalesced since the last release
+	coalescedCount int
+}
+
+func newMemoryRelease(settings *freeMemorySettings) *memoryRelease {
+	return &memoryRelease{
+		settings: settings,
+	}
+}
+
+// the process's releases: the memory and the caches FreeMemory sheds are the
+// process's
+var processMemoryRelease = newMemoryRelease(defaultFreeMemorySettings())
+
+// Returns whether a release runs now, and how many calls were coalesced
+// since the last one that did.
+func (self *memoryRelease) admit(now time.Time) (coalescedCount int, admitted bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if 0 < self.settings.MinInterval && !self.lastReleaseTime.IsZero() && now.Sub(self.lastReleaseTime) < self.settings.MinInterval {
+		self.coalescedCount += 1
+		return 0, false
+	}
+	coalescedCount = self.coalescedCount
+	self.coalescedCount = 0
+	self.lastReleaseTime = now
+	return coalescedCount, true
 }
 
 // TrimMemory rebuilds burst-sized message-pool free lists as their warm reuse
