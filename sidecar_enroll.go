@@ -11,6 +11,8 @@
 // The child's token goes into a new Api session, a session of the device's Api with none of its credentials, which
 // becomes the host's TokenSource before the enrollment runs, so the generation that enrollment starts finds it; a
 // refused enrollment drops it and keeps the session that was there. The device's Api never holds the child's token.
+// Bind answers the child's token re-minted with the sidecar_id, and the core hands that to the session before the
+// generation starts (AdoptByJwt, QD-805), so the session, the keychain and the generation all hold the claim's token.
 //
 // The remote backend pairs instead (§5.8's pairing; pairWithDeviceApi in sidecar_remote.go), and forwarding's setup for the app's VPN component
 // after an enrollment is SDK-M8-07's wiring (DESIGN-DETAILS 4.7).
@@ -90,7 +92,8 @@ func (self *Sidecar) enrollWithDeviceApi(ctx context.Context, deviceApi *Api) (s
 			if err != nil {
 				return nil, err
 			}
-			// only a child the core will keep is ever presented by the session
+			// only a child the core will keep is ever presented by the session; one a close of the Sidecar ended
+			// meanwhile takes no token
 			if result.AdminRefused && result.StrictExp {
 				session.install(result.ByClientJwt)
 			}

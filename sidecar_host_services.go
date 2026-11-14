@@ -16,6 +16,13 @@
 // the device's token never enter the session (I-6): it is minted from the device's token by a request of the
 // device's own Api, and only the child's answer is kept.
 //
+// The mint's token names no sidecar. POST /sidecar/bind answers it re-minted with the bound sidecar_id (QD-040,
+// QD-797), and the core hands that re-mint to the session (AdoptByJwt, QD-805) at the child's enrollment, before the
+// generation starts, and at a host's Reregister. From then on the session presents and refreshes the re-mint, and each
+// refresh keeps the claim of the token it presents and adds none, so the claim sockets reads survives the session's
+// refreshes. A session that kept the mint's token would hand the core a token naming no sidecar at every refresh, and
+// sockets would deny the sidecar, the closed direction.
+//
 // Safe for concurrent use.
 
 package sdk
@@ -30,12 +37,28 @@ import (
 // The session holds no token: the core refreshes on its own.
 var errSidecarSessionEmpty = errors.New("the sidecar's api session holds no token")
 
+// The session has closed, so it takes no token.
+var errSidecarSessionClosed = errors.New("the sidecar's api session has closed")
+
+// A token offered as bind's re-mint is not a re-mint of the session's token.
+var errSidecarRemintMismatch = errors.New("the re-minted token names another network, client or device than the session's, or no sidecar")
+
+// The core finds a source's optional interfaces by assertion at run time, where a missing method only falls back, a
+// missing AdoptByJwt to a token naming no sidecar, so the session's are each checked here, at compile time.
+var (
+	_ sidecar.SidecarTokenSource       = (*sidecarApiSession)(nil)
+	_ sidecar.SidecarTokenSourceSigner = (*sidecarApiSession)(nil)
+	_ sidecar.SidecarTokenSourceLogout = (*sidecarApiSession)(nil)
+	_ sidecar.SidecarTokenSourceRemint = (*sidecarApiSession)(nil)
+)
+
 // The child token's session.
 type sidecarApiSession struct {
 	api *Api
 
 	stateLock sync.Mutex
-	// the child's token as this session last held it: installed at the mint, then each refresh's
+	// the child's token as this session last held it: installed at the mint, replaced by bind's re-mint, then each
+	// refresh's
 	byJwt string
 	// the refresher runs, since a signer is installed
 	refreshing bool
@@ -56,14 +79,79 @@ func newSidecarApiSession(api *Api) *sidecarApiSession {
 	return self
 }
 
-// Holds the child's token, from the mint's answer: the only token this session ever presents.
-func (self *sidecarApiSession) install(byJwt string) {
-	func() {
+// Holds byJwt and then gives it to the session's Api, reporting whether it did: the only token this session presents,
+// the mint's answer and then bind's re-mint (AdoptByJwt). A closed session takes none, so a close that came first
+// leaves nothing held and its Api's token as it was.
+func (self *sidecarApiSession) install(byJwt string) bool {
+	held := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if self.closed {
+			return false
+		}
 		self.byJwt = byJwt
+		return true
 	}()
+	if !held {
+		return false
+	}
 	self.api.SetByJwt(byJwt)
+	return true
+}
+
+// Takes bind's re-mint of the child's token (QD-797, QD-805) in place of the token the session holds: the same
+// network, client and device, with the bound sidecar_id, which the session presents and refreshes from then on. With
+// the refresher running (a host's Reregister), installing it refreshes it at once, as any new token is (Api.SetByJwt),
+// and that refresh keeps the claim. Refuses, keeping the session's own token, when the session has closed, holds no
+// token (none installed yet, or one a confirmed rejection cleared, which a re-mint must not bring back), or byJwt is
+// not a re-mint of the token it holds. See sidecar.SidecarTokenSourceRemint.
+func (self *sidecarApiSession) AdoptByJwt(byJwt string) error {
+	heldByJwt, err := func() (string, error) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		switch {
+		case self.closed:
+			return "", errSidecarSessionClosed
+		case self.byJwt == "":
+			return "", errSidecarSessionEmpty
+		}
+		return self.byJwt, nil
+	}()
+	if err != nil {
+		return err
+	}
+	// a re-mint of the held token names its network, client and device, and a sidecar in its sidecar_id claim. Both
+	// are read unverified, as the core reads the re-mint and the sdk a refreshed token: api verifies the signature, and
+	// this keeps the session from presenting another client's token
+	isRemint := func() bool {
+		heldIdentity, heldOk := parseClientJwtIdentity(heldByJwt)
+		identity, ok := parseClientJwtIdentity(byJwt)
+		if !heldOk || !ok || heldIdentity != identity {
+			return false
+		}
+		heldNetworkId, heldOk := credentialNetworkId(heldByJwt)
+		networkId, ok := credentialNetworkId(byJwt)
+		if !heldOk || !ok || heldNetworkId != networkId {
+			return false
+		}
+		claims, ok := unverifiedCredentialClaims(byJwt)
+		if !ok {
+			return false
+		}
+		claimed, _ := claims["sidecar_id"].(string)
+		sidecarId, err := sidecar.ParseId(claimed)
+		return err == nil && sidecarId != (sidecar.Id{})
+	}
+	if !isRemint() {
+		return errSidecarRemintMismatch
+	}
+	if self.api.GetByJwt() == "" {
+		return errSidecarSessionEmpty
+	}
+	if !self.install(byJwt) {
+		return errSidecarSessionClosed
+	}
+	return nil
 }
 
 // Whether the session holds a token: one it was given, which its Api still presents, so a session whose token a
