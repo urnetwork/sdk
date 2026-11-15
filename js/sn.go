@@ -8,8 +8,8 @@ import (
 	"strings"
 	"syscall/js"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // UR protocol (subnet 25) exports for the web app. The site has no
