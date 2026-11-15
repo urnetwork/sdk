@@ -115,6 +115,11 @@ type Sidecar struct {
 	directoryBackend  sidecarDirectoryBackend
 	// the bounds SignEdgeLogin holds its arguments to (sidecar_edge_login.go), nil for the defaults
 	edgeLoginSettings *sidecarEdgeLoginSettings
+	// the mail wrapper (sidecar_mail.go), made at the first GetMail; its tunables, nil for the defaults; and a test's
+	// backend in place of this Sidecar's own, nil otherwise
+	mail         *SidecarMail
+	mailSettings *sidecarMailSettings
+	mailBackend  sidecarMailBackend
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -427,6 +432,7 @@ func (self *Sidecar) Close() {
 		var removeEventCallback func()
 		var evs *SidecarEvs
 		var directory *SidecarDirectory
+		var mail *SidecarMail
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -437,6 +443,7 @@ func (self *Sidecar) Close() {
 			local, instance, remote, removeEventCallback = self.local, self.instance, self.remote, self.removeEventCallback
 			evs = self.evs
 			directory = self.directory
+			mail = self.mail
 			return false
 		}()
 		if alreadyClosed {
@@ -453,6 +460,10 @@ func (self *Sidecar) Close() {
 		// nor a page of the directory, whose open view closes with it
 		if directory != nil {
 			directory.close()
+		}
+		// and a mail call in flight answers unavailable
+		if mail != nil {
+			mail.close()
 		}
 		if remote != nil {
 			remote.close()
