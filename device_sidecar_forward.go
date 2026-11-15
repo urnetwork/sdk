@@ -128,8 +128,8 @@ const (
 )
 
 // What a role's Forwarder and F are built over, which the device supplies once it is built: the network space's urls,
-// the client strategy's transport, the device client's id and ClientKey public key, and the wake of the device's
-// status listeners, which never blocks.
+// the client strategy's transport, the device client's id and ClientKey public key, the wake of the device's status
+// listeners, which never blocks, and the clock every loop of the role and its Forwarder reads, nil for real time.
 type deviceForwardingDeps struct {
 	ctx           context.Context
 	apiUrl        string
@@ -137,6 +137,15 @@ type deviceForwardingDeps struct {
 	transport     http.RoundTripper
 	hostClient    func() (clientId []byte, publicKey []byte)
 	statusChanged func()
+	clock         sidecar.Clock
+}
+
+// deps' clock, or real time.
+func (self *deviceForwardingDeps) clockOrReal() sidecar.Clock {
+	if self == nil || self.clock == nil {
+		return sidecar.RealClock{}
+	}
+	return self.clock
 }
 
 // A device's forwarding roles (the file's comment). Nil on a device given no forwarding key store or directory, which
@@ -497,6 +506,10 @@ type deviceLocalForwarding struct {
 	expiresAt time.Time
 	// the newest head_alarm the Forwarder raised, nil before one
 	headAlarm *deviceForwardHeadAlarm
+	// what the loops of the Forwarder running read time from, real time before one runs, and the wake of the
+	// device's status listeners, nil before one runs
+	clock         sidecar.Clock
+	statusChanged func()
 	// wakes the promotion loop at once after a state was handed
 	promotionWanted chan struct{}
 }
@@ -605,6 +618,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		Transport:     deps.transport,
 		ByJwt:         byJwt,
 		ClientKeySeed: clientSet.clientSeed,
+		Clock:         deps.clock,
 	})
 	if err != nil {
 		return err
@@ -621,8 +635,9 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 	if err != nil {
 		return err
 	}
+	clock := deps.clockOrReal()
 	expiresAt := deviceForwardTokenExpiry(byJwt)
-	lapsed := !expiresAt.IsZero() && !time.Now().Before(expiresAt)
+	lapsed := !expiresAt.IsZero() && !clock.Now().Before(expiresAt)
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -630,6 +645,8 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		self.client = client
 		self.expiresAt = expiresAt
 		self.lapsed = lapsed
+		self.clock = clock
+		self.statusChanged = deps.statusChanged
 		self.promotionWanted = make(chan struct{}, 1)
 	}()
 	if lapsed {
@@ -664,6 +681,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		Emit: func(event sidecar.SidecarEvent) {
 			self.forwarderEvent(event, deps.statusChanged)
 		},
+		Clock:    deps.clock,
 		Settings: forwarderSettings,
 	})
 	if err != nil {
@@ -712,7 +730,22 @@ func (self *deviceLocalForwarding) currentForwarder() *sidecar.Forwarder {
 func (self *deviceLocalForwarding) lapsedNow() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.lapsed || (!self.expiresAt.IsZero() && !time.Now().Before(self.expiresAt))
+	return self.lapsed || (!self.expiresAt.IsZero() && !self.clockWithLock().Now().Before(self.expiresAt))
+}
+
+// The role's clock, real time before a Forwarder runs.
+func (self *deviceLocalForwarding) clockWithLock() sidecar.Clock {
+	if self.clock == nil {
+		return sidecar.RealClock{}
+	}
+	return self.clock
+}
+
+// The role's clock, read under its lock.
+func (self *deviceLocalForwarding) clockNow() sidecar.Clock {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.clockWithLock()
 }
 
 // The app's witnessed pin and fork, to the Forwarder.
@@ -730,13 +763,13 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 	retryCount := 0
 	for {
 		self.stateLock.Lock()
-		client := self.client
+		client, clock := self.client, self.clockWithLock()
 		self.stateLock.Unlock()
 		byJwt, err := self.keys.token()
 		wait := self.settings.RefreshRetryMaxTimeout
 		if err == nil && byJwt != "" {
 			if at, ok := deviceForwardRefreshAt(byJwt, self.settings); ok {
-				wait = time.Until(at)
+				wait = at.Sub(clock.Now())
 			}
 		}
 		if 0 < retryCount {
@@ -745,7 +778,7 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(max(wait, 0)):
+		case <-clock.After(max(wait, 0)):
 		}
 		if client == nil {
 			retryCount += 1
@@ -776,14 +809,20 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 	}
 }
 
-// Holds the posture pending for a lapsed F.
+// Holds the posture pending for a lapsed F, and tells the status listeners, since the lapse is in the status whether
+// or not the posture moved.
 func (self *deviceLocalForwarding) markLapsed() {
 	self.stateLock.Lock()
 	changed := !self.lapsed
 	self.lapsed = true
+	statusChanged := self.statusChanged
 	self.stateLock.Unlock()
-	if changed {
-		self.sink.applyFork()
+	if !changed {
+		return
+	}
+	self.sink.applyFork()
+	if statusChanged != nil {
+		statusChanged()
 	}
 }
 
@@ -811,7 +850,7 @@ func (self *deviceLocalForwarding) runPoll(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(deviceForwardBackoff(self.settings.PollRetryMinTimeout, self.settings.PollRetryMaxTimeout, retryCount)):
+			case <-self.clockNow().After(deviceForwardBackoff(self.settings.PollRetryMinTimeout, self.settings.PollRetryMaxTimeout, retryCount)):
 			}
 			continue
 		}
@@ -852,7 +891,7 @@ func (self *deviceLocalForwarding) runPromotion(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-wanted:
-		case <-time.After(self.settings.PromotionCheckInterval):
+		case <-self.clockNow().After(self.settings.PromotionCheckInterval):
 		}
 	}
 }
@@ -945,7 +984,7 @@ type deviceForwardHeadAlarm struct {
 func (self *deviceLocalForwarding) forwarderEvent(event sidecar.SidecarEvent, statusChanged func()) {
 	switch event.Kind {
 	case sidecar.SidecarEventHeadAlarm:
-		headAlarm := &deviceForwardHeadAlarm{Kind: string(event.HeadAlarm), At: time.Now()}
+		headAlarm := &deviceForwardHeadAlarm{Kind: string(event.HeadAlarm), At: self.clockNow().Now()}
 		for i, into := range []*uint64{&headAlarm.N, &headAlarm.OtherN} {
 			pin := &bridge.AuthPin{}
 			if proto.Unmarshal(event.Evidence[i], pin) == nil {

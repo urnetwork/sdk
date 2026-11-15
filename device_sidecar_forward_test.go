@@ -6,12 +6,16 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +51,8 @@ type testingForwardDevice struct {
 	stateDir  string
 	identity  *testingForwardIdentity
 	transport http.RoundTripper
+	// the role's clock, nil for real time
+	clock sidecar.Clock
 }
 
 func newTestingForwardDevice(t *testing.T) *testingForwardDevice {
@@ -70,6 +76,7 @@ func (self *testingForwardDevice) device(t *testing.T, adjust func(settings *Dev
 			deps.apiUrl = "https://api.forward.test"
 			deps.platformUrl = "wss://platform.forward.test"
 			deps.transport = self.transport
+			deps.clock = self.clock
 		}
 		if adjust != nil {
 			adjust(settings)
@@ -536,5 +543,247 @@ func TestForwardHeadAlarmReachesTheStatusMirror(t *testing.T) {
 		case <-deadline:
 			t.Fatal("no status carried the head alarm")
 		}
+	}
+}
+
+// A clock a test moves: each After and AfterFunc fires once Advance reaches its time, never on its own.
+type testingForwardClock struct {
+	stateLock sync.Mutex
+	now       time.Time
+	timers    []*testingForwardTimer
+}
+
+type testingForwardTimer struct {
+	at       time.Time
+	fired    chan time.Time
+	function func()
+}
+
+func newTestingForwardClock(now time.Time) *testingForwardClock {
+	return &testingForwardClock{now: now}
+}
+
+func (self *testingForwardClock) Now() time.Time {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.now
+}
+
+func (self *testingForwardClock) After(timeout time.Duration) <-chan time.Time {
+	fired := make(chan time.Time, 1)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if timeout <= 0 {
+		fired <- self.now
+		return fired
+	}
+	self.timers = append(self.timers, &testingForwardTimer{at: self.now.Add(timeout), fired: fired})
+	return fired
+}
+
+func (self *testingForwardClock) AfterFunc(timeout time.Duration, function func()) func() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	timer := &testingForwardTimer{at: self.now.Add(timeout), function: function}
+	self.timers = append(self.timers, timer)
+	return func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		held := slices.Contains(self.timers, timer)
+		self.timers = slices.DeleteFunc(self.timers, func(other *testingForwardTimer) bool { return other == timer })
+		return held
+	}
+}
+
+// Moves the clock by by and fires every timer it reaches.
+func (self *testingForwardClock) Advance(by time.Duration) {
+	self.stateLock.Lock()
+	self.now = self.now.Add(by)
+	now := self.now
+	due := []*testingForwardTimer{}
+	self.timers = slices.DeleteFunc(self.timers, func(timer *testingForwardTimer) bool {
+		if timer.at.After(now) {
+			return false
+		}
+		due = append(due, timer)
+		return true
+	})
+	self.stateLock.Unlock()
+	for _, timer := range due {
+		if timer.fired != nil {
+			timer.fired <- now
+		} else {
+			go timer.function()
+		}
+	}
+}
+
+// api as F's refresh reaches it: each GET /auth/refresh is handed to the test, which answers it with a token, an
+// empty one answering 503; every other request is 503.
+type testingForwardRefreshTransport struct {
+	requests chan *testingForwardRefresh
+}
+
+type testingForwardRefresh struct {
+	request *http.Request
+	answer  chan string
+}
+
+func (self *testingForwardRefreshTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.Method != http.MethodGet || !strings.HasSuffix(request.URL.Path, "/auth/refresh") {
+		return testingForwardTransport{}.RoundTrip(request)
+	}
+	refresh := &testingForwardRefresh{request: request, answer: make(chan string, 1)}
+	select {
+	case self.requests <- refresh:
+	case <-request.Context().Done():
+		return nil, request.Context().Err()
+	}
+	var byJwt string
+	select {
+	case byJwt = <-refresh.answer:
+	case <-request.Context().Done():
+		return nil, request.Context().Err()
+	}
+	if byJwt == "" {
+		return testingForwardTransport{}.RoundTrip(request)
+	}
+	return &http.Response{
+		StatusCode: 200,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"by_jwt":"` + byJwt + `"}`)),
+		Request:    request,
+	}, nil
+}
+
+// The next refresh F asks, within the test's bound.
+func (self *testingForwardRefreshTransport) next(t *testing.T) *testingForwardRefresh {
+	t.Helper()
+	select {
+	case refresh := <-self.requests:
+		return refresh
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("F asked for no refresh")
+		return nil
+	}
+}
+
+// The jwk x of a DPoP proof's header, empty for one that does not read.
+func testingForwardProofKey(proof string) string {
+	parts := strings.Split(proof, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return ""
+	}
+	header := struct {
+		Jwk struct {
+			X string `json:"x"`
+		} `json:"jwk"`
+	}{}
+	if json.Unmarshal(headerBytes, &header) != nil {
+		return ""
+	}
+	return header.Jwk.X
+}
+
+// F refreshes itself at its window's point by proofs of its own ClientKey, which the component generated, keeps the
+// new token before it presents it, and presents it at the next refresh, all on the role's clock with no app running.
+func TestForwardClientRefreshesByItsOwnProofs(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	keys, err := device.forwardingHost().keys(networkId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifetime := int64(7 * 24 * 60 * 60)
+	first := testingForwardJwt(t, start.Unix(), lifetime)
+	handOff := forward.identity.handOff(t, keys, forward.pending(), nil)
+	handOff.ForwardClientJwt = first
+	if err := device.forwardingHost().handOff(handOff); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	role, _ := device.forwardingHost().role(networkId, false)
+
+	// nothing before 40% of the lifetime; by 50% the refresh is asked
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh := transport.next(t)
+	if bearer := refresh.request.Header.Get("Authorization"); bearer != "Bearer "+first {
+		t.Errorf("the refresh presented %q", bearer)
+	}
+	if proofKey := testingForwardProofKey(refresh.request.Header.Get("DPoP")); proofKey != base64.RawURLEncoding.EncodeToString(keys.GetClientPublicKey()) {
+		t.Errorf("the refresh's proof is by %q, not F's own ClientKey", proofKey)
+	}
+	second := testingForwardJwt(t, start.Unix()+lifetime/2, lifetime)
+	refresh.answer <- second
+
+	// the next refresh, at the new token's point, presents the new token, which was kept first
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh = transport.next(t)
+	if bearer := refresh.request.Header.Get("Authorization"); bearer != "Bearer "+second {
+		t.Errorf("the next refresh presented %q", bearer)
+	}
+	if kept, _ := role.keys.token(); kept != second {
+		t.Error("the new token was presented before it was kept")
+	}
+	if status := role.status(); status.Lapsed || status.ForwardClientExpiresAt.Unix() != start.Unix()+lifetime/2+lifetime {
+		t.Errorf("status %+v", status)
+	}
+	refresh.answer <- testingForwardJwt(t, start.Unix()+lifetime, lifetime)
+}
+
+// F left unrefreshed past its exp lapses with no grace: its refreshes failing, the role holds its posture pending.
+func TestForwardClientLapsesUnrefreshed(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	keys, err := device.forwardingHost().keys(networkId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifetime := int64(7 * 24 * 60 * 60)
+	handOff := forward.identity.handOff(t, keys, forward.pending(), nil)
+	handOff.ForwardClientJwt = testingForwardJwt(t, start.Unix(), lifetime)
+	if err := device.forwardingHost().handOff(handOff); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	role, _ := device.forwardingHost().role(networkId, false)
+	changed := make(chan *BridgeStatus, 64)
+	sub := device.AddBridgeStatusChangeListener(&testingBridgeStatusListener{changed: changed})
+	defer sub.Close()
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh := transport.next(t)
+	// the clock passes the exp while the refresh is in flight, which then fails: the role lapses, and the status says
+	// so
+	clock.Advance(time.Duration(lifetime) * time.Second)
+	if role.status().Lapsed {
+		t.Fatal("the role lapsed before a refresh failed")
+	}
+	refresh.answer <- ""
+	deadline := time.After(testSidecarTimeout)
+	for lapsed := false; !lapsed; {
+		select {
+		case status := <-changed:
+			lapsed = status.Networks != nil && status.Networks.Len() == 1 && status.Networks.Get(0).Lapsed
+		case <-deadline:
+			t.Fatal("no status carried the lapse")
+		}
+	}
+	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
+		t.Errorf("a lapsed role's decision %+v", decision)
 	}
 }
