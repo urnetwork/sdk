@@ -413,16 +413,155 @@ func (self *DeviceLocal) notifyBridgeStatus() {
 	})
 }
 
+// The status as the device RPC carries it: plain fields and slices, since gob encodes no StringList or bound list,
+// whose fields are unexported. RPC plumbing, named with the DeviceRemote prefix mobileexports keeps out of the
+// bindings, as every RPC message type is.
+//
+//gomobile:noexport
+type DeviceRemoteBridgeStatus struct {
+	State             string
+	HasDocument       bool
+	PinN              int64
+	Block             string
+	Addresses         []string
+	EntryCount        int32
+	MapCount          int32
+	ServedCount       int32
+	SubjectCount      int32
+	LinkOpenCount     int32
+	LinkBuildingCount int32
+	NameCount         int32
+	Networks          []*DeviceRemoteBridgeNetworkStatus
+}
+
+// One forwarding role's fields as the device RPC carries them.
+//
+//gomobile:noexport
+type DeviceRemoteBridgeNetworkStatus struct {
+	NetworkId                  connect.Id
+	Hosting                    bool
+	Posture                    string
+	KeySet                     string
+	Lapsed                     bool
+	ForwardClientExpiresMillis int64
+	TipN                       int64
+	CompiledN                  int64
+	Alarms                     []string
+	CompileCount               int64
+	CompileErrorCount          int64
+	CompileRefusedCount        int64
+}
+
+// The RPC's copy of status, nil for nil.
+func newDeviceRemoteBridgeStatus(status *BridgeStatus) *DeviceRemoteBridgeStatus {
+	if status == nil {
+		return nil
+	}
+	mirrored := &DeviceRemoteBridgeStatus{
+		State:             status.State,
+		HasDocument:       status.HasDocument,
+		PinN:              status.PinN,
+		Block:             status.Block,
+		EntryCount:        status.EntryCount,
+		MapCount:          status.MapCount,
+		ServedCount:       status.ServedCount,
+		SubjectCount:      status.SubjectCount,
+		LinkOpenCount:     status.LinkOpenCount,
+		LinkBuildingCount: status.LinkBuildingCount,
+		NameCount:         status.NameCount,
+	}
+	if status.Addresses != nil {
+		mirrored.Addresses = status.Addresses.getAll()
+	}
+	if status.Networks != nil {
+		for _, network := range status.Networks.getAll() {
+			if network == nil {
+				continue
+			}
+			mirroredNetwork := &DeviceRemoteBridgeNetworkStatus{
+				Hosting:                    network.Hosting,
+				Posture:                    network.Posture,
+				KeySet:                     network.KeySet,
+				Lapsed:                     network.Lapsed,
+				ForwardClientExpiresMillis: network.ForwardClientExpiresMillis,
+				TipN:                       network.TipN,
+				CompiledN:                  network.CompiledN,
+				CompileCount:               network.CompileCount,
+				CompileErrorCount:          network.CompileErrorCount,
+				CompileRefusedCount:        network.CompileRefusedCount,
+			}
+			if network.NetworkId != nil {
+				mirroredNetwork.NetworkId = network.NetworkId.toConnectId()
+			}
+			if network.Alarms != nil {
+				mirroredNetwork.Alarms = network.Alarms.getAll()
+			}
+			mirrored.Networks = append(mirrored.Networks, mirroredNetwork)
+		}
+	}
+	return mirrored
+}
+
+// The bound status the RPC's copy carries, legacy's for nil.
+func (self *DeviceRemoteBridgeStatus) toBridgeStatus() *BridgeStatus {
+	if self == nil {
+		return bridgeStatusOf(sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}, nil)
+	}
+	status := &BridgeStatus{
+		State:             self.State,
+		HasDocument:       self.HasDocument,
+		PinN:              self.PinN,
+		Block:             self.Block,
+		Addresses:         stringListFromStrings(self.Addresses),
+		EntryCount:        self.EntryCount,
+		MapCount:          self.MapCount,
+		ServedCount:       self.ServedCount,
+		SubjectCount:      self.SubjectCount,
+		LinkOpenCount:     self.LinkOpenCount,
+		LinkBuildingCount: self.LinkBuildingCount,
+		NameCount:         self.NameCount,
+		Networks:          NewBridgeNetworkStatusList(),
+	}
+	for _, network := range self.Networks {
+		if network == nil {
+			continue
+		}
+		status.Networks.Add(&BridgeNetworkStatus{
+			NetworkId:                  newId([16]byte(network.NetworkId)),
+			Hosting:                    network.Hosting,
+			Posture:                    network.Posture,
+			KeySet:                     network.KeySet,
+			Lapsed:                     network.Lapsed,
+			ForwardClientExpiresMillis: network.ForwardClientExpiresMillis,
+			TipN:                       network.TipN,
+			CompiledN:                  network.CompiledN,
+			Alarms:                     stringListFromStrings(network.Alarms),
+			CompileCount:               network.CompileCount,
+			CompileErrorCount:          network.CompileErrorCount,
+			CompileRefusedCount:        network.CompileRefusedCount,
+		})
+	}
+	return status
+}
+
 // The device RPC's GetBridgeStatus.
-func (self *DeviceLocalRpc) GetBridgeStatus(_ RpcNoArg, status **BridgeStatus) error {
-	*status = self.deviceLocal.GetBridgeStatus()
+func (self *DeviceLocalRpc) GetBridgeStatus(_ RpcNoArg, status **DeviceRemoteBridgeStatus) error {
+	*status = newDeviceRemoteBridgeStatus(self.deviceLocal.GetBridgeStatus())
 	return nil
 }
 
-// The device RPC's AddBridgeStatusChangeListener: the remote's listener id, heard through BridgeStatusChanged.
+// The device RPC's AddBridgeStatusChangeListener: the remote's listener id, heard through BridgeStatusChanged. A sync
+// re-adds every id the remote holds, since each connection's rpc starts with none, and closing the service removes
+// them, so a closed connection's rpc stays subscribed to nothing.
 func (self *DeviceLocalRpc) AddBridgeStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addBridgeStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// Subscribes to the device once, for the first remote listener.
+func (self *DeviceLocalRpc) addBridgeStatusChangeListenerWithLock(listenerId connect.Id) {
 	if self.bridgeStatusChangeListenerIds == nil {
 		self.bridgeStatusChangeListenerIds = map[connect.Id]bool{}
 	}
@@ -430,44 +569,49 @@ func (self *DeviceLocalRpc) AddBridgeStatusChangeListener(listenerId connect.Id,
 	if self.bridgeStatusChangeListenerSub == nil {
 		self.bridgeStatusChangeListenerSub = self.deviceLocal.AddBridgeStatusChangeListener(self)
 	}
-	return nil
 }
 
 // The device RPC's RemoveBridgeStatusChangeListener.
 func (self *DeviceLocalRpc) RemoveBridgeStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeBridgeStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// Unsubscribes from the device with the last remote listener.
+func (self *DeviceLocalRpc) removeBridgeStatusChangeListenerWithLock(listenerId connect.Id) {
 	delete(self.bridgeStatusChangeListenerIds, listenerId)
 	if len(self.bridgeStatusChangeListenerIds) == 0 && self.bridgeStatusChangeListenerSub != nil {
 		self.bridgeStatusChangeListenerSub.Close()
 		self.bridgeStatusChangeListenerSub = nil
 	}
-	return nil
 }
 
 // BridgeStatusChangeListener: the status to the remote, an async coalescing reverse notification.
 func (self *DeviceLocalRpc) BridgeStatusChanged(status *BridgeStatus) {
-	self.reverseNotify("DeviceRemoteRpc.BridgeStatusChanged", status)
+	self.reverseNotify("DeviceRemoteRpc.BridgeStatusChanged", newDeviceRemoteBridgeStatus(status))
 }
 
 // The device RPC's reverse BridgeStatusChanged, to the remote's listeners.
-func (self *DeviceRemoteRpc) BridgeStatusChanged(status *BridgeStatus, _ RpcVoid) error {
+func (self *DeviceRemoteRpc) BridgeStatusChanged(status *DeviceRemoteBridgeStatus, _ RpcVoid) error {
 	self.dispatch(func() {
-		self.deviceRemote.bridgeStatusChanged(status)
+		self.deviceRemote.bridgeStatusChanged(status.toBridgeStatus())
 	})
 	return nil
 }
 
 // The status the VPN component's process reports, legacy's while it cannot answer or is too old to know the call.
 func (self *DeviceRemote) GetBridgeStatus() *BridgeStatus {
-	status, err := deviceRemoteForwardingCall[*BridgeStatus](self, "DeviceLocalRpc.GetBridgeStatus", RpcNoArg(0))
-	if err != nil || status == nil {
+	status, err := deviceRemoteForwardingCall[*DeviceRemoteBridgeStatus](self, "DeviceLocalRpc.GetBridgeStatus", RpcNoArg(0))
+	if err != nil {
 		return bridgeStatusOf(sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}, nil)
 	}
-	return status
+	return status.toBridgeStatus()
 }
 
-// Calls listener with each status the VPN component's process sends; an older one sends none.
+// Calls listener with each status the VPN component's process sends, across reconnects, each sync re-adding it with
+// the current status; an older process sends none.
 func (self *DeviceRemote) AddBridgeStatusChangeListener(listener BridgeStatusChangeListener) Sub {
 	self.stateLock.Lock()
 	if self.bridgeStatusChangeListeners == nil {

@@ -360,8 +360,8 @@ func TestBridgeStatusCarriesTheForwardingFields(t *testing.T) {
 		t.Error("no status change was heard")
 	}
 	rpc := &DeviceLocalRpc{deviceLocal: device}
-	var mirrored *BridgeStatus
-	if err := rpc.GetBridgeStatus(0, &mirrored); err != nil || mirrored.Networks.Len() != 1 {
+	var mirrored *DeviceRemoteBridgeStatus
+	if err := rpc.GetBridgeStatus(0, &mirrored); err != nil || len(mirrored.Networks) != 1 || mirrored.toBridgeStatus().Networks.Len() != 1 {
 		t.Errorf("the RPC's status %+v, %v", mirrored, err)
 	}
 	encoded, _ := json.Marshal(mirrored)

@@ -352,7 +352,7 @@ type DeviceRemote struct {
 	ingressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
 	dnsResolverSettingsChangeListeners       map[connect.Id]DnsResolverSettingsChangeListener
 	networkPeersChangeListeners              map[connect.Id]NetworkPeersChangeListener
-	// the bridge status mirror's listeners (device_sidecar_channel.go), made at the first
+	// the bridge status mirror's listeners (device_sidecar_channel.go), re-added at each sync as the others are
 	bridgeStatusChangeListeners map[connect.Id]BridgeStatusChangeListener
 
 	providerPacketStatsChangeListeners            map[connect.Id]PacketStatsChangeListener
@@ -620,6 +620,7 @@ func newDeviceRemoteWithOverrides(
 		ingressContractDetailsChangeListeners:    map[connect.Id]ContractDetailsChangeListener{},
 		dnsResolverSettingsChangeListeners:       map[connect.Id]DnsResolverSettingsChangeListener{},
 		networkPeersChangeListeners:              map[connect.Id]NetworkPeersChangeListener{},
+		bridgeStatusChangeListeners:              map[connect.Id]BridgeStatusChangeListener{},
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
 		deviceConfigurationChangedListeners:      connect.NewCallbackList[DeviceConfigurationChangedListener](),
@@ -815,6 +816,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		IngressContractDetailsChangeListenerIds:         slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
 		DnsResolverSettingsChangeListenerIds:            slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
 		NetworkPeersChangeListenerIds:                   slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
+		BridgeStatusChangeListenerIds:                   slices.Collect(maps.Keys(self.bridgeStatusChangeListeners)),
 		ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
 		ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
 		ProviderEgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.providerEgressContractDetailsChangeListeners)),
@@ -7733,8 +7735,10 @@ type DeviceRemoteSyncRequest struct {
 	IngressContractDetailsChangeListenerIds    []connect.Id
 	DnsResolverSettingsChangeListenerIds       []connect.Id
 	NetworkPeersChangeListenerIds              []connect.Id
-	WindowMonitorEventListenerIds              map[connect.Id][]connect.Id
-	State                                      DeviceRemoteState
+	// the bridge status mirror's listeners (device_sidecar_channel.go); a device that predates them ignores the field
+	BridgeStatusChangeListenerIds []connect.Id
+	WindowMonitorEventListenerIds map[connect.Id][]connect.Id
+	State                         DeviceRemoteState
 
 	ProviderPacketStatsChangeListenerIds            []connect.Id
 	ProviderEgressContractStatsChangeListenerIds    []connect.Id
@@ -9670,7 +9674,8 @@ type DeviceLocalRpc struct {
 	ingressContractDetailsChangeListenerSub    Sub
 	dnsResolverSettingsChangeListenerSub       Sub
 	networkPeersChangeListenerSub              Sub
-	// the remote's bridge status listeners (device_sidecar_channel.go), made at the first
+	// the remote's bridge status listeners (device_sidecar_channel.go): re-added at each sync and removed with the
+	// service, as the others are
 	bridgeStatusChangeListenerIds map[connect.Id]bool
 	bridgeStatusChangeListenerSub Sub
 
@@ -9761,6 +9766,7 @@ func newDeviceLocalRpc(
 		ingressContractDetailsChangeListenerIds:    map[connect.Id]bool{},
 		dnsResolverSettingsChangeListenerIds:       map[connect.Id]bool{},
 		networkPeersChangeListenerIds:              map[connect.Id]bool{},
+		bridgeStatusChangeListenerIds:              map[connect.Id]bool{},
 		localWindowIds:                             map[connect.Id]connect.Id{},
 		sendPending:                                map[string]func(){},
 		sendSignal:                                 make(chan struct{}, 1),
@@ -10040,6 +10046,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for networkPeersChangeListenerId, _ := range self.networkPeersChangeListenerIds {
 		self.removeNetworkPeersChangeListener(networkPeersChangeListenerId)
+	}
+	for bridgeStatusChangeListenerId := range self.bridgeStatusChangeListenerIds {
+		self.removeBridgeStatusChangeListenerWithLock(bridgeStatusChangeListenerId)
 	}
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
@@ -10697,6 +10706,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, networkPeersChangeListenerId := range syncRequest.NetworkPeersChangeListenerIds {
 		self.addNetworkPeersChangeListener(networkPeersChangeListenerId)
 	}
+	for _, bridgeStatusChangeListenerId := range syncRequest.BridgeStatusChangeListenerIds {
+		self.addBridgeStatusChangeListenerWithLock(bridgeStatusChangeListenerId)
+	}
 	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
 		for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
@@ -10904,6 +10916,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.networkPeersChangeListenerSub != nil {
 		self.networkPeersChanged(self.deviceLocal.GetNetworkPeers())
+	}
+	if self.bridgeStatusChangeListenerSub != nil {
+		self.BridgeStatusChanged(self.deviceLocal.GetBridgeStatus())
 	}
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
