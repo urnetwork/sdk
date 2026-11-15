@@ -108,6 +108,8 @@ type Sidecar struct {
 	// the wrappers, made at their first Get
 	evs     *SidecarEvs
 	sockets *SidecarSockets
+	// the bounds SignEdgeLogin holds its arguments to (sidecar_edge_login.go), nil for the defaults
+	edgeLoginSettings *sidecarEdgeLoginSettings
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
