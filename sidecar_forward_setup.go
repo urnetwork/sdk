@@ -11,8 +11,9 @@
 //	when      the core's ForwardingSetupDue: a new client generation, the 90-day rotation, no live Delegation; after
 //	          another signer revoked the Delegation (foreign_revocation) only once the person confirms in the app, which
 //	          the role offers by raising bridge_alarm forwarding_revoked, and ConfirmForwardingSetup runs it
-//	witness   every WitnessInterval while the role knows the device, its witnessed pin and fork go to the component as
-//	          a hint (ForwardingWitness) when either moved; a due setup found then runs too
+//	witness   every WitnessInterval while the role knows the device, and at once at each head_alarm the core raises,
+//	          a fork it found among them, its witnessed pin and fork go to the component as a hint (ForwardingWitness)
+//	          when either moved; a due setup found then runs too
 //	device    the app's Device given to EnrollWithDevice, which carries the VPN component (DeviceLocal in process on
 //	          Android, DeviceRemote over the device RPC to the Apple extensions): a role that has none since its start,
 //	          as after a restart before the app enrolls again, runs nothing, since no other bound call names the device
@@ -86,6 +87,24 @@ type sidecarForwarding struct {
 	// a hand-off the component did not take, held in memory alone and handed again at each witness until it is: the
 	// device RPC was down or the component's process restarting (§18.6's after row)
 	pendingHandOff *bridge.ForwardingHandOff
+	// wakes the witness loop at once: a head_alarm the core raised
+	wake chan struct{}
+}
+
+// The witness loop's wake on the Sidecar's events: a head_alarm, which may be a fork the core found, sends the witness
+// at once rather than at the next interval, so the component holds pending on it promptly. Never blocks.
+type sidecarForwardingWitnessWake struct {
+	wake chan struct{}
+}
+
+func (self *sidecarForwardingWitnessWake) SidecarEventReceived(event *SidecarEvent) {
+	if event == nil || event.Kind != string(sidecar.SidecarEventHeadAlarm) {
+		return
+	}
+	select {
+	case self.wake <- struct{}{}:
+	default:
+	}
 }
 
 // Hands handOff to device, keeping it for the next witness when the component cannot be reached; a refusal of the
@@ -121,7 +140,7 @@ func (self *Sidecar) forwardingState() *sidecarForwarding {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.forwarding == nil {
-		self.forwarding = &sidecarForwarding{settings: defaultSidecarForwardingSetupSettings()}
+		self.forwarding = &sidecarForwarding{settings: defaultSidecarForwardingSetupSettings(), wake: make(chan struct{}, 1)}
 	}
 	return self.forwarding
 }
@@ -257,14 +276,20 @@ func (self *Sidecar) raiseForwardingRevoked(networkId sidecar.Id) {
 	})
 }
 
-// Sends the witness hint while the role knows the device: every WitnessInterval, and a due setup found then runs.
+// Sends the witness hint while the role knows the device: every WitnessInterval and at each head_alarm, and a due
+// setup found then runs.
 func (self *Sidecar) runForwardingWitness(ctx context.Context) {
 	forwarding := self.forwardingState()
+	if self.events != nil {
+		remove := self.events.addListener(&sidecarForwardingWitnessWake{wake: forwarding.wake})
+		defer remove()
+	}
 	for {
 		self.sendForwardingWitness(ctx)
 		select {
 		case <-ctx.Done():
 			return
+		case <-forwarding.wake:
 		case <-time.After(forwarding.settings.WitnessInterval):
 		}
 	}

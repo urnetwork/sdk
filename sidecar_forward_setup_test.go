@@ -76,6 +76,8 @@ type testingForwardingChannel struct {
 	witnesses   []*bridge.AuthPin
 	forks       []bool
 	unreachable bool
+	// signaled at each witness, when set
+	witnessed chan struct{}
 }
 
 func (self *testingForwardingChannel) forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error) {
@@ -97,6 +99,12 @@ func (self *testingForwardingChannel) forwardingWitness(networkId connect.Id, pi
 	defer self.stateLock.Unlock()
 	self.witnesses = append(self.witnesses, pin)
 	self.forks = append(self.forks, fork)
+	if self.witnessed != nil {
+		select {
+		case self.witnessed <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -382,5 +390,37 @@ func (self *testingBridgeStatusListener) BridgeStatusChanged(status *BridgeStatu
 	select {
 	case self.changed <- status:
 	default:
+	}
+}
+
+// A fork the core found reaches the component at the head_alarm the core raises for it, not at the next interval, so
+// the component holds pending on it promptly.
+func TestForkWitnessedAtTheHeadAlarm(t *testing.T) {
+	core := &testingSetupCore{networkId: sidecar.Id(connect.NewId()), witnessPin: &bridge.AuthPin{Version: 5}}
+	channel := &testingForwardingChannel{witnessed: make(chan struct{}, 1)}
+	local := testingSetupSidecar(t, core, channel)
+	forwarding := local.forwardingState()
+	forwarding.settings.WitnessInterval = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go local.runForwardingWitness(ctx)
+	waitWitness := func(when string) {
+		t.Helper()
+		select {
+		case <-channel.witnessed:
+		case <-time.After(testSidecarTimeout):
+			t.Fatalf("no witness reached the component %s", when)
+		}
+	}
+	waitWitness("at the loop's start")
+	core.stateLock.Lock()
+	core.fork = true
+	core.stateLock.Unlock()
+	local.events.offerFresh(sidecar.SidecarEvent{Kind: sidecar.SidecarEventHeadAlarm, HeadAlarm: sidecar.SidecarHeadAlarmFork})
+	waitWitness("at the head_alarm")
+	channel.stateLock.Lock()
+	defer channel.stateLock.Unlock()
+	if len(channel.forks) != 2 || channel.forks[0] || !channel.forks[1] || channel.witnesses[1].GetVersion() != 5 {
+		t.Errorf("the component was told forks %v", channel.forks)
 	}
 }
