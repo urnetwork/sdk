@@ -21,81 +21,92 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
-// One event. A field is set only for the kinds its comment names; the rest are zero.
+// One event. A field is set only for the kinds its comment names; the rest are zero. json in the C ABI and js.
 type SidecarEvent struct {
 	// The core's kind: state, approval_pending, member_added, member_removed, key_changed, refused, admission_alarm,
 	// recovery_rebind, recovery_window, recovery_unseen, admissions_near_cap, head_alarm, index_mismatch,
 	// index_malformed, search_alarm, history_drop, access_request, access_decided, directory_erasure, erasure,
 	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, and any a later
 	// component adds.
-	Kind string
+	Kind string `json:"kind"`
 	// The client generation it comes from (§18.5's State block).
-	Generation int64
+	Generation int64 `json:"generation"`
 	// state: locked, unenrolled, offline, online or revoked.
-	State string
+	State string `json:"state,omitempty"`
 	// state: the reason of an unenrolled or revoked state.
-	Reason string
+	Reason string `json:"reason,omitempty"`
 	// member_added, member_removed: the group.
-	GroupId *Id
+	GroupId *Id `json:"group_id,omitempty"`
 	// The sidecar its kind names: a group's member, an admitted, recovered or rebinding device, a head alarm's peer,
-	// an index alarm's or drop's signer, a search alarm's indexer.
-	SidecarId *Id
+	// an index alarm's or drop's signer, a search alarm's indexer, a ct_alarm's attesting identity.
+	SidecarId *Id `json:"sidecar_id,omitempty"`
 	// Index alarms, search_alarm, history_drop, directory_erasure, erasure and the evs kinds.
-	RepoId *Id
+	RepoId *Id `json:"repo_id,omitempty"`
 	// Index alarms, history_drop and the evs kinds.
-	RefId *Id
+	RefId *Id `json:"ref_id,omitempty"`
 	// Index alarms: the path; history_drop: its first listed path; evs_conflict: the local conflict ref; evs_alarm:
 	// the path, where one is named. Local to this device: never log it (I-13).
-	Path string
+	Path string `json:"path,omitempty"`
 	// history_drop.
-	DropId *Id
+	DropId *Id `json:"drop_id,omitempty"`
 	// history_drop: pending, cancelled, executing, done, refused or invalid.
-	DropState string
+	DropState string `json:"drop_state,omitempty"`
 	// history_drop: its window's end, in unix milliseconds; 0 for none.
-	NotBeforeMillis int64
+	NotBeforeMillis int64 `json:"not_before_millis,omitempty"`
 	// search_alarm: mismatch or omission.
-	SearchAlarm string
+	SearchAlarm string `json:"search_alarm,omitempty"`
 	// access_request, access_decided, directory_erasure.
-	RequestId *Id
+	RequestId *Id `json:"request_id,omitempty"`
 	// access_decided: approved, denied, cancelled or expired; directory_erasure: pending or done.
-	Outcome string
+	Outcome string `json:"outcome,omitempty"`
 	// mail_send: the send, whose outcomes GetSendResult reads.
-	SendId *Id
+	SendId *Id `json:"send_id,omitempty"`
 	// approval_pending.
-	ApprovalId *Id
+	ApprovalId *Id `json:"approval_id,omitempty"`
 	// head_alarm: fork, withheld, unverified or unwitnessed.
-	HeadAlarm string
+	HeadAlarm string `json:"head_alarm,omitempty"`
 	// head_alarm: this device's pin; recovery_rebind at a void: the AuthPin keychain.wrap was sealed at.
-	FirstEvidence []byte
+	FirstEvidence []byte `json:"first_evidence,omitempty"`
 	// head_alarm: the peer's or api's pin; recovery_rebind at a void: the AuthPin it was re-sealed at.
-	SecondEvidence []byte
+	SecondEvidence []byte `json:"second_evidence,omitempty"`
 	// erasure.
-	Erasure *SidecarErasure
+	Erasure *SidecarErasure `json:"erasure,omitempty"`
 	// evs_alarm: missing_segment, tamper, version_rule, epoch_overdue or prefix_rule.
-	EvsAlarm string
+	EvsAlarm string `json:"evs_alarm,omitempty"`
+	// evs_alarm of reason prefix_rule: ignored, refused, set_void or set_newer, what it stands for.
+	EvsAlarmDetail string `json:"evs_alarm_detail,omitempty"`
+	// evs_alarm of reason prefix_rule: the ref version of the first change it names, or a set's log position.
+	Version int64 `json:"version,omitempty"`
+	// evs_alarm of reason prefix_rule: the push of the first change it names; nil for a set's.
+	PushId *Id `json:"push_id,omitempty"`
+	// evs_alarm of reason prefix_rule: how many changes it stands for.
+	Count int64 `json:"count,omitempty"`
 	// evs_gap: the newest re-pin past the catch-up budget, in unix milliseconds; 0 for none.
-	VerifiedSinceMillis int64
+	VerifiedSinceMillis int64 `json:"verified_since_millis,omitempty"`
 	// record_alarm: what the record found, one of the core's closed set (chain_gap, chain_fork, bad_entry, ...).
-	RecordAlarm string
+	RecordAlarm string `json:"record_alarm,omitempty"`
 	// bridge_alarm: what the bridge found (block_conflict, state_unverified, map_refused, ...).
-	BridgeAlarm string
+	BridgeAlarm string `json:"bridge_alarm,omitempty"`
 	// dns_alarm: what the zone watch found (split, unrequested, zone_mismatch, ...).
-	DnsAlarm string
+	DnsAlarm string `json:"dns_alarm,omitempty"`
+	// ct_alarm: what the CT watch found (unattested, recent_identity).
+	CtAlarm string `json:"ct_alarm,omitempty"`
 }
 
-// An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait).
+// An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI
+// and js.
 type SidecarErasure struct {
-	ErasureId *Id
+	ErasureId *Id `json:"erasure_id,omitempty"`
 	// fenced, rewriting, waiting, done or stalled.
-	State string
+	State string `json:"state"`
 	// Rekey objects not yet re-keyed.
-	ObjectsLeft int64
+	ObjectsLeft int64 `json:"objects_left,omitempty"`
 	// Their closure bytes.
-	BytesLeft int64
+	BytesLeft int64 `json:"bytes_left,omitempty"`
 	// The last 429's retry, in unix milliseconds; 0 when none waits.
-	NextTryMillis int64
+	NextTryMillis int64 `json:"next_try_millis,omitempty"`
 	// The bound on its finish, in unix milliseconds; 0 below the limit.
-	FinishMillis int64
+	FinishMillis int64 `json:"finish_millis,omitempty"`
 }
 
 // App-implemented: called on a Go thread with each event, in order.
@@ -127,10 +138,15 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		FirstEvidence:       sidecarBytesOf(event.Evidence[0]),
 		SecondEvidence:      sidecarBytesOf(event.Evidence[1]),
 		EvsAlarm:            string(event.EvsAlarm),
+		EvsAlarmDetail:      string(event.EvsAlarmDetail),
+		Version:             int64(event.Version),
+		PushId:              sidecarIdOf(event.PushId),
+		Count:               int64(event.Count),
 		VerifiedSinceMillis: sidecarMillisOf(event.VerifiedSince),
 		RecordAlarm:         string(event.RecordAlarm),
 		BridgeAlarm:         string(event.BridgeAlarm),
 		DnsAlarm:            string(event.DnsAlarm),
+		CtAlarm:             string(event.CtAlarm),
 	}
 	if erasure := event.Erasure; erasure != nil {
 		bound.Erasure = sidecarErasureOf(erasure)

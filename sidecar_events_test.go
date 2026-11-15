@@ -115,6 +115,12 @@ func testFullSidecarEvent(kind string) *sidecar.SidecarEvent {
 		RecordAlarm:   sidecar.SidecarRecordAlarmChainGap,
 		BridgeAlarm:   sidecar.SidecarBridgeAlarmStateUnverified,
 		DnsAlarm:      sidecar.SidecarDnsAlarmZoneMismatch,
+		// evs_alarm's prefix_rule detail and ct_alarm (DESIGN-DETAILS 16.2.10, D-TLS-8)
+		EvsAlarmDetail: sidecar.SidecarEvsAlarmDetailSetVoid,
+		Version:        17,
+		PushId:         id(0xa0),
+		Count:          3,
+		CtAlarm:        sidecar.SidecarCtAlarmRecentIdentity,
 	}
 }
 
@@ -126,7 +132,7 @@ func TestEveryEventKindMaps(t *testing.T) {
 		"RepoId": true, "RefId": true, "Path": true, "DropId": true, "DropState": true, "NotBefore": true,
 		"SearchAlarm": true, "RequestId": true, "Outcome": true, "SendId": true, "ApprovalId": true, "HeadAlarm": true,
 		"Evidence": true, "Erasure": true, "EvsAlarm": true, "VerifiedSince": true, "RecordAlarm": true, "BridgeAlarm": true,
-		"DnsAlarm": true,
+		"DnsAlarm": true, "EvsAlarmDetail": true, "Version": true, "PushId": true, "Count": true, "CtAlarm": true,
 	}
 	eventType := reflect.TypeFor[sidecar.SidecarEvent]()
 	for i := 0; i < eventType.NumField(); i += 1 {
@@ -159,7 +165,9 @@ func TestEveryEventKindMaps(t *testing.T) {
 			bound.SearchAlarm != string(core.SearchAlarm) || bound.Outcome != core.Outcome ||
 			bound.HeadAlarm != string(core.HeadAlarm) || bound.EvsAlarm != string(core.EvsAlarm) ||
 			bound.RecordAlarm != string(core.RecordAlarm) || bound.BridgeAlarm != string(core.BridgeAlarm) ||
-			bound.DnsAlarm != string(core.DnsAlarm) {
+			bound.DnsAlarm != string(core.DnsAlarm) || bound.EvsAlarmDetail != string(core.EvsAlarmDetail) ||
+			bound.CtAlarm != string(core.CtAlarm) || bound.Version != int64(core.Version) || bound.Count != int64(core.Count) ||
+			!sameId(bound.PushId, core.PushId) {
 			t.Errorf("%s: the strings mapped as %+v", kind, bound)
 		}
 		if !sameId(bound.GroupId, core.GroupId) || !sameId(bound.SidecarId, core.SidecarId) || !sameId(bound.RepoId, core.RepoId) ||

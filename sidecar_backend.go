@@ -232,10 +232,15 @@ func (self *sidecarControlEvent) boundEvent() *SidecarEvent {
 		FirstEvidence:       sidecarControlBytesOf(self.FirstEvidence),
 		SecondEvidence:      sidecarControlBytesOf(self.SecondEvidence),
 		EvsAlarm:            self.EvsAlarm,
+		EvsAlarmDetail:      self.EvsAlarmDetail,
+		Version:             int64(self.Version),
+		PushId:              sidecarControlIdOf(self.PushId),
+		Count:               int64(self.Count),
 		VerifiedSinceMillis: self.VerifiedSinceMs,
 		RecordAlarm:         self.RecordAlarm,
 		BridgeAlarm:         self.BridgeAlarm,
 		DnsAlarm:            self.DnsAlarm,
+		CtAlarm:             self.CtAlarm,
 	}
 	if erasure := self.Erasure; erasure != nil {
 		bound.Erasure = &SidecarErasure{
