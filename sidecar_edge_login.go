@@ -22,7 +22,7 @@
 //	           SIGNED_TLS_EDGE_LOGIN naming the origin and the nonce sent; its signature is the front's to check
 //
 // The nonce and the statement are one login's secrets: nothing here logs either, and a refusal's message repeats
-// neither (I-7), a daemon's refusal that would being replaced. Safe for concurrent use.
+// neither (I-7): a daemon's refusal that would is replaced. Safe for concurrent use.
 
 package sdk
 
