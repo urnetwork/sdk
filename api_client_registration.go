@@ -125,6 +125,9 @@ func (self *Api) RegisterNetworkClientSyncWithContext(ctx context.Context, args 
 	}
 	raw, err := self.getHttpPostRaw()(connect.WithHttpRedirectsDisabled(ctx), endpoint, bytes.Clone(body), self.GetByJwt())
 	if err != nil {
+		if clientControlErrorIsNil(err) {
+			return nil, err
+		}
 		var invalid *ClientControlResponseError
 		if errors.As(err, &invalid) {
 			return nil, err
