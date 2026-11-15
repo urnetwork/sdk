@@ -949,6 +949,8 @@ class IoLoop;
 
 /* ----- data types (json) ----- */
 
+struct AccountCurrentBlock;
+struct AccountCurrentEpoch;
 struct AccountEpoch;
 struct SnError;
 struct AccountEpochsResult;
@@ -1468,6 +1470,23 @@ using TransportPacketStatsList = std::vector<TransportPacketStats>;
 using TransportShareList = std::vector<TransportShare>;
 using UploadLogsFileList = std::vector<UploadLogsFile>;
 
+struct AccountCurrentBlock {
+	int64_t block_number{};
+	int64_t start_millis{};
+	int64_t end_millis{};
+	int64_t served_byte_count{};
+	int64_t as_of_millis{};
+	int64_t epoch{};
+};
+
+struct AccountCurrentEpoch {
+	int64_t epoch{};
+	int64_t start_millis{};
+	int64_t end_millis{};
+	int64_t served_byte_count{};
+	int64_t as_of_millis{};
+};
+
 struct AccountEpoch {
 	int64_t epoch{};
 	int64_t start_millis{};
@@ -1475,6 +1494,7 @@ struct AccountEpoch {
 	double points{};
 	int64_t share_bps{};
 	std::optional<int64_t> rank;
+	int64_t served_byte_count{};
 };
 
 struct SnError {
@@ -1485,6 +1505,8 @@ struct SnError {
 struct AccountEpochsResult {
 	std::optional<AccountEpochList> epochs;
 	std::optional<double> total_points;
+	std::optional<AccountCurrentEpoch> current_epoch;
+	std::optional<AccountCurrentBlock> current_block;
 	std::optional<SnError> error;
 };
 
@@ -5215,6 +5237,10 @@ struct WindowStatus {
 	bool Failed{};
 };
 
+inline void to_json(nlohmann::json& j, const AccountCurrentBlock& v);
+inline void from_json(const nlohmann::json& j, AccountCurrentBlock& v);
+inline void to_json(nlohmann::json& j, const AccountCurrentEpoch& v);
+inline void from_json(const nlohmann::json& j, AccountCurrentEpoch& v);
 inline void to_json(nlohmann::json& j, const AccountEpoch& v);
 inline void from_json(const nlohmann::json& j, AccountEpoch& v);
 inline void to_json(nlohmann::json& j, const SnError& v);
@@ -6088,6 +6114,68 @@ inline void from_json(const nlohmann::json& j, WalletValidateAddressResult& v);
 inline void to_json(nlohmann::json& j, const WindowStatus& v);
 inline void from_json(const nlohmann::json& j, WindowStatus& v);
 
+inline void to_json(nlohmann::json& j, const AccountCurrentBlock& v) {
+	j = nlohmann::json::object();
+	j["block_number"] = v.block_number;
+	j["start_millis"] = v.start_millis;
+	j["end_millis"] = v.end_millis;
+	j["served_byte_count"] = v.served_byte_count;
+	j["as_of_millis"] = v.as_of_millis;
+	j["epoch"] = v.epoch;
+}
+inline void from_json(const nlohmann::json& j, AccountCurrentBlock& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("block_number"); it != j.end() && !it->is_null()) {
+		it->get_to(v.block_number);
+	}
+	if (auto it = j.find("start_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.start_millis);
+	}
+	if (auto it = j.find("end_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_millis);
+	}
+	if (auto it = j.find("served_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.served_byte_count);
+	}
+	if (auto it = j.find("as_of_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.as_of_millis);
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AccountCurrentEpoch& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["start_millis"] = v.start_millis;
+	j["end_millis"] = v.end_millis;
+	j["served_byte_count"] = v.served_byte_count;
+	j["as_of_millis"] = v.as_of_millis;
+}
+inline void from_json(const nlohmann::json& j, AccountCurrentEpoch& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("start_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.start_millis);
+	}
+	if (auto it = j.find("end_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_millis);
+	}
+	if (auto it = j.find("served_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.served_byte_count);
+	}
+	if (auto it = j.find("as_of_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.as_of_millis);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const AccountEpoch& v) {
 	j = nlohmann::json::object();
 	j["epoch"] = v.epoch;
@@ -6098,6 +6186,7 @@ inline void to_json(nlohmann::json& j, const AccountEpoch& v) {
 	if (v.rank) {
 		j["rank"] = *v.rank;
 	}
+	j["served_byte_count"] = v.served_byte_count;
 }
 inline void from_json(const nlohmann::json& j, AccountEpoch& v) {
 	if (!j.is_object()) {
@@ -6122,6 +6211,9 @@ inline void from_json(const nlohmann::json& j, AccountEpoch& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.rank = std::move(tmp);
+	}
+	if (auto it = j.find("served_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.served_byte_count);
 	}
 }
 
@@ -6154,6 +6246,12 @@ inline void to_json(nlohmann::json& j, const AccountEpochsResult& v) {
 	if (v.total_points) {
 		j["total_points"] = *v.total_points;
 	}
+	if (v.current_epoch) {
+		j["current_epoch"] = *v.current_epoch;
+	}
+	if (v.current_block) {
+		j["current_block"] = *v.current_block;
+	}
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -6171,6 +6269,16 @@ inline void from_json(const nlohmann::json& j, AccountEpochsResult& v) {
 		double tmp{};
 		it->get_to(tmp);
 		v.total_points = std::move(tmp);
+	}
+	if (auto it = j.find("current_epoch"); it != j.end() && !it->is_null()) {
+		AccountCurrentEpoch tmp{};
+		it->get_to(tmp);
+		v.current_epoch = std::move(tmp);
+	}
+	if (auto it = j.find("current_block"); it != j.end() && !it->is_null()) {
+		AccountCurrentBlock tmp{};
+		it->get_to(tmp);
+		v.current_block = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};

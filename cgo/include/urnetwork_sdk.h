@@ -3006,6 +3006,23 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ----- data type reference (json shapes) ----- */
 
+/* AccountCurrentBlock (json):
+ *   block_number: number
+ *   start_millis: number
+ *   end_millis: number
+ *   served_byte_count: number
+ *   as_of_millis: number
+ *   epoch: number
+ */
+
+/* AccountCurrentEpoch (json):
+ *   epoch: number
+ *   start_millis: number
+ *   end_millis: number
+ *   served_byte_count: number
+ *   as_of_millis: number
+ */
+
 /* AccountEpoch (json):
  *   epoch: number
  *   start_millis: number
@@ -3013,6 +3030,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   points: number
  *   share_bps: number
  *   rank?: number
+ *   served_byte_count: number
  */
 
 /* AccountEpochList (json):
@@ -3022,6 +3040,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AccountEpochsResult (json):
  *   epochs: AccountEpochList | null
  *   total_points?: number
+ *   current_epoch?: AccountCurrentEpoch | null
+ *   current_block?: AccountCurrentBlock | null
  *   error?: SnError | null
  */
 
