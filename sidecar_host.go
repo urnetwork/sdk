@@ -18,10 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/urnetwork/sidecar"
@@ -130,34 +128,6 @@ func sidecarCertsResourceOf(apiUrl string, apiLabel string) (string, error) {
 		return "", err
 	}
 	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String(), nil
-}
-
-// apiUrl with its first label's apiLabel swapped for serviceLabel, an env's "<env>-" prefix, the port and the path
-// kept. An api url whose first label is not apiLabel, alone or after a prefix, refuses.
-func sidecarServiceUrlOf(apiUrl string, apiLabel string, serviceLabel string) (string, error) {
-	parsed, err := url.Parse(apiUrl)
-	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" {
-		return "", errors.New("the network space's api url is not an https url")
-	}
-	first, rest, ok := strings.Cut(parsed.Hostname(), ".")
-	if !ok || rest == "" {
-		return "", errors.New("the network space's api url has no host to put the sidecar's services under")
-	}
-	var label string
-	switch {
-	case first == apiLabel:
-		label = serviceLabel
-	case strings.HasSuffix(first, "-"+apiLabel):
-		label = strings.TrimSuffix(first, apiLabel) + serviceLabel
-	default:
-		return "", fmt.Errorf("the network space's api host does not start with %s", apiLabel)
-	}
-	host := label + "." + rest
-	if port := parsed.Port(); port != "" {
-		host = net.JoinHostPort(host, port)
-	}
-	serviceUrl := &url.URL{Scheme: parsed.Scheme, Host: host, Path: parsed.Path, RawPath: parsed.RawPath}
-	return serviceUrl.String(), nil
 }
 
 // Builds a component of a local Sidecar from its core, which it attaches to (sidecar.Sidecar.AddComponent). ctx ends

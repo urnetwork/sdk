@@ -278,7 +278,8 @@ func sidecarTlsLegFiles(t *testing.T, leg messagingBoundaryLeg) map[string][]str
 
 // D-TLS-7 and TLS-M8-01's trap, over sdk's mobile legs: no app leg links an ACME client or miekg/dns, while each
 // links the tls component and this file's wrapper, so the check reads a closure that holds them; the iOS extension's
-// leg links neither, so §18.10's make size row, which measures that leg, is as it was.
+// leg links neither the component nor the wrapper, only the few tls files the forwarding closure names
+// (DESIGN-DETAILS 4.2.3's list), so §18.10's make size row holds no certificate manager.
 func TestSidecarTlsLegsLinkNoAcmeClientOrDnsLibrary(t *testing.T) {
 	refusedRoots := []string{"github.com/mholt/acmez", "github.com/miekg/dns"}
 	legCount := 0
@@ -304,8 +305,9 @@ func TestSidecarTlsLegsLinkNoAcmeClientOrDnsLibrary(t *testing.T) {
 		})
 		sdkTls := slices.Contains(files["github.com/urnetwork/sdk"], "sidecar_tls.go")
 		extension := strings.Contains(leg.tags, "ios_extension")
+		component := slices.Contains(rootTlsFiles, "tls_component.go") || slices.Contains(rootTlsFiles, "tls_cert_manager.go")
 		switch {
-		case extension && (0 < len(rootTlsFiles) || sdkTls):
+		case extension && (component || sdkTls):
 			t.Errorf("%s links the tls component: %v, sidecar_tls.go %v", leg.name, rootTlsFiles, sdkTls)
 		case !extension && (!slices.Contains(rootTlsFiles, "tls_component.go") || !slices.Contains(rootTlsFiles, "tls_cert_manager.go") || !sdkTls):
 			t.Errorf("CONTROL FAILED: %s does not link the tls component: %v, sidecar_tls.go %v", leg.name, rootTlsFiles, sdkTls)

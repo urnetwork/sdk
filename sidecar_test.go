@@ -543,7 +543,9 @@ func TestNoSidecarTypeCrosses(t *testing.T) {
 }
 
 // No leg the sdk ships links mcp/, cli/ or sidecarctl (R-SDK-4), and the iOS extension's links of the sidecar module
-// only the device role, sidecar/device and protocol/bridge, since the sidecar role is !ios_extension (D-SDK-20).
+// only the forwarding role: sidecar/device and protocol/bridge, and the root and protocol, whose files the sidecar
+// module's ios_extension leg list holds (D-SDK-20, DESIGN-DETAILS 4.2.3; owner decision 197), which
+// TestSdkImportsTheSidecarModuleByRole's list rule checks file by file. The sidecar role is !ios_extension.
 func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 	refused := []string{
 		"github.com/urnetwork/sidecar/mcp",
@@ -553,6 +555,8 @@ func TestBindingsLinkNoMcpOrCli(t *testing.T) {
 	deviceRole := []string{
 		"github.com/urnetwork/sidecar/device",
 		"github.com/urnetwork/sidecar/protocol/bridge",
+		"github.com/urnetwork/sidecar",
+		"github.com/urnetwork/sidecar/protocol",
 	}
 	linksSidecar := false
 	extensionLinksDeviceRole := false

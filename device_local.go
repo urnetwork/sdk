@@ -960,6 +960,22 @@ type DeviceLocalSettings struct {
 	// Builds the device role's bridge in place of device.NewBridge. Nil builds
 	// the real one.
 	testingNewDeviceBridge deviceBridgeConstructor
+	// The VPN component's own container directory, absolute, where its
+	// forwarding roles keep their sealed stores (sidecar §18.6's posture row,
+	// DESIGN-DETAILS 4.2.2): the extension's own container on Apple, never the
+	// app group; the VPN service's files on Android; the app service's state
+	// directory on Windows and Linux. Empty, or with no forwarding key store
+	// (SetForwardKeyStore), the device sets no forwarding up and keeps the
+	// device role's store under the network space's storage path.
+	ForwardStateDir string
+	// The VPN component's forwarding key store (device_sidecar_forward_keys.go),
+	// set by SetForwardKeyStore.
+	forwardKeyStore SidecarForwardKeyStore
+	// The forwarding roles' tunables; nil takes the defaults.
+	forwardingSettings *deviceForwardingSettings
+	// Adjusts what the forwarding roles' Forwarders are built over (a test's
+	// transport and urls). Nil adjusts nothing.
+	testingForwardingDeps func(deps *deviceForwardingDeps)
 
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
 	// 10.x.y.h (RFC1918, DHCP-shaped) address instead of drawing from connect's
@@ -2307,6 +2323,10 @@ func newDeviceLocalWithOverridesForPlatform(
 	if !settings.HostedIncompatible {
 		deviceLocal.extenderReleaseUnbind = networkSpace.bindExtenderRelease(api.GetByJwt)
 	}
+
+	// the VPN component's Forwarders, each following its network on its own forwarding client (sidecar §18.6), once
+	// the device is whole, since each calls into the send route from its own goroutine
+	deviceLocal.startForwarding()
 
 	ownedClientStrategyTransferred = true
 	return deviceLocal, nil
