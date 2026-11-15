@@ -697,7 +697,7 @@ func TestStaleEventDroppedAcrossRepair(t *testing.T) {
 	if paired := events.next(t); paired.State != "online" || paired.Generation != 2 {
 		t.Fatalf("the re-pair's event: %+v", paired)
 	}
-	backend.applyStatus(stale)
+	backend.applyStatus(stale, false, false)
 	if state, reason := remote.GetState(), remote.GetStateReason(); state != "online" || reason != "" || backend.generation() != 2 {
 		t.Fatalf("a stale status ended the new pairing: %s %s at %d", state, reason, backend.generation())
 	}
@@ -899,6 +899,8 @@ func TestRemoteWireMatchesTheDaemon(t *testing.T) {
 		sidecarControlMethodPair:              sidecar.DaemonMethodPair,
 		sidecarControlMethodForwardingSetup:   sidecar.DaemonMethodForwardingSetup,
 		sidecarControlMethodForwardingWitness: sidecar.DaemonMethodForwardingWitness,
+		sidecarControlMethodEvents:            sidecar.DaemonMethodEvents,
+		sidecarControlEventKindState:          string(sidecar.SidecarEventState),
 		sidecarRemoteStateLocked:              string(sidecar.SidecarStateLocked),
 		sidecarRemoteStateUnenrolled:          string(sidecar.SidecarStateUnenrolled),
 		sidecarRemoteStateOffline:             string(sidecar.SidecarStateOffline),
@@ -927,6 +929,8 @@ func TestRemoteWireMatchesTheDaemon(t *testing.T) {
 		{"setup params", &sidecarControlForwardingSetupParams{Network: "a-network", Keys: []byte{1, 2}, ConfirmAfterRevocation: true}, &sidecar.DaemonForwardingSetupParams{}, &sidecarControlForwardingSetupParams{}},
 		{"setup reply", &sidecarControlForwardingSetupReply{HandOff: []byte{3}}, &sidecar.DaemonForwardingSetupReply{}, &sidecarControlForwardingSetupReply{}},
 		{"witness params", &sidecarControlNetworkParams{Network: "a-network"}, &sidecar.DaemonForwardingWitnessParams{}, &sidecarControlNetworkParams{}},
+		{"events params", &sidecarControlEventsParams{After: "a-cursor", WaitMs: 20000}, &sidecar.DaemonEventsParams{}, &sidecarControlEventsParams{}},
+		{"events reply", &sidecarControlEventsReply{Events: []*sidecarControlEvent{testFullControlEvent()}, Cursor: "a-cursor", Gap: true}, &sidecar.DaemonEventsReply{}, &sidecarControlEventsReply{}},
 		{"witness reply", &sidecarControlForwardingWitnessReply{Pin: []byte{4}, Witnessed: true, Fork: true, SetupDue: "due"}, &sidecar.DaemonForwardingWitnessReply{}, &sidecarControlForwardingWitnessReply{}},
 	}
 	for _, crossing := range crossings {

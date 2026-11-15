@@ -11,14 +11,18 @@
 //	frames   one JSON-RPC 2.0 object a message, either way. A reply past the native host's chunk size arrives as
 //	         {"ur_chunk":{"id","index","count"},"data_base64"} messages in index order, joined here within
 //	         AnswerMaxByteCount (cli/native_host_frame.go)
-//	relayed  what the native host's allow-list names, status today: the state, its reason, the generation and the
-//	         sidecar_id. It never relays a confirmed call, so one is refused here before it is sent, and it pairs
+//	relayed  what the native host's allow-list names: status, the state, its reason, the generation and the
+//	         sidecar_id; and events, every event kind of the daemon's sidecars, its alarms among them, long-polled
+//	         (QD-821). It never relays a confirmed call, so one is refused here before it is sent, and it pairs
 //	         nothing, so EnrollWithDevice refuses: the extension is alarms-only (§18.4)
+//	turns    the port carries one call at a time, as the native host answers them in order: the events long-poll and
+//	         a status read take turns, so a read waits for the poll in flight, which answers within the daemon's cap
 //	state    as on a desktop (sidecar_backend.go): offline while the port or the daemon is gone, an older
-//	         generation's status dropped, revoked only with its verified reason. A port that disconnected stays
-//	         offline: the host opens another and a new Sidecar
+//	         generation's status or event dropped, revoked only with its verified reason, and state events from the
+//	         long-poll while it answers. A port that disconnected stays offline: the host opens another and a new
+//	         Sidecar
 //
-// Only state events reach a listener (question sdk-m8-02-remote-events).
+// Every event kind reaches a listener, each as the bound event the other legs deliver.
 
 package sdk
 
@@ -120,10 +124,15 @@ func newSidecarRemoteJs(ctx context.Context, port js.Value, presenceSigner Sidec
 		events:         make(chan *SidecarEvent, remoteSettings.EventQueueSize),
 		listeners:      map[int]SidecarEventListener{},
 	}
+	// neither callback blocks: a full queue drops the event, and an app reads GetState for where things stand
 	self.remote = newSidecarRemoteBackend(cancelCtx, self.channel.dial, remoteSettings, func(generation int64, state string, reason string) {
-		// never blocks: a full queue drops the event, and an app reads GetState for where things stand
 		select {
-		case self.events <- &SidecarEvent{Kind: "state", Generation: generation, State: state, Reason: reason}:
+		case self.events <- &SidecarEvent{Kind: sidecarControlEventKindState, Generation: generation, State: state, Reason: reason}:
+		default:
+		}
+	}, func(event *sidecarControlEvent) {
+		select {
+		case self.events <- event.boundEvent():
 		default:
 		}
 	})
@@ -131,6 +140,7 @@ func newSidecarRemoteJs(ctx context.Context, port js.Value, presenceSigner Sidec
 	go self.deliver()
 	if !options.noStatusPoll {
 		go self.remote.run()
+		go self.remote.followEvents()
 	}
 	return self, nil
 }
@@ -189,7 +199,7 @@ func (self *Sidecar) GetSidecarId() *Id {
 	return self.remote.sidecarId()
 }
 
-// Calls listener with each event from here on, in order, until the answer closes. Only state events arrive.
+// Calls listener with each event from here on, in order, until the answer closes.
 func (self *Sidecar) AddEventListener(listener SidecarEventListener) Sub {
 	if listener == nil {
 		return newSub(func() {})
@@ -274,12 +284,15 @@ type sidecarPortMessage struct {
 	DataBase64 string `json:"data_base64"`
 }
 
-// The control channel over a native-host port: one call at a time, as the backend makes them.
+// The control channel over a native-host port: one call at a time, the events long-poll's and the others' taking
+// turns, as the native host answers them in order.
 type sidecarPortChannel struct {
 	port     js.Value
 	settings *sidecarRemoteSettings
 	// closed once the port disconnected or the channel closed
 	gone chan struct{}
+	// held by the call in flight, from its send to its answer
+	turn chan struct{}
 	// called once when the port goes, so the state reads offline without waiting for a call to fail; set before the
 	// first call
 	onGone func()
@@ -298,7 +311,7 @@ type sidecarPortChannel struct {
 
 // A channel on port, listening for its messages and its disconnect.
 func newSidecarPortChannel(port js.Value, settings *sidecarRemoteSettings) *sidecarPortChannel {
-	self := &sidecarPortChannel{port: port, settings: settings, gone: make(chan struct{})}
+	self := &sidecarPortChannel{port: port, settings: settings, gone: make(chan struct{}), turn: make(chan struct{}, 1)}
 	onMessage := js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			self.receive(args[0])
@@ -358,10 +371,14 @@ func (self *sidecarPortChannel) receive(value js.Value) {
 		return
 	}
 	if chunk := message.Chunk; chunk != nil {
+		if string(chunk.Id) != self.pendingId {
+			// a chunk of an answer no call waits for any more, one whose call ended at its bound
+			return
+		}
 		// chunks of the call in flight, in order, within the bound; anything else ends the reply as unreadable
 		data, err := base64.StdEncoding.DecodeString(message.DataBase64)
 		self.chunkByteCount += int64(len(data))
-		if err != nil || string(chunk.Id) != self.pendingId || chunk.Index != len(self.chunks) || chunk.Count <= chunk.Index ||
+		if err != nil || chunk.Index != len(self.chunks) || chunk.Count <= chunk.Index ||
 			self.settings.AnswerMaxByteCount < self.chunkByteCount {
 			self.answer(nil)
 			return
@@ -395,11 +412,22 @@ func (self *sidecarPortChannel) answer(message *sidecarPortMessage) {
 	self.chunkByteCount = 0
 }
 
-// See sidecarControlChannel. A confirmed call is refused unsent: the native host relays none.
+// See sidecarControlChannel. A confirmed call is refused unsent: the native host relays none. A call waits its turn
+// behind the one in flight, until ctx ends or the port goes.
 func (self *sidecarPortChannel) call(ctx context.Context, method string, params any, confirmed bool, result any) error {
 	if confirmed {
 		return &sidecarControlError{Code: sidecarControlCodeConfirmationRequired, Message: sidecarPortConfirmationRefused}
 	}
+	select {
+	case self.turn <- struct{}{}:
+	case <-self.gone:
+		return errSidecarPortDisconnected
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() {
+		<-self.turn
+	}()
 	replies := make(chan *sidecarPortMessage, 1)
 	id, err := func() (int64, error) {
 		self.stateLock.Lock()

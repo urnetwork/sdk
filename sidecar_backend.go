@@ -7,17 +7,26 @@
 //	          the root's DaemonClient on the instance's socket or a sandboxed app's app-group socket
 //	          (sidecar_remote_dial.go); on js a host-supplied `ur native-host` port (sidecar_remote_js.go). This file
 //	          links no sidecar package, so sdk.wasm shares it and stays under its gate (plan-SDK-small-readings #7)
-//	state     the daemon's, read by its status method and never written here: locked, unenrolled, offline, online or
-//	          revoked with its reason, as the daemon's core decided them (D-SDK-14). With no daemon answering the
-//	          backend reads offline and starts nothing (R-SDK-9, plan-SDK-small-readings #9)
-//	network   the one the pairing bound (pair's reply), else the daemon's only network, else its first
-//	generation every status names its generation, and one older than the newest this backend took for the same
-//	          sidecar_id is dropped, so an answer that crossed a re-pair cannot end the new pairing (D-SDK-14)
+//	events    a second session holds one long-poll of the daemon's events method open (QD-821), so every event kind of
+//	          the core reaches the app in the daemon's order, state among them. The first call takes the ring's cursor,
+//	          and status is read after it (subscribe, then read); a gap reads status and emits state, since events
+//	          between were lost; a session that ends reads status at once and is dialed again after a backoff that
+//	          doubles up to its cap. While the poll answers, its state events move the backend's state and the status
+//	          poll stops; while it does not, the poll reads status every StatusPollInterval as before. On js the second
+//	          session is the port itself, whose calls take turns
+//	state     the daemon's, read by its status method or from its state events and never written here: locked,
+//	          unenrolled, offline, online or revoked with its reason, as the daemon's core decided them (D-SDK-14).
+//	          With no daemon answering the backend reads offline and starts nothing (R-SDK-9,
+//	          plan-SDK-small-readings #9)
+//	network   the one the pairing bound (pair's reply), else the daemon's only network, else its first; events of any
+//	          other network go nowhere, and one naming a network the last status did not list reads status first
+//	generation every status and event names its generation, and one older than the newest this backend took for the
+//	          same sidecar_id is dropped, so an answer that crossed a re-pair cannot end the new pairing (D-SDK-14)
 //	replies   only the fields this file names are read; nothing else of a reply reaches an app. A refusal's text that
 //	          repeats the child's token is replaced before it is surfaced (I-7)
 //
-// The method names are their owners' (ur daemon's status, CORE-M8-02's pair, BRIDGE-M8-06's forwarding methods),
-// spelled here because the js leg cannot import them; sidecar_remote_test.go holds them equal.
+// The method names are their owners' (ur daemon's status, CORE-M8-02's pair, BRIDGE-M8-06's forwarding methods,
+// QD-821's events), spelled here because the js leg cannot import them; sidecar_remote_test.go holds them equal.
 
 package sdk
 
@@ -27,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/urnetwork/connect"
 )
 
 // What a Sidecar's calls reach when its core runs in another process: the remote backend. The local backend's calls
@@ -55,7 +66,11 @@ const (
 	sidecarControlMethodPair              = "pair"
 	sidecarControlMethodForwardingSetup   = "bridge.forwarding.setup"
 	sidecarControlMethodForwardingWitness = "bridge.forwarding.witness"
+	sidecarControlMethodEvents            = "events"
 )
+
+// The kind of the event that carries a state (§5.4's state kind).
+const sidecarControlEventKindState = "state"
 
 // §18.5's states, as the daemon names them.
 const (
@@ -127,6 +142,138 @@ type sidecarControlForwardingWitnessReply struct {
 	SetupDue string `json:"setup_due,omitempty"`
 }
 
+// events's params (QD-821).
+type sidecarControlEventsParams struct {
+	// The cursor of the last reply taken, empty for none, which answers the current cursor at once.
+	After string `json:"after,omitempty"`
+	// How long the daemon waits for an event past After, in milliseconds; it caps the wait at its own bound.
+	WaitMs int64 `json:"wait_ms,omitempty"`
+}
+
+// events's reply.
+type sidecarControlEventsReply struct {
+	Events []*sidecarControlEvent `json:"events"`
+	// Where the next call starts.
+	Cursor string `json:"cursor"`
+	// The events past After are gone: status says where things stand.
+	Gap bool `json:"gap,omitempty"`
+}
+
+// One event of the daemon's ring: the root's DaemonEvent, its kind, generation and what §5.4's SidecarEvent carries
+// for its kind, with the network and sidecar that raised it. Times are unix milliseconds, zero for none.
+type sidecarControlEvent struct {
+	NetworkId       *Id                         `json:"network_id,omitempty"`
+	OriginSidecarId *Id                         `json:"origin_sidecar_id,omitempty"`
+	Kind            string                      `json:"kind"`
+	Generation      int64                       `json:"generation"`
+	State           string                      `json:"state,omitempty"`
+	Reason          string                      `json:"reason,omitempty"`
+	GroupId         *Id                         `json:"group_id,omitempty"`
+	SidecarId       *Id                         `json:"sidecar_id,omitempty"`
+	RepoId          *Id                         `json:"repo_id,omitempty"`
+	RefId           *Id                         `json:"ref_id,omitempty"`
+	Path            string                      `json:"path,omitempty"`
+	DropId          *Id                         `json:"drop_id,omitempty"`
+	DropState       string                      `json:"drop_state,omitempty"`
+	NotBeforeMs     int64                       `json:"not_before_ms,omitempty"`
+	SearchAlarm     string                      `json:"search_alarm,omitempty"`
+	RequestId       *Id                         `json:"request_id,omitempty"`
+	Outcome         string                      `json:"outcome,omitempty"`
+	SendId          *Id                         `json:"send_id,omitempty"`
+	ApprovalId      *Id                         `json:"approval_id,omitempty"`
+	HeadAlarm       string                      `json:"head_alarm,omitempty"`
+	FirstEvidence   []byte                      `json:"first_evidence,omitempty"`
+	SecondEvidence  []byte                      `json:"second_evidence,omitempty"`
+	Erasure         *sidecarControlEventErasure `json:"erasure,omitempty"`
+	EvsAlarm        string                      `json:"evs_alarm,omitempty"`
+	EvsAlarmDetail  string                      `json:"evs_alarm_detail,omitempty"`
+	Version         uint64                      `json:"version,omitempty"`
+	PushId          *Id                         `json:"push_id,omitempty"`
+	Count           int                         `json:"count,omitempty"`
+	VerifiedSinceMs int64                       `json:"verified_since_ms,omitempty"`
+	RecordAlarm     string                      `json:"record_alarm,omitempty"`
+	BridgeAlarm     string                      `json:"bridge_alarm,omitempty"`
+	DnsAlarm        string                      `json:"dns_alarm,omitempty"`
+	CtAlarm         string                      `json:"ct_alarm,omitempty"`
+}
+
+// An event's erasure: the root's DaemonEventErasure.
+type sidecarControlEventErasure struct {
+	ErasureId   *Id    `json:"erasure_id"`
+	State       string `json:"state"`
+	ObjectsLeft int64  `json:"objects_left,omitempty"`
+	BytesLeft   int64  `json:"bytes_left,omitempty"`
+	NextTryMs   int64  `json:"next_try_ms,omitempty"`
+	FinishMs    int64  `json:"finish_ms,omitempty"`
+}
+
+// The bound event this ring event stands for, as the local backend's listener gets its core's: what the js leg
+// delivers, and on the other legs the same values the dispatch makes from the core event (sidecar_remote.go).
+func (self *sidecarControlEvent) boundEvent() *SidecarEvent {
+	bound := &SidecarEvent{
+		Kind:                self.Kind,
+		Generation:          self.Generation,
+		State:               self.State,
+		Reason:              self.Reason,
+		GroupId:             sidecarControlIdOf(self.GroupId),
+		SidecarId:           sidecarControlIdOf(self.SidecarId),
+		RepoId:              sidecarControlIdOf(self.RepoId),
+		RefId:               sidecarControlIdOf(self.RefId),
+		Path:                self.Path,
+		DropId:              sidecarControlIdOf(self.DropId),
+		DropState:           self.DropState,
+		NotBeforeMillis:     self.NotBeforeMs,
+		SearchAlarm:         self.SearchAlarm,
+		RequestId:           sidecarControlIdOf(self.RequestId),
+		Outcome:             self.Outcome,
+		SendId:              sidecarControlIdOf(self.SendId),
+		ApprovalId:          sidecarControlIdOf(self.ApprovalId),
+		HeadAlarm:           self.HeadAlarm,
+		FirstEvidence:       sidecarControlBytesOf(self.FirstEvidence),
+		SecondEvidence:      sidecarControlBytesOf(self.SecondEvidence),
+		EvsAlarm:            self.EvsAlarm,
+		VerifiedSinceMillis: self.VerifiedSinceMs,
+		RecordAlarm:         self.RecordAlarm,
+		BridgeAlarm:         self.BridgeAlarm,
+		DnsAlarm:            self.DnsAlarm,
+	}
+	if erasure := self.Erasure; erasure != nil {
+		bound.Erasure = &SidecarErasure{
+			ErasureId:     sidecarControlIdOf(erasure.ErasureId),
+			State:         erasure.State,
+			ObjectsLeft:   erasure.ObjectsLeft,
+			BytesLeft:     erasure.BytesLeft,
+			NextTryMillis: erasure.NextTryMs,
+			FinishMillis:  erasure.FinishMs,
+		}
+	}
+	return bound
+}
+
+// A copy of id, nil for nil.
+func sidecarControlIdOf(id *Id) *Id {
+	if id == nil {
+		return nil
+	}
+	return newId(id.id)
+}
+
+// A copy, nil for none.
+func sidecarControlBytesOf(value []byte) []byte {
+	if len(value) == 0 {
+		return nil
+	}
+	return append([]byte{}, value...)
+}
+
+// Whether a and b name one id, nil naming none.
+func sidecarControlSameId(a *Id, b *Id) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Cmp(b) == 0
+}
+
 // The daemon's code for a call that needs a person's confirmation and came without one (D-CORE-13).
 const sidecarControlCodeConfirmationRequired = -32001
 
@@ -175,16 +322,29 @@ type sidecarRemoteSettings struct {
 	AnswerMaxByteCount int64
 	// js: how many events wait for the listeners before one is dropped.
 	EventQueueSize int
+	// How long one events call asks the daemon to wait for an event: 20 s, under the daemon's own cap of 25 s
+	// (SidecarLocalSettings.EventWaitTimeout), so a poll answers in the daemon's time. The call's bound is this and
+	// CallTimeout together.
+	EventWaitTimeout time.Duration
+	// The first wait before the events session is dialed or called again after it ended or was refused: 250 ms,
+	// doubling at each failure in a row up to EventReconnectMaxTimeout, and back to this once a call answers.
+	EventReconnectMinTimeout time.Duration
+	// The longest such wait: 10 s, the status poll reading the daemon's state meanwhile.
+	EventReconnectMaxTimeout time.Duration
 }
 
-// The defaults: a status read every 2 s, 30 s a call, 60 s a pairing, a 64 MiB reply and 256 queued events.
+// The defaults: a status read every 2 s, 30 s a call, 60 s a pairing, a 64 MiB reply, 256 queued events, and events
+// polled 20 s at a time and dialed again from 250 ms to 10 s apart.
 func defaultSidecarRemoteSettings() *sidecarRemoteSettings {
 	return &sidecarRemoteSettings{
-		StatusPollInterval: 2 * time.Second,
-		CallTimeout:        30 * time.Second,
-		PairTimeout:        60 * time.Second,
-		AnswerMaxByteCount: 64 * 1024 * 1024,
-		EventQueueSize:     256,
+		StatusPollInterval:       2 * time.Second,
+		CallTimeout:              30 * time.Second,
+		PairTimeout:              60 * time.Second,
+		AnswerMaxByteCount:       64 * 1024 * 1024,
+		EventQueueSize:           256,
+		EventWaitTimeout:         20 * time.Second,
+		EventReconnectMinTimeout: 250 * time.Millisecond,
+		EventReconnectMaxTimeout: 10 * time.Second,
 	}
 }
 
@@ -202,9 +362,13 @@ type sidecarRemoteBackend struct {
 	cancel   context.CancelFunc
 	settings *sidecarRemoteSettings
 	dial     sidecarControlDial
-	// called with each change of the state, its reason or its generation; it must not block
+	// called with each change of the state, its reason or its generation that a status read finds; it must not block
 	stateChanged func(generation int64, state string, reason string)
-	pollDone     chan struct{}
+	// called with each event of the followed network the events long-poll takes, in order; it must not block
+	eventReceived func(event *sidecarControlEvent)
+	pollDone      chan struct{}
+	// closed once followEvents has returned, its session closed
+	eventsDone chan struct{}
 
 	// one call at a time, as the daemon answers them; guards channel
 	callLock sync.Mutex
@@ -216,30 +380,43 @@ type sidecarRemoteBackend struct {
 	generationFloor int64
 	// the network the pairing bound, nil before one
 	networkId *Id
-	closed    bool
+	// the networks the last status named, and its first, which an unpaired backend follows; nil while it names none
+	statusNetworkIds   []*Id
+	statusFirstNetwork *Id
+	// the events long-poll answers, so its state events move the state and status reads by anything else leave it
+	eventsCarryState bool
+	closed           bool
 }
 
 var _ sidecarBackend = (*sidecarRemoteBackend)(nil)
 
-// A backend that dials with dial, offline until its first status. stateChanged may be nil. The caller starts run.
-func newSidecarRemoteBackend(ctx context.Context, dial sidecarControlDial, settings *sidecarRemoteSettings, stateChanged func(generation int64, state string, reason string)) *sidecarRemoteBackend {
+// A backend that dials with dial, offline until its first status. stateChanged and eventReceived may be nil. The
+// caller starts run and followEvents.
+func newSidecarRemoteBackend(ctx context.Context, dial sidecarControlDial, settings *sidecarRemoteSettings,
+	stateChanged func(generation int64, state string, reason string), eventReceived func(event *sidecarControlEvent)) *sidecarRemoteBackend {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	if stateChanged == nil {
 		stateChanged = func(generation int64, state string, reason string) {}
 	}
+	if eventReceived == nil {
+		eventReceived = func(event *sidecarControlEvent) {}
+	}
 	return &sidecarRemoteBackend{
-		ctx:          cancelCtx,
-		cancel:       cancel,
-		settings:     settings,
-		dial:         dial,
-		stateChanged: stateChanged,
-		pollDone:     make(chan struct{}),
-		status:       sidecarRemoteStatus{state: sidecarRemoteStateOffline},
+		ctx:           cancelCtx,
+		cancel:        cancel,
+		settings:      settings,
+		dial:          dial,
+		stateChanged:  stateChanged,
+		eventReceived: eventReceived,
+		pollDone:      make(chan struct{}),
+		eventsDone:    make(chan struct{}),
+		status:        sidecarRemoteStatus{state: sidecarRemoteStateOffline},
 	}
 }
 
-// Reads the daemon's status at once and then every StatusPollInterval until the backend closes. A read that fails leaves the backend
-// offline, and the next one dials again.
+// Reads the daemon's status at once and then every StatusPollInterval until the backend closes, a turn passing while
+// the events long-poll carries the state (pollStatus). A read that fails leaves the backend offline, and the next one
+// dials again.
 func (self *sidecarRemoteBackend) run() {
 	defer close(self.pollDone)
 	self.refresh(self.ctx)
@@ -250,9 +427,198 @@ func (self *sidecarRemoteBackend) run() {
 		case <-self.ctx.Done():
 			return
 		case <-ticker.C:
-			self.refresh(self.ctx)
+			self.pollStatus(self.ctx)
 		}
 	}
+}
+
+// One turn of the status poll: a read, unless the events long-poll answers, whose state events stand for it (QD-821).
+func (self *sidecarRemoteBackend) pollStatus(ctx context.Context) {
+	if self.eventsCarry() {
+		return
+	}
+	self.refresh(ctx)
+}
+
+// Whether the events long-poll answers, so its state events carry the state.
+func (self *sidecarRemoteBackend) eventsCarry() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.eventsCarryState
+}
+
+// Notes whether the events long-poll answers.
+func (self *sidecarRemoteBackend) setEventsCarry(carry bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.eventsCarryState = carry
+}
+
+// Keeps one events long-poll open on a session of its own until the backend closes (QD-821; see the file's comment):
+// takes the cursor and reads status, then hands each event of the followed network to eventReceived in order; reads
+// status and emits state after a gap; and after a session that ended or a refusal, reads status at once and calls again
+// after a backoff, dialing again where the session ended.
+func (self *sidecarRemoteBackend) followEvents() {
+	defer close(self.eventsDone)
+	var channel sidecarControlChannel
+	defer func() {
+		if channel != nil {
+			channel.close()
+		}
+		self.setEventsCarry(false)
+	}()
+	cursor := ""
+	failureCount := 0
+	for self.ctx.Err() == nil {
+		if 0 < failureCount {
+			backoff := self.settings.EventReconnectMinTimeout
+			for i := 1; i < failureCount && backoff < self.settings.EventReconnectMaxTimeout; i += 1 {
+				backoff *= 2
+			}
+			reconnect := connect.NewPacedReconnect(min(backoff, self.settings.EventReconnectMaxTimeout))
+			select {
+			case <-self.ctx.Done():
+				return
+			case <-reconnect.After():
+			}
+		}
+		if channel == nil {
+			dialCtx, cancel := context.WithTimeout(self.ctx, self.settings.CallTimeout)
+			opened, err := self.dial(dialCtx)
+			cancel()
+			if err != nil {
+				failureCount += 1
+				continue
+			}
+			channel = opened
+		}
+		params := &sidecarControlEventsParams{After: cursor}
+		if cursor != "" {
+			params.WaitMs = self.settings.EventWaitTimeout.Milliseconds()
+		}
+		reply := &sidecarControlEventsReply{}
+		callCtx, cancel := context.WithTimeout(self.ctx, self.settings.EventWaitTimeout+self.settings.CallTimeout)
+		err := channel.call(callCtx, sidecarControlMethodEvents, params, false, reply)
+		cancel()
+		if err != nil {
+			var refusal *sidecarControlError
+			if !errors.As(err, &refusal) {
+				// the session is gone, and with it whatever its answer would have said
+				channel.close()
+				channel = nil
+			}
+			if self.ctx.Err() != nil {
+				return
+			}
+			// the poll reads status again, and this reads it now, offline among what it may find
+			self.setEventsCarry(false)
+			self.refreshFromEvents(self.ctx, false)
+			failureCount += 1
+			continue
+		}
+		failureCount = 0
+		switch {
+		case cursor == "" || reply.Gap:
+			// subscribed, or anew past a gap: status says where things stand, and every event from the cursor on
+			// follows it
+			gap := cursor != ""
+			cursor = reply.Cursor
+			self.setEventsCarry(true)
+			self.refreshFromEvents(self.ctx, gap)
+		default:
+			cursor = reply.Cursor
+			self.setEventsCarry(true)
+			self.applyEvents(reply.Events)
+		}
+	}
+}
+
+// Takes a reply's events in order. Each of the followed network reaches eventReceived, a state one first moving the
+// backend's state, and one of an older generation of the same sidecar is dropped (D-SDK-14). One naming a network the
+// last status did not list reads status first, once a reply, so the network an enrollment or a pairing just added is
+// followed from its first event.
+func (self *sidecarRemoteBackend) applyEvents(events []*sidecarControlEvent) {
+	refreshed := false
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		if !refreshed && !self.knowsNetwork(event.NetworkId) {
+			refreshed = true
+			self.refreshFromEvents(self.ctx, false)
+		}
+		if self.takeEvent(event) {
+			self.eventReceived(event)
+		}
+	}
+}
+
+// Whether networkId is one the last status named or the pairing bound; nil, a sidecar's before enrollment, always is.
+func (self *sidecarRemoteBackend) knowsNetwork(networkId *Id) bool {
+	if networkId == nil {
+		return true
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if sidecarControlSameId(self.networkId, networkId) {
+		return true
+	}
+	for _, statusNetworkId := range self.statusNetworkIds {
+		if sidecarControlSameId(statusNetworkId, networkId) {
+			return true
+		}
+	}
+	return false
+}
+
+// Whether event is the followed network's and not of an older generation of its sidecar, moving the floor, the
+// sidecar_id and, for a state event, the state, which it makes read as a status's does. The event's own state is
+// rewritten to match, so a listener and GetState agree.
+func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed {
+		return false
+	}
+	followed := self.networkId
+	if followed == nil {
+		followed = self.statusFirstNetwork
+	}
+	if !sidecarControlSameId(event.NetworkId, followed) {
+		return false
+	}
+	current := self.status
+	sameSidecar := current.sidecarId == nil || event.OriginSidecarId == nil || current.sidecarId.Cmp(event.OriginSidecarId) == 0
+	if sameSidecar && event.Generation < self.generationFloor {
+		return false
+	}
+	if !sameSidecar || current.sidecarId == nil {
+		self.status.sidecarId = sidecarControlIdOf(event.OriginSidecarId)
+	}
+	if !sameSidecar || self.generationFloor < event.Generation {
+		self.generationFloor = event.Generation
+	}
+	if event.Kind == sidecarControlEventKindState {
+		event.State, event.Reason = sidecarRemoteStateOf(event.State, event.Reason)
+		self.status.state, self.status.reason, self.status.generation = event.State, event.Reason, event.Generation
+	}
+	return true
+}
+
+// A state and reason as this sdk reads them: a state it does not know reads offline, a daemon that runs no sidecar
+// among them, and revoked without the reason only a verified SidecarRevoke carries reads unenrolled(refused), since
+// nothing but signed means revoked (D-SDK-14).
+func sidecarRemoteStateOf(state string, reason string) (string, string) {
+	switch state {
+	case sidecarRemoteStateLocked, sidecarRemoteStateUnenrolled, sidecarRemoteStateOffline, sidecarRemoteStateOnline:
+		return state, reason
+	case sidecarRemoteStateRevoked:
+		if reason != sidecarRemoteReasonSigned {
+			return sidecarRemoteStateUnenrolled, sidecarRemoteReasonRefused
+		}
+		return state, reason
+	}
+	return sidecarRemoteStateOffline, ""
 }
 
 // See sidecarBackend.
@@ -287,13 +653,26 @@ func (self *sidecarRemoteBackend) network() string {
 	return self.networkId.String()
 }
 
-// See sidecarBackend.
+// See sidecarBackend. While the events long-poll carries the state, a read from here moves the sidecar_id and the
+// networks and leaves the state to the events, so an answer that crossed an event cannot undo it.
 func (self *sidecarRemoteBackend) refresh(ctx context.Context) error {
 	reply := &sidecarControlStatus{}
 	if err := self.callBounded(ctx, self.settings.CallTimeout, sidecarControlMethodStatus, nil, false, reply); err != nil {
 		return err
 	}
-	self.applyStatus(reply)
+	self.applyStatus(reply, false, false)
+	return nil
+}
+
+// A status read by the events long-poll, between its calls, so no event of its own crosses it: it moves the state as
+// a read with no long-poll does, and with always it emits the state even unchanged, as after a gap, whose lost events
+// may have moved it and back.
+func (self *sidecarRemoteBackend) refreshFromEvents(ctx context.Context, always bool) error {
+	reply := &sidecarControlStatus{}
+	if err := self.callBounded(ctx, self.settings.CallTimeout, sidecarControlMethodStatus, nil, false, reply); err != nil {
+		return err
+	}
+	self.applyStatus(reply, true, always)
 	return nil
 }
 
@@ -444,26 +823,28 @@ func (self *sidecarRemoteBackend) statusOf(reply *sidecarControlStatus, networkI
 	return sidecarRemoteStatus{state: reply.State, reason: reply.Reason, generation: reply.Generation}
 }
 
-// Takes a status the daemon answered. One of an older generation of the same sidecar_id is dropped (D-SDK-14). A state
-// this sdk does not know reads offline, a daemon that runs no sidecar among them, and revoked without the reason only
-// a verified SidecarRevoke carries reads unenrolled(refused): nothing but signed means revoked.
-func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus) {
-	changed, next := func() (bool, sidecarRemoteStatus) {
+// Takes a status the daemon answered: its networks always, and its state unless the events long-poll carries the
+// state and fromEvents is false. One of an older generation of the same sidecar_id is dropped (D-SDK-14), and the
+// state reads as sidecarRemoteStateOf has it. A change is emitted, or with always the state as it stands.
+func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromEvents bool, always bool) {
+	emitted, next := func() (bool, sidecarRemoteStatus) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.closed {
 			return false, self.status
 		}
-		next := self.statusOf(reply, self.networkId)
-		switch next.state {
-		case sidecarRemoteStateLocked, sidecarRemoteStateUnenrolled, sidecarRemoteStateOffline, sidecarRemoteStateOnline:
-		case sidecarRemoteStateRevoked:
-			if next.reason != sidecarRemoteReasonSigned {
-				next.state, next.reason = sidecarRemoteStateUnenrolled, sidecarRemoteReasonRefused
+		self.statusNetworkIds = nil
+		self.statusFirstNetwork = nil
+		for i := range reply.Networks {
+			if networkId := reply.Networks[i].NetworkId; networkId != nil {
+				self.statusNetworkIds = append(self.statusNetworkIds, networkId)
 			}
-		default:
-			next.state, next.reason = sidecarRemoteStateOffline, ""
 		}
+		if 0 < len(reply.Networks) {
+			self.statusFirstNetwork = reply.Networks[0].NetworkId
+		}
+		next := self.statusOf(reply, self.networkId)
+		next.state, next.reason = sidecarRemoteStateOf(next.state, next.reason)
 		current := self.status
 		sameSidecar := current.sidecarId == nil || next.sidecarId == nil || current.sidecarId.Cmp(next.sidecarId) == 0
 		if sameSidecar && next.generation < self.generationFloor {
@@ -473,21 +854,27 @@ func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus) {
 		if sameSidecar && next.sidecarId == nil {
 			next.sidecarId = current.sidecarId
 		}
+		if self.eventsCarryState && !fromEvents {
+			// the events move the state; this read names the sidecar alone
+			self.status.sidecarId = next.sidecarId
+			return false, self.status
+		}
 		self.generationFloor = next.generation
 		self.status = next
-		return next.state != current.state || next.reason != current.reason || next.generation != current.generation, next
+		return always || next.state != current.state || next.reason != current.reason || next.generation != current.generation, next
 	}()
-	if changed {
+	if emitted {
 		self.stateChanged(next.generation, next.state, next.reason)
 	}
 }
 
-// No daemon answers: offline, the sidecar_id and generation kept for when one does.
+// No daemon answers: offline, the sidecar_id and generation kept for when one does. While the events long-poll
+// answers, the daemon does, and a call that failed on the other session leaves the state as the events have it.
 func (self *sidecarRemoteBackend) applyOffline() {
 	changed, next := func() (bool, sidecarRemoteStatus) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.closed || self.status.state == sidecarRemoteStateOffline {
+		if self.closed || self.eventsCarryState || self.status.state == sidecarRemoteStateOffline {
 			return false, self.status
 		}
 		self.status.state, self.status.reason = sidecarRemoteStateOffline, ""

@@ -13,8 +13,9 @@
 //	           the daemon may have bound it
 //	Unlock     refused: the daemon unlocks its own keychain (§5.9), so no pass ever crosses this backend
 //	push       refused: the daemon registers no app wake token (sidecar_push.go)
-//	events     state alone, from the status reads, each naming its generation; §5.8 has no method that carries the
-//	           core's other events yet (question sdk-m8-02-remote-events)
+//	events     every kind, from the daemon's events method on a session of their own (QD-821; sidecar_backend.go),
+//	           each as the core event it stands for, so a listener gets what the local backend's gets; state also from
+//	           the status reads while that long-poll does not answer, each naming its generation
 //	forwarding the paired app relays its VPN component's bridge.ForwardingKeys out and the daemon's
 //	           bridge.ForwardingHandOff back (§18.6; BRIDGE-M8-06), public halves and the hand-off alone, never a key.
 //	           SDK-M8-07's setup run calls these
@@ -31,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -54,8 +56,10 @@ type sidecarRemoteOptions struct {
 	remoteSettings *sidecarRemoteSettings
 	// Nil: defaultSidecarEventSettings.
 	eventSettings *sidecarEventSettings
-	// The test reads the daemon's status itself: no read runs on its own.
+	// The test reads the daemon's status itself: no read runs on its own, and no events long-poll unless followEvents.
 	noStatusPoll bool
+	// With noStatusPoll, the events long-poll runs all the same.
+	followEvents bool
 }
 
 // A Sidecar on the remote backend: the daemon of settings' Instance, reached on §5.9's socket or, with
@@ -108,6 +112,8 @@ func newSidecarRemote(ctx context.Context, presenceSigner SidecarPresenceSigner,
 			State:      sidecar.SidecarState(state),
 			Reason:     sidecar.SidecarStateReason(reason),
 		})
+	}, func(event *sidecarControlEvent) {
+		events.offer(sidecarCoreEventOf(event))
 	})
 	self := &Sidecar{
 		ctx:                cancelCtx,
@@ -123,7 +129,72 @@ func newSidecarRemote(ctx context.Context, presenceSigner SidecarPresenceSigner,
 	if !options.noStatusPoll {
 		go backend.run()
 	}
+	if !options.noStatusPoll || options.followEvents {
+		go backend.followEvents()
+	}
 	return self, nil
+}
+
+// The core event a ring event of the daemon stands for, so the dispatch delivers it as it delivers the local backend's
+// (sidecar_events.go): the same kinds, ids, values and times.
+func sidecarCoreEventOf(event *sidecarControlEvent) sidecar.SidecarEvent {
+	idOf := func(id *Id) *sidecar.Id {
+		if id == nil {
+			return nil
+		}
+		coreId := sidecar.Id(id.id)
+		return &coreId
+	}
+	timeOf := func(millis int64) time.Time {
+		if millis == 0 {
+			return time.Time{}
+		}
+		return time.UnixMilli(millis)
+	}
+	core := sidecar.SidecarEvent{
+		Kind:           sidecar.SidecarEventKind(event.Kind),
+		Generation:     event.Generation,
+		State:          sidecar.SidecarState(event.State),
+		Reason:         sidecar.SidecarStateReason(event.Reason),
+		GroupId:        idOf(event.GroupId),
+		SidecarId:      idOf(event.SidecarId),
+		RepoId:         idOf(event.RepoId),
+		RefId:          idOf(event.RefId),
+		Path:           event.Path,
+		DropId:         idOf(event.DropId),
+		DropState:      sidecar.SidecarDropState(event.DropState),
+		NotBefore:      timeOf(event.NotBeforeMs),
+		SearchAlarm:    sidecar.SidecarSearchAlarm(event.SearchAlarm),
+		RequestId:      idOf(event.RequestId),
+		Outcome:        event.Outcome,
+		SendId:         idOf(event.SendId),
+		ApprovalId:     idOf(event.ApprovalId),
+		HeadAlarm:      sidecar.SidecarHeadAlarm(event.HeadAlarm),
+		Evidence:       [2][]byte{sidecarControlBytesOf(event.FirstEvidence), sidecarControlBytesOf(event.SecondEvidence)},
+		EvsAlarm:       sidecar.SidecarEvsAlarm(event.EvsAlarm),
+		EvsAlarmDetail: sidecar.SidecarEvsAlarmDetail(event.EvsAlarmDetail),
+		Version:        event.Version,
+		PushId:         idOf(event.PushId),
+		Count:          event.Count,
+		VerifiedSince:  timeOf(event.VerifiedSinceMs),
+		RecordAlarm:    sidecar.SidecarRecordAlarm(event.RecordAlarm),
+		BridgeAlarm:    sidecar.SidecarBridgeAlarm(event.BridgeAlarm),
+		DnsAlarm:       sidecar.SidecarDnsAlarm(event.DnsAlarm),
+		CtAlarm:        sidecar.SidecarCtAlarm(event.CtAlarm),
+	}
+	if erasure := event.Erasure; erasure != nil {
+		core.Erasure = &sidecar.SidecarErasure{
+			State:       erasure.State,
+			ObjectsLeft: erasure.ObjectsLeft,
+			BytesLeft:   erasure.BytesLeft,
+			NextTry:     timeOf(erasure.NextTryMs),
+			Finish:      timeOf(erasure.FinishMs),
+		}
+		if erasureId := idOf(erasure.ErasureId); erasureId != nil {
+			core.Erasure.ErasureId = *erasureId
+		}
+	}
+	return core
 }
 
 // EnrollWithDevice on the remote backend (§5.8's pair row): the device's Api mints the child on its own token, the

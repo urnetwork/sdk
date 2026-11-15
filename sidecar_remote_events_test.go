@@ -1,0 +1,666 @@
+//go:build !ios_extension && !js
+
+package sdk
+
+// The remote backend's events long-poll (QD-821) against a daemon of the root over a real Unix socket: the daemon's
+// own events method over its own ring, a status method answering what a test sets, and a source attached to the ring
+// raising the network's sidecar's events as a Sidecar does. Each event kind reaches a listener in order and as the
+// local backend's would; a reader the ring passed gets a gap and then the state a status read finds; a session that
+// ends is dialed again after its backoff; and state events stand for the status poll while they flow. Every wait is
+// on a channel, the daemon's waits on its own bound, and nothing sleeps.
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/urnetwork/sidecar"
+)
+
+// A source the daemon's ring is attached to: one network's sidecar, raising what a test gives it.
+type testEventsSource struct {
+	callbacks *sidecar.CallbackList[sidecar.SidecarEventFunction]
+	networkId sidecar.Id
+	sidecarId sidecar.Id
+}
+
+func newTestEventsSource() *testEventsSource {
+	return &testEventsSource{
+		callbacks: sidecar.NewCallbackList[sidecar.SidecarEventFunction](),
+		networkId: sidecar.NewId(),
+		sidecarId: sidecar.NewId(),
+	}
+}
+
+func (self *testEventsSource) AddEventCallback(callback sidecar.SidecarEventFunction) func() {
+	callbackId := self.callbacks.Add(callback)
+	return func() {
+		self.callbacks.Remove(callbackId)
+	}
+}
+
+func (self *testEventsSource) NetworkId() *sidecar.Id {
+	networkId := self.networkId
+	return &networkId
+}
+
+func (self *testEventsSource) Identity() *sidecar.SidecarIdentity {
+	return &sidecar.SidecarIdentity{NetworkId: self.networkId, SidecarId: self.sidecarId, Generation: 1}
+}
+
+// Raises event to every callback, as a Sidecar's own delivery does.
+func (self *testEventsSource) raise(event sidecar.SidecarEvent) {
+	for _, callback := range self.callbacks.Get() {
+		callback(event)
+	}
+}
+
+// A daemon of the root: its events method over its ring, which source is attached to, and a status method answering
+// the state a test sets for source's network.
+type testEventsDaemon struct {
+	daemon   *sidecar.Daemon
+	ran      chan error
+	stopOnce sync.Once
+
+	stateLock   sync.Mutex
+	source      *testEventsSource
+	state       string
+	reason      string
+	generation  int64
+	statusCount int
+}
+
+// A daemon serving on socketPath, online at generation, with edit applied to its local settings, stopped at the
+// test's end.
+func startTestEventsDaemon(t *testing.T, socketPath string, source *testEventsSource, generation int64, edit func(local *sidecar.SidecarLocalSettings)) *testEventsDaemon {
+	t.Helper()
+	stateDirectory, err := os.MkdirTemp("", "ur")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stateDirectory) })
+	local := sidecar.DefaultSidecarSettings().LocalSettings
+	if edit != nil {
+		edit(local)
+	}
+	daemon, err := sidecar.NewDaemon(context.Background(), &sidecar.DaemonSettings{
+		Instance:       "default",
+		StateDirectory: filepath.Join(stateDirectory, "state"),
+		SocketPath:     socketPath,
+		Local:          local,
+		Version:        testRemoteDaemonVersion,
+		Log:            sidecar.NewNoopLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	self := &testEventsDaemon{daemon: daemon, ran: make(chan error, 1), source: source, state: "online", generation: generation}
+	if err := daemon.RegisterMethod(&sidecar.DaemonMethod{Name: sidecarControlMethodStatus, Handler: func(ctx context.Context, call *sidecar.DaemonCall) (any, error) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.statusCount += 1
+		return map[string]any{
+			"instance":   "default",
+			"state":      self.state,
+			"reason":     self.reason,
+			"generation": self.generation,
+			"key_store":  "keychain",
+			"networks": []map[string]any{{
+				"network_id": self.source.networkId,
+				"sidecar_id": self.source.sidecarId,
+				"state":      self.state,
+				"reason":     self.reason,
+				"generation": self.generation,
+			}},
+		}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.RegisterMethod(sidecar.DaemonEventsMethod(daemon.Events())); err != nil {
+		t.Fatal(err)
+	}
+	daemon.Events().Attach(source)
+	go func() {
+		self.ran <- daemon.Run()
+	}()
+	t.Cleanup(self.stop)
+	return self
+}
+
+// Ends the daemon and waits for its run. Safe to call again.
+func (self *testEventsDaemon) stop() {
+	self.stopOnce.Do(func() {
+		self.daemon.Close()
+		<-self.ran
+	})
+}
+
+// Sets what status answers, raising no event.
+func (self *testEventsDaemon) set(state string, reason string, generation int64) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.state, self.reason, self.generation = state, reason, generation
+}
+
+// How many status reads it answered.
+func (self *testEventsDaemon) statusReads() int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.statusCount
+}
+
+// A dial whose sessions open once ready closes, so a listener is added before the first event, and whose next events
+// call past a cursor waits for the test once it holds one.
+type testEventsDial struct {
+	base  sidecarControlDial
+	ready chan struct{}
+
+	stateLock sync.Mutex
+	// closed by the call it holds when it does, and by the test to let it go
+	held    chan struct{}
+	release chan struct{}
+	// which call's after it holds, nil for any
+	match func(after string) bool
+}
+
+func newTestEventsDial(base sidecarControlDial) *testEventsDial {
+	return &testEventsDial{base: base, ready: make(chan struct{})}
+}
+
+func (self *testEventsDial) dial(ctx context.Context) (sidecarControlChannel, error) {
+	select {
+	case <-self.ready:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	channel, err := self.base(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &testEventsChannel{channel: channel, dial: self}, nil
+}
+
+// Holds the next events call past a cursor: held closes once it waits, and it goes on once release closes.
+func (self *testEventsDial) holdNext() (held chan struct{}, release chan struct{}) {
+	return self.holdNextMatching(nil)
+}
+
+// Holds the next events call past a cursor match takes, as holdNext does.
+func (self *testEventsDial) holdNextMatching(match func(after string) bool) (held chan struct{}, release chan struct{}) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.held, self.release, self.match = make(chan struct{}), make(chan struct{}), match
+	return self.held, self.release
+}
+
+// The hold an events call past after takes, once, or nils.
+func (self *testEventsDial) takeHold(after string) (chan struct{}, chan struct{}) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.held == nil || (self.match != nil && !self.match(after)) {
+		return nil, nil
+	}
+	held, release := self.held, self.release
+	self.held, self.release, self.match = nil, nil, nil
+	return held, release
+}
+
+// A session through testEventsDial.
+type testEventsChannel struct {
+	channel sidecarControlChannel
+	dial    *testEventsDial
+}
+
+func (self *testEventsChannel) call(ctx context.Context, method string, params any, confirmed bool, result any) error {
+	if events, ok := params.(*sidecarControlEventsParams); ok && method == sidecarControlMethodEvents && events.After != "" {
+		if held, release := self.dial.takeHold(events.After); held != nil {
+			close(held)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	return self.channel.call(ctx, method, params, confirmed, result)
+}
+
+func (self *testEventsChannel) close() {
+	self.channel.close()
+}
+
+// A remote Sidecar on dial whose status reads are its events long-poll's alone, with its listener, closed at the
+// test's end with the long-poll joined. edit changes its settings.
+func openTestEventsSidecar(t *testing.T, dial sidecarControlDial, edit func(settings *sidecarRemoteSettings)) (*Sidecar, *sidecarRemoteBackend, *testRemoteEvents) {
+	t.Helper()
+	remoteSettings := defaultSidecarRemoteSettings()
+	remoteSettings.CallTimeout = testSidecarTimeout
+	remoteSettings.EventReconnectMinTimeout = time.Millisecond
+	remoteSettings.EventReconnectMaxTimeout = 4 * time.Millisecond
+	if edit != nil {
+		edit(remoteSettings)
+	}
+	remote, err := newSidecarRemote(context.Background(), nil, DefaultSidecarSettings(), &sidecarRemoteOptions{
+		dial:           dial,
+		remoteSettings: remoteSettings,
+		noStatusPoll:   true,
+		followEvents:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := remote.remote.(*sidecarRemoteBackend)
+	t.Cleanup(func() {
+		remote.Close()
+		select {
+		case <-backend.eventsDone:
+		case <-time.After(testSidecarTimeout):
+			t.Error("the events long-poll outlived its Sidecar")
+		}
+	})
+	events := &testRemoteEvents{events: make(chan *SidecarEvent, 256)}
+	remote.AddEventListener(events)
+	return remote, backend, events
+}
+
+// Waits for done to close, failing as what once testSidecarTimeout passes.
+func awaitTestEventsChannel(t *testing.T, done chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(testSidecarTimeout):
+		t.Fatalf("waited for %s", what)
+	}
+}
+
+// Every kind §5.4 names and a later component added, as the core raises them.
+var testEveryEventKind = []sidecar.SidecarEventKind{
+	sidecar.SidecarEventState, sidecar.SidecarEventApprovalPending, sidecar.SidecarEventMemberAdded,
+	sidecar.SidecarEventMemberRemoved, sidecar.SidecarEventKeyChanged, sidecar.SidecarEventRefused,
+	sidecar.SidecarEventAdmissionAlarm, sidecar.SidecarEventRecoveryRebind, sidecar.SidecarEventRecoveryWindow,
+	sidecar.SidecarEventRecoveryUnseen, sidecar.SidecarEventAdmissionsNearCap, sidecar.SidecarEventHeadAlarm,
+	sidecar.SidecarEventIndexMismatch, sidecar.SidecarEventIndexMalformed, sidecar.SidecarEventSearchAlarm,
+	sidecar.SidecarEventHistoryDrop, sidecar.SidecarEventAccessRequest, sidecar.SidecarEventAccessDecided,
+	sidecar.SidecarEventDirectoryErasure, sidecar.SidecarEventErasure, sidecar.SidecarEventMailSend,
+	sidecar.SidecarEventEvsConflict, sidecar.SidecarEventEvsAlarm, sidecar.SidecarEventEvsGap,
+	sidecar.SidecarEventCredentialStore, sidecar.SidecarEventRecordAlarm, sidecar.SidecarEventBridgeAlarm,
+	sidecar.SidecarEventDnsAlarm, sidecar.SidecarEventCtAlarm,
+}
+
+// A core event of kind at generation with every field set to something of its own, its times whole milliseconds; a
+// state event names online.
+func testFullCoreEvent(t *testing.T, kind sidecar.SidecarEventKind, generation int64) sidecar.SidecarEvent {
+	t.Helper()
+	event := sidecar.SidecarEvent{}
+	value := reflect.ValueOf(&event).Elem()
+	at := time.Date(2026, time.November, 14, 15, 16, 17, 0, time.UTC)
+	for i := 0; i < value.NumField(); i += 1 {
+		field := value.Field(i)
+		name := value.Type().Field(i).Name
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString("synthetic-" + strings.ToLower(name))
+		case reflect.Int, reflect.Int64:
+			field.SetInt(int64(100 + i))
+		case reflect.Uint64:
+			field.SetUint(uint64(200 + i))
+		case reflect.Pointer:
+			switch field.Type() {
+			case reflect.TypeFor[*sidecar.Id]():
+				id := sidecar.NewId()
+				field.Set(reflect.ValueOf(&id))
+			case reflect.TypeFor[*sidecar.SidecarErasure]():
+				field.Set(reflect.ValueOf(&sidecar.SidecarErasure{
+					ErasureId:   sidecar.NewId(),
+					State:       "waiting",
+					ObjectsLeft: 7,
+					BytesLeft:   8192,
+					NextTry:     at.Add(time.Minute),
+					Finish:      at.Add(time.Hour),
+				}))
+			default:
+				t.Fatalf("SidecarEvent.%s's type %s has no synthetic value", name, field.Type())
+			}
+		case reflect.Struct:
+			field.Set(reflect.ValueOf(at.Add(time.Duration(i) * time.Second)))
+		case reflect.Array:
+			field.Set(reflect.ValueOf([2][]byte{{1, 2, byte(i)}, {4, 5, byte(i)}}))
+		default:
+			t.Fatalf("SidecarEvent.%s's kind %s has no synthetic value", name, field.Kind())
+		}
+	}
+	event.Kind = kind
+	event.Generation = generation
+	if kind == sidecar.SidecarEventState {
+		event.State, event.Reason = sidecar.SidecarStateOnline, ""
+	}
+	return event
+}
+
+// A ring event with every field set, for the wire's shape.
+func testFullControlEvent() *sidecarControlEvent {
+	event := &sidecarControlEvent{}
+	value := reflect.ValueOf(event).Elem()
+	for i := 0; i < value.NumField(); i += 1 {
+		field := value.Field(i)
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString("synthetic-" + value.Type().Field(i).Name)
+		case reflect.Int, reflect.Int64:
+			field.SetInt(int64(100 + i))
+		case reflect.Uint64:
+			field.SetUint(uint64(200 + i))
+		case reflect.Slice:
+			field.SetBytes([]byte{byte(i), 1})
+		case reflect.Pointer:
+			if field.Type() == reflect.TypeFor[*Id]() {
+				field.Set(reflect.ValueOf(NewId()))
+			} else {
+				field.Set(reflect.ValueOf(&sidecarControlEventErasure{
+					ErasureId: NewId(), State: "done", ObjectsLeft: 1, BytesLeft: 2, NextTryMs: 3, FinishMs: 4,
+				}))
+			}
+		}
+	}
+	return event
+}
+
+// The JSON of a bound event, for comparing two.
+func testBoundEventJson(t *testing.T, event *SidecarEvent) string {
+	t.Helper()
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+// Every event kind the daemon's core raises reaches a remote-mode listener, in the order raised, as the bound event
+// the local backend's listener would get for it; and the js leg's conversion of the daemon's own answer is the same.
+func TestRemoteEventsReachTheListenerInOrder(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	source := newTestEventsSource()
+	startTestEventsDaemon(t, socketPath, source, 1, nil)
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	remote, _, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	// subscribed: the status read after the cursor finds the daemon online
+	if first := events.next(t); first.Kind != "state" || first.State != "online" || first.Generation != 1 {
+		t.Fatalf("the first event: %+v", first)
+	}
+	// a cursor of the test's own, to read the daemon's answer as the js leg does
+	ctx, cancel := context.WithTimeout(context.Background(), testSidecarTimeout)
+	defer cancel()
+	client, err := sidecar.DialDaemon(ctx, socketPath, &sidecar.DaemonHello{Mode: sidecar.DaemonModeControl, Version: testRemoteDaemonVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	start := &sidecarControlEventsReply{}
+	if err := client.Call(ctx, sidecarControlMethodEvents, &sidecarControlEventsParams{}, false, start); err != nil {
+		t.Fatal(err)
+	}
+
+	raised := []sidecar.SidecarEvent{}
+	for _, kind := range testEveryEventKind {
+		event := testFullCoreEvent(t, kind, 1)
+		raised = append(raised, event)
+		source.raise(event)
+	}
+	for i := range raised {
+		got := events.next(t)
+		if want := newSidecarEventOf(&raised[i]); testBoundEventJson(t, got) != testBoundEventJson(t, want) {
+			t.Errorf("event %d (%s):\n%s\nwant\n%s", i, raised[i].Kind, testBoundEventJson(t, got), testBoundEventJson(t, want))
+		}
+	}
+	if state := remote.GetState(); state != "online" {
+		t.Errorf("the state after the events: %s", state)
+	}
+
+	answered := &sidecarControlEventsReply{}
+	if err := client.Call(ctx, sidecarControlMethodEvents, &sidecarControlEventsParams{After: start.Cursor}, false, answered); err != nil {
+		t.Fatal(err)
+	}
+	if len(answered.Events) != len(raised) {
+		t.Fatalf("the daemon answered %d events of %d", len(answered.Events), len(raised))
+	}
+	for i, event := range answered.Events {
+		if testBoundEventJson(t, event.boundEvent()) != testBoundEventJson(t, newSidecarEventOf(&raised[i])) {
+			t.Errorf("the js leg's event %d (%s) differs", i, raised[i].Kind)
+		}
+		if event.NetworkId == nil || event.NetworkId.String() != source.networkId.String() ||
+			event.OriginSidecarId == nil || event.OriginSidecarId.String() != source.sidecarId.String() {
+			t.Errorf("event %d's source: %v %v", i, event.NetworkId, event.OriginSidecarId)
+		}
+	}
+}
+
+// A reader the ring passed while it was held gets gap from the daemon, reads status and emits the state it finds,
+// none of the events it lost reaching the listener; it goes on from the gap's cursor.
+func TestRemoteEventsGapReadsTheState(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	source := newTestEventsSource()
+	daemon := startTestEventsDaemon(t, socketPath, source, 1, func(local *sidecar.SidecarLocalSettings) {
+		local.EventRingEventCount = 2
+	})
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	held, release := dial.holdNext()
+	remote, _, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	if first := events.next(t); first.State != "online" || first.Generation != 1 {
+		t.Fatalf("the first event: %+v", first)
+	}
+	awaitTestEventsChannel(t, held, "the long-poll's first call past the cursor")
+	readsBefore := daemon.statusReads()
+	// three events pass a ring of two while the reader is held, and the state moves with no event the reader keeps
+	for range 3 {
+		source.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventApprovalPending, Generation: 1, ApprovalId: func() *sidecar.Id {
+			id := sidecar.NewId()
+			return &id
+		}()})
+	}
+	daemon.set("locked", "", 1)
+	close(release)
+	if gap := events.next(t); gap.Kind != "state" || gap.State != "locked" || gap.Generation != 1 {
+		t.Fatalf("after the gap: %+v", gap)
+	}
+	if remote.GetState() != "locked" || daemon.statusReads() != readsBefore+1 {
+		t.Fatalf("the state after the gap: %s, %d status reads after the hold", remote.GetState(), daemon.statusReads()-readsBefore)
+	}
+	// the next event is the first past the gap's cursor
+	mailSend := sidecar.NewId()
+	source.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventMailSend, Generation: 1, SendId: &mailSend})
+	if next := events.next(t); next.Kind != "mail_send" || next.SendId == nil || next.SendId.String() != mailSend.String() {
+		t.Fatalf("past the gap: %+v", next)
+	}
+}
+
+// A session that ends reads status at once, offline with no daemon answering, and the long-poll dials again after its
+// backoff: a daemon that started since has another ring, so its first answer is a gap and the state it reads follows.
+func TestRemoteEventsReconnectAfterTheSessionEnds(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	first := newTestEventsSource()
+	ended := startTestEventsDaemon(t, socketPath, first, 1, nil)
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	remote, _, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	if online := events.next(t); online.State != "online" {
+		t.Fatalf("the first event: %+v", online)
+	}
+	// the long-poll's first call past a cursor of another ring than this daemon's is held, so the test raises the new
+	// daemon's event once the reader follows its ring
+	endedRing := testEventsRingOf(t, socketPath)
+	held, release := dial.holdNextMatching(func(after string) bool { return !strings.HasPrefix(after, endedRing) })
+	ended.stop()
+	if offline := events.next(t); offline.State != "offline" {
+		t.Fatalf("after the daemon ended: %+v", offline)
+	}
+
+	// the same network's sidecar under a daemon that started again
+	second := &testEventsSource{callbacks: sidecar.NewCallbackList[sidecar.SidecarEventFunction](), networkId: first.networkId, sidecarId: first.sidecarId}
+	startTestEventsDaemon(t, socketPath, second, 2, nil)
+	awaitTestEventsChannel(t, held, "the long-poll past the new daemon's cursor")
+	if online := events.next(t); online.State != "online" || online.Generation != 2 {
+		t.Fatalf("after the daemon started again: %+v", online)
+	}
+	if remote.GetState() != "online" {
+		t.Fatalf("the state: %s", remote.GetState())
+	}
+	approvalId := sidecar.NewId()
+	second.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventApprovalPending, Generation: 2, ApprovalId: &approvalId})
+	close(release)
+	// the read at the session's end may have found online before the gap's read emitted it again
+	pending := events.next(t)
+	for pending.Kind == "state" && pending.State == "online" && pending.Generation == 2 {
+		pending = events.next(t)
+	}
+	if pending.Kind != "approval_pending" || pending.ApprovalId == nil || pending.ApprovalId.String() != approvalId.String() {
+		t.Fatalf("an event of the new daemon: %+v", pending)
+	}
+}
+
+// The ring id the daemon at socketPath names in its cursors, with its separator, from a session of the test's own.
+func testEventsRingOf(t *testing.T, socketPath string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), testSidecarTimeout)
+	defer cancel()
+	client, err := sidecar.DialDaemon(ctx, socketPath, &sidecar.DaemonHello{Mode: sidecar.DaemonModeControl, Version: testRemoteDaemonVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	reply := &sidecarControlEventsReply{}
+	if err := client.Call(ctx, sidecarControlMethodEvents, &sidecarControlEventsParams{}, false, reply); err != nil {
+		t.Fatal(err)
+	}
+	ring, _, ok := strings.Cut(reply.Cursor, ":")
+	if !ok {
+		t.Fatalf("a cursor %q", reply.Cursor)
+	}
+	return ring + ":"
+}
+
+// While the long-poll answers, its state events move the state and a status read by anything else leaves it, and the
+// status poll's turn reads nothing; an older generation's event and another network's go nowhere.
+func TestRemoteStateEventsStandForThePoll(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	source := newTestEventsSource()
+	daemon := startTestEventsDaemon(t, socketPath, source, 2, nil)
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	remote, backend, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	if online := events.next(t); online.State != "online" || online.Generation != 2 {
+		t.Fatalf("the first event: %+v", online)
+	}
+	if !backend.eventsCarry() {
+		t.Fatal("the long-poll answered and does not carry the state")
+	}
+	reads := daemon.statusReads()
+	backend.pollStatus(context.Background())
+	if daemon.statusReads() != reads {
+		t.Fatal("the status poll read while the long-poll carries the state")
+	}
+	// a read that crossed a state event changes nothing
+	daemon.set("locked", "", 2)
+	if err := backend.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if remote.GetState() != "online" {
+		t.Fatalf("a status read moved the state past the events: %s", remote.GetState())
+	}
+	// the state's own event moves it, and a listener sees it
+	source.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventState, Generation: 2, State: sidecar.SidecarStateLocked})
+	if locked := events.next(t); locked.State != "locked" || remote.GetState() != "locked" {
+		t.Fatalf("the locked event: %+v, state %s", locked, remote.GetState())
+	}
+	// an older generation's event, another network's, and a revocation without its verified reason
+	other := newTestEventsSource()
+	daemon.daemon.Events().Attach(other)
+	other.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventAdmissionAlarm, Generation: 9})
+	source.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventApprovalPending, Generation: 1})
+	source.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventState, Generation: 3, State: sidecar.SidecarStateRevoked, Reason: sidecar.SidecarReasonRefused})
+	if refused := events.next(t); refused.Kind != "state" || refused.State != "unenrolled" || refused.Reason != "refused" || refused.Generation != 3 {
+		t.Fatalf("the event after the dropped ones: %+v", refused)
+	}
+	if state, reason := remote.GetState(), remote.GetStateReason(); state != "unenrolled" || reason != "refused" {
+		t.Fatalf("a revocation without its reason: %s %s", state, reason)
+	}
+	if got := remote.GetSidecarId(); got == nil || got.String() != source.sidecarId.String() {
+		t.Fatalf("the sidecar_id: %v", got)
+	}
+}
+
+// What an events reply carries beyond the fields this sdk names goes nowhere: a broken daemon's extra fields reach no
+// listener on either leg's conversion.
+func TestRemoteEventsReadOnlyTheirFields(t *testing.T) {
+	const leaked = "a-token-no-reply-may-carry"
+	networkId := NewId()
+	raw := `{"events":[{"kind":"approval_pending","generation":1,"network_id":"` + networkId.String() + `","by_client_jwt":"` +
+		leaked + `","pass":"` + leaked + `","erasure":{"erasure_id":"` + NewId().String() + `","state":"done","recovery_code":"` +
+		leaked + `"}}],"cursor":"c","auth_key":"` + leaked + `"}`
+	reply := &sidecarControlEventsReply{}
+	if err := json.Unmarshal([]byte(raw), reply); err != nil || len(reply.Events) != 1 {
+		t.Fatalf("%+v %v", reply, err)
+	}
+	core := sidecarCoreEventOf(reply.Events[0])
+	for _, bound := range []*SidecarEvent{reply.Events[0].boundEvent(), newSidecarEventOf(&core)} {
+		if encoded := testBoundEventJson(t, bound); strings.Contains(encoded, leaked) || !strings.Contains(encoded, "approval_pending") {
+			t.Errorf("a listener's event: %s", encoded)
+		}
+	}
+	encoded, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(leaked)) {
+		t.Errorf("the reply as read keeps %s", encoded)
+	}
+}
+
+// The long-poll ends with its Sidecar, its session closed, whatever it waited on: a call in flight, or a backoff.
+func TestRemoteEventsEndWithTheSidecar(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	source := newTestEventsSource()
+	startTestEventsDaemon(t, socketPath, source, 1, nil)
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	held, _ := dial.holdNext()
+	remote, backend, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	if online := events.next(t); online.State != "online" {
+		t.Fatalf("the first event: %+v", online)
+	}
+	awaitTestEventsChannel(t, held, "the long-poll's call past the cursor")
+	remote.Close()
+	awaitTestEventsChannel(t, backend.eventsDone, "the long-poll's end")
+	if backend.eventsCarry() {
+		t.Error("a closed backend's events carry the state")
+	}
+
+	// no daemon at all: the long-poll backs off and dials again until its Sidecar closes
+	none := newTestEventsDial(sidecarDaemonSocketDial(filepath.Join(filepath.Dir(socketPath), "none.sock"), testRemoteDaemonVersion))
+	close(none.ready)
+	idle, idleBackend, idleEvents := openTestEventsSidecar(t, none.dial, nil)
+	if state := idle.GetState(); state != "offline" {
+		t.Fatalf("with no daemon: %s", state)
+	}
+	idle.Close()
+	awaitTestEventsChannel(t, idleBackend.eventsDone, "the long-poll's end with no daemon")
+	select {
+	case event := <-idleEvents.events:
+		if event.State != "offline" {
+			t.Errorf("with no daemon a listener heard %+v", event)
+		}
+	default:
+	}
+	if err := idleBackend.refresh(context.Background()); !errors.Is(err, errSidecarRemoteClosed) {
+		t.Errorf("a read after Close: %v", err)
+	}
+}
