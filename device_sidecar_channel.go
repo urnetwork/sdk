@@ -24,6 +24,7 @@ package sdk
 import (
 	"errors"
 	"net/netip"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -32,6 +33,28 @@ import (
 	sidecardevice "github.com/urnetwork/sidecar/device"
 	"github.com/urnetwork/sidecar/protocol/bridge"
 )
+
+// One network's forwarding as a status shows it (§18.6's Status, the mirror's forwarding fields), from the role's own
+// state and its Forwarder's (device_sidecar_forward.go).
+type deviceForwardingStatus struct {
+	NetworkId connect.Id
+	// The device client's network, the one role that hosts.
+	Hosting bool
+	Posture sidecardevice.PostureState
+	// none, generated, delegated or active (4.2.6).
+	KeySet string
+	// F's token is past its exp: the posture holds pending until a new hand-off.
+	Lapsed bool
+	// F's exp, zero while none is kept.
+	ForwardClientExpiresAt time.Time
+	// The Forwarder's newest entry and compile, the bridge_alarm reasons standing, and its compile counts.
+	TipN                uint64
+	CompiledN           uint64
+	Alarms              []string
+	CompileCount        uint64
+	CompileErrorCount   uint64
+	CompileRefusedCount uint64
+}
 
 // What forwarding's setup asks of the device that runs the VPN component: DeviceLocal in process, DeviceRemote over
 // the device RPC. Go only.
@@ -318,19 +341,17 @@ func bridgeStatusOf(status sidecardevice.BridgeStatus, roles []deviceForwardingS
 			Posture:             role.Posture.String(),
 			KeySet:              role.KeySet,
 			Lapsed:              role.Lapsed,
-			TipN:                int64(min(role.Forwarder.Tip.GetVersion(), uint64(1<<63-1))),
-			CompiledN:           int64(min(role.Forwarder.CompiledPin.GetVersion(), uint64(1<<63-1))),
+			TipN:                int64(min(role.TipN, uint64(1<<63-1))),
+			CompiledN:           int64(min(role.CompiledN, uint64(1<<63-1))),
 			Alarms:              NewStringList(),
-			CompileCount:        int64(min(role.Forwarder.CompileCount, uint64(1<<63-1))),
-			CompileErrorCount:   int64(min(role.Forwarder.CompileErrorCount, uint64(1<<63-1))),
-			CompileRefusedCount: int64(min(role.Forwarder.CompileRefusedCount, uint64(1<<63-1))),
+			CompileCount:        int64(min(role.CompileCount, uint64(1<<63-1))),
+			CompileErrorCount:   int64(min(role.CompileErrorCount, uint64(1<<63-1))),
+			CompileRefusedCount: int64(min(role.CompileRefusedCount, uint64(1<<63-1))),
 		}
 		if !role.ForwardClientExpiresAt.IsZero() {
 			network.ForwardClientExpiresMillis = role.ForwardClientExpiresAt.UnixMilli()
 		}
-		for _, alarm := range role.Forwarder.Alarms {
-			network.Alarms.Add(string(alarm.Reason))
-		}
+		network.Alarms.addAll(role.Alarms...)
 		bound.Networks.Add(network)
 	}
 	return bound

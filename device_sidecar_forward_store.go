@@ -1,3 +1,5 @@
+//go:build !js
+
 // The VPN component's forwarding store (DESIGN-DETAILS 4.2.2's store; §18.6's posture row; owner decision 197;
 // SDK-M8-16): one directory per network under the component's own container, never an app group, every record sealed
 // under the network's forwarding root key by device.NewSealedPostureStore, so a copy of the files opens to nothing.

@@ -43,7 +43,6 @@ import (
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 
-	"github.com/urnetwork/sidecar"
 	sidecardevice "github.com/urnetwork/sidecar/device"
 	"github.com/urnetwork/sidecar/protocol/bridge"
 )
@@ -976,32 +975,6 @@ func (self *deviceBridgeRouterZone) Answer(host string, qtype uint16) ([]netip.A
 		}
 	}
 	return nil, 0, false
-}
-
-// Starts the VPN component's Forwarders once the device is built (device_sidecar_forward.go): F's requests dial by the
-// device's client strategy, the urls are the network space's, and the device client's id and ClientKey public key name
-// this device as host in its own network. Nothing without forwarding.
-func (self *DeviceLocal) startForwarding() {
-	if self.bridgeOwner == nil || self.bridgeOwner.forwarding == nil {
-		return
-	}
-	deps := &deviceForwardingDeps{
-		ctx:         self.ctx,
-		apiUrl:      self.networkSpace.GetApiUrl(),
-		platformUrl: self.networkSpace.GetPlatformUrl(),
-		transport:   sidecar.NewForwardingTransport(self.ctx, self.clientStrategy),
-		hostClient: func() ([]byte, []byte) {
-			client := self.providerClientSnapshot()
-			if client == nil || client.ClientKeyManager() == nil {
-				return nil, nil
-			}
-			return bytes.Clone(self.clientId[:]), bytes.Clone(client.ClientKeyManager().PublicKey())
-		},
-	}
-	if self.settings.testingForwardingDeps != nil {
-		self.settings.testingForwardingDeps(deps)
-	}
-	self.bridgeOwner.forwarding.start(deps)
 }
 
 // The VPN component's forwarding host, nil on a device that runs none: SDK-M8-07's channel calls its keys, hand-off

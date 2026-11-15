@@ -1,3 +1,5 @@
+//go:build !js
+
 // The VPN component's forwarding host in DeviceLocal (DESIGN-DETAILS 4.2.6, the component's side; §18.6's Setup,
 // Following and posture; D-SDK-13, D-SDK-20, D-SDK-32, DP1, owner decision 197; SDK-M8-16): one forwarding role per
 // network a hand-off names, each with its own key sets (device_sidecar_forward_keys.go), sealed store
@@ -119,22 +121,6 @@ const (
 	deviceForwardKeySetDelegated = "delegated"
 	deviceForwardKeySetActive    = "active"
 )
-
-// One network's forwarding as a status shows it (§18.6's Status, the mirror's forwarding fields).
-type deviceForwardingStatus struct {
-	NetworkId connect.Id
-	// The device client's network, the one role that hosts.
-	Hosting bool
-	Posture sidecardevice.PostureState
-	// none, generated, delegated or active (4.2.6).
-	KeySet string
-	// F's token is past its exp: the posture holds pending until a new hand-off.
-	Lapsed bool
-	// F's exp, zero while none is kept.
-	ForwardClientExpiresAt time.Time
-	// The Forwarder's status, zero before one runs.
-	Forwarder sidecar.ForwarderStatus
-}
 
 // What a role's Forwarder and F are built over, which the device supplies once it is built: the network space's urls,
 // the client strategy's transport, and the device client's id and ClientKey public key.
@@ -904,7 +890,15 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 		status.KeySet = deviceForwardKeySetActive
 	}
 	if forwarder != nil {
-		status.Forwarder = forwarder.Status()
+		forwarderStatus := forwarder.Status()
+		status.TipN = forwarderStatus.Tip.GetVersion()
+		status.CompiledN = forwarderStatus.CompiledPin.GetVersion()
+		status.CompileCount = forwarderStatus.CompileCount
+		status.CompileErrorCount = forwarderStatus.CompileErrorCount
+		status.CompileRefusedCount = forwarderStatus.CompileRefusedCount
+		for _, alarm := range forwarderStatus.Alarms {
+			status.Alarms = append(status.Alarms, string(alarm.Reason))
+		}
 	}
 	return status
 }
@@ -1158,9 +1152,28 @@ func sidecarServiceUrlOf(apiUrl string, apiLabel string, serviceLabel string) (s
 	return serviceUrl.String(), nil
 }
 
-// Gives the device the VPN component's forwarding key store (sidecar §18.6's Setup, DESIGN-DETAILS 4.2.2): with
-// ForwardStateDir set, the device keeps its forwarding roles' keys there and runs a forwarding role for each network a
-// hand-off names. The store is the component's own, never the sidecar role's SidecarKeyStore.
-func (self *DeviceLocalSettings) SetForwardKeyStore(keyStore SidecarForwardKeyStore) {
-	self.forwardKeyStore = keyStore
+// Starts the VPN component's Forwarders once the device is built: F's requests dial by the device's client strategy,
+// the urls are the network space's, and the device client's id and ClientKey public key name this device as host in
+// its own network. Nothing without forwarding.
+func (self *DeviceLocal) startForwarding() {
+	if self.bridgeOwner == nil || self.bridgeOwner.forwarding == nil {
+		return
+	}
+	deps := &deviceForwardingDeps{
+		ctx:         self.ctx,
+		apiUrl:      self.networkSpace.GetApiUrl(),
+		platformUrl: self.networkSpace.GetPlatformUrl(),
+		transport:   sidecar.NewForwardingTransport(self.ctx, self.clientStrategy),
+		hostClient: func() ([]byte, []byte) {
+			client := self.providerClientSnapshot()
+			if client == nil || client.ClientKeyManager() == nil {
+				return nil, nil
+			}
+			return bytes.Clone(self.clientId[:]), bytes.Clone(client.ClientKeyManager().PublicKey())
+		},
+	}
+	if self.settings.testingForwardingDeps != nil {
+		self.settings.testingForwardingDeps(deps)
+	}
+	self.bridgeOwner.forwarding.start(deps)
 }
