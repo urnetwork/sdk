@@ -976,15 +976,6 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 	return status
 }
 
-// A head_alarm as a role's status shows it: its kind, when the Forwarder raised it, and the two pins' positions, this
-// device's and the other's (§6.5's evidence, positions alone, I-13). Zero for none.
-type deviceForwardHeadAlarm struct {
-	Kind   string
-	At     time.Time
-	N      uint64
-	OtherN uint64
-}
-
 // The Forwarder's events (sidecar.ForwarderArgs.Emit), on its goroutine, never blocking: a head_alarm is kept as the
 // newest, and each alarm tells the status listeners through statusChanged, nil for none.
 func (self *deviceLocalForwarding) forwarderEvent(event sidecar.SidecarEvent, statusChanged func()) {

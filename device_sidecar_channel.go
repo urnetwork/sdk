@@ -58,6 +58,16 @@ type deviceForwardingStatus struct {
 	HeadAlarm deviceForwardHeadAlarm
 }
 
+// A head_alarm as a role's status shows it: its kind, when the Forwarder raised it, and the two pins' positions, this
+// device's and the other's (§6.5's evidence, positions alone, I-13). Zero for none. Declared here, beside the status
+// that carries it, so the js leg, which runs no Forwarder, builds the status too.
+type deviceForwardHeadAlarm struct {
+	Kind   string
+	At     time.Time
+	N      uint64
+	OtherN uint64
+}
+
 // What forwarding's setup asks of the device that runs the VPN component: DeviceLocal in process, DeviceRemote over
 // the device RPC. Go only.
 type deviceForwardingChannel interface {
