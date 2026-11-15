@@ -352,6 +352,8 @@ type DeviceRemote struct {
 	ingressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
 	dnsResolverSettingsChangeListeners       map[connect.Id]DnsResolverSettingsChangeListener
 	networkPeersChangeListeners              map[connect.Id]NetworkPeersChangeListener
+	// the bridge status mirror's listeners (device_sidecar_channel.go), made at the first
+	bridgeStatusChangeListeners map[connect.Id]BridgeStatusChangeListener
 
 	providerPacketStatsChangeListeners            map[connect.Id]PacketStatsChangeListener
 	providerEgressContractStatsChangeListeners    map[connect.Id]ContractStatsChangeListener
@@ -9668,6 +9670,9 @@ type DeviceLocalRpc struct {
 	ingressContractDetailsChangeListenerSub    Sub
 	dnsResolverSettingsChangeListenerSub       Sub
 	networkPeersChangeListenerSub              Sub
+	// the remote's bridge status listeners (device_sidecar_channel.go), made at the first
+	bridgeStatusChangeListenerIds map[connect.Id]bool
+	bridgeStatusChangeListenerSub Sub
 
 	providerPacketStatsChangeListenerSub            Sub
 	providerEgressContractStatsChangeListenerSub    Sub

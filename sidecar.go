@@ -120,6 +120,8 @@ type Sidecar struct {
 	mail         *SidecarMail
 	mailSettings *sidecarMailSettings
 	mailBackend  sidecarMailBackend
+	// forwarding's setup for the app's VPN component (sidecar_forward_setup.go), made at the first use
+	forwarding *sidecarForwarding
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -465,6 +467,8 @@ func (self *Sidecar) Close() {
 		if mail != nil {
 			mail.close()
 		}
+		// and no witness goes to the VPN component after it
+		self.stopForwarding()
 		if remote != nil {
 			remote.close()
 		}

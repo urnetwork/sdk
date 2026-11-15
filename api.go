@@ -1010,6 +1010,14 @@ type AuthNetworkClientArgs struct {
 	// false, the default, mints today's client. An app's device client never
 	// asks for strict_exp (owner decision 131), so this carries none.
 	AdminRefused bool `json:"admin_refused,omitempty"`
+
+	// Mints a device client acl_enforcing (sidecar §7.7, §18.6's Rules): its
+	// resident publishes team hints to it, which its VPN component's
+	// forwarding role follows. Kept for life and inherited. An app sets it only
+	// once its forwarding role has left legacy (Device.GetBridgeStatus,
+	// BridgeStatus.AclEnforcingMint), and re-mints a legacy device client then
+	// (owner decision 106); false, the default, mints a legacy client.
+	AclEnforcing bool `json:"acl_enforcing,omitempty"`
 }
 
 type AuthNetworkClientResult struct {
@@ -1022,6 +1030,9 @@ type AuthNetworkClientResult struct {
 	// mark answers false, and refuses the request rather than minting a
 	// client without it (§7.4).
 	AdminRefused bool `json:"admin_refused,omitempty"`
+	// The client carries the acl_enforcing mark: what an app that asked for
+	// AclEnforcing checks before it counts the client acl_enforcing.
+	AclEnforcing bool `json:"acl_enforcing,omitempty"`
 }
 
 type AuthNetworkClientError struct {

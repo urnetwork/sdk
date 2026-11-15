@@ -84,6 +84,7 @@ type deviceBridgeOwned interface {
 	Close()
 	SetFork(fork bool) error
 	Decision() sidecardevice.PostureDecision
+	SetLocalAddresses(addresses []netip.Addr)
 }
 
 var _ deviceBridgeOwned = (*sidecardevice.Bridge)(nil)
@@ -174,6 +175,8 @@ type deviceLocalBridgeOwner struct {
 	joinOrder func() []connect.Id
 	// the VPN component's forwarding roles, nil on a device given no forwarding key store or directory
 	forwarding *deviceLocalForwardingHost
+	// the tun owner's local addresses, which every bridge built later takes too
+	localAddresses []netip.Addr
 }
 
 // The device role of a device built on settings for the network networkIdText names, its posture restored from the
@@ -269,6 +272,9 @@ func (self *deviceLocalBridgeOwner) buildWithLock() error {
 	bridge, err := self.newBridge(self.ctx, self.store, self.settings)
 	if err != nil {
 		return err
+	}
+	if self.localAddresses != nil {
+		bridge.SetLocalAddresses(self.localAddresses)
 	}
 	self.bridge = bridge
 	if self.hold != nil {
@@ -539,21 +545,28 @@ func (self *DeviceLocal) holdBridge(bridge deviceBridge) {
 		routes = bridge.Routes()
 	}
 	readNumber := self.bridgeReadNumber.Add(1)
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	if self.closed {
-		return
-	}
-	if self.bridge != bridge {
-		self.bridge = bridge
-		self.bridgeZone = nil
-		if bridge != nil {
-			self.bridgeZone = &deviceBridgeZone{bridge: bridge}
+	held := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed {
+			return false
 		}
-		self.updateSendRouteWithLock()
+		if self.bridge != bridge {
+			self.bridge = bridge
+			self.bridgeZone = nil
+			if bridge != nil {
+				self.bridgeZone = &deviceBridgeZone{bridge: bridge}
+			}
+			self.updateSendRouteWithLock()
+		}
+		self.setBridgeRoutesWithLock(readNumber, routes)
+		self.applyBridgeZoneWithLock()
+		return true
+	}()
+	// told once the lock is let go
+	if held {
+		self.notifyBridgeStatus()
 	}
-	self.setBridgeRoutesWithLock(readNumber, routes)
-	self.applyBridgeZoneWithLock()
 }
 
 // A held bridge's change callback, on the goroutine that published: re-reads its routes and puts its zone back on the
@@ -561,13 +574,19 @@ func (self *DeviceLocal) holdBridge(bridge deviceBridge) {
 func (self *DeviceLocal) bridgeChanged(bridge deviceBridge) {
 	routes := bridge.Routes()
 	readNumber := self.bridgeReadNumber.Add(1)
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	if self.closed || self.bridge != bridge {
-		return
+	held := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed || self.bridge != bridge {
+			return false
+		}
+		self.setBridgeRoutesWithLock(readNumber, routes)
+		self.applyBridgeZoneWithLock()
+		return true
+	}()
+	if held {
+		self.notifyBridgeStatus()
 	}
-	self.setBridgeRoutesWithLock(readNumber, routes)
-	self.applyBridgeZoneWithLock()
 }
 
 // Keeps routes unless a later read is already kept, since a publish's callback and the owner can read them in either
@@ -700,6 +719,9 @@ func (self *deviceLocalBridgeOwner) buildRoleWithLock(role *deviceLocalBridgeRol
 	bridge, err := self.newBridge(self.ctx, role.store, role.settings)
 	if err != nil {
 		return err
+	}
+	if self.localAddresses != nil {
+		bridge.SetLocalAddresses(self.localAddresses)
 	}
 	role.bridge = bridge
 	if self.hold != nil {
@@ -989,4 +1011,26 @@ func (self *DeviceLocal) forwardingHost() *deviceLocalForwardingHost {
 		return nil
 	}
 	return self.bridgeOwner.forwarding
+}
+
+// The tun owner's local addresses to every role's bridge, which re-reads its routes (DeviceLocal.SetBridgeLocalAddresses).
+func (self *deviceLocalBridgeOwner) setLocalAddresses(addresses []netip.Addr) {
+	if self.refusal != nil {
+		return
+	}
+	self.operationLock.Lock()
+	defer self.operationLock.Unlock()
+	if self.closed {
+		return
+	}
+	self.localAddresses = slices.Clone(addresses)
+	if self.bridge != nil {
+		self.bridge.SetLocalAddresses(addresses)
+	}
+	for _, role := range self.others {
+		if role.bridge != nil {
+			role.bridge.SetLocalAddresses(addresses)
+		}
+	}
+	self.holdWithLock()
 }

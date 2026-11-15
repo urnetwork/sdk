@@ -1,0 +1,541 @@
+// The device channel (§18.6's Setup and Mirror; D-SDK-1, D-SDK-3, D-SDK-13, D-SDK-32, DP1, owner decision 197;
+// SDK-M8-07): forwarding's three setup calls between the sidecar role and the app's VPN component, and the bridge
+// status mirror.
+//
+//	keys       ForwardingKeys(networkId): the component's public halves (C0), nothing else
+//	hand-off   ForwardingHandOff(bytes): the sidecar role's hand-off (S6 to C7), which the component checks itself
+//	witness    ForwardingWitness(networkId, pin, fork): the app's witnessed pin, a hint the component's Forwarder
+//	           follows to and judges itself
+//	status     GetBridgeStatus and AddBridgeStatusChangeListener: the device role's state with each forwarding role's
+//	           fields, read-only
+//
+// In process on Android (DeviceLocal's own calls), over the device RPC to the Apple extensions (DeviceRemote), and from
+// ur daemon through a paired desktop app (sidecar_forward_setup.go relays to the daemon). Each RPC method is additive
+// and listed in its method table, so an older peer answers it unknown and DeviceRpcVersion stays 3. No state,
+// delegation or key crosses: the component compiles its own state, signs its own links, and its private keys never
+// leave it, while the sidecar's never enter it (KeysStayPut). Nothing the channel carries can lower a posture: a
+// witness is a hint, a status is read-only, and a hand-off the component did not verify is refused (DP1).
+//
+// GetBridgeRoutes and SetBridgeLocalAddresses are the tun owner's, bound on DeviceLocal in its own process (§18.15).
+// Hosted devices refuse every call (D-SDK-12). Untagged: the tunnel links it. Safe for concurrent use.
+
+package sdk
+
+import (
+	"errors"
+	"net/netip"
+
+	"google.golang.org/protobuf/proto"
+
+	"github.com/urnetwork/connect"
+
+	sidecardevice "github.com/urnetwork/sidecar/device"
+	"github.com/urnetwork/sidecar/protocol/bridge"
+)
+
+// What forwarding's setup asks of the device that runs the VPN component: DeviceLocal in process, DeviceRemote over
+// the device RPC. Go only.
+type deviceForwardingChannel interface {
+	// C0: the component's public halves for networkId.
+	forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error)
+	// C7: the hand-off, which the component checks itself.
+	forwardingHandOff(handOff *bridge.ForwardingHandOff) error
+	// The app's witnessed pin and fork for networkId.
+	forwardingWitness(networkId connect.Id, pin *bridge.AuthPin, fork bool) error
+}
+
+var (
+	_ deviceForwardingChannel = (*DeviceLocal)(nil)
+	_ deviceForwardingChannel = (*DeviceRemote)(nil)
+)
+
+// Why a device answers no forwarding call.
+var (
+	// A device built with no forwarding key store or directory, or one whose role is off.
+	errDeviceForwardingNone = errors.New("this device runs no forwarding role")
+	// The VPN component's process is too old to know the call, or the RPC is down.
+	errDeviceForwardingUnreachable = errors.New("the VPN component does not answer forwarding's setup")
+)
+
+// The forwarding host, or why the device has none.
+func (self *DeviceLocal) forwardingChannelHost(name string) (*deviceLocalForwardingHost, error) {
+	if self.hostedIncompatibleGuarded(name) {
+		return nil, errDeviceBridgeHosted
+	}
+	host := self.forwardingHost()
+	if host == nil {
+		if self.bridgeOwner != nil && self.bridgeOwner.refusal != nil {
+			return nil, self.bridgeOwner.refusal
+		}
+		return nil, errDeviceForwardingNone
+	}
+	return host, nil
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceLocal) forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error) {
+	host, err := self.forwardingChannelHost("forwardingKeys")
+	if err != nil {
+		return nil, err
+	}
+	return host.keys(networkId)
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceLocal) forwardingHandOff(handOff *bridge.ForwardingHandOff) error {
+	host, err := self.forwardingChannelHost("forwardingHandOff")
+	if err != nil {
+		return err
+	}
+	return host.handOff(handOff)
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceLocal) forwardingWitness(networkId connect.Id, pin *bridge.AuthPin, fork bool) error {
+	host, err := self.forwardingChannelHost("forwardingWitness")
+	if err != nil {
+		return err
+	}
+	return host.witness(networkId, pin, fork)
+}
+
+// ForwardingKeys' argument and answer on the device RPC: the network, and the encoded bridge.ForwardingKeys.
+type DeviceForwardingKeysArgs struct {
+	NetworkId connect.Id
+}
+
+type DeviceForwardingKeysReply struct {
+	Keys []byte
+}
+
+// ForwardingHandOff's argument: the encoded bridge.ForwardingHandOff, which holds F's token and is never logged (I-7).
+type DeviceForwardingHandOffArgs struct {
+	HandOff []byte
+}
+
+// ForwardingWitness's argument: the network, the encoded bridge.AuthPin, and whether the sidecar role found a fork.
+type DeviceForwardingWitnessArgs struct {
+	NetworkId connect.Id
+	Pin       []byte
+	Fork      bool
+}
+
+// The device RPC's ForwardingKeys (the file's comment).
+func (self *DeviceLocalRpc) ForwardingKeys(args *DeviceForwardingKeysArgs, reply **DeviceForwardingKeysReply) error {
+	if args == nil {
+		return errors.New("forwarding keys name a network")
+	}
+	keys, err := self.deviceLocal.forwardingKeys(args.NetworkId)
+	if err != nil {
+		return err
+	}
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(keys)
+	if err != nil {
+		return err
+	}
+	*reply = &DeviceForwardingKeysReply{Keys: encoded}
+	return nil
+}
+
+// The device RPC's ForwardingHandOff (the file's comment). A refusal names no byte of the hand-off.
+func (self *DeviceLocalRpc) ForwardingHandOff(args *DeviceForwardingHandOffArgs, _ RpcVoid) error {
+	if args == nil {
+		return errors.New("a hand-off is needed")
+	}
+	handOff := &bridge.ForwardingHandOff{}
+	if err := proto.Unmarshal(args.HandOff, handOff); err != nil {
+		return errors.New("the hand-off does not decode")
+	}
+	return self.deviceLocal.forwardingHandOff(handOff)
+}
+
+// The device RPC's ForwardingWitness (the file's comment).
+func (self *DeviceLocalRpc) ForwardingWitness(args *DeviceForwardingWitnessArgs, _ RpcVoid) error {
+	if args == nil {
+		return errors.New("a witness names a network")
+	}
+	pin := &bridge.AuthPin{}
+	if err := proto.Unmarshal(args.Pin, pin); err != nil {
+		return errors.New("the witnessed pin does not decode")
+	}
+	return self.deviceLocal.forwardingWitness(args.NetworkId, pin, args.Fork)
+}
+
+// One call to the VPN component, which an older peer answers unknown without the RPC closing.
+func deviceRemoteForwardingCall[T any](self *DeviceRemote, name string, arg any) (T, error) {
+	var reply T
+	self.stateLock.Lock()
+	service := self.service
+	self.stateLock.Unlock()
+	if service == nil {
+		return reply, errDeviceForwardingUnreachable
+	}
+	service.log.Infof("[rpc]%s", name)
+	err := service.Call(name, arg, &reply)
+	if err != nil && rpcMissingMethodError(err) {
+		return reply, errDeviceForwardingUnreachable
+	}
+	if err != nil {
+		var serverError deviceRpcServerError
+		if !errors.As(err, &serverError) {
+			self.closeServiceInstance(service)
+			return reply, errDeviceForwardingUnreachable
+		}
+	}
+	return reply, err
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceRemote) forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error) {
+	reply, err := deviceRemoteForwardingCall[*DeviceForwardingKeysReply](self, "DeviceLocalRpc.ForwardingKeys", &DeviceForwardingKeysArgs{NetworkId: networkId})
+	if err != nil {
+		return nil, err
+	}
+	if reply == nil {
+		return nil, errDeviceForwardingUnreachable
+	}
+	keys := &bridge.ForwardingKeys{}
+	if err := proto.Unmarshal(reply.Keys, keys); err != nil {
+		return nil, errors.New("the component's keys do not decode")
+	}
+	return keys, nil
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceRemote) forwardingHandOff(handOff *bridge.ForwardingHandOff) error {
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(handOff)
+	if err != nil {
+		return err
+	}
+	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingHandOff", &DeviceForwardingHandOffArgs{HandOff: encoded})
+	return err
+}
+
+// See deviceForwardingChannel.
+func (self *DeviceRemote) forwardingWitness(networkId connect.Id, pin *bridge.AuthPin, fork bool) error {
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(pin)
+	if err != nil {
+		return err
+	}
+	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingWitness", &DeviceForwardingWitnessArgs{NetworkId: networkId, Pin: encoded, Fork: fork})
+	return err
+}
+
+// One forwarding role's fields in a status (DESIGN-DETAILS 4.2.6's states). json in the C ABI and js.
+type BridgeNetworkStatus struct {
+	NetworkId *Id `json:"network_id"`
+	// The device client's network, the one role that hosts (D-SDK-3).
+	Hosting bool `json:"hosting,omitempty"`
+	// legacy, pending, enforcing_doc or enforcing_nodoc (§17.8).
+	Posture string `json:"posture"`
+	// none, generated, delegated or active.
+	KeySet string `json:"key_set"`
+	// F's token passed its exp: pending until the app's next setup.
+	Lapsed bool `json:"lapsed,omitempty"`
+	// F's exp, in unix milliseconds, 0 for none.
+	ForwardClientExpiresMillis int64 `json:"forward_client_expires_millis,omitempty"`
+	// The newest entry the component holds, and the pin of its newest compile.
+	TipN      int64 `json:"tip_n,omitempty"`
+	CompiledN int64 `json:"compiled_n,omitempty"`
+	// The bridge_alarm reasons standing: compile_over_budget, compile_deferred, config_key_waiting,
+	// forward_client_lapsed, narrowing_overdue.
+	Alarms *StringList `json:"alarms,omitempty"`
+	// Compiles handed to the posture, failed and refused by the admission rule since the component started.
+	CompileCount        int64 `json:"compile_count,omitempty"`
+	CompileErrorCount   int64 `json:"compile_error_count,omitempty"`
+	CompileRefusedCount int64 `json:"compile_refused_count,omitempty"`
+}
+
+// Each forwarding role's fields.
+type BridgeNetworkStatusList struct {
+	exportedList[*BridgeNetworkStatus]
+}
+
+// An empty list.
+func NewBridgeNetworkStatusList() *BridgeNetworkStatusList {
+	return &BridgeNetworkStatusList{
+		exportedList: *newExportedList[*BridgeNetworkStatus](),
+	}
+}
+
+// The device role's status as the mirror carries it (§18.6's Status): the device client's network's bridge, then each
+// forwarding role. Names states, counts and this network's own block, never a key, a name or a client's address
+// (I-13). json in the C ABI and js.
+type BridgeStatus struct {
+	// legacy, pending, enforcing_doc or enforcing_nodoc for the device client's network (§17.8).
+	State       string `json:"state"`
+	HasDocument bool   `json:"has_document,omitempty"`
+	PinN        int64  `json:"pin_n,omitempty"`
+	// The network's block, empty before a state names one.
+	Block string `json:"block,omitempty"`
+	// This host's overlay addresses.
+	Addresses *StringList `json:"addresses,omitempty"`
+	// The rules in force.
+	EntryCount   int32 `json:"entry_count,omitempty"`
+	MapCount     int32 `json:"map_count,omitempty"`
+	ServedCount  int32 `json:"served_count,omitempty"`
+	SubjectCount int32 `json:"subject_count,omitempty"`
+	// The sender's links, open and building.
+	LinkOpenCount     int32 `json:"link_open_count,omitempty"`
+	LinkBuildingCount int32 `json:"link_building_count,omitempty"`
+	// §12.9's private names in force.
+	NameCount int32 `json:"name_count,omitempty"`
+	// Each forwarding role, in the order the networks joined.
+	Networks *BridgeNetworkStatusList `json:"networks,omitempty"`
+}
+
+// App-implemented: called on a Go thread with each status after a change.
+type BridgeStatusChangeListener interface {
+	BridgeStatusChanged(status *BridgeStatus)
+}
+
+// The bound status of a bridge's and the forwarding roles'.
+func bridgeStatusOf(status sidecardevice.BridgeStatus, roles []deviceForwardingStatus) *BridgeStatus {
+	bound := &BridgeStatus{
+		State:             status.State.String(),
+		HasDocument:       status.HasDocument,
+		PinN:              int64(min(status.PinN, uint64(1<<63-1))),
+		Addresses:         NewStringList(),
+		EntryCount:        int32(status.EntryCount),
+		MapCount:          int32(status.MapCount),
+		ServedCount:       int32(status.ServedCount),
+		SubjectCount:      int32(status.SubjectCount),
+		LinkOpenCount:     int32(status.LinkOpenCount),
+		LinkBuildingCount: int32(status.LinkBuildingCount),
+		NameCount:         int32(status.NameCount),
+		Networks:          NewBridgeNetworkStatusList(),
+	}
+	if status.Block.IsValid() {
+		bound.Block = status.Block.String()
+	}
+	for _, address := range status.Addresses {
+		bound.Addresses.Add(address.String())
+	}
+	for _, role := range roles {
+		network := &BridgeNetworkStatus{
+			NetworkId:           newId([16]byte(role.NetworkId)),
+			Hosting:             role.Hosting,
+			Posture:             role.Posture.String(),
+			KeySet:              role.KeySet,
+			Lapsed:              role.Lapsed,
+			TipN:                int64(min(role.Forwarder.Tip.GetVersion(), uint64(1<<63-1))),
+			CompiledN:           int64(min(role.Forwarder.CompiledPin.GetVersion(), uint64(1<<63-1))),
+			Alarms:              NewStringList(),
+			CompileCount:        int64(min(role.Forwarder.CompileCount, uint64(1<<63-1))),
+			CompileErrorCount:   int64(min(role.Forwarder.CompileErrorCount, uint64(1<<63-1))),
+			CompileRefusedCount: int64(min(role.Forwarder.CompileRefusedCount, uint64(1<<63-1))),
+		}
+		if !role.ForwardClientExpiresAt.IsZero() {
+			network.ForwardClientExpiresMillis = role.ForwardClientExpiresAt.UnixMilli()
+		}
+		for _, alarm := range role.Forwarder.Alarms {
+			network.Alarms.Add(string(alarm.Reason))
+		}
+		bound.Networks.Add(network)
+	}
+	return bound
+}
+
+// The device role's status (the file's comment), legacy's on a device that runs none.
+func (self *DeviceLocal) GetBridgeStatus() *BridgeStatus {
+	status, err := traceWithReturn(func() *BridgeStatus {
+		bridgeStatus, err := self.bridgeStatus()
+		if err != nil {
+			bridgeStatus = sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}
+		}
+		var roles []deviceForwardingStatus
+		if host := self.forwardingHost(); host != nil {
+			roles = host.status()
+		}
+		return bridgeStatusOf(bridgeStatus, roles)
+	})
+	if err != nil {
+		return bridgeStatusOf(sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}, nil)
+	}
+	return status
+}
+
+// Calls listener with the status after each change of the device role, on a Go thread, until the answer closes.
+func (self *DeviceLocal) AddBridgeStatusChangeListener(listener BridgeStatusChangeListener) Sub {
+	if listener == nil {
+		return newSub(func() {})
+	}
+	callbackId := self.bridgeStatusListeners().Add(listener)
+	return newSub(func() {
+		self.bridgeStatusListeners().Remove(callbackId)
+	})
+}
+
+// The status listeners, made at the first use.
+func (self *DeviceLocal) bridgeStatusListeners() *connect.CallbackList[BridgeStatusChangeListener] {
+	self.bridgeStatusListenersOnce.Do(func() {
+		self.bridgeStatusChangeListeners = connect.NewCallbackList[BridgeStatusChangeListener]()
+	})
+	return self.bridgeStatusChangeListeners
+}
+
+// Tells the status listeners, on a goroutine of its own, so no listener runs under a lock of the device's or the
+// owner's.
+func (self *DeviceLocal) notifyBridgeStatus() {
+	listeners := self.bridgeStatusListeners().Get()
+	if len(listeners) == 0 {
+		return
+	}
+	go connect.HandleError(func() {
+		status := self.GetBridgeStatus()
+		for _, listener := range listeners {
+			trace(func() {
+				listener.BridgeStatusChanged(status)
+			})
+		}
+	})
+}
+
+// The device RPC's GetBridgeStatus.
+func (self *DeviceLocalRpc) GetBridgeStatus(_ RpcNoArg, status **BridgeStatus) error {
+	*status = self.deviceLocal.GetBridgeStatus()
+	return nil
+}
+
+// The device RPC's AddBridgeStatusChangeListener: the remote's listener id, heard through BridgeStatusChanged.
+func (self *DeviceLocalRpc) AddBridgeStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.bridgeStatusChangeListenerIds == nil {
+		self.bridgeStatusChangeListenerIds = map[connect.Id]bool{}
+	}
+	self.bridgeStatusChangeListenerIds[listenerId] = true
+	if self.bridgeStatusChangeListenerSub == nil {
+		self.bridgeStatusChangeListenerSub = self.deviceLocal.AddBridgeStatusChangeListener(self)
+	}
+	return nil
+}
+
+// The device RPC's RemoveBridgeStatusChangeListener.
+func (self *DeviceLocalRpc) RemoveBridgeStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	delete(self.bridgeStatusChangeListenerIds, listenerId)
+	if len(self.bridgeStatusChangeListenerIds) == 0 && self.bridgeStatusChangeListenerSub != nil {
+		self.bridgeStatusChangeListenerSub.Close()
+		self.bridgeStatusChangeListenerSub = nil
+	}
+	return nil
+}
+
+// BridgeStatusChangeListener: the status to the remote, an async coalescing reverse notification.
+func (self *DeviceLocalRpc) BridgeStatusChanged(status *BridgeStatus) {
+	self.reverseNotify("DeviceRemoteRpc.BridgeStatusChanged", status)
+}
+
+// The device RPC's reverse BridgeStatusChanged, to the remote's listeners.
+func (self *DeviceRemoteRpc) BridgeStatusChanged(status *BridgeStatus, _ RpcVoid) error {
+	self.dispatch(func() {
+		self.deviceRemote.bridgeStatusChanged(status)
+	})
+	return nil
+}
+
+// The status the VPN component's process reports, legacy's while it cannot answer or is too old to know the call.
+func (self *DeviceRemote) GetBridgeStatus() *BridgeStatus {
+	status, err := deviceRemoteForwardingCall[*BridgeStatus](self, "DeviceLocalRpc.GetBridgeStatus", RpcNoArg(0))
+	if err != nil || status == nil {
+		return bridgeStatusOf(sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}, nil)
+	}
+	return status
+}
+
+// Calls listener with each status the VPN component's process sends; an older one sends none.
+func (self *DeviceRemote) AddBridgeStatusChangeListener(listener BridgeStatusChangeListener) Sub {
+	self.stateLock.Lock()
+	if self.bridgeStatusChangeListeners == nil {
+		self.bridgeStatusChangeListeners = map[connect.Id]BridgeStatusChangeListener{}
+	}
+	self.stateLock.Unlock()
+	return addCompatibleListener(
+		self,
+		listener,
+		self.bridgeStatusChangeListeners,
+		"DeviceLocalRpc.AddBridgeStatusChangeListener",
+		"DeviceLocalRpc.RemoveBridgeStatusChangeListener",
+	)
+}
+
+// Tells the remote's listeners.
+func (self *DeviceRemote) bridgeStatusChanged(status *BridgeStatus) {
+	self.stateLock.Lock()
+	listeners := []BridgeStatusChangeListener{}
+	for _, listener := range self.bridgeStatusChangeListeners {
+		listeners = append(listeners, listener)
+	}
+	self.stateLock.Unlock()
+	for _, listener := range listeners {
+		trace(func() {
+			listener.BridgeStatusChanged(status)
+		})
+	}
+}
+
+// One prefix the tun owner routes into the tun (§17.4). json in the C ABI and js.
+type BridgeRoute struct {
+	// CIDR text.
+	Prefix string `json:"prefix"`
+}
+
+// The prefixes to route into the tun.
+type BridgeRouteList struct {
+	exportedList[*BridgeRoute]
+}
+
+// An empty list.
+func NewBridgeRouteList() *BridgeRouteList {
+	return &BridgeRouteList{
+		exportedList: *newExportedList[*BridgeRoute](),
+	}
+}
+
+// The prefixes the tun owner routes into the tun (§18.6, D-BRIDGE-12): the held bridge's, or the router's over every
+// forwarding role; per-peer /32s while SetBridgeLocalAddresses has given none; empty in legacy. Its listener is
+// AddBridgeStatusChangeListener's.
+func (self *DeviceLocal) GetBridgeRoutes() *BridgeRouteList {
+	routes := NewBridgeRouteList()
+	for _, prefix := range self.bridgeRoutesSnapshot() {
+		routes.Add(&BridgeRoute{Prefix: prefix.String()})
+	}
+	return routes
+}
+
+// The tun owner's interface, gateway and resolver addresses from the platform's routes and DNS settings, on each path
+// change (§18.6, §17.4), which every role's routes carve; nil or empty where enumeration is restricted, which keeps
+// per-peer /32s. An address that does not parse is dropped.
+func (self *DeviceLocal) SetBridgeLocalAddresses(addresses *StringList) {
+	trace(func() {
+		if self.hostedIncompatibleGuarded("SetBridgeLocalAddresses") || self.bridgeOwner == nil {
+			return
+		}
+		parsed := []netip.Addr{}
+		if addresses != nil {
+			for _, address := range addresses.getAll() {
+				if addr, err := netip.ParseAddr(address); err == nil {
+					parsed = append(parsed, addr.Unmap())
+				}
+			}
+		}
+		self.bridgeOwner.setLocalAddresses(parsed)
+	})
+}
+
+// Whether an app mints its device client acl_enforcing now (§18.6's Rules, AuthNetworkClientArgs.AclEnforcing): once
+// the forwarding role of the device client's network has left legacy, so its resident's team hints reach a role that
+// follows them; never before, which keeps an older or unset role's client legacy.
+func (self *BridgeStatus) AclEnforcingMint() bool {
+	if self == nil || self.Networks == nil {
+		return false
+	}
+	for _, network := range self.Networks.getAll() {
+		if network != nil && network.Hosting && network.Posture != sidecardevice.PostureLegacy.String() {
+			return true
+		}
+	}
+	return false
+}

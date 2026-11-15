@@ -14,8 +14,8 @@
 // Bind answers the child's token re-minted with the sidecar_id, and the core hands that to the session before the
 // generation starts (AdoptByJwt, QD-805), so the session, the keychain and the generation all hold the claim's token.
 //
-// The remote backend pairs instead (§5.8's pairing; pairWithDeviceApi in sidecar_remote.go), and forwarding's setup for the app's VPN component
-// after an enrollment is SDK-M8-07's wiring (DESIGN-DETAILS 4.7).
+// The remote backend pairs instead (§5.8's pairing; pairWithDeviceApi in sidecar_remote.go), and after an enrollment or
+// a pairing forwarding's setup runs for the device's VPN component (sidecar_forward_setup.go).
 
 package sdk
 
@@ -63,7 +63,13 @@ func (self *Sidecar) EnrollWithDevice(device Device, callback SidecarResultCallb
 				if device == nil {
 					return sidecarResultOf("", errors.New("an enrollment needs the app's device")), nil
 				}
-				return sidecarResultOf(self.enrollWithDeviceApi(self.ctx, device.GetApi())), nil
+				sidecarId, err := self.enrollWithDeviceApi(self.ctx, device.GetApi())
+				if err == nil {
+					// a new client generation makes forwarding's setup due for the device's VPN component
+					// (sidecar_forward_setup.go)
+					self.attachForwardingDevice(device)
+				}
+				return sidecarResultOf(sidecarId, err), nil
 			})
 			if callback != nil {
 				callback.Result(result, err)

@@ -909,6 +909,12 @@ type Device interface {
 
 	AddNetworkPeersChangeListener(listener NetworkPeersChangeListener) Sub
 
+	// The device role's status, each forwarding role's fields with it (sidecar §18.6's Mirror,
+	// device_sidecar_channel.go): read-only, so nothing here lowers a posture.
+	GetBridgeStatus() *BridgeStatus
+
+	AddBridgeStatusChangeListener(listener BridgeStatusChangeListener) Sub
+
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
 
 	AddJwtRefreshListener(listener JwtRefreshListener) Sub

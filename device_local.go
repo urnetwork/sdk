@@ -1254,6 +1254,9 @@ type DeviceLocal struct {
 	bridgeZone             connect.LocalZone
 	bridgeRoutes           []netip.Prefix
 	bridgeRoutesReadNumber uint64
+	// the bridge status listeners (device_sidecar_channel.go), made at the first
+	bridgeStatusListenersOnce   sync.Once
+	bridgeStatusChangeListeners *connect.CallbackList[BridgeStatusChangeListener]
 	// numbers each read of a bridge's routes, so an older read never replaces
 	// a newer one
 	bridgeReadNumber atomic.Uint64
