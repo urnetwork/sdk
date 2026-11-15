@@ -16,8 +16,10 @@
 //	           live, next becomes current and the old set goes; until then current signs, and a kill between the
 //	           hand-off and the promotion keeps it signing
 //	following  the Forwarder follows the log on F, applies what the posture can check at once and compiles the rest,
-//	           handing states to the network's posture (the sink), all with no sidecar role running; team hints come by
-//	           §6.8's long-poll on F, which reaches every network (D's pushes on 21842 are not wired here yet)
+//	           handing states to the network's posture (the sink), all with no sidecar role running; it reads each
+//	           base's config head through F's head reader at the state at that base (device_sidecar_forward_heads.go;
+//	           the Apple extensions' leg builds none yet); team hints come by §6.8's long-poll on F, which reaches every
+//	           network (D's pushes on 21842 wait on PROTO's move of the push types, plan-PROTO-device-role-push-types)
 //	refresh    F refreshes itself by its own proofs at 40 to 50% of its lifetime, keeping the new token before it is
 //	           presented; a token past its exp at start holds the posture pending (forward_client_lapsed) until a new
 //	           hand-off, by the posture's fork hold, which a witness's fork shares
@@ -57,6 +59,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -476,6 +479,8 @@ type deviceLocalForwarding struct {
 	forwarderStore *deviceForwarderStore
 	forwarder      *sidecar.Forwarder
 	client         *sidecar.ForwardingClient
+	// the config head reader the Forwarder reads bases' heads through, nil on a leg that builds none
+	heads sidecar.ConfigHeadReader
 	// the hand-off the Forwarder runs on, without its token
 	setup *bridge.ForwardingHandOff
 	// ends the refresh, poll and promotion loops of the Forwarder running
@@ -630,6 +635,12 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 	if forwarderSettings == nil {
 		forwarderSettings = sidecar.DefaultForwarderSettings(deviceForwarderHostClass())
 	}
+	// the head reader opens the head with the generations the Forwarder keeps, so it reaches the Forwarder once built
+	running := &atomic.Pointer[sidecar.Forwarder]{}
+	heads, err := deviceForwardConfigHeads(self, client, sidecarId, configRepoId, forwarderSettings, running)
+	if err != nil {
+		return err
+	}
 	forwarder, err := sidecar.NewForwarder(deps.ctx, &sidecar.ForwarderArgs{
 		NetworkId:     sidecar.Id(self.networkId),
 		SidecarId:     sidecarId,
@@ -637,6 +648,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		ConfigRepoId:  configRepoId,
 		ConfigGroupId: configGroupId,
 		Projection:    client,
+		Heads:         heads,
 		Gkm:           client.Gkm(),
 		Binding:       client.Binding,
 		ClientLapsed:  self.lapsedNow,
@@ -648,9 +660,11 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 	if err != nil {
 		return err
 	}
+	running.Store(forwarder)
 	ctx, cancel := context.WithCancel(deps.ctx)
 	self.stateLock.Lock()
 	self.forwarder = forwarder
+	self.heads = heads
 	self.cancel = cancel
 	self.stateLock.Unlock()
 	self.loops.Add(3)

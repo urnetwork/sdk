@@ -480,3 +480,23 @@ func TestForwardLegacyDeltasWipeNothing(t *testing.T) {
 		t.Errorf("the root key went: %v", err)
 	}
 }
+
+// A role's Forwarder reads each base's config head through F's head reader, whose keys are the generations that
+// Forwarder keeps (SDK-M8-16; QD-814): on this leg the role holds one, an anchoring reader the Forwarder reads at the
+// state at each base.
+func TestForwardRoleReadsHeadsThroughF(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	if err := forward.setUp(t, device, forward.pending(), nil); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	role, _ := device.forwardingHost().role(networkId, false)
+	role.stateLock.Lock()
+	heads := role.heads
+	role.stateLock.Unlock()
+	if _, anchors := heads.(sidecar.ConfigHeadAnchorReader); heads == nil || !anchors {
+		t.Fatalf("the role's Forwarder reads heads through %T", heads)
+	}
+}
