@@ -827,3 +827,28 @@ func TestGetEvsWrapsTheCoresEvsComponent(t *testing.T) {
 		t.Errorf("evs with no composition: %v", err)
 	}
 }
+
+// EVS_PREFIX_RULE through the SDK (EVS1-M6-05; DESIGN-DETAILS 16.2.7, 8.2.8; QD-801): the planner's and a reader's
+// refusal and publish's, each of the seven details, answer the one code, with the detail in the message and the path
+// in neither.
+func TestSidecarEvsMapsThePrefixRuleRefusalWithItsDetails(t *testing.T) {
+	details := []sidecar.EvsPrefixDetail{
+		sidecar.EvsPrefixDetailRefused, sidecar.EvsPrefixDetailPending, sidecar.EvsPrefixDetailUpdate, sidecar.EvsPrefixDetailDepth,
+		sidecar.EvsPrefixDetailUnavailable, sidecar.EvsPrefixDetailBase, sidecar.EvsPrefixDetailTag,
+	}
+	for _, detail := range details {
+		err := fmt.Errorf("a write: %w", &sidecar.EvsPrefixRuleError{Detail: detail, Path: "src/secret-name.go"})
+		result := sidecarEvsResultOf("", err)
+		if result.Code != sidecarEvsCodePrefixRule || !strings.Contains(sidecarEvsMessageOf(err), string(detail)) ||
+			strings.Contains(sidecarEvsMessageOf(err), "secret-name") {
+			t.Errorf("%s: code %q, message %q", detail, result.Code, sidecarEvsMessageOf(err))
+		}
+	}
+	for _, detail := range []sidecar.AclPrefixDetail{sidecar.AclPrefixDetailBase, sidecar.AclPrefixDetailTag, sidecar.AclPrefixDetailRefused} {
+		err := &sidecar.AclPrefixRuleError{Detail: detail, Path: "src/secret-name.go"}
+		if code := sidecarEvsCodeOf(err); code != sidecarEvsCodePrefixRule || !strings.Contains(err.Error(), detail.String()) ||
+			strings.Contains(err.Error(), "secret-name") {
+			t.Errorf("publish's %s: code %q, message %q", detail, code, err)
+		}
+	}
+}

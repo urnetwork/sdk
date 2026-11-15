@@ -87,6 +87,10 @@ const (
 	sidecarEvsCodeInvalid           = "EVS_INVALID"
 	sidecarEvsCodeUnavailable       = "EVS_UNAVAILABLE"
 	sidecarEvsCodePathConflict      = "EVS_PATH_CONFLICT"
+	// The repo's prefix write rules hold the path (DESIGN-DETAILS 16.2.7, 16.2.5, 8.2.8): the message carries the
+	// detail, one of refused, pending, update, depth, unavailable, base and tag, and never the path, which is the
+	// caller's own.
+	sidecarEvsCodePrefixRule = "EVS_PREFIX_RULE"
 )
 
 // The kinds CreateRepo takes, as §11.12 names them: the ones an app makes for a person. Owner-bound kinds and the
@@ -406,6 +410,9 @@ func sidecarEvsCodeOf(err error) string {
 		return sidecarEvsCodeFormatUnsupported
 	case errors.As(err, &conflict):
 		return sidecarEvsCodePathConflict
+	case errors.Is(err, sidecar.ErrEvsPrefixRule), errors.Is(err, sidecar.ErrAclPrefixRule):
+		// the planner's and a reader's, and publish's with its details base and tag (QD-801)
+		return sidecarEvsCodePrefixRule
 	}
 	if refusal, ok := sidecar.EvsErrorOf(err); ok && refusal.Code != protocol.EvsRefusalCode_EVS_REFUSAL_CODE_UNSPECIFIED {
 		return "EVS_" + strings.TrimPrefix(refusal.Code.String(), "EVS_REFUSAL_")
