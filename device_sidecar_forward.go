@@ -241,9 +241,11 @@ func (self *deviceLocalForwardingHost) restore(owner *deviceLocalBridgeOwner) er
 		}
 		store, bridgeSettings := self.postureStore(role)
 		if role.hosting {
-			owner.usePrimaryStore(store, bridgeSettings)
-			if err := owner.restore(); err != nil {
-				return err
+			// the primary takes the sealed store only while it holds no bridge, which it then restores from it
+			if owner.usePrimaryStore(store, bridgeSettings) {
+				if err := owner.restore(); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -953,12 +955,16 @@ func (self *deviceForwardSink) SetState(state *bridge.BridgeState, log *sidecar.
 	return err
 }
 
-// The entries after the posture's pin; the sidecar's own sign-out among them wipes the role.
+// The entries after the posture's pin; the sidecar's own sign-out among them, which moves a posture past legacy back to
+// legacy, wipes the role. A posture legacy before the call wipes nothing, so a role whose anchor did not take keeps its
+// keys.
 func (self *deviceForwardSink) ApplyDeltas(log *sidecar.BridgeStateLog) error {
+	owner := self.role.host.owner
+	before := owner.roleDecision(self.role.networkId).State
 	err := self.onRole(false, func(bridge deviceBridgeOwned) error {
 		return bridge.ApplyDeltas(devicePostureLogOf(log))
 	})
-	if self.role.host.owner.roleDecision(self.role.networkId).State == sidecardevice.PostureLegacy {
+	if before != sidecardevice.PostureLegacy && owner.roleDecision(self.role.networkId).State == sidecardevice.PostureLegacy {
 		self.role.host.wipe(self.role)
 	}
 	return err

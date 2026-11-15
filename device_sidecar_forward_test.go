@@ -459,3 +459,24 @@ func TestForwardStatusAndErrorsHoldNoToken(t *testing.T) {
 		t.Error("the keys carry a token")
 	}
 }
+
+// Deltas a legacy posture cannot take wipe nothing: a role whose anchor never took keeps its keys and store.
+func TestForwardLegacyDeltasWipeNothing(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	if _, err := device.forwardingHost().keys(networkId); err != nil {
+		t.Fatal(err)
+	}
+	role, _ := device.forwardingHost().role(networkId, false)
+	log := forward.role.vectors.log(1, 1)
+	if err := role.sink.ApplyDeltas(&sidecar.BridgeStateLog{Entries: log.Entries, OpenRows: log.OpenRows}); !errors.Is(err, errDeviceBridgeLegacy) {
+		t.Errorf("a legacy posture's deltas answered %v", err)
+	}
+	if _, status := role.keys.loadSet(deviceForwardSlotNext); status != deviceForwardSecretPresent {
+		t.Error("the generated key set went with a legacy posture's deltas")
+	}
+	if rootKey, err := role.keys.rootKey(false); err != nil || len(rootKey) != 32 {
+		t.Errorf("the root key went: %v", err)
+	}
+}
