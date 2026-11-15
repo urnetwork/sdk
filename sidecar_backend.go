@@ -501,10 +501,17 @@ func (self *sidecarRemoteBackend) followEvents() {
 		if cursor != "" {
 			params.WaitMs = self.settings.EventWaitTimeout.Milliseconds()
 		}
+		// a reply with no event comes at once only for the cursor, a gap or a daemon that does not wait: the next call
+		// waits for this, so none of them turns the loop hot
+		paced := connect.NewPacedReconnect(self.settings.EventReconnectMinTimeout)
 		reply := &sidecarControlEventsReply{}
 		callCtx, cancel := context.WithTimeout(self.ctx, self.settings.EventWaitTimeout+self.settings.CallTimeout)
 		err := channel.call(callCtx, sidecarControlMethodEvents, params, false, reply)
 		cancel()
+		if err == nil && reply.Cursor == "" {
+			// no place to go on from: a broken answer, kept apart from the session
+			err = &sidecarControlError{Message: "the daemon's events answer named no cursor"}
+		}
 		if err != nil {
 			var refusal *sidecarControlError
 			if !errors.As(err, &refusal) {
@@ -534,6 +541,13 @@ func (self *sidecarRemoteBackend) followEvents() {
 			cursor = reply.Cursor
 			self.setEventsCarry(true)
 			self.applyEvents(reply.Events)
+		}
+		if len(reply.Events) == 0 {
+			select {
+			case <-self.ctx.Done():
+				return
+			case <-paced.After():
+			}
 		}
 	}
 }
