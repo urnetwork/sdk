@@ -122,29 +122,30 @@ func (self *DeviceLocal) forwardingWitness(networkId connect.Id, pin *bridge.Aut
 	return host.witness(networkId, pin, fork)
 }
 
-// ForwardingKeys' argument and answer on the device RPC: the network, and the encoded bridge.ForwardingKeys.
-type DeviceForwardingKeysArgs struct {
+// ForwardingKeys' argument and answer on the device RPC: the network, and the encoded bridge.ForwardingKeys. RPC
+// plumbing, named with the DeviceRemote prefix mobileexports keeps out of the bindings, as every RPC message type is.
+type DeviceRemoteForwardingKeysArgs struct {
 	NetworkId connect.Id
 }
 
-type DeviceForwardingKeysReply struct {
+type DeviceRemoteForwardingKeys struct {
 	Keys []byte
 }
 
 // ForwardingHandOff's argument: the encoded bridge.ForwardingHandOff, which holds F's token and is never logged (I-7).
-type DeviceForwardingHandOffArgs struct {
+type DeviceRemoteForwardingHandOff struct {
 	HandOff []byte
 }
 
 // ForwardingWitness's argument: the network, the encoded bridge.AuthPin, and whether the sidecar role found a fork.
-type DeviceForwardingWitnessArgs struct {
+type DeviceRemoteForwardingWitness struct {
 	NetworkId connect.Id
 	Pin       []byte
 	Fork      bool
 }
 
 // The device RPC's ForwardingKeys (the file's comment).
-func (self *DeviceLocalRpc) ForwardingKeys(args *DeviceForwardingKeysArgs, reply **DeviceForwardingKeysReply) error {
+func (self *DeviceLocalRpc) ForwardingKeys(args *DeviceRemoteForwardingKeysArgs, reply **DeviceRemoteForwardingKeys) error {
 	if args == nil {
 		return errors.New("forwarding keys name a network")
 	}
@@ -156,12 +157,12 @@ func (self *DeviceLocalRpc) ForwardingKeys(args *DeviceForwardingKeysArgs, reply
 	if err != nil {
 		return err
 	}
-	*reply = &DeviceForwardingKeysReply{Keys: encoded}
+	*reply = &DeviceRemoteForwardingKeys{Keys: encoded}
 	return nil
 }
 
 // The device RPC's ForwardingHandOff (the file's comment). A refusal names no byte of the hand-off.
-func (self *DeviceLocalRpc) ForwardingHandOff(args *DeviceForwardingHandOffArgs, _ RpcVoid) error {
+func (self *DeviceLocalRpc) ForwardingHandOff(args *DeviceRemoteForwardingHandOff, _ RpcVoid) error {
 	if args == nil {
 		return errors.New("a hand-off is needed")
 	}
@@ -173,7 +174,7 @@ func (self *DeviceLocalRpc) ForwardingHandOff(args *DeviceForwardingHandOffArgs,
 }
 
 // The device RPC's ForwardingWitness (the file's comment).
-func (self *DeviceLocalRpc) ForwardingWitness(args *DeviceForwardingWitnessArgs, _ RpcVoid) error {
+func (self *DeviceLocalRpc) ForwardingWitness(args *DeviceRemoteForwardingWitness, _ RpcVoid) error {
 	if args == nil {
 		return errors.New("a witness names a network")
 	}
@@ -210,7 +211,7 @@ func deviceRemoteForwardingCall[T any](self *DeviceRemote, name string, arg any)
 
 // See deviceForwardingChannel.
 func (self *DeviceRemote) forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error) {
-	reply, err := deviceRemoteForwardingCall[*DeviceForwardingKeysReply](self, "DeviceLocalRpc.ForwardingKeys", &DeviceForwardingKeysArgs{NetworkId: networkId})
+	reply, err := deviceRemoteForwardingCall[*DeviceRemoteForwardingKeys](self, "DeviceLocalRpc.ForwardingKeys", &DeviceRemoteForwardingKeysArgs{NetworkId: networkId})
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +231,7 @@ func (self *DeviceRemote) forwardingHandOff(handOff *bridge.ForwardingHandOff) e
 	if err != nil {
 		return err
 	}
-	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingHandOff", &DeviceForwardingHandOffArgs{HandOff: encoded})
+	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingHandOff", &DeviceRemoteForwardingHandOff{HandOff: encoded})
 	return err
 }
 
@@ -240,7 +241,7 @@ func (self *DeviceRemote) forwardingWitness(networkId connect.Id, pin *bridge.Au
 	if err != nil {
 		return err
 	}
-	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingWitness", &DeviceForwardingWitnessArgs{NetworkId: networkId, Pin: encoded, Fork: fork})
+	_, err = deviceRemoteForwardingCall[RpcVoid](self, "DeviceLocalRpc.ForwardingWitness", &DeviceRemoteForwardingWitness{NetworkId: networkId, Pin: encoded, Fork: fork})
 	return err
 }
 

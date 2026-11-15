@@ -276,8 +276,8 @@ func TestForwardingChannelCarriesNoPrivateKey(t *testing.T) {
 	device := forward.device(t, nil)
 	networkId := forward.role.vectors.networkId()
 	rpc := &DeviceLocalRpc{deviceLocal: device}
-	var reply *DeviceForwardingKeysReply
-	if err := rpc.ForwardingKeys(&DeviceForwardingKeysArgs{NetworkId: networkId}, &reply); err != nil {
+	var reply *DeviceRemoteForwardingKeys
+	if err := rpc.ForwardingKeys(&DeviceRemoteForwardingKeysArgs{NetworkId: networkId}, &reply); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range forward.store.names() {
@@ -299,8 +299,8 @@ func TestUnsignedResponseOverRpcIgnored(t *testing.T) {
 	device := forward.device(t, nil)
 	networkId := forward.role.vectors.networkId()
 	rpc := &DeviceLocalRpc{deviceLocal: device}
-	var reply *DeviceForwardingKeysReply
-	if err := rpc.ForwardingKeys(&DeviceForwardingKeysArgs{NetworkId: networkId}, &reply); err != nil {
+	var reply *DeviceRemoteForwardingKeys
+	if err := rpc.ForwardingKeys(&DeviceRemoteForwardingKeysArgs{NetworkId: networkId}, &reply); err != nil {
 		t.Fatal(err)
 	}
 	keys := &bridge.ForwardingKeys{}
@@ -308,14 +308,14 @@ func TestUnsignedResponseOverRpcIgnored(t *testing.T) {
 	unsigned := forward.identity.handOff(t, keys, forward.pending(), nil)
 	unsigned.SignedDelegation = nil
 	unsignedBytes, _ := proto.Marshal(unsigned)
-	if err := rpc.ForwardingHandOff(&DeviceForwardingHandOffArgs{HandOff: unsignedBytes}, nil); err == nil {
+	if err := rpc.ForwardingHandOff(&DeviceRemoteForwardingHandOff{HandOff: unsignedBytes}, nil); err == nil {
 		t.Error("an unsigned hand-off was taken")
 	}
-	if err := rpc.ForwardingHandOff(&DeviceForwardingHandOffArgs{HandOff: []byte{0xff, 0xff}}, nil); err == nil {
+	if err := rpc.ForwardingHandOff(&DeviceRemoteForwardingHandOff{HandOff: []byte{0xff, 0xff}}, nil); err == nil {
 		t.Error("bytes that do not decode were taken")
 	}
 	pinBytes, _ := proto.Marshal(&bridge.AuthPin{Version: 9})
-	if err := rpc.ForwardingWitness(&DeviceForwardingWitnessArgs{NetworkId: networkId, Pin: pinBytes}, nil); err == nil {
+	if err := rpc.ForwardingWitness(&DeviceRemoteForwardingWitness{NetworkId: networkId, Pin: pinBytes}, nil); err == nil {
 		t.Error("a witness for a network with no forwarder was taken")
 	}
 	if state := device.bridgeOwner.roleDecision(networkId).State; state != 1 {
