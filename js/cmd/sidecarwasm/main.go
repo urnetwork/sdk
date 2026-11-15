@@ -64,6 +64,9 @@ func main() {
 type pageOpenConfig struct {
 	NetworkId string           `json:"network_id"`
 	Urls      *pageServiceUrls `json:"urls,omitempty"`
+	// A quick burner (§18.8, SDK-M8-14): memory only, on newBurnerInstance, with no Web Lock and no IndexedDB, its
+	// close capability handed to the frame's document alone (keystore_memory.go).
+	Burner bool `json:"burner,omitempty"`
 }
 
 // An environment's service urls.
@@ -107,6 +110,8 @@ type pageNetwork struct {
 	instance  *sidecar.SidecarInstance
 	local     *sidecar.Sidecar
 	worker    *sidecarworker.Worker
+	// a quick burner's, which answers in place of worker; nil for a page Worker
+	burner *sidecarworker.QuickBurner
 
 	// built at the first read, once a network is enrolled
 	evsLock sync.Mutex
@@ -141,6 +146,14 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	settings := sidecar.DefaultSidecarSettings()
 	if err := applyPageServiceUrls(settings, config.Urls); err != nil {
 		return nil, err
+	}
+	if config.Burner {
+		network, err := self.openBurner(networkId, settings)
+		if err != nil {
+			return nil, err
+		}
+		self.opened = network
+		return network.status(), nil
 	}
 	database, err := openIndexedDb(indexedDbNetworkName(self.databaseNamePrefix, networkId))
 	if err != nil {
@@ -191,6 +204,9 @@ func (self *pageWorker) handle(ctx context.Context, requestJson []byte) []byte {
 	network := self.current()
 	if network == nil {
 		return pageNotOpenReply(ctx, requestJson)
+	}
+	if network.burner != nil {
+		return network.burner.HandleJson(ctx, requestJson)
 	}
 	return network.worker.HandleJson(ctx, requestJson)
 }

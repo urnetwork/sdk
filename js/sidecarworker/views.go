@@ -89,6 +89,8 @@ type Reply struct {
 	File    *FileView    `json:"file,omitempty"`
 	Record  *RecordView  `json:"record,omitempty"`
 	SignOut *SignOutView `json:"sign_out,omitempty"`
+	// A quick burner's state (quick_burner.go).
+	QuickBurner *QuickBurnerView `json:"quick_burner,omitempty"`
 }
 
 // The reply's JSON. A view marshals by construction, so this never fails; if it did, the page gets a refusal.
