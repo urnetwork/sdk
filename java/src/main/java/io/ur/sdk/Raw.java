@@ -39,6 +39,7 @@ public interface Raw extends Library {
   interface urnet_block_actions_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_block_stats_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_blocker_enabled_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
+  interface urnet_bridge_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_can_prompt_intro_funnel_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_can_refer_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_can_show_rating_dialog_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
@@ -177,6 +178,24 @@ public interface Raw extends Library {
   interface urnet_set_payout_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_set_points_leaderboard_public_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_setup_new_device_cb extends Callback { byte invoke(Pointer a0, long a1, String a2); }
+  interface urnet_sidecar_approval_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_burner_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_bytes_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_directory_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_erasures_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_event_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_history_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_key_store_delete_secret_cb extends Callback { long invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_key_store_get_secret_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_key_store_put_secret_cb extends Callback { long invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_one_time_codes_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_presence_signer_get_attestation_cb extends Callback { Pointer invoke(Pointer a0); }
+  interface urnet_sidecar_presence_signer_sign_with_presence_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_repo_change_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_result_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_revoke_plan_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_used_at_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_vault_entries_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_claim_confirmed_cb extends Callback { void invoke(Pointer a0, long a1, String a2, long a3); }
   interface urnet_sn_claim_done_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_sn_claim_failed_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
@@ -630,6 +649,7 @@ public interface Raw extends Library {
   long urnet_device_add_block_action_window_change_listener(long a0, urnet_block_action_window_change_cb a1, Pointer a2);
   long urnet_device_add_block_stats_change_listener(long a0, urnet_block_stats_change_cb a1, Pointer a2);
   long urnet_device_add_blocker_enabled_change_listener(long a0, urnet_blocker_enabled_change_cb a1, Pointer a2);
+  long urnet_device_add_bridge_status_change_listener(long a0, urnet_bridge_status_change_cb a1, Pointer a2);
   long urnet_device_add_can_prompt_intro_funnel_change_listener(long a0, urnet_can_prompt_intro_funnel_change_cb a1, Pointer a2);
   long urnet_device_add_can_refer_change_listener(long a0, urnet_can_refer_change_cb a1, Pointer a2);
   long urnet_device_add_can_show_rating_dialog_change_listener(long a0, urnet_can_show_rating_dialog_change_cb a1, Pointer a2);
@@ -683,6 +703,7 @@ public interface Raw extends Library {
   Pointer urnet_device_get_block_actions(long a0);
   Pointer urnet_device_get_block_stats(long a0);
   byte urnet_device_get_blocker_enabled(long a0);
+  Pointer urnet_device_get_bridge_status(long a0);
   byte urnet_device_get_can_prompt_intro_funnel(long a0);
   byte urnet_device_get_can_refer(long a0);
   byte urnet_device_get_can_show_rating_dialog(long a0);
@@ -804,6 +825,7 @@ public interface Raw extends Library {
   long urnet_device_local_enable_subprotocol(long a0, long a1, urnet_subprotocol_cb a2, Pointer a3, PointerByReference a4);
   Pointer urnet_device_local_enabled_subprotocols(long a0);
   byte urnet_device_local_get_auto_save(long a0);
+  Pointer urnet_device_local_get_bridge_routes(long a0);
   Pointer urnet_device_local_get_client_jwt(long a0);
   Pointer urnet_device_local_get_destination_exits(long a0);
   Pointer urnet_device_local_get_exits(long a0);
@@ -867,6 +889,7 @@ public interface Raw extends Library {
   byte urnet_device_local_send_subprotocol_bytes(long a0, long a1, String a2, Pointer a3, int a4);
   void urnet_device_local_set_app_backgrounded(long a0, byte a1);
   byte urnet_device_local_set_auto_save(long a0, byte a1, PointerByReference a2);
+  void urnet_device_local_set_bridge_local_addresses(long a0, String a1);
   void urnet_device_local_set_by_jwt(long a0, String a1);
   byte urnet_device_local_set_connect_location_checked(long a0, String a1, PointerByReference a2);
   byte urnet_device_local_set_default_location_checked(long a0, String a1, PointerByReference a2);
@@ -1370,6 +1393,55 @@ public interface Raw extends Library {
   byte urnet_session_sign_out_result_get_credential_cleared(long a0);
   Pointer urnet_session_sign_out_result_get_operation_id(long a0);
   byte urnet_session_sign_out_result_get_revocation_confirmed(long a0);
+  long urnet_sidecar_add_event_listener(long a0, urnet_sidecar_event_cb a1, Pointer a2);
+  void urnet_sidecar_close(long a0);
+  void urnet_sidecar_confirm_forwarding_setup(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_enroll_with_device(long a0, long a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_get_approvals(long a0);
+  long urnet_sidecar_get_directory(long a0);
+  long urnet_sidecar_get_evs(long a0);
+  long urnet_sidecar_get_mail(long a0);
+  Pointer urnet_sidecar_get_sidecar_id(long a0);
+  long urnet_sidecar_get_sockets(long a0);
+  Pointer urnet_sidecar_get_state(long a0);
+  Pointer urnet_sidecar_get_state_reason(long a0);
+  void urnet_sidecar_set_push_token(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  void urnet_sidecar_sign_edge_login(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  void urnet_sidecar_unlock(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_approvals_add_pending_listener(long a0, urnet_sidecar_approval_cb a1, Pointer a2);
+  void urnet_sidecar_approvals_decide(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  Pointer urnet_sidecar_approvals_get_devices(long a0);
+  Pointer urnet_sidecar_approvals_get_pending(long a0);
+  void urnet_sidecar_approvals_preview_revoke_device(long a0, String a1, String a2, long a3, long a4, urnet_sidecar_revoke_plan_cb a5, Pointer a6);
+  void urnet_sidecar_approvals_revoke_device(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  void urnet_sidecar_directory_announce_repo(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  Pointer urnet_sidecar_directory_get(long a0, String a1);
+  Pointer urnet_sidecar_directory_get_requests(long a0, String a1);
+  long urnet_sidecar_directory_list(long a0, String a1, urnet_sidecar_directory_cb a2, Pointer a3);
+  void urnet_sidecar_directory_request(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_directory_revoke_repo(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_directory_set_runs(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  void urnet_sidecar_directory_set_worker(long a0, byte a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_evs_add_repo_change_listener(long a0, String a1, urnet_sidecar_repo_change_cb a2, Pointer a3);
+  void urnet_sidecar_evs_create_repo(long a0, String a1, String a2, byte a3, urnet_sidecar_result_cb a4, Pointer a5);
+  void urnet_sidecar_evs_erasures(long a0, String a1, urnet_sidecar_erasures_cb a2, Pointer a3);
+  void urnet_sidecar_evs_history(long a0, String a1, String a2, urnet_sidecar_history_cb a3, Pointer a4);
+  void urnet_sidecar_evs_read_head(long a0, String a1, String a2, urnet_sidecar_bytes_cb a3, Pointer a4);
+  void urnet_sidecar_evs_write(long a0, String a1, String a2, Pointer a3, int a4, String a5, urnet_sidecar_result_cb a6, Pointer a7);
+  void urnet_sidecar_mail_burn(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_mail_create_burner(long a0, String a1, urnet_sidecar_burner_cb a2, Pointer a3);
+  Pointer urnet_sidecar_mail_get_aliases(long a0);
+  void urnet_sidecar_mail_get_one_time_codes(long a0, long a1, urnet_sidecar_one_time_codes_cb a2, Pointer a3);
+  Pointer urnet_sidecar_mail_get_receiver_coverage(long a0);
+  void urnet_sidecar_mail_get_used_at(long a0, String a1, urnet_sidecar_used_at_cb a2, Pointer a3);
+  void urnet_sidecar_mail_get_vault_entries(long a0, urnet_sidecar_vault_entries_cb a1, Pointer a2);
+  void urnet_sidecar_mail_send(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_mail_set_receiver_enabled(long a0, byte a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_socket_listener_accept(long a0, long a1, PointerByReference a2);
+  byte urnet_sidecar_socket_listener_close(long a0, PointerByReference a1);
+  Pointer urnet_sidecar_socket_listener_get_addr(long a0);
+  long urnet_sidecar_sockets_dial(long a0, String a1, long a2, PointerByReference a3);
+  long urnet_sidecar_sockets_listen(long a0, String a1, long a2, PointerByReference a3);
   void urnet_sn_fleet_claim_advance(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
   void urnet_sn_fleet_claim_leave(long a0, long a1, urnet_sn_fleet_device_leave_cb a2, Pointer a3);
   void urnet_sn_fleet_claim_refresh(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
@@ -1492,6 +1564,7 @@ public interface Raw extends Library {
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();
   Pointer urnet_default_proxy_device_settings();
+  Pointer urnet_default_sidecar_settings();
   Pointer urnet_default_sn_chain_settings();
   long urnet_default_transport_mode_priority(String a0);
   Pointer urnet_default_transport_settings();
@@ -1591,6 +1664,8 @@ public interface Raw extends Library {
   Pointer urnet_new_purchase_completed_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_purchase_failed_event(String a0, String a1, String a2, byte a3, double a4, String a5, String a6);
   Pointer urnet_new_purchase_started_event(String a0, String a1, String a2, byte a3, double a4, String a5);
+  long urnet_new_sidecar_local(long a0, urnet_sidecar_key_store_delete_secret_cb a1, urnet_sidecar_key_store_get_secret_cb a2, urnet_sidecar_key_store_put_secret_cb a3, Pointer a4, urnet_sidecar_presence_signer_get_attestation_cb a5, urnet_sidecar_presence_signer_sign_with_presence_cb a6, Pointer a7, String a8, PointerByReference a9);
+  long urnet_new_sidecar_remote(urnet_sidecar_presence_signer_get_attestation_cb a0, urnet_sidecar_presence_signer_sign_with_presence_cb a1, Pointer a2, String a3, PointerByReference a4);
   Pointer urnet_new_signup_optout_changed_event(byte a0);
   Pointer urnet_new_sn_chain_settings();
   long urnet_new_sn_fleet_claim(long a0, String a1, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb a2, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb a3, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb a4, Pointer a5);

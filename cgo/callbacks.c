@@ -145,6 +145,10 @@ void urnet_invoke_blocker_enabled_change(urnet_blocker_enabled_change_cb cb, voi
 	cb(user_data, blocker_enabled);
 }
 
+void urnet_invoke_bridge_status_change(urnet_bridge_status_change_cb cb, void* user_data, const char* status_json) {
+	cb(user_data, status_json);
+}
+
 void urnet_invoke_can_prompt_intro_funnel_change(urnet_can_prompt_intro_funnel_change_cb cb, void* user_data, bool can_prompt_intro_funnel) {
 	cb(user_data, can_prompt_intro_funnel);
 }
@@ -699,6 +703,78 @@ void urnet_invoke_set_points_leaderboard_public(urnet_set_points_leaderboard_pub
 
 bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data, uint64_t device, const char* proxy_config_result_json) {
 	return cb(user_data, device, proxy_config_result_json);
+}
+
+void urnet_invoke_sidecar_approval(urnet_sidecar_approval_cb cb, void* user_data, const char* pending_json) {
+	cb(user_data, pending_json);
+}
+
+void urnet_invoke_sidecar_burner(urnet_sidecar_burner_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_bytes(urnet_sidecar_bytes_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_data, const char* page_json) {
+	cb(user_data, page_json);
+}
+
+void urnet_invoke_sidecar_erasures(urnet_sidecar_erasures_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_event(urnet_sidecar_event_cb cb, void* user_data, const char* event_json) {
+	cb(user_data, event_json);
+}
+
+void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+int64_t urnet_invoke_sidecar_key_store_delete_secret(urnet_sidecar_key_store_delete_secret_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+char* urnet_invoke_sidecar_key_store_get_secret(urnet_sidecar_key_store_get_secret_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+int64_t urnet_invoke_sidecar_key_store_put_secret(urnet_sidecar_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64) {
+	return cb(user_data, name, value_base64);
+}
+
+void urnet_invoke_sidecar_one_time_codes(urnet_sidecar_one_time_codes_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+char* urnet_invoke_sidecar_presence_signer_get_attestation(urnet_sidecar_presence_signer_get_attestation_cb cb, void* user_data) {
+	return cb(user_data);
+}
+
+char* urnet_invoke_sidecar_presence_signer_sign_with_presence(urnet_sidecar_presence_signer_sign_with_presence_cb cb, void* user_data, const char* message_base64) {
+	return cb(user_data, message_base64);
+}
+
+void urnet_invoke_sidecar_repo_change(urnet_sidecar_repo_change_cb cb, void* user_data, const char* change_json) {
+	cb(user_data, change_json);
+}
+
+void urnet_invoke_sidecar_result(urnet_sidecar_result_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_revoke_plan(urnet_sidecar_revoke_plan_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_used_at(urnet_sidecar_used_at_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_vault_entries(urnet_sidecar_vault_entries_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claim_confirmed(urnet_sn_claim_confirmed_cb cb, void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao) {

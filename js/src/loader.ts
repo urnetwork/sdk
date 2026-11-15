@@ -6,6 +6,8 @@ declare global {
     URnetworkNewProxyDeviceWithDefaults: any;
     URnetworkNewPlatformDeviceRemote: any;
     URnetworkNewExtensionDeviceRemote: any;
+    URnetworkNewSidecarRemote: any;
+    URnetworkNewSidecarLocal: any;
     URnetworkNewLocationsViewController: any;
     URnetworkNewAccountHost: any;
     URnetworkColorHex: any;
@@ -184,6 +186,9 @@ export function getWasmGlobals() {
     // a hosted DeviceLocal, reached over the proxy host's device-rpc websocket
     URnetworkNewPlatformDeviceRemote: runtimeGlobal.URnetworkNewPlatformDeviceRemote,
     URnetworkNewExtensionDeviceRemote: runtimeGlobal.URnetworkNewExtensionDeviceRemote,
+    // the extension's alarms-only sidecar over `ur native-host` (sdk/js/sidecar.go)
+    URnetworkNewSidecarRemote: runtimeGlobal.URnetworkNewSidecarRemote,
+    URnetworkNewSidecarLocal: runtimeGlobal.URnetworkNewSidecarLocal,
     URnetworkNewLocationsViewController: runtimeGlobal.URnetworkNewLocationsViewController,
     URnetworkNewAccountHost: runtimeGlobal.URnetworkNewAccountHost,
     URnetworkColorHex: runtimeGlobal.URnetworkColorHex,

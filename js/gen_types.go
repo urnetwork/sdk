@@ -184,6 +184,15 @@ func generateTypes() ([]byte, error) {
 		sdk.AccountEpoch{},
 		sdk.AccountEpochsResult{},
 		sdk.SnHeadResult{},
+		// sdk.Sidecar for the extension's hosts (sidecar §18.5's js row, SDK-M8-06): its settings, a call's result, its
+		// events, and the device revocation's types, which the alarms-only extension answers REVOKE_NOT_CAPABLE in
+		sdk.SidecarSettings{},
+		sdk.SidecarResult{},
+		sdk.SidecarEvent{},
+		sdk.SidecarErasure{},
+		sdk.SidecarDevice{},
+		sdk.SidecarRevokePlan{},
+		sdk.SidecarRevokeItem{},
 	}
 
 	for _, t := range types {
@@ -281,6 +290,10 @@ func goTypeToTypeScript(t reflect.Type) string {
 		reflect.Float32, reflect.Float64:
 		return "number"
 	case reflect.Slice:
+		// encoding/json writes a []byte as standard base64
+		if t.Elem().Kind() == reflect.Uint8 {
+			return "string"
+		}
 		elemType := goTypeToTypeScript(t.Elem())
 		return elemType + "[]"
 	case reflect.Map:
@@ -336,6 +349,10 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "ClientEvent[]"
 		case "sdk.ClientEventRejectionList":
 			return "ClientEventRejection[]"
+		case "sdk.SidecarDeviceList":
+			return "SidecarDevice[]"
+		case "sdk.SidecarRevokeItemList":
+			return "SidecarRevokeItem[]"
 		case "sdk.ExperimentAssignmentList":
 			// custom json: an object keyed by surface
 			return "Record<string, ExperimentAssignment>"

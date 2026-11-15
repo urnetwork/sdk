@@ -1,5 +1,5 @@
-import type { ClientSessionSnapshot, SessionSignOutResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
-export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
+import type { ClientSessionSnapshot, SessionSignOutResult, SidecarDevice, SidecarEvent, SidecarResult, SidecarRevokeItem, SidecarRevokePlan, SidecarSettings, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
+export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SidecarDevice, SidecarEvent, SidecarResult, SidecarRevokeItem, SidecarRevokePlan, SidecarSettings, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
 import type { SocketDevice } from "./socket";
 import type { SubprotocolDevice } from "./subprotocol";
 
@@ -1400,4 +1400,51 @@ export interface ClientSessionViewController {
  revokeSession(sessionId: string): void;
  revokeOtherSessions(): void;
  addClientSessionListener(callback: (snapshot: ClientSessionSnapshot) => void): Unsubscribe;
+}
+
+/**
+ * A port to `ur native-host`, shaped as chrome.runtime.Port from connectNative: the remote sidecar's channel to the
+ * desktop's `ur daemon`, which relays status and events alone.
+ */
+export interface SidecarNativeHostPort {
+  postMessage(message: unknown): void;
+  disconnect(): void;
+  onMessage: { addListener(listener: (message: unknown) => void): void };
+  onDisconnect: { addListener(listener: () => void): void };
+}
+
+export interface SidecarRemoteOptions {
+  port: SidecarNativeHostPort;
+  settings?: SidecarSettings;
+}
+
+/**
+ * The alarms-only extension's sidecar (sidecar §18.5's js row, §18.4): the desktop daemon's state and events, read
+ * through `ur native-host`, which relays no call a person must confirm.
+ */
+export interface Sidecar {
+  getState(): string;
+  getStateReason(): string;
+  getSidecarId(): string | null;
+  addEventListener(callback: (event: SidecarEvent) => void): Unsubscribe;
+  /** Refused: the daemon unlocks its own keychain. */
+  unlock(passphrase: string, callback: (result: SidecarResult) => void): void;
+  /** Refused: the daemon takes no app wake token. */
+  setPushToken(platform: string, token: string, callback: (result: SidecarResult) => void): void;
+  getApprovals(): SidecarApprovals;
+  close(): void;
+}
+
+/**
+ * The extension decides nothing and revokes no device: getPending lists nothing, decide answers APPROVAL_NOT_ELIGIBLE,
+ * and previewRevokeDevice and revokeDevice answer REVOKE_NOT_CAPABLE (D-SDK-30).
+ */
+export interface SidecarApprovals {
+  getPending(): unknown[];
+  addPendingListener(callback: (pending: unknown[]) => void): Unsubscribe;
+  decide(approvalId: string, decision: string, callback: (result: SidecarResult) => void): void;
+  /** null: unknown, never none. */
+  getDevices(): SidecarDevice[] | null;
+  previewRevokeDevice(sidecarId: string, reason: string, lostAtMillis: number, sinceN: number, callback: (plan: SidecarRevokePlan) => void): void;
+  revokeDevice(planId: string, revokeKeys: SidecarRevokeItem[], callback: (result: SidecarResult) => void): void;
 }

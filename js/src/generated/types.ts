@@ -602,6 +602,7 @@ export interface AuthNetworkClientResult {
   proxy_config_result: ProxyConfigResult | null;
   error?: AuthNetworkClientError | null;
   admin_refused?: boolean;
+  acl_enforcing?: boolean;
 }
 
 export interface ProviderSpec {
@@ -630,6 +631,7 @@ export interface AuthNetworkClientArgs {
   locale?: string;
   provide_intent?: boolean;
   admin_refused?: boolean;
+  acl_enforcing?: boolean;
 }
 
 export interface ProxyConfig {
@@ -1024,5 +1026,98 @@ export interface SnHeadResult {
   netuid: number;
   source: string;
   error?: SnError | null;
+}
+
+export interface SidecarSettings {
+  instance?: string;
+  state_dir?: string;
+  components?: string[] | null;
+  memory_budget_byte_count?: number;
+  host_class?: string;
+  daemon_socket_dir?: string;
+}
+
+export interface SidecarResult {
+  ok: boolean;
+  value?: string;
+  code?: string;
+  message?: string;
+}
+
+export interface SidecarEvent {
+  kind: string;
+  generation: number;
+  state?: string;
+  reason?: string;
+  group_id?: string | null;
+  sidecar_id?: string | null;
+  repo_id?: string | null;
+  ref_id?: string | null;
+  path?: string;
+  drop_id?: string | null;
+  drop_state?: string;
+  not_before_millis?: number;
+  search_alarm?: string;
+  request_id?: string | null;
+  outcome?: string;
+  send_id?: string | null;
+  approval_id?: string | null;
+  head_alarm?: string;
+  first_evidence?: string;
+  second_evidence?: string;
+  erasure?: SidecarErasure | null;
+  evs_alarm?: string;
+  evs_alarm_detail?: string;
+  version?: number;
+  push_id?: string | null;
+  count?: number;
+  verified_since_millis?: number;
+  record_alarm?: string;
+  bridge_alarm?: string;
+  dns_alarm?: string;
+  ct_alarm?: string;
+}
+
+export interface SidecarErasure {
+  erasure_id?: string | null;
+  state: string;
+  objects_left?: number;
+  bytes_left?: number;
+  next_try_millis?: number;
+  finish_millis?: number;
+}
+
+export interface SidecarDevice {
+  sidecar_id: string | null;
+  name?: string;
+  this?: boolean;
+  read_only?: boolean;
+  ephemeral?: boolean;
+  state: string;
+  admitted_millis?: number;
+  last_change_millis?: number;
+}
+
+export interface SidecarRevokePlan {
+  plan_id?: string | null;
+  sidecar_id?: string | null;
+  name?: string;
+  reason?: string;
+  since_n?: number;
+  since_millis?: number;
+  items?: SidecarRevokeItem[] | null;
+  signatures?: number;
+  presence?: boolean;
+  code?: string;
+  parks_self_position?: number;
+  message?: string;
+}
+
+export interface SidecarRevokeItem {
+  effect: string;
+  kind: string;
+  name?: string;
+  id?: string;
+  position?: number;
 }
 

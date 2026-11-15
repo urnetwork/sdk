@@ -514,6 +514,84 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ROUTING_TIER_FULL 2
 #define URNET_ROUTING_TIER_LIGHT 1
 #define URNET_ROUTING_TIER_OFF 0
+#define URNET_SIDECAR_ACCESS_DEPOSIT "deposit"
+#define URNET_SIDECAR_ACCESS_DIAL "dial"
+#define URNET_SIDECAR_ACCESS_READER "reader"
+#define URNET_SIDECAR_ACCESS_REQUESTS_INCOMING "incoming"
+#define URNET_SIDECAR_ACCESS_REQUESTS_MINE "mine"
+#define URNET_SIDECAR_ACCESS_TARGET_REPO "repo"
+#define URNET_SIDECAR_ACCESS_TARGET_SOCKET "socket"
+#define URNET_SIDECAR_ACCESS_TARGET_WORKER "worker"
+#define URNET_SIDECAR_ACCESS_WRITER "writer"
+#define URNET_SIDECAR_APPROVAL_KIND_ACCESS_REQUEST "access_request"
+#define URNET_SIDECAR_APPROVAL_KIND_ADMISSION "admission"
+#define URNET_SIDECAR_APPROVAL_KIND_ADMISSIONS_NEAR_CAP "admissions_near_cap"
+#define URNET_SIDECAR_APPROVAL_KIND_ADMISSION_ALARM "admission_alarm"
+#define URNET_SIDECAR_APPROVAL_KIND_RECOVERY_REBIND "recovery_rebind"
+#define URNET_SIDECAR_APPROVAL_KIND_RECOVERY_UNSEEN "recovery_unseen"
+#define URNET_SIDECAR_APPROVAL_KIND_RECOVERY_WINDOW "recovery_window"
+#define URNET_SIDECAR_APPROVAL_KIND_REQUEST "request"
+#define URNET_SIDECAR_APPROVAL_KIND_REVOCATION_PROPOSAL "revocation_proposal"
+#define URNET_SIDECAR_BRIDGE_ALARM_FORWARDING_REVOKED "forwarding_revoked"
+#define URNET_SIDECAR_CODE_APPROVAL_AUTHORITY "APPROVAL_AUTHORITY"
+#define URNET_SIDECAR_CODE_APPROVAL_DECIDED "APPROVAL_DECIDED"
+#define URNET_SIDECAR_CODE_APPROVAL_NOT_ELIGIBLE "APPROVAL_NOT_ELIGIBLE"
+#define URNET_SIDECAR_CODE_APPROVAL_REFUSED "APPROVAL_REFUSED"
+#define URNET_SIDECAR_CODE_APPROVAL_UNKNOWN "APPROVAL_UNKNOWN"
+#define URNET_SIDECAR_CODE_FAILED_PRECONDITION "FAILED_PRECONDITION"
+#define URNET_SIDECAR_CODE_INVALID_ARGUMENT "INVALID_ARGUMENT"
+#define URNET_SIDECAR_CODE_REVOKE_CANCELLED "REVOKE_CANCELLED"
+#define URNET_SIDECAR_CODE_REVOKE_NOT_CAPABLE "REVOKE_NOT_CAPABLE"
+#define URNET_SIDECAR_CODE_REVOKE_NOT_OWN "REVOKE_NOT_OWN"
+#define URNET_SIDECAR_CODE_REVOKE_PARKS_SELF "REVOKE_PARKS_SELF"
+#define URNET_SIDECAR_CODE_REVOKE_REFUSED "REVOKE_REFUSED"
+#define URNET_SIDECAR_CODE_REVOKE_SELF "REVOKE_SELF"
+#define URNET_SIDECAR_CODE_REVOKE_SINCE "REVOKE_SINCE"
+#define URNET_SIDECAR_CODE_REVOKE_STALE "REVOKE_STALE"
+#define URNET_SIDECAR_CODE_UNAVAILABLE "UNAVAILABLE"
+#define URNET_SIDECAR_COMPONENT_BRIDGE "bridge"
+#define URNET_SIDECAR_COMPONENT_EVS "evs"
+#define URNET_SIDECAR_COMPONENT_MAIL "mail"
+#define URNET_SIDECAR_COMPONENT_SOCKETS "sockets"
+#define URNET_SIDECAR_COMPONENT_TLS "tls"
+#define URNET_SIDECAR_DECISION_APPROVE "approve"
+#define URNET_SIDECAR_DECISION_DENY "deny"
+#define URNET_SIDECAR_DECISION_REVOKE "revoke"
+#define URNET_SIDECAR_DEVICE_LIVE "live"
+#define URNET_SIDECAR_DEVICE_PARKED "parked"
+#define URNET_SIDECAR_DEVICE_PENDING "pending"
+#define URNET_SIDECAR_DEVICE_REVOKED "revoked"
+#define URNET_SIDECAR_DEVICE_STALE "stale"
+#define URNET_SIDECAR_DIRECTORY_KIND_REPO "repo"
+#define URNET_SIDECAR_DIRECTORY_KIND_RUN "run"
+#define URNET_SIDECAR_DIRECTORY_KIND_WORKER "worker"
+#define URNET_SIDECAR_DIRECTORY_REQUESTS_CLOSED "closed"
+#define URNET_SIDECAR_DIRECTORY_REQUESTS_OPEN "open"
+#define URNET_SIDECAR_DIRECTORY_REVOKE_HIDDEN "hidden"
+#define URNET_SIDECAR_FORWARD_KEY_STORE_FAILED 0
+#define URNET_SIDECAR_FORWARD_KEY_STORE_LOCKED 4
+#define URNET_SIDECAR_FORWARD_KEY_STORE_OK 1
+#define URNET_SIDECAR_FORWARD_SECRET_ABSENT 3
+#define URNET_SIDECAR_FORWARD_SECRET_FAILED 0
+#define URNET_SIDECAR_FORWARD_SECRET_LOCKED 4
+#define URNET_SIDECAR_FORWARD_SECRET_PRESENT 2
+#define URNET_SIDECAR_HOST_CLASS_ANDROID "android"
+#define URNET_SIDECAR_HOST_CLASS_DESKTOP "desktop"
+#define URNET_SIDECAR_HOST_CLASS_IOS "ios"
+#define URNET_SIDECAR_KEY_STORE_FAILED 0
+#define URNET_SIDECAR_KEY_STORE_LOCKED 4
+#define URNET_SIDECAR_KEY_STORE_OK 1
+#define URNET_SIDECAR_PUSH_PLATFORM_APNS "apns"
+#define URNET_SIDECAR_PUSH_PLATFORM_FCM "fcm"
+#define URNET_SIDECAR_RECEIVER_COVERAGE_FOREGROUND_ONLY "foreground-only"
+#define URNET_SIDECAR_RECEIVER_COVERAGE_INDEXER "indexer"
+#define URNET_SIDECAR_RECEIVER_COVERAGE_NONE "none"
+#define URNET_SIDECAR_REVOKE_COMPROMISE "compromise"
+#define URNET_SIDECAR_REVOKE_LOST "lost"
+#define URNET_SIDECAR_SECRET_ABSENT 3
+#define URNET_SIDECAR_SECRET_FAILED 0
+#define URNET_SIDECAR_SECRET_LOCKED 4
+#define URNET_SIDECAR_SECRET_PRESENT 2
 #define URNET_SN_ALPHA_SYMBOL "SN25α"
 #define URNET_SN_CHAIN_ID_MAINNET 964
 #define URNET_SN_CHAIN_ID_TESTNET 945
@@ -757,6 +835,8 @@ typedef void (*urnet_block_actions_cb)(void* user_data);
 typedef void (*urnet_block_stats_change_cb)(void* user_data, const char* block_stats_json);
 /* BlockerEnabledChangeListener */
 typedef void (*urnet_blocker_enabled_change_cb)(void* user_data, bool blocker_enabled);
+/* BridgeStatusChangeListener */
+typedef void (*urnet_bridge_status_change_cb)(void* user_data, const char* status_json);
 /* CanPromptIntroFunnelChangeListener */
 typedef void (*urnet_can_prompt_intro_funnel_change_cb)(void* user_data, bool can_prompt_intro_funnel);
 /* CanReferChangeListener */
@@ -1031,6 +1111,39 @@ typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_j
 typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetupNewDeviceCallback */
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
+/* SidecarApprovalListener */
+typedef void (*urnet_sidecar_approval_cb)(void* user_data, const char* pending_json);
+/* SidecarBurnerCallback */
+typedef void (*urnet_sidecar_burner_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarBytesCallback */
+typedef void (*urnet_sidecar_bytes_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarDirectoryListener */
+typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_json);
+/* SidecarErasuresCallback */
+typedef void (*urnet_sidecar_erasures_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarEventListener */
+typedef void (*urnet_sidecar_event_cb)(void* user_data, const char* event_json);
+/* SidecarHistoryCallback */
+typedef void (*urnet_sidecar_history_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarKeyStore */
+typedef int64_t (*urnet_sidecar_key_store_delete_secret_cb)(void* user_data, const char* name);
+typedef char* (*urnet_sidecar_key_store_get_secret_cb)(void* user_data, const char* name);
+typedef int64_t (*urnet_sidecar_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
+/* SidecarOneTimeCodesCallback */
+typedef void (*urnet_sidecar_one_time_codes_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarPresenceSigner */
+typedef char* (*urnet_sidecar_presence_signer_get_attestation_cb)(void* user_data);
+typedef char* (*urnet_sidecar_presence_signer_sign_with_presence_cb)(void* user_data, const char* message_base64);
+/* SidecarRepoChangeListener */
+typedef void (*urnet_sidecar_repo_change_cb)(void* user_data, const char* change_json);
+/* SidecarResultCallback */
+typedef void (*urnet_sidecar_result_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarRevokePlanCallback */
+typedef void (*urnet_sidecar_revoke_plan_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarUsedAtCallback */
+typedef void (*urnet_sidecar_used_at_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarVaultEntriesCallback */
+typedef void (*urnet_sidecar_vault_entries_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnClaimCallback */
 typedef void (*urnet_sn_claim_confirmed_cb)(void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao);
 typedef void (*urnet_sn_claim_done_cb)(void* user_data);
@@ -1572,6 +1685,7 @@ uint64_t urnet_device_add_block_action_overrides_change_listener(uint64_t self, 
 uint64_t urnet_device_add_block_action_window_change_listener(uint64_t self, urnet_block_action_window_change_cb listener_block_action_window_changed, void* listener_user_data);
 uint64_t urnet_device_add_block_stats_change_listener(uint64_t self, urnet_block_stats_change_cb listener_block_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_blocker_enabled_change_listener(uint64_t self, urnet_blocker_enabled_change_cb listener_blocker_enabled_changed, void* listener_user_data);
+uint64_t urnet_device_add_bridge_status_change_listener(uint64_t self, urnet_bridge_status_change_cb listener_bridge_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_prompt_intro_funnel_change_listener(uint64_t self, urnet_can_prompt_intro_funnel_change_cb listener_can_prompt_intro_funnel_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_refer_change_listener(uint64_t self, urnet_can_refer_change_cb listener_can_refer_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_show_rating_dialog_change_listener(uint64_t self, urnet_can_show_rating_dialog_change_cb listener_can_show_rating_dialog_changed, void* listener_user_data);
@@ -1625,6 +1739,7 @@ char* urnet_device_get_block_action_overrides(uint64_t self);
 char* urnet_device_get_block_actions(uint64_t self);
 char* urnet_device_get_block_stats(uint64_t self);
 bool urnet_device_get_blocker_enabled(uint64_t self);
+char* urnet_device_get_bridge_status(uint64_t self);
 bool urnet_device_get_can_prompt_intro_funnel(uint64_t self);
 bool urnet_device_get_can_refer(uint64_t self);
 bool urnet_device_get_can_show_rating_dialog(uint64_t self);
@@ -1749,6 +1864,7 @@ bool urnet_device_local_drop_exit(uint64_t self, const char* client_id);
 uint64_t urnet_device_local_enable_subprotocol(uint64_t self, int64_t subprotocol_id, urnet_subprotocol_cb listener_subprotocol_message, void* listener_user_data, char** out_error);
 char* urnet_device_local_enabled_subprotocols(uint64_t self);
 bool urnet_device_local_get_auto_save(uint64_t self);
+char* urnet_device_local_get_bridge_routes(uint64_t self);
 char* urnet_device_local_get_client_jwt(uint64_t self);
 char* urnet_device_local_get_destination_exits(uint64_t self);
 char* urnet_device_local_get_exits(uint64_t self);
@@ -1812,6 +1928,7 @@ int64_t urnet_device_local_send_packet_batch(uint64_t self, const uint8_t* packe
 bool urnet_device_local_send_subprotocol_bytes(uint64_t self, int64_t subprotocol_id, const char* destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
 void urnet_device_local_set_app_backgrounded(uint64_t self, bool backgrounded);
 bool urnet_device_local_set_auto_save(uint64_t self, bool enabled, char** out_error);
+void urnet_device_local_set_bridge_local_addresses(uint64_t self, const char* addresses_json);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 bool urnet_device_local_set_connect_location_checked(uint64_t self, const char* location_json, char** out_error);
 bool urnet_device_local_set_default_location_checked(uint64_t self, const char* location_json, char** out_error);
@@ -2426,6 +2543,76 @@ bool urnet_session_sign_out_result_get_credential_cleared(uint64_t self);
 char* urnet_session_sign_out_result_get_operation_id(uint64_t self);
 bool urnet_session_sign_out_result_get_revocation_confirmed(uint64_t self);
 
+/* ----- Sidecar ----- */
+
+uint64_t urnet_sidecar_add_event_listener(uint64_t self, urnet_sidecar_event_cb listener_sidecar_event_received, void* listener_user_data);
+void urnet_sidecar_close(uint64_t self);
+void urnet_sidecar_confirm_forwarding_setup(uint64_t self, const char* network_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_enroll_with_device(uint64_t self, uint64_t device, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+uint64_t urnet_sidecar_get_approvals(uint64_t self);
+uint64_t urnet_sidecar_get_directory(uint64_t self);
+uint64_t urnet_sidecar_get_evs(uint64_t self);
+uint64_t urnet_sidecar_get_mail(uint64_t self);
+char* urnet_sidecar_get_sidecar_id(uint64_t self);
+uint64_t urnet_sidecar_get_sockets(uint64_t self);
+char* urnet_sidecar_get_state(uint64_t self);
+char* urnet_sidecar_get_state_reason(uint64_t self);
+void urnet_sidecar_set_push_token(uint64_t self, const char* platform, const char* token, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_sign_edge_login(uint64_t self, const char* origin, const char* nonce_base64, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_unlock(uint64_t self, const char* passphrase, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarApprovals ----- */
+
+uint64_t urnet_sidecar_approvals_add_pending_listener(uint64_t self, urnet_sidecar_approval_cb listener_approvals_changed, void* listener_user_data);
+void urnet_sidecar_approvals_decide(uint64_t self, const char* approval_id, const char* decision, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_approvals_get_devices(uint64_t self);
+char* urnet_sidecar_approvals_get_pending(uint64_t self);
+void urnet_sidecar_approvals_preview_revoke_device(uint64_t self, const char* sidecar_id, const char* reason, int64_t lost_at_millis, int64_t since_n, urnet_sidecar_revoke_plan_cb callback_result, void* callback_user_data);
+void urnet_sidecar_approvals_revoke_device(uint64_t self, const char* plan_id, const char* revoke_keys_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarDirectory ----- */
+
+void urnet_sidecar_directory_announce_repo(uint64_t self, const char* repo_id, const char* announcement_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_directory_get(uint64_t self, const char* announcement_id);
+char* urnet_sidecar_directory_get_requests(uint64_t self, const char* view);
+uint64_t urnet_sidecar_directory_list(uint64_t self, const char* filter_json, urnet_sidecar_directory_cb listener_directory_changed, void* listener_user_data);
+void urnet_sidecar_directory_request(uint64_t self, const char* request_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_directory_revoke_repo(uint64_t self, const char* repo_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_directory_set_runs(uint64_t self, const char* project_key, const char* value, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_directory_set_worker(uint64_t self, bool enabled, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarEvs ----- */
+
+uint64_t urnet_sidecar_evs_add_repo_change_listener(uint64_t self, const char* repo_id, urnet_sidecar_repo_change_cb listener_repo_changed, void* listener_user_data);
+void urnet_sidecar_evs_create_repo(uint64_t self, const char* kind, const char* display_name, bool private_param, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_erasures(uint64_t self, const char* repo_id, urnet_sidecar_erasures_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_history(uint64_t self, const char* repo_id, const char* path, urnet_sidecar_history_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_read_head(uint64_t self, const char* repo_id, const char* path, urnet_sidecar_bytes_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_write(uint64_t self, const char* repo_id, const char* path, const uint8_t* data, int32_t data_len, const char* versioning, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarMail ----- */
+
+void urnet_sidecar_mail_burn(uint64_t self, const char* address, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_mail_create_burner(uint64_t self, const char* site, urnet_sidecar_burner_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_mail_get_aliases(uint64_t self);
+void urnet_sidecar_mail_get_one_time_codes(uint64_t self, int64_t since_millis, urnet_sidecar_one_time_codes_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_mail_get_receiver_coverage(uint64_t self);
+void urnet_sidecar_mail_get_used_at(uint64_t self, const char* entry_id, urnet_sidecar_used_at_cb callback_result, void* callback_user_data);
+void urnet_sidecar_mail_get_vault_entries(uint64_t self, urnet_sidecar_vault_entries_cb callback_result, void* callback_user_data);
+void urnet_sidecar_mail_send(uint64_t self, const char* draft_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_mail_set_receiver_enabled(uint64_t self, bool enabled, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarSocketListener ----- */
+
+uint64_t urnet_sidecar_socket_listener_accept(uint64_t self, int64_t timeout_millis, char** out_error);
+bool urnet_sidecar_socket_listener_close(uint64_t self, char** out_error);
+char* urnet_sidecar_socket_listener_get_addr(uint64_t self);
+
+/* ----- SidecarSockets ----- */
+
+uint64_t urnet_sidecar_sockets_dial(uint64_t self, const char* address, int64_t timeout_millis, char** out_error);
+uint64_t urnet_sidecar_sockets_listen(uint64_t self, const char* address, int64_t weight, char** out_error);
+
 /* ----- SnFleetClaim ----- */
 
 void urnet_sn_fleet_claim_advance(uint64_t self, urnet_sn_fleet_claim_cb callback_result, void* callback_user_data);
@@ -2574,6 +2761,7 @@ char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
+char* urnet_default_sidecar_settings(void);
 char* urnet_default_sn_chain_settings(void);
 int64_t urnet_default_transport_mode_priority(const char* mode);
 char* urnet_default_transport_settings(void);
@@ -2673,6 +2861,8 @@ char* urnet_new_purchase_cancelled_event(const char* store, const char* product,
 char* urnet_new_purchase_completed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
 char* urnet_new_purchase_failed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency, const char* error_class);
 char* urnet_new_purchase_started_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
+uint64_t urnet_new_sidecar_local(uint64_t network_space, urnet_sidecar_key_store_delete_secret_cb key_store_delete_secret, urnet_sidecar_key_store_get_secret_cb key_store_get_secret, urnet_sidecar_key_store_put_secret_cb key_store_put_secret, void* key_store_user_data, urnet_sidecar_presence_signer_get_attestation_cb presence_signer_get_attestation, urnet_sidecar_presence_signer_sign_with_presence_cb presence_signer_sign_with_presence, void* presence_signer_user_data, const char* settings_json, char** out_error);
+uint64_t urnet_new_sidecar_remote(urnet_sidecar_presence_signer_get_attestation_cb presence_signer_get_attestation, urnet_sidecar_presence_signer_sign_with_presence_cb presence_signer_sign_with_presence, void* presence_signer_user_data, const char* settings_json, char** out_error);
 char* urnet_new_signup_optout_changed_event(bool product_updates);
 char* urnet_new_sn_chain_settings(void);
 uint64_t urnet_new_sn_fleet_claim(uint64_t api, const char* settings_json, urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb store_load_sn_fleet_coldkey_phrase, urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb store_load_sn_fleet_hotkey_seed, urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb store_save_sn_fleet_hotkey_seed, void* store_user_data);
@@ -2977,6 +3167,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   locale?: string
  *   provide_intent?: boolean
  *   admin_refused?: boolean
+ *   acl_enforcing?: boolean
  */
 
 /* AuthNetworkClientError (json):
@@ -2992,6 +3183,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_config_result: ProxyConfigResult | null
  *   error?: AuthNetworkClientError | null
  *   admin_refused?: boolean
+ *   acl_enforcing?: boolean
  */
 
 /* AuthPasswordResetArgs (json):
@@ -3260,6 +3452,53 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* BlockedLocationsList (json):
  *   = BlockedLocation | null[]
+ */
+
+/* BridgeNetworkStatus (json):
+ *   network_id: string (uuid) | null
+ *   hosting?: boolean
+ *   posture: string
+ *   key_set: string
+ *   lapsed?: boolean
+ *   forward_client_expires_millis?: number
+ *   tip_n?: number
+ *   compiled_n?: number
+ *   alarms?: StringList | null
+ *   compile_count?: number
+ *   compile_error_count?: number
+ *   compile_refused_count?: number
+ *   head_alarm?: string
+ *   head_alarm_millis?: number
+ *   head_alarm_n?: number
+ *   head_alarm_other_n?: number
+ */
+
+/* BridgeNetworkStatusList (json):
+ *   = BridgeNetworkStatus | null[]
+ */
+
+/* BridgeRoute (json):
+ *   prefix: string
+ */
+
+/* BridgeRouteList (json):
+ *   = BridgeRoute | null[]
+ */
+
+/* BridgeStatus (json):
+ *   state: string
+ *   has_document?: boolean
+ *   pin_n?: number
+ *   block?: string
+ *   addresses?: StringList | null
+ *   entry_count?: number
+ *   map_count?: number
+ *   served_count?: number
+ *   subject_count?: number
+ *   link_open_count?: number
+ *   link_building_count?: number
+ *   name_count?: number
+ *   networks?: BridgeNetworkStatusList | null
  */
 
 /* ByJwt (json):
@@ -3783,6 +4022,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   EnableRpc: boolean
  *   DisableLogging: boolean
  *   HostedIncompatible: boolean
+ *   ForwardStateDir: string
  *   UseExperimentalTunnelAddress: boolean
  * A DeviceLocalSettings argument is decoded over
  * urnet_default_device_local_settings(): a field it omits keeps its default,
@@ -5374,6 +5614,423 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* SetPointsLeaderboardPublicResult (json):
  *   points_leaderboard_public: boolean
  *   error?: SetPointsLeaderboardPublicError | null
+ */
+
+/* SidecarAccessDecision (json):
+ *   decider_sidecar_id: string (uuid) | null
+ *   outcome: string
+ *   eligible: boolean
+ *   grant_expires_millis?: number
+ *   untrusted_text?: SidecarDirectoryFieldList | null
+ */
+
+/* SidecarAccessDecisionList (json):
+ *   = SidecarAccessDecision | null[]
+ */
+
+/* SidecarAccessRequest (json):
+ *   target_kind: string
+ *   repo_id?: string (uuid) | null
+ *   worker_sidecar_id?: string (uuid) | null
+ *   tcp_ports?: IntList | null
+ *   socket_token?: string (base64)
+ *   access?: string
+ *   grant_expires_millis?: number
+ *   lifetime_millis?: number
+ *   reason?: string
+ *   announcement_id?: string (uuid) | null
+ *   request_id?: string (uuid) | null
+ *   requester_sidecar_id?: string (uuid) | null
+ *   state?: string
+ *   subject_id?: string (uuid) | null
+ *   subject_is_member?: boolean
+ *   not_after_millis?: number
+ *   filed_by?: string
+ *   endorsement?: string
+ *   tainted?: boolean
+ *   mine?: boolean
+ *   decidable?: boolean
+ *   decisions?: SidecarAccessDecisionList | null
+ *   untrusted_text?: SidecarDirectoryFieldList | null
+ */
+
+/* SidecarAccessRequestList (json):
+ *   = SidecarAccessRequest | null[]
+ */
+
+/* SidecarAlias (json):
+ *   address: string
+ *   kind: string
+ *   known?: boolean
+ */
+
+/* SidecarAliasList (json):
+ *   = SidecarAlias | null[]
+ */
+
+/* SidecarAnnouncement (json):
+ *   announcement_id: string (uuid) | null
+ *   kind: string
+ *   version: number
+ *   display: string
+ *   sidecar_id: string (uuid) | null
+ *   member_id?: string (uuid) | null
+ *   tainted?: boolean
+ *   renewed_millis?: number
+ *   expires_millis?: number
+ *   run_id?: string (uuid) | null
+ *   repo_id?: string (uuid) | null
+ *   requests?: string
+ *   identifier_trust: string
+ *   identifiers?: SidecarDirectoryFieldList | null
+ *   services?: SidecarDirectoryServiceList | null
+ *   matches?: StringList | null
+ *   untrusted_text?: SidecarDirectoryFieldList | null
+ *   untrusted_withheld?: number
+ */
+
+/* SidecarAnnouncementList (json):
+ *   = SidecarAnnouncement | null[]
+ */
+
+/* SidecarApprovalItem (json):
+ *   approval_id?: string (uuid) | null
+ *   kind: string
+ *   sidecar_id?: string (uuid) | null
+ *   member_id?: string (uuid) | null
+ *   proposal_id?: string (base64)
+ *   position?: number
+ *   raised_millis?: number
+ *   safety_number?: string
+ *   action?: string
+ *   template?: boolean
+ *   channel?: string
+ *   text?: string
+ *   refused?: string
+ *   access_request?: SidecarAccessRequest | null
+ *   cleanup?: SidecarCleanupList | null
+ *   decisions: StringList | null
+ */
+
+/* SidecarApprovalList (json):
+ *   = SidecarApprovalItem | null[]
+ */
+
+/* SidecarBurner (json):
+ *   ok: boolean
+ *   address?: string
+ *   entry_id?: string (uuid) | null
+ *   coverage_copy?: string
+ *   value?: string
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarBytes (json):
+ *   ok: boolean
+ *   data?: string (base64)
+ *   version?: number
+ *   commit_version?: number
+ *   time_millis?: number
+ *   signer_sidecar_id?: string (uuid) | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarCleanupList (json):
+ *   admission_count: number
+ *   admission_cap: number
+ *   workers: SidecarCleanupWorkerList | null
+ *   presence?: boolean
+ */
+
+/* SidecarCleanupWorker (json):
+ *   sidecar_id: string (uuid) | null
+ *   member_id: string (uuid) | null
+ *   admitted_position?: number
+ *   admitted_millis?: number
+ *   last_change_millis?: number
+ *   signatures: number
+ */
+
+/* SidecarCleanupWorkerList (json):
+ *   = SidecarCleanupWorker | null[]
+ */
+
+/* SidecarDevice (json):
+ *   sidecar_id: string (uuid) | null
+ *   name?: string
+ *   this?: boolean
+ *   read_only?: boolean
+ *   ephemeral?: boolean
+ *   state: string
+ *   admitted_millis?: number
+ *   last_change_millis?: number
+ */
+
+/* SidecarDeviceList (json):
+ *   = SidecarDevice | null[]
+ */
+
+/* SidecarDirectoryCoverage (json):
+ *   complete: boolean
+ *   waiting?: string
+ *   fetched_sidecar_ids: IdList | null
+ *   left_sidecar_ids: IdList | null
+ *   fetched_byte_count: number
+ *   metered_byte_count: number
+ *   left_byte_count: number
+ */
+
+/* SidecarDirectoryField (json):
+ *   name: string
+ *   value: string
+ */
+
+/* SidecarDirectoryFieldList (json):
+ *   = SidecarDirectoryField | null[]
+ */
+
+/* SidecarDirectoryFilter (json):
+ *   kind?: string
+ *   member_id?: string (uuid) | null
+ *   repo_id?: string (uuid) | null
+ *   active_only?: boolean
+ *   query?: string
+ *   include_private?: boolean
+ *   allow_metered?: boolean
+ */
+
+/* SidecarDirectoryPage (json):
+ *   announcements: SidecarAnnouncementList | null
+ *   coverage: SidecarDirectoryCoverage | null
+ *   untrusted_withheld?: number
+ *   message?: string
+ */
+
+/* SidecarDirectoryService (json):
+ *   kind: string
+ *   name?: string
+ */
+
+/* SidecarDirectoryServiceList (json):
+ *   = SidecarDirectoryService | null[]
+ */
+
+/* SidecarDraft (json):
+ *   from: string
+ *   to?: StringList | null
+ *   cc?: StringList | null
+ *   bcc?: StringList | null
+ *   subject?: string
+ *   body?: string
+ */
+
+/* SidecarErasure (json):
+ *   erasure_id?: string (uuid) | null
+ *   state: string
+ *   objects_left?: number
+ *   bytes_left?: number
+ *   next_try_millis?: number
+ *   finish_millis?: number
+ */
+
+/* SidecarErasureList (json):
+ *   = SidecarErasure | null[]
+ */
+
+/* SidecarErasures (json):
+ *   ok: boolean
+ *   erasures?: SidecarErasureList | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarEvent (json):
+ *   kind: string
+ *   generation: number
+ *   state?: string
+ *   reason?: string
+ *   group_id?: string (uuid) | null
+ *   sidecar_id?: string (uuid) | null
+ *   repo_id?: string (uuid) | null
+ *   ref_id?: string (uuid) | null
+ *   path?: string
+ *   drop_id?: string (uuid) | null
+ *   drop_state?: string
+ *   not_before_millis?: number
+ *   search_alarm?: string
+ *   request_id?: string (uuid) | null
+ *   outcome?: string
+ *   send_id?: string (uuid) | null
+ *   approval_id?: string (uuid) | null
+ *   head_alarm?: string
+ *   first_evidence?: string (base64)
+ *   second_evidence?: string (base64)
+ *   erasure?: SidecarErasure | null
+ *   evs_alarm?: string
+ *   evs_alarm_detail?: string
+ *   version?: number
+ *   push_id?: string (uuid) | null
+ *   count?: number
+ *   verified_since_millis?: number
+ *   record_alarm?: string
+ *   bridge_alarm?: string
+ *   dns_alarm?: string
+ *   ct_alarm?: string
+ */
+
+/* SidecarHistory (json):
+ *   ok: boolean
+ *   versions?: SidecarHistoryVersionList | null
+ *   head_version?: number
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarHistoryVersion (json):
+ *   version: number
+ *   commit_version: number
+ *   time_millis?: number
+ *   signer_sidecar_id?: string (uuid) | null
+ *   removed?: boolean
+ *   versioning: string
+ *   state: string
+ */
+
+/* SidecarHistoryVersionList (json):
+ *   = SidecarHistoryVersion | null[]
+ */
+
+/* SidecarOneTimeCode (json):
+ *   code: string
+ *   source: string
+ *   entry_id?: string (uuid) | null
+ *   address?: string
+ *   time_millis?: number
+ *   expires_millis?: number
+ */
+
+/* SidecarOneTimeCodeList (json):
+ *   = SidecarOneTimeCode | null[]
+ */
+
+/* SidecarOneTimeCodes (json):
+ *   ok: boolean
+ *   codes?: SidecarOneTimeCodeList | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarRepoAnnouncement (json):
+ *   display_name?: string
+ *   description?: string
+ *   topics?: StringList | null
+ *   roles?: StringList | null
+ *   requests?: string
+ */
+
+/* SidecarRepoChange (json):
+ *   repo_id: string (uuid) | null
+ *   ref_id?: string (uuid) | null
+ *   version?: number
+ *   push_id?: string (uuid) | null
+ *   signer_sidecar_id?: string (uuid) | null
+ *   gap?: boolean
+ *   path_epoch?: boolean
+ */
+
+/* SidecarResult (json):
+ *   ok: boolean
+ *   value?: string
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarRevokeItem (json):
+ *   effect: string
+ *   kind: string
+ *   name?: string
+ *   id?: string (base64)
+ *   position?: number
+ */
+
+/* SidecarRevokeItemList (json):
+ *   = SidecarRevokeItem | null[]
+ */
+
+/* SidecarRevokePlan (json):
+ *   plan_id?: string (uuid) | null
+ *   sidecar_id?: string (uuid) | null
+ *   name?: string
+ *   reason?: string
+ *   since_n?: number
+ *   since_millis?: number
+ *   items?: SidecarRevokeItemList | null
+ *   signatures?: number
+ *   presence?: boolean
+ *   code?: string
+ *   parks_self_position?: number
+ *   message?: string
+ */
+
+/* SidecarSecret (json):
+ *   status: number
+ *   value_base64?: string
+ */
+
+/* SidecarSettings (json):
+ *   instance?: string
+ *   state_dir?: string
+ *   components?: StringList | null
+ *   memory_budget_byte_count?: number
+ *   host_class?: string
+ *   daemon_socket_dir?: string
+ * A SidecarSettings argument is decoded over
+ * urnet_default_sidecar_settings(): a field it omits keeps its default,
+ * and NULL is the defaults.
+ */
+
+/* SidecarUsedAt (json):
+ *   registrable_domain: string
+ *   first_millis: number
+ *   last_millis: number
+ */
+
+/* SidecarUsedAtList (json):
+ *   = SidecarUsedAt | null[]
+ */
+
+/* SidecarUsedAtResult (json):
+ *   ok: boolean
+ *   used_at?: SidecarUsedAtList | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarVaultEntries (json):
+ *   ok: boolean
+ *   entries?: SidecarVaultEntryList | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarVaultEntry (json):
+ *   entry_id: string (uuid) | null
+ *   address?: string
+ *   title?: string
+ *   username?: string
+ *   password?: string
+ *   urls?: StringList | null
+ *   notes?: string
+ *   has_totp?: boolean
+ *   created_millis?: number
+ *   updated_millis?: number
+ *   state: string
+ */
+
+/* SidecarVaultEntryList (json):
+ *   = SidecarVaultEntry | null[]
  */
 
 /* SnChainSettings (json):

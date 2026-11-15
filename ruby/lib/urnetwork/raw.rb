@@ -38,6 +38,7 @@ module URnetwork
       callback :urnet_block_actions_cb, [:pointer], :void
       callback :urnet_block_stats_change_cb, [:pointer, :string], :void
       callback :urnet_blocker_enabled_change_cb, [:pointer, :bool], :void
+      callback :urnet_bridge_status_change_cb, [:pointer, :string], :void
       callback :urnet_can_prompt_intro_funnel_change_cb, [:pointer, :bool], :void
       callback :urnet_can_refer_change_cb, [:pointer, :bool], :void
       callback :urnet_can_show_rating_dialog_change_cb, [:pointer, :bool], :void
@@ -176,6 +177,24 @@ module URnetwork
       callback :urnet_set_payout_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_set_points_leaderboard_public_cb, [:pointer, :string, :string], :void
       callback :urnet_setup_new_device_cb, [:pointer, :uint64, :string], :bool
+      callback :urnet_sidecar_approval_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_burner_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_bytes_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_directory_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_erasures_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_event_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_history_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_key_store_delete_secret_cb, [:pointer, :string], :int64
+      callback :urnet_sidecar_key_store_get_secret_cb, [:pointer, :string], :pointer
+      callback :urnet_sidecar_key_store_put_secret_cb, [:pointer, :string, :string], :int64
+      callback :urnet_sidecar_one_time_codes_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_presence_signer_get_attestation_cb, [:pointer], :pointer
+      callback :urnet_sidecar_presence_signer_sign_with_presence_cb, [:pointer, :string], :pointer
+      callback :urnet_sidecar_repo_change_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_result_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_revoke_plan_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_used_at_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_vault_entries_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_claim_confirmed_cb, [:pointer, :int64, :string, :int64], :void
       callback :urnet_sn_claim_done_cb, [:pointer], :void
       callback :urnet_sn_claim_failed_cb, [:pointer, :int64, :string], :void
@@ -629,6 +648,7 @@ module URnetwork
       attach_function :urnet_device_add_block_action_window_change_listener, [:uint64, :urnet_block_action_window_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_block_stats_change_listener, [:uint64, :urnet_block_stats_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_blocker_enabled_change_listener, [:uint64, :urnet_blocker_enabled_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_bridge_status_change_listener, [:uint64, :urnet_bridge_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_prompt_intro_funnel_change_listener, [:uint64, :urnet_can_prompt_intro_funnel_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_refer_change_listener, [:uint64, :urnet_can_refer_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_show_rating_dialog_change_listener, [:uint64, :urnet_can_show_rating_dialog_change_cb, :pointer], :uint64, blocking: true
@@ -682,6 +702,7 @@ module URnetwork
       attach_function :urnet_device_get_block_actions, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_block_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_blocker_enabled, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_get_bridge_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_can_prompt_intro_funnel, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_can_refer, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_can_show_rating_dialog, [:uint64], :bool, blocking: true
@@ -803,6 +824,7 @@ module URnetwork
       attach_function :urnet_device_local_enable_subprotocol, [:uint64, :int64, :urnet_subprotocol_cb, :pointer, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_enabled_subprotocols, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_auto_save, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_local_get_bridge_routes, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_client_jwt, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_destination_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_exits, [:uint64], :pointer, blocking: true
@@ -866,6 +888,7 @@ module URnetwork
       attach_function :urnet_device_local_send_subprotocol_bytes, [:uint64, :int64, :string, :pointer, :int32], :bool, blocking: true
       attach_function :urnet_device_local_set_app_backgrounded, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_auto_save, [:uint64, :bool, :pointer], :bool, blocking: true
+      attach_function :urnet_device_local_set_bridge_local_addresses, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_local_set_by_jwt, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_local_set_connect_location_checked, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_set_default_location_checked, [:uint64, :string, :pointer], :bool, blocking: true
@@ -1369,6 +1392,55 @@ module URnetwork
       attach_function :urnet_session_sign_out_result_get_credential_cleared, [:uint64], :bool, blocking: true
       attach_function :urnet_session_sign_out_result_get_operation_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_sign_out_result_get_revocation_confirmed, [:uint64], :bool, blocking: true
+      attach_function :urnet_sidecar_add_event_listener, [:uint64, :urnet_sidecar_event_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_close, [:uint64], :void, blocking: true
+      attach_function :urnet_sidecar_confirm_forwarding_setup, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_enroll_with_device, [:uint64, :uint64, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_get_approvals, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_directory, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_evs, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_mail, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_sidecar_id, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_get_sockets, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_state, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_get_state_reason, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_set_push_token, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_sign_edge_login, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_unlock, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_approvals_add_pending_listener, [:uint64, :urnet_sidecar_approval_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_approvals_decide, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_approvals_get_devices, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_approvals_get_pending, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_approvals_preview_revoke_device, [:uint64, :string, :string, :int64, :int64, :urnet_sidecar_revoke_plan_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_approvals_revoke_device, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_directory_announce_repo, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_directory_get, [:uint64, :string], :pointer, blocking: true
+      attach_function :urnet_sidecar_directory_get_requests, [:uint64, :string], :pointer, blocking: true
+      attach_function :urnet_sidecar_directory_list, [:uint64, :string, :urnet_sidecar_directory_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_directory_request, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_directory_revoke_repo, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_directory_set_runs, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_directory_set_worker, [:uint64, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_add_repo_change_listener, [:uint64, :string, :urnet_sidecar_repo_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_evs_create_repo, [:uint64, :string, :string, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_erasures, [:uint64, :string, :urnet_sidecar_erasures_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_history, [:uint64, :string, :string, :urnet_sidecar_history_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_read_head, [:uint64, :string, :string, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_write, [:uint64, :string, :string, :pointer, :int32, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_burn, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_create_burner, [:uint64, :string, :urnet_sidecar_burner_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_get_aliases, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_mail_get_one_time_codes, [:uint64, :int64, :urnet_sidecar_one_time_codes_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_get_receiver_coverage, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_mail_get_used_at, [:uint64, :string, :urnet_sidecar_used_at_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_get_vault_entries, [:uint64, :urnet_sidecar_vault_entries_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_send, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_set_receiver_enabled, [:uint64, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_socket_listener_accept, [:uint64, :int64, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_socket_listener_close, [:uint64, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_socket_listener_get_addr, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_sockets_dial, [:uint64, :string, :int64, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_sockets_listen, [:uint64, :string, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sn_fleet_claim_advance, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_leave, [:uint64, :uint64, :urnet_sn_fleet_device_leave_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_refresh, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
@@ -1491,6 +1563,7 @@ module URnetwork
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_device_settings, [], :pointer, blocking: true
+      attach_function :urnet_default_sidecar_settings, [], :pointer, blocking: true
       attach_function :urnet_default_sn_chain_settings, [], :pointer, blocking: true
       attach_function :urnet_default_transport_mode_priority, [:string], :int64, blocking: true
       attach_function :urnet_default_transport_settings, [], :pointer, blocking: true
@@ -1590,6 +1663,8 @@ module URnetwork
       attach_function :urnet_new_purchase_completed_event, [:string, :string, :string, :bool, :double, :string], :pointer, blocking: true
       attach_function :urnet_new_purchase_failed_event, [:string, :string, :string, :bool, :double, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_purchase_started_event, [:string, :string, :string, :bool, :double, :string], :pointer, blocking: true
+      attach_function :urnet_new_sidecar_local, [:uint64, :urnet_sidecar_key_store_delete_secret_cb, :urnet_sidecar_key_store_get_secret_cb, :urnet_sidecar_key_store_put_secret_cb, :pointer, :urnet_sidecar_presence_signer_get_attestation_cb, :urnet_sidecar_presence_signer_sign_with_presence_cb, :pointer, :string, :pointer], :uint64, blocking: true
+      attach_function :urnet_new_sidecar_remote, [:urnet_sidecar_presence_signer_get_attestation_cb, :urnet_sidecar_presence_signer_sign_with_presence_cb, :pointer, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_signup_optout_changed_event, [:bool], :pointer, blocking: true
       attach_function :urnet_new_sn_chain_settings, [], :pointer, blocking: true
       attach_function :urnet_new_sn_fleet_claim, [:uint64, :string, :urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb, :urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb, :urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb, :pointer], :uint64, blocking: true

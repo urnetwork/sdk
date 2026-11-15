@@ -11,6 +11,8 @@ import type {
   DeviceRemote,
   PlatformDeviceRemoteOptions,
   ExtensionDeviceRemoteOptions,
+  Sidecar,
+  SidecarRemoteOptions,
   LocationsViewControllerOptions,
   LocationsViewController,
   AccountHostOptions,
@@ -272,6 +274,27 @@ export class URNetwork {
       throw new Error(String(device.error));
     }
     return attachSubprotocolAPI(attachSocketAPI(device)) as DeviceRemote;
+  }
+
+  /**
+   * Open the extension's sidecar over a port to `ur native-host` (sidecar §18.5's js row): the desktop daemon's state
+   * and events, alarms-only, so it decides and revokes nothing.
+   */
+  createSidecarRemote(options: SidecarRemoteOptions): Sidecar {
+    const { URnetworkNewSidecarRemote } = getWasmGlobals();
+    if (typeof URnetworkNewSidecarRemote !== "function") {
+      throw new Error(
+        "URnetworkNewSidecarRemote is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    const sidecar = URnetworkNewSidecarRemote(options.port, null, options.settings ?? null);
+    if (!sidecar) {
+      throw new Error("Could not open the sidecar.");
+    }
+    if (sidecar.error) {
+      throw new Error(String(sidecar.error));
+    }
+    return sidecar as Sidecar;
   }
 
   /**

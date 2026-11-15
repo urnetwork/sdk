@@ -566,6 +566,84 @@ inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* SidecarAccessDeposit = "deposit";
+inline constexpr const char* SidecarAccessDial = "dial";
+inline constexpr const char* SidecarAccessReader = "reader";
+inline constexpr const char* SidecarAccessRequestsIncoming = "incoming";
+inline constexpr const char* SidecarAccessRequestsMine = "mine";
+inline constexpr const char* SidecarAccessTargetRepo = "repo";
+inline constexpr const char* SidecarAccessTargetSocket = "socket";
+inline constexpr const char* SidecarAccessTargetWorker = "worker";
+inline constexpr const char* SidecarAccessWriter = "writer";
+inline constexpr const char* SidecarApprovalKindAccessRequest = "access_request";
+inline constexpr const char* SidecarApprovalKindAdmission = "admission";
+inline constexpr const char* SidecarApprovalKindAdmissionAlarm = "admission_alarm";
+inline constexpr const char* SidecarApprovalKindAdmissionsNearCap = "admissions_near_cap";
+inline constexpr const char* SidecarApprovalKindRecoveryRebind = "recovery_rebind";
+inline constexpr const char* SidecarApprovalKindRecoveryUnseen = "recovery_unseen";
+inline constexpr const char* SidecarApprovalKindRecoveryWindow = "recovery_window";
+inline constexpr const char* SidecarApprovalKindRequest = "request";
+inline constexpr const char* SidecarApprovalKindRevocationProposal = "revocation_proposal";
+inline constexpr const char* SidecarBridgeAlarmForwardingRevoked = "forwarding_revoked";
+inline constexpr const char* SidecarCodeApprovalAuthority = "APPROVAL_AUTHORITY";
+inline constexpr const char* SidecarCodeApprovalDecided = "APPROVAL_DECIDED";
+inline constexpr const char* SidecarCodeApprovalNotEligible = "APPROVAL_NOT_ELIGIBLE";
+inline constexpr const char* SidecarCodeApprovalRefused = "APPROVAL_REFUSED";
+inline constexpr const char* SidecarCodeApprovalUnknown = "APPROVAL_UNKNOWN";
+inline constexpr const char* SidecarCodeFailedPrecondition = "FAILED_PRECONDITION";
+inline constexpr const char* SidecarCodeInvalidArgument = "INVALID_ARGUMENT";
+inline constexpr const char* SidecarCodeRevokeCancelled = "REVOKE_CANCELLED";
+inline constexpr const char* SidecarCodeRevokeNotCapable = "REVOKE_NOT_CAPABLE";
+inline constexpr const char* SidecarCodeRevokeNotOwn = "REVOKE_NOT_OWN";
+inline constexpr const char* SidecarCodeRevokeParksSelf = "REVOKE_PARKS_SELF";
+inline constexpr const char* SidecarCodeRevokeRefused = "REVOKE_REFUSED";
+inline constexpr const char* SidecarCodeRevokeSelf = "REVOKE_SELF";
+inline constexpr const char* SidecarCodeRevokeSince = "REVOKE_SINCE";
+inline constexpr const char* SidecarCodeRevokeStale = "REVOKE_STALE";
+inline constexpr const char* SidecarCodeUnavailable = "UNAVAILABLE";
+inline constexpr const char* SidecarComponentBridge = "bridge";
+inline constexpr const char* SidecarComponentEvs = "evs";
+inline constexpr const char* SidecarComponentMail = "mail";
+inline constexpr const char* SidecarComponentSockets = "sockets";
+inline constexpr const char* SidecarComponentTls = "tls";
+inline constexpr const char* SidecarDecisionApprove = "approve";
+inline constexpr const char* SidecarDecisionDeny = "deny";
+inline constexpr const char* SidecarDecisionRevoke = "revoke";
+inline constexpr const char* SidecarDeviceLive = "live";
+inline constexpr const char* SidecarDeviceParked = "parked";
+inline constexpr const char* SidecarDevicePending = "pending";
+inline constexpr const char* SidecarDeviceRevoked = "revoked";
+inline constexpr const char* SidecarDeviceStale = "stale";
+inline constexpr const char* SidecarDirectoryKindRepo = "repo";
+inline constexpr const char* SidecarDirectoryKindRun = "run";
+inline constexpr const char* SidecarDirectoryKindWorker = "worker";
+inline constexpr const char* SidecarDirectoryRequestsClosed = "closed";
+inline constexpr const char* SidecarDirectoryRequestsOpen = "open";
+inline constexpr const char* SidecarDirectoryRevokeHidden = "hidden";
+inline constexpr int64_t SidecarForwardKeyStoreFailed = 0;
+inline constexpr int64_t SidecarForwardKeyStoreLocked = 4;
+inline constexpr int64_t SidecarForwardKeyStoreOk = 1;
+inline constexpr int64_t SidecarForwardSecretAbsent = 3;
+inline constexpr int64_t SidecarForwardSecretFailed = 0;
+inline constexpr int64_t SidecarForwardSecretLocked = 4;
+inline constexpr int64_t SidecarForwardSecretPresent = 2;
+inline constexpr const char* SidecarHostClassAndroid = "android";
+inline constexpr const char* SidecarHostClassDesktop = "desktop";
+inline constexpr const char* SidecarHostClassIos = "ios";
+inline constexpr int64_t SidecarKeyStoreFailed = 0;
+inline constexpr int64_t SidecarKeyStoreLocked = 4;
+inline constexpr int64_t SidecarKeyStoreOk = 1;
+inline constexpr const char* SidecarPushPlatformApns = "apns";
+inline constexpr const char* SidecarPushPlatformFcm = "fcm";
+inline constexpr const char* SidecarReceiverCoverageForegroundOnly = "foreground-only";
+inline constexpr const char* SidecarReceiverCoverageIndexer = "indexer";
+inline constexpr const char* SidecarReceiverCoverageNone = "none";
+inline constexpr const char* SidecarRevokeCompromise = "compromise";
+inline constexpr const char* SidecarRevokeLost = "lost";
+inline constexpr int64_t SidecarSecretAbsent = 3;
+inline constexpr int64_t SidecarSecretFailed = 0;
+inline constexpr int64_t SidecarSecretLocked = 4;
+inline constexpr int64_t SidecarSecretPresent = 2;
 inline constexpr const char* SnAlphaSymbol = "SN25α";
 inline constexpr int64_t SnChainIdMainnet = 964;
 inline constexpr int64_t SnChainIdTestnet = 945;
@@ -799,6 +877,13 @@ class ReferralCodeViewController;
 class SessionLastUsed;
 class SessionOperationResult;
 class SessionSignOutResult;
+class Sidecar;
+class SidecarApprovals;
+class SidecarDirectory;
+class SidecarEvs;
+class SidecarMail;
+class SidecarSocketListener;
+class SidecarSockets;
 class SnFleetClaim;
 class SnFleetDevice;
 class Socket;
@@ -884,6 +969,9 @@ struct BlockActionOverride;
 struct BlockActionWindow;
 struct BlockStats;
 struct BlockedLocation;
+struct BridgeNetworkStatus;
+struct BridgeRoute;
+struct BridgeStatus;
 struct ByJwt;
 struct ChangeNetworkNameArgs;
 struct ChangeNetworkNameError;
@@ -1108,6 +1196,40 @@ struct SetPayoutWalletResult;
 struct SetPointsLeaderboardPublicArgs;
 struct SetPointsLeaderboardPublicError;
 struct SetPointsLeaderboardPublicResult;
+struct SidecarAccessDecision;
+struct SidecarAccessRequest;
+struct SidecarAlias;
+struct SidecarAnnouncement;
+struct SidecarCleanupList;
+struct SidecarApprovalItem;
+struct SidecarBurner;
+struct SidecarBytes;
+struct SidecarCleanupWorker;
+struct SidecarDevice;
+struct SidecarDirectoryCoverage;
+struct SidecarDirectoryField;
+struct SidecarDirectoryFilter;
+struct SidecarDirectoryPage;
+struct SidecarDirectoryService;
+struct SidecarDraft;
+struct SidecarErasure;
+struct SidecarErasures;
+struct SidecarEvent;
+struct SidecarHistory;
+struct SidecarHistoryVersion;
+struct SidecarOneTimeCode;
+struct SidecarOneTimeCodes;
+struct SidecarRepoAnnouncement;
+struct SidecarRepoChange;
+struct SidecarResult;
+struct SidecarRevokeItem;
+struct SidecarRevokePlan;
+struct SidecarSecret;
+struct SidecarSettings;
+struct SidecarUsedAt;
+struct SidecarUsedAtResult;
+struct SidecarVaultEntries;
+struct SidecarVaultEntry;
 struct SnClaimNowResult;
 struct SnClaimRelayAccount;
 struct SnClaimRelayClaimNowArgs;
@@ -1234,6 +1356,8 @@ using AccountWalletsList = std::vector<AccountWallet>;
 using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
+using BridgeNetworkStatusList = std::vector<BridgeNetworkStatus>;
+using BridgeRouteList = std::vector<BridgeRoute>;
 using ClientEventList = std::vector<ClientEvent>;
 using ClientEventRejectionList = std::vector<ClientEventRejection>;
 using ConnectLocationList = std::vector<ConnectLocation>;
@@ -1277,6 +1401,21 @@ using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
 using RegionalDnsServerList = std::vector<RegionalDnsServer>;
+using SidecarAccessDecisionList = std::vector<SidecarAccessDecision>;
+using SidecarAccessRequestList = std::vector<SidecarAccessRequest>;
+using SidecarAliasList = std::vector<SidecarAlias>;
+using SidecarAnnouncementList = std::vector<SidecarAnnouncement>;
+using SidecarApprovalList = std::vector<SidecarApprovalItem>;
+using SidecarCleanupWorkerList = std::vector<SidecarCleanupWorker>;
+using SidecarDeviceList = std::vector<SidecarDevice>;
+using SidecarDirectoryFieldList = std::vector<SidecarDirectoryField>;
+using SidecarDirectoryServiceList = std::vector<SidecarDirectoryService>;
+using SidecarErasureList = std::vector<SidecarErasure>;
+using SidecarHistoryVersionList = std::vector<SidecarHistoryVersion>;
+using SidecarOneTimeCodeList = std::vector<SidecarOneTimeCode>;
+using SidecarRevokeItemList = std::vector<SidecarRevokeItem>;
+using SidecarUsedAtList = std::vector<SidecarUsedAt>;
+using SidecarVaultEntryList = std::vector<SidecarVaultEntry>;
 using SnClaimRelayAccountList = std::vector<SnClaimRelayAccount>;
 using SnEpochClaimList = std::vector<SnEpochClaim>;
 using SnLedgerAccountList = std::vector<SnLedgerAccount>;
@@ -1569,6 +1708,7 @@ struct AuthNetworkClientArgs {
 	std::optional<std::string> locale;
 	std::optional<bool> provide_intent;
 	std::optional<bool> admin_refused;
+	std::optional<bool> acl_enforcing;
 };
 
 struct AuthNetworkClientError {
@@ -1634,6 +1774,7 @@ struct AuthNetworkClientResult {
 	std::optional<ProxyConfigResult> proxy_config_result;
 	std::optional<AuthNetworkClientError> error;
 	std::optional<bool> admin_refused;
+	std::optional<bool> acl_enforcing;
 };
 
 struct AuthPasswordResetArgs {
@@ -1889,6 +2030,45 @@ struct BlockedLocation {
 	std::string location_name{};
 	std::string location_type{};
 	std::string country_code{};
+};
+
+struct BridgeNetworkStatus {
+	std::optional<std::string> network_id;
+	std::optional<bool> hosting;
+	std::string posture{};
+	std::string key_set{};
+	std::optional<bool> lapsed;
+	std::optional<int64_t> forward_client_expires_millis;
+	std::optional<int64_t> tip_n;
+	std::optional<int64_t> compiled_n;
+	std::optional<StringList> alarms;
+	std::optional<int64_t> compile_count;
+	std::optional<int64_t> compile_error_count;
+	std::optional<int64_t> compile_refused_count;
+	std::optional<std::string> head_alarm;
+	std::optional<int64_t> head_alarm_millis;
+	std::optional<int64_t> head_alarm_n;
+	std::optional<int64_t> head_alarm_other_n;
+};
+
+struct BridgeRoute {
+	std::string prefix{};
+};
+
+struct BridgeStatus {
+	std::string state{};
+	std::optional<bool> has_document;
+	std::optional<int64_t> pin_n;
+	std::optional<std::string> block;
+	std::optional<StringList> addresses;
+	std::optional<int32_t> entry_count;
+	std::optional<int32_t> map_count;
+	std::optional<int32_t> served_count;
+	std::optional<int32_t> subject_count;
+	std::optional<int32_t> link_open_count;
+	std::optional<int32_t> link_building_count;
+	std::optional<int32_t> name_count;
+	std::optional<BridgeNetworkStatusList> networks;
 };
 
 struct ByJwt {
@@ -2347,6 +2527,7 @@ struct DeviceLocalSettings {
 	bool EnableRpc{};
 	bool DisableLogging{};
 	bool HostedIncompatible{};
+	std::string ForwardStateDir{};
 	bool UseExperimentalTunnelAddress{};
 };
 
@@ -3767,6 +3948,360 @@ struct SetPointsLeaderboardPublicResult {
 	std::optional<SetPointsLeaderboardPublicError> error;
 };
 
+struct SidecarAccessDecision {
+	std::optional<std::string> decider_sidecar_id;
+	std::string outcome{};
+	bool eligible{};
+	std::optional<int64_t> grant_expires_millis;
+	std::optional<SidecarDirectoryFieldList> untrusted_text;
+};
+
+struct SidecarAccessRequest {
+	std::string target_kind{};
+	std::optional<std::string> repo_id;
+	std::optional<std::string> worker_sidecar_id;
+	std::optional<IntList> tcp_ports;
+	std::optional<std::string> socket_token;
+	std::optional<std::string> access;
+	std::optional<int64_t> grant_expires_millis;
+	std::optional<int64_t> lifetime_millis;
+	std::optional<std::string> reason;
+	std::optional<std::string> announcement_id;
+	std::optional<std::string> request_id;
+	std::optional<std::string> requester_sidecar_id;
+	std::optional<std::string> state;
+	std::optional<std::string> subject_id;
+	std::optional<bool> subject_is_member;
+	std::optional<int64_t> not_after_millis;
+	std::optional<std::string> filed_by;
+	std::optional<std::string> endorsement;
+	std::optional<bool> tainted;
+	std::optional<bool> mine;
+	std::optional<bool> decidable;
+	std::optional<SidecarAccessDecisionList> decisions;
+	std::optional<SidecarDirectoryFieldList> untrusted_text;
+};
+
+struct SidecarAlias {
+	std::string address{};
+	std::string kind{};
+	std::optional<bool> known;
+};
+
+struct SidecarAnnouncement {
+	std::optional<std::string> announcement_id;
+	std::string kind{};
+	int64_t version{};
+	std::string display{};
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> member_id;
+	std::optional<bool> tainted;
+	std::optional<int64_t> renewed_millis;
+	std::optional<int64_t> expires_millis;
+	std::optional<std::string> run_id;
+	std::optional<std::string> repo_id;
+	std::optional<std::string> requests;
+	std::string identifier_trust{};
+	std::optional<SidecarDirectoryFieldList> identifiers;
+	std::optional<SidecarDirectoryServiceList> services;
+	std::optional<StringList> matches;
+	std::optional<SidecarDirectoryFieldList> untrusted_text;
+	std::optional<int32_t> untrusted_withheld;
+};
+
+struct SidecarCleanupList {
+	int32_t admission_count{};
+	int32_t admission_cap{};
+	std::optional<SidecarCleanupWorkerList> workers;
+	std::optional<bool> presence;
+};
+
+struct SidecarApprovalItem {
+	std::optional<std::string> approval_id;
+	std::string kind{};
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> member_id;
+	std::optional<std::string> proposal_id;
+	std::optional<int64_t> position;
+	std::optional<int64_t> raised_millis;
+	std::optional<std::string> safety_number;
+	std::optional<std::string> action;
+	std::optional<bool> template_;
+	std::optional<std::string> channel;
+	std::optional<std::string> text;
+	std::optional<std::string> refused;
+	std::optional<SidecarAccessRequest> access_request;
+	std::optional<SidecarCleanupList> cleanup;
+	std::optional<StringList> decisions;
+};
+
+struct SidecarBurner {
+	bool ok{};
+	std::optional<std::string> address;
+	std::optional<std::string> entry_id;
+	std::optional<std::string> coverage_copy;
+	std::optional<std::string> value;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarBytes {
+	bool ok{};
+	std::optional<std::string> data;
+	std::optional<int64_t> version;
+	std::optional<int64_t> commit_version;
+	std::optional<int64_t> time_millis;
+	std::optional<std::string> signer_sidecar_id;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarCleanupWorker {
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> member_id;
+	std::optional<int64_t> admitted_position;
+	std::optional<int64_t> admitted_millis;
+	std::optional<int64_t> last_change_millis;
+	int32_t signatures{};
+};
+
+struct SidecarDevice {
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> name;
+	std::optional<bool> this_;
+	std::optional<bool> read_only;
+	std::optional<bool> ephemeral;
+	std::string state{};
+	std::optional<int64_t> admitted_millis;
+	std::optional<int64_t> last_change_millis;
+};
+
+struct SidecarDirectoryCoverage {
+	bool complete{};
+	std::optional<std::string> waiting;
+	std::optional<IdList> fetched_sidecar_ids;
+	std::optional<IdList> left_sidecar_ids;
+	int64_t fetched_byte_count{};
+	int64_t metered_byte_count{};
+	int64_t left_byte_count{};
+};
+
+struct SidecarDirectoryField {
+	std::string name{};
+	std::string value{};
+};
+
+struct SidecarDirectoryFilter {
+	std::optional<std::string> kind;
+	std::optional<std::string> member_id;
+	std::optional<std::string> repo_id;
+	std::optional<bool> active_only;
+	std::optional<std::string> query;
+	std::optional<bool> include_private;
+	std::optional<bool> allow_metered;
+};
+
+struct SidecarDirectoryPage {
+	std::optional<SidecarAnnouncementList> announcements;
+	std::optional<SidecarDirectoryCoverage> coverage;
+	std::optional<int32_t> untrusted_withheld;
+	std::optional<std::string> message;
+};
+
+struct SidecarDirectoryService {
+	std::string kind{};
+	std::optional<std::string> name;
+};
+
+struct SidecarDraft {
+	std::string from{};
+	std::optional<StringList> to;
+	std::optional<StringList> cc;
+	std::optional<StringList> bcc;
+	std::optional<std::string> subject;
+	std::optional<std::string> body;
+};
+
+struct SidecarErasure {
+	std::optional<std::string> erasure_id;
+	std::string state{};
+	std::optional<int64_t> objects_left;
+	std::optional<int64_t> bytes_left;
+	std::optional<int64_t> next_try_millis;
+	std::optional<int64_t> finish_millis;
+};
+
+struct SidecarErasures {
+	bool ok{};
+	std::optional<SidecarErasureList> erasures;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarEvent {
+	std::string kind{};
+	int64_t generation{};
+	std::optional<std::string> state;
+	std::optional<std::string> reason;
+	std::optional<std::string> group_id;
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> repo_id;
+	std::optional<std::string> ref_id;
+	std::optional<std::string> path;
+	std::optional<std::string> drop_id;
+	std::optional<std::string> drop_state;
+	std::optional<int64_t> not_before_millis;
+	std::optional<std::string> search_alarm;
+	std::optional<std::string> request_id;
+	std::optional<std::string> outcome;
+	std::optional<std::string> send_id;
+	std::optional<std::string> approval_id;
+	std::optional<std::string> head_alarm;
+	std::optional<std::string> first_evidence;
+	std::optional<std::string> second_evidence;
+	std::optional<SidecarErasure> erasure;
+	std::optional<std::string> evs_alarm;
+	std::optional<std::string> evs_alarm_detail;
+	std::optional<int64_t> version;
+	std::optional<std::string> push_id;
+	std::optional<int64_t> count;
+	std::optional<int64_t> verified_since_millis;
+	std::optional<std::string> record_alarm;
+	std::optional<std::string> bridge_alarm;
+	std::optional<std::string> dns_alarm;
+	std::optional<std::string> ct_alarm;
+};
+
+struct SidecarHistory {
+	bool ok{};
+	std::optional<SidecarHistoryVersionList> versions;
+	std::optional<int64_t> head_version;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarHistoryVersion {
+	int64_t version{};
+	int64_t commit_version{};
+	std::optional<int64_t> time_millis;
+	std::optional<std::string> signer_sidecar_id;
+	std::optional<bool> removed;
+	std::string versioning{};
+	std::string state{};
+};
+
+struct SidecarOneTimeCode {
+	std::string code{};
+	std::string source{};
+	std::optional<std::string> entry_id;
+	std::optional<std::string> address;
+	std::optional<int64_t> time_millis;
+	std::optional<int64_t> expires_millis;
+};
+
+struct SidecarOneTimeCodes {
+	bool ok{};
+	std::optional<SidecarOneTimeCodeList> codes;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarRepoAnnouncement {
+	std::optional<std::string> display_name;
+	std::optional<std::string> description;
+	std::optional<StringList> topics;
+	std::optional<StringList> roles;
+	std::optional<std::string> requests;
+};
+
+struct SidecarRepoChange {
+	std::optional<std::string> repo_id;
+	std::optional<std::string> ref_id;
+	std::optional<int64_t> version;
+	std::optional<std::string> push_id;
+	std::optional<std::string> signer_sidecar_id;
+	std::optional<bool> gap;
+	std::optional<bool> path_epoch;
+};
+
+struct SidecarResult {
+	bool ok{};
+	std::optional<std::string> value;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarRevokeItem {
+	std::string effect{};
+	std::string kind{};
+	std::optional<std::string> name;
+	std::optional<std::string> id;
+	std::optional<int64_t> position;
+};
+
+struct SidecarRevokePlan {
+	std::optional<std::string> plan_id;
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> name;
+	std::optional<std::string> reason;
+	std::optional<int64_t> since_n;
+	std::optional<int64_t> since_millis;
+	std::optional<SidecarRevokeItemList> items;
+	std::optional<int32_t> signatures;
+	std::optional<bool> presence;
+	std::optional<std::string> code;
+	std::optional<int64_t> parks_self_position;
+	std::optional<std::string> message;
+};
+
+struct SidecarSecret {
+	int32_t status{};
+	std::optional<std::string> value_base64;
+};
+
+struct SidecarSettings {
+	std::optional<std::string> instance;
+	std::optional<std::string> state_dir;
+	std::optional<StringList> components;
+	std::optional<int64_t> memory_budget_byte_count;
+	std::optional<std::string> host_class;
+	std::optional<std::string> daemon_socket_dir;
+};
+
+struct SidecarUsedAt {
+	std::string registrable_domain{};
+	int64_t first_millis{};
+	int64_t last_millis{};
+};
+
+struct SidecarUsedAtResult {
+	bool ok{};
+	std::optional<SidecarUsedAtList> used_at;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarVaultEntries {
+	bool ok{};
+	std::optional<SidecarVaultEntryList> entries;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarVaultEntry {
+	std::optional<std::string> entry_id;
+	std::optional<std::string> address;
+	std::optional<std::string> title;
+	std::optional<std::string> username;
+	std::optional<std::string> password;
+	std::optional<StringList> urls;
+	std::optional<std::string> notes;
+	std::optional<bool> has_totp;
+	std::optional<int64_t> created_millis;
+	std::optional<int64_t> updated_millis;
+	std::string state{};
+};
+
 struct SnClaimNowResult {
 	bool requested{};
 	std::optional<std::string> reason;
@@ -4845,6 +5380,12 @@ inline void to_json(nlohmann::json& j, const BlockStats& v);
 inline void from_json(const nlohmann::json& j, BlockStats& v);
 inline void to_json(nlohmann::json& j, const BlockedLocation& v);
 inline void from_json(const nlohmann::json& j, BlockedLocation& v);
+inline void to_json(nlohmann::json& j, const BridgeNetworkStatus& v);
+inline void from_json(const nlohmann::json& j, BridgeNetworkStatus& v);
+inline void to_json(nlohmann::json& j, const BridgeRoute& v);
+inline void from_json(const nlohmann::json& j, BridgeRoute& v);
+inline void to_json(nlohmann::json& j, const BridgeStatus& v);
+inline void from_json(const nlohmann::json& j, BridgeStatus& v);
 inline void to_json(nlohmann::json& j, const ByJwt& v);
 inline void from_json(const nlohmann::json& j, ByJwt& v);
 inline void to_json(nlohmann::json& j, const ChangeNetworkNameArgs& v);
@@ -5293,6 +5834,74 @@ inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v)
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v);
 inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v);
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v);
+inline void to_json(nlohmann::json& j, const SidecarAccessDecision& v);
+inline void from_json(const nlohmann::json& j, SidecarAccessDecision& v);
+inline void to_json(nlohmann::json& j, const SidecarAccessRequest& v);
+inline void from_json(const nlohmann::json& j, SidecarAccessRequest& v);
+inline void to_json(nlohmann::json& j, const SidecarAlias& v);
+inline void from_json(const nlohmann::json& j, SidecarAlias& v);
+inline void to_json(nlohmann::json& j, const SidecarAnnouncement& v);
+inline void from_json(const nlohmann::json& j, SidecarAnnouncement& v);
+inline void to_json(nlohmann::json& j, const SidecarCleanupList& v);
+inline void from_json(const nlohmann::json& j, SidecarCleanupList& v);
+inline void to_json(nlohmann::json& j, const SidecarApprovalItem& v);
+inline void from_json(const nlohmann::json& j, SidecarApprovalItem& v);
+inline void to_json(nlohmann::json& j, const SidecarBurner& v);
+inline void from_json(const nlohmann::json& j, SidecarBurner& v);
+inline void to_json(nlohmann::json& j, const SidecarBytes& v);
+inline void from_json(const nlohmann::json& j, SidecarBytes& v);
+inline void to_json(nlohmann::json& j, const SidecarCleanupWorker& v);
+inline void from_json(const nlohmann::json& j, SidecarCleanupWorker& v);
+inline void to_json(nlohmann::json& j, const SidecarDevice& v);
+inline void from_json(const nlohmann::json& j, SidecarDevice& v);
+inline void to_json(nlohmann::json& j, const SidecarDirectoryCoverage& v);
+inline void from_json(const nlohmann::json& j, SidecarDirectoryCoverage& v);
+inline void to_json(nlohmann::json& j, const SidecarDirectoryField& v);
+inline void from_json(const nlohmann::json& j, SidecarDirectoryField& v);
+inline void to_json(nlohmann::json& j, const SidecarDirectoryFilter& v);
+inline void from_json(const nlohmann::json& j, SidecarDirectoryFilter& v);
+inline void to_json(nlohmann::json& j, const SidecarDirectoryPage& v);
+inline void from_json(const nlohmann::json& j, SidecarDirectoryPage& v);
+inline void to_json(nlohmann::json& j, const SidecarDirectoryService& v);
+inline void from_json(const nlohmann::json& j, SidecarDirectoryService& v);
+inline void to_json(nlohmann::json& j, const SidecarDraft& v);
+inline void from_json(const nlohmann::json& j, SidecarDraft& v);
+inline void to_json(nlohmann::json& j, const SidecarErasure& v);
+inline void from_json(const nlohmann::json& j, SidecarErasure& v);
+inline void to_json(nlohmann::json& j, const SidecarErasures& v);
+inline void from_json(const nlohmann::json& j, SidecarErasures& v);
+inline void to_json(nlohmann::json& j, const SidecarEvent& v);
+inline void from_json(const nlohmann::json& j, SidecarEvent& v);
+inline void to_json(nlohmann::json& j, const SidecarHistory& v);
+inline void from_json(const nlohmann::json& j, SidecarHistory& v);
+inline void to_json(nlohmann::json& j, const SidecarHistoryVersion& v);
+inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v);
+inline void to_json(nlohmann::json& j, const SidecarOneTimeCode& v);
+inline void from_json(const nlohmann::json& j, SidecarOneTimeCode& v);
+inline void to_json(nlohmann::json& j, const SidecarOneTimeCodes& v);
+inline void from_json(const nlohmann::json& j, SidecarOneTimeCodes& v);
+inline void to_json(nlohmann::json& j, const SidecarRepoAnnouncement& v);
+inline void from_json(const nlohmann::json& j, SidecarRepoAnnouncement& v);
+inline void to_json(nlohmann::json& j, const SidecarRepoChange& v);
+inline void from_json(const nlohmann::json& j, SidecarRepoChange& v);
+inline void to_json(nlohmann::json& j, const SidecarResult& v);
+inline void from_json(const nlohmann::json& j, SidecarResult& v);
+inline void to_json(nlohmann::json& j, const SidecarRevokeItem& v);
+inline void from_json(const nlohmann::json& j, SidecarRevokeItem& v);
+inline void to_json(nlohmann::json& j, const SidecarRevokePlan& v);
+inline void from_json(const nlohmann::json& j, SidecarRevokePlan& v);
+inline void to_json(nlohmann::json& j, const SidecarSecret& v);
+inline void from_json(const nlohmann::json& j, SidecarSecret& v);
+inline void to_json(nlohmann::json& j, const SidecarSettings& v);
+inline void from_json(const nlohmann::json& j, SidecarSettings& v);
+inline void to_json(nlohmann::json& j, const SidecarUsedAt& v);
+inline void from_json(const nlohmann::json& j, SidecarUsedAt& v);
+inline void to_json(nlohmann::json& j, const SidecarUsedAtResult& v);
+inline void from_json(const nlohmann::json& j, SidecarUsedAtResult& v);
+inline void to_json(nlohmann::json& j, const SidecarVaultEntries& v);
+inline void from_json(const nlohmann::json& j, SidecarVaultEntries& v);
+inline void to_json(nlohmann::json& j, const SidecarVaultEntry& v);
+inline void from_json(const nlohmann::json& j, SidecarVaultEntry& v);
 inline void to_json(nlohmann::json& j, const SnClaimNowResult& v);
 inline void from_json(const nlohmann::json& j, SnClaimNowResult& v);
 inline void to_json(nlohmann::json& j, const SnClaimRelayAccount& v);
@@ -6916,6 +7525,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientArgs& v) {
 	if (v.admin_refused) {
 		j["admin_refused"] = *v.admin_refused;
 	}
+	if (v.acl_enforcing) {
+		j["acl_enforcing"] = *v.acl_enforcing;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 	if (!j.is_object()) {
@@ -6971,6 +7583,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.admin_refused = std::move(tmp);
+	}
+	if (auto it = j.find("acl_enforcing"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.acl_enforcing = std::move(tmp);
 	}
 }
 
@@ -7316,6 +7933,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientResult& v) {
 	if (v.admin_refused) {
 		j["admin_refused"] = *v.admin_refused;
 	}
+	if (v.acl_enforcing) {
+		j["acl_enforcing"] = *v.acl_enforcing;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 	if (!j.is_object()) {
@@ -7345,6 +7965,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.admin_refused = std::move(tmp);
+	}
+	if (auto it = j.find("acl_enforcing"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.acl_enforcing = std::move(tmp);
 	}
 }
 
@@ -8466,6 +9091,257 @@ inline void from_json(const nlohmann::json& j, BlockedLocation& v) {
 	}
 	if (auto it = j.find("country_code"); it != j.end() && !it->is_null()) {
 		it->get_to(v.country_code);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BridgeNetworkStatus& v) {
+	j = nlohmann::json::object();
+	if (v.network_id) {
+		j["network_id"] = *v.network_id;
+	}
+	if (v.hosting) {
+		j["hosting"] = *v.hosting;
+	}
+	j["posture"] = v.posture;
+	j["key_set"] = v.key_set;
+	if (v.lapsed) {
+		j["lapsed"] = *v.lapsed;
+	}
+	if (v.forward_client_expires_millis) {
+		j["forward_client_expires_millis"] = *v.forward_client_expires_millis;
+	}
+	if (v.tip_n) {
+		j["tip_n"] = *v.tip_n;
+	}
+	if (v.compiled_n) {
+		j["compiled_n"] = *v.compiled_n;
+	}
+	if (v.alarms) {
+		j["alarms"] = *v.alarms;
+	}
+	if (v.compile_count) {
+		j["compile_count"] = *v.compile_count;
+	}
+	if (v.compile_error_count) {
+		j["compile_error_count"] = *v.compile_error_count;
+	}
+	if (v.compile_refused_count) {
+		j["compile_refused_count"] = *v.compile_refused_count;
+	}
+	if (v.head_alarm) {
+		j["head_alarm"] = *v.head_alarm;
+	}
+	if (v.head_alarm_millis) {
+		j["head_alarm_millis"] = *v.head_alarm_millis;
+	}
+	if (v.head_alarm_n) {
+		j["head_alarm_n"] = *v.head_alarm_n;
+	}
+	if (v.head_alarm_other_n) {
+		j["head_alarm_other_n"] = *v.head_alarm_other_n;
+	}
+}
+inline void from_json(const nlohmann::json& j, BridgeNetworkStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("network_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network_id = std::move(tmp);
+	}
+	if (auto it = j.find("hosting"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.hosting = std::move(tmp);
+	}
+	if (auto it = j.find("posture"); it != j.end() && !it->is_null()) {
+		it->get_to(v.posture);
+	}
+	if (auto it = j.find("key_set"); it != j.end() && !it->is_null()) {
+		it->get_to(v.key_set);
+	}
+	if (auto it = j.find("lapsed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.lapsed = std::move(tmp);
+	}
+	if (auto it = j.find("forward_client_expires_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.forward_client_expires_millis = std::move(tmp);
+	}
+	if (auto it = j.find("tip_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.tip_n = std::move(tmp);
+	}
+	if (auto it = j.find("compiled_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.compiled_n = std::move(tmp);
+	}
+	if (auto it = j.find("alarms"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.alarms = std::move(tmp);
+	}
+	if (auto it = j.find("compile_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.compile_count = std::move(tmp);
+	}
+	if (auto it = j.find("compile_error_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.compile_error_count = std::move(tmp);
+	}
+	if (auto it = j.find("compile_refused_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.compile_refused_count = std::move(tmp);
+	}
+	if (auto it = j.find("head_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.head_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("head_alarm_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.head_alarm_millis = std::move(tmp);
+	}
+	if (auto it = j.find("head_alarm_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.head_alarm_n = std::move(tmp);
+	}
+	if (auto it = j.find("head_alarm_other_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.head_alarm_other_n = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BridgeRoute& v) {
+	j = nlohmann::json::object();
+	j["prefix"] = v.prefix;
+}
+inline void from_json(const nlohmann::json& j, BridgeRoute& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("prefix"); it != j.end() && !it->is_null()) {
+		it->get_to(v.prefix);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BridgeStatus& v) {
+	j = nlohmann::json::object();
+	j["state"] = v.state;
+	if (v.has_document) {
+		j["has_document"] = *v.has_document;
+	}
+	if (v.pin_n) {
+		j["pin_n"] = *v.pin_n;
+	}
+	if (v.block) {
+		j["block"] = *v.block;
+	}
+	if (v.addresses) {
+		j["addresses"] = *v.addresses;
+	}
+	if (v.entry_count) {
+		j["entry_count"] = *v.entry_count;
+	}
+	if (v.map_count) {
+		j["map_count"] = *v.map_count;
+	}
+	if (v.served_count) {
+		j["served_count"] = *v.served_count;
+	}
+	if (v.subject_count) {
+		j["subject_count"] = *v.subject_count;
+	}
+	if (v.link_open_count) {
+		j["link_open_count"] = *v.link_open_count;
+	}
+	if (v.link_building_count) {
+		j["link_building_count"] = *v.link_building_count;
+	}
+	if (v.name_count) {
+		j["name_count"] = *v.name_count;
+	}
+	if (v.networks) {
+		j["networks"] = *v.networks;
+	}
+}
+inline void from_json(const nlohmann::json& j, BridgeStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("has_document"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.has_document = std::move(tmp);
+	}
+	if (auto it = j.find("pin_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.pin_n = std::move(tmp);
+	}
+	if (auto it = j.find("block"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.block = std::move(tmp);
+	}
+	if (auto it = j.find("addresses"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.addresses = std::move(tmp);
+	}
+	if (auto it = j.find("entry_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.entry_count = std::move(tmp);
+	}
+	if (auto it = j.find("map_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.map_count = std::move(tmp);
+	}
+	if (auto it = j.find("served_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.served_count = std::move(tmp);
+	}
+	if (auto it = j.find("subject_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.subject_count = std::move(tmp);
+	}
+	if (auto it = j.find("link_open_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.link_open_count = std::move(tmp);
+	}
+	if (auto it = j.find("link_building_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.link_building_count = std::move(tmp);
+	}
+	if (auto it = j.find("name_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.name_count = std::move(tmp);
+	}
+	if (auto it = j.find("networks"); it != j.end() && !it->is_null()) {
+		BridgeNetworkStatusList tmp{};
+		it->get_to(tmp);
+		v.networks = std::move(tmp);
 	}
 }
 
@@ -10336,6 +11212,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["EnableRpc"] = v.EnableRpc;
 	j["DisableLogging"] = v.DisableLogging;
 	j["HostedIncompatible"] = v.HostedIncompatible;
+	j["ForwardStateDir"] = v.ForwardStateDir;
 	j["UseExperimentalTunnelAddress"] = v.UseExperimentalTunnelAddress;
 }
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
@@ -10479,6 +11356,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("HostedIncompatible"); it != j.end() && !it->is_null()) {
 		it->get_to(v.HostedIncompatible);
+	}
+	if (auto it = j.find("ForwardStateDir"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ForwardStateDir);
 	}
 	if (auto it = j.find("UseExperimentalTunnelAddress"); it != j.end() && !it->is_null()) {
 		it->get_to(v.UseExperimentalTunnelAddress);
@@ -16985,6 +17865,2144 @@ inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult&
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarAccessDecision& v) {
+	j = nlohmann::json::object();
+	if (v.decider_sidecar_id) {
+		j["decider_sidecar_id"] = *v.decider_sidecar_id;
+	}
+	j["outcome"] = v.outcome;
+	j["eligible"] = v.eligible;
+	if (v.grant_expires_millis) {
+		j["grant_expires_millis"] = *v.grant_expires_millis;
+	}
+	if (v.untrusted_text) {
+		j["untrusted_text"] = *v.untrusted_text;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarAccessDecision& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("decider_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.decider_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("outcome"); it != j.end() && !it->is_null()) {
+		it->get_to(v.outcome);
+	}
+	if (auto it = j.find("eligible"); it != j.end() && !it->is_null()) {
+		it->get_to(v.eligible);
+	}
+	if (auto it = j.find("grant_expires_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.grant_expires_millis = std::move(tmp);
+	}
+	if (auto it = j.find("untrusted_text"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryFieldList tmp{};
+		it->get_to(tmp);
+		v.untrusted_text = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarAccessRequest& v) {
+	j = nlohmann::json::object();
+	j["target_kind"] = v.target_kind;
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	if (v.worker_sidecar_id) {
+		j["worker_sidecar_id"] = *v.worker_sidecar_id;
+	}
+	if (v.tcp_ports) {
+		j["tcp_ports"] = *v.tcp_ports;
+	}
+	if (v.socket_token) {
+		j["socket_token"] = *v.socket_token;
+	}
+	if (v.access) {
+		j["access"] = *v.access;
+	}
+	if (v.grant_expires_millis) {
+		j["grant_expires_millis"] = *v.grant_expires_millis;
+	}
+	if (v.lifetime_millis) {
+		j["lifetime_millis"] = *v.lifetime_millis;
+	}
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.announcement_id) {
+		j["announcement_id"] = *v.announcement_id;
+	}
+	if (v.request_id) {
+		j["request_id"] = *v.request_id;
+	}
+	if (v.requester_sidecar_id) {
+		j["requester_sidecar_id"] = *v.requester_sidecar_id;
+	}
+	if (v.state) {
+		j["state"] = *v.state;
+	}
+	if (v.subject_id) {
+		j["subject_id"] = *v.subject_id;
+	}
+	if (v.subject_is_member) {
+		j["subject_is_member"] = *v.subject_is_member;
+	}
+	if (v.not_after_millis) {
+		j["not_after_millis"] = *v.not_after_millis;
+	}
+	if (v.filed_by) {
+		j["filed_by"] = *v.filed_by;
+	}
+	if (v.endorsement) {
+		j["endorsement"] = *v.endorsement;
+	}
+	if (v.tainted) {
+		j["tainted"] = *v.tainted;
+	}
+	if (v.mine) {
+		j["mine"] = *v.mine;
+	}
+	if (v.decidable) {
+		j["decidable"] = *v.decidable;
+	}
+	if (v.decisions) {
+		j["decisions"] = *v.decisions;
+	}
+	if (v.untrusted_text) {
+		j["untrusted_text"] = *v.untrusted_text;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarAccessRequest& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("target_kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.target_kind);
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("worker_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.worker_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("tcp_ports"); it != j.end() && !it->is_null()) {
+		IntList tmp{};
+		it->get_to(tmp);
+		v.tcp_ports = std::move(tmp);
+	}
+	if (auto it = j.find("socket_token"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.socket_token = std::move(tmp);
+	}
+	if (auto it = j.find("access"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.access = std::move(tmp);
+	}
+	if (auto it = j.find("grant_expires_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.grant_expires_millis = std::move(tmp);
+	}
+	if (auto it = j.find("lifetime_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.lifetime_millis = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("announcement_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.announcement_id = std::move(tmp);
+	}
+	if (auto it = j.find("request_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.request_id = std::move(tmp);
+	}
+	if (auto it = j.find("requester_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.requester_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state = std::move(tmp);
+	}
+	if (auto it = j.find("subject_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.subject_id = std::move(tmp);
+	}
+	if (auto it = j.find("subject_is_member"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.subject_is_member = std::move(tmp);
+	}
+	if (auto it = j.find("not_after_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.not_after_millis = std::move(tmp);
+	}
+	if (auto it = j.find("filed_by"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.filed_by = std::move(tmp);
+	}
+	if (auto it = j.find("endorsement"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.endorsement = std::move(tmp);
+	}
+	if (auto it = j.find("tainted"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.tainted = std::move(tmp);
+	}
+	if (auto it = j.find("mine"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.mine = std::move(tmp);
+	}
+	if (auto it = j.find("decidable"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.decidable = std::move(tmp);
+	}
+	if (auto it = j.find("decisions"); it != j.end() && !it->is_null()) {
+		SidecarAccessDecisionList tmp{};
+		it->get_to(tmp);
+		v.decisions = std::move(tmp);
+	}
+	if (auto it = j.find("untrusted_text"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryFieldList tmp{};
+		it->get_to(tmp);
+		v.untrusted_text = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarAlias& v) {
+	j = nlohmann::json::object();
+	j["address"] = v.address;
+	j["kind"] = v.kind;
+	if (v.known) {
+		j["known"] = *v.known;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarAlias& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.address);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("known"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.known = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarAnnouncement& v) {
+	j = nlohmann::json::object();
+	if (v.announcement_id) {
+		j["announcement_id"] = *v.announcement_id;
+	}
+	j["kind"] = v.kind;
+	j["version"] = v.version;
+	j["display"] = v.display;
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	if (v.tainted) {
+		j["tainted"] = *v.tainted;
+	}
+	if (v.renewed_millis) {
+		j["renewed_millis"] = *v.renewed_millis;
+	}
+	if (v.expires_millis) {
+		j["expires_millis"] = *v.expires_millis;
+	}
+	if (v.run_id) {
+		j["run_id"] = *v.run_id;
+	}
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	if (v.requests) {
+		j["requests"] = *v.requests;
+	}
+	j["identifier_trust"] = v.identifier_trust;
+	if (v.identifiers) {
+		j["identifiers"] = *v.identifiers;
+	}
+	if (v.services) {
+		j["services"] = *v.services;
+	}
+	if (v.matches) {
+		j["matches"] = *v.matches;
+	}
+	if (v.untrusted_text) {
+		j["untrusted_text"] = *v.untrusted_text;
+	}
+	if (v.untrusted_withheld) {
+		j["untrusted_withheld"] = *v.untrusted_withheld;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarAnnouncement& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("announcement_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.announcement_id = std::move(tmp);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.version);
+	}
+	if (auto it = j.find("display"); it != j.end() && !it->is_null()) {
+		it->get_to(v.display);
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("tainted"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.tainted = std::move(tmp);
+	}
+	if (auto it = j.find("renewed_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.renewed_millis = std::move(tmp);
+	}
+	if (auto it = j.find("expires_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_millis = std::move(tmp);
+	}
+	if (auto it = j.find("run_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.run_id = std::move(tmp);
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("requests"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.requests = std::move(tmp);
+	}
+	if (auto it = j.find("identifier_trust"); it != j.end() && !it->is_null()) {
+		it->get_to(v.identifier_trust);
+	}
+	if (auto it = j.find("identifiers"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryFieldList tmp{};
+		it->get_to(tmp);
+		v.identifiers = std::move(tmp);
+	}
+	if (auto it = j.find("services"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryServiceList tmp{};
+		it->get_to(tmp);
+		v.services = std::move(tmp);
+	}
+	if (auto it = j.find("matches"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.matches = std::move(tmp);
+	}
+	if (auto it = j.find("untrusted_text"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryFieldList tmp{};
+		it->get_to(tmp);
+		v.untrusted_text = std::move(tmp);
+	}
+	if (auto it = j.find("untrusted_withheld"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.untrusted_withheld = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarCleanupList& v) {
+	j = nlohmann::json::object();
+	j["admission_count"] = v.admission_count;
+	j["admission_cap"] = v.admission_cap;
+	if (v.workers) {
+		j["workers"] = *v.workers;
+	}
+	if (v.presence) {
+		j["presence"] = *v.presence;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarCleanupList& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("admission_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.admission_count);
+	}
+	if (auto it = j.find("admission_cap"); it != j.end() && !it->is_null()) {
+		it->get_to(v.admission_cap);
+	}
+	if (auto it = j.find("workers"); it != j.end() && !it->is_null()) {
+		SidecarCleanupWorkerList tmp{};
+		it->get_to(tmp);
+		v.workers = std::move(tmp);
+	}
+	if (auto it = j.find("presence"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.presence = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarApprovalItem& v) {
+	j = nlohmann::json::object();
+	if (v.approval_id) {
+		j["approval_id"] = *v.approval_id;
+	}
+	j["kind"] = v.kind;
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	if (v.proposal_id) {
+		j["proposal_id"] = *v.proposal_id;
+	}
+	if (v.position) {
+		j["position"] = *v.position;
+	}
+	if (v.raised_millis) {
+		j["raised_millis"] = *v.raised_millis;
+	}
+	if (v.safety_number) {
+		j["safety_number"] = *v.safety_number;
+	}
+	if (v.action) {
+		j["action"] = *v.action;
+	}
+	if (v.template_) {
+		j["template"] = *v.template_;
+	}
+	if (v.channel) {
+		j["channel"] = *v.channel;
+	}
+	if (v.text) {
+		j["text"] = *v.text;
+	}
+	if (v.refused) {
+		j["refused"] = *v.refused;
+	}
+	if (v.access_request) {
+		j["access_request"] = *v.access_request;
+	}
+	if (v.cleanup) {
+		j["cleanup"] = *v.cleanup;
+	}
+	if (v.decisions) {
+		j["decisions"] = *v.decisions;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarApprovalItem& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("approval_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.approval_id = std::move(tmp);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("proposal_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.proposal_id = std::move(tmp);
+	}
+	if (auto it = j.find("position"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.position = std::move(tmp);
+	}
+	if (auto it = j.find("raised_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.raised_millis = std::move(tmp);
+	}
+	if (auto it = j.find("safety_number"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.safety_number = std::move(tmp);
+	}
+	if (auto it = j.find("action"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.action = std::move(tmp);
+	}
+	if (auto it = j.find("template"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.template_ = std::move(tmp);
+	}
+	if (auto it = j.find("channel"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.channel = std::move(tmp);
+	}
+	if (auto it = j.find("text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.text = std::move(tmp);
+	}
+	if (auto it = j.find("refused"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.refused = std::move(tmp);
+	}
+	if (auto it = j.find("access_request"); it != j.end() && !it->is_null()) {
+		SidecarAccessRequest tmp{};
+		it->get_to(tmp);
+		v.access_request = std::move(tmp);
+	}
+	if (auto it = j.find("cleanup"); it != j.end() && !it->is_null()) {
+		SidecarCleanupList tmp{};
+		it->get_to(tmp);
+		v.cleanup = std::move(tmp);
+	}
+	if (auto it = j.find("decisions"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.decisions = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarBurner& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.entry_id) {
+		j["entry_id"] = *v.entry_id;
+	}
+	if (v.coverage_copy) {
+		j["coverage_copy"] = *v.coverage_copy;
+	}
+	if (v.value) {
+		j["value"] = *v.value;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarBurner& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("entry_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.entry_id = std::move(tmp);
+	}
+	if (auto it = j.find("coverage_copy"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coverage_copy = std::move(tmp);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.value = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarBytes& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.data) {
+		j["data"] = *v.data;
+	}
+	if (v.version) {
+		j["version"] = *v.version;
+	}
+	if (v.commit_version) {
+		j["commit_version"] = *v.commit_version;
+	}
+	if (v.time_millis) {
+		j["time_millis"] = *v.time_millis;
+	}
+	if (v.signer_sidecar_id) {
+		j["signer_sidecar_id"] = *v.signer_sidecar_id;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarBytes& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("data"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.data = std::move(tmp);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.version = std::move(tmp);
+	}
+	if (auto it = j.find("commit_version"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.commit_version = std::move(tmp);
+	}
+	if (auto it = j.find("time_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.time_millis = std::move(tmp);
+	}
+	if (auto it = j.find("signer_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.signer_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarCleanupWorker& v) {
+	j = nlohmann::json::object();
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	if (v.admitted_position) {
+		j["admitted_position"] = *v.admitted_position;
+	}
+	if (v.admitted_millis) {
+		j["admitted_millis"] = *v.admitted_millis;
+	}
+	if (v.last_change_millis) {
+		j["last_change_millis"] = *v.last_change_millis;
+	}
+	j["signatures"] = v.signatures;
+}
+inline void from_json(const nlohmann::json& j, SidecarCleanupWorker& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("admitted_position"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.admitted_position = std::move(tmp);
+	}
+	if (auto it = j.find("admitted_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.admitted_millis = std::move(tmp);
+	}
+	if (auto it = j.find("last_change_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.last_change_millis = std::move(tmp);
+	}
+	if (auto it = j.find("signatures"); it != j.end() && !it->is_null()) {
+		it->get_to(v.signatures);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDevice& v) {
+	j = nlohmann::json::object();
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.this_) {
+		j["this"] = *v.this_;
+	}
+	if (v.read_only) {
+		j["read_only"] = *v.read_only;
+	}
+	if (v.ephemeral) {
+		j["ephemeral"] = *v.ephemeral;
+	}
+	j["state"] = v.state;
+	if (v.admitted_millis) {
+		j["admitted_millis"] = *v.admitted_millis;
+	}
+	if (v.last_change_millis) {
+		j["last_change_millis"] = *v.last_change_millis;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDevice& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("this"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.this_ = std::move(tmp);
+	}
+	if (auto it = j.find("read_only"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.read_only = std::move(tmp);
+	}
+	if (auto it = j.find("ephemeral"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.ephemeral = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("admitted_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.admitted_millis = std::move(tmp);
+	}
+	if (auto it = j.find("last_change_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.last_change_millis = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDirectoryCoverage& v) {
+	j = nlohmann::json::object();
+	j["complete"] = v.complete;
+	if (v.waiting) {
+		j["waiting"] = *v.waiting;
+	}
+	if (v.fetched_sidecar_ids) {
+		j["fetched_sidecar_ids"] = *v.fetched_sidecar_ids;
+	}
+	if (v.left_sidecar_ids) {
+		j["left_sidecar_ids"] = *v.left_sidecar_ids;
+	}
+	j["fetched_byte_count"] = v.fetched_byte_count;
+	j["metered_byte_count"] = v.metered_byte_count;
+	j["left_byte_count"] = v.left_byte_count;
+}
+inline void from_json(const nlohmann::json& j, SidecarDirectoryCoverage& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("complete"); it != j.end() && !it->is_null()) {
+		it->get_to(v.complete);
+	}
+	if (auto it = j.find("waiting"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.waiting = std::move(tmp);
+	}
+	if (auto it = j.find("fetched_sidecar_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.fetched_sidecar_ids = std::move(tmp);
+	}
+	if (auto it = j.find("left_sidecar_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.left_sidecar_ids = std::move(tmp);
+	}
+	if (auto it = j.find("fetched_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.fetched_byte_count);
+	}
+	if (auto it = j.find("metered_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.metered_byte_count);
+	}
+	if (auto it = j.find("left_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.left_byte_count);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDirectoryField& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	j["value"] = v.value;
+}
+inline void from_json(const nlohmann::json& j, SidecarDirectoryField& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDirectoryFilter& v) {
+	j = nlohmann::json::object();
+	if (v.kind) {
+		j["kind"] = *v.kind;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	if (v.active_only) {
+		j["active_only"] = *v.active_only;
+	}
+	if (v.query) {
+		j["query"] = *v.query;
+	}
+	if (v.include_private) {
+		j["include_private"] = *v.include_private;
+	}
+	if (v.allow_metered) {
+		j["allow_metered"] = *v.allow_metered;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDirectoryFilter& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.kind = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("active_only"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.active_only = std::move(tmp);
+	}
+	if (auto it = j.find("query"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.query = std::move(tmp);
+	}
+	if (auto it = j.find("include_private"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.include_private = std::move(tmp);
+	}
+	if (auto it = j.find("allow_metered"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.allow_metered = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDirectoryPage& v) {
+	j = nlohmann::json::object();
+	if (v.announcements) {
+		j["announcements"] = *v.announcements;
+	}
+	if (v.coverage) {
+		j["coverage"] = *v.coverage;
+	}
+	if (v.untrusted_withheld) {
+		j["untrusted_withheld"] = *v.untrusted_withheld;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDirectoryPage& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("announcements"); it != j.end() && !it->is_null()) {
+		SidecarAnnouncementList tmp{};
+		it->get_to(tmp);
+		v.announcements = std::move(tmp);
+	}
+	if (auto it = j.find("coverage"); it != j.end() && !it->is_null()) {
+		SidecarDirectoryCoverage tmp{};
+		it->get_to(tmp);
+		v.coverage = std::move(tmp);
+	}
+	if (auto it = j.find("untrusted_withheld"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.untrusted_withheld = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDirectoryService& v) {
+	j = nlohmann::json::object();
+	j["kind"] = v.kind;
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDirectoryService& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDraft& v) {
+	j = nlohmann::json::object();
+	j["from"] = v.from;
+	if (v.to) {
+		j["to"] = *v.to;
+	}
+	if (v.cc) {
+		j["cc"] = *v.cc;
+	}
+	if (v.bcc) {
+		j["bcc"] = *v.bcc;
+	}
+	if (v.subject) {
+		j["subject"] = *v.subject;
+	}
+	if (v.body) {
+		j["body"] = *v.body;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDraft& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("from"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from);
+	}
+	if (auto it = j.find("to"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.to = std::move(tmp);
+	}
+	if (auto it = j.find("cc"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.cc = std::move(tmp);
+	}
+	if (auto it = j.find("bcc"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.bcc = std::move(tmp);
+	}
+	if (auto it = j.find("subject"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.subject = std::move(tmp);
+	}
+	if (auto it = j.find("body"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.body = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarErasure& v) {
+	j = nlohmann::json::object();
+	if (v.erasure_id) {
+		j["erasure_id"] = *v.erasure_id;
+	}
+	j["state"] = v.state;
+	if (v.objects_left) {
+		j["objects_left"] = *v.objects_left;
+	}
+	if (v.bytes_left) {
+		j["bytes_left"] = *v.bytes_left;
+	}
+	if (v.next_try_millis) {
+		j["next_try_millis"] = *v.next_try_millis;
+	}
+	if (v.finish_millis) {
+		j["finish_millis"] = *v.finish_millis;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarErasure& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("erasure_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.erasure_id = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("objects_left"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.objects_left = std::move(tmp);
+	}
+	if (auto it = j.find("bytes_left"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.bytes_left = std::move(tmp);
+	}
+	if (auto it = j.find("next_try_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.next_try_millis = std::move(tmp);
+	}
+	if (auto it = j.find("finish_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.finish_millis = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarErasures& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.erasures) {
+		j["erasures"] = *v.erasures;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarErasures& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("erasures"); it != j.end() && !it->is_null()) {
+		SidecarErasureList tmp{};
+		it->get_to(tmp);
+		v.erasures = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarEvent& v) {
+	j = nlohmann::json::object();
+	j["kind"] = v.kind;
+	j["generation"] = v.generation;
+	if (v.state) {
+		j["state"] = *v.state;
+	}
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.group_id) {
+		j["group_id"] = *v.group_id;
+	}
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	if (v.ref_id) {
+		j["ref_id"] = *v.ref_id;
+	}
+	if (v.path) {
+		j["path"] = *v.path;
+	}
+	if (v.drop_id) {
+		j["drop_id"] = *v.drop_id;
+	}
+	if (v.drop_state) {
+		j["drop_state"] = *v.drop_state;
+	}
+	if (v.not_before_millis) {
+		j["not_before_millis"] = *v.not_before_millis;
+	}
+	if (v.search_alarm) {
+		j["search_alarm"] = *v.search_alarm;
+	}
+	if (v.request_id) {
+		j["request_id"] = *v.request_id;
+	}
+	if (v.outcome) {
+		j["outcome"] = *v.outcome;
+	}
+	if (v.send_id) {
+		j["send_id"] = *v.send_id;
+	}
+	if (v.approval_id) {
+		j["approval_id"] = *v.approval_id;
+	}
+	if (v.head_alarm) {
+		j["head_alarm"] = *v.head_alarm;
+	}
+	if (v.first_evidence) {
+		j["first_evidence"] = *v.first_evidence;
+	}
+	if (v.second_evidence) {
+		j["second_evidence"] = *v.second_evidence;
+	}
+	if (v.erasure) {
+		j["erasure"] = *v.erasure;
+	}
+	if (v.evs_alarm) {
+		j["evs_alarm"] = *v.evs_alarm;
+	}
+	if (v.evs_alarm_detail) {
+		j["evs_alarm_detail"] = *v.evs_alarm_detail;
+	}
+	if (v.version) {
+		j["version"] = *v.version;
+	}
+	if (v.push_id) {
+		j["push_id"] = *v.push_id;
+	}
+	if (v.count) {
+		j["count"] = *v.count;
+	}
+	if (v.verified_since_millis) {
+		j["verified_since_millis"] = *v.verified_since_millis;
+	}
+	if (v.record_alarm) {
+		j["record_alarm"] = *v.record_alarm;
+	}
+	if (v.bridge_alarm) {
+		j["bridge_alarm"] = *v.bridge_alarm;
+	}
+	if (v.dns_alarm) {
+		j["dns_alarm"] = *v.dns_alarm;
+	}
+	if (v.ct_alarm) {
+		j["ct_alarm"] = *v.ct_alarm;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("generation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.generation);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("group_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.group_id = std::move(tmp);
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("ref_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ref_id = std::move(tmp);
+	}
+	if (auto it = j.find("path"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.path = std::move(tmp);
+	}
+	if (auto it = j.find("drop_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.drop_id = std::move(tmp);
+	}
+	if (auto it = j.find("drop_state"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.drop_state = std::move(tmp);
+	}
+	if (auto it = j.find("not_before_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.not_before_millis = std::move(tmp);
+	}
+	if (auto it = j.find("search_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.search_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("request_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.request_id = std::move(tmp);
+	}
+	if (auto it = j.find("outcome"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.outcome = std::move(tmp);
+	}
+	if (auto it = j.find("send_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.send_id = std::move(tmp);
+	}
+	if (auto it = j.find("approval_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.approval_id = std::move(tmp);
+	}
+	if (auto it = j.find("head_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.head_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("first_evidence"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.first_evidence = std::move(tmp);
+	}
+	if (auto it = j.find("second_evidence"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.second_evidence = std::move(tmp);
+	}
+	if (auto it = j.find("erasure"); it != j.end() && !it->is_null()) {
+		SidecarErasure tmp{};
+		it->get_to(tmp);
+		v.erasure = std::move(tmp);
+	}
+	if (auto it = j.find("evs_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.evs_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("evs_alarm_detail"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.evs_alarm_detail = std::move(tmp);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.version = std::move(tmp);
+	}
+	if (auto it = j.find("push_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.push_id = std::move(tmp);
+	}
+	if (auto it = j.find("count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.count = std::move(tmp);
+	}
+	if (auto it = j.find("verified_since_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.verified_since_millis = std::move(tmp);
+	}
+	if (auto it = j.find("record_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.record_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("bridge_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.bridge_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("dns_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.dns_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("ct_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ct_alarm = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarHistory& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.versions) {
+		j["versions"] = *v.versions;
+	}
+	if (v.head_version) {
+		j["head_version"] = *v.head_version;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarHistory& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("versions"); it != j.end() && !it->is_null()) {
+		SidecarHistoryVersionList tmp{};
+		it->get_to(tmp);
+		v.versions = std::move(tmp);
+	}
+	if (auto it = j.find("head_version"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.head_version = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarHistoryVersion& v) {
+	j = nlohmann::json::object();
+	j["version"] = v.version;
+	j["commit_version"] = v.commit_version;
+	if (v.time_millis) {
+		j["time_millis"] = *v.time_millis;
+	}
+	if (v.signer_sidecar_id) {
+		j["signer_sidecar_id"] = *v.signer_sidecar_id;
+	}
+	if (v.removed) {
+		j["removed"] = *v.removed;
+	}
+	j["versioning"] = v.versioning;
+	j["state"] = v.state;
+}
+inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.version);
+	}
+	if (auto it = j.find("commit_version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.commit_version);
+	}
+	if (auto it = j.find("time_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.time_millis = std::move(tmp);
+	}
+	if (auto it = j.find("signer_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.signer_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("removed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.removed = std::move(tmp);
+	}
+	if (auto it = j.find("versioning"); it != j.end() && !it->is_null()) {
+		it->get_to(v.versioning);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarOneTimeCode& v) {
+	j = nlohmann::json::object();
+	j["code"] = v.code;
+	j["source"] = v.source;
+	if (v.entry_id) {
+		j["entry_id"] = *v.entry_id;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.time_millis) {
+		j["time_millis"] = *v.time_millis;
+	}
+	if (v.expires_millis) {
+		j["expires_millis"] = *v.expires_millis;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarOneTimeCode& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.code);
+	}
+	if (auto it = j.find("source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.source);
+	}
+	if (auto it = j.find("entry_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.entry_id = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("time_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.time_millis = std::move(tmp);
+	}
+	if (auto it = j.find("expires_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_millis = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarOneTimeCodes& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.codes) {
+		j["codes"] = *v.codes;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarOneTimeCodes& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("codes"); it != j.end() && !it->is_null()) {
+		SidecarOneTimeCodeList tmp{};
+		it->get_to(tmp);
+		v.codes = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarRepoAnnouncement& v) {
+	j = nlohmann::json::object();
+	if (v.display_name) {
+		j["display_name"] = *v.display_name;
+	}
+	if (v.description) {
+		j["description"] = *v.description;
+	}
+	if (v.topics) {
+		j["topics"] = *v.topics;
+	}
+	if (v.roles) {
+		j["roles"] = *v.roles;
+	}
+	if (v.requests) {
+		j["requests"] = *v.requests;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarRepoAnnouncement& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("display_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.display_name = std::move(tmp);
+	}
+	if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.description = std::move(tmp);
+	}
+	if (auto it = j.find("topics"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.topics = std::move(tmp);
+	}
+	if (auto it = j.find("roles"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.roles = std::move(tmp);
+	}
+	if (auto it = j.find("requests"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.requests = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarRepoChange& v) {
+	j = nlohmann::json::object();
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	if (v.ref_id) {
+		j["ref_id"] = *v.ref_id;
+	}
+	if (v.version) {
+		j["version"] = *v.version;
+	}
+	if (v.push_id) {
+		j["push_id"] = *v.push_id;
+	}
+	if (v.signer_sidecar_id) {
+		j["signer_sidecar_id"] = *v.signer_sidecar_id;
+	}
+	if (v.gap) {
+		j["gap"] = *v.gap;
+	}
+	if (v.path_epoch) {
+		j["path_epoch"] = *v.path_epoch;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarRepoChange& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("ref_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ref_id = std::move(tmp);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.version = std::move(tmp);
+	}
+	if (auto it = j.find("push_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.push_id = std::move(tmp);
+	}
+	if (auto it = j.find("signer_sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.signer_sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("gap"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.gap = std::move(tmp);
+	}
+	if (auto it = j.find("path_epoch"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.path_epoch = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarResult& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.value) {
+		j["value"] = *v.value;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.value = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarRevokeItem& v) {
+	j = nlohmann::json::object();
+	j["effect"] = v.effect;
+	j["kind"] = v.kind;
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.id) {
+		j["id"] = *v.id;
+	}
+	if (v.position) {
+		j["position"] = *v.position;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarRevokeItem& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("effect"); it != j.end() && !it->is_null()) {
+		it->get_to(v.effect);
+	}
+	if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.kind);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.id = std::move(tmp);
+	}
+	if (auto it = j.find("position"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.position = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarRevokePlan& v) {
+	j = nlohmann::json::object();
+	if (v.plan_id) {
+		j["plan_id"] = *v.plan_id;
+	}
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.since_n) {
+		j["since_n"] = *v.since_n;
+	}
+	if (v.since_millis) {
+		j["since_millis"] = *v.since_millis;
+	}
+	if (v.items) {
+		j["items"] = *v.items;
+	}
+	if (v.signatures) {
+		j["signatures"] = *v.signatures;
+	}
+	if (v.presence) {
+		j["presence"] = *v.presence;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.parks_self_position) {
+		j["parks_self_position"] = *v.parks_self_position;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarRevokePlan& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("plan_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan_id = std::move(tmp);
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("since_n"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.since_n = std::move(tmp);
+	}
+	if (auto it = j.find("since_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.since_millis = std::move(tmp);
+	}
+	if (auto it = j.find("items"); it != j.end() && !it->is_null()) {
+		SidecarRevokeItemList tmp{};
+		it->get_to(tmp);
+		v.items = std::move(tmp);
+	}
+	if (auto it = j.find("signatures"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.signatures = std::move(tmp);
+	}
+	if (auto it = j.find("presence"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.presence = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("parks_self_position"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.parks_self_position = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSecret& v) {
+	j = nlohmann::json::object();
+	j["status"] = v.status;
+	if (v.value_base64) {
+		j["value_base64"] = *v.value_base64;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSecret& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("value_base64"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.value_base64 = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSettings& v) {
+	j = nlohmann::json::object();
+	if (v.instance) {
+		j["instance"] = *v.instance;
+	}
+	if (v.state_dir) {
+		j["state_dir"] = *v.state_dir;
+	}
+	if (v.components) {
+		j["components"] = *v.components;
+	}
+	if (v.memory_budget_byte_count) {
+		j["memory_budget_byte_count"] = *v.memory_budget_byte_count;
+	}
+	if (v.host_class) {
+		j["host_class"] = *v.host_class;
+	}
+	if (v.daemon_socket_dir) {
+		j["daemon_socket_dir"] = *v.daemon_socket_dir;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("instance"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.instance = std::move(tmp);
+	}
+	if (auto it = j.find("state_dir"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state_dir = std::move(tmp);
+	}
+	if (auto it = j.find("components"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.components = std::move(tmp);
+	}
+	if (auto it = j.find("memory_budget_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.memory_budget_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("host_class"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.host_class = std::move(tmp);
+	}
+	if (auto it = j.find("daemon_socket_dir"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.daemon_socket_dir = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarUsedAt& v) {
+	j = nlohmann::json::object();
+	j["registrable_domain"] = v.registrable_domain;
+	j["first_millis"] = v.first_millis;
+	j["last_millis"] = v.last_millis;
+}
+inline void from_json(const nlohmann::json& j, SidecarUsedAt& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("registrable_domain"); it != j.end() && !it->is_null()) {
+		it->get_to(v.registrable_domain);
+	}
+	if (auto it = j.find("first_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.first_millis);
+	}
+	if (auto it = j.find("last_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.last_millis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarUsedAtResult& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.used_at) {
+		j["used_at"] = *v.used_at;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarUsedAtResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("used_at"); it != j.end() && !it->is_null()) {
+		SidecarUsedAtList tmp{};
+		it->get_to(tmp);
+		v.used_at = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarVaultEntries& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.entries) {
+		j["entries"] = *v.entries;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarVaultEntries& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("entries"); it != j.end() && !it->is_null()) {
+		SidecarVaultEntryList tmp{};
+		it->get_to(tmp);
+		v.entries = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarVaultEntry& v) {
+	j = nlohmann::json::object();
+	if (v.entry_id) {
+		j["entry_id"] = *v.entry_id;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.title) {
+		j["title"] = *v.title;
+	}
+	if (v.username) {
+		j["username"] = *v.username;
+	}
+	if (v.password) {
+		j["password"] = *v.password;
+	}
+	if (v.urls) {
+		j["urls"] = *v.urls;
+	}
+	if (v.notes) {
+		j["notes"] = *v.notes;
+	}
+	if (v.has_totp) {
+		j["has_totp"] = *v.has_totp;
+	}
+	if (v.created_millis) {
+		j["created_millis"] = *v.created_millis;
+	}
+	if (v.updated_millis) {
+		j["updated_millis"] = *v.updated_millis;
+	}
+	j["state"] = v.state;
+}
+inline void from_json(const nlohmann::json& j, SidecarVaultEntry& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("entry_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.entry_id = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("title"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.title = std::move(tmp);
+	}
+	if (auto it = j.find("username"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.username = std::move(tmp);
+	}
+	if (auto it = j.find("password"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.password = std::move(tmp);
+	}
+	if (auto it = j.find("urls"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.urls = std::move(tmp);
+	}
+	if (auto it = j.find("notes"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.notes = std::move(tmp);
+	}
+	if (auto it = j.find("has_totp"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.has_totp = std::move(tmp);
+	}
+	if (auto it = j.find("created_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.created_millis = std::move(tmp);
+	}
+	if (auto it = j.find("updated_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.updated_millis = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnClaimNowResult& v) {
 	j = nlohmann::json::object();
 	j["requested"] = v.requested;
@@ -21339,6 +24357,7 @@ using BlockActionWindowChangeListener = std::function<void(std::optional<BlockAc
 using BlockActionsListener = std::function<void()>;
 using BlockStatsChangeListener = std::function<void(std::optional<BlockStats> block_stats)>;
 using BlockerEnabledChangeListener = std::function<void(bool blocker_enabled)>;
+using BridgeStatusChangeListener = std::function<void(std::optional<BridgeStatus> status)>;
 using CanPromptIntroFunnelChangeListener = std::function<void(bool can_prompt_intro_funnel)>;
 using CanReferChangeListener = std::function<void(bool can_refer)>;
 using CanShowRatingDialogChangeListener = std::function<void(bool can_show_rating_dialog)>;
@@ -21479,6 +24498,28 @@ using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkRe
 using SetPayoutWalletCallback = std::function<void(std::optional<SetPayoutWalletResult> result, std::optional<std::string> err_param)>;
 using SetPointsLeaderboardPublicCallback = std::function<void(std::optional<SetPointsLeaderboardPublicResult> result, std::optional<std::string> err_param)>;
 using SetupNewDeviceCallback = std::function<bool(Device device, std::optional<ProxyConfigResult> proxy_config_result)>;
+using SidecarApprovalListener = std::function<void(std::optional<SidecarApprovalList> pending)>;
+using SidecarBurnerCallback = std::function<void(std::optional<SidecarBurner> result, std::optional<std::string> err_param)>;
+using SidecarBytesCallback = std::function<void(std::optional<SidecarBytes> result, std::optional<std::string> err_param)>;
+using SidecarDirectoryListener = std::function<void(std::optional<SidecarDirectoryPage> page)>;
+using SidecarErasuresCallback = std::function<void(std::optional<SidecarErasures> result, std::optional<std::string> err_param)>;
+using SidecarEventListener = std::function<void(std::optional<SidecarEvent> event)>;
+using SidecarHistoryCallback = std::function<void(std::optional<SidecarHistory> result, std::optional<std::string> err_param)>;
+struct SidecarKeyStore {
+	std::function<int64_t(std::string name)> delete_secret;
+	std::function<std::optional<SidecarSecret>(std::string name)> get_secret;
+	std::function<int64_t(std::string name, std::string value_base64)> put_secret;
+};
+using SidecarOneTimeCodesCallback = std::function<void(std::optional<SidecarOneTimeCodes> result, std::optional<std::string> err_param)>;
+struct SidecarPresenceSigner {
+	std::function<std::string()> get_attestation;
+	std::function<std::string(std::string message_base64)> sign_with_presence;
+};
+using SidecarRepoChangeListener = std::function<void(std::optional<SidecarRepoChange> change)>;
+using SidecarResultCallback = std::function<void(std::optional<SidecarResult> result, std::optional<std::string> err_param)>;
+using SidecarRevokePlanCallback = std::function<void(std::optional<SidecarRevokePlan> result, std::optional<std::string> err_param)>;
+using SidecarUsedAtCallback = std::function<void(std::optional<SidecarUsedAtResult> result, std::optional<std::string> err_param)>;
+using SidecarVaultEntriesCallback = std::function<void(std::optional<SidecarVaultEntries> result, std::optional<std::string> err_param)>;
 struct SnClaimCallback {
 	std::function<void(int64_t epoch, std::string tx_hash, int64_t amount_rao)> confirmed;
 	std::function<void()> done;
@@ -21597,6 +24638,7 @@ public:
 	Sub addBlockActionWindowChangeListener(BlockActionWindowChangeListener listener) const;
 	Sub addBlockStatsChangeListener(BlockStatsChangeListener listener) const;
 	Sub addBlockerEnabledChangeListener(BlockerEnabledChangeListener listener) const;
+	Sub addBridgeStatusChangeListener(BridgeStatusChangeListener listener) const;
 	Sub addCanPromptIntroFunnelChangeListener(CanPromptIntroFunnelChangeListener listener) const;
 	Sub addCanReferChangeListener(CanReferChangeListener listener) const;
 	Sub addCanShowRatingDialogChangeListener(CanShowRatingDialogChangeListener listener) const;
@@ -21650,6 +24692,7 @@ public:
 	std::optional<BlockActionWindow> getBlockActions() const;
 	std::optional<BlockStats> getBlockStats() const;
 	bool getBlockerEnabled() const;
+	std::optional<BridgeStatus> getBridgeStatus() const;
 	bool getCanPromptIntroFunnel() const;
 	bool getCanRefer() const;
 	bool getCanShowRatingDialog() const;
@@ -22232,6 +25275,7 @@ public:
 	Sub enableSubprotocol(int64_t subprotocol_id, SubprotocolListener listener) const;
 	std::optional<IntList> enabledSubprotocols() const;
 	bool getAutoSave() const;
+	std::optional<BridgeRouteList> getBridgeRoutes() const;
 	std::string getClientJwt() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
@@ -22295,6 +25339,7 @@ public:
 	bool sendSubprotocolBytes(int64_t subprotocol_id, const std::string& destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) const;
 	void setAppBackgrounded(bool backgrounded) const;
 	void setAutoSave(bool enabled) const;
+	void setBridgeLocalAddresses(const std::optional<StringList>& addresses) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setConnectLocationChecked(const std::optional<ConnectLocation>& location) const;
 	void setDefaultLocationChecked(const std::optional<ConnectLocation>& location) const;
@@ -23040,6 +26085,97 @@ public:
 	bool getCredentialCleared() const;
 	std::string getOperationId() const;
 	bool getRevocationConfirmed() const;
+};
+
+class Sidecar final : public detail::Handle {
+public:
+	Sidecar() = default;
+	explicit Sidecar(uint64_t h) : detail::Handle(h) {}
+	Sub addEventListener(SidecarEventListener listener) const;
+	void close() const;
+	void confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const;
+	void enrollWithDevice(const Device& device, SidecarResultCallback callback) const;
+	SidecarApprovals getApprovals() const;
+	SidecarDirectory getDirectory() const;
+	SidecarEvs getEvs() const;
+	SidecarMail getMail() const;
+	std::string getSidecarId() const;
+	SidecarSockets getSockets() const;
+	std::string getState() const;
+	std::string getStateReason() const;
+	void setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const;
+	void signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const;
+	void unlock(const std::string& passphrase, SidecarResultCallback callback) const;
+};
+
+class SidecarApprovals final : public detail::Handle {
+public:
+	SidecarApprovals() = default;
+	explicit SidecarApprovals(uint64_t h) : detail::Handle(h) {}
+	Sub addPendingListener(SidecarApprovalListener listener) const;
+	void decide(const std::string& approval_id, const std::string& decision, SidecarResultCallback callback) const;
+	std::optional<SidecarDeviceList> getDevices() const;
+	std::optional<SidecarApprovalList> getPending() const;
+	void previewRevokeDevice(const std::string& sidecar_id, const std::string& reason, int64_t lost_at_millis, int64_t since_n, SidecarRevokePlanCallback callback) const;
+	void revokeDevice(const std::string& plan_id, const std::optional<SidecarRevokeItemList>& revoke_keys, SidecarResultCallback callback) const;
+};
+
+class SidecarDirectory final : public detail::Handle {
+public:
+	SidecarDirectory() = default;
+	explicit SidecarDirectory(uint64_t h) : detail::Handle(h) {}
+	void announceRepo(const std::string& repo_id, const std::optional<SidecarRepoAnnouncement>& announcement, SidecarResultCallback callback) const;
+	std::optional<SidecarAnnouncement> get(const std::string& announcement_id) const;
+	std::optional<SidecarAccessRequestList> getRequests(const std::string& view) const;
+	Sub list(const std::optional<SidecarDirectoryFilter>& filter, SidecarDirectoryListener listener) const;
+	void request(const std::optional<SidecarAccessRequest>& request, SidecarResultCallback callback) const;
+	void revokeRepo(const std::string& repo_id, SidecarResultCallback callback) const;
+	void setRuns(const std::string& project_key, const std::string& value, SidecarResultCallback callback) const;
+	void setWorker(bool enabled, SidecarResultCallback callback) const;
+};
+
+class SidecarEvs final : public detail::Handle {
+public:
+	SidecarEvs() = default;
+	explicit SidecarEvs(uint64_t h) : detail::Handle(h) {}
+	Sub addRepoChangeListener(const std::string& repo_id, SidecarRepoChangeListener listener) const;
+	void createRepo(const std::string& kind, const std::string& display_name, bool private_param, SidecarResultCallback callback) const;
+	void erasures(const std::string& repo_id, SidecarErasuresCallback callback) const;
+	void history(const std::string& repo_id, const std::string& path, SidecarHistoryCallback callback) const;
+	void readHead(const std::string& repo_id, const std::string& path, SidecarBytesCallback callback) const;
+	void write(const std::string& repo_id, const std::string& path, const uint8_t* data, int32_t data_len, const std::string& versioning, SidecarResultCallback callback) const;
+};
+
+class SidecarMail final : public detail::Handle {
+public:
+	SidecarMail() = default;
+	explicit SidecarMail(uint64_t h) : detail::Handle(h) {}
+	void burn(const std::string& address, SidecarResultCallback callback) const;
+	void createBurner(const std::string& site, SidecarBurnerCallback callback) const;
+	std::optional<SidecarAliasList> getAliases() const;
+	void getOneTimeCodes(int64_t since_millis, SidecarOneTimeCodesCallback callback) const;
+	std::string getReceiverCoverage() const;
+	void getUsedAt(const std::string& entry_id, SidecarUsedAtCallback callback) const;
+	void getVaultEntries(SidecarVaultEntriesCallback callback) const;
+	void send(const std::optional<SidecarDraft>& draft, SidecarResultCallback callback) const;
+	void setReceiverEnabled(bool enabled, SidecarResultCallback callback) const;
+};
+
+class SidecarSocketListener final : public detail::Handle {
+public:
+	SidecarSocketListener() = default;
+	explicit SidecarSocketListener(uint64_t h) : detail::Handle(h) {}
+	Socket accept(int64_t timeout_millis) const;
+	void close() const;
+	std::string getAddr() const;
+};
+
+class SidecarSockets final : public detail::Handle {
+public:
+	SidecarSockets() = default;
+	explicit SidecarSockets(uint64_t h) : detail::Handle(h) {}
+	Socket dial(const std::string& address, int64_t timeout_millis) const;
+	SidecarSocketListener listen(const std::string& address, int64_t weight) const;
 };
 
 class SnFleetClaim final : public detail::Handle {
@@ -24127,6 +27263,34 @@ inline void oneshot_blocker_enabled_change(void* user_data, bool blocker_enabled
 	auto* f = static_cast<BlockerEnabledChangeListener*>(user_data);
 	try {
 		(*f)(blocker_enabled);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_bridge_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<BridgeStatusChangeListener*>(user_data);
+	try {
+		std::optional<BridgeStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<BridgeStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_bridge_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<BridgeStatusChangeListener*>(user_data);
+	try {
+		std::optional<BridgeStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<BridgeStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -27998,6 +31162,513 @@ inline bool oneshot_setup_new_device(void* user_data, uint64_t device, const cha
 	return r;
 }
 
+inline void retained_sidecar_approval(void* user_data, const char* pending_json) {
+	auto* f = static_cast<SidecarApprovalListener*>(user_data);
+	try {
+		std::optional<SidecarApprovalList> pending_v;
+		if (pending_json) {
+			pending_v = parseJson<SidecarApprovalList>(pending_json);
+		}
+		(*f)(std::move(pending_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_approval(void* user_data, const char* pending_json) {
+	auto* f = static_cast<SidecarApprovalListener*>(user_data);
+	try {
+		std::optional<SidecarApprovalList> pending_v;
+		if (pending_json) {
+			pending_v = parseJson<SidecarApprovalList>(pending_json);
+		}
+		(*f)(std::move(pending_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_burner(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarBurnerCallback*>(user_data);
+	try {
+		std::optional<SidecarBurner> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarBurner>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_burner(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarBurnerCallback*>(user_data);
+	try {
+		std::optional<SidecarBurner> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarBurner>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_bytes(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarBytesCallback*>(user_data);
+	try {
+		std::optional<SidecarBytes> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarBytes>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_bytes(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarBytesCallback*>(user_data);
+	try {
+		std::optional<SidecarBytes> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarBytes>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_directory(void* user_data, const char* page_json) {
+	auto* f = static_cast<SidecarDirectoryListener*>(user_data);
+	try {
+		std::optional<SidecarDirectoryPage> page_v;
+		if (page_json) {
+			page_v = parseJson<SidecarDirectoryPage>(page_json);
+		}
+		(*f)(std::move(page_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_directory(void* user_data, const char* page_json) {
+	auto* f = static_cast<SidecarDirectoryListener*>(user_data);
+	try {
+		std::optional<SidecarDirectoryPage> page_v;
+		if (page_json) {
+			page_v = parseJson<SidecarDirectoryPage>(page_json);
+		}
+		(*f)(std::move(page_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_erasures(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarErasuresCallback*>(user_data);
+	try {
+		std::optional<SidecarErasures> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarErasures>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_erasures(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarErasuresCallback*>(user_data);
+	try {
+		std::optional<SidecarErasures> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarErasures>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_event(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarEventListener*>(user_data);
+	try {
+		std::optional<SidecarEvent> event_v;
+		if (event_json) {
+			event_v = parseJson<SidecarEvent>(event_json);
+		}
+		(*f)(std::move(event_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_event(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarEventListener*>(user_data);
+	try {
+		std::optional<SidecarEvent> event_v;
+		if (event_json) {
+			event_v = parseJson<SidecarEvent>(event_json);
+		}
+		(*f)(std::move(event_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_history(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarHistoryCallback*>(user_data);
+	try {
+		std::optional<SidecarHistory> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarHistory>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_history(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarHistoryCallback*>(user_data);
+	try {
+		std::optional<SidecarHistory> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarHistory>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline int64_t retained_sidecar_key_store_delete_secret(void* user_data, const char* name) {
+	auto* f = static_cast<SidecarKeyStore*>(user_data);
+	int64_t r{};
+	try {
+		if (f->delete_secret) {
+			r = f->delete_secret(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline char* retained_sidecar_key_store_get_secret(void* user_data, const char* name) {
+	auto* f = static_cast<SidecarKeyStore*>(user_data);
+	std::optional<SidecarSecret> v{};
+	try {
+		if (f->get_secret) {
+			v = f->get_secret(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	if (!v) {
+		return nullptr;
+	}
+	std::string r = nlohmann::json(*v).dump();
+	return dupCString(r);
+}
+inline int64_t retained_sidecar_key_store_put_secret(void* user_data, const char* name, const char* value_base64) {
+	auto* f = static_cast<SidecarKeyStore*>(user_data);
+	int64_t r{};
+	try {
+		if (f->put_secret) {
+			r = f->put_secret(std::string(name ? name : ""), std::string(value_base64 ? value_base64 : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+
+inline void retained_sidecar_one_time_codes(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarOneTimeCodesCallback*>(user_data);
+	try {
+		std::optional<SidecarOneTimeCodes> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarOneTimeCodes>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_one_time_codes(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarOneTimeCodesCallback*>(user_data);
+	try {
+		std::optional<SidecarOneTimeCodes> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarOneTimeCodes>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline char* retained_sidecar_presence_signer_get_attestation(void* user_data) {
+	auto* f = static_cast<SidecarPresenceSigner*>(user_data);
+	std::string r{};
+	try {
+		if (f->get_attestation) {
+			r = f->get_attestation();
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+inline char* retained_sidecar_presence_signer_sign_with_presence(void* user_data, const char* message_base64) {
+	auto* f = static_cast<SidecarPresenceSigner*>(user_data);
+	std::string r{};
+	try {
+		if (f->sign_with_presence) {
+			r = f->sign_with_presence(std::string(message_base64 ? message_base64 : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return dupCString(r);
+}
+
+inline void retained_sidecar_repo_change(void* user_data, const char* change_json) {
+	auto* f = static_cast<SidecarRepoChangeListener*>(user_data);
+	try {
+		std::optional<SidecarRepoChange> change_v;
+		if (change_json) {
+			change_v = parseJson<SidecarRepoChange>(change_json);
+		}
+		(*f)(std::move(change_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_repo_change(void* user_data, const char* change_json) {
+	auto* f = static_cast<SidecarRepoChangeListener*>(user_data);
+	try {
+		std::optional<SidecarRepoChange> change_v;
+		if (change_json) {
+			change_v = parseJson<SidecarRepoChange>(change_json);
+		}
+		(*f)(std::move(change_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_result(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarResultCallback*>(user_data);
+	try {
+		std::optional<SidecarResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_result(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarResultCallback*>(user_data);
+	try {
+		std::optional<SidecarResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_revoke_plan(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarRevokePlanCallback*>(user_data);
+	try {
+		std::optional<SidecarRevokePlan> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarRevokePlan>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_revoke_plan(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarRevokePlanCallback*>(user_data);
+	try {
+		std::optional<SidecarRevokePlan> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarRevokePlan>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_used_at(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarUsedAtCallback*>(user_data);
+	try {
+		std::optional<SidecarUsedAtResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarUsedAtResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_used_at(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarUsedAtCallback*>(user_data);
+	try {
+		std::optional<SidecarUsedAtResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarUsedAtResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_vault_entries(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarVaultEntriesCallback*>(user_data);
+	try {
+		std::optional<SidecarVaultEntries> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarVaultEntries>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_vault_entries(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarVaultEntriesCallback*>(user_data);
+	try {
+		std::optional<SidecarVaultEntries> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarVaultEntries>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sn_claim_confirmed(void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao) {
 	auto* f = static_cast<SnClaimCallback*>(user_data);
 	try {
@@ -30087,6 +33758,17 @@ inline Sub Device::addBlockerEnabledChangeListener(BlockerEnabledChangeListener 
 	}
 	return r;
 }
+inline Sub Device::addBridgeStatusChangeListener(BridgeStatusChangeListener listener) const {
+	std::shared_ptr<BridgeStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<BridgeStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_bridge_status_change_listener(handle(), listener_fn ? &detail::retained_bridge_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addCanPromptIntroFunnelChangeListener(CanPromptIntroFunnelChangeListener listener) const {
 	std::shared_ptr<CanPromptIntroFunnelChangeListener> listener_fn;
 	if (listener) {
@@ -30601,6 +34283,14 @@ inline std::optional<BlockStats> Device::getBlockStats() const {
 inline bool Device::getBlockerEnabled() const {
 	bool r = urnet_device_get_blocker_enabled(handle());
 	return r;
+}
+inline std::optional<BridgeStatus> Device::getBridgeStatus() const {
+	char* r_c = urnet_device_get_bridge_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BridgeStatus>(r_s->c_str());
 }
 inline bool Device::getCanPromptIntroFunnel() const {
 	bool r = urnet_device_get_can_prompt_intro_funnel(handle());
@@ -33549,6 +37239,14 @@ inline bool DeviceLocal::getAutoSave() const {
 	bool r = urnet_device_local_get_auto_save(handle());
 	return r;
 }
+inline std::optional<BridgeRouteList> DeviceLocal::getBridgeRoutes() const {
+	char* r_c = urnet_device_local_get_bridge_routes(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BridgeRouteList>(r_s->c_str());
+}
 inline std::string DeviceLocal::getClientJwt() const {
 	char* r_c = urnet_device_local_get_client_jwt(handle());
 	return detail::takeString(r_c);
@@ -33876,6 +37574,15 @@ inline void DeviceLocal::setAutoSave(bool enabled) const {
 	if (!ok) {
 		throw Error("urnet: urnet_device_local_set_auto_save failed");
 	}
+}
+inline void DeviceLocal::setBridgeLocalAddresses(const std::optional<StringList>& addresses) const {
+	std::string addresses_json;
+	const char* addresses_c = nullptr;
+	if (addresses) {
+		addresses_json = nlohmann::json(*addresses).dump();
+		addresses_c = addresses_json.c_str();
+	}
+	urnet_device_local_set_bridge_local_addresses(handle(), addresses_c);
 }
 inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
 	urnet_device_local_set_by_jwt(handle(), by_jwt.c_str());
@@ -36906,6 +40613,297 @@ inline bool SessionSignOutResult::getRevocationConfirmed() const {
 	bool r = urnet_session_sign_out_result_get_revocation_confirmed(handle());
 	return r;
 }
+inline Sub Sidecar::addEventListener(SidecarEventListener listener) const {
+	std::shared_ptr<SidecarEventListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarEventListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_add_event_listener(handle(), listener_fn ? &detail::retained_sidecar_event : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void Sidecar::close() const {
+	urnet_sidecar_close(handle());
+}
+inline void Sidecar::confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_confirm_forwarding_setup(handle(), network_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void Sidecar::enrollWithDevice(const Device& device, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_enroll_with_device(handle(), device.handle(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline SidecarApprovals Sidecar::getApprovals() const {
+	SidecarApprovals r(urnet_sidecar_get_approvals(handle()));
+	return r;
+}
+inline SidecarDirectory Sidecar::getDirectory() const {
+	SidecarDirectory r(urnet_sidecar_get_directory(handle()));
+	return r;
+}
+inline SidecarEvs Sidecar::getEvs() const {
+	SidecarEvs r(urnet_sidecar_get_evs(handle()));
+	return r;
+}
+inline SidecarMail Sidecar::getMail() const {
+	SidecarMail r(urnet_sidecar_get_mail(handle()));
+	return r;
+}
+inline std::string Sidecar::getSidecarId() const {
+	char* r_c = urnet_sidecar_get_sidecar_id(handle());
+	return detail::takeString(r_c);
+}
+inline SidecarSockets Sidecar::getSockets() const {
+	SidecarSockets r(urnet_sidecar_get_sockets(handle()));
+	return r;
+}
+inline std::string Sidecar::getState() const {
+	char* r_c = urnet_sidecar_get_state(handle());
+	return detail::takeString(r_c);
+}
+inline std::string Sidecar::getStateReason() const {
+	char* r_c = urnet_sidecar_get_state_reason(handle());
+	return detail::takeString(r_c);
+}
+inline void Sidecar::setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_set_push_token(handle(), platform.c_str(), token.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void Sidecar::signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_sign_edge_login(handle(), origin.c_str(), nonce_base64.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void Sidecar::unlock(const std::string& passphrase, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_unlock(handle(), passphrase.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline Sub SidecarApprovals::addPendingListener(SidecarApprovalListener listener) const {
+	std::shared_ptr<SidecarApprovalListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarApprovalListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_approvals_add_pending_listener(handle(), listener_fn ? &detail::retained_sidecar_approval : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void SidecarApprovals::decide(const std::string& approval_id, const std::string& decision, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_approvals_decide(handle(), approval_id.c_str(), decision.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline std::optional<SidecarDeviceList> SidecarApprovals::getDevices() const {
+	char* r_c = urnet_sidecar_approvals_get_devices(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarDeviceList>(r_s->c_str());
+}
+inline std::optional<SidecarApprovalList> SidecarApprovals::getPending() const {
+	char* r_c = urnet_sidecar_approvals_get_pending(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarApprovalList>(r_s->c_str());
+}
+inline void SidecarApprovals::previewRevokeDevice(const std::string& sidecar_id, const std::string& reason, int64_t lost_at_millis, int64_t since_n, SidecarRevokePlanCallback callback) const {
+	auto* callback_fn = callback ? new SidecarRevokePlanCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_approvals_preview_revoke_device(handle(), sidecar_id.c_str(), reason.c_str(), lost_at_millis, since_n, callback_fn ? &detail::oneshot_sidecar_revoke_plan : nullptr, callback_fn);
+}
+inline void SidecarApprovals::revokeDevice(const std::string& plan_id, const std::optional<SidecarRevokeItemList>& revoke_keys, SidecarResultCallback callback) const {
+	std::string revoke_keys_json;
+	const char* revoke_keys_c = nullptr;
+	if (revoke_keys) {
+		revoke_keys_json = nlohmann::json(*revoke_keys).dump();
+		revoke_keys_c = revoke_keys_json.c_str();
+	}
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_approvals_revoke_device(handle(), plan_id.c_str(), revoke_keys_c, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDirectory::announceRepo(const std::string& repo_id, const std::optional<SidecarRepoAnnouncement>& announcement, SidecarResultCallback callback) const {
+	std::string announcement_json;
+	const char* announcement_c = nullptr;
+	if (announcement) {
+		announcement_json = nlohmann::json(*announcement).dump();
+		announcement_c = announcement_json.c_str();
+	}
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_directory_announce_repo(handle(), repo_id.c_str(), announcement_c, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline std::optional<SidecarAnnouncement> SidecarDirectory::get(const std::string& announcement_id) const {
+	char* r_c = urnet_sidecar_directory_get(handle(), announcement_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarAnnouncement>(r_s->c_str());
+}
+inline std::optional<SidecarAccessRequestList> SidecarDirectory::getRequests(const std::string& view) const {
+	char* r_c = urnet_sidecar_directory_get_requests(handle(), view.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarAccessRequestList>(r_s->c_str());
+}
+inline Sub SidecarDirectory::list(const std::optional<SidecarDirectoryFilter>& filter, SidecarDirectoryListener listener) const {
+	std::string filter_json;
+	const char* filter_c = nullptr;
+	if (filter) {
+		filter_json = nlohmann::json(*filter).dump();
+		filter_c = filter_json.c_str();
+	}
+	std::shared_ptr<SidecarDirectoryListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarDirectoryListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_directory_list(handle(), filter_c, listener_fn ? &detail::retained_sidecar_directory : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void SidecarDirectory::request(const std::optional<SidecarAccessRequest>& request, SidecarResultCallback callback) const {
+	std::string request_json;
+	const char* request_c = nullptr;
+	if (request) {
+		request_json = nlohmann::json(*request).dump();
+		request_c = request_json.c_str();
+	}
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_directory_request(handle(), request_c, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDirectory::revokeRepo(const std::string& repo_id, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_directory_revoke_repo(handle(), repo_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDirectory::setRuns(const std::string& project_key, const std::string& value, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_directory_set_runs(handle(), project_key.c_str(), value.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDirectory::setWorker(bool enabled, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_directory_set_worker(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline Sub SidecarEvs::addRepoChangeListener(const std::string& repo_id, SidecarRepoChangeListener listener) const {
+	std::shared_ptr<SidecarRepoChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarRepoChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_evs_add_repo_change_listener(handle(), repo_id.c_str(), listener_fn ? &detail::retained_sidecar_repo_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void SidecarEvs::createRepo(const std::string& kind, const std::string& display_name, bool private_param, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_create_repo(handle(), kind.c_str(), display_name.c_str(), private_param, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarEvs::erasures(const std::string& repo_id, SidecarErasuresCallback callback) const {
+	auto* callback_fn = callback ? new SidecarErasuresCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_erasures(handle(), repo_id.c_str(), callback_fn ? &detail::oneshot_sidecar_erasures : nullptr, callback_fn);
+}
+inline void SidecarEvs::history(const std::string& repo_id, const std::string& path, SidecarHistoryCallback callback) const {
+	auto* callback_fn = callback ? new SidecarHistoryCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_history(handle(), repo_id.c_str(), path.c_str(), callback_fn ? &detail::oneshot_sidecar_history : nullptr, callback_fn);
+}
+inline void SidecarEvs::readHead(const std::string& repo_id, const std::string& path, SidecarBytesCallback callback) const {
+	auto* callback_fn = callback ? new SidecarBytesCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_read_head(handle(), repo_id.c_str(), path.c_str(), callback_fn ? &detail::oneshot_sidecar_bytes : nullptr, callback_fn);
+}
+inline void SidecarEvs::write(const std::string& repo_id, const std::string& path, const uint8_t* data, int32_t data_len, const std::string& versioning, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_write(handle(), repo_id.c_str(), path.c_str(), data, data_len, versioning.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarMail::burn(const std::string& address, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_burn(handle(), address.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarMail::createBurner(const std::string& site, SidecarBurnerCallback callback) const {
+	auto* callback_fn = callback ? new SidecarBurnerCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_create_burner(handle(), site.c_str(), callback_fn ? &detail::oneshot_sidecar_burner : nullptr, callback_fn);
+}
+inline std::optional<SidecarAliasList> SidecarMail::getAliases() const {
+	char* r_c = urnet_sidecar_mail_get_aliases(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarAliasList>(r_s->c_str());
+}
+inline void SidecarMail::getOneTimeCodes(int64_t since_millis, SidecarOneTimeCodesCallback callback) const {
+	auto* callback_fn = callback ? new SidecarOneTimeCodesCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_get_one_time_codes(handle(), since_millis, callback_fn ? &detail::oneshot_sidecar_one_time_codes : nullptr, callback_fn);
+}
+inline std::string SidecarMail::getReceiverCoverage() const {
+	char* r_c = urnet_sidecar_mail_get_receiver_coverage(handle());
+	return detail::takeString(r_c);
+}
+inline void SidecarMail::getUsedAt(const std::string& entry_id, SidecarUsedAtCallback callback) const {
+	auto* callback_fn = callback ? new SidecarUsedAtCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_get_used_at(handle(), entry_id.c_str(), callback_fn ? &detail::oneshot_sidecar_used_at : nullptr, callback_fn);
+}
+inline void SidecarMail::getVaultEntries(SidecarVaultEntriesCallback callback) const {
+	auto* callback_fn = callback ? new SidecarVaultEntriesCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_get_vault_entries(handle(), callback_fn ? &detail::oneshot_sidecar_vault_entries : nullptr, callback_fn);
+}
+inline void SidecarMail::send(const std::optional<SidecarDraft>& draft, SidecarResultCallback callback) const {
+	std::string draft_json;
+	const char* draft_c = nullptr;
+	if (draft) {
+		draft_json = nlohmann::json(*draft).dump();
+		draft_c = draft_json.c_str();
+	}
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_send(handle(), draft_c, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarMail::setReceiverEnabled(bool enabled, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_set_receiver_enabled(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline Socket SidecarSocketListener::accept(int64_t timeout_millis) const {
+	char* err_c = nullptr;
+	Socket r(urnet_sidecar_socket_listener_accept(handle(), timeout_millis, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline void SidecarSocketListener::close() const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_socket_listener_close(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_socket_listener_close failed");
+	}
+}
+inline std::string SidecarSocketListener::getAddr() const {
+	char* r_c = urnet_sidecar_socket_listener_get_addr(handle());
+	return detail::takeString(r_c);
+}
+inline Socket SidecarSockets::dial(const std::string& address, int64_t timeout_millis) const {
+	char* err_c = nullptr;
+	Socket r(urnet_sidecar_sockets_dial(handle(), address.c_str(), timeout_millis, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline SidecarSocketListener SidecarSockets::listen(const std::string& address, int64_t weight) const {
+	char* err_c = nullptr;
+	SidecarSocketListener r(urnet_sidecar_sockets_listen(handle(), address.c_str(), weight, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline void SnFleetClaim::advance(SnFleetClaimCallback callback) const {
 	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;
 	urnet_sn_fleet_claim_advance(handle(), callback_fn ? &detail::oneshot_sn_fleet_claim : nullptr, callback_fn);
@@ -37728,6 +41726,14 @@ inline std::optional<ProxyDeviceSettings> defaultProxyDeviceSettings() {
 	}
 	return detail::parseJson<ProxyDeviceSettings>(r_s->c_str());
 }
+inline std::optional<SidecarSettings> defaultSidecarSettings() {
+	char* r_c = urnet_default_sidecar_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarSettings>(r_s->c_str());
+}
 inline std::optional<SnChainSettings> defaultSnChainSettings() {
 	char* r_c = urnet_default_sn_chain_settings();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -38407,6 +42413,55 @@ inline std::optional<ClientEvent> newPurchaseStartedEvent(const std::string& sto
 		return std::nullopt;
 	}
 	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline Sidecar newSidecarLocal(const NetworkSpace& network_space, SidecarKeyStore key_store, SidecarPresenceSigner presence_signer, const std::optional<SidecarSettings>& settings) {
+	std::shared_ptr<SidecarKeyStore> key_store_fn;
+	if ((static_cast<bool>(key_store.delete_secret) || static_cast<bool>(key_store.get_secret) || static_cast<bool>(key_store.put_secret))) {
+		key_store_fn = std::make_shared<SidecarKeyStore>(std::move(key_store));
+	}
+	std::shared_ptr<SidecarPresenceSigner> presence_signer_fn;
+	if ((static_cast<bool>(presence_signer.get_attestation) || static_cast<bool>(presence_signer.sign_with_presence))) {
+		presence_signer_fn = std::make_shared<SidecarPresenceSigner>(std::move(presence_signer));
+	}
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* err_c = nullptr;
+	Sidecar r(urnet_new_sidecar_local(network_space.handle(), key_store_fn ? &detail::retained_sidecar_key_store_delete_secret : nullptr, key_store_fn ? &detail::retained_sidecar_key_store_get_secret : nullptr, key_store_fn ? &detail::retained_sidecar_key_store_put_secret : nullptr, key_store_fn.get(), presence_signer_fn ? &detail::retained_sidecar_presence_signer_get_attestation : nullptr, presence_signer_fn ? &detail::retained_sidecar_presence_signer_sign_with_presence : nullptr, presence_signer_fn.get(), settings_c, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (key_store_fn) {
+		r.retain(key_store_fn);
+	}
+	if (presence_signer_fn) {
+		r.retain(presence_signer_fn);
+	}
+	return r;
+}
+inline Sidecar newSidecarRemote(SidecarPresenceSigner presence_signer, const std::optional<SidecarSettings>& settings) {
+	std::shared_ptr<SidecarPresenceSigner> presence_signer_fn;
+	if ((static_cast<bool>(presence_signer.get_attestation) || static_cast<bool>(presence_signer.sign_with_presence))) {
+		presence_signer_fn = std::make_shared<SidecarPresenceSigner>(std::move(presence_signer));
+	}
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* err_c = nullptr;
+	Sidecar r(urnet_new_sidecar_remote(presence_signer_fn ? &detail::retained_sidecar_presence_signer_get_attestation : nullptr, presence_signer_fn ? &detail::retained_sidecar_presence_signer_sign_with_presence : nullptr, presence_signer_fn.get(), settings_c, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (presence_signer_fn) {
+		r.retain(presence_signer_fn);
+	}
+	return r;
 }
 inline std::optional<ClientEvent> newSignupOptoutChangedEvent(bool product_updates) {
 	char* r_c = urnet_new_signup_optout_changed_event(product_updates);

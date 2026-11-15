@@ -590,6 +590,20 @@ func (self *cAdapterBlockerEnabledChangeListener) BlockerEnabledChanged(blockerE
 	C.urnet_invoke_blocker_enabled_change(self.cbBlockerEnabledChanged, self.userData, C.bool(bool(blockerEnabled)))
 }
 
+type cAdapterBridgeStatusChangeListener struct {
+	cbBridgeStatusChanged C.urnet_bridge_status_change_cb
+	userData              unsafe.Pointer
+}
+
+func (self *cAdapterBridgeStatusChangeListener) BridgeStatusChanged(status *sdk.BridgeStatus) {
+	defer cgoGuard("urnet_bridge_status_change_cb")
+	status_ := cJson(status, "urnet_bridge_status_change_cb")
+	C.urnet_invoke_bridge_status_change(self.cbBridgeStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterCanPromptIntroFunnelChangeListener struct {
 	cbCanPromptIntroFunnelChanged C.urnet_can_prompt_intro_funnel_change_cb
 	userData                      unsafe.Pointer
@@ -2744,6 +2758,321 @@ func (self *cAdapterSetupNewDeviceCallback) SetupNewDevice(device sdk.Device, pr
 		cStringFree(proxyConfigResult_)
 	}
 	return bool(r0_)
+}
+
+type cAdapterSidecarApprovalListener struct {
+	cbApprovalsChanged C.urnet_sidecar_approval_cb
+	userData           unsafe.Pointer
+}
+
+func (self *cAdapterSidecarApprovalListener) ApprovalsChanged(pending *sdk.SidecarApprovalList) {
+	defer cgoGuard("urnet_sidecar_approval_cb")
+	pending_ := cJson(pending, "urnet_sidecar_approval_cb")
+	C.urnet_invoke_sidecar_approval(self.cbApprovalsChanged, self.userData, pending_)
+	if pending_ != nil {
+		cStringFree(pending_)
+	}
+}
+
+type cAdapterSidecarBurnerCallback struct {
+	cbResult C.urnet_sidecar_burner_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarBurnerCallback) Result(result *sdk.SidecarBurner, errParam error) {
+	defer cgoGuard("urnet_sidecar_burner_cb")
+	result_ := cJson(result, "urnet_sidecar_burner_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_burner(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarBytesCallback struct {
+	cbResult C.urnet_sidecar_bytes_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarBytesCallback) Result(result *sdk.SidecarBytes, errParam error) {
+	defer cgoGuard("urnet_sidecar_bytes_cb")
+	result_ := cJson(result, "urnet_sidecar_bytes_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_bytes(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarDirectoryListener struct {
+	cbDirectoryChanged C.urnet_sidecar_directory_cb
+	userData           unsafe.Pointer
+}
+
+func (self *cAdapterSidecarDirectoryListener) DirectoryChanged(page *sdk.SidecarDirectoryPage) {
+	defer cgoGuard("urnet_sidecar_directory_cb")
+	page_ := cJson(page, "urnet_sidecar_directory_cb")
+	C.urnet_invoke_sidecar_directory(self.cbDirectoryChanged, self.userData, page_)
+	if page_ != nil {
+		cStringFree(page_)
+	}
+}
+
+type cAdapterSidecarErasuresCallback struct {
+	cbResult C.urnet_sidecar_erasures_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarErasuresCallback) Result(result *sdk.SidecarErasures, errParam error) {
+	defer cgoGuard("urnet_sidecar_erasures_cb")
+	result_ := cJson(result, "urnet_sidecar_erasures_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_erasures(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarEventListener struct {
+	cbSidecarEventReceived C.urnet_sidecar_event_cb
+	userData               unsafe.Pointer
+}
+
+func (self *cAdapterSidecarEventListener) SidecarEventReceived(event *sdk.SidecarEvent) {
+	defer cgoGuard("urnet_sidecar_event_cb")
+	event_ := cJson(event, "urnet_sidecar_event_cb")
+	C.urnet_invoke_sidecar_event(self.cbSidecarEventReceived, self.userData, event_)
+	if event_ != nil {
+		cStringFree(event_)
+	}
+}
+
+type cAdapterSidecarHistoryCallback struct {
+	cbResult C.urnet_sidecar_history_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarHistoryCallback) Result(result *sdk.SidecarHistory, errParam error) {
+	defer cgoGuard("urnet_sidecar_history_cb")
+	result_ := cJson(result, "urnet_sidecar_history_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_history(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarKeyStore struct {
+	cbDeleteSecret C.urnet_sidecar_key_store_delete_secret_cb
+	cbGetSecret    C.urnet_sidecar_key_store_get_secret_cb
+	cbPutSecret    C.urnet_sidecar_key_store_put_secret_cb
+	userData       unsafe.Pointer
+}
+
+func (self *cAdapterSidecarKeyStore) DeleteSecret(name string) int32 {
+	defer cgoGuard("urnet_sidecar_key_store_delete_secret_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_sidecar_key_store_delete_secret(self.cbDeleteSecret, self.userData, name_)
+	cStringFree(name_)
+	return int32(int64(r0_))
+}
+
+func (self *cAdapterSidecarKeyStore) GetSecret(name string) *sdk.SidecarSecret {
+	defer cgoGuard("urnet_sidecar_key_store_get_secret_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_sidecar_key_store_get_secret(self.cbGetSecret, self.userData, name_)
+	cStringFree(name_)
+	if r0_ == nil {
+		return nil
+	}
+	r0 := &sdk.SidecarSecret{}
+	ok := goJson(r0_, r0, "urnet_sidecar_key_store_get_secret_cb")
+	urnet_free_string(r0_)
+	if !ok {
+		return nil
+	}
+	return r0
+}
+
+func (self *cAdapterSidecarKeyStore) PutSecret(name string, valueBase64 string) int32 {
+	defer cgoGuard("urnet_sidecar_key_store_put_secret_cb")
+	name_ := cString(string(name))
+	valueBase64_ := cString(string(valueBase64))
+	r0_ := C.urnet_invoke_sidecar_key_store_put_secret(self.cbPutSecret, self.userData, name_, valueBase64_)
+	cStringFree(name_)
+	cStringFree(valueBase64_)
+	return int32(int64(r0_))
+}
+
+type cAdapterSidecarOneTimeCodesCallback struct {
+	cbResult C.urnet_sidecar_one_time_codes_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarOneTimeCodesCallback) Result(result *sdk.SidecarOneTimeCodes, errParam error) {
+	defer cgoGuard("urnet_sidecar_one_time_codes_cb")
+	result_ := cJson(result, "urnet_sidecar_one_time_codes_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_one_time_codes(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarPresenceSigner struct {
+	cbGetAttestation   C.urnet_sidecar_presence_signer_get_attestation_cb
+	cbSignWithPresence C.urnet_sidecar_presence_signer_sign_with_presence_cb
+	userData           unsafe.Pointer
+}
+
+func (self *cAdapterSidecarPresenceSigner) GetAttestation() string {
+	defer cgoGuard("urnet_sidecar_presence_signer_get_attestation_cb")
+	r0_ := C.urnet_invoke_sidecar_presence_signer_get_attestation(self.cbGetAttestation, self.userData)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
+func (self *cAdapterSidecarPresenceSigner) SignWithPresence(messageBase64 string) string {
+	defer cgoGuard("urnet_sidecar_presence_signer_sign_with_presence_cb")
+	messageBase64_ := cString(string(messageBase64))
+	r0_ := C.urnet_invoke_sidecar_presence_signer_sign_with_presence(self.cbSignWithPresence, self.userData, messageBase64_)
+	cStringFree(messageBase64_)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
+type cAdapterSidecarRepoChangeListener struct {
+	cbRepoChanged C.urnet_sidecar_repo_change_cb
+	userData      unsafe.Pointer
+}
+
+func (self *cAdapterSidecarRepoChangeListener) RepoChanged(change *sdk.SidecarRepoChange) {
+	defer cgoGuard("urnet_sidecar_repo_change_cb")
+	change_ := cJson(change, "urnet_sidecar_repo_change_cb")
+	C.urnet_invoke_sidecar_repo_change(self.cbRepoChanged, self.userData, change_)
+	if change_ != nil {
+		cStringFree(change_)
+	}
+}
+
+type cAdapterSidecarResultCallback struct {
+	cbResult C.urnet_sidecar_result_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarResultCallback) Result(result *sdk.SidecarResult, errParam error) {
+	defer cgoGuard("urnet_sidecar_result_cb")
+	result_ := cJson(result, "urnet_sidecar_result_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_result(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarRevokePlanCallback struct {
+	cbResult C.urnet_sidecar_revoke_plan_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarRevokePlanCallback) Result(result *sdk.SidecarRevokePlan, errParam error) {
+	defer cgoGuard("urnet_sidecar_revoke_plan_cb")
+	result_ := cJson(result, "urnet_sidecar_revoke_plan_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_revoke_plan(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarUsedAtCallback struct {
+	cbResult C.urnet_sidecar_used_at_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarUsedAtCallback) Result(result *sdk.SidecarUsedAtResult, errParam error) {
+	defer cgoGuard("urnet_sidecar_used_at_cb")
+	result_ := cJson(result, "urnet_sidecar_used_at_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_used_at(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarVaultEntriesCallback struct {
+	cbResult C.urnet_sidecar_vault_entries_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarVaultEntriesCallback) Result(result *sdk.SidecarVaultEntries, errParam error) {
+	defer cgoGuard("urnet_sidecar_vault_entries_cb")
+	result_ := cJson(result, "urnet_sidecar_vault_entries_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_vault_entries(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
 }
 
 type cAdapterSnClaimCallback struct {
@@ -9421,6 +9750,16 @@ func urnet_default_proxy_device_settings() *C.char {
 	return cJson(r0, "urnet_default_proxy_device_settings")
 }
 
+//export urnet_default_sidecar_settings
+func urnet_default_sidecar_settings() *C.char {
+	defer cgoGuard("urnet_default_sidecar_settings")
+	r0 := sdk.DefaultSidecarSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_sidecar_settings")
+}
+
 //export urnet_default_sn_chain_settings
 func urnet_default_sn_chain_settings() *C.char {
 	defer cgoGuard("urnet_default_sn_chain_settings")
@@ -9562,6 +9901,21 @@ func urnet_device_add_blocker_enabled_change_listener(self C.uint64_t, listener_
 		listener_ = &cAdapterBlockerEnabledChangeListener{cbBlockerEnabledChanged: listener_blocker_enabled_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddBlockerEnabledChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_bridge_status_change_listener
+func urnet_device_add_bridge_status_change_listener(self C.uint64_t, listener_bridge_status_changed C.urnet_bridge_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_bridge_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_bridge_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.BridgeStatusChangeListener
+	if listener_bridge_status_changed != nil {
+		listener_ = &cAdapterBridgeStatusChangeListener{cbBridgeStatusChanged: listener_bridge_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddBridgeStatusChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -10323,6 +10677,20 @@ func urnet_device_get_blocker_enabled(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetBlockerEnabled()
 	return C.bool(r0)
+}
+
+//export urnet_device_get_bridge_status
+func urnet_device_get_bridge_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_bridge_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_bridge_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetBridgeStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_bridge_status")
 }
 
 //export urnet_device_get_can_prompt_intro_funnel
@@ -11957,6 +12325,20 @@ func urnet_device_local_get_auto_save(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_local_get_bridge_routes
+func urnet_device_local_get_bridge_routes(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_bridge_routes")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_bridge_routes")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetBridgeRoutes()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_bridge_routes")
+}
+
 //export urnet_device_local_get_client_jwt
 func urnet_device_local_get_client_jwt(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_client_jwt")
@@ -12789,6 +13171,23 @@ func urnet_device_local_set_auto_save(self C.uint64_t, enabled C.bool, outError 
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_device_local_set_bridge_local_addresses
+func urnet_device_local_set_bridge_local_addresses(self C.uint64_t, addresses *C.char) {
+	defer cgoGuard("urnet_device_local_set_bridge_local_addresses")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_bridge_local_addresses")
+	if !ok {
+		return
+	}
+	var addresses_ *sdk.StringList
+	if addresses != nil {
+		addresses_ = &sdk.StringList{}
+		if !goJson(addresses, addresses_, "urnet_device_local_set_bridge_local_addresses") {
+			return
+		}
+	}
+	self_.SetBridgeLocalAddresses(addresses_)
 }
 
 //export urnet_device_local_set_by_jwt
@@ -19347,6 +19746,62 @@ func urnet_new_purchase_started_event(store *C.char, product *C.char, plan *C.ch
 	return cJson(r0, "urnet_new_purchase_started_event")
 }
 
+//export urnet_new_sidecar_local
+func urnet_new_sidecar_local(networkSpace C.uint64_t, keyStore_delete_secret C.urnet_sidecar_key_store_delete_secret_cb, keyStore_get_secret C.urnet_sidecar_key_store_get_secret_cb, keyStore_put_secret C.urnet_sidecar_key_store_put_secret_cb, keyStore_user_data unsafe.Pointer, presenceSigner_get_attestation C.urnet_sidecar_presence_signer_get_attestation_cb, presenceSigner_sign_with_presence C.urnet_sidecar_presence_signer_sign_with_presence_cb, presenceSigner_user_data unsafe.Pointer, settings *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_sidecar_local")
+	var networkSpace_ *sdk.NetworkSpace
+	if networkSpace != 0 {
+		var ok bool
+		networkSpace_, ok = resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_sidecar_local")
+		if !ok {
+			return 0
+		}
+	}
+	var keyStore_ sdk.SidecarKeyStore
+	if keyStore_delete_secret != nil {
+		keyStore_ = &cAdapterSidecarKeyStore{cbDeleteSecret: keyStore_delete_secret, cbGetSecret: keyStore_get_secret, cbPutSecret: keyStore_put_secret, userData: keyStore_user_data}
+	}
+	var presenceSigner_ sdk.SidecarPresenceSigner
+	if presenceSigner_get_attestation != nil {
+		presenceSigner_ = &cAdapterSidecarPresenceSigner{cbGetAttestation: presenceSigner_get_attestation, cbSignWithPresence: presenceSigner_sign_with_presence, userData: presenceSigner_user_data}
+	}
+	settings_ := sdk.DefaultSidecarSettings()
+	if !goJson(settings, settings_, "urnet_new_sidecar_local") {
+		return 0
+	}
+	r0, err := sdk.NewSidecarLocal(networkSpace_, keyStore_, presenceSigner_, settings_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_sidecar_remote
+func urnet_new_sidecar_remote(presenceSigner_get_attestation C.urnet_sidecar_presence_signer_get_attestation_cb, presenceSigner_sign_with_presence C.urnet_sidecar_presence_signer_sign_with_presence_cb, presenceSigner_user_data unsafe.Pointer, settings *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_sidecar_remote")
+	var presenceSigner_ sdk.SidecarPresenceSigner
+	if presenceSigner_get_attestation != nil {
+		presenceSigner_ = &cAdapterSidecarPresenceSigner{cbGetAttestation: presenceSigner_get_attestation, cbSignWithPresence: presenceSigner_sign_with_presence, userData: presenceSigner_user_data}
+	}
+	settings_ := sdk.DefaultSidecarSettings()
+	if !goJson(settings, settings_, "urnet_new_sidecar_remote") {
+		return 0
+	}
+	r0, err := sdk.NewSidecarRemote(presenceSigner_, settings_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_signup_optout_changed_event
 func urnet_new_signup_optout_changed_event(productUpdates C.bool) *C.char {
 	defer cgoGuard("urnet_new_signup_optout_changed_event")
@@ -21118,6 +21573,733 @@ func urnet_short_ss58(address *C.char) *C.char {
 	defer cgoGuard("urnet_short_ss58")
 	r0 := sdk.ShortSs58(goString(address))
 	return cString(string(r0))
+}
+
+//export urnet_sidecar_add_event_listener
+func urnet_sidecar_add_event_listener(self C.uint64_t, listener_sidecar_event_received C.urnet_sidecar_event_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_add_event_listener")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_add_event_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarEventListener
+	if listener_sidecar_event_received != nil {
+		listener_ = &cAdapterSidecarEventListener{cbSidecarEventReceived: listener_sidecar_event_received, userData: listener_user_data}
+	}
+	r0 := self_.AddEventListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_close
+func urnet_sidecar_close(self C.uint64_t) {
+	defer cgoGuard("urnet_sidecar_close")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_sidecar_confirm_forwarding_setup
+func urnet_sidecar_confirm_forwarding_setup(self C.uint64_t, networkId *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_confirm_forwarding_setup")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_confirm_forwarding_setup")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ConfirmForwardingSetup(goId(networkId, "urnet_sidecar_confirm_forwarding_setup"), callback_)
+}
+
+//export urnet_sidecar_enroll_with_device
+func urnet_sidecar_enroll_with_device(self C.uint64_t, device C.uint64_t, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_enroll_with_device")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_enroll_with_device")
+	if !ok {
+		return
+	}
+	var device_ sdk.Device
+	if device != 0 {
+		var ok bool
+		device_, ok = resolveHandle[sdk.Device](uint64(device), "urnet_sidecar_enroll_with_device")
+		if !ok {
+			return
+		}
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.EnrollWithDevice(device_, callback_)
+}
+
+//export urnet_sidecar_get_approvals
+func urnet_sidecar_get_approvals(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_approvals")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_approvals")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetApprovals()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_get_directory
+func urnet_sidecar_get_directory(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_directory")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_directory")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetDirectory()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_get_evs
+func urnet_sidecar_get_evs(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_evs")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_evs")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetEvs()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_get_mail
+func urnet_sidecar_get_mail(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_mail")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_mail")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetMail()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_get_sidecar_id
+func urnet_sidecar_get_sidecar_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_get_sidecar_id")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_sidecar_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSidecarId()
+	return cId(r0)
+}
+
+//export urnet_sidecar_get_sockets
+func urnet_sidecar_get_sockets(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_sockets")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_sockets")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetSockets()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_get_state
+func urnet_sidecar_get_state(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_get_state")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_state")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetState()
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_get_state_reason
+func urnet_sidecar_get_state_reason(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_get_state_reason")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_state_reason")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetStateReason()
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_set_push_token
+func urnet_sidecar_set_push_token(self C.uint64_t, platform *C.char, token *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_set_push_token")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_set_push_token")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetPushToken(goString(platform), goString(token), callback_)
+}
+
+//export urnet_sidecar_sign_edge_login
+func urnet_sidecar_sign_edge_login(self C.uint64_t, origin *C.char, nonceBase64 *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_sign_edge_login")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_sign_edge_login")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SignEdgeLogin(goString(origin), goString(nonceBase64), callback_)
+}
+
+//export urnet_sidecar_unlock
+func urnet_sidecar_unlock(self C.uint64_t, passphrase *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_unlock")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_unlock")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Unlock(goString(passphrase), callback_)
+}
+
+//export urnet_sidecar_approvals_add_pending_listener
+func urnet_sidecar_approvals_add_pending_listener(self C.uint64_t, listener_approvals_changed C.urnet_sidecar_approval_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_approvals_add_pending_listener")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_add_pending_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarApprovalListener
+	if listener_approvals_changed != nil {
+		listener_ = &cAdapterSidecarApprovalListener{cbApprovalsChanged: listener_approvals_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddPendingListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_approvals_decide
+func urnet_sidecar_approvals_decide(self C.uint64_t, approvalId *C.char, decision *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_approvals_decide")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_decide")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Decide(goId(approvalId, "urnet_sidecar_approvals_decide"), goString(decision), callback_)
+}
+
+//export urnet_sidecar_approvals_get_devices
+func urnet_sidecar_approvals_get_devices(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_approvals_get_devices")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_get_devices")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDevices()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_approvals_get_devices")
+}
+
+//export urnet_sidecar_approvals_get_pending
+func urnet_sidecar_approvals_get_pending(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_approvals_get_pending")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_get_pending")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPending()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_approvals_get_pending")
+}
+
+//export urnet_sidecar_approvals_preview_revoke_device
+func urnet_sidecar_approvals_preview_revoke_device(self C.uint64_t, sidecarId *C.char, reason *C.char, lostAtMillis C.int64_t, sinceN C.int64_t, callback_result C.urnet_sidecar_revoke_plan_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_approvals_preview_revoke_device")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_preview_revoke_device")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarRevokePlanCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarRevokePlanCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.PreviewRevokeDevice(goId(sidecarId, "urnet_sidecar_approvals_preview_revoke_device"), goString(reason), int64(lostAtMillis), int64(sinceN), callback_)
+}
+
+//export urnet_sidecar_approvals_revoke_device
+func urnet_sidecar_approvals_revoke_device(self C.uint64_t, planId *C.char, revokeKeys *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_approvals_revoke_device")
+	self_, ok := resolveHandle[*sdk.SidecarApprovals](uint64(self), "urnet_sidecar_approvals_revoke_device")
+	if !ok {
+		return
+	}
+	var revokeKeys_ *sdk.SidecarRevokeItemList
+	if revokeKeys != nil {
+		revokeKeys_ = &sdk.SidecarRevokeItemList{}
+		if !goJson(revokeKeys, revokeKeys_, "urnet_sidecar_approvals_revoke_device") {
+			return
+		}
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RevokeDevice(goId(planId, "urnet_sidecar_approvals_revoke_device"), revokeKeys_, callback_)
+}
+
+//export urnet_sidecar_directory_announce_repo
+func urnet_sidecar_directory_announce_repo(self C.uint64_t, repoId *C.char, announcement *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_directory_announce_repo")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_announce_repo")
+	if !ok {
+		return
+	}
+	var announcement_ *sdk.SidecarRepoAnnouncement
+	if announcement != nil {
+		announcement_ = &sdk.SidecarRepoAnnouncement{}
+		if !goJson(announcement, announcement_, "urnet_sidecar_directory_announce_repo") {
+			return
+		}
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AnnounceRepo(goId(repoId, "urnet_sidecar_directory_announce_repo"), announcement_, callback_)
+}
+
+//export urnet_sidecar_directory_get
+func urnet_sidecar_directory_get(self C.uint64_t, announcementId *C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_directory_get")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_get")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Get(goId(announcementId, "urnet_sidecar_directory_get"))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_directory_get")
+}
+
+//export urnet_sidecar_directory_get_requests
+func urnet_sidecar_directory_get_requests(self C.uint64_t, view *C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_directory_get_requests")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_get_requests")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetRequests(goString(view))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_directory_get_requests")
+}
+
+//export urnet_sidecar_directory_list
+func urnet_sidecar_directory_list(self C.uint64_t, filter *C.char, listener_directory_changed C.urnet_sidecar_directory_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_directory_list")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_list")
+	if !ok {
+		return 0
+	}
+	var filter_ *sdk.SidecarDirectoryFilter
+	if filter != nil {
+		filter_ = &sdk.SidecarDirectoryFilter{}
+		if !goJson(filter, filter_, "urnet_sidecar_directory_list") {
+			return 0
+		}
+	}
+	var listener_ sdk.SidecarDirectoryListener
+	if listener_directory_changed != nil {
+		listener_ = &cAdapterSidecarDirectoryListener{cbDirectoryChanged: listener_directory_changed, userData: listener_user_data}
+	}
+	r0 := self_.List(filter_, listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_directory_request
+func urnet_sidecar_directory_request(self C.uint64_t, request *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_directory_request")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_request")
+	if !ok {
+		return
+	}
+	var request_ *sdk.SidecarAccessRequest
+	if request != nil {
+		request_ = &sdk.SidecarAccessRequest{}
+		if !goJson(request, request_, "urnet_sidecar_directory_request") {
+			return
+		}
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Request(request_, callback_)
+}
+
+//export urnet_sidecar_directory_revoke_repo
+func urnet_sidecar_directory_revoke_repo(self C.uint64_t, repoId *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_directory_revoke_repo")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_revoke_repo")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RevokeRepo(goId(repoId, "urnet_sidecar_directory_revoke_repo"), callback_)
+}
+
+//export urnet_sidecar_directory_set_runs
+func urnet_sidecar_directory_set_runs(self C.uint64_t, projectKey *C.char, value *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_directory_set_runs")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_set_runs")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetRuns(goString(projectKey), goString(value), callback_)
+}
+
+//export urnet_sidecar_directory_set_worker
+func urnet_sidecar_directory_set_worker(self C.uint64_t, enabled C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_directory_set_worker")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_set_worker")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetWorker(bool(enabled), callback_)
+}
+
+//export urnet_sidecar_evs_add_repo_change_listener
+func urnet_sidecar_evs_add_repo_change_listener(self C.uint64_t, repoId *C.char, listener_repo_changed C.urnet_sidecar_repo_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_evs_add_repo_change_listener")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_add_repo_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarRepoChangeListener
+	if listener_repo_changed != nil {
+		listener_ = &cAdapterSidecarRepoChangeListener{cbRepoChanged: listener_repo_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddRepoChangeListener(goId(repoId, "urnet_sidecar_evs_add_repo_change_listener"), listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_evs_create_repo
+func urnet_sidecar_evs_create_repo(self C.uint64_t, kind *C.char, displayName *C.char, privateParam C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_create_repo")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_create_repo")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CreateRepo(goString(kind), goString(displayName), bool(privateParam), callback_)
+}
+
+//export urnet_sidecar_evs_erasures
+func urnet_sidecar_evs_erasures(self C.uint64_t, repoId *C.char, callback_result C.urnet_sidecar_erasures_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_erasures")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_erasures")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarErasuresCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarErasuresCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Erasures(goId(repoId, "urnet_sidecar_evs_erasures"), callback_)
+}
+
+//export urnet_sidecar_evs_history
+func urnet_sidecar_evs_history(self C.uint64_t, repoId *C.char, path *C.char, callback_result C.urnet_sidecar_history_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_history")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_history")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarHistoryCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarHistoryCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.History(goId(repoId, "urnet_sidecar_evs_history"), goString(path), callback_)
+}
+
+//export urnet_sidecar_evs_read_head
+func urnet_sidecar_evs_read_head(self C.uint64_t, repoId *C.char, path *C.char, callback_result C.urnet_sidecar_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_read_head")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_read_head")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ReadHead(goId(repoId, "urnet_sidecar_evs_read_head"), goString(path), callback_)
+}
+
+//export urnet_sidecar_evs_write
+func urnet_sidecar_evs_write(self C.uint64_t, repoId *C.char, path *C.char, data *C.uint8_t, data_len C.int32_t, versioning *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_write")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_write")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Write(goId(repoId, "urnet_sidecar_evs_write"), goString(path), goBytes(data, data_len), goString(versioning), callback_)
+}
+
+//export urnet_sidecar_mail_burn
+func urnet_sidecar_mail_burn(self C.uint64_t, address *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_burn")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_burn")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Burn(goString(address), callback_)
+}
+
+//export urnet_sidecar_mail_create_burner
+func urnet_sidecar_mail_create_burner(self C.uint64_t, site *C.char, callback_result C.urnet_sidecar_burner_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_create_burner")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_create_burner")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarBurnerCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarBurnerCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CreateBurner(goString(site), callback_)
+}
+
+//export urnet_sidecar_mail_get_aliases
+func urnet_sidecar_mail_get_aliases(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_mail_get_aliases")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_aliases")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAliases()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_mail_get_aliases")
+}
+
+//export urnet_sidecar_mail_get_one_time_codes
+func urnet_sidecar_mail_get_one_time_codes(self C.uint64_t, sinceMillis C.int64_t, callback_result C.urnet_sidecar_one_time_codes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_get_one_time_codes")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_one_time_codes")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarOneTimeCodesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarOneTimeCodesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetOneTimeCodes(int64(sinceMillis), callback_)
+}
+
+//export urnet_sidecar_mail_get_receiver_coverage
+func urnet_sidecar_mail_get_receiver_coverage(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_mail_get_receiver_coverage")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_receiver_coverage")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReceiverCoverage()
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_mail_get_used_at
+func urnet_sidecar_mail_get_used_at(self C.uint64_t, entryId *C.char, callback_result C.urnet_sidecar_used_at_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_get_used_at")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_used_at")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarUsedAtCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarUsedAtCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetUsedAt(goId(entryId, "urnet_sidecar_mail_get_used_at"), callback_)
+}
+
+//export urnet_sidecar_mail_get_vault_entries
+func urnet_sidecar_mail_get_vault_entries(self C.uint64_t, callback_result C.urnet_sidecar_vault_entries_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_get_vault_entries")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_vault_entries")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarVaultEntriesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarVaultEntriesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetVaultEntries(callback_)
+}
+
+//export urnet_sidecar_mail_send
+func urnet_sidecar_mail_send(self C.uint64_t, draft *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_send")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_send")
+	if !ok {
+		return
+	}
+	var draft_ *sdk.SidecarDraft
+	if draft != nil {
+		draft_ = &sdk.SidecarDraft{}
+		if !goJson(draft, draft_, "urnet_sidecar_mail_send") {
+			return
+		}
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Send(draft_, callback_)
+}
+
+//export urnet_sidecar_mail_set_receiver_enabled
+func urnet_sidecar_mail_set_receiver_enabled(self C.uint64_t, enabled C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_set_receiver_enabled")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_set_receiver_enabled")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetReceiverEnabled(bool(enabled), callback_)
+}
+
+//export urnet_sidecar_socket_listener_accept
+func urnet_sidecar_socket_listener_accept(self C.uint64_t, timeoutMillis C.int64_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_socket_listener_accept")
+	self_, ok := resolveHandle[*sdk.SidecarSocketListener](uint64(self), "urnet_sidecar_socket_listener_accept")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.Accept(int64(timeoutMillis))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_socket_listener_close
+func urnet_sidecar_socket_listener_close(self C.uint64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_socket_listener_close")
+	self_, ok := resolveHandle[*sdk.SidecarSocketListener](uint64(self), "urnet_sidecar_socket_listener_close")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Close()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_socket_listener_get_addr
+func urnet_sidecar_socket_listener_get_addr(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_socket_listener_get_addr")
+	self_, ok := resolveHandle[*sdk.SidecarSocketListener](uint64(self), "urnet_sidecar_socket_listener_get_addr")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAddr()
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_sockets_dial
+func urnet_sidecar_sockets_dial(self C.uint64_t, address *C.char, timeoutMillis C.int64_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_sockets_dial")
+	self_, ok := resolveHandle[*sdk.SidecarSockets](uint64(self), "urnet_sidecar_sockets_dial")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.Dial(goString(address), int64(timeoutMillis))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_sockets_listen
+func urnet_sidecar_sockets_listen(self C.uint64_t, address *C.char, weight C.int64_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_sockets_listen")
+	self_, ok := resolveHandle[*sdk.SidecarSockets](uint64(self), "urnet_sidecar_sockets_listen")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.Listen(goString(address), int32(int64(weight)))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_sn_claim_transactions_for

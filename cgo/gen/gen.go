@@ -123,6 +123,17 @@ var behavioralTypes = map[string]bool{
 	"PointsLeaderboardViewController":     true,
 	"ProviderStatusViewController":        true,
 	"WalletViewController":                true,
+
+	// sdk.Sidecar's handles (sidecar §18.5's Gate table, SDK-M8-06): each holds a lock-guarded core or a daemon
+	// session and its listeners, so it crosses as a handle with its methods. SidecarSearch and SidecarSearchHandle
+	// join with M10's search API.
+	"Sidecar":               true,
+	"SidecarEvs":            true,
+	"SidecarMail":           true,
+	"SidecarSockets":        true,
+	"SidecarSocketListener": true,
+	"SidecarApprovals":      true,
+	"SidecarDirectory":      true,
 }
 
 // skipped types are not exported. mirror the gomobile validate exclusions
@@ -150,14 +161,6 @@ var skipTypePatterns = []*regexp.Regexp{
 // explicitly not skipped even though they match skipTypePatterns
 var keepTypes = map[string]bool{}
 
-// sdk.Sidecar's surface (sidecar §18.5) lands in the sdk ahead of its c abi, whose handles, json types and function
-// pointers are SDK-M8-06's (§18.5's Gate table). Until that task binds them, every symbol of it is skipped here, by
-// name, so the abi, its header and the language packages do not move: SDK-M8-06 replaces this rule with the bindings.
-var pendingSidecarSymbolPattern = regexp.MustCompile(`^(New|Default)?Sidecar`)
-
-// The reason a pending sdk.Sidecar symbol is not exported.
-const pendingSidecarSymbolReason = "sdk.Sidecar's c abi is SDK-M8-06's (sidecar §18.5's Gate table)"
-
 // json arguments decoded over their type's defaults rather than over a zero
 // value, by the type's defaults function: a field the json omits keeps its
 // default, and a NULL json is the defaults. A zero DeviceLocalSettings is no
@@ -165,6 +168,8 @@ const pendingSidecarSymbolReason = "sdk.Sidecar's c abi is SDK-M8-06's (sidecar 
 // the type is built from DefaultDeviceLocalSettings everywhere else.
 var jsonParamDefaults = map[string]string{
 	"DeviceLocalSettings": "DefaultDeviceLocalSettings",
+	// a zero SidecarSettings names no instance; NewSidecarLocal and NewSidecarRemote take it over its defaults
+	"SidecarSettings": "DefaultSidecarSettings",
 }
 
 var skipFuncs = map[string]string{
@@ -206,6 +211,11 @@ var skipMethods = map[string]string{
 	"PacketBatch.Get":                                "manual export urnet_packet_batch_get",
 	"WebsocketDeviceRpcDialer.Dial":                  "net.Conn internal; used by DeviceRemote internally",
 	"WebsocketDeviceRpcListener.Accept":              "net.Conn internal; used by DeviceLocal internally",
+	// sdk.Sidecar's Go-only members (sidecar §18.5): a Go embedder's, as gomobile's mobileSidecarGoOnlyIds names them
+	"Sidecar.Core":                 "Go only: the sidecar package's own Sidecar (sidecar §18.5)",
+	"Sidecar.CloseAndWait":         "go context does not cross the abi; use urnet_sidecar_close",
+	"SidecarSockets.ListenContext": "Go only: a net.Listener for a Go embedder's own server (sidecar §18.5)",
+	"DeviceLocal.NewBridgeLink":    "Go only: §17.10's BridgeHost, which the device's own bridge calls in process",
 
 	// byte results cross via the buffer-out pattern, see exports_manual.go
 	"DeviceLocal.GetClientKeySeed":                           "manual export urnet_device_local_get_client_key_seed",
@@ -587,9 +597,6 @@ func (g *gen) typeSkipReason(name string) (string, bool) {
 	if reason, ok := skipTypes[name]; ok {
 		return reason, true
 	}
-	if pendingSidecarSymbolPattern.MatchString(name) {
-		return pendingSidecarSymbolReason, true
-	}
 	if keepTypes[name] {
 		return "", false
 	}
@@ -605,10 +612,6 @@ func (g *gen) typeSkipReason(name string) (string, bool) {
 // emission
 
 func (g *gen) emitConst(obj *types.Const) {
-	if pendingSidecarSymbolPattern.MatchString(obj.Name()) {
-		g.skip(obj.Name(), "skipped: "+pendingSidecarSymbolReason)
-		return
-	}
 	if obj.Name() == "Version" {
 		// crosses via urnet_version(), which returns the linker-set value
 		g.skip("Version", "crosses via urnet_version()")
@@ -650,10 +653,6 @@ func (g *gen) emitFunc(obj *types.Func) {
 	name := obj.Name()
 	if reason, ok := skipFuncs[name]; ok {
 		g.skip(name, "skipped: "+reason)
-		return
-	}
-	if pendingSidecarSymbolPattern.MatchString(name) {
-		g.skip(name, "skipped: "+pendingSidecarSymbolReason)
 		return
 	}
 	for _, p := range skipFuncPatterns {
@@ -2146,6 +2145,10 @@ func paramName(p *types.Var, i int) string {
 	// avoid go keywords and our locals
 	switch name {
 	case "self", "ok", "err", "type", "func", "range", "map", "chan", "go", "defer", "select", "var", "const", "outError":
+		return name + "Param"
+	}
+	// and c++ keywords, since the c header is included from c++ (a bool named private, say)
+	if cppReserved[name] {
 		return name + "Param"
 	}
 	return name
