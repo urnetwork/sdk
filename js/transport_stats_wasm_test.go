@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 func TestTransportDistributionWasmPreservesH1Selection(t *testing.T) {
