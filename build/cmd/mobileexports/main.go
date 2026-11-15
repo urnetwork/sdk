@@ -102,6 +102,9 @@ var mobileSnFleetGoOnlyIds = map[string]bool{
 // signer, Go only by §18.7, and its func parameter binds nowhere.
 // SidecarSockets.ListenContext answers a net.Listener for a Go embedder's own
 // server (SDK-M8-03), and its context binds nowhere either.
+// DeviceLocal.NewBridgeLink is §17.10's BridgeHost, which the VPN component's
+// own device.Bridge calls in process with connect types and a signing func
+// (SDK-M8-08); no app calls it.
 //
 // The app interfaces of §18.7's credential rules bind whole and need no entry:
 // LocalStateSealer, its LocalStateSealKey answer and its statuses,
@@ -113,6 +116,7 @@ var mobileSidecarGoOnlyIds = map[string]bool{
 	"Sidecar.CloseAndWait":         true,
 	"Api.SetDpopSigner":            true,
 	"SidecarSockets.ListenContext": true,
+	"DeviceLocal.NewBridgeLink":    true,
 }
 
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile

@@ -138,6 +138,8 @@ type deviceForwardingDeps struct {
 	hostClient    func() (clientId []byte, publicKey []byte)
 	statusChanged func()
 	clock         sidecar.Clock
+	// a test's generator of a link's window clients in place of connect's, nil for connect's (device_sidecar_host.go)
+	linkGenerator func(ctx context.Context, source *deviceForwardLinkSource, credentials connect.NetworkClientCredentials, target connect.Id) connect.MultiClientGenerator
 }
 
 // deps' clock, or real time.
@@ -231,6 +233,9 @@ func (self *deviceLocalForwardingHost) postureStore(role *deviceLocalForwarding)
 	}
 	postureSettings.Floor = role.keys.floor()
 	bridgeSettings.PostureSettings = postureSettings
+	// the role's links sign by its Forwarder and read their targets' bindings through F (device_sidecar_host.go)
+	bridgeSettings.LinkSign = role.signWindowDelegation
+	bridgeSettings.LinkTargetKey = role.targetBinding
 	if err := role.openStore(false); err != nil {
 		self.log.Infof("[forward]%s the forwarding store stays closed: %v\n", role.networkId, err)
 		return &failedPostureStore{err: err}, &bridgeSettings
@@ -390,22 +395,6 @@ func (self *deviceLocalForwardingHost) witness(networkId connect.Id, pin *bridge
 		return errDeviceBridgeLegacy
 	}
 	return role.witness(pin, fork)
-}
-
-// networkId's forwarding signer for its links (SDK-M8-08), refusing while no key set is current.
-func (self *deviceLocalForwardingHost) signer(networkId connect.Id) (*sidecar.ForwardingSigner, error) {
-	role, err := self.role(networkId, false)
-	if err != nil {
-		return nil, err
-	}
-	if role == nil {
-		return nil, errDeviceBridgeLegacy
-	}
-	forwarder := role.currentForwarder()
-	if forwarder == nil {
-		return nil, errors.New("no forwarder runs for the network")
-	}
-	return forwarder.NewSigner(nil)
 }
 
 // Every role's status, in the order the networks joined.
@@ -1277,5 +1266,7 @@ func (self *DeviceLocal) startForwarding() {
 	if self.settings.testingForwardingDeps != nil {
 		self.settings.testingForwardingDeps(deps)
 	}
+	// every role's bridge builds its links through this device from here on (device_sidecar_host.go)
+	self.bridgeOwner.linkHost.bind(self)
 	self.bridgeOwner.forwarding.start(deps)
 }

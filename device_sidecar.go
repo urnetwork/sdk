@@ -25,8 +25,9 @@
 // first-joined network's wins (§17.4), and every other packet to the primary, whose egress rules decide it. Only the
 // primary's hook goes on the exit NAT, so an app device hosts nothing outside its device client's network (D-SDK-3).
 //
-// Not here yet, and closed meanwhile: the bridge has no BridgeHost until SDK-M8-08's DeviceLocal.NewBridgeLink, so every
-// link entry answers with a reject.
+// Links: every role's bridge builds them through the device (DeviceLocal.NewBridgeLink, device_sidecar_host.go) on its
+// network's forwarding client, signed by its Forwarder (the role's LinkSign), which the device binds as host once it
+// is whole; a link asked for before that, or on a device with no forwarding role, is refused, so it fails closed.
 
 package sdk
 
@@ -39,6 +40,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
@@ -84,6 +86,8 @@ type deviceBridgeOwned interface {
 	SetFork(fork bool) error
 	Decision() sidecardevice.PostureDecision
 	SetLocalAddresses(addresses []netip.Addr)
+	// Signs each live window client of the shares' links again, once a share's signer changed (§17.10).
+	ResignShares(shareIds []connect.Id) error
 }
 
 var _ deviceBridgeOwned = (*sidecardevice.Bridge)(nil)
@@ -91,13 +95,51 @@ var _ deviceBridgeOwned = (*sidecardevice.Bridge)(nil)
 // Builds a device role's bridge over store, restoring its posture before it returns.
 type deviceBridgeConstructor func(ctx context.Context, store sidecardevice.PostureStore, settings *sidecardevice.BridgeSettings) (deviceBridgeOwned, error)
 
-// device.NewBridge with no BridgeHost, so no link is built (the file's comment).
+// device.NewBridge with no BridgeHost, so no link is built.
 func newDeviceBridge(ctx context.Context, store sidecardevice.PostureStore, settings *sidecardevice.BridgeSettings) (deviceBridgeOwned, error) {
-	bridge, err := sidecardevice.NewBridge(ctx, store, nil, settings)
+	return newDeviceBridgeWithHost(ctx, store, nil, settings)
+}
+
+// device.NewBridge whose links host builds (the file's comment).
+func newDeviceBridgeWithHost(ctx context.Context, store sidecardevice.PostureStore, host sidecardevice.BridgeHost, settings *sidecardevice.BridgeSettings) (deviceBridgeOwned, error) {
+	bridge, err := sidecardevice.NewBridge(ctx, store, host, settings)
 	if err != nil {
 		return nil, err
 	}
 	return bridge, nil
+}
+
+// No device builds a role's links yet: it is not whole, or runs no forwarding role.
+var errDeviceBridgeLinkUnbound = errors.New("no device builds this bridge's links yet")
+
+// The BridgeHost every role's bridge is built with, before the device that builds its links exists: the device binds
+// itself once it is whole (DeviceLocal.NewBridgeLink), and until then every build is refused, so a link fails closed.
+// Safe for concurrent use.
+type deviceBridgeLinkHost struct {
+	bound atomic.Pointer[deviceBridgeLinkHostBinding]
+}
+
+// The host bound.
+type deviceBridgeLinkHostBinding struct {
+	host sidecardevice.BridgeHost
+}
+
+var _ sidecardevice.BridgeHost = (*deviceBridgeLinkHost)(nil)
+
+// Binds the host every later build goes to.
+func (self *deviceBridgeLinkHost) bind(host sidecardevice.BridgeHost) {
+	self.bound.Store(&deviceBridgeLinkHostBinding{host: host})
+}
+
+// device.BridgeHost: the bound host's link, or a refusal while none is bound.
+func (self *deviceBridgeLinkHost) NewBridgeLink(ctx context.Context, target connect.Id, subject connect.Id, shareAliases []netip.Prefix,
+	sign func(windowClientId connect.Id, windowClientPublicKey []byte, notAfter time.Time) ([]byte, error),
+) (connect.UserNatClient, error) {
+	binding := self.bound.Load()
+	if binding == nil || binding.host == nil {
+		return nil, errors.Join(sidecardevice.ErrBridgeLinkRefused, errDeviceBridgeLinkUnbound)
+	}
+	return binding.host.NewBridgeLink(ctx, target, subject, shareAliases, sign)
 }
 
 // Why a device runs no device role, or refuses a bridge call.
@@ -112,7 +154,8 @@ var (
 
 // The device role's bridge settings for a device's: §17's desktop values, a phone's on a low-memory device (§17.5),
 // the sdk exit NAT's table until C16, so an app device hosts, serves and maps nothing (D-SDK-3), and on iOS no link
-// until §22.9 measures one there (owner decision 100). No signer and no binding fetch until SDK-M8-08.
+// until §22.9 measures one there (owner decision 100). No signer and no binding fetch: each forwarding role's settings
+// add its own (device_sidecar_host.go), so a bridge no role's settings built builds no link.
 func deviceLocalBridgeSettings(settings *DeviceLocalSettings) *sidecardevice.BridgeSettings {
 	var bridgeSettings *sidecardevice.BridgeSettings
 	if settings.LowMemoryProfile {
@@ -176,6 +219,8 @@ type deviceLocalBridgeOwner struct {
 	forwarding *deviceLocalForwardingHost
 	// the tun owner's local addresses, which every bridge built later takes too
 	localAddresses []netip.Addr
+	// what every bridge builds its links through, which the device binds once it is whole
+	linkHost *deviceBridgeLinkHost
 }
 
 // The device role of a device built on settings for the network networkIdText names, its posture restored from the
@@ -194,9 +239,13 @@ func newDeviceLocalBridgeOwner(
 		settings:  deviceLocalBridgeSettings(settings),
 		newBridge: settings.testingNewDeviceBridge,
 		log:       log,
+		linkHost:  &deviceBridgeLinkHost{},
 	}
 	if self.newBridge == nil {
-		self.newBridge = newDeviceBridge
+		linkHost := self.linkHost
+		self.newBridge = func(ctx context.Context, store sidecardevice.PostureStore, settings *sidecardevice.BridgeSettings) (deviceBridgeOwned, error) {
+			return newDeviceBridgeWithHost(ctx, store, linkHost, settings)
+		}
 	}
 	if refusal := deviceBridgeRefusal(settings, runtime.GOOS); refusal != nil {
 		if refusal != errDeviceBridgeOff {
