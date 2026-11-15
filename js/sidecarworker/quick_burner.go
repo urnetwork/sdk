@@ -100,11 +100,11 @@ func (self *QuickBurner) Handle(ctx context.Context, request *Request) *Reply {
 	if request == nil || request.Operation != OperationQuickBurner {
 		return self.worker.Handle(ctx, request)
 	}
-	if err := checkRequest(request); err != nil {
+	if err := checkRequest(request, self.worker.settings); err != nil {
 		return refusalReply("", CodeInvalid)
 	}
 	if request.RepoId != "" || request.LogId != "" || request.Ref != "" || request.Path != "" || request.PathBase64 != "" ||
-		request.Version != "" || request.History || request.After != "" || requestCodeMaxByteCount < len(request.Code) {
+		request.Version != "" || request.History || request.After != "" || self.worker.settings.RequestCodeMaxByteCount < len(request.Code) {
 		return refusalReply(request.Id, CodeInvalid)
 	}
 	reply := self.quickBurner(ctx, request.Code)
@@ -118,7 +118,7 @@ func (self *QuickBurner) HandleJson(ctx context.Context, requestJson []byte) []b
 	if self.worker.settings.RequestMaxByteCount < len(requestJson) {
 		reply = refusalReply("", CodeTooLarge)
 	} else if request, err := ParseRequest(requestJson); err != nil {
-		reply = refusalReply(readableRequestId(requestJson), CodeInvalid)
+		reply = refusalReply(readableRequestId(requestJson, self.worker.settings), CodeInvalid)
 	} else {
 		reply = self.Handle(ctx, request)
 	}

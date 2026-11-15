@@ -270,6 +270,8 @@ func TestNoReplyCarriesSecret(t *testing.T) {
 		world.request("read", OperationReadView),
 		history,
 		world.request("records", OperationRecordView),
+		world.request("directory", OperationDirectoryView),
+		world.request("config", OperationConfigView),
 		world.request("enroll", OperationEnroll),
 		world.request("admission", OperationAdmissionStatus),
 	} {
@@ -302,16 +304,19 @@ func TestNoReplyCarriesSecret(t *testing.T) {
 	}
 }
 
-// A page Worker is read_only (§7.9): it offers exactly §18.8's M4 operations, no approval, request, decision or
-// revocation, the seams it holds have no signing call, and of its operations only sign_out reaches the one call that
-// signs, Logout's own SidecarRevoke.
+// A page Worker is read_only (§7.9): it offers exactly §18.8's M4 operations and RS2's two console views, no approval,
+// request, decision or revocation, the seams it holds have no signing call, and of its operations only sign_out reaches
+// the one call that signs, Logout's own SidecarRevoke.
 func TestReadOnlyOperationsOnly(t *testing.T) {
 	operations := []string{}
 	for name := range workerOperations {
 		operations = append(operations, name)
 	}
 	slices.Sort(operations)
-	want := []string{OperationAdmissionStatus, OperationEnroll, OperationList, OperationReadView, OperationRecordView, OperationSignOut}
+	want := []string{
+		OperationAdmissionStatus, OperationConfigView, OperationDirectoryView, OperationEnroll, OperationList, OperationReadView,
+		OperationRecordView, OperationSignOut,
+	}
 	if !slices.Equal(operations, want) {
 		t.Fatalf("the operations %v, want %v", operations, want)
 	}
@@ -330,6 +335,7 @@ func TestReadOnlyOperationsOnly(t *testing.T) {
 		{seam: (*WorkerSidecar)(nil), methods: []string{"Identity", "Logout", "Status"}},
 		{seam: (*WorkerRepo)(nil), methods: []string{"History", "List", "ReadHead"}},
 		{seam: (*WorkerRecords)(nil), methods: []string{"Entries", "Sync"}},
+		{seam: (*WorkerDirectory)(nil), methods: []string{"DirectoryId", "Get", "List", "Sync"}},
 	} {
 		if methods := methodsOf(c.seam); !slices.Equal(methods, c.methods) {
 			t.Errorf("a seam offers %v, want %v", methods, c.methods)

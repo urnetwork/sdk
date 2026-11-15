@@ -12,13 +12,14 @@
 // row; I-2, I-7). Ids cross as strings and versions as decimal strings, since a JS number holds an integer exactly
 // only up to 2^53 (§6.8).
 //
-// What a Worker does: it reads (list, read_view, record_view) and it signs itself out (sign_out). A page Worker is
-// admitted read_only (§7.9), so beyond its sign-out SidecarRevoke, its own key upkeep and read receipts, which the
-// root signs where they belong, it signs nothing: the seams it holds have no signing call (WorkerSidecar), and it
-// files no approval or request and offers no revocation (§18.5's js row). enroll and admission_status exist as
-// operations and answer unavailable: the owner chose the ur.io session's one-time code as the key origin's credential
-// (plan-SDK-key-origin-credential, option 2), and until the root can mint a top-level client from it the interim
-// holds, so no page Worker enrolls.
+// What a Worker does: it reads (list, read_view, record_view, and for RS2's team console directory_view and
+// config_view) and it signs itself out (sign_out). A page Worker is admitted read_only (§7.9) and its client
+// admin_refused (§18.8's Identity bullet), so beyond its sign-out SidecarRevoke, its own key upkeep and read receipts,
+// which the root signs where they belong, it signs nothing: the seams it holds have no signing call (WorkerSidecar,
+// WorkerDirectory), and it files no approval, request or decision and offers no revocation (§18.5's js row, §16.11's
+// console row). enroll and admission_status exist as operations and answer unavailable: the owner chose the ur.io
+// session's one-time code as the key origin's credential (plan-SDK-key-origin-credential, option 2), and until the root
+// can mint a top-level client from it the interim holds, so no page Worker enrolls.
 //
 // js/wasm runs one thread (§18.10's threads row): an operation yields between its steps once YieldInterval has
 // passed since its last yield, through the host's Yield, which on the page Worker hands the thread to the browser's
@@ -55,16 +56,49 @@ type WorkerSettings struct {
 	ListMaxEntryCount int
 	// The most entries one record_view returns; past it the reply names where the next page starts.
 	RecordMaxEntryCount int
+	// A request's field bounds, the format the frame's loader.js checks first (its requestIdPattern and textMaxLength):
+	// a correlation id's bytes, 64; a path's, as text or as the bytes its base64 names, 4096; a ref's name, 255;
+	// enroll's one-time code, 512; directory_view's query, 512, a search query's bound (§11.14), which the Worker
+	// filters by locally and sends nowhere (§16.11's tools row, I-19).
+	RequestIdMaxByteCount    int
+	RequestPathMaxByteCount  int
+	RequestRefMaxByteCount   int
+	RequestCodeMaxByteCount  int
+	RequestQueryMaxByteCount int
+	// The most items one directory_view returns; past it the reply names where the next page starts. 256: about 512
+	// KiB of typical items' views, and at most about 5 MiB at an item's caps (four claims' text and targets), inside
+	// §18.4's 64 MiB above wasm data.
+	DirectoryMaxItemCount int
+	// A directory_view syncs the directory's copy first unless a sync of it succeeded within this, as a desktop syncs
+	// at each view (§16.11's desktops row): the root's Directory.ViewCoalesce, 30 s, which the shell passes from the
+	// network's own settings. Non-positive syncs at every view.
+	DirectoryViewCoalesce time.Duration
+	// The most rows each list of a config_view holds, members, sidecars, names and rules each; past it the list stops
+	// and the view is marked truncated. 16,384, past a Team's 5,000 config_admissions (§20.4) and its stress case's
+	// 12,500 (§16.11's sizes row).
+	ConfigMaxRowCount int
+	// The most bytes of the policy document a config_view carries: §8.8's 4 MiB source bound, which no head a base
+	// names passes. A longer one is left out and marked.
+	ConfigPolicySourceMaxByteCount int
 }
 
 // The defaults.
 func DefaultWorkerSettings() *WorkerSettings {
 	return &WorkerSettings{
-		YieldInterval:       50 * time.Millisecond,
-		RequestMaxByteCount: 64 * 1024,
-		ReadMaxByteCount:    8 * 1024 * 1024,
-		ListMaxEntryCount:   4096,
-		RecordMaxEntryCount: 512,
+		YieldInterval:                  50 * time.Millisecond,
+		RequestMaxByteCount:            64 * 1024,
+		ReadMaxByteCount:               8 * 1024 * 1024,
+		ListMaxEntryCount:              4096,
+		RecordMaxEntryCount:            512,
+		RequestIdMaxByteCount:          64,
+		RequestPathMaxByteCount:        4096,
+		RequestRefMaxByteCount:         255,
+		RequestCodeMaxByteCount:        512,
+		RequestQueryMaxByteCount:       512,
+		DirectoryMaxItemCount:          256,
+		DirectoryViewCoalesce:          sidecar.DefaultSidecarSettings().Directory.ViewCoalesce,
+		ConfigMaxRowCount:              16 * 1024,
+		ConfigPolicySourceMaxByteCount: 4 * 1024 * 1024,
 	}
 }
 
@@ -94,6 +128,32 @@ type WorkerRecords interface {
 	Entries(logId sidecar.Id) []*sidecar.RecordReadEntry
 }
 
+// The team directory a Worker reads (§16.11): on the page Worker, the Sidecar's DirectoryClient, which the
+// sidecar_http leg builds read_only, so its writes refuse whatever is asked of it. Every method here reads: a sync
+// fetches and verifies, and List and Get filter the folded copy locally, so nothing of a filter or a query reaches evs
+// (I-19).
+type WorkerDirectory interface {
+	// The network's directory, false where it has none: a personal network, or a team's before its directory exists.
+	DirectoryId() (sidecar.Id, bool)
+	// One sync of the copy: the cards ref, the moved streams, each entry verified before it is kept.
+	Sync(ctx context.Context) error
+	List(filter *sidecar.DirectoryFilter) ([]*sidecar.DirectoryItem, error)
+	Get(announcementId sidecar.Id, writerSidecarId *sidecar.Id) (*sidecar.DirectoryItem, error)
+}
+
+// The network's config as a Worker shows it (§18.8's Identity bullet: the config's names, tags, groups and policy):
+// one verified state of §7.9's log and what the config head that state stands on names. A Worker reads it and changes
+// none of it.
+type WorkerConfigState struct {
+	// The newest verified state.
+	State *sidecar.ConfigState
+	// The config head State's newest base names, nil where this device could not open it.
+	Head *sidecar.ConfigHead
+	// The policy compiled from Head (AclLocalPolicy): its rules, its requests rules and the names behind their atoms;
+	// nil where none compiled.
+	Local *sidecar.AclLocalPolicy
+}
+
 // What a Worker runs on.
 type WorkerArgs struct {
 	Sidecar WorkerSidecar
@@ -101,6 +161,12 @@ type WorkerArgs struct {
 	Repo func(repoId sidecar.Id) (WorkerRepo, error)
 	// The record reader: on the page Worker, the Sidecar's record's. An error is what the reply reports.
 	Records func() (WorkerRecords, error)
+	// The team directory: on the page Worker, the Sidecar's read_only DirectoryClient once its evs and authorization
+	// state are bound. An error is what the reply reports; nil answers unavailable.
+	Directory func() (WorkerDirectory, error)
+	// The verified config: on the page Worker, its config state, head and compiled policy once this leg verifies
+	// them. An error is what the reply reports; nil answers unavailable.
+	Config func() (*WorkerConfigState, error)
 	// Hands the thread to the event loop: the shell's wait on a zero timeout in the browser. Nil yields with
 	// runtime.Gosched, which on a native leg is a cheap hand-off.
 	Yield func(ctx context.Context) error
@@ -125,9 +191,14 @@ type Worker struct {
 	stateLock sync.Mutex
 	// set once a sign_out has wiped, after which every request answers signed_out
 	signedOut bool
+	// the directory whose copy last synced without error, and when that sync started, which DirectoryViewCoalesce
+	// reads; zero before any
+	syncedDirectoryId sidecar.Id
+	syncedAt          time.Time
 }
 
-// A Worker on args. Refuses args without the sidecar, the repo seam or the record seam.
+// A Worker on args. Refuses args without the sidecar, the repo seam or the record seam, or with a bound that is not
+// positive.
 func NewWorker(args *WorkerArgs) (*Worker, error) {
 	if args == nil || args.Sidecar == nil || args.Repo == nil || args.Records == nil {
 		return nil, errors.New("a page Worker needs its sidecar, its repos and its records")
@@ -136,8 +207,15 @@ func NewWorker(args *WorkerArgs) (*Worker, error) {
 	if settings == nil {
 		settings = DefaultWorkerSettings()
 	}
-	if settings.RequestMaxByteCount <= 0 || settings.ReadMaxByteCount <= 0 || settings.ListMaxEntryCount <= 0 || settings.RecordMaxEntryCount <= 0 {
-		return nil, fmt.Errorf("a page Worker's bounds must be positive")
+	for _, bound := range []int64{
+		int64(settings.RequestMaxByteCount), settings.ReadMaxByteCount, int64(settings.ListMaxEntryCount), int64(settings.RecordMaxEntryCount),
+		int64(settings.RequestIdMaxByteCount), int64(settings.RequestPathMaxByteCount), int64(settings.RequestRefMaxByteCount),
+		int64(settings.RequestCodeMaxByteCount), int64(settings.RequestQueryMaxByteCount), int64(settings.DirectoryMaxItemCount),
+		int64(settings.ConfigMaxRowCount), int64(settings.ConfigPolicySourceMaxByteCount),
+	} {
+		if bound <= 0 {
+			return nil, fmt.Errorf("a page Worker's bounds must be positive")
+		}
 	}
 	now := args.Now
 	if now == nil {
@@ -163,7 +241,7 @@ func (self *Worker) Handle(ctx context.Context, request *Request) *Reply {
 	if request == nil {
 		return refusalReply("", CodeInvalid)
 	}
-	if err := checkRequest(request); err != nil {
+	if err := checkRequest(request, self.settings); err != nil {
 		// an id that is not one is never repeated
 		return refusalReply("", CodeInvalid)
 	}
@@ -171,7 +249,7 @@ func (self *Worker) Handle(ctx context.Context, request *Request) *Reply {
 	if !ok {
 		return refusalReply(request.Id, CodeUnknownOperation)
 	}
-	fields, err := operation.fields(request)
+	fields, err := operation.fields(request, self.settings)
 	if err != nil {
 		return refusalReply(request.Id, CodeInvalid)
 	}
@@ -190,7 +268,7 @@ func (self *Worker) HandleJson(ctx context.Context, requestJson []byte) []byte {
 	if self.settings.RequestMaxByteCount < len(requestJson) {
 		reply = refusalReply("", CodeTooLarge)
 	} else if request, err := ParseRequest(requestJson); err != nil {
-		reply = refusalReply(readableRequestId(requestJson), CodeInvalid)
+		reply = refusalReply(readableRequestId(requestJson, self.settings), CodeInvalid)
 	} else {
 		reply = self.Handle(ctx, request)
 	}
