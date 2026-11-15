@@ -748,7 +748,7 @@ func (self *deviceLocalForwarding) clockWithLock() sidecar.Clock {
 }
 
 // The role's clock, read under its lock.
-func (self *deviceLocalForwarding) clockNow() sidecar.Clock {
+func (self *deviceLocalForwarding) currentClock() sidecar.Clock {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.clockWithLock()
@@ -856,7 +856,7 @@ func (self *deviceLocalForwarding) runPoll(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-self.clockNow().After(deviceForwardBackoff(self.settings.PollRetryMinTimeout, self.settings.PollRetryMaxTimeout, retryCount)):
+			case <-self.currentClock().After(deviceForwardBackoff(self.settings.PollRetryMinTimeout, self.settings.PollRetryMaxTimeout, retryCount)):
 			}
 			continue
 		}
@@ -897,7 +897,7 @@ func (self *deviceLocalForwarding) runPromotion(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-wanted:
-		case <-self.clockNow().After(self.settings.PromotionCheckInterval):
+		case <-self.currentClock().After(self.settings.PromotionCheckInterval):
 		}
 	}
 }
@@ -990,7 +990,7 @@ type deviceForwardHeadAlarm struct {
 func (self *deviceLocalForwarding) forwarderEvent(event sidecar.SidecarEvent, statusChanged func()) {
 	switch event.Kind {
 	case sidecar.SidecarEventHeadAlarm:
-		headAlarm := &deviceForwardHeadAlarm{Kind: string(event.HeadAlarm), At: self.clockNow().Now()}
+		headAlarm := &deviceForwardHeadAlarm{Kind: string(event.HeadAlarm), At: self.currentClock().Now()}
 		for i, into := range []*uint64{&headAlarm.N, &headAlarm.OtherN} {
 			pin := &bridge.AuthPin{}
 			if proto.Unmarshal(event.Evidence[i], pin) == nil {
