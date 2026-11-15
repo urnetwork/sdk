@@ -664,3 +664,66 @@ func TestRemoteEventsEndWithTheSidecar(t *testing.T) {
 		t.Errorf("a read after Close: %v", err)
 	}
 }
+
+// A sidecar of the network the daemon enrolled anew, after a logout, starts its own generations at its first, below
+// the one before it: its events still reach the listener, and the backend follows its sidecar_id from them on.
+func TestRemoteEventsFollowANewSidecarOfTheNetwork(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	before := newTestEventsSource()
+	daemon := startTestEventsDaemon(t, socketPath, before, 5, nil)
+	dial := newTestEventsDial(sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion))
+	remote, _, events := openTestEventsSidecar(t, dial.dial, nil)
+	close(dial.ready)
+	if online := events.next(t); online.State != "online" || online.Generation != 5 {
+		t.Fatalf("the first event: %+v", online)
+	}
+	after := &testEventsSource{callbacks: sidecar.NewCallbackList[sidecar.SidecarEventFunction](), networkId: before.networkId, sidecarId: sidecar.NewId()}
+	daemon.daemon.Events().Attach(after)
+	after.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventState, Generation: 1, State: sidecar.SidecarStateOnline})
+	if fresh := events.next(t); fresh.State != "online" || fresh.Generation != 1 {
+		t.Fatalf("the new sidecar's first event: %+v", fresh)
+	}
+	if got := remote.GetSidecarId(); got == nil || got.String() != after.sidecarId.String() {
+		t.Fatalf("the sidecar_id followed: %v", got)
+	}
+	approvalId := sidecar.NewId()
+	after.raise(sidecar.SidecarEvent{Kind: sidecar.SidecarEventApprovalPending, Generation: 1, ApprovalId: &approvalId})
+	if pending := events.next(t); pending.Kind != "approval_pending" || pending.Generation != 1 {
+		t.Fatalf("the new sidecar's next event: %+v", pending)
+	}
+}
+
+// A pairing that moves the backend to another network's sidecar, whose generations start below the one followed
+// before, still delivers that sidecar's state.
+func TestRemotePairingToAnotherNetworkPassesTheFloor(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	daemon.set("online", "", 5)
+	daemon.start()
+	remote, backend, events := openTestRemoteSidecar(t, socketPath)
+	if err := backend.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if online := events.next(t); online.Generation != 5 {
+		t.Fatalf("the first event: %+v", online)
+	}
+	// the daemon's sidecar of another network, the one the pairing binds, at its first generations
+	other := sidecar.NewId()
+	func() {
+		daemon.stateLock.Lock()
+		defer daemon.stateLock.Unlock()
+		daemon.networkId, daemon.sidecarId, daemon.generation = sidecar.NewId(), other, 0
+	}()
+	if reply, err := backend.pair(context.Background(), "a-synthetic-child-token"); err != nil || reply.Generation != 1 {
+		t.Fatalf("the pairing: %+v %v", reply, err)
+	}
+	if err := backend.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if paired := events.next(t); paired.State != "online" || paired.Generation != 1 {
+		t.Fatalf("the paired network's state: %+v", paired)
+	}
+	if got := remote.GetSidecarId(); got == nil || got.String() != other.String() {
+		t.Fatalf("the sidecar_id followed: %v", got)
+	}
+}

@@ -105,15 +105,22 @@ func newSidecarRemote(ctx context.Context, presenceSigner SidecarPresenceSigner,
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	events := newSidecarEventDispatch(cancelCtx, eventSettings)
-	backend := newSidecarRemoteBackend(cancelCtx, dial, remoteSettings, func(generation int64, state string, reason string) {
-		events.offer(sidecar.SidecarEvent{
+	offer := func(event sidecar.SidecarEvent, fresh bool) {
+		if fresh {
+			events.offerFresh(event)
+		} else {
+			events.offer(event)
+		}
+	}
+	backend := newSidecarRemoteBackend(cancelCtx, dial, remoteSettings, func(generation int64, state string, reason string, fresh bool) {
+		offer(sidecar.SidecarEvent{
 			Kind:       sidecar.SidecarEventState,
 			Generation: generation,
 			State:      sidecar.SidecarState(state),
 			Reason:     sidecar.SidecarStateReason(reason),
-		})
-	}, func(event *sidecarControlEvent) {
-		events.offer(sidecarCoreEventOf(event))
+		}, fresh)
+	}, func(event *sidecarControlEvent, fresh bool) {
+		offer(sidecarCoreEventOf(event), fresh)
 	})
 	self := &Sidecar{
 		ctx:                cancelCtx,

@@ -362,10 +362,12 @@ type sidecarRemoteBackend struct {
 	cancel   context.CancelFunc
 	settings *sidecarRemoteSettings
 	dial     sidecarControlDial
-	// called with each change of the state, its reason or its generation that a status read finds; it must not block
-	stateChanged func(generation int64, state string, reason string)
-	// called with each event of the followed network the events long-poll takes, in order; it must not block
-	eventReceived func(event *sidecarControlEvent)
+	// called with each change of the state, its reason or its generation that a status read finds; it must not block.
+	// fresh marks the first of a sidecar this backend did not follow before (takeFreshWithLock)
+	stateChanged func(generation int64, state string, reason string, fresh bool)
+	// called with each event of the followed network the events long-poll takes, in order, fresh as above; it must
+	// not block
+	eventReceived func(event *sidecarControlEvent, fresh bool)
 	pollDone      chan struct{}
 	// closed once followEvents has returned, its session closed
 	eventsDone chan struct{}
@@ -385,7 +387,10 @@ type sidecarRemoteBackend struct {
 	statusFirstNetwork *Id
 	// the events long-poll answers, so its state events move the state and status reads by anything else leave it
 	eventsCarryState bool
-	closed           bool
+	// the next state or event emitted is the first of a sidecar this backend did not follow before: a pairing moved
+	// it to another network's
+	freshPending bool
+	closed       bool
 }
 
 var _ sidecarBackend = (*sidecarRemoteBackend)(nil)
@@ -393,13 +398,13 @@ var _ sidecarBackend = (*sidecarRemoteBackend)(nil)
 // A backend that dials with dial, offline until its first status. stateChanged and eventReceived may be nil. The
 // caller starts run and followEvents.
 func newSidecarRemoteBackend(ctx context.Context, dial sidecarControlDial, settings *sidecarRemoteSettings,
-	stateChanged func(generation int64, state string, reason string), eventReceived func(event *sidecarControlEvent)) *sidecarRemoteBackend {
+	stateChanged func(generation int64, state string, reason string, fresh bool), eventReceived func(event *sidecarControlEvent, fresh bool)) *sidecarRemoteBackend {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	if stateChanged == nil {
-		stateChanged = func(generation int64, state string, reason string) {}
+		stateChanged = func(generation int64, state string, reason string, fresh bool) {}
 	}
 	if eventReceived == nil {
-		eventReceived = func(event *sidecarControlEvent) {}
+		eventReceived = func(event *sidecarControlEvent, fresh bool) {}
 	}
 	return &sidecarRemoteBackend{
 		ctx:           cancelCtx,
@@ -544,11 +549,12 @@ func (self *sidecarRemoteBackend) applyEvents(events []*sidecarControlEvent) {
 			continue
 		}
 		if !refreshed && !self.knowsNetwork(event.NetworkId) {
+			// for the networks: the state stays the events', unless the read moves the network followed
 			refreshed = true
-			self.refreshFromEvents(self.ctx, false)
+			self.refresh(self.ctx)
 		}
-		if self.takeEvent(event) {
-			self.eventReceived(event)
+		if taken, fresh := self.takeEvent(event); taken {
+			self.eventReceived(event, fresh)
 		}
 	}
 }
@@ -572,25 +578,22 @@ func (self *sidecarRemoteBackend) knowsNetwork(networkId *Id) bool {
 }
 
 // Whether event is the followed network's and not of an older generation of its sidecar, moving the floor, the
-// sidecar_id and, for a state event, the state, which it makes read as a status's does. The event's own state is
-// rewritten to match, so a listener and GetState agree.
-func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) bool {
+// sidecar_id and, for a state event, the state, which it makes read as a status's does, and whether it is the first of
+// a sidecar this backend did not follow before. The event's own state is rewritten to match, so a listener and
+// GetState agree.
+func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) (bool, bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.closed {
-		return false
+		return false, false
 	}
-	followed := self.networkId
-	if followed == nil {
-		followed = self.statusFirstNetwork
-	}
-	if !sidecarControlSameId(event.NetworkId, followed) {
-		return false
+	if !sidecarControlSameId(event.NetworkId, self.followedWithLock()) {
+		return false, false
 	}
 	current := self.status
 	sameSidecar := current.sidecarId == nil || event.OriginSidecarId == nil || current.sidecarId.Cmp(event.OriginSidecarId) == 0
 	if sameSidecar && event.Generation < self.generationFloor {
-		return false
+		return false, false
 	}
 	if !sameSidecar || current.sidecarId == nil {
 		self.status.sidecarId = sidecarControlIdOf(event.OriginSidecarId)
@@ -602,7 +605,24 @@ func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) bool {
 		event.State, event.Reason = sidecarRemoteStateOf(event.State, event.Reason)
 		self.status.state, self.status.reason, self.status.generation = event.State, event.Reason, event.Generation
 	}
-	return true
+	return true, self.takeFreshWithLock(!sameSidecar)
+}
+
+// The network this backend follows: the pairing's, else the first the last status named, nil for none.
+func (self *sidecarRemoteBackend) followedWithLock() *Id {
+	if self.networkId != nil {
+		return self.networkId
+	}
+	return self.statusFirstNetwork
+}
+
+// Whether what is emitted now is the first of a sidecar this backend did not follow before: another sidecar_id than
+// the one it followed (changed), or the first since a pairing moved it to another network's. Taking it clears the
+// pairing's mark.
+func (self *sidecarRemoteBackend) takeFreshWithLock(changed bool) bool {
+	fresh := changed || self.freshPending
+	self.freshPending = false
+	return fresh
 }
 
 // A state and reason as this sdk reads them: a state it does not know reads offline, a daemon that runs no sidecar
@@ -741,10 +761,12 @@ func (self *sidecarRemoteBackend) pair(ctx context.Context, childJwt string) (*s
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.networkId == nil || self.networkId.Cmp(reply.NetworkId) != 0 {
-			// the daemon's sidecar of this network, which the next status names: its own id and generations
+			// the daemon's sidecar of this network, which the next status names: its own id and generations, which its
+			// first event delivers past whatever another network's left
 			self.networkId = reply.NetworkId
 			self.status.sidecarId = nil
 			self.generationFloor = reply.Generation
+			self.freshPending = true
 			return
 		}
 		// the same sidecar's next generation: nothing older ends it from here on
@@ -824,15 +846,19 @@ func (self *sidecarRemoteBackend) statusOf(reply *sidecarControlStatus, networkI
 }
 
 // Takes a status the daemon answered: its networks always, and its state unless the events long-poll carries the
-// state and fromEvents is false. One of an older generation of the same sidecar_id is dropped (D-SDK-14), and the
-// state reads as sidecarRemoteStateOf has it. A change is emitted, or with always the state as it stands.
+// state, fromEvents is false and the network followed stays the one it was (an unpaired backend follows the first a
+// status names, which an enrollment or a logout can change). One of an older generation of the same sidecar_id is
+// dropped (D-SDK-14), and the state reads as sidecarRemoteStateOf has it. A change is emitted, or with always the
+// state as it stands.
 func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromEvents bool, always bool) {
+	fresh := false
 	emitted, next := func() (bool, sidecarRemoteStatus) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.closed {
 			return false, self.status
 		}
+		followedBefore := self.followedWithLock()
 		self.statusNetworkIds = nil
 		self.statusFirstNetwork = nil
 		for i := range reply.Networks {
@@ -854,23 +880,28 @@ func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromE
 		if sameSidecar && next.sidecarId == nil {
 			next.sidecarId = current.sidecarId
 		}
-		if self.eventsCarryState && !fromEvents {
+		if self.eventsCarryState && !fromEvents && sidecarControlSameId(followedBefore, self.followedWithLock()) {
 			// the events move the state; this read names the sidecar alone
 			self.status.sidecarId = next.sidecarId
 			return false, self.status
 		}
 		self.generationFloor = next.generation
 		self.status = next
-		return always || next.state != current.state || next.reason != current.reason || next.generation != current.generation, next
+		emitted := always || next.state != current.state || next.reason != current.reason || next.generation != current.generation
+		if emitted {
+			fresh = self.takeFreshWithLock(!sameSidecar)
+		}
+		return emitted, next
 	}()
 	if emitted {
-		self.stateChanged(next.generation, next.state, next.reason)
+		self.stateChanged(next.generation, next.state, next.reason, fresh)
 	}
 }
 
 // No daemon answers: offline, the sidecar_id and generation kept for when one does. While the events long-poll
 // answers, the daemon does, and a call that failed on the other session leaves the state as the events have it.
 func (self *sidecarRemoteBackend) applyOffline() {
+	fresh := false
 	changed, next := func() (bool, sidecarRemoteStatus) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -878,9 +909,10 @@ func (self *sidecarRemoteBackend) applyOffline() {
 			return false, self.status
 		}
 		self.status.state, self.status.reason = sidecarRemoteStateOffline, ""
+		fresh = self.takeFreshWithLock(false)
 		return true, self.status
 	}()
 	if changed {
-		self.stateChanged(next.generation, next.state, next.reason)
+		self.stateChanged(next.generation, next.state, next.reason, fresh)
 	}
 }

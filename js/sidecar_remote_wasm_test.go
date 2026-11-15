@@ -1,8 +1,9 @@
 //go:build js
 
-// sdk.Sidecar on js (sidecar §18.5's js row; SDK-M8-02): NewSidecarRemote over a fake native-host port, which answers
-// as `ur native-host` does: status relayed, every other method refused, a long reply in chunks. Each test waits on an
-// event or a callback, never a clock.
+// sdk.Sidecar on js (sidecar §18.5's js row; SDK-M8-02, QD-821): NewSidecarRemote over a fake native-host port, which
+// answers as `ur native-host` does: status and events relayed, every other method refused, a long reply in chunks. An
+// events call from no cursor answers one at once; one past a cursor is held until the test answers it, as a daemon's
+// long-poll waits for an event. Each test waits on an event, a held call or a callback, never a clock.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"syscall/js"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk"
@@ -36,11 +38,13 @@ type testSidecarPort struct {
 	// a reply longer than this goes as chunks; 0 sends every reply whole
 	chunkByteCount int
 	disconnected   int
+	// the ids of the events calls past a cursor, each held until answerEvents
+	heldEvents chan json.RawMessage
 }
 
 func newTestSidecarPort(t *testing.T) *testSidecarPort {
 	t.Helper()
-	self := &testSidecarPort{port: js.Global().Get("Object").New(), state: "online", generation: 3}
+	self := &testSidecarPort{port: js.Global().Get("Object").New(), state: "online", generation: 3, heldEvents: make(chan json.RawMessage, 16)}
 	listenerEvent := func(set func(listener js.Value)) js.Value {
 		event := js.Global().Get("Object").New()
 		addListener := js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -79,17 +83,26 @@ func (self *testSidecarPort) deliver(message []byte) {
 	self.messageListener.Invoke(js.Global().Get("JSON").Call("parse", string(message)))
 }
 
-// Answers one request as ur native-host does.
+// Answers one request as ur native-host does, an events call past a cursor held until answerEvents.
 func (self *testSidecarPort) reply(posted string) {
 	request := struct {
 		Id     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
+		Params struct {
+			After string `json:"after"`
+		} `json:"params"`
 	}{}
 	if err := json.Unmarshal([]byte(posted), &request); err != nil {
 		return
 	}
+	if request.Method == "events" && request.Params.After != "" {
+		self.heldEvents <- request.Id
+		return
+	}
 	response := map[string]any{"jsonrpc": "2.0", "id": request.Id}
-	if request.Method == "status" {
+	if request.Method == "events" {
+		response["result"] = map[string]any{"events": []any{}, "cursor": "ring:0"}
+	} else if request.Method == "status" {
 		response["result"] = map[string]any{
 			"instance":   "default",
 			"state":      self.state,
@@ -107,6 +120,28 @@ func (self *testSidecarPort) reply(posted string) {
 	} else {
 		response["error"] = map[string]any{"code": -32601, "message": "the native host does not relay this method"}
 	}
+	self.send(request.Id, response)
+}
+
+// Answers the events call id with result.
+func (self *testSidecarPort) answerEvents(id json.RawMessage, result map[string]any) {
+	self.send(id, map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+// The next held events call's id. The bound only stops a broken test from hanging.
+func (self *testSidecarPort) nextHeldEvents(t *testing.T) json.RawMessage {
+	t.Helper()
+	select {
+	case id := <-self.heldEvents:
+		return id
+	case <-time.After(30 * time.Second):
+		t.Fatal("no events call past a cursor")
+		return nil
+	}
+}
+
+// Sends response, the answer to the request id names, whole or in chunks.
+func (self *testSidecarPort) send(id json.RawMessage, response map[string]any) {
 	encoded, _ := json.Marshal(response)
 	if self.chunkByteCount == 0 || len(encoded) <= self.chunkByteCount {
 		self.deliver(encoded)
@@ -116,7 +151,7 @@ func (self *testSidecarPort) reply(posted string) {
 	for index := 0; index < count; index += 1 {
 		part := encoded[index*self.chunkByteCount : min(len(encoded), (index+1)*self.chunkByteCount)]
 		chunk, _ := json.Marshal(map[string]any{
-			"ur_chunk":    map[string]any{"id": request.Id, "index": index, "count": count},
+			"ur_chunk":    map[string]any{"id": id, "index": index, "count": count},
 			"data_base64": base64.StdEncoding.EncodeToString(part),
 		})
 		self.deliver(chunk)
@@ -168,16 +203,78 @@ func TestSidecarRemoteWasmReadsStatusOverThePort(t *testing.T) {
 	if sidecarId := remote.GetSidecarId(); sidecarId == nil || sidecarId.String() != testSidecarPortSidecarId {
 		t.Fatalf("the daemon's sidecar_id: %v", sidecarId)
 	}
-	// what crossed is JSON-RPC 2.0 and nothing more, which the native host holds a request to
-	if len(port.posted) != 1 {
-		t.Fatalf("%d requests posted", len(port.posted))
+	// what crossed is JSON-RPC 2.0 and nothing more, which the native host holds a request to: status reads and the
+	// events long-poll, the long-poll holding its call past the cursor
+	port.nextHeldEvents(t)
+	statusCount := 0
+	for _, posted := range port.posted {
+		fields := map[string]json.RawMessage{}
+		if err := json.Unmarshal([]byte(posted), &fields); err != nil {
+			t.Fatal(err)
+		}
+		switch string(fields["method"]) {
+		case `"status"`:
+			statusCount += 1
+			if len(fields) != 3 || string(fields["jsonrpc"]) != `"2.0"` || len(fields["id"]) == 0 {
+				t.Fatalf("the request: %s", posted)
+			}
+		case `"events"`:
+			if len(fields) != 4 || string(fields["jsonrpc"]) != `"2.0"` || len(fields["id"]) == 0 {
+				t.Fatalf("the request: %s", posted)
+			}
+		default:
+			t.Fatalf("the request: %s", posted)
+		}
 	}
-	fields := map[string]json.RawMessage{}
-	if err := json.Unmarshal([]byte(port.posted[0]), &fields); err != nil {
-		t.Fatal(err)
+	if statusCount == 0 {
+		t.Fatalf("no status read in %v", port.posted)
 	}
-	if len(fields) != 3 || string(fields["jsonrpc"]) != `"2.0"` || string(fields["method"]) != `"status"` || len(fields["id"]) == 0 {
-		t.Fatalf("the request: %s", port.posted[0])
+}
+
+// Every event the daemon's events method answers reaches the listener in order, a state event moving the state; a gap
+// reads status and emits the state it finds; and the long-poll goes on from the cursor each answer gave.
+func TestSidecarRemoteWasmHearsTheDaemonsEvents(t *testing.T) {
+	port := newTestSidecarPort(t)
+	remote, events := openTestSidecarOverPort(t, port)
+	if online := <-events.events; online.State != "online" || online.Generation != 3 {
+		t.Fatalf("the first event: %+v", online)
+	}
+	approvalId := sdk.NewId().String()
+	port.answerEvents(port.nextHeldEvents(t), map[string]any{
+		"events": []map[string]any{
+			{"kind": "approval_pending", "generation": 3, "network_id": testSidecarPortNetworkId, "origin_sidecar_id": testSidecarPortSidecarId, "approval_id": approvalId},
+			{"kind": "head_alarm", "generation": 3, "network_id": testSidecarPortNetworkId, "head_alarm": "fork", "first_evidence": "AQI=", "second_evidence": "AwQ="},
+			{"kind": "state", "generation": 3, "network_id": testSidecarPortNetworkId, "state": "locked"},
+			{"kind": "access_request", "generation": 3, "network_id": "018f2d5e-7b1a-7c3d-9e4f-0a1b2c3d4eff"},
+			{"kind": "admission_alarm", "generation": 2, "network_id": testSidecarPortNetworkId},
+		},
+		"cursor": "ring:5",
+	})
+	if pending := <-events.events; pending.Kind != "approval_pending" || pending.ApprovalId == nil || pending.ApprovalId.String() != approvalId {
+		t.Fatalf("the first event the long-poll answered: %+v", pending)
+	}
+	if alarm := <-events.events; alarm.Kind != "head_alarm" || alarm.HeadAlarm != "fork" || len(alarm.FirstEvidence) != 2 || len(alarm.SecondEvidence) != 2 {
+		t.Fatalf("the head alarm: %+v", alarm)
+	}
+	if locked := <-events.events; locked.State != "locked" || remote.GetState() != "locked" {
+		t.Fatalf("the state event: %+v, state %s", locked, remote.GetState())
+	}
+	// another network's event and an older generation's went nowhere: the next is the gap's state
+	port.state = "unenrolled"
+	port.reason = "parent_lost"
+	port.answerEvents(port.nextHeldEvents(t), map[string]any{"events": []any{}, "cursor": "ring:9", "gap": true})
+	if lost := <-events.events; lost.Kind != "state" || lost.State != "unenrolled" || lost.Reason != "parent_lost" {
+		t.Fatalf("after the gap: %+v", lost)
+	}
+	// the long-poll goes on from the gap's cursor
+	port.nextHeldEvents(t)
+	for i := len(port.posted) - 1; 0 <= i; i -= 1 {
+		if strings.Contains(port.posted[i], `"method":"events"`) {
+			if !strings.Contains(port.posted[i], `"after":"ring:9"`) {
+				t.Fatalf("the long-poll past the gap: %s", port.posted[i])
+			}
+			break
+		}
 	}
 }
 
@@ -243,9 +340,11 @@ func TestSidecarRemoteWasmRefusesWhatTheNativeHostDoesNotRelay(t *testing.T) {
 	if result := <-results; result.Ok {
 		t.Fatalf("a push token over the port: %+v", result)
 	}
-	// each refusal is this sdk's own: nothing but the status read crossed, the pass least of all
-	if len(port.posted) != 1 || strings.Contains(strings.Join(port.posted, ""), pass) {
-		t.Fatalf("the port carried %v", port.posted)
+	// each refusal is this sdk's own: nothing but status reads and the events long-poll crossed, the pass least of all
+	for _, posted := range port.posted {
+		if (!strings.Contains(posted, `"method":"status"`) && !strings.Contains(posted, `"method":"events"`)) || strings.Contains(posted, pass) {
+			t.Fatalf("the port carried %v", port.posted)
+		}
 	}
 }
 

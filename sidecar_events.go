@@ -176,11 +176,20 @@ func defaultSidecarEventSettings() *sidecarEventSettings {
 	}
 }
 
+// One queued event.
+type sidecarDispatchItem struct {
+	event *sidecar.SidecarEvent
+	// the first event of a sidecar the remote backend did not follow before, such as one a logout and a new enrollment
+	// made in the same network or another network's after a pairing: its generations start anew, so the floor starts
+	// again at its own (D-SDK-14)
+	fresh bool
+}
+
 // One Sidecar's delivery of its core's events to its app listeners. Safe for concurrent use.
 type sidecarEventDispatch struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
-	events    chan *sidecar.SidecarEvent
+	events    chan sidecarDispatchItem
 	listeners *connect.CallbackList[SidecarEventListener]
 	// the newest generation an event was delivered for, read and written by the delivering goroutine
 	newestGeneration int64
@@ -198,7 +207,7 @@ func newSidecarEventDispatch(ctx context.Context, settings *sidecarEventSettings
 	self := &sidecarEventDispatch{
 		ctx:       cancelCtx,
 		cancel:    cancel,
-		events:    make(chan *sidecar.SidecarEvent, settings.QueueEventCount),
+		events:    make(chan sidecarDispatchItem, settings.QueueEventCount),
 		listeners: connect.NewCallbackList[SidecarEventListener](),
 		done:      make(chan struct{}),
 	}
@@ -215,8 +224,18 @@ func (self *sidecarEventDispatch) close() {
 
 // The core's callback: a copy of event offered with zero wait, dropped and counted when the queue is full.
 func (self *sidecarEventDispatch) offer(event sidecar.SidecarEvent) {
+	self.offerItem(sidecarDispatchItem{event: &event})
+}
+
+// offer of the first event of a sidecar the remote backend did not follow before (sidecarDispatchItem.fresh).
+func (self *sidecarEventDispatch) offerFresh(event sidecar.SidecarEvent) {
+	self.offerItem(sidecarDispatchItem{event: &event, fresh: true})
+}
+
+// Queues item with zero wait, dropping and counting it when the queue is full.
+func (self *sidecarEventDispatch) offerItem(item sidecarDispatchItem) {
 	select {
-	case self.events <- &event:
+	case self.events <- item:
 	default:
 		self.droppedCount.Add(1)
 	}
@@ -229,15 +248,16 @@ func (self *sidecarEventDispatch) run() {
 		select {
 		case <-self.ctx.Done():
 			return
-		case event := <-self.events:
-			self.deliver(event)
+		case item := <-self.events:
+			self.deliver(item.event, item.fresh)
 		}
 	}
 }
 
-// Delivers one event to every listener, unless a newer generation's was delivered first (D-SDK-14).
-func (self *sidecarEventDispatch) deliver(event *sidecar.SidecarEvent) {
-	if event.Generation < self.newestGeneration {
+// Delivers one event to every listener, unless a newer generation's was delivered first and event is not a fresh
+// sidecar's (D-SDK-14).
+func (self *sidecarEventDispatch) deliver(event *sidecar.SidecarEvent, fresh bool) {
+	if !fresh && event.Generation < self.newestGeneration {
 		return
 	}
 	self.newestGeneration = event.Generation

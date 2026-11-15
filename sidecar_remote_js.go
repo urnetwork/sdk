@@ -125,12 +125,14 @@ func newSidecarRemoteJs(ctx context.Context, port js.Value, presenceSigner Sidec
 		listeners:      map[int]SidecarEventListener{},
 	}
 	// neither callback blocks: a full queue drops the event, and an app reads GetState for where things stand
-	self.remote = newSidecarRemoteBackend(cancelCtx, self.channel.dial, remoteSettings, func(generation int64, state string, reason string) {
+	// and this leg's delivery drops nothing by generation, the backend dropping each sidecar's older ones, so a fresh
+	// sidecar's mark has nothing here to reset
+	self.remote = newSidecarRemoteBackend(cancelCtx, self.channel.dial, remoteSettings, func(generation int64, state string, reason string, fresh bool) {
 		select {
 		case self.events <- &SidecarEvent{Kind: sidecarControlEventKindState, Generation: generation, State: state, Reason: reason}:
 		default:
 		}
-	}, func(event *sidecarControlEvent) {
+	}, func(event *sidecarControlEvent, fresh bool) {
 		select {
 		case self.events <- event.boundEvent():
 		default:
@@ -338,8 +340,8 @@ func (self *sidecarPortChannel) dial(ctx context.Context) (sidecarControlChannel
 	}
 }
 
-// The port is gone: a call in flight ends, and the state reads offline.
-func (self *sidecarPortChannel) markGone() {
+// The port is gone: a call in flight ends, and the state reads offline. Answers whether this call marked it.
+func (self *sidecarPortChannel) markGone() bool {
 	first := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -353,6 +355,7 @@ func (self *sidecarPortChannel) markGone() {
 	if first && self.onGone != nil {
 		self.onGone()
 	}
+	return first
 }
 
 // One message from the port: the pending call's reply, a chunk of it, or something to drop.
@@ -477,13 +480,8 @@ func (self *sidecarPortChannel) call(ctx context.Context, method string, params 
 
 // See sidecarControlChannel. Disconnects the port: a session that failed cannot be told from its next answer.
 func (self *sidecarPortChannel) close() {
-	alreadyGone := func() bool {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		return self.isGone
-	}()
-	self.markGone()
-	if !alreadyGone {
+	// the first to mark it gone disconnects, so the long-poll's close and the backend's never disconnect twice
+	if self.markGone() {
 		trace(func() {
 			self.port.Call("disconnect")
 		})
