@@ -54,6 +54,8 @@ type deviceForwardingStatus struct {
 	CompileCount        uint64
 	CompileErrorCount   uint64
 	CompileRefusedCount uint64
+	// The newest head_alarm the Forwarder raised, zero for none.
+	HeadAlarm deviceForwardHeadAlarm
 }
 
 // What forwarding's setup asks of the device that runs the VPN component: DeviceLocal in process, DeviceRemote over
@@ -268,6 +270,12 @@ type BridgeNetworkStatus struct {
 	CompileCount        int64 `json:"compile_count,omitempty"`
 	CompileErrorCount   int64 `json:"compile_error_count,omitempty"`
 	CompileRefusedCount int64 `json:"compile_refused_count,omitempty"`
+	// The newest head_alarm the component raised (fork, withheld, unverified), empty for none: when, in unix
+	// milliseconds, and the positions of its two pins, the component's and the one it was shown (§6.5).
+	HeadAlarm       string `json:"head_alarm,omitempty"`
+	HeadAlarmMillis int64  `json:"head_alarm_millis,omitempty"`
+	HeadAlarmN      int64  `json:"head_alarm_n,omitempty"`
+	HeadAlarmOtherN int64  `json:"head_alarm_other_n,omitempty"`
 }
 
 // Each forwarding role's fields.
@@ -351,6 +359,12 @@ func bridgeStatusOf(status sidecardevice.BridgeStatus, roles []deviceForwardingS
 		}
 		if !role.ForwardClientExpiresAt.IsZero() {
 			network.ForwardClientExpiresMillis = role.ForwardClientExpiresAt.UnixMilli()
+		}
+		if role.HeadAlarm.Kind != "" {
+			network.HeadAlarm = role.HeadAlarm.Kind
+			network.HeadAlarmMillis = role.HeadAlarm.At.UnixMilli()
+			network.HeadAlarmN = int64(min(role.HeadAlarm.N, uint64(1<<63-1)))
+			network.HeadAlarmOtherN = int64(min(role.HeadAlarm.OtherN, uint64(1<<63-1)))
 		}
 		network.Alarms.addAll(role.Alarms...)
 		bound.Networks.Add(network)
@@ -450,6 +464,10 @@ type DeviceRemoteBridgeNetworkStatus struct {
 	CompileCount               int64
 	CompileErrorCount          int64
 	CompileRefusedCount        int64
+	HeadAlarm                  string
+	HeadAlarmMillis            int64
+	HeadAlarmN                 int64
+	HeadAlarmOtherN            int64
 }
 
 // The RPC's copy of status, nil for nil.
@@ -489,6 +507,10 @@ func newDeviceRemoteBridgeStatus(status *BridgeStatus) *DeviceRemoteBridgeStatus
 				CompileCount:               network.CompileCount,
 				CompileErrorCount:          network.CompileErrorCount,
 				CompileRefusedCount:        network.CompileRefusedCount,
+				HeadAlarm:                  network.HeadAlarm,
+				HeadAlarmMillis:            network.HeadAlarmMillis,
+				HeadAlarmN:                 network.HeadAlarmN,
+				HeadAlarmOtherN:            network.HeadAlarmOtherN,
 			}
 			if network.NetworkId != nil {
 				mirroredNetwork.NetworkId = network.NetworkId.toConnectId()
@@ -539,6 +561,10 @@ func (self *DeviceRemoteBridgeStatus) toBridgeStatus() *BridgeStatus {
 			CompileCount:               network.CompileCount,
 			CompileErrorCount:          network.CompileErrorCount,
 			CompileRefusedCount:        network.CompileRefusedCount,
+			HeadAlarm:                  network.HeadAlarm,
+			HeadAlarmMillis:            network.HeadAlarmMillis,
+			HeadAlarmN:                 network.HeadAlarmN,
+			HeadAlarmOtherN:            network.HeadAlarmOtherN,
 		})
 	}
 	return status

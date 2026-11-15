@@ -500,3 +500,41 @@ func TestForwardRoleReadsHeadsThroughF(t *testing.T) {
 		t.Fatalf("the role's Forwarder reads heads through %T", heads)
 	}
 }
+
+// A head_alarm the role's Forwarder raises reaches the status mirror, the newest with its two pins' positions, and
+// tells the status listeners (§18.6's witness row): a witness past what the component holds is withheld.
+func TestForwardHeadAlarmReachesTheStatusMirror(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	if err := forward.setUp(t, device, forward.pending(), nil); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	changed := make(chan *BridgeStatus, 64)
+	sub := device.AddBridgeStatusChangeListener(&testingBridgeStatusListener{changed: changed})
+	defer sub.Close()
+	if err := device.forwardingHost().witness(networkId, &bridge.AuthPin{Version: 9, Chain: make([]byte, 32)}, false); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(testSidecarTimeout)
+	for {
+		select {
+		case status := <-changed:
+			if status.Networks == nil || status.Networks.Len() != 1 || status.Networks.Get(0).HeadAlarm == "" {
+				continue
+			}
+			network := status.Networks.Get(0)
+			if network.HeadAlarm != string(sidecar.SidecarHeadAlarmWithheld) || network.HeadAlarmOtherN != 9 || network.HeadAlarmN != 0 || network.HeadAlarmMillis == 0 {
+				t.Errorf("the status's head alarm %+v", network)
+			}
+			mirrored := newDeviceRemoteBridgeStatus(status).toBridgeStatus().Networks.Get(0)
+			if mirrored.HeadAlarm != network.HeadAlarm || mirrored.HeadAlarmOtherN != network.HeadAlarmOtherN {
+				t.Errorf("the RPC's copy carries %+v", mirrored)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no status carried the head alarm")
+		}
+	}
+}

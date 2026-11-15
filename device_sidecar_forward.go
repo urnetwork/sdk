@@ -25,6 +25,8 @@
 //	           hand-off, by the posture's fork hold, which a witness's fork shares
 //	witness    witness(networkId, pin, fork) hands the app's witnessed pin to the Forwarder, which follows to it and
 //	           raises head_alarm on a pin off its chain; a fork holds the posture pending until a later witness clears it
+//	alarms     the Forwarder's bridge_alarm stands in the role's status and its head_alarm, the newest, with its two
+//	           pins, and each one raised tells the status listeners, so the mirror carries both to the app (§18.6)
 //	wipe       the sidecar's own sign-out, which leaves the posture legacy, erases the network's keys, store and floor
 //
 // The router (device_sidecar.go) takes each network's block, the first-joined's where two collide, and hosting runs
@@ -126,13 +128,15 @@ const (
 )
 
 // What a role's Forwarder and F are built over, which the device supplies once it is built: the network space's urls,
-// the client strategy's transport, and the device client's id and ClientKey public key.
+// the client strategy's transport, the device client's id and ClientKey public key, and the wake of the device's
+// status listeners, which never blocks.
 type deviceForwardingDeps struct {
-	ctx         context.Context
-	apiUrl      string
-	platformUrl string
-	transport   http.RoundTripper
-	hostClient  func() (clientId []byte, publicKey []byte)
+	ctx           context.Context
+	apiUrl        string
+	platformUrl   string
+	transport     http.RoundTripper
+	hostClient    func() (clientId []byte, publicKey []byte)
+	statusChanged func()
 }
 
 // A device's forwarding roles (the file's comment). Nil on a device given no forwarding key store or directory, which
@@ -491,6 +495,8 @@ type deviceLocalForwarding struct {
 	witnessFork bool
 	// F's token's exp, zero for none
 	expiresAt time.Time
+	// the newest head_alarm the Forwarder raised, nil before one
+	headAlarm *deviceForwardHeadAlarm
 	// wakes the promotion loop at once after a state was handed
 	promotionWanted chan struct{}
 }
@@ -655,7 +661,10 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		Store:         self.forwarderStore,
 		Keys:          self.keys,
 		Sink:          self.sink,
-		Settings:      forwarderSettings,
+		Emit: func(event sidecar.SidecarEvent) {
+			self.forwarderEvent(event, deps.statusChanged)
+		},
+		Settings: forwarderSettings,
 	})
 	if err != nil {
 		return err
@@ -884,7 +893,7 @@ func (self *deviceLocalForwarding) checkPromotion() bool {
 // What the role shows.
 func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 	self.stateLock.Lock()
-	forwarder, lapsed, expiresAt := self.forwarder, self.lapsed, self.expiresAt
+	forwarder, lapsed, expiresAt, headAlarm := self.forwarder, self.lapsed, self.expiresAt, self.headAlarm
 	self.stateLock.Unlock()
 	status := deviceForwardingStatus{
 		NetworkId:              self.networkId,
@@ -892,6 +901,9 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 		Lapsed:                 lapsed,
 		ForwardClientExpiresAt: expiresAt,
 		KeySet:                 deviceForwardKeySetNone,
+	}
+	if headAlarm != nil {
+		status.HeadAlarm = *headAlarm
 	}
 	if self.host != nil && self.host.owner != nil {
 		status.Posture = self.host.owner.roleDecision(self.networkId).State
@@ -917,6 +929,39 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 		}
 	}
 	return status
+}
+
+// A head_alarm as a role's status shows it: its kind, when the Forwarder raised it, and the two pins' positions, this
+// device's and the other's (§6.5's evidence, positions alone, I-13). Zero for none.
+type deviceForwardHeadAlarm struct {
+	Kind   string
+	At     time.Time
+	N      uint64
+	OtherN uint64
+}
+
+// The Forwarder's events (sidecar.ForwarderArgs.Emit), on its goroutine, never blocking: a head_alarm is kept as the
+// newest, and each alarm tells the status listeners through statusChanged, nil for none.
+func (self *deviceLocalForwarding) forwarderEvent(event sidecar.SidecarEvent, statusChanged func()) {
+	switch event.Kind {
+	case sidecar.SidecarEventHeadAlarm:
+		headAlarm := &deviceForwardHeadAlarm{Kind: string(event.HeadAlarm), At: time.Now()}
+		for i, into := range []*uint64{&headAlarm.N, &headAlarm.OtherN} {
+			pin := &bridge.AuthPin{}
+			if proto.Unmarshal(event.Evidence[i], pin) == nil {
+				*into = pin.GetVersion()
+			}
+		}
+		self.stateLock.Lock()
+		self.headAlarm = headAlarm
+		self.stateLock.Unlock()
+	case sidecar.SidecarEventBridgeAlarm:
+	default:
+		return
+	}
+	if statusChanged != nil {
+		statusChanged()
+	}
 }
 
 // The network's posture as the Forwarder's sink (sidecar.ForwarderSink), through the owner's role for the network:
@@ -1180,10 +1225,11 @@ func (self *DeviceLocal) startForwarding() {
 		return
 	}
 	deps := &deviceForwardingDeps{
-		ctx:         self.ctx,
-		apiUrl:      self.networkSpace.GetApiUrl(),
-		platformUrl: self.networkSpace.GetPlatformUrl(),
-		transport:   sidecar.NewForwardingTransport(self.ctx, self.clientStrategy),
+		ctx:           self.ctx,
+		apiUrl:        self.networkSpace.GetApiUrl(),
+		platformUrl:   self.networkSpace.GetPlatformUrl(),
+		transport:     sidecar.NewForwardingTransport(self.ctx, self.clientStrategy),
+		statusChanged: self.notifyBridgeStatus,
 		hostClient: func() ([]byte, []byte) {
 			client := self.providerClientSnapshot()
 			if client == nil || client.ClientKeyManager() == nil {
