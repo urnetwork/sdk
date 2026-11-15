@@ -108,6 +108,11 @@ type Sidecar struct {
 	// the wrappers, made at their first Get
 	evs     *SidecarEvs
 	sockets *SidecarSockets
+	// the team directory's wrapper (sidecar_directory.go), made at the first GetDirectory in a team network; its
+	// tunables, nil for the defaults; and a test's backend in place of this Sidecar's own, nil otherwise
+	directory         *SidecarDirectory
+	directorySettings *sidecarDirectorySettings
+	directoryBackend  sidecarDirectoryBackend
 	// the bounds SignEdgeLogin holds its arguments to (sidecar_edge_login.go), nil for the defaults
 	edgeLoginSettings *sidecarEdgeLoginSettings
 }
@@ -421,6 +426,7 @@ func (self *Sidecar) Close() {
 		var remote sidecarBackend
 		var removeEventCallback func()
 		var evs *SidecarEvs
+		var directory *SidecarDirectory
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -430,6 +436,7 @@ func (self *Sidecar) Close() {
 			self.closed = true
 			local, instance, remote, removeEventCallback = self.local, self.instance, self.remote, self.removeEventCallback
 			evs = self.evs
+			directory = self.directory
 			return false
 		}()
 		if alreadyClosed {
@@ -442,6 +449,10 @@ func (self *Sidecar) Close() {
 		// no repo change reaches a listener after Close returns, as no event does
 		if evs != nil {
 			evs.close()
+		}
+		// nor a page of the directory, whose open view closes with it
+		if directory != nil {
+			directory.close()
 		}
 		if remote != nil {
 			remote.close()
