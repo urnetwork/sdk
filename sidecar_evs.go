@@ -87,9 +87,10 @@ const (
 	sidecarEvsCodeInvalid           = "EVS_INVALID"
 	sidecarEvsCodeUnavailable       = "EVS_UNAVAILABLE"
 	sidecarEvsCodePathConflict      = "EVS_PATH_CONFLICT"
-	// The repo's prefix write rules hold the path (DESIGN-DETAILS 16.2.7, 16.2.5, 8.2.8): the message carries the
-	// detail, one of refused, pending, update, depth, unavailable, base and tag, and never the path, which is the
-	// caller's own.
+	// The repo's prefix write rules hold the path (DESIGN-DETAILS 16.2.7, 16.2.5, 8.2.8; §18.5's {path, detail}): the
+	// message carries the detail, one of refused, pending, update, depth, unavailable, base and tag, and the result's
+	// Value the path the rules hold, the first file outside the device's prefixes for base and tag, empty where there
+	// is none to name. The path is the caller's own and goes into no log (I-13).
 	sidecarEvsCodePrefixRule = "EVS_PREFIX_RULE"
 )
 
@@ -463,13 +464,30 @@ func (self *SidecarEvs) CreateRepo(kind string, displayName string, private bool
 	})
 }
 
-// A SidecarResult for a call that answered value or err: sidecarResultOf's, with §18.5's EVS_ code where err has one.
+// A SidecarResult for a call that answered value or err: sidecarResultOf's, with §18.5's EVS_ code where err has one,
+// and for EVS_PREFIX_RULE the path the rules hold in Value, what the refusal names.
 func sidecarEvsResultOf(value string, err error) *SidecarResult {
 	result := sidecarResultOf(value, err)
 	if err != nil && result.Code == "" {
 		result.Code = sidecarEvsCodeOf(err)
 	}
+	if err != nil && result.Code == sidecarEvsCodePrefixRule {
+		result.Value = sidecarEvsPrefixRulePath(err)
+	}
 	return result
+}
+
+// The path an EVS_PREFIX_RULE names, the planner's or a reader's and publish's alike, empty for none.
+func sidecarEvsPrefixRulePath(err error) string {
+	var evsErr *sidecar.EvsPrefixRuleError
+	var aclErr *sidecar.AclPrefixRuleError
+	switch {
+	case errors.As(err, &evsErr):
+		return evsErr.Path
+	case errors.As(err, &aclErr):
+		return aclErr.Path
+	}
+	return ""
 }
 
 // A writer that keeps at most maxByteCount bytes and refuses the write past them, so a read stops at the bound.
