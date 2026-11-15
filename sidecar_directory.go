@@ -1193,8 +1193,6 @@ type SidecarDirectory struct {
 	// what the open view held at its last page, by announcement id, for Get; an id two writers use is held as nil
 	announcements map[sidecar.Id]*SidecarAnnouncement
 	closed        bool
-	// told after each fetch of a view has been delivered to its listings' queues: a test's hook, nil otherwise
-	published func()
 }
 
 // A SidecarDirectory on backend until ctx ends or close.
@@ -1416,22 +1414,16 @@ func (self *SidecarDirectory) publish(view *sidecarDirectoryOpenView, fetchErr e
 		page, _ := self.page(view, listing.filter, fetchErr)
 		pages = append(pages, page)
 	}
-	published := func() func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		if self.view != view {
-			return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.view != view {
+		return
+	}
+	self.announcements = announcements
+	for i, listing := range listings {
+		if self.listings[listing] {
+			listing.offer(pages[i])
 		}
-		self.announcements = announcements
-		for i, listing := range listings {
-			if self.listings[listing] {
-				listing.offer(pages[i])
-			}
-		}
-		return self.published
-	}()
-	if published != nil {
-		published()
 	}
 }
 
