@@ -290,12 +290,16 @@ func (self *cantReachRule) apiAnswer() {
 }
 
 // Reports one api request's result to the process's rule: a result or an
-// http status answer means URnetwork answered. A failure is left for the
-// app's IsCantReachError, which sees it with its text.
+// http status answer means URnetwork answered. Unknown failures remain for
+// IsCantReachError; observation never calls foreign error methods.
 func noteCantReachApiResult(requestErr error) {
-	if requestErr == nil || isHttpStatusAnswer(strings.ToLower(strings.TrimSpace(requestErr.Error()))) {
-		processCantReach.apiAnswer()
+	if requestErr != nil {
+		statusErr, ok := requestErr.(*connect.HttpStatusError)
+		if !ok || statusErr == nil {
+			return
+		}
 	}
+	processCantReach.apiAnswer()
 }
 
 // Whether a failure's text is an http status answer: three digits and a space

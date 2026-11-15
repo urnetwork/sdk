@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -326,7 +327,7 @@ func TestApiRequestSeamsReportAnswersToCantReach(t *testing.T) {
 		ends      bool
 	}{
 		{answerErr: nil, ends: true},
-		{answerErr: errors.New("503 Service Unavailable: busy"), ends: true},
+		{answerErr: &connect.HttpStatusError{StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable", Body: []byte("synthetic busy")}, ends: true},
 		{answerErr: errors.New(cantReachTestTimeout), ends: false},
 	} {
 		processCantReach.apiAnswer()

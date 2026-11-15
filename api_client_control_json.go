@@ -23,11 +23,28 @@ func (self *ClientControlResponseError) Error() string {
 	return "invalid client control response: " + self.detail
 }
 
+// Typed-nil causes supply no response evidence and must not be unwrapped.
+func clientControlErrorIsNil(err error) bool {
+	if err == nil {
+		return true
+	}
+	value := reflect.ValueOf(err)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
 // Only a complete all-leaf HTTP401 verdict may revoke a captured credential.
 // A timeout or malformed response joined to401 is not confirmed revocation.
 //
 //gomobile:noexport
 func ConfirmedClientRefreshRejection(err error) bool {
+	if clientControlErrorIsNil(err) {
+		return false
+	}
 	if status, ok := err.(*connect.HttpStatusError); ok {
 		return status.StatusCode == http.StatusUnauthorized
 	}

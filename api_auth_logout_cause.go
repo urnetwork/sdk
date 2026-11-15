@@ -36,6 +36,9 @@ const AuthLogoutCauseSessionRevoked = "session_revoked"
 // field (decodeClientControlJson), so a duplicated, case-folded or trailing
 // field cannot introduce the code.
 func confirmedRejectionCause(err error) string {
+	if clientControlErrorIsNil(err) {
+		return ""
+	}
 	if status, ok := err.(*connect.HttpStatusError); ok {
 		if status.StatusCode != http.StatusUnauthorized {
 			return ""

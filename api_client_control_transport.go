@@ -21,7 +21,7 @@ func (self *ClientControlUnavailableError) Error() string {
 func (self *ClientControlUnavailableError) Unwrap() error { return self.cause }
 
 func transientClientControlRequestError(err error) bool {
-	if err == nil || err == context.Canceled {
+	if clientControlErrorIsNil(err) || err == context.Canceled {
 		return false
 	}
 	if err == context.DeadlineExceeded || err == io.EOF || err == io.ErrUnexpectedEOF || err == net.ErrClosed || err == syscall.ECONNRESET || err == syscall.ECONNREFUSED || err == syscall.ECONNABORTED || err == syscall.EPIPE || err == syscall.ETIMEDOUT {
@@ -57,6 +57,9 @@ func transientClientControlRequestError(err error) bool {
 // A capability response is complete only when every leaf says the same
 // unsupported status. A timeout or hard sibling retains the original tree.
 func clientControlOnlyUnsupportedStatus(err error) (int, bool) {
+	if clientControlErrorIsNil(err) {
+		return 0, false
+	}
 	if status, ok := err.(*connect.HttpStatusError); ok {
 		return status.StatusCode, status.StatusCode == http.StatusNotFound || status.StatusCode == http.StatusMethodNotAllowed || status.StatusCode == http.StatusNotImplemented
 	}
