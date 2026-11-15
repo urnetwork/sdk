@@ -2,9 +2,10 @@
 
 // The forwarding role's config head reader (DESIGN-DETAILS 4.2.5's Compile, step 3; QD-814; SDK-M8-16): the root's
 // reader over F (sidecar.ForwardingClient.ConfigHeads), its keys the generations the role's Forwarder keeps, opened by
-// its forwarding reader key, and its pin in the role's sealed store, so a network past its first base compiles in the
-// VPN component with no sidecar role running. Android's VPN service and the desktop app services build it; the Apple
-// extensions' leg does not link the reader yet (device_sidecar_forward_heads_extension.go).
+// its forwarding reader key, and its pin in the role's sealed store. Every base names a head, base 1's included, so
+// it is what lets the VPN component compile at all, with no sidecar role running. Android's VPN service and the
+// desktop app services build it; the Apple extensions' leg does not link the reader yet
+// (device_sidecar_forward_heads_extension.go).
 
 package sdk
 
