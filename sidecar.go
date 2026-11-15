@@ -122,6 +122,11 @@ type Sidecar struct {
 	mailBackend  sidecarMailBackend
 	// forwarding's setup for the app's VPN component (sidecar_forward_setup.go), made at the first use
 	forwarding *sidecarForwarding
+	// the approvals and device revocation wrapper (sidecar_approvals.go), made at the first GetApprovals; its
+	// tunables, nil for the defaults; and a test's backend in place of this Sidecar's own, nil otherwise
+	approvals         *SidecarApprovals
+	approvalsSettings *sidecarApprovalsSettings
+	approvalsBackend  sidecarApprovalsBackend
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -435,6 +440,7 @@ func (self *Sidecar) Close() {
 		var evs *SidecarEvs
 		var directory *SidecarDirectory
 		var mail *SidecarMail
+		var approvals *SidecarApprovals
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -446,6 +452,7 @@ func (self *Sidecar) Close() {
 			evs = self.evs
 			directory = self.directory
 			mail = self.mail
+			approvals = self.approvals
 			return false
 		}()
 		if alreadyClosed {
@@ -466,6 +473,10 @@ func (self *Sidecar) Close() {
 		// and a mail call in flight answers unavailable
 		if mail != nil {
 			mail.close()
+		}
+		// as does an approvals call, and no pending list reaches a listener after it
+		if approvals != nil {
+			approvals.close()
 		}
 		// and no witness goes to the VPN component after it
 		self.stopForwarding()

@@ -62,7 +62,7 @@ type SidecarSecret struct {
 }
 
 // The app's presence key: a Secure Enclave or platform FIDO key, per §16.6's profiles. Nil: another device approves.
-// The calls that use it are SDK-M8-05's and later; the shell keeps it for them.
+// SidecarApprovals' decisions and revocations sign through it wherever the log covers their act (sidecar_presence.go).
 type SidecarPresenceSigner interface {
 	// The public key and its attestation, registered per §16.6.
 	GetAttestation() string
