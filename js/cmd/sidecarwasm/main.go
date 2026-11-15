@@ -22,7 +22,10 @@
 //
 // What this leg cannot read yet fails closed: no GkmClient exists on any leg (KEYS-M4-01 layers mls_ and gkm_ on this
 // Worker), so evs reads answer unavailable, and with no config state verified here no statement judges as verified;
-// the record reader has no streams until RECORD-M3-12 binds them, so record_view answers unavailable too.
+// the record reader has no streams until RECORD-M3-12 binds them, so record_view answers unavailable too. The team
+// console's two operations (SDK-M6-02) answer unavailable for the same reason: config_view shows a verified config
+// state, and directory_view a DirectoryClient whose cards and authorization state that config binds, and until this
+// leg verifies one the Worker cannot tell a network without a directory from one it cannot read.
 //
 // worker.js opens the network only while it holds the network's Web Lock, urnetwork-sidecar-<network_id> (SDK-M4-05),
 // so one Worker a network ever loads its keychain, token and MLS state, and, each network being its own database and
@@ -35,6 +38,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -168,11 +172,16 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 		instance:  instance,
 		local:     local,
 	}
+	workerSettings := sidecarworker.DefaultWorkerSettings()
+	workerSettings.DirectoryViewCoalesce = settings.Directory.ViewCoalesce
 	worker, err := sidecarworker.NewWorker(&sidecarworker.WorkerArgs{
-		Sidecar: local,
-		Repo:    network.repo,
-		Records: network.records,
-		Yield:   yieldToEventLoop,
+		Sidecar:   local,
+		Repo:      network.repo,
+		Records:   network.records,
+		Directory: network.directory,
+		Config:    network.config,
+		Yield:     yieldToEventLoop,
+		Settings:  workerSettings,
 	})
 	if err != nil {
 		local.Close()
@@ -317,6 +326,26 @@ func (self *pageNetwork) records() (sidecarworker.WorkerRecords, error) {
 		return nil, err
 	}
 	return record.Reader(), nil
+}
+
+// The network's team directory, for the console's directory_view: not enrolled before the network is, and otherwise
+// unavailable, since nothing on this leg verifies the config state that binds the Sidecar's read_only DirectoryClient
+// to its cards and its authorization state (DirectoryClient.Bind) yet. Until one is bound the client answers every
+// network as having no directory, which the Worker would show as no_directory, so the client is not handed over.
+func (self *pageNetwork) directory() (sidecarworker.WorkerDirectory, error) {
+	if self.local.NetworkId() == nil {
+		return nil, sidecar.ErrSidecarNoIdentity
+	}
+	return nil, fmt.Errorf("%w: no config state verified on this leg binds the directory", sidecar.ErrEvsNoConfig)
+}
+
+// The network's verified config, for the console's config_view: not enrolled before the network is, and otherwise
+// unavailable, since nothing on this leg verifies a config state yet.
+func (self *pageNetwork) config() (*sidecarworker.WorkerConfigState, error) {
+	if self.local.NetworkId() == nil {
+		return nil, sidecar.ErrSidecarNoIdentity
+	}
+	return nil, fmt.Errorf("%w: no config state verified on this leg", sidecar.ErrEvsNoConfig)
 }
 
 // settings' service urls: urls where given, whole, else §18.9's table's.

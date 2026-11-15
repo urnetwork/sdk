@@ -53,6 +53,10 @@ const (
 	CodeSignedOut = "signed_out"
 	// The operation was cancelled.
 	CodeCancelled = "cancelled"
+	// The network has no team directory: a personal network, or a team's before its directory exists (§16.11).
+	CodeNoDirectory = "no_directory"
+	// More than one writer's run or worker item uses the announcement id (id_reuse): ask again naming the writer.
+	CodeAmbiguous = "ambiguous"
 	// Anything else.
 	CodeFailed = "failed"
 )
@@ -71,6 +75,8 @@ var codeMessages = map[string]string{
 	CodeTooLarge:         "too large for a browser view",
 	CodeSignedOut:        "this browser signed out of the network",
 	CodeCancelled:        "cancelled",
+	CodeNoDirectory:      "this network has no team directory",
+	CodeAmbiguous:        "more than one writer uses this id: name the writer",
 	CodeFailed:           "the operation failed",
 }
 
@@ -85,10 +91,12 @@ type Reply struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	// One view, as the operation gives.
-	Listing *ListingView `json:"listing,omitempty"`
-	File    *FileView    `json:"file,omitempty"`
-	Record  *RecordView  `json:"record,omitempty"`
-	SignOut *SignOutView `json:"sign_out,omitempty"`
+	Listing   *ListingView   `json:"listing,omitempty"`
+	File      *FileView      `json:"file,omitempty"`
+	Record    *RecordView    `json:"record,omitempty"`
+	Directory *DirectoryView `json:"directory,omitempty"`
+	Config    *ConfigView    `json:"config,omitempty"`
+	SignOut   *SignOutView   `json:"sign_out,omitempty"`
 }
 
 // The reply's JSON. A view marshals by construction, so this never fails; if it did, the page gets a refusal.
@@ -121,9 +129,13 @@ func codeOf(err error) string {
 		return CodeNotEnrolled
 	case errors.Is(err, sidecar.ErrSidecarStoreLocked):
 		return CodeLocked
-	case errors.Is(err, sidecar.ErrEvsPathAbsent), errors.Is(err, sidecar.ErrSidecarStoreAbsent):
+	case errors.Is(err, sidecar.ErrDirectoryNone):
+		return CodeNoDirectory
+	case errors.Is(err, sidecar.ErrDirectoryItemAmbiguous):
+		return CodeAmbiguous
+	case errors.Is(err, sidecar.ErrEvsPathAbsent), errors.Is(err, sidecar.ErrSidecarStoreAbsent), errors.Is(err, sidecar.ErrDirectoryItemNone):
 		return CodeNotFound
-	case errors.Is(err, sidecar.ErrEvsUnauthorized), errors.Is(err, sidecar.ErrRecordNotReader):
+	case errors.Is(err, sidecar.ErrEvsUnauthorized), errors.Is(err, sidecar.ErrRecordNotReader), errors.Is(err, sidecar.ErrDirectoryReadLost):
 		return CodeRefused
 	case errors.Is(err, sidecar.ErrEvsPinLower), errors.Is(err, sidecar.ErrEvsPinFork), errors.Is(err, sidecar.ErrEvsChainBroken),
 		errors.Is(err, sidecar.ErrEvsHeadForked), errors.Is(err, sidecar.ErrEvsStatementRefused), errors.Is(err, sidecar.ErrEvsEntryRefused),
@@ -132,7 +144,7 @@ func codeOf(err error) string {
 	case errors.Is(err, sidecar.ErrEvsFormatUnsupported):
 		return CodeUnsupported
 	case errors.Is(err, sidecar.ErrGkmUnavailable), errors.Is(err, sidecar.ErrEvsNoConfig), errors.Is(err, sidecar.ErrRecordStreamsUnavailable),
-		errors.Is(err, sidecar.ErrEvsReceiptGate), errors.Is(err, sidecar.ErrSidecarClosed):
+		errors.Is(err, sidecar.ErrEvsReceiptGate), errors.Is(err, sidecar.ErrSidecarClosed), errors.Is(err, sidecar.ErrDirectoryCardsUnavailable):
 		return CodeUnavailable
 	}
 	// evs's answer by its status: its code and paths stay behind

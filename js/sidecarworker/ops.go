@@ -8,13 +8,23 @@
 //	read_view         repo_id, path | path_base64, [ref], [version],  a file's content and what its push signed, and
 //	                  [history]                                     with history its versions (EvsRepo.ReadHead, History)
 //	record_view       log_id, [after]                               a record log's verified entries (RecordReader)
+//	directory_view    [kind], [member_id], [repo_id],               the team directory's current items, filtered
+//	                  [active_only], [query], [include_private],    locally (ops_directory.go); or with announcement_id
+//	                  [after] | announcement_id,                    the one item, a writer's where two writers use the id
+//	                  [writer_sidecar_id]
+//	config_view       nothing                                       the verified config's members, sidecars, names,
+//	                                                                tags, groups, labels and policy (ops_config.go)
 //	sign_out          nothing                                       SidecarRevoke{removed}, the client removed, the
 //	                                                                network's state wiped (Sidecar.Logout)
 //	enroll            [code]                                        unavailable until plan-SDK-key-origin-credential's
 //	admission_status  nothing                                       answer is built; neither reaches a seam
 //
+// directory_view and config_view are RS2's team console (§18.8's pages row, §23.4's M6): views only. There is no
+// operation that files a request, decides one, announces, withdraws or revokes, or dry-runs, signs or cancels a drop,
+// since a page Worker is read_only and admin_refused (§16.11's console row).
+//
 // A field an operation does not take must be empty. ids are uuid strings, versions decimal strings, names UTF-8 text
-// or, for bytes that are not UTF-8, base64 (plan-EVS1-ref-name-bytes).
+// or, for bytes that are not UTF-8, base64 (plan-EVS1-ref-name-bytes). Each field's bound is WorkerSettings'.
 
 package sidecarworker
 
@@ -35,25 +45,19 @@ const (
 	OperationList            = "list"
 	OperationReadView        = "read_view"
 	OperationRecordView      = "record_view"
+	OperationDirectoryView   = "directory_view"
+	OperationConfigView      = "config_view"
 	OperationSignOut         = "sign_out"
 	OperationEnroll          = "enroll"
 	OperationAdmissionStatus = "admission_status"
 )
 
-// Format bounds on a request's fields, which change nothing a server reads.
-const (
-	requestIdMaxByteCount   = 64
-	requestPathMaxByteCount = 4096
-	requestRefMaxByteCount  = 255
-	requestCodeMaxByteCount = 512
-)
-
 // One request, as the frame passes it: an operation, the page's correlation id, and the operation's fields.
 type Request struct {
-	// The page's correlation id, 1 to 64 of [A-Za-z0-9_-], which the reply repeats.
+	// The page's correlation id, 1 to RequestIdMaxByteCount of [A-Za-z0-9_-], which the reply repeats.
 	Id        string `json:"id"`
 	Operation string `json:"op"`
-	// A repo's or a record log's id.
+	// A repo's or a record log's id; for directory_view, a run in the repo or the repo's own item.
 	RepoId string `json:"repo_id,omitempty"`
 	LogId  string `json:"log_id,omitempty"`
 	// A ref's name as UTF-8; empty reads main.
@@ -65,10 +69,23 @@ type Request struct {
 	Version string `json:"version,omitempty"`
 	// read_view: also the path's versions.
 	History bool `json:"history,omitempty"`
-	// record_view: the index of the first entry to return, decimal, as a reply's next named it; empty is 0.
+	// record_view and directory_view: the index of the first entry or item to return, decimal, as a reply's next
+	// named it; empty is 0.
 	After string `json:"after,omitempty"`
 	// enroll: the ur.io session's one-time code (plan-SDK-key-origin-credential, option 2).
 	Code string `json:"code,omitempty"`
+	// directory_view's filter (§16.11's tools row), each set field narrowing: an item kind (run, worker or repo); the
+	// item's member in this device's state; only items shown active now; words each of which must appear in some text
+	// field; private markers too.
+	Kind           string `json:"kind,omitempty"`
+	MemberId       string `json:"member_id,omitempty"`
+	ActiveOnly     bool   `json:"active_only,omitempty"`
+	Query          string `json:"query,omitempty"`
+	IncludePrivate bool   `json:"include_private,omitempty"`
+	// directory_view of one item: its announcement id, and the writer whose run or worker item it is where two writers
+	// use the id (id_reuse). With an announcement id no filter field or after is taken.
+	AnnouncementId  string `json:"announcement_id,omitempty"`
+	WriterSidecarId string `json:"writer_sidecar_id,omitempty"`
 }
 
 // A request from its JSON, refusing a field this package does not know.
@@ -86,19 +103,19 @@ func ParseRequest(requestJson []byte) (*Request, error) {
 }
 
 // The id of a request that did not parse, where it is one a reply may repeat, else empty.
-func readableRequestId(requestJson []byte) string {
+func readableRequestId(requestJson []byte, settings *WorkerSettings) string {
 	partial := &struct {
 		Id string `json:"id"`
 	}{}
-	if json.Unmarshal(requestJson, partial) != nil || !validRequestId(partial.Id) {
+	if json.Unmarshal(requestJson, partial) != nil || !validRequestId(partial.Id, settings) {
 		return ""
 	}
 	return partial.Id
 }
 
-// Whether id is 1 to 64 of [A-Za-z0-9_-].
-func validRequestId(id string) bool {
-	if id == "" || requestIdMaxByteCount < len(id) {
+// Whether id is 1 to RequestIdMaxByteCount of [A-Za-z0-9_-].
+func validRequestId(id string, settings *WorkerSettings) bool {
+	if id == "" || settings.RequestIdMaxByteCount < len(id) {
 		return false
 	}
 	for _, c := range []byte(id) {
@@ -112,9 +129,9 @@ func validRequestId(id string) bool {
 }
 
 // The checks every request passes, whatever its operation.
-func checkRequest(request *Request) error {
-	if !validRequestId(request.Id) {
-		return errors.New("a request id is 1 to 64 of [A-Za-z0-9_-]")
+func checkRequest(request *Request, settings *WorkerSettings) error {
+	if !validRequestId(request.Id, settings) {
+		return errors.New("a request id is 1 to RequestIdMaxByteCount of [A-Za-z0-9_-]")
 	}
 	return nil
 }
@@ -127,29 +144,64 @@ type requestFields struct {
 	path    string
 	version uint64
 	after   int
+	// directory_view's: a repo filter, nil for none, and the rest of the filter; or the one item's id and writer
+	repoIdFilter    *sidecar.Id
+	kind            sidecar.DirectoryAnnouncementKind
+	memberId        *sidecar.Id
+	activeOnly      bool
+	query           string
+	includePrivate  bool
+	announcementId  *sidecar.Id
+	writerSidecarId *sidecar.Id
 }
 
 // Which fields an operation takes, beyond Id and Operation.
 type requestShape struct {
-	repoId  bool
-	logId   bool
-	ref     bool
-	path    bool
-	version bool
-	history bool
-	after   bool
-	code    bool
+	// repo_id required, or taken as an optional filter
+	repoId       bool
+	repoIdFilter bool
+	logId        bool
+	ref          bool
+	path         bool
+	version      bool
+	history      bool
+	after        bool
+	code         bool
+	// directory_view's filter and its one item
+	kind            bool
+	memberId        bool
+	activeOnly      bool
+	query           bool
+	includePrivate  bool
+	announcementId  bool
+	writerSidecarId bool
 }
 
-// request's fields under shape: each field shape does not take is empty, and each it takes parses.
-func (self requestShape) fields(request *Request) (*requestFields, error) {
+// An optional id field: nil when empty, else the id it parses to.
+func optionalRequestId(text string) (*sidecar.Id, error) {
+	if text == "" {
+		return nil, nil
+	}
+	id, err := sidecar.ParseId(text)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+// request's fields under shape, each held to settings' bounds: each field shape does not take is empty, and each it
+// takes parses.
+func (self requestShape) fields(request *Request, settings *WorkerSettings) (*requestFields, error) {
 	fields := &requestFields{}
 	refuse := func(set bool, takes bool) bool {
 		return set && !takes
 	}
-	if refuse(request.RepoId != "", self.repoId) || refuse(request.LogId != "", self.logId) || refuse(request.Ref != "", self.ref) ||
+	if refuse(request.RepoId != "", self.repoId || self.repoIdFilter) || refuse(request.LogId != "", self.logId) || refuse(request.Ref != "", self.ref) ||
 		refuse(request.Path != "" || request.PathBase64 != "", self.path) || refuse(request.Version != "", self.version) ||
-		refuse(request.History, self.history) || refuse(request.After != "", self.after) || refuse(request.Code != "", self.code) {
+		refuse(request.History, self.history) || refuse(request.After != "", self.after) || refuse(request.Code != "", self.code) ||
+		refuse(request.Kind != "", self.kind) || refuse(request.MemberId != "", self.memberId) || refuse(request.ActiveOnly, self.activeOnly) ||
+		refuse(request.Query != "", self.query) || refuse(request.IncludePrivate, self.includePrivate) ||
+		refuse(request.AnnouncementId != "", self.announcementId) || refuse(request.WriterSidecarId != "", self.writerSidecarId) {
 		return nil, errors.New("a field this operation does not take")
 	}
 	if self.repoId {
@@ -158,6 +210,12 @@ func (self requestShape) fields(request *Request) (*requestFields, error) {
 			return nil, err
 		}
 		fields.repoId = repoId
+	} else if self.repoIdFilter {
+		repoId, err := optionalRequestId(request.RepoId)
+		if err != nil {
+			return nil, err
+		}
+		fields.repoIdFilter = repoId
 	}
 	if self.logId {
 		logId, err := sidecar.ParseId(request.LogId)
@@ -167,8 +225,8 @@ func (self requestShape) fields(request *Request) (*requestFields, error) {
 		fields.logId = logId
 	}
 	if request.Ref != "" {
-		if requestRefMaxByteCount < len(request.Ref) || !utf8.ValidString(request.Ref) {
-			return nil, errors.New("a ref is up to 255 bytes of UTF-8")
+		if settings.RequestRefMaxByteCount < len(request.Ref) || !utf8.ValidString(request.Ref) {
+			return nil, errors.New("a ref is up to RequestRefMaxByteCount bytes of UTF-8")
 		}
 		fields.refName = []byte(request.Ref)
 	}
@@ -187,8 +245,8 @@ func (self requestShape) fields(request *Request) (*requestFields, error) {
 		}
 		fields.path = request.Path
 	}
-	if requestPathMaxByteCount < len(fields.path) {
-		return nil, errors.New("a path is up to 4096 bytes")
+	if settings.RequestPathMaxByteCount < len(fields.path) {
+		return nil, errors.New("a path is up to RequestPathMaxByteCount bytes")
 	}
 	if request.Version != "" {
 		version, err := strconv.ParseUint(request.Version, 10, 64)
@@ -204,8 +262,31 @@ func (self requestShape) fields(request *Request) (*requestFields, error) {
 		}
 		fields.after = after
 	}
-	if request.Code != "" && (requestCodeMaxByteCount < len(request.Code) || !printableAscii(request.Code)) {
-		return nil, errors.New("a code is up to 512 printable ASCII bytes")
+	if request.Code != "" && (settings.RequestCodeMaxByteCount < len(request.Code) || !printableAscii(request.Code)) {
+		return nil, errors.New("a code is up to RequestCodeMaxByteCount printable ASCII bytes")
+	}
+	if request.Kind != "" {
+		kind, ok := directoryKindNamed(request.Kind)
+		if !ok {
+			return nil, errors.New("a kind is run, worker or repo")
+		}
+		fields.kind = kind
+	}
+	var err error
+	if fields.memberId, err = optionalRequestId(request.MemberId); err != nil {
+		return nil, err
+	}
+	if request.Query != "" && (settings.RequestQueryMaxByteCount < len(request.Query) || !utf8.ValidString(request.Query)) {
+		return nil, errors.New("a query is up to RequestQueryMaxByteCount bytes of UTF-8")
+	}
+	fields.query = request.Query
+	fields.activeOnly = request.ActiveOnly
+	fields.includePrivate = request.IncludePrivate
+	if fields.announcementId, err = optionalRequestId(request.AnnouncementId); err != nil {
+		return nil, err
+	}
+	if fields.writerSidecarId, err = optionalRequestId(request.WriterSidecarId); err != nil {
+		return nil, err
 	}
 	return fields, nil
 }
@@ -225,17 +306,24 @@ type workerOperation struct {
 	shape requestShape
 	// a path is required
 	needsPath bool
-	run       func(worker *Worker, ctx context.Context, request *Request, fields *requestFields, step *workerStep) *Reply
+	// what the fields must hold together beyond their shape, nil for nothing
+	check func(fields *requestFields) error
+	run   func(worker *Worker, ctx context.Context, request *Request, fields *requestFields, step *workerStep) *Reply
 }
 
-// The request's fields under the operation's shape, checked.
-func (self *workerOperation) fields(request *Request) (*requestFields, error) {
-	fields, err := self.shape.fields(request)
+// The request's fields under the operation's shape, checked against settings' bounds.
+func (self *workerOperation) fields(request *Request, settings *WorkerSettings) (*requestFields, error) {
+	fields, err := self.shape.fields(request, settings)
 	if err != nil {
 		return nil, err
 	}
 	if self.needsPath && fields.path == "" {
 		return nil, errors.New("this operation reads a path")
+	}
+	if self.check != nil {
+		if err := self.check(fields); err != nil {
+			return nil, err
+		}
 	}
 	return fields, nil
 }
@@ -254,6 +342,17 @@ var workerOperations = map[string]*workerOperation{
 	OperationRecordView: {
 		shape: requestShape{logId: true, after: true},
 		run:   runRecordView,
+	},
+	OperationDirectoryView: {
+		shape: requestShape{
+			repoIdFilter: true, kind: true, memberId: true, activeOnly: true, query: true, includePrivate: true, after: true,
+			announcementId: true, writerSidecarId: true,
+		},
+		check: checkDirectoryViewFields,
+		run:   runDirectoryView,
+	},
+	OperationConfigView: {
+		run: runConfigView,
 	},
 	OperationSignOut: {
 		run: runSignOut,
