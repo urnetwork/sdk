@@ -164,6 +164,8 @@ type deviceLocalForwardingHost struct {
 	roles     map[connect.Id]*deviceLocalForwarding
 	deps      *deviceForwardingDeps
 	closed    bool
+	// the wipes running, which close joins
+	wipes sync.WaitGroup
 }
 
 // The host of a device built on settings for networkId, or nil where the app gave no forwarding key store or no
@@ -433,7 +435,7 @@ func deviceForwardJoinIndex(networkIds []connect.Id, networkId connect.Id) int {
 	return len(networkIds)
 }
 
-// Stops every Forwarder; the postures keep what they hold. Waits for each Forwarder's goroutine.
+// Stops every Forwarder; the postures keep what they hold. Waits for each Forwarder's goroutine and each wipe running.
 func (self *deviceLocalForwardingHost) close() {
 	roles := func() []*deviceLocalForwarding {
 		self.stateLock.Lock()
@@ -448,12 +450,16 @@ func (self *deviceLocalForwardingHost) close() {
 	for _, role := range roles {
 		role.stop()
 	}
+	self.wipes.Wait()
 }
 
 // The sidecar's own sign-out left networkId's posture legacy (4.2.6's wiped): its Forwarder stops and its keys, store,
-// floor and listing go. On a goroutine of its own, since the Forwarder that applied the sign-out calls in from its own.
+// floor and listing go. On a goroutine of its own, since the Forwarder that applied the sign-out calls in from its own;
+// close joins it.
 func (self *deviceLocalForwardingHost) wipe(role *deviceLocalForwarding) {
+	self.wipes.Add(1)
 	go func() {
+		defer self.wipes.Done()
 		role.stop()
 		if err := role.keys.wipe(); err != nil {
 			self.log.Infof("[forward]%s the wipe left keys: %v\n", role.networkId, err)

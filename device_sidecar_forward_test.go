@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -785,5 +786,64 @@ func TestForwardClientLapsesUnrefreshed(t *testing.T) {
 	}
 	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
 		t.Errorf("a lapsed role's decision %+v", decision)
+	}
+}
+
+// The sidecar's own sign-out, a SidecarRevoke Pending's identity key verifies, moves the role's posture from past legacy
+// back to legacy, and the role is wiped (4.2.6's wiped): its Forwarder stops, its key store items, sealed files and
+// listing go, and the host holds the role no more.
+func TestForwardSignOutWipesTheRole(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	device := forward.device(t, nil)
+	networkId := forward.role.vectors.networkId()
+	vectors := forward.role.vectors
+	if err := forward.setUp(t, device, forward.pending(), nil); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	host := device.forwardingHost()
+	role, _ := host.role(networkId, false)
+	// the vectors' sidecar's Pending, on the same network and anchor, replaces the hand-off's id and key
+	if err := role.sink.SetPending(vectors.pending); err != nil {
+		t.Fatal(err)
+	}
+	log := vectors.log(1, 3)
+	if err := role.sink.SetState(vectors.state(t, 3, testingBridgeRules()), &sidecar.BridgeStateLog{Entries: log.Entries, OpenRows: log.OpenRows}); err != nil {
+		t.Fatal(err)
+	}
+	if state := device.bridgeOwner.roleDecision(networkId).State; !state.Enforcing() {
+		t.Fatalf("the role's posture is %v before the sign-out", state)
+	}
+	forward.store.stateLock.Lock()
+	heldBefore := len(forward.store.items)
+	forward.store.stateLock.Unlock()
+	if heldBefore == 0 {
+		t.Fatal("the key store holds nothing of the role before the sign-out")
+	}
+	deltas := vectors.log(4, 7)
+	if err := role.sink.ApplyDeltas(&sidecar.BridgeStateLog{Entries: deltas.Entries, OpenRows: deltas.OpenRows}); err != nil {
+		t.Fatalf("the deltas to the sign-out: %v", err)
+	}
+	host.wipes.Wait()
+	if state := device.bridgeOwner.roleDecision(networkId).State; state != sidecardevice.PostureLegacy {
+		t.Errorf("the role's posture is %v after its sidecar's sign-out", state)
+	}
+	if role.currentForwarder() != nil {
+		t.Error("the wiped role's Forwarder still runs")
+	}
+	forward.store.stateLock.Lock()
+	items := slices.Collect(maps.Keys(forward.store.items))
+	forward.store.stateLock.Unlock()
+	if len(items) != 0 {
+		t.Errorf("the key store holds %v after the wipe", items)
+	}
+	if _, err := os.Stat(role.files.directoryPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the role's sealed files remain: %v", err)
+	}
+	if networkIds, _ := host.networks.list(); slices.Contains(networkIds, networkId) {
+		t.Error("the wiped network is still listed")
+	}
+	if held, _ := host.role(networkId, false); held != nil {
+		t.Error("the host still holds the wiped role")
 	}
 }
