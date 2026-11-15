@@ -611,13 +611,89 @@ const sidecarWasmWorkerPath = "github.com/urnetwork/sdk/js/sidecarworker"
 // and net/rpc and the template packages keep a binary's exported methods alive, which loses the
 // linker's method pruning for the whole binary (sdk/build/mobile_method_pruning_test.go).
 var sidecarWasmRefusedRoots = map[string]string{
+	"github.com/urnetwork/sdk": "this repository's sdk, which links connect",
+	"net/rpc":                  "net/rpc, which loses method pruning",
+	"text/template":            "text/template, which loses method pruning",
+	"html/template":            "html/template, which loses method pruning",
+}
+
+// Roots the leg links only through operator-core's Id, which sidecar's Id aliases on every leg (owner
+// decision 251): a package outside these trees and operator-core that imports one of them is a finding.
+var sidecarWasmConnectRoots = map[string]string{
 	"github.com/urnetwork/connect": "connect, which links gVisor",
 	"gvisor.dev/gvisor":            "gVisor's IP stack",
 	"github.com/pion/sctp":         "the sctp fork in connect's tree",
-	"github.com/urnetwork/sdk":     "this repository's sdk, which links connect",
-	"net/rpc":                      "net/rpc, which loses method pruning",
-	"text/template":                "text/template, which loses method pruning",
-	"html/template":                "html/template, which loses method pruning",
+}
+
+// The one module whose packages may import a connect root on the leg.
+const sidecarWasmConnectCarrier = "github.com/urnetwork/operator-core"
+
+// The connect root a package path falls under, by whole path elements.
+func sidecarWasmConnectRootOf(packagePath string) (string, bool) {
+	for root := range sidecarWasmConnectRoots {
+		if packagePath == root || strings.HasPrefix(packagePath, root+"/") {
+			return root, true
+		}
+	}
+	return "", false
+}
+
+// Each package of the leg's closure with the packages it imports, from go list.
+func sidecarWasmLegImports(t *testing.T, repositoryRoot string, leg messagingBoundaryLeg) map[string][]string {
+	t.Helper()
+	arguments := []string{"list", "-deps", "-f", "{{.ImportPath}} {{join .Imports \" \"}}"}
+	if leg.tags != "" {
+		arguments = append(arguments, "-tags", leg.tags)
+	}
+	arguments = append(arguments, leg.patterns...)
+	command := exec.Command("go", arguments...)
+	command.Dir = filepath.Join(repositoryRoot, filepath.FromSlash(leg.moduleDirectory))
+	command.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+	command.Env = append(command.Env, leg.environment...)
+	output, err := command.Output()
+	if err != nil {
+		stderr := ""
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		t.Fatalf("%s: go %s in %s: %v\n%s", leg.name, strings.Join(arguments, " "), leg.moduleDirectory, err, stderr)
+	}
+	imports := map[string][]string{}
+	for _, line := range strings.Split(strings.ReplaceAll(string(output), "\r\n", "\n"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		imports[fields[0]] = fields[1:]
+	}
+	return imports
+}
+
+// Each import of a connect root by a first-party package that is neither under a connect root nor
+// operator-core's, as findings: connect reaches the leg through operator-core's Id and no other way.
+// Connect's own third-party dependencies, which import its forks among themselves, are its closure's.
+func sidecarWasmConnectFindings(legName string, imports map[string][]string) []string {
+	findings := []string{}
+	for importer, imported := range imports {
+		if !strings.HasPrefix(importer, "github.com/urnetwork/") && !strings.HasPrefix(importer, "github.com/urfoundation/") {
+			continue
+		}
+		if _, under := sidecarWasmConnectRootOf(importer); under {
+			continue
+		}
+		if importer == sidecarWasmConnectCarrier || strings.HasPrefix(importer, sidecarWasmConnectCarrier+"/") {
+			continue
+		}
+		for _, importPath := range imported {
+			if root, under := sidecarWasmConnectRootOf(importPath); under {
+				findings = append(findings, fmt.Sprintf("%s: %s imports %s, under %s (%s), which only operator-core may bring",
+					legName, importer, importPath, root, sidecarWasmConnectRoots[root]))
+			}
+		}
+	}
+	sort.Strings(findings)
+	return findings
 }
 
 // Each package in a closure under a refused root, as findings. The main's own package and the Worker's
@@ -638,9 +714,10 @@ func sidecarWasmClosureFindings(legName string, mainPath string, packages []stri
 	return findings
 }
 
-// sidecar.wasm links no connect, gVisor, sdk, net/rpc or template package, so a connect import in the
-// main, or in anything it reaches, fails here as well as in sidecar's make check.
-func TestTheSidecarWasmLegLinksNoConnectOrSdk(t *testing.T) {
+// sidecar.wasm links no sdk, net/rpc or template package, and links connect, gVisor and the sctp fork
+// only through operator-core's Id (owner decision 251), so a connect import in the main, or in anything
+// it reaches but operator-core, fails here as well as in sidecar's make check.
+func TestTheSidecarWasmLegLinksNoSdkAndConnectOnlyThroughOperatorCore(t *testing.T) {
 	legIndex := slices.IndexFunc(messagingBoundaryLegs, func(leg messagingBoundaryLeg) bool {
 		return leg.name == sidecarWasmLegName
 	})
@@ -655,19 +732,26 @@ func TestTheSidecarWasmLegLinksNoConnectOrSdk(t *testing.T) {
 	for _, finding := range sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages) {
 		t.Errorf("%s", finding)
 	}
+	for _, finding := range sidecarWasmConnectFindings(leg.name, sidecarWasmLegImports(t, ".", leg)) {
+		t.Errorf("%s", finding)
+	}
 	t.Logf("%s: %d packages", leg.name, len(packages))
 }
 
 // The rule finds what a fixture plants behind the leg's tag: a connect import, a sdk import and
-// net/rpc with the template packages it brings, and nothing for the same main built without the tag
-// or for a package sharing only a prefix with a root.
+// net/rpc with the template packages it brings, and nothing for the same main built without the tag,
+// for a package sharing only a prefix with a root, or for connect reached through operator-core.
 func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 	fixture := t.TempDir()
 	fixtureFiles := map[string]string{
 		"core/go.mod": "module github.com/urnetwork/sdk/js\n\ngo 1.26\n\n" +
-			"require (\n\tgithub.com/urnetwork/connect v0.0.0\n\tgithub.com/urnetwork/connectx v0.0.0\n\tgithub.com/urnetwork/sdk v0.0.0\n)\n\n" +
-			"replace github.com/urnetwork/connect => ../connect\n\nreplace github.com/urnetwork/connectx => ../connectx\n\nreplace github.com/urnetwork/sdk => ../sdk\n",
-		"core/cmd/sidecarwasm/main.go":    "package main\n\nimport _ \"github.com/urnetwork/connectx\"\n\nfunc main() {}\n",
+			"require (\n\tgithub.com/urnetwork/connect v0.0.0\n\tgithub.com/urnetwork/connectx v0.0.0\n\tgithub.com/urnetwork/operator-core v0.0.0\n\tgithub.com/urnetwork/sdk v0.0.0\n)\n\n" +
+			"replace github.com/urnetwork/connect => ../connect\n\nreplace github.com/urnetwork/connectx => ../connectx\n\n" +
+			"replace github.com/urnetwork/operator-core => ../operator-core\n\nreplace github.com/urnetwork/sdk => ../sdk\n",
+		"core/cmd/sidecarwasm/main.go":    "package main\n\nimport (\n\t_ \"github.com/urnetwork/connectx\"\n\t_ \"github.com/urnetwork/operator-core\"\n)\n\nfunc main() {}\n",
+		"operator-core/go.mod":            "module github.com/urnetwork/operator-core\n\ngo 1.26\n\nrequire github.com/urnetwork/connect v0.0.0\n\nreplace github.com/urnetwork/connect => ../connect\n",
+		"operator-core/operator.go":       "package operator\n\nimport _ \"github.com/urnetwork/connect\"\n",
+		"connect/connect.go":              "package connect\n",
 		"core/cmd/sidecarwasm/planted.go": "//go:build sidecar_http\n\npackage main\n\nimport (\n\t_ \"github.com/urnetwork/connect/protocol\"\n\t_ \"github.com/urnetwork/sdk\"\n\t_ \"net/rpc\"\n)\n",
 		"connect/go.mod":                  "module github.com/urnetwork/connect\n\ngo 1.26\n",
 		"connect/protocol/p.go":           "package protocol\n",
@@ -693,15 +777,19 @@ func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 		patterns:        []string{"./cmd/sidecarwasm"},
 	}
 	packages, _ := messagingBoundaryLegPackages(t, fixture, leg)
+	if !slices.Contains(packages, "github.com/urnetwork/connect") {
+		t.Fatalf("CONTROL FAILED: the fixture reaches no connect through operator-core: %v", packages)
+	}
 	findings := sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages)
-	// net/rpc's debug page brings both template packages with it
+	findings = append(findings, sidecarWasmConnectFindings(leg.name, sidecarWasmLegImports(t, fixture, leg))...)
+	// net/rpc's debug page brings both template packages with it; connect through operator-core is no finding
 	want := []string{
-		"fixture links github.com/urnetwork/connect/protocol, under github.com/urnetwork/connect (connect, which links gVisor)",
 		"fixture links github.com/urnetwork/sdk, under github.com/urnetwork/sdk (this repository's sdk, which links connect)",
 		"fixture links html/template, under html/template (html/template, which loses method pruning)",
 		"fixture links net/rpc, under net/rpc (net/rpc, which loses method pruning)",
 		"fixture links text/template, under text/template (text/template, which loses method pruning)",
 		"fixture links text/template/parse, under text/template (text/template, which loses method pruning)",
+		"fixture: github.com/urnetwork/sdk/js/cmd/sidecarwasm imports github.com/urnetwork/connect/protocol, under github.com/urnetwork/connect (connect, which links gVisor), which only operator-core may bring",
 	}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
@@ -715,6 +803,9 @@ func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 	if findings := sidecarWasmClosureFindings(leg.name, sidecarWasmMainPath, packages); len(findings) != 0 {
 		t.Errorf("without the tag nothing is planted, and the rule found %v", findings)
 	}
+	if findings := sidecarWasmConnectFindings(leg.name, sidecarWasmLegImports(t, fixture, leg)); len(findings) != 0 {
+		t.Errorf("without the tag connect comes only through operator-core, and the rule found %v", findings)
+	}
 }
 
 // The sidecar module (sidecar §18.10's Imports, D-SDK-20, R-SDK-4, DESIGN-DETAILS 4.2.3), file by file on every leg: in
@@ -722,7 +813,7 @@ func TestTheSidecarWasmRuleFindsWhatAFixturePlants(t *testing.T) {
 // and carries !ios_extension, since the tunnel runs forwarding alone; a forwarding file, device_sidecar*.go, imports
 // device, protocol/bridge and the sidecar root, whose forwarding files it names, untagged, since the tunnel links it; no
 // other file of a package this repository builds imports a sidecar package, the page Worker's main aside, which its own
-// leg holds to the root and protocol (TestTheSidecarWasmLegLinksNoConnectOrSdk). On the ios_extension leg a sidecar-role
+// leg holds to the root and protocol (TestTheSidecarWasmLegLinksNoSdkAndConnectOnlyThroughOperatorCore). On the ios_extension leg a sidecar-role
 // file is refused whatever it imports, and every sidecar root or protocol file the leg compiles is on the sidecar
 // module's ios_extension leg list. A rule read from the files each leg compiles, so a file's build constraints are what
 // the leg makes of them.
