@@ -100,6 +100,7 @@ require (
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/operator-core v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
@@ -120,6 +121,8 @@ require (
 replace github.com/urnetwork/sdk => ..
 
 replace github.com/urnetwork/connect => ../../connect
+
+replace github.com/urnetwork/operator-core => ../../operator-core
 
 replace github.com/pion/sctp => ../../connect/sctp
 

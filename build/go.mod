@@ -92,6 +92,7 @@ require (
 	github.com/urnetwork/connect v0.0.0 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/operator-core v0.0.0 // indirect
 	github.com/urnetwork/sidecar v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
@@ -113,6 +114,8 @@ require (
 replace github.com/urnetwork/sdk => ..
 
 replace github.com/urnetwork/connect => ../../connect
+
+replace github.com/urnetwork/operator-core => ../../operator-core
 
 replace github.com/pion/sctp => ../../connect/sctp
 
