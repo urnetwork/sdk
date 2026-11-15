@@ -16,7 +16,7 @@
 //	device    the app's Device given to EnrollWithDevice, which carries the VPN component (DeviceLocal in process on
 //	          Android, DeviceRemote over the device RPC to the Apple extensions): a role that has none since its start,
 //	          as after a restart before the app enrolls again, runs nothing, since no other bound call names the device
-//	          (DESIGN-DETAILS 4.7: setup has no other app-facing API; question sdk-m8-07-setup-device-at-start)
+//	          (DESIGN-DETAILS 4.7: setup has no other app-facing API; question sdk-m8-04-setup-device-at-start)
 //
 // The core's setup refuses where its host installed no setup sources (ErrForwardingSetupUnavailable), which an app
 // host's core does not yet compose (its config follower, gkm and statement poster, as for evs): the run reports it and
