@@ -1,7 +1,7 @@
 
 .PHONY: all clean generate build build_windows build_windows_amd64 \
 	build_windows_arm64 build_linux build_linux_amd64 build_linux_arm64 \
-	build_host smoke smoke_sidecar smoke_hpp smoke_memory_usage_json smoke_transport_stats_json init
+	build_host smoke smoke_sidecar smoke_sidecar_keystore smoke_hpp smoke_memory_usage_json smoke_transport_stats_json init
 
 all: clean build
 
@@ -135,6 +135,11 @@ smoke: build_host
 smoke_sidecar: build_host
 	clang++ -std=c++17 -Iinclude -o build/host/smoke_sidecar smoke/sidecar.cpp build/host/libURnetworkSdk.dylib && \
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke_sidecar;
+
+# sdk.Sidecar's key store and presence key written in C++, against the host library (SDK-M8-15)
+smoke_sidecar_keystore: build_host
+	clang++ -std=c++17 -Iinclude -o build/host/smoke_sidecar_keystore smoke/sidecar_keystore.cpp build/host/libURnetworkSdk.dylib && \
+	DYLD_LIBRARY_PATH=build/host ./build/host/smoke_sidecar_keystore;
 
 # c++ wrapper (hpp) smoke test against the host library
 smoke_hpp: build_host smoke_memory_usage_json smoke_transport_stats_json smoke_customer_transfer_json

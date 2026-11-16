@@ -1434,11 +1434,16 @@ func (g *gen) callback(named *types.Named) (*callbackInfo, error) {
 		cm.typedef = fmt.Sprintf("typedef %s (*%s)(void* user_data%s);", cRet, typedefName, prefixJoin(cParams))
 		cm.shimDecl = fmt.Sprintf("%s urnet_invoke_%s(%s);", cRet, shimName, strings.Join(cParamsFull, ", "))
 		returnKeyword := "return "
+		// a host that gave no function for this method answers the zero value, which every adapter reads as no answer
+		// (a nil string, a false, a 0 status: SidecarKeyStore's Failed), rather than the process ending in a call
+		// through NULL, which no recover in the adapter can catch
+		nullReturn := "return 0;"
 		if cRet == "void" {
 			returnKeyword = ""
+			nullReturn = "return;"
 		}
-		cm.shimDef = fmt.Sprintf("%s urnet_invoke_%s(%s) {\n\t%scb(%s);\n}",
-			cRet, shimName, strings.Join(cParamsFull, ", "), returnKeyword, strings.Join(cArgs, ", "))
+		cm.shimDef = fmt.Sprintf("%s urnet_invoke_%s(%s) {\n\tif (cb == 0) {\n\t\t%s\n\t}\n\t%scb(%s);\n}",
+			cRet, shimName, strings.Join(cParamsFull, ", "), nullReturn, returnKeyword, strings.Join(cArgs, ", "))
 
 		var adapterBody []string
 		adapterBody = append(adapterBody, fmt.Sprintf("\tdefer cgoGuard(%q)", typedefName))

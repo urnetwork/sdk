@@ -2,1090 +2,1906 @@
 #include "callbacks.h"
 
 void urnet_invoke_account_epochs(urnet_account_epochs_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_account_preferences_get(urnet_account_preferences_get_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_account_preferences_set(urnet_account_preferences_set_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_account_sign_in_required(urnet_account_sign_in_required_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_account_wallets(urnet_account_wallets_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_active_network_space_change(urnet_active_network_space_change_cb cb, void* user_data, uint64_t network_space) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, network_space);
 }
 
 void urnet_invoke_add_auth(urnet_add_auth_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_allow_foreground_change(urnet_allow_foreground_change_cb cb, void* user_data, bool allow_foreground) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, allow_foreground);
 }
 
 void urnet_invoke_allow_product_updates(urnet_allow_product_updates_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_auth_code_create(urnet_auth_code_create_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_code_login(urnet_auth_code_login_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_login(urnet_auth_login_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_login_with_password(urnet_auth_login_with_password_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_logout_event(urnet_auth_logout_event_cb cb, void* user_data, int64_t generation, const char* cause) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, generation, cause);
 }
 
 void urnet_invoke_auth_logout(urnet_auth_logout_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_auth_network_client(urnet_auth_network_client_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_password_reset(urnet_auth_password_reset_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_verify(urnet_auth_verify_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_bittensor_convert_estimate(urnet_bittensor_convert_estimate_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_bittensor_convert_receipt(urnet_bittensor_convert_receipt_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_bittensor_convert_submit(urnet_bittensor_convert_submit_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_bittensor_local_key_flow(urnet_bittensor_local_key_flow_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 bool urnet_invoke_bittensor_local_key_store_add_key(urnet_bittensor_local_key_store_add_key_cb cb, void* user_data, const char* network_id, const char* mnemonic, const char* address) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id, mnemonic, address);
 }
 
 bool urnet_invoke_bittensor_local_key_store_delete_key(urnet_bittensor_local_key_store_delete_key_cb cb, void* user_data, const char* network_id) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id);
 }
 
 char* urnet_invoke_bittensor_local_key_store_key_address(urnet_bittensor_local_key_store_key_address_cb cb, void* user_data, const char* network_id) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id);
 }
 
 char* urnet_invoke_bittensor_local_key_store_key_phrase(urnet_bittensor_local_key_store_key_phrase_cb cb, void* user_data, const char* network_id) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id);
 }
 
 char* urnet_invoke_bittensor_local_key_store_read_note(urnet_bittensor_local_key_store_read_note_cb cb, void* user_data, const char* network_id, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id, name);
 }
 
 void urnet_invoke_bittensor_local_key_store_write_note(urnet_bittensor_local_key_store_write_note_cb cb, void* user_data, const char* network_id, const char* name, const char* value) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, network_id, name, value);
 }
 
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, block_action_overrides_json);
 }
 
 void urnet_invoke_block_action_stats(urnet_block_action_stats_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_block_action_window_change(urnet_block_action_window_change_cb cb, void* user_data, const char* block_action_window_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, block_action_window_json);
 }
 
 void urnet_invoke_block_actions(urnet_block_actions_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_block_stats_change(urnet_block_stats_change_cb cb, void* user_data, const char* block_stats_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, block_stats_json);
 }
 
 void urnet_invoke_blocker_enabled_change(urnet_blocker_enabled_change_cb cb, void* user_data, bool blocker_enabled) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, blocker_enabled);
 }
 
 void urnet_invoke_bridge_status_change(urnet_bridge_status_change_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, status_json);
 }
 
 void urnet_invoke_can_prompt_intro_funnel_change(urnet_can_prompt_intro_funnel_change_cb cb, void* user_data, bool can_prompt_intro_funnel) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, can_prompt_intro_funnel);
 }
 
 void urnet_invoke_can_refer_change(urnet_can_refer_change_cb cb, void* user_data, bool can_refer) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, can_refer);
 }
 
 void urnet_invoke_can_show_rating_dialog_change(urnet_can_show_rating_dialog_change_cb cb, void* user_data, bool can_show_rating_dialog) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, can_show_rating_dialog);
 }
 
 void urnet_invoke_change_network_name(urnet_change_network_name_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_check_balance_code(urnet_check_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_claim_network_name(urnet_claim_network_name_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_client_events_send(urnet_client_events_send_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_client_limit_status_change(urnet_client_limit_status_change_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, status_json);
 }
 
 void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, uint64_t notice) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, notice);
 }
 
 void urnet_invoke_client_session(urnet_client_session_cb cb, void* user_data, uint64_t snapshot) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, snapshot);
 }
 
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, success);
 }
 
 void urnet_invoke_connect_change(urnet_connect_change_cb cb, void* user_data, bool connect_enabled) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, connect_enabled);
 }
 
 void urnet_invoke_connect_location_change(urnet_connect_location_change_cb cb, void* user_data, const char* location_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, location_json);
 }
 
 void urnet_invoke_connected_provider_location_change(urnet_connected_provider_location_change_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_connection_status(urnet_connection_status_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_contract_details_change(urnet_contract_details_change_cb cb, void* user_data, const char* contract_details_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, contract_details_json);
 }
 
 void urnet_invoke_contract_rows(urnet_contract_rows_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_contract_stats_change(urnet_contract_stats_change_cb cb, void* user_data, const char* contract_stats_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, contract_stats_json);
 }
 
 void urnet_invoke_contract_status_change(urnet_contract_status_change_cb cb, void* user_data, const char* contract_status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, contract_status_json);
 }
 
 void urnet_invoke_create_account_wallet(urnet_create_account_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_create_api_key(urnet_create_api_key_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_crypto_invoice(urnet_crypto_invoice_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_crypto_payment_assets(urnet_crypto_payment_assets_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_crypto_payment_intent(urnet_crypto_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_crypto_payment_status(urnet_crypto_payment_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, location_json);
 }
 
 void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_device_configuration_changed(urnet_device_configuration_changed_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_device_set_name(urnet_device_set_name_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_dns_resolver_settings_change(urnet_dns_resolver_settings_change_cb cb, void* user_data, const char* dns_resolver_settings_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, dns_resolver_settings_json);
 }
 
 void urnet_invoke_extender_provide_status_change(urnet_extender_provide_status_change_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, status_json);
 }
 
 void urnet_invoke_extender_status_change(urnet_extender_status_change_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, status_json);
 }
 
 void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, status_json);
 }
 
 void urnet_invoke_feedback_send_error(urnet_feedback_send_error_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_feedback_send_success(urnet_feedback_send_success_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, locations_json, state);
 }
 
 void urnet_invoke_find_locations(urnet_find_locations_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_find_providers2(urnet_find_providers2_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_find_providers(urnet_find_providers_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 char* urnet_invoke_flow_owner_lookup(urnet_flow_owner_lookup_cb cb, void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, version, protocol, source_ip, source_port, destination_ip, destination_port);
 }
 
 void urnet_invoke_generate_seedphrase(urnet_generate_seedphrase_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_account_payments(urnet_get_account_payments_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_account_points(urnet_get_account_points_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_account_wallets(urnet_get_account_wallets_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_by_client_jwt(urnet_get_by_client_jwt_cb cb, void* user_data, const char* result, bool ok_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result, ok_param);
 }
 
 void urnet_invoke_get_by_jwt(urnet_get_by_jwt_cb cb, void* user_data, const char* result, bool ok_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result, ok_param);
 }
 
 void urnet_invoke_get_instance_id(urnet_get_instance_id_cb cb, void* user_data, const char* result, bool ok_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result, ok_param);
 }
 
 void urnet_invoke_get_leaderboard(urnet_get_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_blocked_locations(urnet_get_network_blocked_locations_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_clients(urnet_get_network_clients_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_leaderboard_ranking(urnet_get_network_leaderboard_ranking_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_redeemed_balance_codes(urnet_get_network_redeemed_balance_codes_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_referral_code(urnet_get_network_referral_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_reliability(urnet_get_network_reliability_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_network_sessions(urnet_get_network_sessions_cb cb, void* user_data, uint64_t result, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result, err_param);
 }
 
 void urnet_invoke_get_network_user(urnet_get_network_user_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_payout_wallet(urnet_get_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_provider_status(urnet_get_provider_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_referral_network(urnet_get_referral_network_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_get_transfer_stats(urnet_get_transfer_stats_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_grid(urnet_grid_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_is_creating_external_wallet(urnet_is_creating_external_wallet_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_is_network_user_loading(urnet_is_network_user_loading_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_is_network_user_updating(urnet_is_network_user_updating_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_is_removing_wallet(urnet_is_removing_wallet_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_is_sending_feedback(urnet_is_sending_feedback_cb cb, void* user_data, bool p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_jwt_refresh(urnet_jwt_refresh_cb cb, void* user_data, const char* jwt) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, jwt);
 }
 
 void urnet_invoke_list_api_keys(urnet_list_api_keys_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_local_override_app_ids(urnet_local_override_app_ids_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_local_state_save(urnet_local_state_save_cb cb, void* user_data, uint64_t result) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result);
 }
 
 int64_t urnet_invoke_local_state_sealer_delete_seal_key(urnet_local_state_sealer_delete_seal_key_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 char* urnet_invoke_local_state_sealer_get_seal_key(urnet_local_state_sealer_get_seal_key_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 int64_t urnet_invoke_local_state_sealer_put_seal_key(urnet_local_state_sealer_put_seal_key_cb cb, void* user_data, const char* name, const char* key_base64) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name, key_base64);
 }
 
 void urnet_invoke_location_match(urnet_location_match_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_network_block_location(urnet_network_block_location_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_check(urnet_network_check_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_clients(urnet_network_clients_cb cb, void* user_data, const char* network_clients_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, network_clients_json);
 }
 
 void urnet_invoke_network_create(urnet_network_create_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_delete(urnet_network_delete_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_peers_change(urnet_network_peers_change_cb cb, void* user_data, const char* network_peers_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, network_peers_json);
 }
 
 void urnet_invoke_network_sessions_change(urnet_network_sessions_change_cb cb, void* user_data, uint64_t revision) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, revision);
 }
 
 void urnet_invoke_network_space_update(urnet_network_space_update_cb cb, void* user_data, const char* values_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, values_json);
 }
 
 void urnet_invoke_network_spaces_change(urnet_network_spaces_change_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_network_unblock_location(urnet_network_unblock_location_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_user(urnet_network_user_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_network_user_update(urnet_network_user_update_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_network_user_update_error(urnet_network_user_update_error_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_network_user_update_success(urnet_network_user_update_success_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_offline_change(urnet_offline_change_cb cb, void* user_data, bool offline, bool vpn_interface_while_offline) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, offline, vpn_interface_while_offline);
 }
 
 void urnet_invoke_onboarding_click(urnet_onboarding_click_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_onboarding_feedback_token(urnet_onboarding_feedback_token_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_onboarding_offer_issue(urnet_onboarding_offer_issue_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_packet_stats_change(urnet_packet_stats_change_cb cb, void* user_data, const char* packet_stats_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, packet_stats_json);
 }
 
 void urnet_invoke_parse_by_jwt(urnet_parse_by_jwt_cb cb, void* user_data, const char* result_json, bool ok_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, ok_param);
 }
 
 void urnet_invoke_payments(urnet_payments_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_payout_wallet(urnet_payout_wallet_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_peers(urnet_peers_cb cb, void* user_data, const char* peers_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, peers_json);
 }
 
 void urnet_invoke_performance_profile_change(urnet_performance_profile_change_cb cb, void* user_data, const char* performance_profile_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, performance_profile_json);
 }
 
 void urnet_invoke_points_leaderboard(urnet_points_leaderboard_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_provide_change(urnet_provide_change_cb cb, void* user_data, bool provide_enabled) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_enabled);
 }
 
 void urnet_invoke_provide_control_mode_change(urnet_provide_control_mode_change_cb cb, void* user_data, const char* provide_control_mode) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_control_mode);
 }
 
 void urnet_invoke_provide_mode_change(urnet_provide_mode_change_cb cb, void* user_data, int64_t provide_mode) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_mode);
 }
 
 void urnet_invoke_provide_network_mode_change(urnet_provide_network_mode_change_cb cb, void* user_data, const char* provide_network_mode) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_network_mode);
 }
 
 void urnet_invoke_provide_paused_change(urnet_provide_paused_change_cb cb, void* user_data, bool provide_paused) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_paused);
 }
 
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, provide_secret_key_list_json);
 }
 
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_provider_status(urnet_provider_status_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_provider_transport_settings_change(urnet_provider_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, transport_settings_json);
 }
 
 void urnet_invoke_provider_transport_status_change(urnet_provider_transport_status_change_cb cb, void* user_data, const char* transport_status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, transport_status_json);
 }
 
 void urnet_invoke_purchase_confirmation(urnet_purchase_confirmation_cb cb, void* user_data, const char* state) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, state);
 }
 
 void urnet_invoke_receive_packet(urnet_receive_packet_cb cb, void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, ip_version, ip_protocol, packet, packet_len);
 }
 
 void urnet_invoke_receive_packet_batch(urnet_receive_packet_batch_cb cb, void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, packet_batch_bytes, packet_batch_bytes_len);
 }
 
 void urnet_invoke_receive_packets(urnet_receive_packets_cb cb, void* user_data, uint64_t packet_batch) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, packet_batch);
 }
 
 void urnet_invoke_redeem_balance_code(urnet_redeem_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_referral_code_fetch_error(urnet_referral_code_fetch_error_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_referral_code(urnet_referral_code_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_refresh_jwt(urnet_refresh_jwt_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_regenerate_seedphrase(urnet_regenerate_seedphrase_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_remote_change(urnet_remote_change_cb cb, void* user_data, bool remote_connected) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, remote_connected);
 }
 
 void urnet_invoke_remove_auth(urnet_remove_auth_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_remove_network_client(urnet_remove_network_client_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_remove_wallet(urnet_remove_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_rotate_proxy_exit(urnet_rotate_proxy_exit_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_route_local_change(urnet_route_local_change_cb cb, void* user_data, bool route_local) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, route_local);
 }
 
 void urnet_invoke_selected_location(urnet_selected_location_cb cb, void* user_data, const char* location_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, location_json);
 }
 
 void urnet_invoke_selected_provider_location_change(urnet_selected_provider_location_change_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_send_feedback(urnet_send_feedback_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_session_operation(urnet_session_operation_cb cb, void* user_data, uint64_t result, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result, err_param);
 }
 
 void urnet_invoke_session_sign_out(urnet_session_sign_out_cb cb, void* user_data, uint64_t p0, const char* p1) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0, p1);
 }
 
 void urnet_invoke_set_emoji_tag(urnet_set_emoji_tag_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_set_network_leaderboard_public(urnet_set_network_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_set_network_referral(urnet_set_network_referral_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_set_payout_wallet(urnet_set_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_set_points_leaderboard_public(urnet_set_points_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data, uint64_t device, const char* proxy_config_result_json) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, device, proxy_config_result_json);
 }
 
 void urnet_invoke_sidecar_approval(urnet_sidecar_approval_cb cb, void* user_data, const char* pending_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, pending_json);
 }
 
 void urnet_invoke_sidecar_burner(urnet_sidecar_burner_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_bytes(urnet_sidecar_bytes_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_data, const char* page_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, page_json);
 }
 
 void urnet_invoke_sidecar_erasures(urnet_sidecar_erasures_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_event(urnet_sidecar_event_cb cb, void* user_data, const char* event_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, event_json);
 }
 
 int64_t urnet_invoke_sidecar_forward_key_store_delete_secret(urnet_sidecar_forward_key_store_delete_secret_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 char* urnet_invoke_sidecar_forward_key_store_get_secret(urnet_sidecar_forward_key_store_get_secret_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 int64_t urnet_invoke_sidecar_forward_key_store_put_secret(urnet_sidecar_forward_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name, value_base64);
 }
 
 void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 int64_t urnet_invoke_sidecar_key_store_delete_secret(urnet_sidecar_key_store_delete_secret_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 char* urnet_invoke_sidecar_key_store_get_secret(urnet_sidecar_key_store_get_secret_cb cb, void* user_data, const char* name) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name);
 }
 
 int64_t urnet_invoke_sidecar_key_store_put_secret(urnet_sidecar_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, name, value_base64);
 }
 
 void urnet_invoke_sidecar_one_time_codes(urnet_sidecar_one_time_codes_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 char* urnet_invoke_sidecar_presence_signer_get_attestation(urnet_sidecar_presence_signer_get_attestation_cb cb, void* user_data) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data);
 }
 
 char* urnet_invoke_sidecar_presence_signer_sign_with_presence(urnet_sidecar_presence_signer_sign_with_presence_cb cb, void* user_data, const char* message_base64) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, message_base64);
 }
 
 void urnet_invoke_sidecar_repo_change(urnet_sidecar_repo_change_cb cb, void* user_data, const char* change_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, change_json);
 }
 
 void urnet_invoke_sidecar_result(urnet_sidecar_result_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_revoke_plan(urnet_sidecar_revoke_plan_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_search(urnet_sidecar_search_cb cb, void* user_data, const char* hits_json, const char* progress_json, bool done) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, hits_json, progress_json, done);
 }
 
 void urnet_invoke_sidecar_send_check(urnet_sidecar_send_check_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_send_result(urnet_sidecar_send_result_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_used_at(urnet_sidecar_used_at_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sidecar_vault_entries(urnet_sidecar_vault_entries_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claim_confirmed(urnet_sn_claim_confirmed_cb cb, void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, epoch, tx_hash, amount_rao);
 }
 
 void urnet_invoke_sn_claim_done(urnet_sn_claim_done_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_sn_claim_failed(urnet_sn_claim_failed_cb cb, void* user_data, int64_t epoch, const char* message) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, epoch, message);
 }
 
 void urnet_invoke_sn_claim_sent(urnet_sn_claim_sent_cb cb, void* user_data, int64_t epoch, const char* tx_hash) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, epoch, tx_hash);
 }
 
 void urnet_invoke_sn_claim_now(urnet_sn_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claim_relay(urnet_sn_claim_relay_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claim_relay_claim_now(urnet_sn_claim_relay_claim_now_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claim_status(urnet_sn_claim_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_connect_wallet(urnet_sn_connect_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_epoch(urnet_sn_epoch_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_fleet_claim(urnet_sn_fleet_claim_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 char* urnet_invoke_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase(urnet_sn_fleet_claim_store_load_sn_fleet_coldkey_phrase_cb cb, void* user_data, const char* network_id) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id);
 }
 
 char* urnet_invoke_sn_fleet_claim_store_load_sn_fleet_hotkey_seed(urnet_sn_fleet_claim_store_load_sn_fleet_hotkey_seed_cb cb, void* user_data, const char* network_id) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id);
 }
 
 bool urnet_invoke_sn_fleet_claim_store_save_sn_fleet_hotkey_seed(urnet_sn_fleet_claim_store_save_sn_fleet_hotkey_seed_cb cb, void* user_data, const char* network_id, const char* seed_hex) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, network_id, seed_hex);
 }
 
 void urnet_invoke_sn_fleet_device_check(urnet_sn_fleet_device_check_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_fleet_device_leave(urnet_sn_fleet_device_leave_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_fleet_device(urnet_sn_fleet_device_cb cb, void* user_data, const char* result_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json);
 }
 
 char* urnet_invoke_sn_fleet_device_store_load_sn_fleet_device_state(urnet_sn_fleet_device_store_load_sn_fleet_device_state_cb cb, void* user_data) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data);
 }
 
 bool urnet_invoke_sn_fleet_device_store_save_sn_fleet_device_state(urnet_sn_fleet_device_store_save_sn_fleet_device_state_cb cb, void* user_data, const char* state_json) {
+	if (cb == 0) {
+		return 0;
+	}
 	return cb(user_data, state_json);
 }
 
 void urnet_invoke_sn_gas_balance(urnet_sn_gas_balance_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_get_wallet(urnet_sn_get_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_head(urnet_sn_head_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_ledger_accounts(urnet_sn_ledger_accounts_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_ledger_claim_confirmed(urnet_sn_ledger_claim_confirmed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash, int64_t amount_rao) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, no_id, index, tx_hash, amount_rao);
 }
 
 void urnet_invoke_sn_ledger_claim_done(urnet_sn_ledger_claim_done_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_sn_ledger_claim_failed(urnet_sn_ledger_claim_failed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* message) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, no_id, index, message);
 }
 
 void urnet_invoke_sn_ledger_claim_sent(urnet_sn_ledger_claim_sent_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, no_id, index, tx_hash);
 }
 
 void urnet_invoke_sn_network_consent_challenge(urnet_sn_network_consent_challenge_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_network_consent_status(urnet_sn_network_consent_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_top(urnet_sn_top_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_top_me(urnet_sn_top_me_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_validate_wallet(urnet_sn_validate_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_sn_wallet_change(urnet_sn_wallet_change_cb cb, void* user_data, const char* wallet_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, wallet_json);
 }
 
 void urnet_invoke_solana_payment_intent(urnet_solana_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_stripe_create_checkout_session(urnet_stripe_create_checkout_session_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_stripe_create_customer_portal(urnet_stripe_create_customer_portal_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_stripe_payment_intent(urnet_stripe_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_stripe_payment_sheet(urnet_stripe_payment_sheet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_stripe_prices(urnet_stripe_prices_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_subprotocol(urnet_subprotocol_cb cb, void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, subprotocol_id, source_client_id, message_bytes, message_bytes_len);
 }
 
 void urnet_invoke_subprotocols_query(urnet_subprotocols_query_cb cb, void* user_data, const char* subprotocol_ids_json, bool ok_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, subprotocol_ids_json, ok_param);
 }
 
 void urnet_invoke_subscription_balance(urnet_subscription_balance_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_subscription_balance_change(urnet_subscription_balance_change_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_subscription_balance_fetch_error(urnet_subscription_balance_fetch_error_cb cb, void* user_data, const char* p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_subscription_create_payment_id(urnet_subscription_create_payment_id_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_subscription_jwt_out_of_sync(urnet_subscription_jwt_out_of_sync_cb cb, void* user_data, bool server_is_pro) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, server_is_pro);
 }
 
 void urnet_invoke_throughput(urnet_throughput_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_transport_delay_change(urnet_transport_delay_change_cb cb, void* user_data, const char* delay_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, delay_json);
 }
 
 void urnet_invoke_transport_settings_change(urnet_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, transport_settings_json);
 }
 
 void urnet_invoke_transport_status_change(urnet_transport_status_change_cb cb, void* user_data, const char* transport_status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, transport_status_json);
 }
 
 void urnet_invoke_tunnel_change(urnet_tunnel_change_cb cb, void* user_data, bool tunnel_started) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, tunnel_started);
 }
 
 void urnet_invoke_unlink_referral_network(urnet_unlink_referral_network_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_unpaid_byte_count(urnet_unpaid_byte_count_cb cb, void* user_data, int64_t p0) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, p0);
 }
 
 void urnet_invoke_upgrade_guest(urnet_upgrade_guest_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_upgrade_guest_existing(urnet_upgrade_guest_existing_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_upload_logs(urnet_upload_logs_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_validate_address(urnet_validate_address_cb cb, void* user_data, bool valid) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, valid);
 }
 
 void urnet_invoke_validate_referral_code(urnet_validate_referral_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_verify_apple_transaction(urnet_verify_apple_transaction_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_verify_play_purchase(urnet_verify_play_purchase_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_verify_seeker_nft_holder(urnet_verify_seeker_nft_holder_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_view_controller_close(urnet_view_controller_close_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_view_controller_start(urnet_view_controller_start_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_view_controller_stop(urnet_view_controller_stop_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data);
 }
 
 void urnet_invoke_vpn_interface_while_offline_change(urnet_vpn_interface_while_offline_change_cb cb, void* user_data, bool vpn_interface_while_offline) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, vpn_interface_while_offline);
 }
 
 void urnet_invoke_wallet_balance(urnet_wallet_balance_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_wallet_circle_init(urnet_wallet_circle_init_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_wallet_circle_transfer_out(urnet_wallet_circle_transfer_out_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_wallet_validate_address(urnet_wallet_validate_address_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, result_json, err_param);
 }
 
 void urnet_invoke_window_status_change(urnet_window_status_change_cb cb, void* user_data, const char* window_status_json) {
+	if (cb == 0) {
+		return;
+	}
 	cb(user_data, window_status_json);
 }
 
