@@ -21,11 +21,10 @@ import (
 	"time"
 	"unsafe"
 
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/urnetwork/sdk"
 	"github.com/urnetwork/sdk/cgo/abitest"
-	"github.com/urnetwork/sidecar/protocol/bridge"
 )
 
 // How long a test waits for the library: far past any answer here, so reaching it is a failure.
@@ -314,13 +313,26 @@ func TestSidecarPresenceSignerAnswersCrossTheAbi(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		signed := &bridge.Signed{}
-		if err := proto.Unmarshal(signedBytes, signed); err != nil {
-			t.Fatal(err)
+		// the statement's countersignature, Signed's field 5, as its bytes are on the wire (§6.9)
+		var evidenceBytes []byte
+		for encoded := signedBytes; 0 < len(encoded) && evidenceBytes == nil; {
+			number, fieldType, size := protowire.ConsumeTag(encoded)
+			if size < 0 {
+				t.Fatal(protowire.ParseError(size))
+			}
+			encoded = encoded[size:]
+			if number == 5 && fieldType == protowire.BytesType {
+				evidenceBytes, size = protowire.ConsumeBytes(encoded)
+			} else {
+				size = protowire.ConsumeFieldValue(number, fieldType, encoded)
+			}
+			if size < 0 {
+				t.Fatal(protowire.ParseError(size))
+			}
+			encoded = encoded[size:]
 		}
-		evidenceBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(signed.GetWebauthn())
-		if err != nil {
-			t.Fatal(err)
+		if len(evidenceBytes) == 0 {
+			t.Fatalf("%s: no countersignature", vector.Name)
 		}
 		answer := base64.StdEncoding.EncodeToString(evidenceBytes)
 		signer := abitest.NewPresenceSigner(answer)

@@ -832,6 +832,12 @@ var (
 		sidecarImportModulePath + "/device",
 		sidecarImportModulePath + "/protocol/bridge",
 	}
+	// What a sidecar-role test file may import beside the role's: T4's cell harness, which imports only the standard
+	// library, so it brings nothing of sidecartest's servers into this module (SDK-M8-15). No other sidecartest
+	// package, and nothing a file that is no test may import.
+	sidecarImportRoleTestAllowed = []string{
+		sidecarImportModulePath + "/sidecartest/t4cell",
+	}
 )
 
 // The sidecar module's ios_extension leg list, by path from that module (DESIGN-DETAILS 4.2.3): the root and protocol
@@ -1035,6 +1041,8 @@ func sidecarImportFindings(t *testing.T, repositoryRoot string, leg messagingBou
 				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and a sidecar-role file carries !ios_extension, since the iOS extension runs forwarding alone", leg.name, relative, importPath))
 			case kind == "other":
 				findings = append(findings, fmt.Sprintf("%s: %s imports %s, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module", leg.name, relative, importPath))
+			case kind == "role" && strings.HasSuffix(name, "_test.go") && slices.Contains(sidecarImportRoleTestAllowed, importPath):
+				allowedCounts["role test"] += 1
 			case !slices.Contains(allowed, importPath):
 				findings = append(findings, fmt.Sprintf("%s: %s imports %s, which a %s file may not", leg.name, relative, importPath, kind))
 			default:
@@ -1098,6 +1106,8 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		"core/device_sidecar_proto.go":                 "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/protocol\"\n",
 		"core/other.go":                                "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/device\"\n",
 		"core/core_test.go":                            "package sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest\"\n",
+		"core/sidecar_cells_test.go":                   "//go:build !ios_extension\n\npackage sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest/t4cell\"\n",
+		"core/sidecar_cells.go":                        "//go:build !ios_extension\n\npackage sdk\n\nimport _ \"github.com/urnetwork/sidecar/sidecartest/t4cell\"\n",
 		"sidecar/go.mod":                               "module github.com/urnetwork/sidecar\n\ngo 1.26\n",
 		"sidecar/sidecar.go":                           "package sidecar\n",
 		"sidecar/planted.go":                           "package sidecar\n",
@@ -1108,6 +1118,7 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		"sidecar/device/d.go":                          "package device\n",
 		"sidecar/mcp/m.go":                             "package mcp\n",
 		"sidecar/sidecartest/s.go":                     "package sidecartest\n",
+		"sidecar/sidecartest/t4cell/c.go":              "package t4cell\n",
 	}
 	for name, content := range fixtureFiles {
 		fixturePath := filepath.Join(fixture, filepath.FromSlash(name))
@@ -1122,6 +1133,7 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		"host: core/device_sidecar_proto.go imports github.com/urnetwork/sidecar/protocol, which a device file may not",
 		"host: core/other.go imports github.com/urnetwork/sidecar/device, and only sidecar*.go and device_sidecar*.go of the root package import the sidecar module",
 		"host: core/sidecar_mcp.go imports github.com/urnetwork/sidecar/mcp, which a role file may not",
+		"host: core/sidecar_cells.go imports github.com/urnetwork/sidecar/sidecartest/t4cell, which a role file may not",
 	}
 	for _, c := range []struct {
 		leg  messagingBoundaryLeg
@@ -1157,6 +1169,10 @@ func TestTheSidecarImportRuleFindsWhatAFixturePlants(t *testing.T) {
 		}
 		if allowedCounts["device"] != 3 {
 			t.Errorf("%s: %d device imports allowed, want 3", c.leg.name, allowedCounts["device"])
+		}
+		// the role test file's harness import, on the test leg alone
+		if wantRoleTest := map[bool]int{false: 0, true: 1}[c.leg.test]; allowedCounts["role test"] != wantRoleTest {
+			t.Errorf("%s (test=%v): %d role test imports allowed, want %d", c.leg.name, c.leg.test, allowedCounts["role test"], wantRoleTest)
 		}
 	}
 }
