@@ -8,6 +8,8 @@ package main
 
 import (
 	"go/types"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -147,3 +149,53 @@ func TestForwardKeyStoreConstructorCrossesTheAbi(t *testing.T) {
 		}
 	}
 }
+
+// A C host's call compiles against the tracked header as C: three functions of the header's callback types, the
+// header's status constants, a get answered through urnet_copy_string, and the constructor taking them.
+func TestForwardKeyStoreConstructorCompilesForACHost(t *testing.T) {
+	compiler, err := exec.LookPath("clang")
+	if err != nil {
+		t.Skip("clang is not installed")
+	}
+	program := filepath.Join(t.TempDir(), "forward_key_store_host.c")
+	if err := os.WriteFile(program, []byte(forwardKeyStoreHostProgram), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command(compiler, "-std=c11", "-Wall", "-Werror", "-fsyntax-only",
+		"-I"+filepath.Join(testingGenDir(t), "..", "include"), program)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("a c host's call does not compile: %v\n%s", err, output)
+	}
+}
+
+// A desktop service's forwarding key store, as little of one as compiles: every item reads absent.
+const forwardKeyStoreHostProgram = `#include <stddef.h>
+
+#include "urnetwork_sdk.h"
+
+static int64_t put_secret(void* user_data, const char* name, const char* value_base64) {
+	(void)user_data;
+	(void)name;
+	(void)value_base64;
+	return URNET_SIDECAR_FORWARD_KEY_STORE_LOCKED;
+}
+
+static char* get_secret(void* user_data, const char* name) {
+	(void)user_data;
+	(void)name;
+	return urnet_copy_string("{\"status\":3}");
+}
+
+static int64_t delete_secret(void* user_data, const char* name) {
+	(void)user_data;
+	(void)name;
+	return URNET_SIDECAR_FORWARD_KEY_STORE_OK;
+}
+
+uint64_t new_device(uint64_t network_space, const char* by_jwt, const char* instance_id, const char* settings_json, void* store, char** out_error) {
+	urnet_sidecar_forward_key_store_put_secret_cb put = put_secret;
+	urnet_sidecar_forward_key_store_get_secret_cb get = get_secret;
+	urnet_sidecar_forward_key_store_delete_secret_cb del = delete_secret;
+	return urnet_new_device_local_with_forward_key_store(network_space, by_jwt, "", "", "", instance_id, settings_json, del, get, put, store, out_error);
+}
+`
