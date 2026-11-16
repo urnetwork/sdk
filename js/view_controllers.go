@@ -6,7 +6,7 @@ import (
 	"sync"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // Dispatches teardown outside the browser callback. Joining a worker here can
