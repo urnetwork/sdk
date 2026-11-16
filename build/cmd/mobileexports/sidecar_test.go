@@ -225,3 +225,115 @@ func TestMobileSidecarNamesAvoidTheBroadRules(t *testing.T) {
 		}
 	}
 }
+
+// The VPN component's forwarding key store is whole on the gomobile surface
+// (QD-844; sidecar §18.6's Setup, owner decision 197): the app's interface and
+// its answer, the setter on DeviceLocalSettings, and
+// NewDeviceLocalWithForwardKeyStore on the package facade, in Java and in
+// Objective-C, and the generated source passes the check the android build
+// runs on it.
+func TestMobileForwardKeyStoreIsBound(t *testing.T) {
+	javaDirectory := mobileSidecarGenerate(t, "java")
+	objcDirectory := mobileSidecarGenerate(t, "objc")
+	javaPath := func(name string) string {
+		return filepath.Join(javaDirectory, "java", "com", "bringyour", "sdk", name)
+	}
+	files := []struct {
+		path  string
+		texts []string
+	}{
+		{
+			path: javaPath("Sdk.java"),
+			texts: []string{
+				"public static native DeviceLocal newDeviceLocalWithForwardKeyStore(NetworkSpace networkSpace, String byJwt, String deviceDescription, String deviceSpec, String appVersion, Id instanceId, DeviceLocalSettings settings, SidecarForwardKeyStore forwardKeyStore) throws Exception;",
+			},
+		},
+		{
+			path: javaPath("DeviceLocalSettings.java"),
+			texts: []string{
+				"public native void setForwardKeyStore(SidecarForwardKeyStore keyStore);",
+				"public final native String getForwardStateDir();",
+				"public final native void setForwardStateDir(String v);",
+			},
+		},
+		{
+			path: javaPath("SidecarForwardKeyStore.java"),
+			texts: []string{
+				"public int putSecret(String name, String valueBase64);",
+				"public SidecarForwardSecret getSecret(String name);",
+				"public int deleteSecret(String name);",
+			},
+		},
+		{
+			path: javaPath("SidecarForwardSecret.java"),
+			texts: []string{
+				"public final native int getStatus();",
+				"public final native void setStatus(int v);",
+				"public final native String getValueBase64();",
+				"public final native void setValueBase64(String v);",
+			},
+		},
+		{
+			path: filepath.Join(objcDirectory, "src", "gobind", "Sdk.objc.h"),
+			texts: []string{
+				"FOUNDATION_EXPORT SdkDeviceLocal* _Nullable SdkNewDeviceLocalWithForwardKeyStore(SdkNetworkSpace* _Nullable networkSpace, NSString* _Nullable byJwt, NSString* _Nullable deviceDescription, NSString* _Nullable deviceSpec, NSString* _Nullable appVersion, SdkId* _Nullable instanceId, SdkDeviceLocalSettings* _Nullable settings, id<SdkSidecarForwardKeyStore> _Nullable forwardKeyStore, NSError* _Nullable* _Nullable error);",
+				"- (void)setForwardKeyStore:(id<SdkSidecarForwardKeyStore> _Nullable)keyStore;",
+				"@protocol SdkSidecarForwardKeyStore <NSObject>",
+			},
+		},
+	}
+	for _, file := range files {
+		contents, err := os.ReadFile(file.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, text := range file.texts {
+			if !strings.Contains(string(contents), text) {
+				t.Errorf("%s does not bind %s", filepath.Base(file.path), text)
+			}
+		}
+	}
+	if err := validateMobileExports(javaDirectory); err != nil {
+		t.Errorf("the generated bindings have unexpected omissions:\n%v", err)
+	}
+}
+
+// The gate refuses generated source that omits a forwarding key store entry
+// point, each in the record gobind writes for it: the setter, which
+// DeviceLocalSettings' broad rule would have let through, and the
+// constructor's two records. Another DeviceLocalSettings omission passes as
+// before, and so does source with none.
+func TestMobileForwardKeyStoreOmissionFailsTheGate(t *testing.T) {
+	for identifier := range mobileForwardKeyStoreBoundIds {
+		if allowedMobileOmission(identifier) {
+			t.Errorf("an omission of %s is accepted", identifier)
+		}
+	}
+	if !allowedMobileOmission("DeviceLocalSettings.GeneratorFunc") {
+		t.Error("the settings' Go-only fields are no longer accepted")
+	}
+	write := func(lines ...string) string {
+		directory := t.TempDir()
+		source := "package com.bringyour.sdk;\n" + strings.Join(lines, "\n") + "\n"
+		if err := os.WriteFile(filepath.Join(directory, "Fixture.java"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return directory
+	}
+	for _, record := range []string{
+		"\t// skipped method DeviceLocalSettings.SetForwardKeyStore with unsupported parameter or return types",
+		"\t// skipped function NewDeviceLocalWithForwardKeyStore with unsupported parameter or return types",
+		"\t// skipped constructor DeviceLocal.NewDeviceLocalWithForwardKeyStore with unsupported parameter or return types",
+	} {
+		err := validateMobileExports(write(record))
+		if err == nil || !strings.Contains(err.Error(), strings.TrimSpace(record)) {
+			t.Errorf("the gate passed %q: %v", strings.TrimSpace(record), err)
+		}
+	}
+	if err := validateMobileExports(write(
+		"\t// skipped field DeviceLocalSettings.GeneratorFunc with unsupported type: func",
+		"\tpublic native void setForwardKeyStore(SidecarForwardKeyStore keyStore);",
+	)); err != nil {
+		t.Errorf("the gate refused source that omits no forwarding key store entry point: %v", err)
+	}
+}

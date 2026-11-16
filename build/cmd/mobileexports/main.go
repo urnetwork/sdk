@@ -119,9 +119,26 @@ var mobileSidecarGoOnlyIds = map[string]bool{
 	"DeviceLocal.NewBridgeLink":    true,
 }
 
+// The entry points an app's VPN component gives its forwarding key store through
+// (sidecar §18.6's Setup, owner decision 197, QD-844; SDK-M8-06's tables): the
+// setter on the settings a gomobile host builds, and the constructor that takes
+// the store beside the settings, which the c abi binds too. Each must be bound:
+// an omission of one is never accepted, whatever broad rule its name falls
+// under. DeviceLocalSettings' rule below would otherwise hide a lost setter,
+// and a component with no store sets no forwarding up. The constructor has two
+// gobind records, the package facade's and the return type's.
+var mobileForwardKeyStoreBoundIds = map[string]bool{
+	"DeviceLocalSettings.SetForwardKeyStore":        true,
+	"NewDeviceLocalWithForwardKeyStore":             true,
+	"DeviceLocal.NewDeviceLocalWithForwardKeyStore": true,
+}
+
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
 // callbacks retain the non-joining Close methods so they cannot self-join.
 func allowedMobileOmission(identifier string) bool {
+	if mobileForwardKeyStoreBoundIds[identifier] {
+		return false
+	}
 	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] ||
 		mobileExtenderStringSliceIds[identifier] || mobileSnFleetGoOnlyIds[identifier] ||
 		mobileSidecarGoOnlyIds[identifier] {
