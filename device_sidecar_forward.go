@@ -992,7 +992,33 @@ func (self *deviceLocalForwarding) forwarderEvent(event sidecar.SidecarEvent, st
 // The network's posture as the Forwarder's sink (sidecar.ForwarderSink), through the owner's role for the network:
 // the device client's network's is the primary, every other network's its own.
 type deviceForwardSink struct {
-	role *deviceLocalForwarding
+	role   *deviceLocalForwarding
+	raises deviceForwardRaises
+}
+
+// The overdue raise a sink last reported, by the waiting entry it named and its age: a later read of the posture finds
+// the same raise among its alarms until another call replaces them, and the Forwarder raises bridge_alarm once a
+// raise (QD-696's once a point). Safe for concurrent use.
+type deviceForwardRaises struct {
+	stateLock sync.Mutex
+	raised    bool
+	n         uint64
+	age       time.Duration
+}
+
+// Leaves sink's Overdue marked raised only for a raise in decision not reported before.
+func (self *deviceForwardRaises) once(decision sidecardevice.PostureDecision, sink *sidecar.BridgeSinkDecision) {
+	if sink.Overdue == nil || !sink.Overdue.Raised {
+		return
+	}
+	raise, _ := deviceForwardOverdueRaise(decision)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.raised && raise.N == self.n && raise.Age == self.age {
+		sink.Overdue.Raised = false
+		return
+	}
+	self.raised, self.n, self.age = true, raise.N, raise.Age
 }
 
 var _ sidecar.ForwarderSink = (*deviceForwardSink)(nil)
@@ -1072,7 +1098,9 @@ func (self *deviceForwardSink) applyFork() error {
 	})
 }
 
-// The posture's decision, as the Forwarder reads it.
+// The posture's decision at the clock's now, as the Forwarder reads it at each alarm time (DESIGN-DETAILS 4.2.5): the
+// role's adopted decision carries the Overdue of its last adoption, so a read of it raised no narrowing_overdue. An
+// overdue raise is reported raised once.
 func (self *deviceForwardSink) Decision() sidecar.BridgeSinkDecision {
 	owner := self.role.host.owner
 	if owner == nil {
@@ -1082,7 +1110,20 @@ func (self *deviceForwardSink) Decision() sidecar.BridgeSinkDecision {
 	if settings := self.role.host.bridgeSettings; settings != nil && settings.PostureSettings != nil {
 		timeout = settings.PostureSettings.NarrowingOverdueTimeout
 	}
-	return deviceForwardSinkDecisionOf(owner.roleDecision(self.role.networkId), timeout)
+	decision := owner.roleDecisionNow(self.role.networkId)
+	sink := deviceForwardSinkDecisionOf(decision, timeout)
+	self.raises.once(decision, &sink)
+	return sink
+}
+
+// The posture's overdue raise among its alarms: the waiting entry it named and its age at the raise.
+func deviceForwardOverdueRaise(decision sidecardevice.PostureDecision) (sidecardevice.PostureAlarm, bool) {
+	for _, alarm := range slices.Backward(decision.Alarms) {
+		if alarm.Kind == sidecardevice.PostureAlarmCompileOverdue {
+			return alarm, true
+		}
+	}
+	return sidecardevice.PostureAlarm{}, false
 }
 
 // The root's log run as device.PostureLog, which never links the root's type.
