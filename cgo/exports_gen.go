@@ -2865,6 +2865,48 @@ func (self *cAdapterSidecarEventListener) SidecarEventReceived(event *sdk.Sideca
 	}
 }
 
+type cAdapterSidecarForwardKeyStore struct {
+	cbDeleteSecret C.urnet_sidecar_forward_key_store_delete_secret_cb
+	cbGetSecret    C.urnet_sidecar_forward_key_store_get_secret_cb
+	cbPutSecret    C.urnet_sidecar_forward_key_store_put_secret_cb
+	userData       unsafe.Pointer
+}
+
+func (self *cAdapterSidecarForwardKeyStore) DeleteSecret(name string) int32 {
+	defer cgoGuard("urnet_sidecar_forward_key_store_delete_secret_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_sidecar_forward_key_store_delete_secret(self.cbDeleteSecret, self.userData, name_)
+	cStringFree(name_)
+	return int32(int64(r0_))
+}
+
+func (self *cAdapterSidecarForwardKeyStore) GetSecret(name string) *sdk.SidecarForwardSecret {
+	defer cgoGuard("urnet_sidecar_forward_key_store_get_secret_cb")
+	name_ := cString(string(name))
+	r0_ := C.urnet_invoke_sidecar_forward_key_store_get_secret(self.cbGetSecret, self.userData, name_)
+	cStringFree(name_)
+	if r0_ == nil {
+		return nil
+	}
+	r0 := &sdk.SidecarForwardSecret{}
+	ok := goJson(r0_, r0, "urnet_sidecar_forward_key_store_get_secret_cb")
+	urnet_free_string(r0_)
+	if !ok {
+		return nil
+	}
+	return r0
+}
+
+func (self *cAdapterSidecarForwardKeyStore) PutSecret(name string, valueBase64 string) int32 {
+	defer cgoGuard("urnet_sidecar_forward_key_store_put_secret_cb")
+	name_ := cString(string(name))
+	valueBase64_ := cString(string(valueBase64))
+	r0_ := C.urnet_invoke_sidecar_forward_key_store_put_secret(self.cbPutSecret, self.userData, name_, valueBase64_)
+	cStringFree(name_)
+	cStringFree(valueBase64_)
+	return int32(int64(r0_))
+}
+
 type cAdapterSidecarHistoryCallback struct {
 	cbResult C.urnet_sidecar_history_cb
 	userData unsafe.Pointer
@@ -19396,6 +19438,36 @@ func urnet_new_device_local_with_defaults(networkSpace C.uint64_t, byJwt *C.char
 		}
 	}
 	r0, err := sdk.NewDeviceLocalWithDefaults(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_defaults"), bool(enableRpc))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_device_local_with_forward_key_store
+func urnet_new_device_local_with_forward_key_store(networkSpace C.uint64_t, byJwt *C.char, deviceDescription *C.char, deviceSpec *C.char, appVersion *C.char, instanceId *C.char, settings *C.char, forwardKeyStore_delete_secret C.urnet_sidecar_forward_key_store_delete_secret_cb, forwardKeyStore_get_secret C.urnet_sidecar_forward_key_store_get_secret_cb, forwardKeyStore_put_secret C.urnet_sidecar_forward_key_store_put_secret_cb, forwardKeyStore_user_data unsafe.Pointer, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_device_local_with_forward_key_store")
+	var networkSpace_ *sdk.NetworkSpace
+	if networkSpace != 0 {
+		var ok bool
+		networkSpace_, ok = resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_device_local_with_forward_key_store")
+		if !ok {
+			return 0
+		}
+	}
+	settings_ := sdk.DefaultDeviceLocalSettings()
+	if !goJson(settings, settings_, "urnet_new_device_local_with_forward_key_store") {
+		return 0
+	}
+	var forwardKeyStore_ sdk.SidecarForwardKeyStore
+	if forwardKeyStore_delete_secret != nil {
+		forwardKeyStore_ = &cAdapterSidecarForwardKeyStore{cbDeleteSecret: forwardKeyStore_delete_secret, cbGetSecret: forwardKeyStore_get_secret, cbPutSecret: forwardKeyStore_put_secret, userData: forwardKeyStore_user_data}
+	}
+	r0, err := sdk.NewDeviceLocalWithForwardKeyStore(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_forward_key_store"), settings_, forwardKeyStore_)
 	if err != nil {
 		setErrorOut(outError, err)
 		return 0

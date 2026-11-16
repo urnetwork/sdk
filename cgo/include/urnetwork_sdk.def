@@ -1126,6 +1126,7 @@ EXPORTS
 	urnet_new_device_local
 	urnet_new_device_local_key_material
 	urnet_new_device_local_with_defaults
+	urnet_new_device_local_with_forward_key_store
 	urnet_new_device_local_with_key_material
 	urnet_new_device_local_with_memory_target
 	urnet_new_device_local_with_provide_extender

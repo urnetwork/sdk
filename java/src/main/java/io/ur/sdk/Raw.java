@@ -184,6 +184,9 @@ public interface Raw extends Library {
   interface urnet_sidecar_directory_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_erasures_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_event_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_forward_key_store_delete_secret_cb extends Callback { long invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_forward_key_store_get_secret_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_forward_key_store_put_secret_cb extends Callback { long invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_history_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_key_store_delete_secret_cb extends Callback { long invoke(Pointer a0, String a1); }
   interface urnet_sidecar_key_store_get_secret_cb extends Callback { Pointer invoke(Pointer a0, String a1); }
@@ -1641,6 +1644,7 @@ public interface Raw extends Library {
   long urnet_new_device_local(long a0, String a1, String a2, String a3, String a4, String a5, String a6, PointerByReference a7);
   long urnet_new_device_local_key_material(Pointer a0, int a1, Pointer a2, int a3, Pointer a4, int a5);
   long urnet_new_device_local_with_defaults(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, PointerByReference a7);
+  long urnet_new_device_local_with_forward_key_store(long a0, String a1, String a2, String a3, String a4, String a5, String a6, urnet_sidecar_forward_key_store_delete_secret_cb a7, urnet_sidecar_forward_key_store_get_secret_cb a8, urnet_sidecar_forward_key_store_put_secret_cb a9, Pointer a10, PointerByReference a11);
   long urnet_new_device_local_with_key_material(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, PointerByReference a8);
   long urnet_new_device_local_with_memory_target(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, long a8, PointerByReference a9);
   long urnet_new_device_local_with_provide_extender(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, byte a8, byte a9, PointerByReference a10);

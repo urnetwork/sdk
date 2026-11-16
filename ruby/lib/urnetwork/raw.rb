@@ -183,6 +183,9 @@ module URnetwork
       callback :urnet_sidecar_directory_cb, [:pointer, :string], :void
       callback :urnet_sidecar_erasures_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_event_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_forward_key_store_delete_secret_cb, [:pointer, :string], :int64
+      callback :urnet_sidecar_forward_key_store_get_secret_cb, [:pointer, :string], :pointer
+      callback :urnet_sidecar_forward_key_store_put_secret_cb, [:pointer, :string, :string], :int64
       callback :urnet_sidecar_history_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_key_store_delete_secret_cb, [:pointer, :string], :int64
       callback :urnet_sidecar_key_store_get_secret_cb, [:pointer, :string], :pointer
@@ -1640,6 +1643,7 @@ module URnetwork
       attach_function :urnet_new_device_local, [:uint64, :string, :string, :string, :string, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_key_material, [:pointer, :int32, :pointer, :int32, :pointer, :int32], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_defaults, [:uint64, :string, :string, :string, :string, :string, :bool, :pointer], :uint64, blocking: true
+      attach_function :urnet_new_device_local_with_forward_key_store, [:uint64, :string, :string, :string, :string, :string, :string, :urnet_sidecar_forward_key_store_delete_secret_cb, :urnet_sidecar_forward_key_store_get_secret_cb, :urnet_sidecar_forward_key_store_put_secret_cb, :pointer, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_key_material, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_memory_target, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_provide_extender, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :bool, :bool, :pointer], :uint64, blocking: true

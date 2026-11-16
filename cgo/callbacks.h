@@ -369,6 +369,12 @@ typedef void (*urnet_sidecar_erasures_cb)(void* user_data, const char* result_js
 void urnet_invoke_sidecar_erasures(urnet_sidecar_erasures_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_event_cb)(void* user_data, const char* event_json);
 void urnet_invoke_sidecar_event(urnet_sidecar_event_cb cb, void* user_data, const char* event_json);
+typedef int64_t (*urnet_sidecar_forward_key_store_delete_secret_cb)(void* user_data, const char* name);
+int64_t urnet_invoke_sidecar_forward_key_store_delete_secret(urnet_sidecar_forward_key_store_delete_secret_cb cb, void* user_data, const char* name);
+typedef char* (*urnet_sidecar_forward_key_store_get_secret_cb)(void* user_data, const char* name);
+char* urnet_invoke_sidecar_forward_key_store_get_secret(urnet_sidecar_forward_key_store_get_secret_cb cb, void* user_data, const char* name);
+typedef int64_t (*urnet_sidecar_forward_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
+int64_t urnet_invoke_sidecar_forward_key_store_put_secret(urnet_sidecar_forward_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64);
 typedef void (*urnet_sidecar_history_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef int64_t (*urnet_sidecar_key_store_delete_secret_cb)(void* user_data, const char* name);

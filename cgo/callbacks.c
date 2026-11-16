@@ -729,6 +729,18 @@ void urnet_invoke_sidecar_event(urnet_sidecar_event_cb cb, void* user_data, cons
 	cb(user_data, event_json);
 }
 
+int64_t urnet_invoke_sidecar_forward_key_store_delete_secret(urnet_sidecar_forward_key_store_delete_secret_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+char* urnet_invoke_sidecar_forward_key_store_get_secret(urnet_sidecar_forward_key_store_get_secret_cb cb, void* user_data, const char* name) {
+	return cb(user_data, name);
+}
+
+int64_t urnet_invoke_sidecar_forward_key_store_put_secret(urnet_sidecar_forward_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64) {
+	return cb(user_data, name, value_base64);
+}
+
 void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

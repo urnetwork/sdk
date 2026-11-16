@@ -182,6 +182,9 @@ pub type urnet_sidecar_bytes_cb = Option<unsafe extern "C" fn(*mut c_void, *cons
 pub type urnet_sidecar_directory_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_erasures_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_event_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_sidecar_forward_key_store_delete_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> i64>;
+pub type urnet_sidecar_forward_key_store_get_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>;
+pub type urnet_sidecar_forward_key_store_put_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> i64>;
 pub type urnet_sidecar_history_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_key_store_delete_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> i64>;
 pub type urnet_sidecar_key_store_get_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>;
@@ -1641,6 +1644,7 @@ pub struct Raw {
     pub urnet_new_device_local: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_key_material: unsafe extern "C" fn(*const u8, i32, *const u8, i32, *const u8, i32) -> u64,
     pub urnet_new_device_local_with_defaults: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, *mut *mut c_char) -> u64,
+    pub urnet_new_device_local_with_forward_key_store: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, urnet_sidecar_forward_key_store_delete_secret_cb, urnet_sidecar_forward_key_store_get_secret_cb, urnet_sidecar_forward_key_store_put_secret_cb, *mut c_void, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_with_key_material: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_with_memory_target: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, i64, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_with_provide_extender: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, bool, bool, *mut *mut c_char) -> u64,
@@ -3131,6 +3135,7 @@ impl Raw {
             urnet_new_device_local: unsafe { *library.get(b"urnet_new_device_local\0")? },
             urnet_new_device_local_key_material: unsafe { *library.get(b"urnet_new_device_local_key_material\0")? },
             urnet_new_device_local_with_defaults: unsafe { *library.get(b"urnet_new_device_local_with_defaults\0")? },
+            urnet_new_device_local_with_forward_key_store: unsafe { *library.get(b"urnet_new_device_local_with_forward_key_store\0")? },
             urnet_new_device_local_with_key_material: unsafe { *library.get(b"urnet_new_device_local_with_key_material\0")? },
             urnet_new_device_local_with_memory_target: unsafe { *library.get(b"urnet_new_device_local_with_memory_target\0")? },
             urnet_new_device_local_with_provide_extender: unsafe { *library.get(b"urnet_new_device_local_with_provide_extender\0")? },

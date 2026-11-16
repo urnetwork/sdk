@@ -1229,6 +1229,7 @@ struct SidecarDraft;
 struct SidecarErasure;
 struct SidecarErasures;
 struct SidecarEvent;
+struct SidecarForwardSecret;
 struct SidecarHistory;
 struct SidecarHistoryVersion;
 struct SidecarOneTimeCode;
@@ -4190,6 +4191,11 @@ struct SidecarEvent {
 	std::optional<std::string> ct_alarm;
 };
 
+struct SidecarForwardSecret {
+	int32_t status{};
+	std::optional<std::string> value_base64;
+};
+
 struct SidecarHistory {
 	bool ok{};
 	std::optional<SidecarHistoryVersionList> versions;
@@ -5922,6 +5928,8 @@ inline void to_json(nlohmann::json& j, const SidecarErasures& v);
 inline void from_json(const nlohmann::json& j, SidecarErasures& v);
 inline void to_json(nlohmann::json& j, const SidecarEvent& v);
 inline void from_json(const nlohmann::json& j, SidecarEvent& v);
+inline void to_json(nlohmann::json& j, const SidecarForwardSecret& v);
+inline void from_json(const nlohmann::json& j, SidecarForwardSecret& v);
 inline void to_json(nlohmann::json& j, const SidecarHistory& v);
 inline void from_json(const nlohmann::json& j, SidecarHistory& v);
 inline void to_json(nlohmann::json& j, const SidecarHistoryVersion& v);
@@ -19316,6 +19324,27 @@ inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarForwardSecret& v) {
+	j = nlohmann::json::object();
+	j["status"] = v.status;
+	if (v.value_base64) {
+		j["value_base64"] = *v.value_base64;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarForwardSecret& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.status);
+	}
+	if (auto it = j.find("value_base64"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.value_base64 = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarHistory& v) {
 	j = nlohmann::json::object();
 	j["ok"] = v.ok;
@@ -24755,6 +24784,11 @@ using SidecarBytesCallback = std::function<void(std::optional<SidecarBytes> resu
 using SidecarDirectoryListener = std::function<void(std::optional<SidecarDirectoryPage> page)>;
 using SidecarErasuresCallback = std::function<void(std::optional<SidecarErasures> result, std::optional<std::string> err_param)>;
 using SidecarEventListener = std::function<void(std::optional<SidecarEvent> event)>;
+struct SidecarForwardKeyStore {
+	std::function<int64_t(std::string name)> delete_secret;
+	std::function<std::optional<SidecarForwardSecret>(std::string name)> get_secret;
+	std::function<int64_t(std::string name, std::string value_base64)> put_secret;
+};
 using SidecarHistoryCallback = std::function<void(std::optional<SidecarHistory> result, std::optional<std::string> err_param)>;
 struct SidecarKeyStore {
 	std::function<int64_t(std::string name)> delete_secret;
@@ -31607,6 +31641,50 @@ inline void oneshot_sidecar_event(void* user_data, const char* event_json) {
 	} catch (...) {
 	}
 	delete f;
+}
+
+inline int64_t retained_sidecar_forward_key_store_delete_secret(void* user_data, const char* name) {
+	auto* f = static_cast<SidecarForwardKeyStore*>(user_data);
+	int64_t r{};
+	try {
+		if (f->delete_secret) {
+			r = f->delete_secret(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline char* retained_sidecar_forward_key_store_get_secret(void* user_data, const char* name) {
+	auto* f = static_cast<SidecarForwardKeyStore*>(user_data);
+	std::optional<SidecarForwardSecret> v{};
+	try {
+		if (f->get_secret) {
+			v = f->get_secret(std::string(name ? name : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	if (!v) {
+		return nullptr;
+	}
+	std::string r = nlohmann::json(*v).dump();
+	return dupCString(r);
+}
+inline int64_t retained_sidecar_forward_key_store_put_secret(void* user_data, const char* name, const char* value_base64) {
+	auto* f = static_cast<SidecarForwardKeyStore*>(user_data);
+	int64_t r{};
+	try {
+		if (f->put_secret) {
+			r = f->put_secret(std::string(name ? name : ""), std::string(value_base64 ? value_base64 : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
 }
 
 inline void retained_sidecar_history(void* user_data, const char* result_json, const char* err_param) {
@@ -42535,6 +42613,27 @@ inline DeviceLocal newDeviceLocalWithDefaults(const NetworkSpace& network_space,
 	DeviceLocal r(urnet_new_device_local_with_defaults(network_space.handle(), by_jwt.c_str(), device_description.c_str(), device_spec.c_str(), app_version.c_str(), instance_id.c_str(), enable_rpc, &err_c));
 	if (err_c) {
 		detail::throwError(err_c);
+	}
+	return r;
+}
+inline DeviceLocal newDeviceLocalWithForwardKeyStore(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, const std::optional<DeviceLocalSettings>& settings, SidecarForwardKeyStore forward_key_store) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	std::shared_ptr<SidecarForwardKeyStore> forward_key_store_fn;
+	if ((static_cast<bool>(forward_key_store.delete_secret) || static_cast<bool>(forward_key_store.get_secret) || static_cast<bool>(forward_key_store.put_secret))) {
+		forward_key_store_fn = std::make_shared<SidecarForwardKeyStore>(std::move(forward_key_store));
+	}
+	char* err_c = nullptr;
+	DeviceLocal r(urnet_new_device_local_with_forward_key_store(network_space.handle(), by_jwt.c_str(), device_description.c_str(), device_spec.c_str(), app_version.c_str(), instance_id.c_str(), settings_c, forward_key_store_fn ? &detail::retained_sidecar_forward_key_store_delete_secret : nullptr, forward_key_store_fn ? &detail::retained_sidecar_forward_key_store_get_secret : nullptr, forward_key_store_fn ? &detail::retained_sidecar_forward_key_store_put_secret : nullptr, forward_key_store_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (forward_key_store_fn) {
+		r.retain(forward_key_store_fn);
 	}
 	return r;
 }

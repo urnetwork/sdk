@@ -1137,6 +1137,10 @@ typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_jso
 typedef void (*urnet_sidecar_erasures_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarEventListener */
 typedef void (*urnet_sidecar_event_cb)(void* user_data, const char* event_json);
+/* SidecarForwardKeyStore */
+typedef int64_t (*urnet_sidecar_forward_key_store_delete_secret_cb)(void* user_data, const char* name);
+typedef char* (*urnet_sidecar_forward_key_store_get_secret_cb)(void* user_data, const char* name);
+typedef int64_t (*urnet_sidecar_forward_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
 /* SidecarHistoryCallback */
 typedef void (*urnet_sidecar_history_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarKeyStore */
@@ -2854,6 +2858,7 @@ uint64_t urnet_new_crypto_invoice_view_controller(uint64_t api, const char* stor
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
 uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int32_t client_key_seed_len, const uint8_t* provide_tls_certificate_pem, int32_t provide_tls_certificate_pem_len, const uint8_t* provide_tls_private_key_pem, int32_t provide_tls_private_key_pem_len);
 uint64_t urnet_new_device_local_with_defaults(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, char** out_error);
+uint64_t urnet_new_device_local_with_forward_key_store(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, urnet_sidecar_forward_key_store_delete_secret_cb forward_key_store_delete_secret, urnet_sidecar_forward_key_store_get_secret_cb forward_key_store_get_secret, urnet_sidecar_forward_key_store_put_secret_cb forward_key_store_put_secret, void* forward_key_store_user_data, char** out_error);
 uint64_t urnet_new_device_local_with_key_material(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, char** out_error);
 uint64_t urnet_new_device_local_with_memory_target(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, int64_t memory_target_byte_count, char** out_error);
 uint64_t urnet_new_device_local_with_provide_extender(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, bool provide_extender_enabled, bool default_provide_extender, char** out_error);
@@ -5898,6 +5903,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   bridge_alarm?: string
  *   dns_alarm?: string
  *   ct_alarm?: string
+ */
+
+/* SidecarForwardSecret (json):
+ *   status: number
+ *   value_base64?: string
  */
 
 /* SidecarHistory (json):
