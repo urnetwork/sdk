@@ -2704,6 +2704,7 @@ type DeviceLocalMemoryUsage struct {
 	PeerKeyPinReleasedByteCount   int64
 	PeerKeyPinCount               int
 	PeerKeyPinCapacityRefusals    int64
+	PeerKeyPinEvictions           int64
 	PeerKeyPinPersistenceFailures int64
 	PeerKeyPinRollbackRefusals    int64
 	PeerKeyPinStateFailures       int64
@@ -2788,6 +2789,7 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 		pins := self.peerKeyPinStore.Stats()
 		usage.PeerKeyPinCount = pins.PeerCount
 		usage.PeerKeyPinCapacityRefusals = int64(pins.CapacityRefusals)
+		usage.PeerKeyPinEvictions = int64(pins.Evictions)
 		usage.PeerKeyPinPersistenceFailures = int64(pins.PersistenceFailures)
 		usage.PeerKeyPinRollbackRefusals = int64(pins.RollbackRefusals)
 		usage.PeerKeyPinStateFailures = int64(pins.StateFailures)

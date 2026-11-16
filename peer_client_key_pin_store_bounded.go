@@ -40,6 +40,14 @@ type boundedPeerPinEntry struct {
 // One fixed owner, not a growing map or a global serialization pool. The
 // admission includes 29 KiB of entries, 129 KiB of owned input/output, and
 // bounded JSON decoder/token/scanner scratch below the 1 MiB envelope.
+//
+// Entries are ordered least recently committed or admitted first, in memory
+// and in the file. A new peer in a full store takes the place of the first
+// entry (owner decision, 2026-11-16: refusing it ended every new post-quantum
+// session once a phone had pinned 256 providers, since a required session
+// treats a refused pin as terminal). The evicted peer is unpinned, a first
+// contact again; the store-wide signed-history latch stays set, so its next
+// session still needs signed evidence and can never fall back to unsigned.
 type boundedPeerPinData struct {
 	entries    [peerPinStoreMaxPeerCount]boundedPeerPinEntry
 	buffer     [peerPinStoreMaxFileByteCount + 1]byte
@@ -48,8 +56,11 @@ type boundedPeerPinData struct {
 }
 
 type boundedPeerPinStats struct {
-	PeerCount           int
+	PeerCount int
+	// stays 0 since a commit to a full store evicts (Evictions); kept for the
+	// transfer diagnostics' peer_pin_capacity_refusals field
 	CapacityRefusals    uint64
+	Evictions           uint64
 	PersistenceFailures uint64
 	RollbackRefusals    uint64
 	StateFailures       uint64
@@ -498,12 +509,24 @@ func (self *boundedPeerClientKeyPinStore) CompareAndSwapPeerClientKeyPin(peer co
 		return false, nil
 	}
 	if nextPin == nil {
+		// an admission against the unchanged pin is a use: the peer becomes
+		// the most recent entry (in memory; the next write persists the order)
+		if i := self.indexWithLock(peer); 0 <= i {
+			self.moveToEndWithLock(i)
+		}
 		return true, nil
 	}
 	if err := self.commitPeerClientKeyPinWithLock(peer, *nextPin, true); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// Moves entry i to the end, the most recent place, keeping the others' order.
+func (self *boundedPeerClientKeyPinStore) moveToEndWithLock(i int) {
+	entry := self.data.entries[i]
+	copy(self.data.entries[i:self.data.count-1], self.data.entries[i+1:self.data.count])
+	self.data.entries[self.data.count-1] = entry
 }
 
 // Preserves the checked compatibility API without splitting snapshot evidence.
@@ -530,11 +553,14 @@ func (self *boundedPeerClientKeyPinStore) CommitPeerClientKeyPin(peer connect.Id
 }
 
 // The live owner and its exact snapshot remain locked through durable commit.
+// The committed peer becomes the most recent entry; a new peer in a full store
+// evicts the least recent one (see boundedPeerPinData). A failed write changes
+// nothing, so it never drops a pin.
 func (self *boundedPeerClientKeyPinStore) commitPeerClientKeyPinWithLock(peer connect.Id, pin connect.ClientKeyPin, allowSignerRotation bool) error {
 	i := self.indexWithLock(peer)
+	evict := -1
 	if i < 0 && self.data.count == peerPinStoreMaxPeerCount {
-		self.stats.CapacityRefusals++
-		return errPeerPinStoreCapacity
+		evict = 0
 	}
 	if i >= 0 {
 		previous := self.data.entries[i].pin
@@ -543,16 +569,22 @@ func (self *boundedPeerClientKeyPinStore) commitPeerClientKeyPinWithLock(peer co
 			return errPeerPinStoreRollback
 		}
 	}
-	if err := self.persistWithLock(peer, pin, i, true); err != nil {
+	if err := self.persistWithLock(peer, pin, i, evict, true); err != nil {
 		self.stats.PersistenceFailures++
 		self.failure = errPeerPinStoreIO
 		return errPeerPinStoreIO
 	}
-	if i < 0 {
-		i = self.data.count
+	if 0 <= i {
+		self.moveToEndWithLock(i)
+	} else {
+		if 0 <= evict {
+			copy(self.data.entries[evict:self.data.count-1], self.data.entries[evict+1:self.data.count])
+			self.data.count--
+			self.stats.Evictions++
+		}
 		self.data.count++
 	}
-	self.data.entries[i] = boundedPeerPinEntry{peer: peer, pin: pin}
+	self.data.entries[self.data.count-1] = boundedPeerPinEntry{peer: peer, pin: pin}
 	self.data.signedSeen = true
 	self.stats.PeerCount = self.data.count
 	return nil
@@ -576,7 +608,7 @@ func (self *boundedPeerClientKeyPinStore) SetSignedHistorySeen() {
 	if self.checkWithLock() != nil || self.data.signedSeen {
 		return
 	}
-	if err := self.persistWithLock(connect.Id{}, connect.ClientKeyPin{}, -1, false); err != nil {
+	if err := self.persistWithLock(connect.Id{}, connect.ClientKeyPin{}, -1, -1, false); err != nil {
 		self.stats.PersistenceFailures++
 		self.failure = errPeerPinStoreIO
 		return
@@ -610,26 +642,37 @@ func appendBoundedPeerPin(dst []byte, entry boundedPeerPinEntry) []byte {
 	return append(dst, '}')
 }
 
-func (self *boundedPeerClientKeyPinStore) persistWithLock(peer connect.Id, pin connect.ClientKeyPin, replace int, hasPin bool) error {
+// Writes the store as it will be after the commit, least recent first: every
+// entry but replace (the committed peer's old place) and evict, then the
+// committed pin last when hasPin. Negative indexes name no entry.
+func (self *boundedPeerClientKeyPinStore) persistWithLock(peer connect.Id, pin connect.ClientKeyPin, replace int, evict int, hasPin bool) error {
 	buffer := append(self.data.buffer[:0:peerPinStoreMaxFileByteCount], `{"signed_history_seen":true,"pins":{`...)
-	count := self.data.count
-	if hasPin && replace < 0 {
-		count++
-	}
-	for i := 0; i < count; i++ {
+	written := 0
+	write := func(entry boundedPeerPinEntry) error {
 		// A canonical entry is <512 bytes even with every byte 255 and a
 		// maximum uint64 generation. Never allow append to grow this owner.
 		if len(buffer)+512+3 > peerPinStoreMaxFileByteCount {
 			return errPeerPinStoreOversize
 		}
-		if i != 0 {
+		if written != 0 {
 			buffer = append(buffer, ',')
 		}
-		entry := boundedPeerPinEntry{peer: peer, pin: pin}
-		if i < self.data.count && (!hasPin || i != replace) {
-			entry = self.data.entries[i]
-		}
 		buffer = appendBoundedPeerPin(buffer, entry)
+		written++
+		return nil
+	}
+	for i := 0; i < self.data.count; i++ {
+		if i == replace || i == evict {
+			continue
+		}
+		if err := write(self.data.entries[i]); err != nil {
+			return err
+		}
+	}
+	if hasPin {
+		if err := write(boundedPeerPinEntry{peer: peer, pin: pin}); err != nil {
+			return err
+		}
 	}
 	buffer = append(buffer, '}', '}')
 	defer clear(buffer)
