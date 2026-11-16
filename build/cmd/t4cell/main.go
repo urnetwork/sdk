@@ -28,7 +28,8 @@ import (
 	"strings"
 )
 
-// The cells, by test name, and the presence vectors FS-124 holds byte-equal on every leg.
+// What a surrogate runs, by test name: the cells, the presence vectors FS-124 holds byte-equal on every leg, and the
+// DeviceRemote mirror, bridge status and forwarding's setup across the device RPC (§18.6).
 var t4CellTests = []string{
 	"TestIos32CellBootsWithinItsBudget",
 	"TestAndroidCellRunsNoBackgroundSidecar",
@@ -37,6 +38,13 @@ var t4CellTests = []string{
 	"TestIos32CellEnrollsTakesAWakeAndReads",
 	"TestAndroidCellEnrollsTakesAWakeAndReads",
 	"TestPresenceVectorsCrossTheAppSignerByteEqual",
+	"TestRpcMirrorBridgeStatusComplete",
+	"TestBridgeStatusMirrorFollowsAResync",
+	"TestBridgeStatusListenerLeavesWithItsConnection",
+	"TestSetupRunsAfterEnrollment",
+	"TestForwardingChannelCarriesNoPrivateKey",
+	"TestUnsignedResponseOverRpcIgnored",
+	"TestBridgeStatusCarriesTheForwardingFields",
 }
 
 // The targets, as -target names them.
