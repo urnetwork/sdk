@@ -1,8 +1,9 @@
 //go:build !js && ios_extension
 
-// The Apple network extensions' forwarding role reads no config head yet: the root's head reader replays push records
-// through evs files the ios_extension leg leaves out by tag (DESIGN-DETAILS 4.2.3), so the leg builds none until those
-// reads move onto it (question sdk-m8-04-forwarding-heads-on-the-leg). Every base names a head, base 1's included,
+// The Apple network extensions' forwarding role reads no config head yet. The root's head reader compiles on the
+// ios_extension leg since its push record reads moved onto it (QD-839), but with it the forwarding leg passes
+// DESIGN-DETAILS 4.2.3's 6 MiB budget (7,009,216 B added, stripped), so the reader stays tagged off the leg until
+// question ios-leg-head-reader-size-over-budget is answered. Every base names a head, base 1's included,
 // so nothing compiles in these extensions: a role's posture stays pending after its hand-off, or as a restored state
 // left it, and the denials it checks still apply, the closed direction (QD-621).
 
