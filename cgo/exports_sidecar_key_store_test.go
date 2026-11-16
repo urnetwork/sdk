@@ -116,7 +116,8 @@ func TestSidecarKeyStoreAnswersCrossTheAbi(t *testing.T) {
 // A Sidecar opened through the abi on a C store keeps §5.9's rules (D-CORE-15, D-SDK-15): on a locked store it opens
 // locked and creates nothing until urnet_sidecar_unlock(""), whose callback answers once, makes U; reopened on the
 // same store it opens U again and writes nothing; and on every answer the sdk cannot vouch for it opens locked and
-// creates nothing, on the store or in its state directory.
+// creates nothing, on the store or in its state directory. The unlocked app, unenrolled, lists no devices and answers
+// a revocation's preview and a revocation once each, refused (FS-98's adapter row on the local backend).
 func TestNewSidecarLocalThroughTheAbiKeepsTheStoreRules(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -231,6 +232,52 @@ func TestNewSidecarLocalThroughTheAbiKeepsTheStoreRules(t *testing.T) {
 	awaitState(lockedHandle, locked, "unenrolled")
 	if counts := store.Counts(); counts.WrittenCount != 1 || counts.ItemCount != 1 {
 		t.Errorf("the unlock made U in %+v", counts)
+	}
+
+	// FS-98's local row through the abi: an unenrolled app lists no devices, and a revocation's preview and the
+	// revocation each answer once, refused, with nothing signed
+	approvalsHandle := socketABICall(urnet_sidecar_get_approvals, lockedHandle)[0].Uint()
+	if approvalsHandle == 0 {
+		t.Fatal("no approvals")
+	}
+	defer handleRelease(approvalsHandle)
+	if devices, ok := testingAbiString(socketABICall(urnet_sidecar_approvals_get_devices, approvalsHandle)[0]); ok && devices != "[]" {
+		t.Errorf("an unenrolled app lists devices: %s", devices)
+	}
+	previewed := abitest.NewResultCallback()
+	t.Cleanup(previewed.Free)
+	targetId := cString(sdk.NewId().String())
+	lost := cString("lost")
+	socketABICall(urnet_sidecar_approvals_preview_revoke_device, approvalsHandle, targetId, lost, int64(0), int64(0),
+		testingAbiFunction(urnet_sidecar_approvals_preview_revoke_device, 5, previewed.ResultFunction()), previewed.UserData())
+	cStringFree(targetId)
+	cStringFree(lost)
+	if count, planJson, errorText := previewed.Wait(testingSidecarAbiTimeout); count != 1 || errorText != "" {
+		t.Errorf("the preview answered %d times: %s %q", count, planJson, errorText)
+	} else if plan := (struct {
+		PlanId *string `json:"plan_id"`
+		Code   string  `json:"code"`
+	}{}); json.Unmarshal([]byte(planJson), &plan) != nil || plan.Code == "" || plan.PlanId != nil {
+		t.Errorf("an unenrolled app's preview: %s", planJson)
+	}
+	revoked := abitest.NewResultCallback()
+	t.Cleanup(revoked.Free)
+	planId := cString(sdk.NewId().String())
+	revokeKeys := cString("[]")
+	socketABICall(urnet_sidecar_approvals_revoke_device, approvalsHandle, planId, revokeKeys,
+		testingAbiFunction(urnet_sidecar_approvals_revoke_device, 3, revoked.ResultFunction()), revoked.UserData())
+	cStringFree(planId)
+	cStringFree(revokeKeys)
+	if count, resultJson, errorText := revoked.Wait(testingSidecarAbiTimeout); count != 1 || errorText != "" {
+		t.Errorf("the revocation answered %d times: %s %q", count, resultJson, errorText)
+	} else if result := (struct {
+		Ok   bool   `json:"ok"`
+		Code string `json:"code"`
+	}{}); json.Unmarshal([]byte(resultJson), &result) != nil || result.Ok || result.Code == "" {
+		t.Errorf("an unenrolled app's revocation: %s", resultJson)
+	}
+	if counts := store.Counts(); counts.WrittenCount != 1 || counts.DeletedCount != 0 {
+		t.Errorf("the revocation calls changed the store: %+v", counts)
 	}
 
 	// reopened on the same store and state: U opens, and nothing is written
