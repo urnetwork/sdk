@@ -446,8 +446,8 @@ func TestSendCopyText(t *testing.T) {
 }
 
 // Every send copy line, compose and results, names no indexer, receiver or coverage setting, which are inbound
-// (§18.5's never row, §14.5's copy rule, FS-123): of the results only too_large cites the cap, each line that names a
-// domain names that one alone, and GetReceiverCoverage's copy says nothing of sending.
+// (§18.5's never row, §14.5's copy rule, FS-123 as QD-277 reads it): of the results only too_large cites the cap, each
+// line that names a domain names that one alone, and GetReceiverCoverage's copy says nothing of sending.
 func TestSendCopyNamesNoIndexer(t *testing.T) {
 	now := time.Date(2026, time.November, 15, 18, 0, 0, 0, time.UTC)
 	check := &sidecar.SmtpSendCheck{}
