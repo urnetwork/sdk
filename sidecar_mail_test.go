@@ -219,8 +219,13 @@ func TestMailAliasesOverTheDaemon(t *testing.T) {
 	}
 }
 
-// Every call whose root call has not landed answers MAIL_UNAVAILABLE on both backends, naming what it waits on, and
-// coverage answers foreground-only, which claims no indexer.
+// MailClient carries VaultEntries and UsedAt (MAIL-M8-01), so the core backend's check finds them and its reads go to
+// the core (TestMailVaultReadsMapAndRefuse runs them over a vault); this holds the check to the root's signatures.
+var _ sidecarMailCoreVault = (*sidecar.MailClient)(nil)
+
+// Every call whose root call is not wired answers MAIL_UNAVAILABLE on both backends, naming what it waits on, and
+// coverage answers foreground-only, which claims no indexer. Vault entries and Used at answer so on the remote backend
+// alone: the core backend reads them from its MailClient, which this test's has none of.
 func TestMailCallsAwaitingTheCoreAnswerUnavailable(t *testing.T) {
 	socketPath := testRemoteSocketPath(t)
 	daemon := newTestRemoteDaemon(t, socketPath)
@@ -247,15 +252,17 @@ func TestMailCallsAwaitingTheCoreAnswerUnavailable(t *testing.T) {
 		if result, err := burn.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable {
 			t.Errorf("%s Burn answered %+v, %v", name, result, err)
 		}
-		entries := newTestEvsCallback[*SidecarVaultEntries]()
-		mail.GetVaultEntries(entries)
-		if result, err := entries.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable {
-			t.Errorf("%s GetVaultEntries answered %+v, %v", name, result, err)
-		}
-		usedAt := newTestEvsCallback[*SidecarUsedAtResult]()
-		mail.GetUsedAt(newId([16]byte{1}), usedAt)
-		if result, err := usedAt.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable {
-			t.Errorf("%s GetUsedAt answered %+v, %v", name, result, err)
+		if name == "remote" {
+			entries := newTestEvsCallback[*SidecarVaultEntries]()
+			mail.GetVaultEntries(entries)
+			if result, err := entries.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable {
+				t.Errorf("%s GetVaultEntries answered %+v, %v", name, result, err)
+			}
+			usedAt := newTestEvsCallback[*SidecarUsedAtResult]()
+			mail.GetUsedAt(newId([16]byte{1}), usedAt)
+			if result, err := usedAt.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable {
+				t.Errorf("%s GetUsedAt answered %+v, %v", name, result, err)
+			}
 		}
 		codes := newTestEvsCallback[*SidecarOneTimeCodes]()
 		mail.GetOneTimeCodes(0, codes)
