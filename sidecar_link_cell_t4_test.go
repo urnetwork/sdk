@@ -10,6 +10,9 @@ package sdk
 // its check. Through the NAT a public flow's bytes reach their destination exactly as with no hook, and its decision
 // holds the NAT's own idle.
 //
+// A sidecar-role test file, so the cell harness's import passes the sdk's import rule, which keeps t4cell out of the
+// device role's files (dependency_boundary_test.go); the plan named it device_sidecar_memory_test.go.
+//
 // What the cell leaves to the review phase and the surrogate devices, each in BRIDGE-M8-03's report: the link measured
 // as a real window client with its transports and sealed session on a surrogate, every LOWBAR phase, bridge flows at
 // §17.5's idles through C5's IdleTimeout in the NAT (a principal's flow needs a sealed session no in-process peer forms
