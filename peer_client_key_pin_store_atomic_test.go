@@ -389,8 +389,17 @@ func TestBoundedPeerPinStoreAtomicCapacityAndLifecycle(t *testing.T) {
 	if accepted, err := store.CompareAndSwapPeerClientKeyPin(peer, snapshot, nil); !accepted || err != nil {
 		t.Fatalf("capacity blocked read-only admission: %t %v", accepted, err)
 	}
-	if accepted, err := store.CompareAndSwapPeerClientKeyPin(peer, snapshot, &pin); accepted || !errors.Is(err, errPeerPinStoreCapacity) {
-		t.Fatalf("atomic admission exceeded capacity: %t %v", accepted, err)
+	// a full store admits the verified new peer and evicts the least recent
+	// pin (seeded peer 0), never growing past capacity
+	if accepted, err := store.CompareAndSwapPeerClientKeyPin(peer, snapshot, &pin); !accepted || err != nil {
+		t.Fatalf("atomic admission refused at capacity: %t %v", accepted, err)
+	}
+	evicted, _ := testBoundedPin(0)
+	if stats := store.Stats(); stats.PeerCount != peerPinStoreMaxPeerCount || stats.Evictions != 1 {
+		t.Fatalf("atomic admission exceeded capacity: %+v", stats)
+	}
+	if evictedSnapshot, err := store.ReadPeerClientKeyPinSnapshot(evicted); err != nil || evictedSnapshot.Pinned || !evictedSnapshot.SignedHistorySeen {
+		t.Fatalf("evicted peer: %+v %v", evictedSnapshot, err)
 	}
 	peer, pin = testBoundedPin(9)
 	snapshot, err = store.ReadPeerClientKeyPinSnapshot(peer)

@@ -164,17 +164,18 @@ func TestBoundedPeerPinStoreConcurrentCapacityUpdateAndRollback(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			peer, pin := testBoundedPin(i)
-			err := store.CommitPeerClientKeyPin(peer, pin)
-			if err == nil {
+			if err := store.CommitPeerClientKeyPin(peer, pin); err == nil {
 				accepted.Add(1)
-			} else if !errors.Is(err, errPeerPinStoreCapacity) {
+			} else {
 				t.Errorf("commit: %v", err)
 			}
 		}()
 	}
 	workers.Wait()
-	if accepted.Load() != 1 || store.Stats().PeerCount != 256 || store.Stats().CapacityRefusals != 15 {
-		t.Fatalf("last-slot admission: accepted=%d stats=%+v", accepted.Load(), store.Stats())
+	// the first fills the last slot; each later one evicts the least recent
+	// seeded pin, 0 through 14, whatever order the commits ran in
+	if stats := store.Stats(); accepted.Load() != 16 || stats.PeerCount != 256 || stats.Evictions != 15 || stats.CapacityRefusals != 0 {
+		t.Fatalf("full-store admission: accepted=%d stats=%+v", accepted.Load(), stats)
 	}
 	peer, pin := testBoundedPin(17)
 	if err := store.CommitPeerClientKeyPin(peer, pin); err != nil {
@@ -203,12 +204,18 @@ func TestBoundedPeerPinStoreConcurrentCapacityUpdateAndRollback(t *testing.T) {
 	if restored.Stats().PeerCount != 256 || !restored.SignedHistorySeen() {
 		t.Fatal("pin+latch commit did not survive reload")
 	}
-	for i := 0; i < 255; i++ {
+	for i := 0; i < 271; i++ {
 		key, want := testBoundedPin(i)
 		if i == 17 {
 			want = pin
 		}
 		got, ok, err := restored.GetPeerClientKeyPinChecked(key)
+		if i < 15 {
+			if err != nil || ok {
+				t.Fatalf("evicted pin %d survived reload: %v %v", i, ok, err)
+			}
+			continue
+		}
 		if err != nil || !ok || got != want {
 			t.Fatalf("replacement changed slot %d: %v %v", i, ok, err)
 		}

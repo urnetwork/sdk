@@ -208,6 +208,7 @@ type transferDiagDeviceTransferBudget struct {
 	PinReleasedByteCount          int64  `json:"peer_pin_released_bytes"`
 	PinCount                      int    `json:"peer_pin_count"`
 	PinCapacityRefusals           int64  `json:"peer_pin_capacity_refusals"`
+	PinEvictions                  int64  `json:"peer_pin_evictions"`
 	PinPersistenceFailures        int64  `json:"peer_pin_persistence_failures"`
 	PinRollbackRefusals           int64  `json:"peer_pin_rollback_refusals"`
 	PinStateFailures              int64  `json:"peer_pin_state_failures"`
@@ -240,6 +241,7 @@ func transferDiagTransferBudget(usage *DeviceLocalMemoryUsage, millis int64) tra
 		PinReleasedByteCount:          usage.PeerKeyPinReleasedByteCount,
 		PinCount:                      usage.PeerKeyPinCount,
 		PinCapacityRefusals:           usage.PeerKeyPinCapacityRefusals,
+		PinEvictions:                  usage.PeerKeyPinEvictions,
 		PinPersistenceFailures:        usage.PeerKeyPinPersistenceFailures,
 		PinRollbackRefusals:           usage.PeerKeyPinRollbackRefusals,
 		PinStateFailures:              usage.PeerKeyPinStateFailures,
