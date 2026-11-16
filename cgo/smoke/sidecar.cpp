@@ -1,9 +1,9 @@
 // sdk.Sidecar's c abi smoke test (SDK-M8-06; sidecar §18.5's Gate table): one call on each of its handle types against
 // the built library, as a desktop app with no ur daemon running sees it. A remote Sidecar opens offline; its approvals
 // list nothing they could not read, answer a revocation's preview and a revocation UNAVAILABLE, and its mail claims no
-// indexer; a handle the offline daemon gives none of is 0, and a call on 0 is a refusal, never a crash; and once every
-// handle is released none is live. Callbacks are waited for on a condition variable. Build and run with
-// `make smoke_sidecar` from the cgo module root.
+// indexer and checks and reads no send; a handle the offline daemon gives none of is 0, and a call on 0 is a refusal,
+// never a crash; and once every handle is released none is live. Callbacks are waited for on a condition variable.
+// Build and run with `make smoke_sidecar` from the cgo module root.
 
 #include <chrono>
 #include <condition_variable>
@@ -96,6 +96,21 @@ int main() {
 	char* coverage = urnet_sidecar_mail_get_receiver_coverage(mail);
 	CHECK(coverage != nullptr && std::strcmp(coverage, "foreground-only") == 0);
 	urnet_free_string(coverage);
+
+	// CheckSend and GetSendResult (SDK-M9-01) take a json draft and a send_id and answer through their callbacks: no
+	// daemon method checks or reads a send yet, and a draft with no recipient is refused before any backend
+	Answer check;
+	urnet_sidecar_mail_check_send(mail, "{\"from\":\"admin@net.example\",\"to\":[\"someone@plain.example\"]}", onAnswer, &check);
+	CHECK(await(check));
+	CHECK(contains(check.json.c_str(), "\"ok\":false") && contains(check.json.c_str(), "\"code\":\"MAIL_UNAVAILABLE\""));
+	Answer noRecipient;
+	urnet_sidecar_mail_check_send(mail, "{\"from\":\"admin@net.example\"}", onAnswer, &noRecipient);
+	CHECK(await(noRecipient));
+	CHECK(contains(noRecipient.json.c_str(), "\"code\":\"MAIL_INVALID\""));
+	Answer sendResult;
+	urnet_sidecar_mail_get_send_result(mail, "018f2d5e-7b1a-7c3d-9e4f-0a1b2c3d4e64", onAnswer, &sendResult);
+	CHECK(await(sendResult));
+	CHECK(contains(sendResult.json.c_str(), "\"ok\":false") && contains(sendResult.json.c_str(), "\"code\":\"MAIL_UNAVAILABLE\""));
 
 	// SidecarEvs, SidecarSockets and SidecarDirectory: the offline daemon gives none, and a call on 0 refuses
 	CHECK(urnet_sidecar_get_evs(sidecar) == 0);
