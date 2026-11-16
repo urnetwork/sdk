@@ -586,6 +586,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_CONFIRMATION_STATE_WAITING_FOR_CONFIRMATION "waiting_for_confirmation"
 #define URNET_PURCHASE_ERROR_CODE_ASSET_UNAVAILABLE "asset_unavailable"
 #define URNET_PURCHASE_ERROR_CODE_GUEST_SIGN_IN_REQUIRED "guest_sign_in_required"
+#define URNET_PURCHASE_ERROR_CODE_INCORRECT_CVC "incorrect_cvc"
 #define URNET_PURCHASE_ERROR_CODE_QUOTE_EXPIRED "quote_expired"
 #define URNET_PURCHASE_ERROR_CODE_UNDERPAID "underpaid"
 #define URNET_PURCHASE_REPORT_STATUS_ALREADY_CREDITED "already_credited"
@@ -4007,6 +4008,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PeerKeyPinReleasedByteCount: number
  *   PeerKeyPinCount: number
  *   PeerKeyPinCapacityRefusals: number
+ *   PeerKeyPinEvictions: number
  *   PeerKeyPinPersistenceFailures: number
  *   PeerKeyPinRollbackRefusals: number
  *   PeerKeyPinStateFailures: number
@@ -6969,6 +6971,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* VerifyStorePurchaseResult (json):
  *   status: string
  *   expiry_time?: string (rfc3339) | null
+ *   error?: OnboardingError | null
  */
 
 /* VerifyStripeCheckoutArgs (json):

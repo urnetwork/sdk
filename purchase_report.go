@@ -27,8 +27,9 @@ package sdk
 // keep the store receipt UI as the user's recourse.
 
 // Purchase report statuses, the wire values of VerifyStorePurchaseResult
-// .Status from POST /subscription/verify-play-purchase and
-// POST /subscription/verify-apple-transaction.
+// .Status from POST /subscription/verify-play-purchase,
+// POST /subscription/verify-apple-transaction and
+// POST /subscription/verify-stripe-checkout.
 const (
 	// PurchaseReportStatusCredited: this report landed the credit. Terminal.
 	PurchaseReportStatusCredited = "credited"
@@ -41,7 +42,8 @@ const (
 	PurchaseReportStatusPending = "pending"
 	// PurchaseReportStatusInvalid: the proof will never verify (unknown
 	// token, failed JWS verification, disallowed product, canceled before
-	// completing). Terminal.
+	// completing). Terminal. A refused card payment is invalid with
+	// VerifyStorePurchaseResult.Error naming why (PurchaseErrorCodeIncorrectCvc).
 	PurchaseReportStatusInvalid = "invalid"
 	// PurchaseReportStatusWrongNetwork: the proof verified but the purchase
 	// is linked to a DIFFERENT network than this session. Terminal for this

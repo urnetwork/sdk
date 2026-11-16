@@ -23,6 +23,19 @@ package sdk
 // credited answer means the next balance read shows Pro. Unlike a store
 // purchase, nothing is finalized after the report: the checkout is already
 // complete at Stripe.
+//
+// A refused purchase ends the report at once. A yearly trial whose card failed
+// the CVC check when it was attached is refused (no Pro; the card is detached
+// and never charged): the server answers invalid with an Error, code
+// PurchaseErrorCodeIncorrectCvc and an English message, and every later report
+// of the same purchase answers the same. The callback gets that answer after
+// the one report that drew it. The balance read never carries a refusal (a
+// refused trial simply never turns Pro), so a confirmation left running would
+// spend its budget and then say the payment has not reached the account yet.
+// When the answer carries an Error, the app ends its confirmation itself,
+// shows the refusal (its own line for the code, else Message), and a retry
+// starts over with a NEW payment sheet (StripePaymentSheet) or a NEW checkout
+// session (CreateStripeCheckoutSession), reported by its own id.
 
 import (
 	"context"
@@ -93,11 +106,14 @@ func (self *Api) VerifyStripeCheckoutSyncWithContext(ctx context.Context, args *
 }
 
 // Reports a finished card payment and retries until the server answers a
-// terminal status (IsPurchaseReportTerminal) or the attempts are spent, then
-// calls back once with the last answer, or the last error when no attempt was
-// answered. An args that names neither id, or both, calls back at once with
-// an error and asks nothing. Returns at once; the attempts run in the
-// background, bound to the Api's lifetime.
+// terminal status (IsPurchaseReportTerminal) or a refusal (an answer with
+// Error), or the attempts are spent, then calls back once with the last
+// answer, or the last error when no attempt was answered. A refused purchase
+// calls back with result.Error set (PurchaseErrorCodeIncorrectCvc for a trial
+// card that failed the CVC check): the app ends its purchase confirmation and
+// offers a new payment sheet or checkout session. An args that names neither
+// id, or both, calls back at once with an error and asks nothing. Returns at
+// once; the attempts run in the background, bound to the Api's lifetime.
 func (self *Api) ReportStripePurchase(args *VerifyStripeCheckoutArgs, callback VerifyStripeCheckoutCallback) {
 	go connect.HandleError(func() {
 		sleep := func(ctx context.Context, d time.Duration) bool {
@@ -123,7 +139,7 @@ func (self *Api) ReportStripePurchase(args *VerifyStripeCheckoutArgs, callback V
 
 // The report loop: verify, and on a pending answer or a transport failure
 // wait PurchaseReportBackoffMillis(attempt) and ask again, until an answer is
-// terminal, the attempts are spent, or ctx ends.
+// terminal or a refusal, the attempts are spent, or ctx ends.
 func reportStripePurchase(
 	ctx context.Context,
 	settings *stripePurchaseReportSettings,
@@ -153,7 +169,9 @@ func reportStripePurchase(
 		if err == nil && result != nil {
 			lastResult = result
 			lastErr = nil
-			if IsPurchaseReportTerminal(result.Status) {
+			// a refusal is the server's last word on the purchase whatever
+			// status it came with: every later report answers the same
+			if IsPurchaseReportTerminal(result.Status) || result.Error != nil {
 				return result, nil
 			}
 		} else if lastResult == nil {

@@ -347,8 +347,9 @@ type OnboardingOfferIssueResult struct {
 }
 
 type OnboardingError struct {
-	// one of the `PurchaseErrorCode*` values, when a refused payment sheet
-	// has one; empty for the other onboarding errors and from an older server
+	// one of the `PurchaseErrorCode*` values, when a refused payment sheet or
+	// card payment report (VerifyStorePurchaseResult.Error) has one; empty for
+	// the other onboarding errors and from an older server
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
