@@ -18,11 +18,13 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/gopacket/layers"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/urnetwork/connect"
@@ -515,5 +517,148 @@ func TestNewShareSignerResignsLiveLinks(t *testing.T) {
 	}
 	if resignedCount != 1 {
 		t.Errorf("the share's links were re-signed %d times", resignedCount)
+	}
+}
+
+// App-device hosting after C16 (BRIDGE-M8-01): only a device that runs the device role hosts, whatever
+// EnableBridgeHosting says, so never an off, hosted or browser's device, and nothing hosts with it off.
+func TestBridgeHostingNeedsTheDeviceRole(t *testing.T) {
+	cases := []struct {
+		name    string
+		adjust  func(settings *DeviceLocalSettings)
+		goos    string
+		hosting bool
+	}{
+		{name: "on", adjust: func(settings *DeviceLocalSettings) {}, goos: "android", hosting: true},
+		{name: "off", adjust: func(settings *DeviceLocalSettings) { settings.EnableBridgeHosting = false }, goos: "android"},
+		{name: "no device role", adjust: func(settings *DeviceLocalSettings) { settings.EnableBridge = false }, goos: "ios"},
+		{name: "hosted", adjust: func(settings *DeviceLocalSettings) { settings.HostedIncompatible = true }, goos: "linux"},
+		{name: "a browser's", adjust: func(settings *DeviceLocalSettings) {}, goos: "js"},
+	}
+	for _, testCase := range cases {
+		settings := DefaultDeviceLocalSettings()
+		settings.EnableBridge = true
+		settings.EnableBridgeHosting = true
+		testCase.adjust(settings)
+		if hosting := deviceBridgeHostingFor(settings, testCase.goos); hosting != testCase.hosting {
+			t.Errorf("%s: hosting %t", testCase.name, hosting)
+		}
+	}
+	if DefaultDeviceLocalSettings().EnableBridgeHosting {
+		t.Error("hosting is on by default")
+	}
+}
+
+// C16 on the provider client of a device that hosts: the sticky Required latch and the verified peer key a host's
+// Sealed row and principal check read, with Opportunistic kept for the provider's public role; a device that does not
+// host builds its provider as before, and the device's own window clients never take the latch either way.
+func TestBridgeHostingProviderClientRunsC16(t *testing.T) {
+	for _, hosting := range []bool{false, true} {
+		role := newTestingDeviceRole(t)
+		device := role.device(t, func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.EnableBridgeHosting = hosting
+		})
+		client := device.providerClient()
+		if client == nil {
+			t.Fatal("CONTROL FAILED: the device built no provider client")
+		}
+		encryption := client.EncryptionSessionManager().Settings()
+		if encryption.Mode != connect.EncryptionModeOpportunistic || encryption.StickyRequired != hosting ||
+			encryption.ExposeVerifiedPeerClientKey != hosting {
+			t.Errorf("hosting %t: the provider client's mode %v, sticky %t, verified key %t", hosting, encryption.Mode,
+				encryption.StickyRequired, encryption.ExposeVerifiedPeerClientKey)
+		}
+		if own := device.settings.ClientSettings.EncryptionSettings; own != nil && (own.StickyRequired || own.ExposeVerifiedPeerClientKey) {
+			t.Errorf("hosting %t: the device's own client settings took C16", hosting)
+		}
+	}
+}
+
+// The device client's network's forwarding role restores its posture into the primary under the sdk host's table where
+// the device hosts, so the exit NAT's hook admits principals and runs maps and hosted addresses; without hosting, and
+// on the M4 seam's primary, which no forwarding Delegation names as host, the sdk provider's table stays.
+func TestBridgeHostingRoleRunsTheSdkHostTable(t *testing.T) {
+	for _, hosting := range []bool{false, true} {
+		forward := newTestingForwardDevice(t)
+		device := forward.device(t, func(settings *DeviceLocalSettings) {
+			settings.EnableBridgeHosting = hosting
+		})
+		pending := forward.pending()
+		if err := forward.setUp(t, device, pending, nil); err != nil {
+			t.Fatal(err)
+		}
+		networkId := connect.Id(pending.GetNetworkId())
+		testingForwardStarted(t, device, networkId)
+		want := sidecardevice.BridgePolicyProfileSdkProvider
+		if hosting {
+			want = sidecardevice.BridgePolicyProfileSdkHost
+		}
+		status, err := device.bridgeStatus()
+		if err != nil || status.PolicyProfile != want {
+			t.Errorf("hosting %t: the role runs %v (%v), want %v", hosting, status.PolicyProfile, err, want)
+		}
+		// the held bridge, whose hook the exit NAT takes, is the role's
+		held := func() deviceBridge {
+			device.stateLock.Lock()
+			defer device.stateLock.Unlock()
+			return device.bridge
+		}()
+		if held == nil || held.Status().PolicyProfile != want {
+			t.Errorf("hosting %t: the held bridge is %v", hosting, held)
+		}
+		role, _ := device.forwardingHost().role(networkId, false)
+		if !role.status().Hosting {
+			t.Errorf("CONTROL FAILED: the vectors' network is not the device client's")
+		}
+	}
+
+	seam := newTestingDeviceRole(t)
+	device := seam.device(t, func(settings *DeviceLocalSettings) {
+		settings.EnableBridgeHosting = true
+	})
+	seam.enforce(t, device, testingBridgeRules())
+	if status, err := device.bridgeStatus(); err != nil || status.PolicyProfile != sidecardevice.BridgePolicyProfileSdkProvider {
+		t.Errorf("the M4 seam's primary runs %v (%v)", status.PolicyProfile, err)
+	}
+}
+
+// Public exit flows at an app host are the sdk provider's: through the exit NAT a Public source's flow to a public
+// address passes and is dialed as sent, while a Network source with the sealed client the sdk provider admits but no
+// principal over a sealed session is denied and dials nothing (D-BRIDGE-17 from C16).
+func TestBridgeHostingExitNatKeepsPublicFlows(t *testing.T) {
+	role := newTestingDeviceRole(t)
+	bridges := &testingExitBridges{configure: func(settings *sidecardevice.BridgeSettings) {
+		settings.PolicyProfile = sidecardevice.BridgePolicyProfileSdkHost
+	}}
+	dialer := newTestingExitDialer()
+	device := role.device(t, func(settings *DeviceLocalSettings) {
+		bridges.adjust(settings)
+		settings.ProviderDialContextSettings = dialer.settings()
+	})
+	testingExitProvider(t, device, nil)
+	role.enforce(t, device, testingExitRules())
+	testingExitProvide(device, ProvideModePublic)
+	held := bridges.last(t)
+	exitNat, _ := testingExitNat(device)
+	held.hook.awaitBound(t, exitNat)
+
+	public := netip.MustParseAddr("203.0.113.10")
+	source := connect.SourceId(connect.NewId())
+	publicPeer := connect.Peer{ProvideMode: protocol.ProvideMode_Public}
+	testingExitProviderFlow(t, device, source, publicPeer, testingDeviceRolePacket(t, public, layers.IPProtocolUDP, 5360, []byte("public")))
+	networkPeer := testingExitPeer(testingExitSubjectClientId, connect.ContractClassData)
+	testingExitProviderFlow(t, device, source, networkPeer, testingDeviceRolePacket(t, public, layers.IPProtocolUDP, 5361, []byte("network")))
+	verdicts := held.hook.decisions(t, 2)
+	if verdicts[netip.AddrPortFrom(public, 5360)] != connect.EgressVerdictPass {
+		t.Errorf("the public flow: %v", verdicts[netip.AddrPortFrom(public, 5360)])
+	}
+	if verdicts[netip.AddrPortFrom(public, 5361)] != connect.EgressVerdictDeny {
+		t.Errorf("a Network flow with no principal: %v", verdicts[netip.AddrPortFrom(public, 5361)])
+	}
+	dialer.await(t, netip.AddrPortFrom(public, 5360))
+	testingJoinDeviceRole(t, device)
+	if dialed := dialer.all(); !slices.Equal(dialed, []string{netip.AddrPortFrom(public, 5360).String()}) {
+		t.Errorf("the exit NAT dialed %v", dialed)
 	}
 }

@@ -4,7 +4,9 @@
 //
 //	exit NAT      remoteUserNatProviderLocalUserNat, which egresses other clients' flows, holds the held bridge's hook,
 //	              the policy table of BridgePolicyProfileSdkProvider until C16, since an Opportunistic provider's
-//	              sources may be plaintext (§17.6's sdk exit NAT). A NAT built while a bridge is held takes the hook at
+//	              sources may be plaintext (§17.6's sdk exit NAT), and BridgePolicyProfileSdkHost's on a device that
+//	              hosts once its client's network's forwarding role takes the primary (EnableBridgeHosting, whose
+//	              provider client runs C16; BRIDGE-M8-01). A NAT built while a bridge is held takes the hook at
 //	              construction; a live NAT takes it through SetEgressHook when a bridge is first held, and gives it up
 //	              when none is, so the hook follows the holds and nothing else. A publish changes what the hook decides,
 //	              never the hook: installing a hook again would close every flow it decided.

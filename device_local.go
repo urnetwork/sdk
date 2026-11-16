@@ -957,6 +957,29 @@ type DeviceLocalSettings struct {
 	// it when SDK-M8-07's channel can move a posture.
 	//gomobile:noexport Go-only while the device role is dark.
 	EnableBridge bool `json:"-"`
+	// Hosts in the device client's network once the VPN component's forwarding
+	// is set up there (sidecar §17.10, D-BRIDGE-5, §18.6's host row;
+	// BRIDGE-M8-01): the provider client runs C16, the sticky Required latch
+	// with the verified peer key a host checks, and the hosting role's hook on
+	// the exit NAT takes device's sdk host table, which admits a Network flow
+	// only from a verified WindowDelegation over a sealed session and runs
+	// maps, hosted addresses and served prefixes into this device, while the
+	// provider's public role is unchanged. Needs EnableBridge, and runs on no
+	// device that runs no role. Off by default: it stays off until the
+	// plaintext an Opportunistic peer has in flight at C16's latch is measured
+	// (owner decision 224). Go-only while hosting is dark.
+	//gomobile:noexport Go-only while hosting is dark.
+	EnableBridgeHosting bool `json:"-"`
+	// Applies §17.9's egress spec to the device's own route (sidecar §17.9,
+	// D-BRIDGE-13, §18.17; BRIDGE-M8-02): a subject's default route goes to an
+	// approved exit over its forwarding role's link, or under none nowhere.
+	// Off by default, which keeps the device's own route whatever the spec
+	// says, since the VPN component runs the device's IP and port forwarding
+	// alone (owner decision 197) and app devices take the egress spec after
+	// M8 (device_sidecar_egress.go). Needs EnableBridge. Go-only while it is
+	// dark.
+	//gomobile:noexport Go-only while app egress is dark.
+	EnableBridgeEgress bool `json:"-"`
 	// Builds the device role's bridge in place of device.NewBridge. Nil builds
 	// the real one.
 	testingNewDeviceBridge deviceBridgeConstructor
@@ -1956,6 +1979,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			settings.DnsPumpHost,
 			transferMemory,
 			moveDecline.hook(),
+			deviceBridgeHosting(settings),
 			api,
 		)
 		if err != nil {

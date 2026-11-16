@@ -223,6 +223,8 @@ func newDeviceLocalProviderWithOverrides(
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
 	moveDecline func() bool,
+	// the device hosts in its client's network (DeviceLocalSettings.EnableBridgeHosting): the client runs C16
+	bridgeHosting bool,
 	sessionApis ...*Api,
 ) (*deviceLocalProvider, error) {
 	providerApi := networkSpace.GetApi()
@@ -256,6 +258,7 @@ func newDeviceLocalProviderWithOverrides(
 		clientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
 	}
 	clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOpportunistic
+	applyDeviceBridgeHostingEncryption(clientSettings.EncryptionSettings, bridgeHosting)
 	// This top-level client exists to provide/relay traffic. Apply provide-mode
 	// reductions to every P2P stream direction, including stale companion
 	// return streams restored by StreamReset after a process restart. Window
@@ -1321,6 +1324,19 @@ func cloneDeviceClientSettings(settings *connect.ClientSettings) *connect.Client
 		clientSettings.WebRtcSettings = &webRtcSettings
 	}
 	return &clientSettings
+}
+
+// C16 on the provider client of a device that hosts (sidecar §4.6's C16, §17.6, D-BRIDGE-5; BRIDGE-M8-01): the sticky
+// Required latch, so a peer that has sealed carries no plaintext application frame either way for the life of its
+// contract and a host's replies to it are sealed too, and the verified peer key the hook's Sealed row and its principal
+// check read. Opportunistic stays for the provider's public role, so a peer that never seals is served as today. With
+// hosting off nothing changes.
+func applyDeviceBridgeHostingEncryption(encryptionSettings *connect.EncryptionSettings, hosting bool) {
+	if !hosting || encryptionSettings == nil {
+		return
+	}
+	encryptionSettings.StickyRequired = true
+	encryptionSettings.ExposeVerifiedPeerClientKey = true
 }
 
 // Install owner-local defaults and API fetchers only at the client boundary.
