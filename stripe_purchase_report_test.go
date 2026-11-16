@@ -3,8 +3,10 @@ package sdk
 // The card payment report (stripe_purchase_report.go), support inbox 7247: a card
 // payment is reported as soon as the checkout or the payment sheet finishes,
 // and the report retries a pending answer until it is terminal, so the credit
-// no longer waits only on Stripe's webhook. Deterministic: the server is a
-// local test server and the waits are recorded, never slept.
+// no longer waits only on Stripe's webhook. A refused trial card ends the
+// report at once and reaches the app with its code and message.
+// Deterministic: the server is a local test server and the waits are
+// recorded, never slept.
 
 import (
 	"context"
@@ -13,7 +15,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -158,6 +162,125 @@ func TestReportStripePurchaseStopsAndRefusesBadArgs(t *testing.T) {
 		result, err := reportStripePurchase(context.Background(), defaultStripePurchaseReportSettings(), args, verify, func(ctx context.Context, d time.Duration) bool { return true })
 		if result != nil || err == nil || asked != 0 {
 			t.Fatalf("args %+v: result = %+v err = %v asked = %d, want a refusal that asks nothing", args, result, err, asked)
+		}
+	}
+}
+
+// The server's words for a yearly trial whose card failed the CVC check when
+// it was attached (the trial card check, owner 2026-11-16).
+const testIncorrectCvcMessage = "Your card's security code (CVC) didn't match. Check the card details and try again."
+
+// The verify answer keeps a refusal: an answer with an error decodes its code
+// and message. One without (every Play and App Store answer, and an older
+// server's) leaves Error nil, and encodes again with no error, which is how
+// the answer crosses to the desktop apps.
+func TestVerifyStorePurchaseResultDecodesTheRefusal(t *testing.T) {
+	var refused VerifyStorePurchaseResult
+	if err := json.Unmarshal([]byte(`{"status":"invalid","error":{"code":"incorrect_cvc","message":"`+testIncorrectCvcMessage+`"}}`), &refused); err != nil {
+		t.Fatal(err)
+	}
+	if refused.Status != PurchaseReportStatusInvalid || refused.Error == nil {
+		t.Fatalf("refused = %+v, want invalid with the error", refused)
+	}
+	if refused.Error.Code != PurchaseErrorCodeIncorrectCvc || refused.Error.Message != testIncorrectCvcMessage {
+		t.Fatalf("error = %+v, want incorrect_cvc and the server's message", refused.Error)
+	}
+	if refused.ExpiryTimeMillis() != 0 {
+		t.Errorf("a refusal decoded an expiry: %+v", refused)
+	}
+
+	for _, answer := range []string{
+		`{"status":"credited","expiry_time":"2026-12-12T00:00:00Z"}`,
+		`{"status":"invalid"}`,
+		`{"status":"pending","error":null}`,
+	} {
+		var result VerifyStorePurchaseResult
+		if err := json.Unmarshal([]byte(answer), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Error != nil {
+			t.Errorf("%s decoded an error: %+v", answer, result.Error)
+		}
+		encoded, err := json.Marshal(&result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), `"error"`) {
+			t.Errorf("%s encoded again as %s, want no error", answer, encoded)
+		}
+	}
+}
+
+// A refused trial card reaches the app through ReportStripePurchase: the server
+// answers invalid with an error naming it, the report asks once, and the
+// callback carries the code and the message.
+func TestReportStripePurchaseCallsBackTheRefusal(t *testing.T) {
+	var asked atomic.Int32
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"invalid","error":{"code":"incorrect_cvc","message":"`+testIncorrectCvcMessage+`"}}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*VerifyStorePurchaseResult](context.Background())
+	api.ReportStripePurchase(&VerifyStripeCheckoutArgs{SubscriptionId: "sub_trial_refused"}, callback)
+	// the callback comes after the loop ended; a retry would have waited out
+	// the backoff first
+	r := awaitApiResult(t, c, "ReportStripePurchase never called back")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if r.Result == nil || r.Result.Status != PurchaseReportStatusInvalid || r.Result.Error == nil {
+		t.Fatalf("result = %+v, want invalid with the refusal", r.Result)
+	}
+	if r.Result.Error.Code != PurchaseErrorCodeIncorrectCvc || r.Result.Error.Message != testIncorrectCvcMessage {
+		t.Fatalf("error = %+v, want incorrect_cvc and the server's message", r.Result.Error)
+	}
+	if n := asked.Load(); n != 1 {
+		t.Fatalf("asked %d times, want one report", n)
+	}
+}
+
+// A refusal ends the report whatever status it came with, also after a
+// transport failure and a pending answer: a server that paired the error with
+// a status this client does not count as terminal is not asked again for 21
+// minutes.
+func TestReportStripePurchaseStopsAtTheRefusal(t *testing.T) {
+	refusal := &OnboardingError{Code: PurchaseErrorCodeIncorrectCvc, Message: testIncorrectCvcMessage}
+	for _, status := range []string{PurchaseReportStatusInvalid, PurchaseReportStatusPending, "refused", ""} {
+		answers := []func() (*VerifyStorePurchaseResult, error){
+			func() (*VerifyStorePurchaseResult, error) { return nil, errors.New("synthetic transport failure") },
+			func() (*VerifyStorePurchaseResult, error) {
+				return &VerifyStorePurchaseResult{Status: PurchaseReportStatusPending}, nil
+			},
+			func() (*VerifyStorePurchaseResult, error) {
+				return &VerifyStorePurchaseResult{Status: status, Error: refusal}, nil
+			},
+			// never asked: the refusal was the last word
+			func() (*VerifyStorePurchaseResult, error) {
+				return &VerifyStorePurchaseResult{Status: PurchaseReportStatusCredited}, nil
+			},
+		}
+		asked := 0
+		waits := []time.Duration{}
+		result, err := reportStripePurchase(
+			context.Background(),
+			defaultStripePurchaseReportSettings(),
+			&VerifyStripeCheckoutArgs{SessionId: "cs_test_refused"},
+			func(ctx context.Context, args *VerifyStripeCheckoutArgs) (*VerifyStorePurchaseResult, error) {
+				asked += 1
+				return answers[asked-1]()
+			},
+			func(ctx context.Context, d time.Duration) bool {
+				waits = append(waits, d)
+				return true
+			},
+		)
+		if err != nil || result == nil || result.Error != refusal || result.Status != status {
+			t.Fatalf("status %q: result = %+v err = %v, want the refusal", status, result, err)
+		}
+		if asked != 3 || len(waits) != 2 {
+			t.Fatalf("status %q: asked %d times after waits %v, want the refusal to end the third report", status, asked, waits)
 		}
 	}
 }

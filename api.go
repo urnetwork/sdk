@@ -3514,15 +3514,26 @@ type SolanaPaymentIntentResult struct {
 	SplTokenMint string `json:"spl_token_mint,omitempty"`
 }
 
-// Stable codes for a refused checkout or payment intent (the server's
-// PurchaseErrorCode*): CreateSolanaPaymentIntent, CreateStripePaymentIntent,
-// CreateStripeCheckoutSession and StripePaymentSheet. Apps pick a flow or a
-// localized message from the code and fall back to `Message`.
+// Stable codes for a refused checkout, payment intent or card payment (the
+// server's PurchaseErrorCode*): CreateSolanaPaymentIntent,
+// CreateStripePaymentIntent, CreateStripeCheckoutSession, StripePaymentSheet,
+// and the card payment report (ReportStripePurchase, VerifyStripeCheckout:
+// VerifyStorePurchaseResult.Error). Apps pick a flow or a localized message
+// from the code and fall back to `Message`.
 const (
 	// The network is a legacy guest network (no sign-in method): nothing
 	// could sign back in to a plan bought on it. Add a sign-in method
 	// (AddAuth) first; the apps open their add-sign-in sheet.
 	PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required"
+	// A Stripe yearly trial's card failed its CVC check when the card was
+	// attached: the trial did not start (no Pro) and the card was detached,
+	// so it is never charged. Only the card payment report answers it, with
+	// the invalid status, and every later report of the same purchase answers
+	// the same. The app ends its purchase confirmation, shows the refusal and
+	// lets the buyer check the card and try again, which takes a NEW payment
+	// sheet (StripePaymentSheet) or a NEW checkout session
+	// (CreateStripeCheckoutSession).
+	PurchaseErrorCodeIncorrectCvc = "incorrect_cvc"
 )
 
 type SolanaPaymentIntentError struct {
@@ -3937,12 +3948,20 @@ type VerifyAppleTransactionArgs struct {
 	SignedTransaction string `json:"signed_transaction"`
 }
 
-// VerifyStorePurchaseResult is the shared response of both verify endpoints.
-// Status is one of the PurchaseReportStatus* values; use
-// IsPurchaseReportTerminal to decide whether to keep retrying.
+// VerifyStorePurchaseResult is the shared response of the verify endpoints:
+// Play, the App Store, and the card payment report (VerifyStripeCheckout,
+// ReportStripePurchase). Status is one of the PurchaseReportStatus* values;
+// use IsPurchaseReportTerminal to decide whether to keep retrying.
 type VerifyStorePurchaseResult struct {
 	Status     string `json:"status"`
 	ExpiryTime *Time  `json:"expiry_time,omitempty"`
+	// Why the server refused the purchase, when it names a reason; the status
+	// is then invalid. Code is a PurchaseErrorCode* value
+	// (PurchaseErrorCodeIncorrectCvc: a card payment report of a yearly trial
+	// whose card failed the CVC check), Message the server's English words
+	// for an app that has no line of its own for the code. Nil on every other
+	// answer, and from an older server.
+	Error *OnboardingError `json:"error,omitempty"`
 }
 
 // ExpiryTimeMillis is the store-side subscription expiry as unix millis, or 0

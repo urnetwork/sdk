@@ -637,6 +637,7 @@ inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
 inline constexpr const char* PurchaseConfirmationStateWaitingForConfirmation = "waiting_for_confirmation";
 inline constexpr const char* PurchaseErrorCodeAssetUnavailable = "asset_unavailable";
 inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
+inline constexpr const char* PurchaseErrorCodeIncorrectCvc = "incorrect_cvc";
 inline constexpr const char* PurchaseErrorCodeQuoteExpired = "quote_expired";
 inline constexpr const char* PurchaseErrorCodeUnderpaid = "underpaid";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
@@ -2497,6 +2498,7 @@ struct DeviceLocalMemoryUsage {
 	int64_t PeerKeyPinReleasedByteCount{};
 	int64_t PeerKeyPinCount{};
 	int64_t PeerKeyPinCapacityRefusals{};
+	int64_t PeerKeyPinEvictions{};
 	int64_t PeerKeyPinPersistenceFailures{};
 	int64_t PeerKeyPinRollbackRefusals{};
 	int64_t PeerKeyPinStateFailures{};
@@ -5159,6 +5161,7 @@ struct VerifyServerKey {
 struct VerifyStorePurchaseResult {
 	std::string status{};
 	std::optional<std::string> expiry_time;
+	std::optional<OnboardingError> error;
 };
 
 struct VerifyStripeCheckoutArgs {
@@ -10993,6 +10996,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["PeerKeyPinReleasedByteCount"] = v.PeerKeyPinReleasedByteCount;
 	j["PeerKeyPinCount"] = v.PeerKeyPinCount;
 	j["PeerKeyPinCapacityRefusals"] = v.PeerKeyPinCapacityRefusals;
+	j["PeerKeyPinEvictions"] = v.PeerKeyPinEvictions;
 	j["PeerKeyPinPersistenceFailures"] = v.PeerKeyPinPersistenceFailures;
 	j["PeerKeyPinRollbackRefusals"] = v.PeerKeyPinRollbackRefusals;
 	j["PeerKeyPinStateFailures"] = v.PeerKeyPinStateFailures;
@@ -11066,6 +11070,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("PeerKeyPinCapacityRefusals"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PeerKeyPinCapacityRefusals);
+	}
+	if (auto it = j.find("PeerKeyPinEvictions"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinEvictions);
 	}
 	if (auto it = j.find("PeerKeyPinPersistenceFailures"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PeerKeyPinPersistenceFailures);
@@ -23121,6 +23128,9 @@ inline void to_json(nlohmann::json& j, const VerifyStorePurchaseResult& v) {
 	if (v.expiry_time) {
 		j["expiry_time"] = *v.expiry_time;
 	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v) {
 	if (!j.is_object()) {
@@ -23133,6 +23143,11 @@ inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.expiry_time = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		OnboardingError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
