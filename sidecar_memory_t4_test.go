@@ -9,6 +9,7 @@ package sdk
 // The cells run on this host under the profiles' limits; the surrogate devices' runs are external (owner decision 100).
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,13 +47,18 @@ func TestT4BudgetCatchesADeliberateOverAllocation(t *testing.T) {
 	if failure == nil || !strings.Contains(failure.Error(), "deliberate over-allocation") || strings.Contains(failure.Error(), "within:") {
 		t.Fatalf("the check: %v", failure)
 	}
-	// a peak budget holds what a step held at once, even if it let it go
+	// a peak budget holds what a step held at once, even if it let it go: sampled where it holds the most, since in the
+	// whole package's run the process's heap is past the profile's limit, the collector runs at once and the timed
+	// samples, starved by other tests' goroutines, missed it (t4cell's TestSampleCatchesATransientTheTimedSamplesMiss
+	// holds the harness to catching it)
 	peakCell := t4cell.NewCell(t4cell.Ios32Profile())
 	peakRow, _ := peakCell.Measure("transient", budget, t4cell.HoldsPeak, func() (any, error) {
 		transient := make([]byte, 4*budget)
 		for i := range transient {
 			transient[i] = byte(i)
 		}
+		peakCell.Sample()
+		runtime.KeepAlive(transient)
 		return nil, nil
 	})
 	if peakRow.PeakByteCount < 3*budget || peakCell.CheckWithin() == nil {
