@@ -101,7 +101,19 @@ type jsSidecarEventListener struct {
 }
 
 func (self *jsSidecarEventListener) SidecarEventReceived(event *sdk.SidecarEvent) {
-	self.callback.Invoke(jsJson(event))
+	jsInvokeAppCallback(self.callback, jsJson(event))
+}
+
+// Calls an app's callback with value. A throw in it stays the app's: syscall/js turns it into a panic here, which,
+// left to run, would end sdk.wasm for every caller, so it is recovered and the answer dropped, with one fixed line on
+// the host's console naming nothing of the app's error (§22.5's §18 row: one terminal result, no panic).
+func jsInvokeAppCallback(callback js.Value, value any) {
+	defer func() {
+		if r := recover(); r != nil {
+			js.Global().Get("console").Call("error", "an app's sidecar callback threw; its answer was dropped")
+		}
+	}()
+	callback.Invoke(value)
 }
 
 // The callback at args[i] as a SidecarResultCallback, called with the result's plain object; none calls nothing.
@@ -117,7 +129,7 @@ func jsSidecarResultCallback(args []js.Value, i int) sdk.SidecarResultCallback {
 		if err != nil {
 			result = &sdk.SidecarResult{Message: err.Error()}
 		}
-		callback.Invoke(jsJson(result))
+		jsInvokeAppCallback(callback, jsJson(result))
 	})
 }
 
@@ -146,7 +158,7 @@ func jsSidecarApprovals() js.Value {
 	})
 	m["previewRevokeDevice"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 4 < len(args) && args[4].Type() == js.TypeFunction {
-			args[4].Invoke(jsJson(&sdk.SidecarRevokePlan{
+			jsInvokeAppCallback(args[4], jsJson(&sdk.SidecarRevokePlan{
 				Code:    sdk.SidecarCodeRevokeNotCapable,
 				Message: "the extension revokes no device: revoke it on an app or with ur devices revoke",
 			}))
