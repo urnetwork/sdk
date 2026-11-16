@@ -123,6 +123,43 @@ func TestHostedSafePerformanceProfile(t *testing.T) {
 	connect.AssertEqual(t, true, nonDirect == hosted.hostedSafePerformanceProfile(nonDirect))
 }
 
+// A hosted device's windows run no post-quantum sessions: the setting is forced
+// off on the way into its stored state, which the initial profile and a
+// remote's set both take (the preference catalog's own and apply), so the
+// windows never see it and GetPerformanceProfile reports what runs. A device
+// that is not hosted, every app's, keeps the setting.
+func TestHostedSafePerformanceProfileTurnsPostQuantumEncryptionOff(t *testing.T) {
+	hosted := &DeviceLocal{settings: &DeviceLocalSettings{HostedIncompatible: true}}
+	notHosted := &DeviceLocal{settings: &DeviceLocalSettings{HostedIncompatible: false}}
+
+	postQuantumProfile := func() *PerformanceProfile {
+		return &PerformanceProfile{
+			WindowType:            WindowTypeQuality,
+			PostQuantumEncryption: true,
+		}
+	}
+
+	// hosted: post-quantum is forced off; the rest of the profile is preserved
+	in := postQuantumProfile()
+	got := hosted.hostedSafePerformanceProfile(in)
+	connect.AssertEqual(t, false, got.PostQuantumEncryption)
+	connect.AssertEqual(t, WindowTypeQuality, got.WindowType)
+	connect.AssertEqual(t, false, toConnectPerformanceProfile(got).PostQuantumEncryption)
+	// the caller's profile is not mutated in place
+	connect.AssertEqual(t, true, in.PostQuantumEncryption)
+
+	// hosted: the value the catalog stores and installs is limited too
+	owned := hosted.ownLocalCatalogValue("performance-profile", postQuantumProfile()).(*PerformanceProfile)
+	connect.AssertEqual(t, false, owned.PostQuantumEncryption)
+
+	// not hosted: the profile is unchanged
+	got = notHosted.hostedSafePerformanceProfile(postQuantumProfile())
+	connect.AssertEqual(t, true, got.PostQuantumEncryption)
+	connect.AssertEqual(t, true, toConnectPerformanceProfile(got).PostQuantumEncryption)
+	owned = notHosted.ownLocalCatalogValue("performance-profile", postQuantumProfile()).(*PerformanceProfile)
+	connect.AssertEqual(t, true, owned.PostQuantumEncryption)
+}
+
 // A hosted remote must discard every platform-owned mutation before it can be
 // queued for sync or accepted into the last-known cache. The hosted rpc returns
 // success for these deliberate noops, so allowing a call through would make a
