@@ -6,7 +6,7 @@
 // The device role is dark behind DeviceLocalSettings.EnableBridge, which is Go only and has no json, so a device
 // built through the abi runs no forwarding role yet and its store takes no call: the first test is the callbacks'
 // round trip through the adapter, the second the export. What a device with the gate open does with its store is
-// the sdk's test (device_local_test.go).
+// the sdk's test (device_sidecar_forward_keystore_test.go).
 package main
 
 import (
