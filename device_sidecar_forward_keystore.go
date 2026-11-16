@@ -42,7 +42,9 @@ type SidecarForwardSecret struct {
 
 // Gives the device the VPN component's forwarding key store (sidecar §18.6's Setup, DESIGN-DETAILS 4.2.2): with
 // ForwardStateDir set, the device keeps its forwarding roles' keys there and runs a forwarding role for each network a
-// hand-off names. The store is the component's own, never the sidecar role's SidecarKeyStore.
+// hand-off names. The store is the component's own, never the sidecar role's SidecarKeyStore. A gomobile host calls
+// this on the settings it builds; a host on the c abi, whose settings cross as json, hands the store to
+// NewDeviceLocalWithForwardKeyStore instead (QD-844), which sets it as this does.
 func (self *DeviceLocalSettings) SetForwardKeyStore(keyStore SidecarForwardKeyStore) {
 	self.forwardKeyStore = keyStore
 }

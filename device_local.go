@@ -1618,6 +1618,42 @@ func NewDeviceLocal(
 	)
 }
 
+// A device as NewDeviceLocal builds it on settings, with forwardKeyStore as the VPN component's forwarding key
+// store (sidecar §18.6's Setup, DESIGN-DETAILS 4.2.2; owner decision 197; QD-844): the constructor of a host that
+// cannot call DeviceLocalSettings.SetForwardKeyStore, which is the c abi and the language bindings over it, whose
+// settings cross as json, so the Windows and Linux app services give their VPN component its key store here. The
+// store crosses the c abi as function pointers. gomobile binds this too, beside the setter.
+//
+// forwardKeyStore is the device's store whatever settings held: nil is no store, and a device with no store, or
+// with no absolute settings.ForwardStateDir, sets no forwarding up (newDeviceLocalForwardingHost). The caller's
+// settings are left as they were.
+func NewDeviceLocalWithForwardKeyStore(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	settings *DeviceLocalSettings,
+	forwardKeyStore SidecarForwardKeyStore,
+) (*DeviceLocal, error) {
+	return traceWithReturnError(
+		func() (*DeviceLocal, error) {
+			settingsWithKeyStore := *settings
+			settingsWithKeyStore.SetForwardKeyStore(forwardKeyStore)
+			return newDeviceLocal(
+				networkSpace,
+				byJwt,
+				deviceDescription,
+				deviceSpec,
+				appVersion,
+				instanceId,
+				&settingsWithKeyStore,
+			)
+		},
+	)
+}
+
 //gomobile:noexport
 func NewPlatformDeviceLocalWithDefaults(
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
