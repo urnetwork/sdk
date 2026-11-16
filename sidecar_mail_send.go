@@ -348,7 +348,7 @@ func sidecarSendOutcomeOf(kind sidecar.SmtpOutcomeKind) string {
 }
 
 // The label mail sent at level carries (I-11): EX4's at TL4, none at TL1 to TL3, which exclude even an active edge,
-// and EX4's for a level this sdk does not know, which shows no authentication.
+// and EX4's for no level or one this sdk does not know, which show no authentication.
 func sidecarSendTlsLabelOf(level sidecar.SmtpTlsLevel) string {
 	switch level {
 	case sidecar.SmtpTlsLevelDane, sidecar.SmtpTlsLevelMtaSts, sidecar.SmtpTlsLevelIndependentMx:

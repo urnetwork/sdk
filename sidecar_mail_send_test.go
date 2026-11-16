@@ -596,7 +596,7 @@ func TestSendDelayCopy(t *testing.T) {
 }
 
 // I-11: only mail sent at TL4 carries EX4's label, TL1 to TL3 none, a refusal at TL4 none since nothing was sent, and a
-// level this sdk does not know the label, which shows no authentication.
+// level this sdk does not know, or none, the label, which shows no authentication.
 func TestSendTlsLabelOnlyOnSentAtTl4(t *testing.T) {
 	now := time.Date(2026, time.November, 15, 18, 0, 0, 0, time.UTC)
 	for _, testCase := range []struct {
@@ -609,6 +609,8 @@ func TestSendTlsLabelOnlyOnSentAtTl4(t *testing.T) {
 		{kind: sidecar.SmtpOutcomeSent, level: sidecar.SmtpTlsLevelIndependentMx},
 		{kind: sidecar.SmtpOutcomeSent, level: sidecar.SmtpTlsLevelUnauthenticated, label: sidecar.SmtpTlsLabelUnauthenticated},
 		{kind: sidecar.SmtpOutcomeSent, level: 7, label: sidecar.SmtpTlsLabelUnauthenticated},
+		// sent with no level reached shows no authentication either
+		{kind: sidecar.SmtpOutcomeSent, level: sidecar.SmtpTlsLevelUnreached, label: sidecar.SmtpTlsLabelUnauthenticated},
 		{kind: sidecar.SmtpOutcomeTlsRefused, level: sidecar.SmtpTlsLevelUnauthenticated},
 		{kind: sidecar.SmtpOutcomeRefused, level: sidecar.SmtpTlsLevelUnauthenticated},
 	} {
