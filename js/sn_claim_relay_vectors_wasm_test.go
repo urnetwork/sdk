@@ -12,7 +12,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // The export is the sdk's SnClaimStatusOf, whatever the page's casing: over

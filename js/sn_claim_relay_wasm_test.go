@@ -14,7 +14,7 @@ import (
 	"syscall/js"
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // a coldkey of the sdk's test vectors

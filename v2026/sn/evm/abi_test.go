@@ -1,0 +1,241 @@
+package evm
+
+import (
+	"bytes"
+	"encoding/hex"
+	"math/big"
+	"strings"
+	"testing"
+
+	"github.com/urnetwork/sdk/v2026/sn/merkle"
+)
+
+const aliceHex = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
+
+// The same golden the sn miner pins (sn/miner/onchain/calldata_test.go).
+var goldenClaimCalldata = "0xce479a1b" +
+	"0000000000000000000000000000000000000000000000000000000000000007" +
+	"0000000000000000000000000000000000000000000000000000000000000003" +
+	aliceHex +
+	"00000000000000000000000000000000000000000000000000000000000004d2" +
+	"00000000000000000000000000000000000000000000000000000000000000a0" +
+	"0000000000000000000000000000000000000000000000000000000000000002" +
+	strings.Repeat("11", 32) +
+	strings.Repeat("22", 32)
+
+func TestSelectors(t *testing.T) {
+	if got := hex.EncodeToString(claimSelector[:]); got != "ce479a1b" {
+		t.Fatalf("claim selector = %s", got)
+	}
+	if got := hex.EncodeToString(errorStringSelector[:]); got != "08c379a0" {
+		t.Fatalf("Error(string) selector = %s", got)
+	}
+	// in the coordinator's dispatch table (sn/sim-testnet/contracts_gen.go)
+	if got := hex.EncodeToString(policyAtSelector[:]); got != "b9a7f076" {
+		t.Fatalf("policyAt(uint256) selector = %s", got)
+	}
+}
+
+// Encodes a PolicySnapshot the way policyAt() returns it: one static tuple of
+// thirteen words.
+func policyWords(fields ...uint64) []byte {
+	out := make([]byte, 0, 13*32)
+	var hash [32]byte
+	hash[0] = 0xab
+	out = append(out, hash[:]...)
+	for _, f := range fields {
+		w := uint64Word(f)
+		out = append(out, w[:]...)
+	}
+	for len(out) < 13*32 {
+		w := uint64Word(1_000_000_000)
+		out = append(out, w[:]...)
+	}
+	return out
+}
+
+// policyAt(epoch) calldata is the selector and the epoch word.
+func TestPackPolicyAt(t *testing.T) {
+	got, err := PackPolicyAt(big.NewInt(42))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "b9a7f076" + "000000000000000000000000000000000000000000000000000000000000002a"
+	if hex.EncodeToString(got) != want {
+		t.Fatalf("policyAt calldata = %x", got)
+	}
+}
+
+// The snapshot's windows decode in order; a short return and a zero-length
+// epoch are refused.
+func TestDecodePolicy(t *testing.T) {
+	// the mainnet reference windows (sn/mainnet/MAINNET.md): 50,400-block
+	// epochs, 1,200 root commit, 14,400 finalize, 120 close grace, 8 claim
+	// epochs plus 1 grace epoch
+	ret := policyWords(3, 4_000_000, 50_400, 1_200, 14_400, 120, 8, 1, 12, 300)
+	p, err := DecodePolicy(ret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Policy{
+		EffectiveEpoch:         3,
+		EffectiveBlock:         4_000_000,
+		EpochBlocks:            50_400,
+		RootCommitWindowBlocks: 1_200,
+		FinalizeOffsetBlocks:   14_400,
+		CloseGraceBlocks:       120,
+		ClaimTtlEpochs:         8,
+		ClaimGraceEpochs:       1,
+	}
+	if *p != want {
+		t.Fatalf("policy %+v, want %+v", *p, want)
+	}
+	if _, err := DecodePolicy(ret[:12*32]); err == nil {
+		t.Fatal("short policy accepted")
+	}
+	if _, err := DecodePolicy(policyWords(3, 4_000_000, 0, 1_200, 14_400, 120, 8, 1, 12, 300)); err == nil {
+		t.Fatal("zero-length epoch accepted")
+	}
+}
+
+func TestPackClaimGolden(t *testing.T) {
+	var coldkey [32]byte
+	b, _ := hex.DecodeString(aliceHex)
+	copy(coldkey[:], b)
+	proof := [][32]byte{{}, {}}
+	for i := range proof[0] {
+		proof[0][i] = 0x11
+		proof[1][i] = 0x22
+	}
+	got, err := PackClaim(big.NewInt(7), big.NewInt(3), coldkey, big.NewInt(1234), proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHex := "0x" + hex.EncodeToString(got); gotHex != goldenClaimCalldata {
+		t.Fatalf("golden mismatch\n got: %s\nwant: %s", gotHex, goldenClaimCalldata)
+	}
+}
+
+func TestPayoutLeafMatchesMerklePackage(t *testing.T) {
+	var coldkey [32]byte
+	b, _ := hex.DecodeString(aliceHex)
+	copy(coldkey[:], b)
+	got, err := PayoutLeaf(coldkey, big.NewInt(1234))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := merkle.PayoutLeaf(coldkey, big.NewInt(1234))
+	if !bytes.Equal(got[:], want[:]) {
+		t.Fatalf("PayoutLeaf differs from merkle.PayoutLeaf: %x vs %x", got, want)
+	}
+}
+
+func TestClaimKey(t *testing.T) {
+	var coldkey [32]byte
+	coldkey[31] = 1
+	got, err := ClaimKey(big.NewInt(3), coldkey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var noId [32]byte
+	noId[31] = 3
+	want := Keccak256(noId[:], coldkey[:])
+	if got != want {
+		t.Fatal("claim key mismatch")
+	}
+}
+
+func TestDecodeEntitlement(t *testing.T) {
+	var ret []byte
+	root := bytes.Repeat([]byte{0xaa}, 32)
+	artifact := bytes.Repeat([]byte{0xbb}, 32)
+	ret = append(ret, root...)
+	ret = append(ret, artifact...)
+	w := uint64Word(1000)
+	ret = append(ret, w[:]...)
+	w = uint64Word(900)
+	ret = append(ret, w[:]...)
+	w = uint64Word(50)
+	ret = append(ret, w[:]...)
+	w = uint64Word(123456)
+	ret = append(ret, w[:]...)
+	w = uint64Word(2)
+	ret = append(ret, w[:]...)
+	e, err := DecodeEntitlement(ret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(e.PayoutRoot[:], root) || !bytes.Equal(e.ArtifactHash[:], artifact) {
+		t.Fatal("hashes")
+	}
+	if e.Funded.Int64() != 1000 || e.Total.Int64() != 900 || e.Claimed.Int64() != 50 || e.ExpiryBlock != 123456 || e.Status != StatusFinalized {
+		t.Fatalf("decoded %+v", e)
+	}
+	if _, err := DecodeEntitlement(ret[:100]); err == nil {
+		t.Fatal("short return accepted")
+	}
+}
+
+func TestDecodeRootCommitment(t *testing.T) {
+	var ret []byte
+	ret = append(ret, bytes.Repeat([]byte{0x01}, 32)...)
+	ret = append(ret, bytes.Repeat([]byte{0x02}, 32)...)
+	addrWord := make([]byte, 32)
+	for i := 12; i < 32; i++ {
+		addrWord[i] = 0xcc
+	}
+	ret = append(ret, addrWord...)
+	w := uint64Word(77)
+	ret = append(ret, w[:]...)
+	c, err := DecodeRootCommitment(ret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.CommitBlock != 77 || c.Committer != [20]byte{0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc} {
+		t.Fatalf("decoded %+v", c)
+	}
+}
+
+func TestDecodeRevert(t *testing.T) {
+	// Error("boom")
+	var data []byte
+	data = append(data, errorStringSelector[:]...)
+	w := uint64Word(32)
+	data = append(data, w[:]...)
+	w = uint64Word(4)
+	data = append(data, w[:]...)
+	data = append(data, []byte("boom")...)
+	data = append(data, make([]byte, 28)...)
+	if got := DecodeRevert(data); got != "boom" {
+		t.Fatalf("Error(string) = %q", got)
+	}
+	sel := selector("AlreadyClaimed()")
+	if got := DecodeRevert(sel[:]); got != "AlreadyClaimed" {
+		t.Fatalf("custom error = %q", got)
+	}
+	if got := DecodeRevert(nil); got != "reverted" {
+		t.Fatalf("empty = %q", got)
+	}
+}
+
+func TestParseUint256(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+		ok   bool
+	}{
+		{"0", 0, true}, {"12", 12, true}, {"0x1f", 31, true}, {"0X1f", 31, true},
+		{"-1", 0, false}, {"", 0, false}, {"zz", 0, false},
+	} {
+		v, err := ParseUint256(tc.in)
+		if (err == nil) != tc.ok {
+			t.Fatalf("%q: err=%v", tc.in, err)
+		}
+		if tc.ok && v.Int64() != tc.want {
+			t.Fatalf("%q = %s", tc.in, v)
+		}
+	}
+	if _, err := ParseUint256("0x1" + strings.Repeat("0", 64)); err == nil {
+		t.Fatal("overflow accepted")
+	}
+}
