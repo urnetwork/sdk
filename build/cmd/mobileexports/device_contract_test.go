@@ -108,7 +108,7 @@ func TestMobileDeviceBindingTagCoversAllTargets(t *testing.T) {
 		t.Fatalf("found %d gomobile binds, want Android, Apple, and Apple extension", len(calls))
 	}
 	for index, remainder := range calls {
-		call := strings.SplitN(remainder, `"github.com/urnetwork/sdk"`, 2)[0]
+		call := strings.SplitN(remainder, `"github.com/urnetwork/sdk/v2026"`, 2)[0]
 		if !strings.Contains(call, "-tags sdk_mobile_bind") {
 			t.Errorf("gomobile bind %d does not select the portable Device view", index+1)
 		}
