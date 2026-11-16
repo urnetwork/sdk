@@ -1,4 +1,4 @@
-//go:build !ios_extension && !js
+//go:build !ios_extension && !js && !ios && !android
 
 package sdk
 

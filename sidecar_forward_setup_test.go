@@ -1,4 +1,4 @@
-//go:build !ios_extension && !js
+//go:build !ios_extension && !js && !ios && !android
 
 package sdk
 
@@ -378,18 +378,6 @@ func TestBridgeStatusCarriesTheForwardingFields(t *testing.T) {
 	}
 	if DeviceRpcVersion != 3 {
 		t.Errorf("DeviceRpcVersion is %d: forwarding's calls are additive", DeviceRpcVersion)
-	}
-}
-
-// Collects status changes.
-type testingBridgeStatusListener struct {
-	changed chan *BridgeStatus
-}
-
-func (self *testingBridgeStatusListener) BridgeStatusChanged(status *BridgeStatus) {
-	select {
-	case self.changed <- status:
-	default:
 	}
 }
 

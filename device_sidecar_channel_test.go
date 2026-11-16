@@ -106,3 +106,15 @@ func TestBridgeStatusListenerLeavesWithItsConnection(t *testing.T) {
 		t.Error("the closed rpc still holds a listener")
 	}
 }
+
+// Collects status changes.
+type testingBridgeStatusListener struct {
+	changed chan *BridgeStatus
+}
+
+func (self *testingBridgeStatusListener) BridgeStatusChanged(status *BridgeStatus) {
+	select {
+	case self.changed <- status:
+	default:
+	}
+}
