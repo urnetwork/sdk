@@ -126,7 +126,7 @@ var behavioralTypes = map[string]bool{
 
 	// sdk.Sidecar's handles (sidecar §18.5's Gate table, SDK-M8-06): each holds a lock-guarded core or a daemon
 	// session and its listeners, so it crosses as a handle with its methods. SidecarSearch and SidecarSearchHandle
-	// join with M10's search API.
+	// joined with M10's search API (SDK-M10-01).
 	"Sidecar":               true,
 	"SidecarEvs":            true,
 	"SidecarMail":           true,
@@ -134,6 +134,8 @@ var behavioralTypes = map[string]bool{
 	"SidecarSocketListener": true,
 	"SidecarApprovals":      true,
 	"SidecarDirectory":      true,
+	"SidecarSearch":         true,
+	"SidecarSearchHandle":   true,
 }
 
 // skipped types are not exported. mirror the gomobile validate exclusions

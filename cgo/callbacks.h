@@ -395,6 +395,8 @@ typedef void (*urnet_sidecar_result_cb)(void* user_data, const char* result_json
 void urnet_invoke_sidecar_result(urnet_sidecar_result_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_revoke_plan_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_revoke_plan(urnet_sidecar_revoke_plan_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sidecar_search_cb)(void* user_data, const char* hits_json, const char* progress_json, bool done);
+void urnet_invoke_sidecar_search(urnet_sidecar_search_cb cb, void* user_data, const char* hits_json, const char* progress_json, bool done);
 typedef void (*urnet_sidecar_send_check_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_send_check(urnet_sidecar_send_check_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_send_result_cb)(void* user_data, const char* result_json, const char* err_param);

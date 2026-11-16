@@ -197,6 +197,7 @@ public interface Raw extends Library {
   interface urnet_sidecar_repo_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_result_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_revoke_plan_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_search_cb extends Callback { void invoke(Pointer a0, String a1, String a2, byte a3); }
   interface urnet_sidecar_send_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_send_result_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_used_at_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -1406,6 +1407,7 @@ public interface Raw extends Library {
   long urnet_sidecar_get_directory(long a0);
   long urnet_sidecar_get_evs(long a0);
   long urnet_sidecar_get_mail(long a0);
+  long urnet_sidecar_get_search(long a0);
   Pointer urnet_sidecar_get_sidecar_id(long a0);
   long urnet_sidecar_get_sockets(long a0);
   Pointer urnet_sidecar_get_state(long a0);
@@ -1444,6 +1446,15 @@ public interface Raw extends Library {
   void urnet_sidecar_mail_get_vault_entries(long a0, urnet_sidecar_vault_entries_cb a1, Pointer a2);
   void urnet_sidecar_mail_send(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
   void urnet_sidecar_mail_set_receiver_enabled(long a0, byte a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_search_drop_cache(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  Pointer urnet_sidecar_search_get_status(long a0, String a1);
+  void urnet_sidecar_search_run_background_sync(long a0, long a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_search_search(long a0, String a1, urnet_sidecar_search_cb a2, Pointer a3);
+  void urnet_sidecar_search_set_conditions(long a0, byte a1, byte a2, byte a3);
+  void urnet_sidecar_search_set_foreground(long a0, byte a1);
+  void urnet_sidecar_search_set_policy(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
+  void urnet_sidecar_search_handle_cancel(long a0);
+  void urnet_sidecar_search_handle_more(long a0, long a1);
   long urnet_sidecar_socket_listener_accept(long a0, long a1, PointerByReference a2);
   byte urnet_sidecar_socket_listener_close(long a0, PointerByReference a1);
   Pointer urnet_sidecar_socket_listener_get_addr(long a0);

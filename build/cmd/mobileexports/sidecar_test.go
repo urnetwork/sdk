@@ -20,8 +20,8 @@ import (
 	"testing"
 )
 
-// The handle types §18.5's Gate table names that the sdk declares now; M10's
-// SidecarSearch and SidecarSearchHandle add their own rows.
+// The handle types §18.5's Gate table names, M10's SidecarSearch and
+// SidecarSearchHandle (SDK-M10-01) among them.
 var mobileSidecarHandleTypes = []string{
 	"Sidecar",
 	"SidecarEvs",
@@ -30,6 +30,8 @@ var mobileSidecarHandleTypes = []string{
 	"SidecarSocketListener",
 	"SidecarApprovals",
 	"SidecarDirectory",
+	"SidecarSearch",
+	"SidecarSearchHandle",
 }
 
 // The sdk's package functions that open a Sidecar.

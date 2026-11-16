@@ -3,8 +3,8 @@ package main
 // sdk.Sidecar's C ABI (SDK-M8-06; sidecar §18.5's Gate table, R-SDK-5, D-SDK-2, D-SDK-15, D-SDK-30): its seven handle
 // types cross as opaque handles with every exported method but the Go-only ones, which are skipped by name; its data
 // types cross as json, its lists as json arrays; its listeners and the app's interfaces as function pointers; and
-// SidecarSettings decodes over DefaultSidecarSettings. A later milestone's handle (M10's SidecarSearch and
-// SidecarSearchHandle) adds its own row to sidecarHandleTypes, and this test then fails until behavioralTypes has it.
+// SidecarSettings decodes over DefaultSidecarSettings. M10's SidecarSearch and SidecarSearchHandle (SDK-M10-01) have their
+// rows in sidecarHandleTypes, and a later handle adds its own, this test failing until behavioralTypes has it.
 
 import (
 	"encoding/json"
@@ -24,6 +24,8 @@ var sidecarHandleTypes = []string{
 	"SidecarSocketListener",
 	"SidecarApprovals",
 	"SidecarDirectory",
+	"SidecarSearch",
+	"SidecarSearchHandle",
 }
 
 // The Go-only members, each skipped by name with its reason.
@@ -81,6 +83,8 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarCleanupList", "SidecarAccessRequest",
 		// SidecarMail's send capability (SDK-M9-01)
 		"SidecarSendCheck", "SidecarSendResult", "SidecarSendDomain", "SidecarSendDomainList",
+		// SidecarSearch's (SDK-M10-01)
+		"SidecarSearchQuery", "SidecarSearchHit", "SidecarSearchHitList", "SidecarSearchProgress", "SidecarSearchStatus", "SidecarIndexer",
 	} {
 		if info := g.classify(types.NewPointer(testingPreferenceType(t, g, name).Type())); info.kind != kindJson {
 			t.Errorf("%s crosses as kind %d", name, info.kind)
@@ -91,6 +95,7 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarRevokeItemList": sdk.NewSidecarRevokeItemList(),
 		"SidecarApprovalList":   sdk.NewSidecarApprovalList(),
 		"SidecarSendDomainList": sdk.NewSidecarSendDomainList(),
+		"SidecarSearchHitList":  sdk.NewSidecarSearchHitList(),
 	} {
 		encoded, err := json.Marshal(list)
 		if err != nil || !strings.HasPrefix(string(encoded), "[") {
@@ -123,7 +128,7 @@ func TestSidecarInterfacesCrossAsFunctionPointers(t *testing.T) {
 	for _, name := range []string{
 		"SidecarKeyStore", "SidecarPresenceSigner", "SidecarEventListener", "SidecarApprovalListener",
 		"SidecarResultCallback", "SidecarRevokePlanCallback", "SidecarForwardKeyStore", "SidecarDirectoryListener",
-		"SidecarSendCheckCallback", "SidecarSendResultCallback",
+		"SidecarSendCheckCallback", "SidecarSendResultCallback", "SidecarSearchListener",
 	} {
 		object := testingPreferenceType(t, g, name)
 		if info := g.classify(object.Type()); info.kind != kindCallback {
@@ -148,6 +153,9 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		"NewSidecarLocal", "NewSidecarRemote", "Sidecar.GetApprovals", "Sidecar.ConfirmForwardingSetup",
 		"SidecarApprovals.RevokeDevice", "SidecarApprovals.PreviewRevokeDevice", "SidecarApprovals.Decide",
 		"SidecarMail.CheckSend", "SidecarMail.GetSendResult",
+		"Sidecar.GetSearch", "SidecarSearch.Search", "SidecarSearch.GetStatus", "SidecarSearch.DropCache", "SidecarSearch.SetPolicy",
+		"SidecarSearch.SetConditions", "SidecarSearch.SetForeground", "SidecarSearch.RunBackgroundSync", "SidecarSearchHandle.More",
+		"SidecarSearchHandle.Cancel",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

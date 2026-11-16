@@ -196,6 +196,7 @@ module URnetwork
       callback :urnet_sidecar_repo_change_cb, [:pointer, :string], :void
       callback :urnet_sidecar_result_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_revoke_plan_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_search_cb, [:pointer, :string, :string, :bool], :void
       callback :urnet_sidecar_send_check_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_send_result_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_used_at_cb, [:pointer, :string, :string], :void
@@ -1405,6 +1406,7 @@ module URnetwork
       attach_function :urnet_sidecar_get_directory, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_evs, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_mail, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_get_search, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_sidecar_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_sidecar_get_sockets, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_state, [:uint64], :pointer, blocking: true
@@ -1443,6 +1445,15 @@ module URnetwork
       attach_function :urnet_sidecar_mail_get_vault_entries, [:uint64, :urnet_sidecar_vault_entries_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_send, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_set_receiver_enabled, [:uint64, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_search_drop_cache, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_search_get_status, [:uint64, :string], :pointer, blocking: true
+      attach_function :urnet_sidecar_search_run_background_sync, [:uint64, :int64, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_search_search, [:uint64, :string, :urnet_sidecar_search_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_search_set_conditions, [:uint64, :bool, :bool, :bool], :void, blocking: true
+      attach_function :urnet_sidecar_search_set_foreground, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_sidecar_search_set_policy, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_search_handle_cancel, [:uint64], :void, blocking: true
+      attach_function :urnet_sidecar_search_handle_more, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_sidecar_socket_listener_accept, [:uint64, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_socket_listener_close, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_socket_listener_get_addr, [:uint64], :pointer, blocking: true

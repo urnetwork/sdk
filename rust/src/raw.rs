@@ -195,6 +195,7 @@ pub type urnet_sidecar_presence_signer_sign_with_presence_cb = Option<unsafe ext
 pub type urnet_sidecar_repo_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_result_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_revoke_plan_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sidecar_search_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, bool) -> ()>;
 pub type urnet_sidecar_send_check_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_send_result_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_used_at_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -1406,6 +1407,7 @@ pub struct Raw {
     pub urnet_sidecar_get_directory: unsafe extern "C" fn(u64) -> u64,
     pub urnet_sidecar_get_evs: unsafe extern "C" fn(u64) -> u64,
     pub urnet_sidecar_get_mail: unsafe extern "C" fn(u64) -> u64,
+    pub urnet_sidecar_get_search: unsafe extern "C" fn(u64) -> u64,
     pub urnet_sidecar_get_sidecar_id: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_sidecar_get_sockets: unsafe extern "C" fn(u64) -> u64,
     pub urnet_sidecar_get_state: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -1444,6 +1446,15 @@ pub struct Raw {
     pub urnet_sidecar_mail_get_vault_entries: unsafe extern "C" fn(u64, urnet_sidecar_vault_entries_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_send: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_set_receiver_enabled: unsafe extern "C" fn(u64, bool, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_search_drop_cache: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_search_get_status: unsafe extern "C" fn(u64, *const c_char) -> *mut c_char,
+    pub urnet_sidecar_search_run_background_sync: unsafe extern "C" fn(u64, i64, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_search_search: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_search_cb, *mut c_void) -> u64,
+    pub urnet_sidecar_search_set_conditions: unsafe extern "C" fn(u64, bool, bool, bool) -> (),
+    pub urnet_sidecar_search_set_foreground: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_sidecar_search_set_policy: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_search_handle_cancel: unsafe extern "C" fn(u64) -> (),
+    pub urnet_sidecar_search_handle_more: unsafe extern "C" fn(u64, i64) -> (),
     pub urnet_sidecar_socket_listener_accept: unsafe extern "C" fn(u64, i64, *mut *mut c_char) -> u64,
     pub urnet_sidecar_socket_listener_close: unsafe extern "C" fn(u64, *mut *mut c_char) -> bool,
     pub urnet_sidecar_socket_listener_get_addr: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -2897,6 +2908,7 @@ impl Raw {
             urnet_sidecar_get_directory: unsafe { *library.get(b"urnet_sidecar_get_directory\0")? },
             urnet_sidecar_get_evs: unsafe { *library.get(b"urnet_sidecar_get_evs\0")? },
             urnet_sidecar_get_mail: unsafe { *library.get(b"urnet_sidecar_get_mail\0")? },
+            urnet_sidecar_get_search: unsafe { *library.get(b"urnet_sidecar_get_search\0")? },
             urnet_sidecar_get_sidecar_id: unsafe { *library.get(b"urnet_sidecar_get_sidecar_id\0")? },
             urnet_sidecar_get_sockets: unsafe { *library.get(b"urnet_sidecar_get_sockets\0")? },
             urnet_sidecar_get_state: unsafe { *library.get(b"urnet_sidecar_get_state\0")? },
@@ -2935,6 +2947,15 @@ impl Raw {
             urnet_sidecar_mail_get_vault_entries: unsafe { *library.get(b"urnet_sidecar_mail_get_vault_entries\0")? },
             urnet_sidecar_mail_send: unsafe { *library.get(b"urnet_sidecar_mail_send\0")? },
             urnet_sidecar_mail_set_receiver_enabled: unsafe { *library.get(b"urnet_sidecar_mail_set_receiver_enabled\0")? },
+            urnet_sidecar_search_drop_cache: unsafe { *library.get(b"urnet_sidecar_search_drop_cache\0")? },
+            urnet_sidecar_search_get_status: unsafe { *library.get(b"urnet_sidecar_search_get_status\0")? },
+            urnet_sidecar_search_run_background_sync: unsafe { *library.get(b"urnet_sidecar_search_run_background_sync\0")? },
+            urnet_sidecar_search_search: unsafe { *library.get(b"urnet_sidecar_search_search\0")? },
+            urnet_sidecar_search_set_conditions: unsafe { *library.get(b"urnet_sidecar_search_set_conditions\0")? },
+            urnet_sidecar_search_set_foreground: unsafe { *library.get(b"urnet_sidecar_search_set_foreground\0")? },
+            urnet_sidecar_search_set_policy: unsafe { *library.get(b"urnet_sidecar_search_set_policy\0")? },
+            urnet_sidecar_search_handle_cancel: unsafe { *library.get(b"urnet_sidecar_search_handle_cancel\0")? },
+            urnet_sidecar_search_handle_more: unsafe { *library.get(b"urnet_sidecar_search_handle_more\0")? },
             urnet_sidecar_socket_listener_accept: unsafe { *library.get(b"urnet_sidecar_socket_listener_accept\0")? },
             urnet_sidecar_socket_listener_close: unsafe { *library.get(b"urnet_sidecar_socket_listener_close\0")? },
             urnet_sidecar_socket_listener_get_addr: unsafe { *library.get(b"urnet_sidecar_socket_listener_get_addr\0")? },

@@ -781,6 +781,10 @@ void urnet_invoke_sidecar_revoke_plan(urnet_sidecar_revoke_plan_cb cb, void* use
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sidecar_search(urnet_sidecar_search_cb cb, void* user_data, const char* hits_json, const char* progress_json, bool done) {
+	cb(user_data, hits_json, progress_json, done);
+}
+
 void urnet_invoke_sidecar_send_check(urnet_sidecar_send_check_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

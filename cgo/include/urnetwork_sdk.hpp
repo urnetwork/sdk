@@ -640,6 +640,23 @@ inline constexpr const char* SidecarReceiverCoverageIndexer = "indexer";
 inline constexpr const char* SidecarReceiverCoverageNone = "none";
 inline constexpr const char* SidecarRevokeCompromise = "compromise";
 inline constexpr const char* SidecarRevokeLost = "lost";
+inline constexpr const char* SidecarSearchCodeBusy = "SEARCH_BUSY";
+inline constexpr const char* SidecarSearchCodeExpired = "SEARCH_EXPIRED";
+inline constexpr const char* SidecarSearchCodeFailed = "SEARCH_FAILED";
+inline constexpr const char* SidecarSearchCodeInvalid = "SEARCH_INVALID";
+inline constexpr const char* SidecarSearchCodeRefused = "SEARCH_REFUSED";
+inline constexpr const char* SidecarSearchCodeUnavailable = "SEARCH_UNAVAILABLE";
+inline constexpr const char* SidecarSearchHitConfirmed = "confirmed";
+inline constexpr const char* SidecarSearchHitNear = "near";
+inline constexpr const char* SidecarSearchHitPossible = "possible";
+inline constexpr const char* SidecarSearchHitUnmatched = "unmatched";
+inline constexpr const char* SidecarSearchHitVerified = "verified";
+inline constexpr const char* SidecarSearchPartitionAll = "all";
+inline constexpr const char* SidecarSearchPartitionLatest = "latest";
+inline constexpr const char* SidecarSearchRemoteOff = "off";
+inline constexpr const char* SidecarSearchScopeAll = "all";
+inline constexpr const char* SidecarSearchScopeCached = "cached";
+inline constexpr const char* SidecarSearchScopeLatest = "latest";
 inline constexpr int64_t SidecarSecretAbsent = 3;
 inline constexpr int64_t SidecarSecretFailed = 0;
 inline constexpr int64_t SidecarSecretLocked = 4;
@@ -896,6 +913,8 @@ class SidecarApprovals;
 class SidecarDirectory;
 class SidecarEvs;
 class SidecarMail;
+class SidecarSearch;
+class SidecarSearchHandle;
 class SidecarSocketListener;
 class SidecarSockets;
 class SnFleetClaim;
@@ -1232,6 +1251,7 @@ struct SidecarEvent;
 struct SidecarForwardSecret;
 struct SidecarHistory;
 struct SidecarHistoryVersion;
+struct SidecarIndexer;
 struct SidecarOneTimeCode;
 struct SidecarOneTimeCodes;
 struct SidecarRepoAnnouncement;
@@ -1239,6 +1259,10 @@ struct SidecarRepoChange;
 struct SidecarResult;
 struct SidecarRevokeItem;
 struct SidecarRevokePlan;
+struct SidecarSearchHit;
+struct SidecarSearchProgress;
+struct SidecarSearchQuery;
+struct SidecarSearchStatus;
 struct SidecarSecret;
 struct SidecarSendCheck;
 struct SidecarSendDomain;
@@ -1432,6 +1456,7 @@ using SidecarErasureList = std::vector<SidecarErasure>;
 using SidecarHistoryVersionList = std::vector<SidecarHistoryVersion>;
 using SidecarOneTimeCodeList = std::vector<SidecarOneTimeCode>;
 using SidecarRevokeItemList = std::vector<SidecarRevokeItem>;
+using SidecarSearchHitList = std::vector<SidecarSearchHit>;
 using SidecarSendDomainList = std::vector<SidecarSendDomain>;
 using SidecarUsedAtList = std::vector<SidecarUsedAt>;
 using SidecarVaultEntryList = std::vector<SidecarVaultEntry>;
@@ -4214,6 +4239,17 @@ struct SidecarHistoryVersion {
 	std::string state{};
 };
 
+struct SidecarIndexer {
+	std::optional<std::string> sidecar_id;
+	std::optional<std::string> name;
+	std::optional<std::string> member_id;
+	std::optional<std::string> member;
+	std::optional<bool> own;
+	std::optional<std::string> state;
+	std::optional<bool> acknowledged;
+	std::optional<IdList> served_repo_ids;
+};
+
 struct SidecarOneTimeCode {
 	std::string code{};
 	std::string source{};
@@ -4276,6 +4312,59 @@ struct SidecarRevokePlan {
 	std::optional<std::string> code;
 	std::optional<int64_t> parks_self_position;
 	std::optional<std::string> message;
+};
+
+struct SidecarSearchHit {
+	std::optional<std::string> repo_id;
+	std::string path{};
+	int64_t version{};
+	int64_t time_millis{};
+	std::optional<std::string> title;
+	std::optional<std::string> from;
+	std::optional<std::string> snippet;
+	std::string state{};
+	std::string partition{};
+	std::optional<std::string> correction;
+	std::optional<std::string> by;
+};
+
+struct SidecarSearchProgress {
+	int32_t searched{};
+	int32_t total{};
+	std::optional<int64_t> fetch_byte_count;
+	std::optional<int64_t> fetched_byte_count;
+	std::optional<int32_t> uncovered;
+	std::optional<std::string> waiting;
+	std::optional<int64_t> covered_from_millis;
+	std::optional<std::string> remote;
+	std::optional<SidecarIndexer> remote_by;
+	std::optional<std::string> fallback_reason;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarSearchQuery {
+	std::string text{};
+	std::optional<IdList> repo_ids;
+	std::optional<std::string> scope;
+	std::optional<int64_t> since_millis;
+	std::optional<int64_t> until_millis;
+	std::optional<bool> fuzzy;
+	std::optional<bool> allow_metered;
+	std::optional<std::string> remote;
+	std::optional<int32_t> page_size;
+};
+
+struct SidecarSearchStatus {
+	bool index_on{};
+	bool format_supported{};
+	std::string policy{};
+	std::string remote{};
+	std::optional<int64_t> latest_from_millis;
+	std::optional<int64_t> all_cached_through_millis;
+	std::optional<int64_t> all_cached_byte_count;
+	std::optional<int64_t> all_missing_byte_count;
+	std::optional<int32_t> uncovered;
 };
 
 struct SidecarSecret {
@@ -5934,6 +6023,8 @@ inline void to_json(nlohmann::json& j, const SidecarHistory& v);
 inline void from_json(const nlohmann::json& j, SidecarHistory& v);
 inline void to_json(nlohmann::json& j, const SidecarHistoryVersion& v);
 inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v);
+inline void to_json(nlohmann::json& j, const SidecarIndexer& v);
+inline void from_json(const nlohmann::json& j, SidecarIndexer& v);
 inline void to_json(nlohmann::json& j, const SidecarOneTimeCode& v);
 inline void from_json(const nlohmann::json& j, SidecarOneTimeCode& v);
 inline void to_json(nlohmann::json& j, const SidecarOneTimeCodes& v);
@@ -5948,6 +6039,14 @@ inline void to_json(nlohmann::json& j, const SidecarRevokeItem& v);
 inline void from_json(const nlohmann::json& j, SidecarRevokeItem& v);
 inline void to_json(nlohmann::json& j, const SidecarRevokePlan& v);
 inline void from_json(const nlohmann::json& j, SidecarRevokePlan& v);
+inline void to_json(nlohmann::json& j, const SidecarSearchHit& v);
+inline void from_json(const nlohmann::json& j, SidecarSearchHit& v);
+inline void to_json(nlohmann::json& j, const SidecarSearchProgress& v);
+inline void from_json(const nlohmann::json& j, SidecarSearchProgress& v);
+inline void to_json(nlohmann::json& j, const SidecarSearchQuery& v);
+inline void from_json(const nlohmann::json& j, SidecarSearchQuery& v);
+inline void to_json(nlohmann::json& j, const SidecarSearchStatus& v);
+inline void from_json(const nlohmann::json& j, SidecarSearchStatus& v);
 inline void to_json(nlohmann::json& j, const SidecarSecret& v);
 inline void from_json(const nlohmann::json& j, SidecarSecret& v);
 inline void to_json(nlohmann::json& j, const SidecarSendCheck& v);
@@ -19439,6 +19538,79 @@ inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarIndexer& v) {
+	j = nlohmann::json::object();
+	if (v.sidecar_id) {
+		j["sidecar_id"] = *v.sidecar_id;
+	}
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	if (v.member) {
+		j["member"] = *v.member;
+	}
+	if (v.own) {
+		j["own"] = *v.own;
+	}
+	if (v.state) {
+		j["state"] = *v.state;
+	}
+	if (v.acknowledged) {
+		j["acknowledged"] = *v.acknowledged;
+	}
+	if (v.served_repo_ids) {
+		j["served_repo_ids"] = *v.served_repo_ids;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarIndexer& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("sidecar_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sidecar_id = std::move(tmp);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("member"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member = std::move(tmp);
+	}
+	if (auto it = j.find("own"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.own = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.state = std::move(tmp);
+	}
+	if (auto it = j.find("acknowledged"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.acknowledged = std::move(tmp);
+	}
+	if (auto it = j.find("served_repo_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.served_repo_ids = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarOneTimeCode& v) {
 	j = nlohmann::json::object();
 	j["code"] = v.code;
@@ -19819,6 +19991,322 @@ inline void from_json(const nlohmann::json& j, SidecarRevokePlan& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSearchHit& v) {
+	j = nlohmann::json::object();
+	if (v.repo_id) {
+		j["repo_id"] = *v.repo_id;
+	}
+	j["path"] = v.path;
+	j["version"] = v.version;
+	j["time_millis"] = v.time_millis;
+	if (v.title) {
+		j["title"] = *v.title;
+	}
+	if (v.from) {
+		j["from"] = *v.from;
+	}
+	if (v.snippet) {
+		j["snippet"] = *v.snippet;
+	}
+	j["state"] = v.state;
+	j["partition"] = v.partition;
+	if (v.correction) {
+		j["correction"] = *v.correction;
+	}
+	if (v.by) {
+		j["by"] = *v.by;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSearchHit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("repo_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.repo_id = std::move(tmp);
+	}
+	if (auto it = j.find("path"); it != j.end() && !it->is_null()) {
+		it->get_to(v.path);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.version);
+	}
+	if (auto it = j.find("time_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.time_millis);
+	}
+	if (auto it = j.find("title"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.title = std::move(tmp);
+	}
+	if (auto it = j.find("from"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.from = std::move(tmp);
+	}
+	if (auto it = j.find("snippet"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.snippet = std::move(tmp);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("partition"); it != j.end() && !it->is_null()) {
+		it->get_to(v.partition);
+	}
+	if (auto it = j.find("correction"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.correction = std::move(tmp);
+	}
+	if (auto it = j.find("by"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.by = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSearchProgress& v) {
+	j = nlohmann::json::object();
+	j["searched"] = v.searched;
+	j["total"] = v.total;
+	if (v.fetch_byte_count) {
+		j["fetch_byte_count"] = *v.fetch_byte_count;
+	}
+	if (v.fetched_byte_count) {
+		j["fetched_byte_count"] = *v.fetched_byte_count;
+	}
+	if (v.uncovered) {
+		j["uncovered"] = *v.uncovered;
+	}
+	if (v.waiting) {
+		j["waiting"] = *v.waiting;
+	}
+	if (v.covered_from_millis) {
+		j["covered_from_millis"] = *v.covered_from_millis;
+	}
+	if (v.remote) {
+		j["remote"] = *v.remote;
+	}
+	if (v.remote_by) {
+		j["remote_by"] = *v.remote_by;
+	}
+	if (v.fallback_reason) {
+		j["fallback_reason"] = *v.fallback_reason;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSearchProgress& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("searched"); it != j.end() && !it->is_null()) {
+		it->get_to(v.searched);
+	}
+	if (auto it = j.find("total"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total);
+	}
+	if (auto it = j.find("fetch_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.fetch_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("fetched_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.fetched_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("uncovered"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.uncovered = std::move(tmp);
+	}
+	if (auto it = j.find("waiting"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.waiting = std::move(tmp);
+	}
+	if (auto it = j.find("covered_from_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.covered_from_millis = std::move(tmp);
+	}
+	if (auto it = j.find("remote"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.remote = std::move(tmp);
+	}
+	if (auto it = j.find("remote_by"); it != j.end() && !it->is_null()) {
+		SidecarIndexer tmp{};
+		it->get_to(tmp);
+		v.remote_by = std::move(tmp);
+	}
+	if (auto it = j.find("fallback_reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.fallback_reason = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSearchQuery& v) {
+	j = nlohmann::json::object();
+	j["text"] = v.text;
+	if (v.repo_ids) {
+		j["repo_ids"] = *v.repo_ids;
+	}
+	if (v.scope) {
+		j["scope"] = *v.scope;
+	}
+	if (v.since_millis) {
+		j["since_millis"] = *v.since_millis;
+	}
+	if (v.until_millis) {
+		j["until_millis"] = *v.until_millis;
+	}
+	if (v.fuzzy) {
+		j["fuzzy"] = *v.fuzzy;
+	}
+	if (v.allow_metered) {
+		j["allow_metered"] = *v.allow_metered;
+	}
+	if (v.remote) {
+		j["remote"] = *v.remote;
+	}
+	if (v.page_size) {
+		j["page_size"] = *v.page_size;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSearchQuery& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.text);
+	}
+	if (auto it = j.find("repo_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.repo_ids = std::move(tmp);
+	}
+	if (auto it = j.find("scope"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.scope = std::move(tmp);
+	}
+	if (auto it = j.find("since_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.since_millis = std::move(tmp);
+	}
+	if (auto it = j.find("until_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.until_millis = std::move(tmp);
+	}
+	if (auto it = j.find("fuzzy"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.fuzzy = std::move(tmp);
+	}
+	if (auto it = j.find("allow_metered"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.allow_metered = std::move(tmp);
+	}
+	if (auto it = j.find("remote"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.remote = std::move(tmp);
+	}
+	if (auto it = j.find("page_size"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.page_size = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSearchStatus& v) {
+	j = nlohmann::json::object();
+	j["index_on"] = v.index_on;
+	j["format_supported"] = v.format_supported;
+	j["policy"] = v.policy;
+	j["remote"] = v.remote;
+	if (v.latest_from_millis) {
+		j["latest_from_millis"] = *v.latest_from_millis;
+	}
+	if (v.all_cached_through_millis) {
+		j["all_cached_through_millis"] = *v.all_cached_through_millis;
+	}
+	if (v.all_cached_byte_count) {
+		j["all_cached_byte_count"] = *v.all_cached_byte_count;
+	}
+	if (v.all_missing_byte_count) {
+		j["all_missing_byte_count"] = *v.all_missing_byte_count;
+	}
+	if (v.uncovered) {
+		j["uncovered"] = *v.uncovered;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSearchStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("index_on"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index_on);
+	}
+	if (auto it = j.find("format_supported"); it != j.end() && !it->is_null()) {
+		it->get_to(v.format_supported);
+	}
+	if (auto it = j.find("policy"); it != j.end() && !it->is_null()) {
+		it->get_to(v.policy);
+	}
+	if (auto it = j.find("remote"); it != j.end() && !it->is_null()) {
+		it->get_to(v.remote);
+	}
+	if (auto it = j.find("latest_from_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.latest_from_millis = std::move(tmp);
+	}
+	if (auto it = j.find("all_cached_through_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.all_cached_through_millis = std::move(tmp);
+	}
+	if (auto it = j.find("all_cached_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.all_cached_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("all_missing_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.all_missing_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("uncovered"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.uncovered = std::move(tmp);
 	}
 }
 
@@ -24803,6 +25291,7 @@ struct SidecarPresenceSigner {
 using SidecarRepoChangeListener = std::function<void(std::optional<SidecarRepoChange> change)>;
 using SidecarResultCallback = std::function<void(std::optional<SidecarResult> result, std::optional<std::string> err_param)>;
 using SidecarRevokePlanCallback = std::function<void(std::optional<SidecarRevokePlan> result, std::optional<std::string> err_param)>;
+using SidecarSearchListener = std::function<void(std::optional<SidecarSearchHitList> hits, std::optional<SidecarSearchProgress> progress, bool done)>;
 using SidecarSendCheckCallback = std::function<void(std::optional<SidecarSendCheck> result, std::optional<std::string> err_param)>;
 using SidecarSendResultCallback = std::function<void(std::optional<SidecarSendResult> result, std::optional<std::string> err_param)>;
 using SidecarUsedAtCallback = std::function<void(std::optional<SidecarUsedAtResult> result, std::optional<std::string> err_param)>;
@@ -26386,6 +26875,7 @@ public:
 	SidecarDirectory getDirectory() const;
 	SidecarEvs getEvs() const;
 	SidecarMail getMail() const;
+	SidecarSearch getSearch() const;
 	std::string getSidecarId() const;
 	SidecarSockets getSockets() const;
 	std::string getState() const;
@@ -26448,6 +26938,27 @@ public:
 	void getVaultEntries(SidecarVaultEntriesCallback callback) const;
 	void send(const std::optional<SidecarDraft>& draft, SidecarResultCallback callback) const;
 	void setReceiverEnabled(bool enabled, SidecarResultCallback callback) const;
+};
+
+class SidecarSearch final : public detail::Handle {
+public:
+	SidecarSearch() = default;
+	explicit SidecarSearch(uint64_t h) : detail::Handle(h) {}
+	void dropCache(const std::string& repo_id, SidecarResultCallback callback) const;
+	std::optional<SidecarSearchStatus> getStatus(const std::string& repo_id) const;
+	void runBackgroundSync(int64_t budget_millis, SidecarResultCallback callback) const;
+	SidecarSearchHandle search(const std::optional<SidecarSearchQuery>& query, SidecarSearchListener listener) const;
+	void setConditions(bool unmetered, bool charging, bool low_power) const;
+	void setForeground(bool foreground) const;
+	void setPolicy(const std::string& repo_id, const std::string& policy, SidecarResultCallback callback) const;
+};
+
+class SidecarSearchHandle final : public detail::Handle {
+public:
+	SidecarSearchHandle() = default;
+	explicit SidecarSearchHandle(uint64_t h) : detail::Handle(h) {}
+	void cancel() const;
+	void more(int64_t page_size) const;
 };
 
 class SidecarSocketListener final : public detail::Handle {
@@ -31923,6 +32434,42 @@ inline void oneshot_sidecar_revoke_plan(void* user_data, const char* result_json
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_search(void* user_data, const char* hits_json, const char* progress_json, bool done) {
+	auto* f = static_cast<SidecarSearchListener*>(user_data);
+	try {
+		std::optional<SidecarSearchHitList> hits_v;
+		if (hits_json) {
+			hits_v = parseJson<SidecarSearchHitList>(hits_json);
+		}
+		std::optional<SidecarSearchProgress> progress_v;
+		if (progress_json) {
+			progress_v = parseJson<SidecarSearchProgress>(progress_json);
+		}
+		(*f)(std::move(hits_v), std::move(progress_v), done);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_search(void* user_data, const char* hits_json, const char* progress_json, bool done) {
+	auto* f = static_cast<SidecarSearchListener*>(user_data);
+	try {
+		std::optional<SidecarSearchHitList> hits_v;
+		if (hits_json) {
+			hits_v = parseJson<SidecarSearchHitList>(hits_json);
+		}
+		std::optional<SidecarSearchProgress> progress_v;
+		if (progress_json) {
+			progress_v = parseJson<SidecarSearchProgress>(progress_json);
+		}
+		(*f)(std::move(hits_v), std::move(progress_v), done);
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -41056,6 +41603,10 @@ inline SidecarMail Sidecar::getMail() const {
 	SidecarMail r(urnet_sidecar_get_mail(handle()));
 	return r;
 }
+inline SidecarSearch Sidecar::getSearch() const {
+	SidecarSearch r(urnet_sidecar_get_search(handle()));
+	return r;
+}
 inline std::string Sidecar::getSidecarId() const {
 	char* r_c = urnet_sidecar_get_sidecar_id(handle());
 	return detail::takeString(r_c);
@@ -41284,6 +41835,55 @@ inline void SidecarMail::send(const std::optional<SidecarDraft>& draft, SidecarR
 inline void SidecarMail::setReceiverEnabled(bool enabled, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_set_receiver_enabled(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarSearch::dropCache(const std::string& repo_id, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_search_drop_cache(handle(), repo_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline std::optional<SidecarSearchStatus> SidecarSearch::getStatus(const std::string& repo_id) const {
+	char* r_c = urnet_sidecar_search_get_status(handle(), repo_id.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarSearchStatus>(r_s->c_str());
+}
+inline void SidecarSearch::runBackgroundSync(int64_t budget_millis, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_search_run_background_sync(handle(), budget_millis, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline SidecarSearchHandle SidecarSearch::search(const std::optional<SidecarSearchQuery>& query, SidecarSearchListener listener) const {
+	std::string query_json;
+	const char* query_c = nullptr;
+	if (query) {
+		query_json = nlohmann::json(*query).dump();
+		query_c = query_json.c_str();
+	}
+	std::shared_ptr<SidecarSearchListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarSearchListener>(std::move(listener));
+	}
+	SidecarSearchHandle r(urnet_sidecar_search_search(handle(), query_c, listener_fn ? &detail::retained_sidecar_search : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void SidecarSearch::setConditions(bool unmetered, bool charging, bool low_power) const {
+	urnet_sidecar_search_set_conditions(handle(), unmetered, charging, low_power);
+}
+inline void SidecarSearch::setForeground(bool foreground) const {
+	urnet_sidecar_search_set_foreground(handle(), foreground);
+}
+inline void SidecarSearch::setPolicy(const std::string& repo_id, const std::string& policy, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_search_set_policy(handle(), repo_id.c_str(), policy.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarSearchHandle::cancel() const {
+	urnet_sidecar_search_handle_cancel(handle());
+}
+inline void SidecarSearchHandle::more(int64_t page_size) const {
+	urnet_sidecar_search_handle_more(handle(), page_size);
 }
 inline Socket SidecarSocketListener::accept(int64_t timeout_millis) const {
 	char* err_c = nullptr;

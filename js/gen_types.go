@@ -198,6 +198,13 @@ func generateTypes() ([]byte, error) {
 		sdk.SidecarSendCheck{},
 		sdk.SidecarSendResult{},
 		sdk.SidecarSendDomain{},
+		// SidecarSearch (sidecar §18.5's search types, SDK-M10-01): a query, its hits and progress, a repo's status, and
+		// the indexer a progress names
+		sdk.SidecarSearchQuery{},
+		sdk.SidecarSearchHit{},
+		sdk.SidecarSearchProgress{},
+		sdk.SidecarSearchStatus{},
+		sdk.SidecarIndexer{},
 	}
 
 	for _, t := range types {
@@ -360,6 +367,10 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SidecarRevokeItem[]"
 		case "sdk.SidecarSendDomainList":
 			return "SidecarSendDomain[]"
+		case "sdk.SidecarSearchHitList":
+			return "SidecarSearchHit[]"
+		case "sdk.IdList":
+			return "string[]"
 		case "sdk.ExperimentAssignmentList":
 			// custom json: an object keyed by surface
 			return "Record<string, ExperimentAssignment>"

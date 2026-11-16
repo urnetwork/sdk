@@ -1153,3 +1153,67 @@ export interface SidecarSendDomain {
   copy?: string;
 }
 
+export interface SidecarSearchQuery {
+  text: string;
+  repo_ids?: string[] | null;
+  scope?: string;
+  since_millis?: number;
+  until_millis?: number;
+  fuzzy?: boolean;
+  allow_metered?: boolean;
+  remote?: string;
+  page_size?: number;
+}
+
+export interface SidecarSearchHit {
+  repo_id: string | null;
+  path: string;
+  version: number;
+  time_millis: number;
+  title?: string;
+  from?: string;
+  snippet?: string;
+  state: string;
+  partition: string;
+  correction?: string;
+  by?: string;
+}
+
+export interface SidecarSearchProgress {
+  searched: number;
+  total: number;
+  fetch_byte_count?: number;
+  fetched_byte_count?: number;
+  uncovered?: number;
+  waiting?: string;
+  covered_from_millis?: number;
+  remote?: string;
+  remote_by?: SidecarIndexer | null;
+  fallback_reason?: string;
+  code?: string;
+  message?: string;
+}
+
+export interface SidecarSearchStatus {
+  index_on: boolean;
+  format_supported: boolean;
+  policy: string;
+  remote: string;
+  latest_from_millis?: number;
+  all_cached_through_millis?: number;
+  all_cached_byte_count?: number;
+  all_missing_byte_count?: number;
+  uncovered?: number;
+}
+
+export interface SidecarIndexer {
+  sidecar_id: string | null;
+  name?: string;
+  member_id?: string | null;
+  member?: string;
+  own?: boolean;
+  state?: string;
+  acknowledged?: boolean;
+  served_repo_ids?: string[] | null;
+}
+

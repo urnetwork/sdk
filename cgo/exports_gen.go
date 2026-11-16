@@ -3075,6 +3075,24 @@ func (self *cAdapterSidecarRevokePlanCallback) Result(result *sdk.SidecarRevokeP
 	}
 }
 
+type cAdapterSidecarSearchListener struct {
+	cbSearchPage C.urnet_sidecar_search_cb
+	userData     unsafe.Pointer
+}
+
+func (self *cAdapterSidecarSearchListener) SearchPage(hits *sdk.SidecarSearchHitList, progress *sdk.SidecarSearchProgress, done bool) {
+	defer cgoGuard("urnet_sidecar_search_cb")
+	hits_ := cJson(hits, "urnet_sidecar_search_cb")
+	progress_ := cJson(progress, "urnet_sidecar_search_cb")
+	C.urnet_invoke_sidecar_search(self.cbSearchPage, self.userData, hits_, progress_, C.bool(bool(done)))
+	if hits_ != nil {
+		cStringFree(hits_)
+	}
+	if progress_ != nil {
+		cStringFree(progress_)
+	}
+}
+
 type cAdapterSidecarSendCheckCallback struct {
 	cbResult C.urnet_sidecar_send_check_cb
 	userData unsafe.Pointer
@@ -21806,6 +21824,20 @@ func urnet_sidecar_get_mail(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_sidecar_get_search
+func urnet_sidecar_get_search(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_get_search")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_search")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetSearch()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_sidecar_get_sidecar_id
 func urnet_sidecar_get_sidecar_id(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_sidecar_get_sidecar_id")
@@ -22369,6 +22401,127 @@ func urnet_sidecar_mail_set_receiver_enabled(self C.uint64_t, enabled C.bool, ca
 		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SetReceiverEnabled(bool(enabled), callback_)
+}
+
+//export urnet_sidecar_search_drop_cache
+func urnet_sidecar_search_drop_cache(self C.uint64_t, repoId *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_search_drop_cache")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_drop_cache")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.DropCache(goId(repoId, "urnet_sidecar_search_drop_cache"), callback_)
+}
+
+//export urnet_sidecar_search_get_status
+func urnet_sidecar_search_get_status(self C.uint64_t, repoId *C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_search_get_status")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_get_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetStatus(goId(repoId, "urnet_sidecar_search_get_status"))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_search_get_status")
+}
+
+//export urnet_sidecar_search_run_background_sync
+func urnet_sidecar_search_run_background_sync(self C.uint64_t, budgetMillis C.int64_t, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_search_run_background_sync")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_run_background_sync")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RunBackgroundSync(int64(budgetMillis), callback_)
+}
+
+//export urnet_sidecar_search_search
+func urnet_sidecar_search_search(self C.uint64_t, query *C.char, listener_search_page C.urnet_sidecar_search_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_search_search")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_search")
+	if !ok {
+		return 0
+	}
+	var query_ *sdk.SidecarSearchQuery
+	if query != nil {
+		query_ = &sdk.SidecarSearchQuery{}
+		if !goJson(query, query_, "urnet_sidecar_search_search") {
+			return 0
+		}
+	}
+	var listener_ sdk.SidecarSearchListener
+	if listener_search_page != nil {
+		listener_ = &cAdapterSidecarSearchListener{cbSearchPage: listener_search_page, userData: listener_user_data}
+	}
+	r0 := self_.Search(query_, listener_)
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_search_set_conditions
+func urnet_sidecar_search_set_conditions(self C.uint64_t, unmetered C.bool, charging C.bool, lowPower C.bool) {
+	defer cgoGuard("urnet_sidecar_search_set_conditions")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_set_conditions")
+	if !ok {
+		return
+	}
+	self_.SetConditions(bool(unmetered), bool(charging), bool(lowPower))
+}
+
+//export urnet_sidecar_search_set_foreground
+func urnet_sidecar_search_set_foreground(self C.uint64_t, foreground C.bool) {
+	defer cgoGuard("urnet_sidecar_search_set_foreground")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_set_foreground")
+	if !ok {
+		return
+	}
+	self_.SetForeground(bool(foreground))
+}
+
+//export urnet_sidecar_search_set_policy
+func urnet_sidecar_search_set_policy(self C.uint64_t, repoId *C.char, policy *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_search_set_policy")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_set_policy")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetPolicy(goId(repoId, "urnet_sidecar_search_set_policy"), goString(policy), callback_)
+}
+
+//export urnet_sidecar_search_handle_cancel
+func urnet_sidecar_search_handle_cancel(self C.uint64_t) {
+	defer cgoGuard("urnet_sidecar_search_handle_cancel")
+	self_, ok := resolveHandle[*sdk.SidecarSearchHandle](uint64(self), "urnet_sidecar_search_handle_cancel")
+	if !ok {
+		return
+	}
+	self_.Cancel()
+}
+
+//export urnet_sidecar_search_handle_more
+func urnet_sidecar_search_handle_more(self C.uint64_t, pageSize C.int64_t) {
+	defer cgoGuard("urnet_sidecar_search_handle_more")
+	self_, ok := resolveHandle[*sdk.SidecarSearchHandle](uint64(self), "urnet_sidecar_search_handle_more")
+	if !ok {
+		return
+	}
+	self_.More(int32(int64(pageSize)))
 }
 
 //export urnet_sidecar_socket_listener_accept

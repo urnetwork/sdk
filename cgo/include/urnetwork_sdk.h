@@ -588,6 +588,23 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_RECEIVER_COVERAGE_NONE "none"
 #define URNET_SIDECAR_REVOKE_COMPROMISE "compromise"
 #define URNET_SIDECAR_REVOKE_LOST "lost"
+#define URNET_SIDECAR_SEARCH_CODE_BUSY "SEARCH_BUSY"
+#define URNET_SIDECAR_SEARCH_CODE_EXPIRED "SEARCH_EXPIRED"
+#define URNET_SIDECAR_SEARCH_CODE_FAILED "SEARCH_FAILED"
+#define URNET_SIDECAR_SEARCH_CODE_INVALID "SEARCH_INVALID"
+#define URNET_SIDECAR_SEARCH_CODE_REFUSED "SEARCH_REFUSED"
+#define URNET_SIDECAR_SEARCH_CODE_UNAVAILABLE "SEARCH_UNAVAILABLE"
+#define URNET_SIDECAR_SEARCH_HIT_CONFIRMED "confirmed"
+#define URNET_SIDECAR_SEARCH_HIT_NEAR "near"
+#define URNET_SIDECAR_SEARCH_HIT_POSSIBLE "possible"
+#define URNET_SIDECAR_SEARCH_HIT_UNMATCHED "unmatched"
+#define URNET_SIDECAR_SEARCH_HIT_VERIFIED "verified"
+#define URNET_SIDECAR_SEARCH_PARTITION_ALL "all"
+#define URNET_SIDECAR_SEARCH_PARTITION_LATEST "latest"
+#define URNET_SIDECAR_SEARCH_REMOTE_OFF "off"
+#define URNET_SIDECAR_SEARCH_SCOPE_ALL "all"
+#define URNET_SIDECAR_SEARCH_SCOPE_CACHED "cached"
+#define URNET_SIDECAR_SEARCH_SCOPE_LATEST "latest"
 #define URNET_SIDECAR_SECRET_ABSENT 3
 #define URNET_SIDECAR_SECRET_FAILED 0
 #define URNET_SIDECAR_SECRET_LOCKED 4
@@ -1158,6 +1175,8 @@ typedef void (*urnet_sidecar_repo_change_cb)(void* user_data, const char* change
 typedef void (*urnet_sidecar_result_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarRevokePlanCallback */
 typedef void (*urnet_sidecar_revoke_plan_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarSearchListener */
+typedef void (*urnet_sidecar_search_cb)(void* user_data, const char* hits_json, const char* progress_json, bool done);
 /* SidecarSendCheckCallback */
 typedef void (*urnet_sidecar_send_check_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarSendResultCallback */
@@ -2575,6 +2594,7 @@ uint64_t urnet_sidecar_get_approvals(uint64_t self);
 uint64_t urnet_sidecar_get_directory(uint64_t self);
 uint64_t urnet_sidecar_get_evs(uint64_t self);
 uint64_t urnet_sidecar_get_mail(uint64_t self);
+uint64_t urnet_sidecar_get_search(uint64_t self);
 char* urnet_sidecar_get_sidecar_id(uint64_t self);
 uint64_t urnet_sidecar_get_sockets(uint64_t self);
 char* urnet_sidecar_get_state(uint64_t self);
@@ -2625,6 +2645,21 @@ void urnet_sidecar_mail_get_used_at(uint64_t self, const char* entry_id, urnet_s
 void urnet_sidecar_mail_get_vault_entries(uint64_t self, urnet_sidecar_vault_entries_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_send(uint64_t self, const char* draft_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_set_receiver_enabled(uint64_t self, bool enabled, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarSearch ----- */
+
+void urnet_sidecar_search_drop_cache(uint64_t self, const char* repo_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_search_get_status(uint64_t self, const char* repo_id);
+void urnet_sidecar_search_run_background_sync(uint64_t self, int64_t budget_millis, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+uint64_t urnet_sidecar_search_search(uint64_t self, const char* query_json, urnet_sidecar_search_cb listener_search_page, void* listener_user_data);
+void urnet_sidecar_search_set_conditions(uint64_t self, bool unmetered, bool charging, bool low_power);
+void urnet_sidecar_search_set_foreground(uint64_t self, bool foreground);
+void urnet_sidecar_search_set_policy(uint64_t self, const char* repo_id, const char* policy, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarSearchHandle ----- */
+
+void urnet_sidecar_search_handle_cancel(uint64_t self);
+void urnet_sidecar_search_handle_more(uint64_t self, int64_t page_size);
 
 /* ----- SidecarSocketListener ----- */
 
@@ -5932,6 +5967,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   = SidecarHistoryVersion | null[]
  */
 
+/* SidecarIndexer (json):
+ *   sidecar_id: string (uuid) | null
+ *   name?: string
+ *   member_id?: string (uuid) | null
+ *   member?: string
+ *   own?: boolean
+ *   state?: string
+ *   acknowledged?: boolean
+ *   served_repo_ids?: IdList | null
+ */
+
 /* SidecarOneTimeCode (json):
  *   code: string
  *   source: string
@@ -6002,6 +6048,63 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   code?: string
  *   parks_self_position?: number
  *   message?: string
+ */
+
+/* SidecarSearchHit (json):
+ *   repo_id: string (uuid) | null
+ *   path: string
+ *   version: number
+ *   time_millis: number
+ *   title?: string
+ *   from?: string
+ *   snippet?: string
+ *   state: string
+ *   partition: string
+ *   correction?: string
+ *   by?: string
+ */
+
+/* SidecarSearchHitList (json):
+ *   = SidecarSearchHit | null[]
+ */
+
+/* SidecarSearchProgress (json):
+ *   searched: number
+ *   total: number
+ *   fetch_byte_count?: number
+ *   fetched_byte_count?: number
+ *   uncovered?: number
+ *   waiting?: string
+ *   covered_from_millis?: number
+ *   remote?: string
+ *   remote_by?: SidecarIndexer | null
+ *   fallback_reason?: string
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarSearchQuery (json):
+ *   text: string
+ *   repo_ids?: IdList | null
+ *   scope?: string
+ *   since_millis?: number
+ *   until_millis?: number
+ *   fuzzy?: boolean
+ *   allow_metered?: boolean
+ *   remote?: string
+ *   page_size?: number
+ */
+
+/* SidecarSearchStatus (json):
+ *   index_on: boolean
+ *   format_supported: boolean
+ *   policy: string
+ *   remote: string
+ *   latest_from_millis?: number
+ *   all_cached_through_millis?: number
+ *   all_cached_byte_count?: number
+ *   all_missing_byte_count?: number
+ *   uncovered?: number
  */
 
 /* SidecarSecret (json):
