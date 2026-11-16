@@ -914,8 +914,20 @@ func TestRemoteWireMatchesTheDaemon(t *testing.T) {
 			t.Errorf("%q is the daemon's %q", own, daemons)
 		}
 	}
-	if sidecarControlCodeConfirmationRequired != sidecar.DaemonRpcConfirmationRequired {
-		t.Errorf("the confirmation code %d is the daemon's %d", sidecarControlCodeConfirmationRequired, sidecar.DaemonRpcConfirmationRequired)
+	// the daemon's codes the sdk reads by number, which phones' builds take from here since the root's carry
+	// !ios && !android
+	for _, code := range []struct {
+		name    string
+		own     int
+		daemons int
+	}{
+		{"confirmation", sidecarControlCodeConfirmationRequired, sidecar.DaemonRpcConfirmationRequired},
+		{"timeout", sidecarControlCodeTimeout, sidecar.DaemonRpcTimeout},
+		{"failed precondition", sidecarControlCodeFailedPrecondition, sidecar.DaemonRpcFailedPrecondition},
+	} {
+		if code.own != code.daemons {
+			t.Errorf("the %s code %d is the daemon's %d", code.name, code.own, code.daemons)
+		}
 	}
 	// each message through the other side's type and back, losing nothing
 	crossings := []struct {

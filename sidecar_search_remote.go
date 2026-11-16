@@ -366,9 +366,9 @@ func sidecarSearchControlCodeOf(refusal *sidecarControlError) string {
 		return SidecarSearchCodeUnavailable
 	case sidecarControlCodeInvalidParams:
 		return SidecarSearchCodeInvalid
-	case int(sidecar.DaemonRpcTimeout):
+	case sidecarControlCodeTimeout:
 		return SidecarSearchCodeBusy
-	case int(sidecar.DaemonRpcFailedPrecondition):
+	case sidecarControlCodeFailedPrecondition:
 		return SidecarSearchCodeUnavailable
 	}
 	for _, named := range []struct {

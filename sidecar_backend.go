@@ -282,6 +282,10 @@ func sidecarControlSameId(a *Id, b *Id) bool {
 // The daemon's code for a call that needs a person's confirmation and came without one (D-CORE-13).
 const sidecarControlCodeConfirmationRequired = -32001
 
+// The daemon's code for a method that ran past its request timeout. The root's DaemonRpcTimeout carries
+// !ios && !android, so phones' builds, which link no daemon client, read the number here.
+const sidecarControlCodeTimeout = -32003
+
 // The daemon's refusal of one call: its JSON-RPC error.
 type sidecarControlError struct {
 	Code    int
