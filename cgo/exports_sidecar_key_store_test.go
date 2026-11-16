@@ -436,3 +436,78 @@ func TestAMissingHostFunctionAnswersNothing(t *testing.T) {
 		t.Errorf("a NULL sign_with_presence answered %q", answer)
 	}
 }
+
+// Receiver hosting through the abi (SDK-M8-15's mirror and receiver rows, FS-82's coverage case, sidecar §18.5's
+// SidecarMail): on a desktop app whose ur daemon is not running, each of CreateBurner, Burn, GetVaultEntries,
+// GetUsedAt, GetOneTimeCodes, Send and SetReceiverEnabled answers once through its callback, refused with a MAIL_ code,
+// and GetReceiverCoverage reads foreground-only, claiming no indexer. What a daemon or a local core answers past these
+// is the sdk's own tests' (sidecar_mail_test.go), the local core's burner, codes, send and coverage waiting on the
+// sdk wiring MailClient's calls in.
+func TestReceiverHostingAnswersOnceThroughTheAbi(t *testing.T) {
+	settingsBytes, err := json.Marshal(map[string]any{"daemon_socket_dir": t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := cString(string(settingsBytes))
+	defer cStringFree(settings)
+	outError := socketABIOut(urnet_new_sidecar_remote, 4)
+	sidecarHandle := socketABICall(urnet_new_sidecar_remote, nil, nil, nil, settings, outError)[0].Uint()
+	if sidecarHandle == 0 {
+		t.Fatalf("no remote Sidecar: %q", socketABIError(outError))
+	}
+	defer func() {
+		socketABICall(urnet_sidecar_close, sidecarHandle)
+		handleRelease(sidecarHandle)
+	}()
+	mailHandle := socketABICall(urnet_sidecar_get_mail, sidecarHandle)[0].Uint()
+	if mailHandle == 0 {
+		t.Fatal("no mail")
+	}
+	defer handleRelease(mailHandle)
+
+	if coverage, ok := testingAbiString(socketABICall(urnet_sidecar_mail_get_receiver_coverage, mailHandle)[0]); !ok || coverage != sdk.SidecarReceiverCoverageForegroundOnly {
+		t.Errorf("coverage reads %q", coverage)
+	}
+	heldTexts := []reflect.Value{}
+	// a C string the call takes, freed at the test's end
+	text := func(value string) any {
+		held := cString(value)
+		heldTexts = append(heldTexts, reflect.ValueOf(held))
+		return held
+	}
+	defer func() {
+		for _, held := range heldTexts {
+			reflect.ValueOf(cStringFree).Call([]reflect.Value{held})
+		}
+	}()
+	draftBytes, err := json.Marshal(map[string]any{"from": "admin@net.example", "to": []string{"someone@elsewhere.example"}, "subject": "s", "body": "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []struct {
+		name      string
+		fn        any
+		arguments []any
+		index     int
+	}{
+		{"CreateBurner", urnet_sidecar_mail_create_burner, []any{mailHandle, text("shop.example")}, 2},
+		{"Burn", urnet_sidecar_mail_burn, []any{mailHandle, text("you@otter-4821.net.example")}, 2},
+		{"GetVaultEntries", urnet_sidecar_mail_get_vault_entries, []any{mailHandle}, 1},
+		{"GetUsedAt", urnet_sidecar_mail_get_used_at, []any{mailHandle, text(sdk.NewId().String())}, 2},
+		{"GetOneTimeCodes", urnet_sidecar_mail_get_one_time_codes, []any{mailHandle, int64(0)}, 2},
+		{"Send", urnet_sidecar_mail_send, []any{mailHandle, text(string(draftBytes))}, 2},
+		{"SetReceiverEnabled", urnet_sidecar_mail_set_receiver_enabled, []any{mailHandle, true}, 2},
+	} {
+		answered := abitest.NewResultCallback()
+		t.Cleanup(answered.Free)
+		socketABICall(call.fn, append(call.arguments, testingAbiFunction(call.fn, call.index, answered.ResultFunction()), answered.UserData())...)
+		count, resultJson, errorText := answered.Wait(testingSidecarAbiTimeout)
+		result := struct {
+			Ok   bool   `json:"ok"`
+			Code string `json:"code"`
+		}{}
+		if count != 1 || errorText != "" || json.Unmarshal([]byte(resultJson), &result) != nil || result.Ok || len(result.Code) < len("MAIL_") || result.Code[:len("MAIL_")] != "MAIL_" {
+			t.Errorf("%s answered %d times: %s %q", call.name, count, resultJson, errorText)
+		}
+	}
+}

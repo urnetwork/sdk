@@ -49,7 +49,7 @@ echo "== the binding gates and the adapter harnesses' bindings"
 (cd build && "$go_command" test -count=1 -run '^(TestMobileSidecar|TestSidecarAdapterHarnessesStayBound)' . ./cmd/mobileexports)
 
 echo "== the app interfaces through the C ABI, and as a C++ host against the built library"
-(cd cgo && "$go_command" test -count=1 -run '^(TestSidecarKeyStoreAnswersCrossTheAbi|TestNewSidecarLocalThroughTheAbiKeepsTheStoreRules|TestSidecarPresenceSignerAnswersCrossTheAbi|TestAMissingHostFunctionAnswersNothing)$' .)
+(cd cgo && "$go_command" test -count=1 -run '^(TestSidecarKeyStoreAnswersCrossTheAbi|TestNewSidecarLocalThroughTheAbiKeepsTheStoreRules|TestSidecarPresenceSignerAnswersCrossTheAbi|TestAMissingHostFunctionAnswersNothing|TestReceiverHostingAnswersOnceThroughTheAbi)$' .)
 if command -v clang++ >/dev/null 2>&1 && [ "$(uname -s)" = Darwin ]; then
 	(cd cgo && make smoke_sidecar smoke_sidecar_keystore)
 else
