@@ -79,6 +79,8 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarSettings", "SidecarResult", "SidecarSecret", "SidecarEvent", "SidecarDevice", "SidecarDeviceList",
 		"SidecarRevokePlan", "SidecarRevokeItem", "SidecarRevokeItemList", "SidecarApprovalItem", "SidecarApprovalList",
 		"SidecarCleanupList", "SidecarAccessRequest",
+		// SidecarMail's send capability (SDK-M9-01)
+		"SidecarSendCheck", "SidecarSendResult", "SidecarSendDomain", "SidecarSendDomainList",
 	} {
 		if info := g.classify(types.NewPointer(testingPreferenceType(t, g, name).Type())); info.kind != kindJson {
 			t.Errorf("%s crosses as kind %d", name, info.kind)
@@ -88,6 +90,7 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarDeviceList":     sdk.NewSidecarDeviceList(),
 		"SidecarRevokeItemList": sdk.NewSidecarRevokeItemList(),
 		"SidecarApprovalList":   sdk.NewSidecarApprovalList(),
+		"SidecarSendDomainList": sdk.NewSidecarSendDomainList(),
 	} {
 		encoded, err := json.Marshal(list)
 		if err != nil || !strings.HasPrefix(string(encoded), "[") {
@@ -120,6 +123,7 @@ func TestSidecarInterfacesCrossAsFunctionPointers(t *testing.T) {
 	for _, name := range []string{
 		"SidecarKeyStore", "SidecarPresenceSigner", "SidecarEventListener", "SidecarApprovalListener",
 		"SidecarResultCallback", "SidecarRevokePlanCallback", "SidecarForwardKeyStore", "SidecarDirectoryListener",
+		"SidecarSendCheckCallback", "SidecarSendResultCallback",
 	} {
 		object := testingPreferenceType(t, g, name)
 		if info := g.classify(object.Type()); info.kind != kindCallback {
@@ -143,6 +147,7 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 	for _, identifier := range []string{
 		"NewSidecarLocal", "NewSidecarRemote", "Sidecar.GetApprovals", "Sidecar.ConfirmForwardingSetup",
 		"SidecarApprovals.RevokeDevice", "SidecarApprovals.PreviewRevokeDevice", "SidecarApprovals.Decide",
+		"SidecarMail.CheckSend", "SidecarMail.GetSendResult",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

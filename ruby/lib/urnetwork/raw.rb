@@ -193,6 +193,8 @@ module URnetwork
       callback :urnet_sidecar_repo_change_cb, [:pointer, :string], :void
       callback :urnet_sidecar_result_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_revoke_plan_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_send_check_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_send_result_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_used_at_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_vault_entries_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_claim_confirmed_cb, [:pointer, :int64, :string, :int64], :void
@@ -1428,10 +1430,12 @@ module URnetwork
       attach_function :urnet_sidecar_evs_read_head, [:uint64, :string, :string, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_write, [:uint64, :string, :string, :pointer, :int32, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_burn, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_mail_check_send, [:uint64, :string, :urnet_sidecar_send_check_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_create_burner, [:uint64, :string, :urnet_sidecar_burner_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_get_aliases, [:uint64], :pointer, blocking: true
       attach_function :urnet_sidecar_mail_get_one_time_codes, [:uint64, :int64, :urnet_sidecar_one_time_codes_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_get_receiver_coverage, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_mail_get_send_result, [:uint64, :string, :urnet_sidecar_send_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_get_used_at, [:uint64, :string, :urnet_sidecar_used_at_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_get_vault_entries, [:uint64, :urnet_sidecar_vault_entries_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_send, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true

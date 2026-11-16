@@ -592,6 +592,20 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_SECRET_FAILED 0
 #define URNET_SIDECAR_SECRET_LOCKED 4
 #define URNET_SIDECAR_SECRET_PRESENT 2
+#define URNET_SIDECAR_SEND_MODE_BDAT "bdat"
+#define URNET_SIDECAR_SEND_MODE_DATA "data"
+#define URNET_SIDECAR_SEND_MODE_UNKNOWN "unknown"
+#define URNET_SIDECAR_SEND_OUTCOME_DEFERRED "deferred"
+#define URNET_SIDECAR_SEND_OUTCOME_FAILED "failed"
+#define URNET_SIDECAR_SEND_OUTCOME_QUEUED "queued"
+#define URNET_SIDECAR_SEND_OUTCOME_REFUSED "refused"
+#define URNET_SIDECAR_SEND_OUTCOME_SENT "sent"
+#define URNET_SIDECAR_SEND_OUTCOME_TLS_REFUSED "tls_refused"
+#define URNET_SIDECAR_SEND_OUTCOME_TOO_LARGE "too_large"
+#define URNET_SIDECAR_SEND_OUTCOME_UNKNOWN "unknown"
+#define URNET_SIDECAR_SEND_PREDICTION_OK "ok"
+#define URNET_SIDECAR_SEND_PREDICTION_TOO_LARGE "too_large"
+#define URNET_SIDECAR_SEND_PREDICTION_UNKNOWN "unknown"
 #define URNET_SN_ALPHA_SYMBOL "SN25α"
 #define URNET_SN_CHAIN_ID_MAINNET 964
 #define URNET_SN_CHAIN_ID_TESTNET 945
@@ -1140,6 +1154,10 @@ typedef void (*urnet_sidecar_repo_change_cb)(void* user_data, const char* change
 typedef void (*urnet_sidecar_result_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarRevokePlanCallback */
 typedef void (*urnet_sidecar_revoke_plan_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarSendCheckCallback */
+typedef void (*urnet_sidecar_send_check_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarSendResultCallback */
+typedef void (*urnet_sidecar_send_result_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarUsedAtCallback */
 typedef void (*urnet_sidecar_used_at_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarVaultEntriesCallback */
@@ -2593,10 +2611,12 @@ void urnet_sidecar_evs_write(uint64_t self, const char* repo_id, const char* pat
 /* ----- SidecarMail ----- */
 
 void urnet_sidecar_mail_burn(uint64_t self, const char* address, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_mail_check_send(uint64_t self, const char* draft_json, urnet_sidecar_send_check_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_create_burner(uint64_t self, const char* site, urnet_sidecar_burner_cb callback_result, void* callback_user_data);
 char* urnet_sidecar_mail_get_aliases(uint64_t self);
 void urnet_sidecar_mail_get_one_time_codes(uint64_t self, int64_t since_millis, urnet_sidecar_one_time_codes_cb callback_result, void* callback_user_data);
 char* urnet_sidecar_mail_get_receiver_coverage(uint64_t self);
+void urnet_sidecar_mail_get_send_result(uint64_t self, const char* send_id, urnet_sidecar_send_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_get_used_at(uint64_t self, const char* entry_id, urnet_sidecar_used_at_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_get_vault_entries(uint64_t self, urnet_sidecar_vault_entries_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_send(uint64_t self, const char* draft_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
@@ -5977,6 +5997,42 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* SidecarSecret (json):
  *   status: number
  *   value_base64?: string
+ */
+
+/* SidecarSendCheck (json):
+ *   ok: boolean
+ *   domains?: SidecarSendDomainList | null
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarSendDomain (json):
+ *   domain: string
+ *   mode: string
+ *   byte_count?: number
+ *   cap_byte_count?: number
+ *   prediction?: string
+ *   expected_delay_millis?: number
+ *   outcome?: string
+ *   retry_after_millis?: number
+ *   retry_at_millis?: number
+ *   reply_code?: number
+ *   tls_level?: number
+ *   tls_label?: string
+ *   update_millis?: number
+ *   copy?: string
+ */
+
+/* SidecarSendDomainList (json):
+ *   = SidecarSendDomain | null[]
+ */
+
+/* SidecarSendResult (json):
+ *   ok: boolean
+ *   send_id?: string (uuid) | null
+ *   domains?: SidecarSendDomainList | null
+ *   code?: string
+ *   message?: string
  */
 
 /* SidecarSettings (json):

@@ -193,6 +193,8 @@ urnet_sidecar_presence_signer_sign_with_presence_cb = CFUNCTYPE(c_void_p, c_void
 urnet_sidecar_repo_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_sidecar_result_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sidecar_revoke_plan_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_sidecar_send_check_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_sidecar_send_result_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sidecar_used_at_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sidecar_vault_entries_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_claim_confirmed_cb = CFUNCTYPE(None, c_void_p, c_int64, c_char_p, c_int64)
@@ -2590,6 +2592,8 @@ def bind(lib):
     lib.urnet_sidecar_evs_write.restype = None
     lib.urnet_sidecar_mail_burn.argtypes = [c_uint64, c_char_p, urnet_sidecar_result_cb, c_void_p]
     lib.urnet_sidecar_mail_burn.restype = None
+    lib.urnet_sidecar_mail_check_send.argtypes = [c_uint64, c_char_p, urnet_sidecar_send_check_cb, c_void_p]
+    lib.urnet_sidecar_mail_check_send.restype = None
     lib.urnet_sidecar_mail_create_burner.argtypes = [c_uint64, c_char_p, urnet_sidecar_burner_cb, c_void_p]
     lib.urnet_sidecar_mail_create_burner.restype = None
     lib.urnet_sidecar_mail_get_aliases.argtypes = [c_uint64]
@@ -2598,6 +2602,8 @@ def bind(lib):
     lib.urnet_sidecar_mail_get_one_time_codes.restype = None
     lib.urnet_sidecar_mail_get_receiver_coverage.argtypes = [c_uint64]
     lib.urnet_sidecar_mail_get_receiver_coverage.restype = c_void_p
+    lib.urnet_sidecar_mail_get_send_result.argtypes = [c_uint64, c_char_p, urnet_sidecar_send_result_cb, c_void_p]
+    lib.urnet_sidecar_mail_get_send_result.restype = None
     lib.urnet_sidecar_mail_get_used_at.argtypes = [c_uint64, c_char_p, urnet_sidecar_used_at_cb, c_void_p]
     lib.urnet_sidecar_mail_get_used_at.restype = None
     lib.urnet_sidecar_mail_get_vault_entries.argtypes = [c_uint64, urnet_sidecar_vault_entries_cb, c_void_p]

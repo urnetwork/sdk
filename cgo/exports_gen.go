@@ -3033,6 +3033,48 @@ func (self *cAdapterSidecarRevokePlanCallback) Result(result *sdk.SidecarRevokeP
 	}
 }
 
+type cAdapterSidecarSendCheckCallback struct {
+	cbResult C.urnet_sidecar_send_check_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarSendCheckCallback) Result(result *sdk.SidecarSendCheck, errParam error) {
+	defer cgoGuard("urnet_sidecar_send_check_cb")
+	result_ := cJson(result, "urnet_sidecar_send_check_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_send_check(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarSendResultCallback struct {
+	cbResult C.urnet_sidecar_send_result_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarSendResultCallback) Result(result *sdk.SidecarSendResult, errParam error) {
+	defer cgoGuard("urnet_sidecar_send_result_cb")
+	result_ := cJson(result, "urnet_sidecar_send_result_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_send_result(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSidecarUsedAtCallback struct {
 	cbResult C.urnet_sidecar_used_at_cb
 	userData unsafe.Pointer
@@ -22106,6 +22148,27 @@ func urnet_sidecar_mail_burn(self C.uint64_t, address *C.char, callback_result C
 	self_.Burn(goString(address), callback_)
 }
 
+//export urnet_sidecar_mail_check_send
+func urnet_sidecar_mail_check_send(self C.uint64_t, draft *C.char, callback_result C.urnet_sidecar_send_check_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_check_send")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_check_send")
+	if !ok {
+		return
+	}
+	var draft_ *sdk.SidecarDraft
+	if draft != nil {
+		draft_ = &sdk.SidecarDraft{}
+		if !goJson(draft, draft_, "urnet_sidecar_mail_check_send") {
+			return
+		}
+	}
+	var callback_ sdk.SidecarSendCheckCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarSendCheckCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CheckSend(draft_, callback_)
+}
+
 //export urnet_sidecar_mail_create_burner
 func urnet_sidecar_mail_create_burner(self C.uint64_t, site *C.char, callback_result C.urnet_sidecar_burner_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sidecar_mail_create_burner")
@@ -22157,6 +22220,20 @@ func urnet_sidecar_mail_get_receiver_coverage(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetReceiverCoverage()
 	return cString(string(r0))
+}
+
+//export urnet_sidecar_mail_get_send_result
+func urnet_sidecar_mail_get_send_result(self C.uint64_t, sendId *C.char, callback_result C.urnet_sidecar_send_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_mail_get_send_result")
+	self_, ok := resolveHandle[*sdk.SidecarMail](uint64(self), "urnet_sidecar_mail_get_send_result")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarSendResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarSendResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetSendResult(goId(sendId, "urnet_sidecar_mail_get_send_result"), callback_)
 }
 
 //export urnet_sidecar_mail_get_used_at

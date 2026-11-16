@@ -1348,10 +1348,12 @@ EXPORTS
 	urnet_sidecar_get_state
 	urnet_sidecar_get_state_reason
 	urnet_sidecar_mail_burn
+	urnet_sidecar_mail_check_send
 	urnet_sidecar_mail_create_burner
 	urnet_sidecar_mail_get_aliases
 	urnet_sidecar_mail_get_one_time_codes
 	urnet_sidecar_mail_get_receiver_coverage
+	urnet_sidecar_mail_get_send_result
 	urnet_sidecar_mail_get_used_at
 	urnet_sidecar_mail_get_vault_entries
 	urnet_sidecar_mail_send

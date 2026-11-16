@@ -1121,3 +1121,35 @@ export interface SidecarRevokeItem {
   position?: number;
 }
 
+export interface SidecarSendCheck {
+  ok: boolean;
+  domains?: SidecarSendDomain[] | null;
+  code?: string;
+  message?: string;
+}
+
+export interface SidecarSendResult {
+  ok: boolean;
+  send_id?: string | null;
+  domains?: SidecarSendDomain[] | null;
+  code?: string;
+  message?: string;
+}
+
+export interface SidecarSendDomain {
+  domain: string;
+  mode: string;
+  byte_count?: number;
+  cap_byte_count?: number;
+  prediction?: string;
+  expected_delay_millis?: number;
+  outcome?: string;
+  retry_after_millis?: number;
+  retry_at_millis?: number;
+  reply_code?: number;
+  tls_level?: number;
+  tls_label?: string;
+  update_millis?: number;
+  copy?: string;
+}
+

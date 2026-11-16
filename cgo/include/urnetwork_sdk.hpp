@@ -644,6 +644,20 @@ inline constexpr int64_t SidecarSecretAbsent = 3;
 inline constexpr int64_t SidecarSecretFailed = 0;
 inline constexpr int64_t SidecarSecretLocked = 4;
 inline constexpr int64_t SidecarSecretPresent = 2;
+inline constexpr const char* SidecarSendModeBdat = "bdat";
+inline constexpr const char* SidecarSendModeData = "data";
+inline constexpr const char* SidecarSendModeUnknown = "unknown";
+inline constexpr const char* SidecarSendOutcomeDeferred = "deferred";
+inline constexpr const char* SidecarSendOutcomeFailed = "failed";
+inline constexpr const char* SidecarSendOutcomeQueued = "queued";
+inline constexpr const char* SidecarSendOutcomeRefused = "refused";
+inline constexpr const char* SidecarSendOutcomeSent = "sent";
+inline constexpr const char* SidecarSendOutcomeTlsRefused = "tls_refused";
+inline constexpr const char* SidecarSendOutcomeTooLarge = "too_large";
+inline constexpr const char* SidecarSendOutcomeUnknown = "unknown";
+inline constexpr const char* SidecarSendPredictionOk = "ok";
+inline constexpr const char* SidecarSendPredictionTooLarge = "too_large";
+inline constexpr const char* SidecarSendPredictionUnknown = "unknown";
 inline constexpr const char* SnAlphaSymbol = "SN25α";
 inline constexpr int64_t SnChainIdMainnet = 964;
 inline constexpr int64_t SnChainIdTestnet = 945;
@@ -1225,6 +1239,9 @@ struct SidecarResult;
 struct SidecarRevokeItem;
 struct SidecarRevokePlan;
 struct SidecarSecret;
+struct SidecarSendCheck;
+struct SidecarSendDomain;
+struct SidecarSendResult;
 struct SidecarSettings;
 struct SidecarUsedAt;
 struct SidecarUsedAtResult;
@@ -1414,6 +1431,7 @@ using SidecarErasureList = std::vector<SidecarErasure>;
 using SidecarHistoryVersionList = std::vector<SidecarHistoryVersion>;
 using SidecarOneTimeCodeList = std::vector<SidecarOneTimeCode>;
 using SidecarRevokeItemList = std::vector<SidecarRevokeItem>;
+using SidecarSendDomainList = std::vector<SidecarSendDomain>;
 using SidecarUsedAtList = std::vector<SidecarUsedAt>;
 using SidecarVaultEntryList = std::vector<SidecarVaultEntry>;
 using SnClaimRelayAccountList = std::vector<SnClaimRelayAccount>;
@@ -4259,6 +4277,38 @@ struct SidecarSecret {
 	std::optional<std::string> value_base64;
 };
 
+struct SidecarSendCheck {
+	bool ok{};
+	std::optional<SidecarSendDomainList> domains;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarSendDomain {
+	std::string domain{};
+	std::string mode{};
+	std::optional<int64_t> byte_count;
+	std::optional<int64_t> cap_byte_count;
+	std::optional<std::string> prediction;
+	std::optional<int64_t> expected_delay_millis;
+	std::optional<std::string> outcome;
+	std::optional<int64_t> retry_after_millis;
+	std::optional<int64_t> retry_at_millis;
+	std::optional<int32_t> reply_code;
+	std::optional<int32_t> tls_level;
+	std::optional<std::string> tls_label;
+	std::optional<int64_t> update_millis;
+	std::optional<std::string> copy;
+};
+
+struct SidecarSendResult {
+	bool ok{};
+	std::optional<std::string> send_id;
+	std::optional<SidecarSendDomainList> domains;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
 struct SidecarSettings {
 	std::optional<std::string> instance;
 	std::optional<std::string> state_dir;
@@ -5892,6 +5942,12 @@ inline void to_json(nlohmann::json& j, const SidecarRevokePlan& v);
 inline void from_json(const nlohmann::json& j, SidecarRevokePlan& v);
 inline void to_json(nlohmann::json& j, const SidecarSecret& v);
 inline void from_json(const nlohmann::json& j, SidecarSecret& v);
+inline void to_json(nlohmann::json& j, const SidecarSendCheck& v);
+inline void from_json(const nlohmann::json& j, SidecarSendCheck& v);
+inline void to_json(nlohmann::json& j, const SidecarSendDomain& v);
+inline void from_json(const nlohmann::json& j, SidecarSendDomain& v);
+inline void to_json(nlohmann::json& j, const SidecarSendResult& v);
+inline void from_json(const nlohmann::json& j, SidecarSendResult& v);
 inline void to_json(nlohmann::json& j, const SidecarSettings& v);
 inline void from_json(const nlohmann::json& j, SidecarSettings& v);
 inline void to_json(nlohmann::json& j, const SidecarUsedAt& v);
@@ -19758,6 +19814,201 @@ inline void from_json(const nlohmann::json& j, SidecarSecret& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarSendCheck& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.domains) {
+		j["domains"] = *v.domains;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSendCheck& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("domains"); it != j.end() && !it->is_null()) {
+		SidecarSendDomainList tmp{};
+		it->get_to(tmp);
+		v.domains = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSendDomain& v) {
+	j = nlohmann::json::object();
+	j["domain"] = v.domain;
+	j["mode"] = v.mode;
+	if (v.byte_count) {
+		j["byte_count"] = *v.byte_count;
+	}
+	if (v.cap_byte_count) {
+		j["cap_byte_count"] = *v.cap_byte_count;
+	}
+	if (v.prediction) {
+		j["prediction"] = *v.prediction;
+	}
+	if (v.expected_delay_millis) {
+		j["expected_delay_millis"] = *v.expected_delay_millis;
+	}
+	if (v.outcome) {
+		j["outcome"] = *v.outcome;
+	}
+	if (v.retry_after_millis) {
+		j["retry_after_millis"] = *v.retry_after_millis;
+	}
+	if (v.retry_at_millis) {
+		j["retry_at_millis"] = *v.retry_at_millis;
+	}
+	if (v.reply_code) {
+		j["reply_code"] = *v.reply_code;
+	}
+	if (v.tls_level) {
+		j["tls_level"] = *v.tls_level;
+	}
+	if (v.tls_label) {
+		j["tls_label"] = *v.tls_label;
+	}
+	if (v.update_millis) {
+		j["update_millis"] = *v.update_millis;
+	}
+	if (v.copy) {
+		j["copy"] = *v.copy;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSendDomain& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("domain"); it != j.end() && !it->is_null()) {
+		it->get_to(v.domain);
+	}
+	if (auto it = j.find("mode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.mode);
+	}
+	if (auto it = j.find("byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("cap_byte_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.cap_byte_count = std::move(tmp);
+	}
+	if (auto it = j.find("prediction"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.prediction = std::move(tmp);
+	}
+	if (auto it = j.find("expected_delay_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expected_delay_millis = std::move(tmp);
+	}
+	if (auto it = j.find("outcome"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.outcome = std::move(tmp);
+	}
+	if (auto it = j.find("retry_after_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_millis = std::move(tmp);
+	}
+	if (auto it = j.find("retry_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("reply_code"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.reply_code = std::move(tmp);
+	}
+	if (auto it = j.find("tls_level"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.tls_level = std::move(tmp);
+	}
+	if (auto it = j.find("tls_label"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tls_label = std::move(tmp);
+	}
+	if (auto it = j.find("update_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.update_millis = std::move(tmp);
+	}
+	if (auto it = j.find("copy"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.copy = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarSendResult& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.send_id) {
+		j["send_id"] = *v.send_id;
+	}
+	if (v.domains) {
+		j["domains"] = *v.domains;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarSendResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("send_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.send_id = std::move(tmp);
+	}
+	if (auto it = j.find("domains"); it != j.end() && !it->is_null()) {
+		SidecarSendDomainList tmp{};
+		it->get_to(tmp);
+		v.domains = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarSettings& v) {
 	j = nlohmann::json::object();
 	if (v.instance) {
@@ -24518,6 +24769,8 @@ struct SidecarPresenceSigner {
 using SidecarRepoChangeListener = std::function<void(std::optional<SidecarRepoChange> change)>;
 using SidecarResultCallback = std::function<void(std::optional<SidecarResult> result, std::optional<std::string> err_param)>;
 using SidecarRevokePlanCallback = std::function<void(std::optional<SidecarRevokePlan> result, std::optional<std::string> err_param)>;
+using SidecarSendCheckCallback = std::function<void(std::optional<SidecarSendCheck> result, std::optional<std::string> err_param)>;
+using SidecarSendResultCallback = std::function<void(std::optional<SidecarSendResult> result, std::optional<std::string> err_param)>;
 using SidecarUsedAtCallback = std::function<void(std::optional<SidecarUsedAtResult> result, std::optional<std::string> err_param)>;
 using SidecarVaultEntriesCallback = std::function<void(std::optional<SidecarVaultEntries> result, std::optional<std::string> err_param)>;
 struct SnClaimCallback {
@@ -26151,10 +26404,12 @@ public:
 	SidecarMail() = default;
 	explicit SidecarMail(uint64_t h) : detail::Handle(h) {}
 	void burn(const std::string& address, SidecarResultCallback callback) const;
+	void checkSend(const std::optional<SidecarDraft>& draft, SidecarSendCheckCallback callback) const;
 	void createBurner(const std::string& site, SidecarBurnerCallback callback) const;
 	std::optional<SidecarAliasList> getAliases() const;
 	void getOneTimeCodes(int64_t since_millis, SidecarOneTimeCodesCallback callback) const;
 	std::string getReceiverCoverage() const;
+	void getSendResult(const std::string& send_id, SidecarSendResultCallback callback) const;
 	void getUsedAt(const std::string& entry_id, SidecarUsedAtCallback callback) const;
 	void getVaultEntries(SidecarVaultEntriesCallback callback) const;
 	void send(const std::optional<SidecarDraft>& draft, SidecarResultCallback callback) const;
@@ -31584,6 +31839,78 @@ inline void oneshot_sidecar_revoke_plan(void* user_data, const char* result_json
 		std::optional<SidecarRevokePlan> result_v;
 		if (result_json) {
 			result_v = parseJson<SidecarRevokePlan>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_send_check(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarSendCheckCallback*>(user_data);
+	try {
+		std::optional<SidecarSendCheck> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarSendCheck>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_send_check(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarSendCheckCallback*>(user_data);
+	try {
+		std::optional<SidecarSendCheck> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarSendCheck>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_send_result(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarSendResultCallback*>(user_data);
+	try {
+		std::optional<SidecarSendResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarSendResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_send_result(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarSendResultCallback*>(user_data);
+	try {
+		std::optional<SidecarSendResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarSendResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -40824,6 +41151,16 @@ inline void SidecarMail::burn(const std::string& address, SidecarResultCallback 
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_burn(handle(), address.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
+inline void SidecarMail::checkSend(const std::optional<SidecarDraft>& draft, SidecarSendCheckCallback callback) const {
+	std::string draft_json;
+	const char* draft_c = nullptr;
+	if (draft) {
+		draft_json = nlohmann::json(*draft).dump();
+		draft_c = draft_json.c_str();
+	}
+	auto* callback_fn = callback ? new SidecarSendCheckCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_check_send(handle(), draft_c, callback_fn ? &detail::oneshot_sidecar_send_check : nullptr, callback_fn);
+}
 inline void SidecarMail::createBurner(const std::string& site, SidecarBurnerCallback callback) const {
 	auto* callback_fn = callback ? new SidecarBurnerCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_create_burner(handle(), site.c_str(), callback_fn ? &detail::oneshot_sidecar_burner : nullptr, callback_fn);
@@ -40843,6 +41180,10 @@ inline void SidecarMail::getOneTimeCodes(int64_t since_millis, SidecarOneTimeCod
 inline std::string SidecarMail::getReceiverCoverage() const {
 	char* r_c = urnet_sidecar_mail_get_receiver_coverage(handle());
 	return detail::takeString(r_c);
+}
+inline void SidecarMail::getSendResult(const std::string& send_id, SidecarSendResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarSendResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_mail_get_send_result(handle(), send_id.c_str(), callback_fn ? &detail::oneshot_sidecar_send_result : nullptr, callback_fn);
 }
 inline void SidecarMail::getUsedAt(const std::string& entry_id, SidecarUsedAtCallback callback) const {
 	auto* callback_fn = callback ? new SidecarUsedAtCallback(std::move(callback)) : nullptr;

@@ -192,6 +192,8 @@ pub type urnet_sidecar_presence_signer_sign_with_presence_cb = Option<unsafe ext
 pub type urnet_sidecar_repo_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_result_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_revoke_plan_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sidecar_send_check_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sidecar_send_result_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_used_at_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_vault_entries_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_claim_confirmed_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *const c_char, i64) -> ()>;
@@ -1429,10 +1431,12 @@ pub struct Raw {
     pub urnet_sidecar_evs_read_head: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_bytes_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_write: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const u8, i32, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_burn: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_mail_check_send: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_send_check_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_create_burner: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_burner_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_get_aliases: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_sidecar_mail_get_one_time_codes: unsafe extern "C" fn(u64, i64, urnet_sidecar_one_time_codes_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_get_receiver_coverage: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_sidecar_mail_get_send_result: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_send_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_get_used_at: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_used_at_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_get_vault_entries: unsafe extern "C" fn(u64, urnet_sidecar_vault_entries_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_send: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
@@ -2917,10 +2921,12 @@ impl Raw {
             urnet_sidecar_evs_read_head: unsafe { *library.get(b"urnet_sidecar_evs_read_head\0")? },
             urnet_sidecar_evs_write: unsafe { *library.get(b"urnet_sidecar_evs_write\0")? },
             urnet_sidecar_mail_burn: unsafe { *library.get(b"urnet_sidecar_mail_burn\0")? },
+            urnet_sidecar_mail_check_send: unsafe { *library.get(b"urnet_sidecar_mail_check_send\0")? },
             urnet_sidecar_mail_create_burner: unsafe { *library.get(b"urnet_sidecar_mail_create_burner\0")? },
             urnet_sidecar_mail_get_aliases: unsafe { *library.get(b"urnet_sidecar_mail_get_aliases\0")? },
             urnet_sidecar_mail_get_one_time_codes: unsafe { *library.get(b"urnet_sidecar_mail_get_one_time_codes\0")? },
             urnet_sidecar_mail_get_receiver_coverage: unsafe { *library.get(b"urnet_sidecar_mail_get_receiver_coverage\0")? },
+            urnet_sidecar_mail_get_send_result: unsafe { *library.get(b"urnet_sidecar_mail_get_send_result\0")? },
             urnet_sidecar_mail_get_used_at: unsafe { *library.get(b"urnet_sidecar_mail_get_used_at\0")? },
             urnet_sidecar_mail_get_vault_entries: unsafe { *library.get(b"urnet_sidecar_mail_get_vault_entries\0")? },
             urnet_sidecar_mail_send: unsafe { *library.get(b"urnet_sidecar_mail_send\0")? },

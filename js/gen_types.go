@@ -193,6 +193,11 @@ func generateTypes() ([]byte, error) {
 		sdk.SidecarDevice{},
 		sdk.SidecarRevokePlan{},
 		sdk.SidecarRevokeItem{},
+		// SidecarMail's send capability (sidecar §18.5's Send capability, SDK-M9-01): CheckSend's and GetSendResult's
+		// answers and their per-domain rows
+		sdk.SidecarSendCheck{},
+		sdk.SidecarSendResult{},
+		sdk.SidecarSendDomain{},
 	}
 
 	for _, t := range types {
@@ -353,6 +358,8 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SidecarDevice[]"
 		case "sdk.SidecarRevokeItemList":
 			return "SidecarRevokeItem[]"
+		case "sdk.SidecarSendDomainList":
+			return "SidecarSendDomain[]"
 		case "sdk.ExperimentAssignmentList":
 			// custom json: an object keyed by surface
 			return "Record<string, ExperimentAssignment>"

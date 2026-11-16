@@ -194,6 +194,8 @@ public interface Raw extends Library {
   interface urnet_sidecar_repo_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_result_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_revoke_plan_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_send_check_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_send_result_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_used_at_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_vault_entries_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_claim_confirmed_cb extends Callback { void invoke(Pointer a0, long a1, String a2, long a3); }
@@ -1429,10 +1431,12 @@ public interface Raw extends Library {
   void urnet_sidecar_evs_read_head(long a0, String a1, String a2, urnet_sidecar_bytes_cb a3, Pointer a4);
   void urnet_sidecar_evs_write(long a0, String a1, String a2, Pointer a3, int a4, String a5, urnet_sidecar_result_cb a6, Pointer a7);
   void urnet_sidecar_mail_burn(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  void urnet_sidecar_mail_check_send(long a0, String a1, urnet_sidecar_send_check_cb a2, Pointer a3);
   void urnet_sidecar_mail_create_burner(long a0, String a1, urnet_sidecar_burner_cb a2, Pointer a3);
   Pointer urnet_sidecar_mail_get_aliases(long a0);
   void urnet_sidecar_mail_get_one_time_codes(long a0, long a1, urnet_sidecar_one_time_codes_cb a2, Pointer a3);
   Pointer urnet_sidecar_mail_get_receiver_coverage(long a0);
+  void urnet_sidecar_mail_get_send_result(long a0, String a1, urnet_sidecar_send_result_cb a2, Pointer a3);
   void urnet_sidecar_mail_get_used_at(long a0, String a1, urnet_sidecar_used_at_cb a2, Pointer a3);
   void urnet_sidecar_mail_get_vault_entries(long a0, urnet_sidecar_vault_entries_cb a1, Pointer a2);
   void urnet_sidecar_mail_send(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
