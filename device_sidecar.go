@@ -152,10 +152,35 @@ var (
 	errDeviceBridgeClosed    = errors.New("the device is closed")
 )
 
+// Whether a device built on settings hosts in its device client's network (DeviceLocalSettings.EnableBridgeHosting;
+// BRIDGE-M8-01): only one that runs the device role, so never an off, hosted or browser's device.
+func deviceBridgeHosting(settings *DeviceLocalSettings) bool {
+	return deviceBridgeHostingFor(settings, runtime.GOOS)
+}
+
+// deviceBridgeHosting for a device of goos.
+func deviceBridgeHostingFor(settings *DeviceLocalSettings, goos string) bool {
+	return settings.EnableBridgeHosting && deviceBridgeRefusal(settings, goos) == nil
+}
+
+// The settings of the bridge the device client's network's forwarding role restores into the primary (usePrimaryStore),
+// a copy of settings: the sdk host's table where the device hosts, since that role's forwarding Delegation names this
+// device as host and senders link to it by that Delegation's host client key (§17.9's target row, D-BRIDGE-5); else
+// the sdk provider's. The M4 seam's primary and every other network's role keep the sdk provider's, so an app device
+// hosts nothing outside its device client's network and nothing before its forwarding is set up there.
+func deviceBridgeHostingSettings(settings *sidecardevice.BridgeSettings, hosting bool) *sidecardevice.BridgeSettings {
+	copied := *settings
+	if hosting {
+		copied.PolicyProfile = sidecardevice.BridgePolicyProfileSdkHost
+	}
+	return &copied
+}
+
 // The device role's bridge settings for a device's: §17's desktop values, a phone's on a low-memory device (§17.5),
-// the sdk exit NAT's table until C16, so an app device hosts, serves and maps nothing (D-SDK-3), and on iOS no link
-// until §22.9 measures one there (owner decision 100). No signer and no binding fetch: each forwarding role's settings
-// add its own (device_sidecar_host.go), so a bridge no role's settings built builds no link.
+// the sdk exit NAT's table until C16, so an app device hosts, serves and maps nothing (D-SDK-3) until its device
+// client's network's forwarding role restores a host's (deviceBridgeHostingSettings), and on iOS no link until §22.9
+// measures one there (owner decision 100). No signer and no binding fetch: each forwarding role's settings add its own
+// (device_sidecar_host.go), so a bridge no role's settings built builds no link.
 func deviceLocalBridgeSettings(settings *DeviceLocalSettings) *sidecardevice.BridgeSettings {
 	var bridgeSettings *sidecardevice.BridgeSettings
 	if settings.LowMemoryProfile {
@@ -221,6 +246,9 @@ type deviceLocalBridgeOwner struct {
 	localAddresses []netip.Addr
 	// what every bridge builds its links through, which the device binds once it is whole
 	linkHost *deviceBridgeLinkHost
+	// whether the device hosts in its client's network once that network's forwarding role takes the primary
+	// (deviceBridgeHosting)
+	hosting bool
 }
 
 // The device role of a device built on settings for the network networkIdText names, its posture restored from the
@@ -240,6 +268,7 @@ func newDeviceLocalBridgeOwner(
 		newBridge: settings.testingNewDeviceBridge,
 		log:       log,
 		linkHost:  &deviceBridgeLinkHost{},
+		hosting:   deviceBridgeHosting(settings),
 	}
 	if self.newBridge == nil {
 		linkHost := self.linkHost
@@ -704,8 +733,8 @@ type deviceLocalBridgeRole struct {
 }
 
 // Replaces the primary's store and settings while it holds no bridge, so a VPN component's sealed store takes the
-// device client's network's posture from its first Pending on (device_sidecar_forward.go). False once a bridge stands,
-// whose store stays.
+// device client's network's posture from its first Pending on (device_sidecar_forward.go), under the sdk host's table
+// where the device hosts (deviceBridgeHostingSettings). False once a bridge stands, whose store and table stay.
 func (self *deviceLocalBridgeOwner) usePrimaryStore(store sidecardevice.PostureStore, settings *sidecardevice.BridgeSettings) bool {
 	self.operationLock.Lock()
 	defer self.operationLock.Unlock()
@@ -713,7 +742,7 @@ func (self *deviceLocalBridgeOwner) usePrimaryStore(store sidecardevice.PostureS
 		return false
 	}
 	self.store = store
-	self.settings = settings
+	self.settings = deviceBridgeHostingSettings(settings, self.hosting)
 	return true
 }
 
