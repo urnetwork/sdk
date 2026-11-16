@@ -1625,8 +1625,9 @@ func NewDeviceLocal(
 // store crosses the c abi as function pointers. gomobile binds this too, beside the setter.
 //
 // forwardKeyStore is the device's store whatever settings held: nil is no store, and a device with no store, or
-// with no absolute settings.ForwardStateDir, sets no forwarding up (newDeviceLocalForwardingHost). The caller's
-// settings are left as they were.
+// with no absolute settings.ForwardStateDir, sets no forwarding up (newDeviceLocalForwardingHost). Nor does any
+// device while the device role is off (settings.EnableBridge, its release gate), which calls no store. The
+// caller's settings are left as they were.
 func NewDeviceLocalWithForwardKeyStore(
 	networkSpace *NetworkSpace,
 	byJwt string,
