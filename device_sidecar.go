@@ -176,23 +176,13 @@ func deviceBridgeHostingSettings(settings *sidecardevice.BridgeSettings, hosting
 	return &copied
 }
 
-// The device role's bridge settings for a device's: §17's desktop values, a phone's on a low-memory device (§17.5),
-// the sdk exit NAT's table until C16, so an app device hosts, serves and maps nothing (D-SDK-3) until its device
-// client's network's forwarding role restores a host's (deviceBridgeHostingSettings), and on iOS no link until §22.9
-// measures one there (owner decision 100). No signer and no binding fetch: each forwarding role's settings add its own
+// The device role's bridge settings for a device's: §17's desktop values or a phone's, LinkCountMax per platform and
+// the egress spec off unless EnableBridgeEgress (device_sidecar_egress.go); the sdk exit NAT's table until C16, so an
+// app device hosts, serves and maps nothing (D-SDK-3) until its device client's network's forwarding role restores a
+// host's (deviceBridgeHostingSettings). No signer and no binding fetch: each forwarding role's settings add its own
 // (device_sidecar_host.go), so a bridge no role's settings built builds no link.
 func deviceLocalBridgeSettings(settings *DeviceLocalSettings) *sidecardevice.BridgeSettings {
-	var bridgeSettings *sidecardevice.BridgeSettings
-	if settings.LowMemoryProfile {
-		bridgeSettings = sidecardevice.MobileBridgeSettings()
-	} else {
-		bridgeSettings = sidecardevice.DefaultBridgeSettings()
-	}
-	bridgeSettings.PolicyProfile = sidecardevice.BridgePolicyProfileSdkProvider
-	if runtime.GOOS == "ios" {
-		bridgeSettings.LinkCountMax = 0
-	}
-	return bridgeSettings
+	return deviceLocalBridgeSettingsFor(settings, runtime.GOOS)
 }
 
 // The zone a mux holds while a bridge is held: the bridge's LocalZone at each query, so a state entering or leaving
