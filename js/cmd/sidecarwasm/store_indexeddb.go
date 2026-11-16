@@ -13,10 +13,11 @@
 // parsed, never the string it was given, so one network has one database however a caller spelled its id. Nothing
 // shipped on the unsuffixed urnetwork-sidecar-v1, so nothing is migrated from it and nothing opens it.
 //
-// Each database holds two object stores: files, keyed by the instance's paths, and keys, the key store's. Each
-// backend write is one readwrite transaction with durability strict, which commits whole or not at all, so a killed
-// tab leaves the old record or the new one (§22.9's no torn writes), and commits only once the browser has the bytes
-// on its disk. The search cache gets its own object store with SDK-M10-04 (D-SDK-24), never this one.
+// Each database holds three object stores: files, keyed by the instance's paths, keys, the key store's, and search,
+// the index cache's files, which the backend routes there by path (store_search_indexeddb.go; D-SDK-24, SDK-M10-04).
+// Each backend write is one readwrite transaction with durability strict, which commits whole or not at all, so a
+// killed tab leaves the old record or the new one (§22.9's no torn writes), and commits only once the browser has the
+// bytes on its disk.
 //
 // A browser clears an origin's storage bucket whole (§18.8's storage row), so an eviction takes every network's
 // database at once, each one's files and key store together, and each reads as Absent with nothing recorded: the
@@ -42,8 +43,9 @@ import (
 // The databases and their object stores.
 const (
 	// a network's database is this and the network id's canonical text
-	indexedDbNamePrefix  = "urnetwork-sidecar-v1-"
-	indexedDbVersion     = 1
+	indexedDbNamePrefix = "urnetwork-sidecar-v1-"
+	// 2 adds the search store (SDK-M10-04); a version-1 database gains it at its next open
+	indexedDbVersion     = 2
 	indexedDbFilesStore  = "files"
 	indexedDbKeysStore   = "keys"
 	indexedDbKeyRangeEnd = "￿"
@@ -71,7 +73,7 @@ func openIndexedDb(name string) (*indexedDb, error) {
 		// a versionchange transaction is open only during this event, so the stores are made here, without waiting
 		database := request.Get("result")
 		names := database.Get("objectStoreNames")
-		for _, store := range []string{indexedDbFilesStore, indexedDbKeysStore} {
+		for _, store := range []string{indexedDbFilesStore, indexedDbKeysStore, indexedDbSearchStore} {
 			if !names.Call("contains", store).Bool() {
 				database.Call("createObjectStore", store)
 			}
@@ -226,8 +228,9 @@ func (self *indexedDb) list(store string, prefix string) ([]indexedDbListed, err
 	}
 }
 
-// The core's SidecarStoreBackend over the files object store. Temp files live in Go memory until their Rename, which
-// is the one transaction that writes them, so nothing torn or temporary ever reaches IndexedDB.
+// The core's SidecarStoreBackend over the files object store, and the search store for the index cache's paths
+// (indexedDbStoreOf). Temp files live in Go memory until their Rename, which is the one transaction that writes them,
+// so nothing torn or temporary ever reaches IndexedDB.
 type indexedDbStoreBackend struct {
 	database *indexedDb
 }
@@ -244,7 +247,7 @@ func indexedDbFault(err error) error {
 
 // The bytes at path: Absent only when the database answers that nothing is there.
 func (self *indexedDbStoreBackend) Open(path string) (io.ReadCloser, error) {
-	value, err := self.database.get(indexedDbFilesStore, path)
+	value, err := self.database.get(indexedDbStoreOf(path), path)
 	if err != nil {
 		return nil, indexedDbFault(err)
 	}
@@ -270,7 +273,7 @@ func (self *indexedDbStoreBackend) SyncDirectory(path string) error {
 
 // Deletes path.
 func (self *indexedDbStoreBackend) Remove(path string) error {
-	if err := self.database.delete(indexedDbFilesStore, path); err != nil {
+	if err := self.database.delete(indexedDbStoreOf(path), path); err != nil {
 		return indexedDbFault(err)
 	}
 	return nil
@@ -278,7 +281,7 @@ func (self *indexedDbStoreBackend) Remove(path string) error {
 
 // Each path starting with prefix, sorted, with its byte count.
 func (self *indexedDbStoreBackend) List(prefix string) ([]sidecar.SidecarStoreEntry, error) {
-	listed, err := self.database.list(indexedDbFilesStore, prefix)
+	listed, err := self.database.listRouted(prefix)
 	if err != nil {
 		return nil, indexedDbFault(err)
 	}
@@ -300,7 +303,7 @@ func (self *indexedDbStoreBackend) RemoveTemp() error {
 // An appender over path's record: each Sync writes the whole record in one transaction, so a kill leaves the record as
 // of the last Sync, which state_log.go reads as a log with no torn tail.
 func (self *indexedDbStoreBackend) OpenAppend(path string) (sidecar.SidecarStoreBackendAppendFile, bool, error) {
-	value, err := self.database.get(indexedDbFilesStore, path)
+	value, err := self.database.get(indexedDbStoreOf(path), path)
 	if err != nil {
 		return nil, false, indexedDbFault(err)
 	}
@@ -312,7 +315,7 @@ func (self *indexedDbStoreBackend) OpenAppend(path string) (sidecar.SidecarStore
 		if !ok {
 			return nil, false, fmt.Errorf("%w: a record that is not bytes", sidecar.ErrSidecarStoreFailed)
 		}
-	} else if err := self.database.put(indexedDbFilesStore, path, bytesToJs(content)); err != nil {
+	} else if err := self.database.put(indexedDbStoreOf(path), path, bytesToJs(content)); err != nil {
 		return nil, false, indexedDbFault(err)
 	}
 	return &indexedDbAppendFile{backend: self, path: path, content: content}, made, nil
@@ -344,7 +347,7 @@ func (self *indexedDbStoreFile) Rename(path string) error {
 		return sidecar.ErrSidecarStoreFailed
 	}
 	self.done = true
-	if err := self.backend.database.put(indexedDbFilesStore, path, bytesToJs(self.buffer.Bytes())); err != nil {
+	if err := self.backend.database.put(indexedDbStoreOf(path), path, bytesToJs(self.buffer.Bytes())); err != nil {
 		return indexedDbFault(err)
 	}
 	return nil
@@ -393,7 +396,7 @@ func (self *indexedDbAppendFile) Sync() error {
 	if self.closed {
 		return sidecar.ErrSidecarStoreFailed
 	}
-	if err := self.backend.database.put(indexedDbFilesStore, self.path, bytesToJs(self.content)); err != nil {
+	if err := self.backend.database.put(indexedDbStoreOf(self.path), self.path, bytesToJs(self.content)); err != nil {
 		return indexedDbFault(err)
 	}
 	return nil

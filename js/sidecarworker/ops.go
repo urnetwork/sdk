@@ -16,6 +16,13 @@
 //	                                                                tags, groups, labels and policy (ops_config.go)
 //	sign_out          nothing                                       SidecarRevoke{removed}, the client removed, the
 //	                                                                network's state wiped (Sidecar.Logout)
+//	search            [query], [repo_id], [scope], [since_ms],       one search's first page as hit views (ops_search.go,
+//	                  [until_ms], [fuzzy], [allow_metered],         SDK-M10-04); search_more its next state or page,
+//	                  [page_size]                                   search_cancel its end, search_status a repo's or
+//	search_more       search_id, [page_size]                        every repo's status, search_policy this browser's
+//	search_cancel     search_id                                     policy for all (§18.8's messages row)
+//	search_status     [repo_id]
+//	search_policy     [repo_id], [policy]
 //	enroll            [code]                                        unavailable until plan-SDK-key-origin-credential's
 //	admission_status  nothing                                       answer is built; neither reaches a seam
 //
@@ -86,6 +93,18 @@ type Request struct {
 	// use the id (id_reuse). With an announcement id no filter field or after is taken.
 	AnnouncementId  string `json:"announcement_id,omitempty"`
 	WriterSidecarId string `json:"writer_sidecar_id,omitempty"`
+	// search's (ops_search.go): query is the search's text; a scope (cached, latest or all), a time range in
+	// milliseconds since the epoch as decimals, near hits, all past §18.4's metered cap, and the hits a page, a decimal.
+	Scope        string `json:"scope,omitempty"`
+	SinceMs      string `json:"since_ms,omitempty"`
+	UntilMs      string `json:"until_ms,omitempty"`
+	Fuzzy        bool   `json:"fuzzy,omitempty"`
+	AllowMetered bool   `json:"allow_metered,omitempty"`
+	PageSize     string `json:"page_size,omitempty"`
+	// search_more's and search_cancel's search, as search's reply named it.
+	SearchId string `json:"search_id,omitempty"`
+	// search_policy's mode for all: background, wifi_charging, on_demand or never; empty restores the default.
+	Policy string `json:"policy,omitempty"`
 }
 
 // A request from its JSON, refusing a field this package does not know.
@@ -153,6 +172,8 @@ type requestFields struct {
 	includePrivate  bool
 	announcementId  *sidecar.Id
 	writerSidecarId *sidecar.Id
+	// search's (ops_search.go)
+	search *searchFields
 }
 
 // Which fields an operation takes, beyond Id and Operation.
@@ -175,6 +196,11 @@ type requestShape struct {
 	includePrivate  bool
 	announcementId  bool
 	writerSidecarId bool
+	// search's (ops_search.go): its query fields, its page size, its search id and its policy
+	searchQuery    bool
+	searchPageSize bool
+	searchId       bool
+	searchPolicy   bool
 }
 
 // An optional id field: nil when empty, else the id it parses to.
@@ -201,7 +227,10 @@ func (self requestShape) fields(request *Request, settings *WorkerSettings) (*re
 		refuse(request.History, self.history) || refuse(request.After != "", self.after) || refuse(request.Code != "", self.code) ||
 		refuse(request.Kind != "", self.kind) || refuse(request.MemberId != "", self.memberId) || refuse(request.ActiveOnly, self.activeOnly) ||
 		refuse(request.Query != "", self.query) || refuse(request.IncludePrivate, self.includePrivate) ||
-		refuse(request.AnnouncementId != "", self.announcementId) || refuse(request.WriterSidecarId != "", self.writerSidecarId) {
+		refuse(request.AnnouncementId != "", self.announcementId) || refuse(request.WriterSidecarId != "", self.writerSidecarId) ||
+		refuse(request.Scope != "" || request.SinceMs != "" || request.UntilMs != "" || request.Fuzzy || request.AllowMetered, self.searchQuery) ||
+		refuse(request.PageSize != "", self.searchPageSize) || refuse(request.SearchId != "", self.searchId) ||
+		refuse(request.Policy != "", self.searchPolicy) {
 		return nil, errors.New("a field this operation does not take")
 	}
 	if self.repoId {
@@ -288,6 +317,11 @@ func (self requestShape) fields(request *Request, settings *WorkerSettings) (*re
 	if fields.writerSidecarId, err = optionalRequestId(request.WriterSidecarId); err != nil {
 		return nil, err
 	}
+	if self.searchQuery || self.searchPageSize || self.searchId || self.searchPolicy {
+		if fields.search, err = searchFieldsOf(request, settings); err != nil {
+			return nil, err
+		}
+	}
 	return fields, nil
 }
 
@@ -363,6 +397,28 @@ var workerOperations = map[string]*workerOperation{
 	},
 	OperationAdmissionStatus: {
 		run: runUnavailable,
+	},
+	OperationSearch: {
+		shape: requestShape{repoIdFilter: true, query: true, searchQuery: true, searchPageSize: true},
+		run:   runSearch,
+	},
+	OperationSearchMore: {
+		shape: requestShape{searchId: true, searchPageSize: true},
+		check: checkSearchIdField,
+		run:   runSearchMore,
+	},
+	OperationSearchCancel: {
+		shape: requestShape{searchId: true},
+		check: checkSearchIdField,
+		run:   runSearchCancel,
+	},
+	OperationSearchStatus: {
+		shape: requestShape{repoIdFilter: true},
+		run:   runSearchStatus,
+	},
+	OperationSearchPolicy: {
+		shape: requestShape{repoIdFilter: true, searchPolicy: true},
+		run:   runSearchPolicy,
 	},
 }
 

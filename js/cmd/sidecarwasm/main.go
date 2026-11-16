@@ -151,6 +151,13 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	if err := applyPageServiceUrls(settings, config.Urls); err != nil {
 		return nil, err
 	}
+	// §18.4's browsers row: the page Worker keeps 128 MiB of search cache in its own store, the burner its buckets in
+	// memory (SDK-M10-04)
+	if config.Burner {
+		sidecarworker.DefaultQuickBurnerSearchSettings().Apply(settings)
+	} else {
+		sidecarworker.DefaultPageSearchSettings().Apply(settings)
+	}
 	if config.Burner {
 		network, err := self.openBurner(networkId, settings)
 		if err != nil {
@@ -193,6 +200,7 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 		Records:   network.records,
 		Directory: network.directory,
 		Config:    network.config,
+		Search:    network.search,
 		Yield:     yieldToEventLoop,
 		Settings:  workerSettings,
 	})
@@ -218,6 +226,19 @@ func (self *pageWorker) handle(ctx context.Context, requestJson []byte) []byte {
 		return network.burner.HandleJson(ctx, requestJson)
 	}
 	return network.worker.HandleJson(ctx, requestJson)
+}
+
+// Reports the frame's conditions (loader.js's browserConditions) to the opened network's search; nothing before open.
+func (self *pageWorker) conditions(conditions *sidecarworker.WorkerConditions) {
+	network := self.current()
+	if network == nil {
+		return
+	}
+	if network.burner != nil {
+		network.burner.SetConditions(conditions)
+		return
+	}
+	network.worker.SetConditions(conditions)
 }
 
 // Ends the opened network's Sidecar and closes its instance once the Sidecar's run loop has ended.
@@ -330,6 +351,12 @@ func (self *pageNetwork) evsClient() (*sidecar.EvsClient, error) {
 	}
 	self.evs = client
 	return client, nil
+}
+
+// The Sidecar's search (§5.4), whose calls answer unavailable until a host installs its engine: on this leg nothing does
+// yet, since its sync, scope and key sources are the core's composition (SEARCH-M10-26's deferral).
+func (self *pageNetwork) search() (sidecarworker.WorkerSearch, error) {
+	return self.local, nil
 }
 
 // The Sidecar's record reader (RECORD.md section 5.5), once the network is enrolled.

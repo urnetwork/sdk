@@ -11,6 +11,8 @@
 //	handle(requestJson)  answers one request with its reply's JSON (sidecarworker): a request that does not parse or
 //	                     check is answered, never thrown
 //	close()              ends the Sidecar and closes the instance
+//	conditions(json)     the frame's report of its browser (loader.js's browserConditions): unmetered, charging, low
+//	                     power and whether a tab of the network's pages is visible, which the search reads (SDK-M10-04)
 //
 // A rejected promise carries an Error whose message is fixed per call, never a Go error's text, which could name a
 // path or a value (I-13). Nothing here holds a key or a token: those stay in the root, behind the Worker's views.
@@ -23,6 +25,8 @@ import (
 	"syscall/js"
 
 	"github.com/urnetwork/sidecar"
+
+	"github.com/urnetwork/sdk/js/sidecarworker"
 )
 
 // Publishes worker's calls as the global worker.js reads.
@@ -58,6 +62,20 @@ func publishPageWorker(worker *pageWorker) {
 					requestJson = ""
 				}
 				return js.ValueOf(string(worker.handle(worker.ctx, []byte(requestJson)))), nil
+			})
+		}),
+		"conditions": js.FuncOf(func(this js.Value, args []js.Value) any {
+			conditionsJson, ok := stringArgument(args)
+			return newBrowserPromise(func() (js.Value, error) {
+				if !ok {
+					return js.Undefined(), errPageCall("conditions takes its report as a JSON string")
+				}
+				conditions := &sidecarworker.WorkerConditions{}
+				if err := json.Unmarshal([]byte(conditionsJson), conditions); err != nil {
+					return js.Undefined(), errPageCall("the conditions do not parse")
+				}
+				worker.conditions(conditions)
+				return js.Undefined(), nil
 			})
 		}),
 		"close": js.FuncOf(func(this js.Value, args []js.Value) any {

@@ -57,6 +57,9 @@ const (
 	CodeNoDirectory = "no_directory"
 	// More than one writer's run or worker item uses the announcement id (id_reuse): ask again naming the writer.
 	CodeAmbiguous = "ambiguous"
+	// The search a search_more names is no longer held here (it ended, went idle, or its Worker's tab closed), or the
+	// index changed under it: search again.
+	CodeSearchExpired = "search_expired"
 	// Anything else.
 	CodeFailed = "failed"
 )
@@ -77,6 +80,7 @@ var codeMessages = map[string]string{
 	CodeCancelled:        "cancelled",
 	CodeNoDirectory:      "this network has no team directory",
 	CodeAmbiguous:        "more than one writer uses this id: name the writer",
+	CodeSearchExpired:    "the search ended: search again",
 	CodeFailed:           "the operation failed",
 }
 
@@ -99,6 +103,9 @@ type Reply struct {
 	SignOut   *SignOutView   `json:"sign_out,omitempty"`
 	// A quick burner's state (quick_burner.go).
 	QuickBurner *QuickBurnerView `json:"quick_burner,omitempty"`
+	// A search's page, or a repo's search status (ops_search.go).
+	Search       *SearchView       `json:"search,omitempty"`
+	SearchStatus *SearchStatusView `json:"search_status,omitempty"`
 }
 
 // The reply's JSON. A view marshals by construction, so this never fails; if it did, the page gets a refusal.

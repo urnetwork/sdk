@@ -50,6 +50,7 @@ func (self *pageWorker) openBurner(networkId sidecar.Id, settings *sidecar.Sidec
 		Sidecar: local,
 		Repo:    network.repo,
 		Records: network.records,
+		Search:  network.search,
 		Yield:   yieldToEventLoop,
 	}, &sidecarworker.QuickBurnerArgs{
 		HandClose: func(closeCapability string) {

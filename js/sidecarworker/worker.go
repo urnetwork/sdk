@@ -80,6 +80,19 @@ type WorkerSettings struct {
 	// The most bytes of the policy document a config_view carries: §8.8's 4 MiB source bound, which no head a base
 	// names passes. A longer one is left out and marked.
 	ConfigPolicySourceMaxByteCount int
+	// Search's (ops_search.go, SDK-M10-04): the searches one Worker holds open, the least recently used ending past it,
+	// 4; how long one goes unused before it ends, the core's Search.CursorTimeout, 10 min; how long a search or
+	// search_more computes before it answers what landed, §16.10's wait_ms default, 2 s; how many pulls in a row may
+	// bring nothing before a reply answers what it has, 4; a page's hits when none is named, §18.5's 50, and at most,
+	// §16.10's limit, 100; and a hit view's bounds, §16.10's 256 B a field and 200 B a snippet.
+	SearchSessionMaxCount     int
+	SearchIdleTimeout         time.Duration
+	SearchReplyTimeout        time.Duration
+	SearchEmptyPullCount      int
+	SearchPageHitCount        int
+	SearchPageHitMaxCount     int
+	SearchFieldMaxByteCount   int
+	SearchSnippetMaxByteCount int
 }
 
 // The defaults.
@@ -99,6 +112,14 @@ func DefaultWorkerSettings() *WorkerSettings {
 		DirectoryViewCoalesce:          sidecar.DefaultSidecarSettings().Directory.ViewCoalesce,
 		ConfigMaxRowCount:              16 * 1024,
 		ConfigPolicySourceMaxByteCount: 4 * 1024 * 1024,
+		SearchSessionMaxCount:          4,
+		SearchIdleTimeout:              10 * time.Minute,
+		SearchReplyTimeout:             2 * time.Second,
+		SearchEmptyPullCount:           4,
+		SearchPageHitCount:             50,
+		SearchPageHitMaxCount:          100,
+		SearchFieldMaxByteCount:        256,
+		SearchSnippetMaxByteCount:      200,
 	}
 }
 
@@ -167,6 +188,12 @@ type WorkerArgs struct {
 	// The verified config: on the page Worker, its config state, head and compiled policy once this leg verifies
 	// them. An error is what the reply reports; nil answers unavailable.
 	Config func() (*WorkerConfigState, error)
+	// The search (ops_search.go): on the page Worker, the Sidecar's §5.4 search calls, which answer unavailable until
+	// a host installs its engine. An error is what the reply reports; nil answers unavailable.
+	Search func() (WorkerSearch, error)
+	// A quick burner's Worker: memory only, its search reads the buckets alone and never fetches all (§18.8's Quick
+	// burner).
+	Ephemeral bool
 	// Hands the thread to the event loop: the shell's wait on a zero timeout in the browser. Nil yields with
 	// runtime.Gosched, which on a native leg is a cheap hand-off.
 	Yield func(ctx context.Context) error
@@ -195,6 +222,9 @@ type Worker struct {
 	// reads; zero before any
 	syncedDirectoryId sidecar.Id
 	syncedAt          time.Time
+
+	// the searches this Worker holds open (ops_search.go)
+	searches *workerSearches
 }
 
 // A Worker on args. Refuses args without the sidecar, the repo seam or the record seam, or with a bound that is not
@@ -212,6 +242,9 @@ func NewWorker(args *WorkerArgs) (*Worker, error) {
 		int64(settings.RequestIdMaxByteCount), int64(settings.RequestPathMaxByteCount), int64(settings.RequestRefMaxByteCount),
 		int64(settings.RequestCodeMaxByteCount), int64(settings.RequestQueryMaxByteCount), int64(settings.DirectoryMaxItemCount),
 		int64(settings.ConfigMaxRowCount), int64(settings.ConfigPolicySourceMaxByteCount),
+		int64(settings.SearchSessionMaxCount), int64(settings.SearchIdleTimeout), int64(settings.SearchReplyTimeout),
+		int64(settings.SearchEmptyPullCount), int64(settings.SearchPageHitCount), int64(settings.SearchPageHitMaxCount),
+		int64(settings.SearchFieldMaxByteCount), int64(settings.SearchSnippetMaxByteCount),
 	} {
 		if bound <= 0 {
 			return nil, fmt.Errorf("a page Worker's bounds must be positive")
@@ -233,6 +266,7 @@ func NewWorker(args *WorkerArgs) (*Worker, error) {
 		settings: settings,
 		now:      now,
 		yield:    yield,
+		searches: newWorkerSearches(),
 	}, nil
 }
 

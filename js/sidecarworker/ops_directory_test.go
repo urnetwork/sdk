@@ -837,6 +837,11 @@ func TestMalformedConsoleRequestsReachNoSeam(t *testing.T) {
 // the authorization log as they were, with Logout never called.
 func TestConsoleFilesNothing(t *testing.T) {
 	for name := range workerOperations {
+		// search_cancel ends one of this Worker's own searches (§18.8's messages row, SDK-M10-04): it files nothing,
+		// and no drop is ever cancelled here
+		if name == OperationSearchCancel {
+			continue
+		}
 		for _, filing := range []string{"request", "decide", "approve", "deny", "announce", "withdraw", "revoke", "erase", "drop", "cancel", "set", "grant", "admit"} {
 			if strings.Contains(name, filing) {
 				t.Errorf("operation %s files: %s", name, filing)

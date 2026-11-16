@@ -88,11 +88,22 @@ func NewQuickBurner(workerArgs *WorkerArgs, args *QuickBurnerArgs) (*QuickBurner
 	if args == nil || args.HandClose == nil {
 		return nil, errors.New("a quick burner hands its close capability to the document")
 	}
-	worker, err := NewWorker(workerArgs)
+	if workerArgs == nil {
+		return nil, errors.New("a quick burner needs its Worker's args")
+	}
+	// memory only: its search reads the buckets alone (SDK-M10-04)
+	ephemeral := *workerArgs
+	ephemeral.Ephemeral = true
+	worker, err := NewWorker(&ephemeral)
 	if err != nil {
 		return nil, err
 	}
 	return &QuickBurner{worker: worker, args: args}, nil
+}
+
+// Reports the frame's conditions to the burner's search, as the page Worker's are (ops_search.go).
+func (self *QuickBurner) SetConditions(conditions *WorkerConditions) {
+	self.worker.SetConditions(conditions)
 }
 
 // Answers request: quick_burner here, every other operation its Worker's.

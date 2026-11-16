@@ -304,9 +304,9 @@ func TestNoReplyCarriesSecret(t *testing.T) {
 	}
 }
 
-// A page Worker is read_only (§7.9): it offers exactly §18.8's M4 operations and RS2's two console views, no approval,
-// request, decision or revocation, the seams it holds have no signing call, and of its operations only sign_out reaches
-// the one call that signs, Logout's own SidecarRevoke.
+// A page Worker is read_only (§7.9): it offers exactly §18.8's M4 operations, RS2's two console views and M10's five
+// search operations, no approval, request, decision or revocation, the seams it holds have no signing call, and of its
+// operations only sign_out reaches the one call that signs, Logout's own SidecarRevoke.
 func TestReadOnlyOperationsOnly(t *testing.T) {
 	operations := []string{}
 	for name := range workerOperations {
@@ -315,7 +315,8 @@ func TestReadOnlyOperationsOnly(t *testing.T) {
 	slices.Sort(operations)
 	want := []string{
 		OperationAdmissionStatus, OperationConfigView, OperationDirectoryView, OperationEnroll, OperationList, OperationReadView,
-		OperationRecordView, OperationSignOut,
+		OperationRecordView, OperationSearch, OperationSearchCancel, OperationSearchMore, OperationSearchPolicy, OperationSearchStatus,
+		OperationSignOut,
 	}
 	if !slices.Equal(operations, want) {
 		t.Fatalf("the operations %v, want %v", operations, want)
