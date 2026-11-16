@@ -7,7 +7,8 @@
 //
 //	aliases    GetAliases: every address record a reader honors (MailClient.Aliases; the daemon's id.ls)
 //	send       Send: §14's outbox unless this host proves (§15.10). MailClient.Send is MAIL-M7-18's and MAIL-M9-01's,
-//	           not on sidecar yet, so Send answers MAIL_UNAVAILABLE on both backends until it lands
+//	           not on sidecar yet, so Send answers MAIL_UNAVAILABLE on both backends until it lands. Its send_id's
+//	           outcomes, the check before it and the mail_send event are sidecar_mail_send.go's
 //	receiver   the receiver hosting API: the "mail" component, MailClient attached to the core's generations, runs this
 //	           device's receiver where policy grants it the listen, only while the sidecar role runs, which on an app
 //	           host is while the app is open (§18.4's Listen row; owner decision 197). SetReceiverEnabled is the
@@ -187,6 +188,10 @@ type sidecarMailBackend interface {
 	vaultEntries(ctx context.Context) ([]*SidecarVaultEntry, error)
 	usedAt(ctx context.Context, entryId sidecar.Id) ([]*SidecarUsedAt, error)
 	oneTimeCodes(ctx context.Context, since time.Time) ([]*SidecarOneTimeCode, error)
+	// sidecar_mail_send.go's calls: the core's check of the message Send would make of draft, and the outcomes of
+	// the send a send_id names, each per recipient domain.
+	checkSend(ctx context.Context, draft *SidecarDraft) (*sidecar.SmtpSendCheck, error)
+	sendResult(ctx context.Context, sendId sidecar.Id) (*sidecar.SmtpSendResult, error)
 }
 
 // The mail component's factory: the core's MailClient, which attaches to the core's generations as the "mail"
@@ -365,18 +370,14 @@ func (self *SidecarMail) GetAliases() *SidecarAliasList {
 }
 
 // Sends draft (§15.10): same-network recipients by deposit, internet ones through §14's outbox unless this host
-// proves, the result naming its send_id, whose outcomes GetSendResult reads and mail_send announces (SDK-M9-01). An
-// outward action, so a recipient no grant covers comes back approval_pending:<id>. MAIL_UNAVAILABLE until the core's
-// MailClient.Send lands (the file's comment).
+// proves, the result naming its send_id, whose outcomes per recipient domain GetSendResult reads and mail_send
+// announces as each changes, from the outbox too (sidecar_mail_send.go). An outward action, so a recipient no grant
+// covers comes back approval_pending:<id>. MAIL_UNAVAILABLE until the core's MailClient.Send lands (the file's
+// comment).
 func (self *SidecarMail) Send(draft *SidecarDraft, callback SidecarResultCallback) {
 	trace(func() {
-		var draftCopy *SidecarDraft
-		if draft != nil {
-			// the draft's lists are the caller's to reuse once Send returns
-			copied := *draft
-			copied.To, copied.Cc, copied.Bcc = sidecarMailCopyList(draft.To), sidecarMailCopyList(draft.Cc), sidecarMailCopyList(draft.Bcc)
-			draftCopy = &copied
-		}
+		// the draft's lists are the caller's to reuse once Send returns
+		draftCopy := sidecarMailCopyDraft(draft)
 		sidecarMailAnswer(self, func(ctx context.Context) *SidecarResult {
 			if err := self.callErr(); err != nil {
 				return sidecarMailResultOf("", err)
