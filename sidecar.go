@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 )
@@ -49,6 +50,10 @@ type sidecarLocalOptions struct {
 	// Called once the components that waited for the core's identity have been built for it
 	// (addDeferredComponentsOnceIdentified). Nil calls nothing.
 	deferredComponentsBuilt func()
+	// The free bytes on StateDir's volume a phone's search cap reads (sidecar_search_host.go). Nil: statfs.
+	searchFreeByteCount func(dir string) (uint64, error)
+	// The clock a background window's deadline is read on. Nil: time.Now.
+	searchNow func() time.Time
 }
 
 // The factory of name: a test's in place of the registry's.
@@ -127,6 +132,13 @@ type Sidecar struct {
 	approvals         *SidecarApprovals
 	approvalsSettings *sidecarApprovalsSettings
 	approvalsBackend  sidecarApprovalsBackend
+	// the search wrapper (sidecar_search.go), made at the first GetSearch; its tunables, nil for the defaults; a test's
+	// backend in place of this Sidecar's own, nil otherwise; and the host's search state (sidecar_search_host.go), which
+	// SetForeground and RunBackgroundSync report to, nil on the remote backend
+	search         *SidecarSearch
+	searchSettings *sidecarSearchSettings
+	searchBackend  sidecarSearchBackend
+	searchHost     *sidecarSearchHost
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -164,6 +176,9 @@ func newSidecarLocal(
 	if err != nil {
 		return nil, err
 	}
+	// the class's search, as an app host's: its policy, working set and caps (SDK-M10-02)
+	searchHost := newSidecarSearchHost(hostClass, settings.StateDir, options.searchFreeByteCount, options.searchNow)
+	searchHost.apply(coreSettings)
 	if err := applySidecarServiceUrls(networkSpace, coreSettings); err != nil {
 		return nil, err
 	}
@@ -227,6 +242,7 @@ func newSidecarLocal(
 		events:             newSidecarEventDispatch(cancelCtx, eventSettings),
 		host:               host,
 		hostClass:          hostClass,
+		searchHost:         searchHost,
 		closeDone:          make(chan struct{}),
 		local:              local,
 		instance:           instance,
@@ -441,6 +457,7 @@ func (self *Sidecar) Close() {
 		var directory *SidecarDirectory
 		var mail *SidecarMail
 		var approvals *SidecarApprovals
+		var search *SidecarSearch
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -453,6 +470,7 @@ func (self *Sidecar) Close() {
 			directory = self.directory
 			mail = self.mail
 			approvals = self.approvals
+			search = self.search
 			return false
 		}()
 		if alreadyClosed {
@@ -477,6 +495,10 @@ func (self *Sidecar) Close() {
 		// as does an approvals call, and no pending list reaches a listener after it
 		if approvals != nil {
 			approvals.close()
+		}
+		// and every open search ends, its pages with it
+		if search != nil {
+			search.close()
 		}
 		// and no witness goes to the VPN component after it
 		self.stopForwarding()
