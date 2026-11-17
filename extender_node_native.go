@@ -157,13 +157,13 @@ func newSpaceExtenderNodeWithRole(
 	return self
 }
 
-// The settings of one space's node in one gossip role (D1). Its carrier dials
-// take the space's connect settings. A space that dials through a proxy or a
-// dialer of its own -- a miner proxy slot, or a test harness -- gives the node
-// that dial for every connection it makes, the operator link included, so its
-// mesh traffic leaves the way the rest of the space's traffic does
-// (connect#227, gossip `NodeSettings.DialContext`). Every other space's node
-// dials as it always has.
+// The settings of one space's node in one gossip role (D1). The node dials
+// every connection through the space's connect settings: the operator link's
+// tcp, tls and websocket upgrade through `ConnectSettings.DialContext`, and the
+// extender carrier through the settings as a whole (connect#227). So the mesh
+// traffic of every space leaves the way the rest of its traffic does: an app's
+// under its egress binding (R1) and DialControl, a miner proxy slot's through
+// its proxy, a test harness's through its dialer.
 func spaceExtenderNodeSettings(
 	key *NetworkSpaceKey,
 	values *NetworkSpaceValues,
@@ -183,11 +183,7 @@ func spaceExtenderNodeSettings(
 	settings.ExtenderListener = listener
 	settings.ListenAddrs = listenAddrs
 	if clientStrategySettings != nil {
-		connectSettings := &clientStrategySettings.ConnectSettings
-		settings.ConnectSettings = connectSettings
-		if connectSettings.ProxySettings != nil || connectSettings.DialContextSettings != nil {
-			settings.DialContext = connectSettings.DialContext
-		}
+		settings.ConnectSettings = &clientStrategySettings.ConnectSettings
 	}
 	return settings
 }
