@@ -448,7 +448,7 @@ test("V6: margin > 0 exactly when D > k, and the radius is along the line to q, 
       [a * a * c * c + b * b * s * s, (a * a - b * b) * c * s],
       [(a * a - b * b) * c * s, a * a * s * s + b * b * c * c],
     ];
-    const k = [K95, K99, 3.13, 3.71, 7.88][i % 5];
+    const k = [K95, K99, 3.25, 3.95, 7.88][i % 5];
     const j = drift.judge(fitAt(at, cov), country, k);
     if (!j.inside) {
       assert.equal(j.marginKm > 0, j.d > k, `case ${i}: margin ${j.marginKm}, D ${j.d}, k ${k}`);
@@ -778,10 +778,10 @@ test("V10: clear when the k_early region is wholly out of the country, or wholly
 
 test("V11: the calibrated k per confidence and continent, never below the textbook k", () => {
   assert.equal(drift.defaultK(0.99, "EU"), K99);
-  assert.equal(drift.defaultK(0.99, "as"), K99);
-  assert.equal(drift.defaultK(0.99, "NA"), 3.13);
+  assert.equal(drift.defaultK(0.99, "as"), 3.35);
+  assert.equal(drift.defaultK(0.99, "NA"), 3.25);
   assert.equal(drift.defaultK(0.99, "sa"), 3.5);
-  assert.equal(drift.defaultK(0.99, "AF"), 3.71);
+  assert.equal(drift.defaultK(0.99, "AF"), 3.95);
   assert.equal(drift.defaultK(0.99, "Oc"), 7.88);
   assert.equal(drift.defaultK(0.99, "AN"), 3.49);
   assert.equal(drift.defaultK(0.99, ""), 3.49, "unknown");
@@ -801,7 +801,7 @@ test("V11: k_early scales with the run's k, and is earlyK at the textbook 99% k"
   assert.equal(drift.kEarly(K99), drift.earlyK);
   assert.equal(drift.kEarly(2), drift.earlyK);
   close(drift.kEarly(7.88), (4.0 / 3.035) * 7.88, 1e-12);
-  close(drift.kEarly(3.71), (4.0 / 3.035) * 3.71, 1e-12);
+  close(drift.kEarly(3.95), (4.0 / 3.035) * 3.95, 1e-12);
 });
 
 test("V10, V11: the clear stop judges at the run's k_early, and never without one", () => {
