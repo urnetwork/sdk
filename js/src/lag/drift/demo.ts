@@ -12,7 +12,7 @@ import { fitPosition, type Fit } from "./fit";
 import type { Point } from "./geo";
 import { judge, regionRadiusKm, type Judgement } from "./judge";
 import { defaultConfidence, defaultModel, type Model, type Observation } from "./model";
-import { countryContains } from "./polygon";
+import { countryContains, hasBoundary } from "./polygon";
 import { estimateRoundTrip } from "./roundTrip";
 import { decide, defaultMaxSigmaKm, type DriftVerdict, type DriftVerdictReason } from "./verdict";
 
@@ -152,7 +152,7 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
         : options.borders.countryAt(fit.at, driftCountryWithinKm);
     result.plusMinusKm = regionRadiusKm(fit, confidence);
     // the figures, even where the verdict needed none
-    const judgement = decision.judgement ?? (country !== null ? judge(fit, country, confidence) : null);
+    const judgement = decision.judgement ?? (country !== null && hasBoundary(country) ? judge(fit, country, confidence) : null);
     if (judgement !== null) {
       result.judgement = judgement;
       result.distanceKm = judgement.distanceKm;

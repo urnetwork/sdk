@@ -17625,6 +17625,76 @@
    }
   },
   {
+   "name": "not clear: a country of no polygons",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -10
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        900,
+        0
+       ],
+       [
+        0,
+        900
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 30,
+      "minorKm": 30,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zn",
+    "polygons": []
+   },
+   "tolerance": {
+    "areaRatio": 1.105
+   },
+   "stop": false,
+   "reason": "",
+   "holds": {
+    "cap": false,
+    "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
    "name": "interrupted before clear",
    "history": [
     {
@@ -24824,6 +24894,354 @@
     "observations": 0
    },
    "country": null,
+   "observations": [
+    {
+     "extenderId": "e0",
+     "at": {
+      "lat": 1,
+      "lon": 3
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e1",
+     "at": {
+      "lat": 3,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e2",
+     "at": {
+      "lat": -1,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e3",
+     "at": {
+      "lat": 1,
+      "lon": -1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e4",
+     "at": {
+      "lat": 10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 24.184001,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 23.184001
+     }
+    },
+    {
+     "extenderId": "e5",
+     "at": {
+      "lat": -10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.678107,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.678107
+     }
+    },
+    {
+     "extenderId": "e6",
+     "at": {
+      "lat": 10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.641792,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.641792
+     }
+    },
+    {
+     "extenderId": "e7",
+     "at": {
+      "lat": -10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 28.904656,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 27.904656
+     }
+    }
+   ],
+   "confidence": 0.99,
+   "maxSigmaKm": 1500,
+   "verdict": "inconclusive",
+   "reason": "ip_country_unknown",
+   "judgement": {
+    "inside": false,
+    "overlaps": false,
+    "d": 0,
+    "distanceKm": 0,
+    "significanceKm": 0,
+    "marginKm": 0,
+    "k": 0
+   }
+  },
+  {
+   "name": "a country of no polygons",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": 1
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zn",
+    "polygons": []
+   },
+   "observations": [
+    {
+     "extenderId": "e0",
+     "at": {
+      "lat": 1,
+      "lon": 3
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e1",
+     "at": {
+      "lat": 3,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e2",
+     "at": {
+      "lat": -1,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e3",
+     "at": {
+      "lat": 1,
+      "lon": -1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e4",
+     "at": {
+      "lat": 10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 24.184001,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 23.184001
+     }
+    },
+    {
+     "extenderId": "e5",
+     "at": {
+      "lat": -10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.678107,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.678107
+     }
+    },
+    {
+     "extenderId": "e6",
+     "at": {
+      "lat": 10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.641792,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.641792
+     }
+    },
+    {
+     "extenderId": "e7",
+     "at": {
+      "lat": -10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 28.904656,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 27.904656
+     }
+    }
+   ],
+   "confidence": 0.99,
+   "maxSigmaKm": 1500,
+   "verdict": "inconclusive",
+   "reason": "ip_country_unknown",
+   "judgement": {
+    "inside": false,
+    "overlaps": false,
+    "d": 0,
+    "distanceKm": 0,
+    "significanceKm": 0,
+    "marginKm": 0,
+    "k": 0
+   }
+  },
+  {
+   "name": "a country of empty rings",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": -3
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zn",
+    "polygons": [
+     [
+      []
+     ]
+    ]
+   },
    "observations": [
     {
      "extenderId": "e0",

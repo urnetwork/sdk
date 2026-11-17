@@ -140,6 +140,22 @@ export function countryIndex(country: Country): readonly PolygonBound[] | undefi
   return countryIndexes.get(country);
 }
 
+/**
+ * The country has a boundary to judge against: a ring with a point. One
+ * without, such as a country of no polygons, is an unknown country to decide
+ * and the clear stop, as a null one is (V6, V10).
+ */
+export function hasBoundary(country: Country): boolean {
+  for (const polygon of country.polygons) {
+    for (const ring of polygon) {
+      if (0 < ring.length) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** p is inside one of the country's polygons and in none of that polygon's holes. */
 export function countryContains(country: Country, p: Point): boolean {
   const index = countryIndexes.get(country);

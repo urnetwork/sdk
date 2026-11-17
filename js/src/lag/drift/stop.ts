@@ -21,7 +21,7 @@ import type { Fit } from "./fit";
 import { hypot } from "./geo";
 import { judgeK } from "./judge";
 import { earlyK } from "./model";
-import type { Country } from "./polygon";
+import { hasBoundary, type Country } from "./polygon";
 
 /** No rule stops a run before this, ms after the sessions opened. */
 export const stopEarliestMs = 3000;
@@ -65,7 +65,7 @@ const stopReasons: readonly StopReason[] = ["interrupted", "clear", "converged",
  * goes on. `history` is the run's snapshots in time order; those after nowMs
  * are ignored. `lastPongMs` is the last pong from any extender, before which
  * openedMs stands in. `country` is the IP country, null when unknown, which
- * rules out clear. When several rules hold, the first of interrupted, clear,
+ * rules out clear, as a country without a ring with a point does. When several rules hold, the first of interrupted, clear,
  * converged and cap is the reason.
  */
 export function evaluateStop(
@@ -106,7 +106,7 @@ export function stopHolds(
       return openedMs + stopCapMs <= nowMs;
     case "clear": {
       const latest = latestSnapshot(history, nowMs);
-      if (latest === null || latest.fit === null || country === null || !enoughRoundTrips(latest.roundTrips)) {
+      if (latest === null || latest.fit === null || country === null || !hasBoundary(country) || !enoughRoundTrips(latest.roundTrips)) {
         return false;
       }
       return earlyK <= judgeK(latest.fit, country, earlyK).d;

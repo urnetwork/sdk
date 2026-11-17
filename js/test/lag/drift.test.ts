@@ -679,6 +679,11 @@ test("V6: the verdict over a fit, as the api decides it", () => {
   assert.equal(farDecision.verdict, "disagree");
   assert.equal(farDecision.reason, "region_outside");
   assert.deepEqual(drift.decide(fit, null, observations, 0.99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
+  // a country with no ring that has a point is unknown too, before the precision check (review F-04)
+  for (const empty of [{ code: "zz", polygons: [] }, { code: "zz", polygons: [[[]]] }, { code: "zz", polygons: [[]] }]) {
+    assert.deepEqual(drift.decide(fit, empty, observations, 0.99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
+    assert.deepEqual(drift.decide(null, empty, observations, 0.99).reason, "ip_country_unknown");
+  }
   assert.deepEqual(drift.decide(null, home, observations, 0.99), { verdict: "inconclusive", reason: "low_precision", judgement: null });
   assert.equal(drift.decide(fit, home, observations, 0.99, fit.majorKm - 1).reason, "low_precision");
   // a region wide enough to touch Spain, while the light discs keep Spain out of reach
@@ -751,8 +756,10 @@ test("V10: clear when the k_early region is wholly out of the country, or wholly
   // near the border it isn't clear
   const near = looks(3000, (t) => stopFit(400 + t, 75, 0));
   assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small), null);
-  // without the IP country's borders, never clear
+  // without the IP country's borders, never clear, nor against a country with none (review F-04)
   assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null), null);
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [] }), null);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }), false);
   assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small), true);
   assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small), false);
 });
