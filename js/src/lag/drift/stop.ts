@@ -97,6 +97,8 @@ export function stopHolds(
   if (nowMs < openedMs + stopEarliestMs) {
     return false;
   }
+  // as a Go nil slice: none is empty
+  history = history ?? [];
   switch (reason) {
     case "interrupted":
       return Math.max(lastPongMs, openedMs) + stopInterruptedMs <= nowMs;
@@ -131,9 +133,9 @@ function latestSnapshot(history: readonly Snapshot[], nowMs: number): Snapshot |
 }
 
 /** at least 8 extenders have 12 round trips each */
-function enoughRoundTrips(roundTrips: readonly number[]): boolean {
+function enoughRoundTrips(roundTrips: readonly number[] | null): boolean {
   let count = 0;
-  for (const n of roundTrips) {
+  for (const n of roundTrips ?? []) {
     if (stopRoundTrips <= n) {
       count += 1;
     }
