@@ -15,9 +15,9 @@ package sdk
 // handler before it, so the system and Google Play still see the crash.
 //
 // When a process next points glog at the directory (setLogDirWithRoot), the
-// pending record is taken into java-crash.txt: its addresses and ids are
-// masked as the diagnostic export masks them (diagnostics_redact.go) and its
-// email addresses replaced, it is appended after the earlier records, and the
+// pending record is taken into java-crash.txt: masked (maskLogLine: addresses
+// and ids as the redacted export masks them, email addresses and the user's
+// folder in a path), it is appended after the earlier records, and the
 // file keeps its newest records within a bound (javaCrashSettings). The file
 // is written whole to a staging file and renamed into place, then the pending
 // record is removed. The upload carries the file before the glog files, as it
@@ -31,7 +31,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,10 +53,6 @@ const javaCrashPendingHeader = "urnetwork-java-crash 1"
 
 // The line that opens each record of the file, followed by the crash's time.
 const javaCrashRecordPrefix = "--- java crash at "
-
-// An email address, which an exception message can carry and the diagnostic
-// export does not mask.
-var javaCrashEmailPattern = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)
 
 // Bounds the java crash file.
 type javaCrashSettings struct {
@@ -165,9 +160,7 @@ func javaCrashRecord(pending string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	mask := func(text string) string {
-		return javaCrashEmailPattern.ReplaceAllString(redactor.redactLine(text), "<email>")
-	}
+	mask := redactor.maskLogLine
 	record := &strings.Builder{}
 	record.WriteString(javaCrashRecordPrefix)
 	record.WriteString(time.UnixMilli(timeMillis).UTC().Format(time.RFC3339Nano))
