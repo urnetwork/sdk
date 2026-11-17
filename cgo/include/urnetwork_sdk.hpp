@@ -24445,6 +24445,7 @@ public:
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	bool getProviderClientKeyPublished() const;
 	bool getProviderClientKeyRegistered() const;
 	bool getProviderConnected() const;
 	bool getProviderReady() const;
@@ -35983,6 +35984,10 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 		return std::nullopt;
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
+}
+inline bool DeviceLocal::getProviderClientKeyPublished() const {
+	bool r = urnet_device_local_get_provider_client_key_published(handle());
+	return r;
 }
 inline bool DeviceLocal::getProviderClientKeyRegistered() const {
 	bool r = urnet_device_local_get_provider_client_key_registered(handle());

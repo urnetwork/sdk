@@ -12509,6 +12509,17 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
 }
 
+//export urnet_device_local_get_provider_client_key_published
+func urnet_device_local_get_provider_client_key_published(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_get_provider_client_key_published")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_provider_client_key_published")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderClientKeyPublished()
+	return C.bool(r0)
+}
+
 //export urnet_device_local_get_provider_client_key_registered
 func urnet_device_local_get_provider_client_key_registered(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_local_get_provider_client_key_registered")
