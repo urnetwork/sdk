@@ -16,6 +16,8 @@ const close = (actual: number, expected: number, tolerance: number, message?: st
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message ?? ""} ${actual} is not within ${tolerance} of ${expected}`);
 
 const atlantic: Point = { lat: 40, lon: -40 };
+// the textbook 99% k, the region's k where these tests need one (V6, V11)
+const K99 = drift.kForConfidence(0.99);
 
 test("borders: a country by code in either case, and every code, sorted", () => {
   const borders = new drift.Borders("test-1", [fx.squareCountry("bb", fx.MADRID, 100), fx.squareCountry("aa", fx.CHICAGO, 100)]);
@@ -255,11 +257,11 @@ test("W8: the demo's verdict against the simplified map", async () => {
   const run = (truth: { lat: number; lon: number }, seed: number) =>
     fx.syntheticRun(1, { truth, extenders: fx.EUROPE_EXTENDERS, lastMileMs: 10, queueMs: 2, count: 16, seed });
   const frankfurt = { lat: 50.105, lon: 8.66 };
-  const home = drift.localDriftVerdict({ borders: world, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run(frankfurt, 3)] });
+  const home = drift.localDriftVerdict({ k: K99, borders: world, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run(frankfurt, 3)] });
   assert.equal(home.verdict, "agree");
   assert.equal(home.driftCountryCode, "de");
   // pings from Frankfurt on an address that says Spain: rejected, the pings pointing to Germany
-  const away = drift.localDriftVerdict({ borders: world, ipCountryCode: "es", expected: fx.MADRID, runs: [run(frankfurt, 5)] });
+  const away = drift.localDriftVerdict({ k: K99, borders: world, ipCountryCode: "es", expected: fx.MADRID, runs: [run(frankfurt, 5)] });
   assert.equal(away.verdict, "disagree");
   assert.equal(away.reason, "region_outside");
   assert.equal(away.driftCountryCode, "de");
@@ -303,7 +305,7 @@ test("W8: a run's observations are its extenders with 12 round trips, and it cou
 });
 
 test("W8: a visitor in their IP country is verified", () => {
-  const result = drift.localDriftVerdict({
+  const result = drift.localDriftVerdict({ k: K99,
     borders: europe,
     ipCountryCode: "DE",
     expected: fx.FRANKFURT,
@@ -316,9 +318,8 @@ test("W8: a visitor in their IP country is verified", () => {
   assert.equal(result.driftCountryCode, "de");
   assert.equal(result.distanceKm, 0);
   assert.ok(result.marginKm! < 0);
-  assert.equal(result.confidence, 0.99);
   assert.ok(result.fit && result.judgement);
-  assert.equal(result.k, drift.kForConfidence(0.99), "the textbook 99% k unless start gives the run's");
+  assert.equal(result.k, K99, "the run's k, as given");
   close(result.plusMinusKm!, drift.regionRadiusKm(result.fit!, result.k), 1e-9);
   // at the run's own k, from start (V11): the region and the ± grow with it
   const oceania = drift.localDriftVerdict({ borders: europe, ipCountryCode: "DE", expected: fx.FRANKFURT, runs: [frankfurtRun(1, 3)], k: 7.88 });
@@ -329,7 +330,7 @@ test("W8: a visitor in their IP country is verified", () => {
 });
 
 test("W8: pings that place the visitor clear of the IP country are rejected, with the figures the demo shows", () => {
-  const result = drift.localDriftVerdict({
+  const result = drift.localDriftVerdict({ k: K99,
     borders: europe,
     ipCountryCode: "es",
     expected: fx.MADRID,
@@ -352,13 +353,13 @@ test("V6: in a disputed area the demo's drift country is the IP country when it 
     fx.squareCountry("es", fx.MADRID, 350),
   ]);
   const run = frankfurtRun(1, 3);
-  const claimant = drift.localDriftVerdict({ borders: disputed, ipCountryCode: "bb", expected: fx.FRANKFURT, runs: [run] });
+  const claimant = drift.localDriftVerdict({ k: K99, borders: disputed, ipCountryCode: "bb", expected: fx.FRANKFURT, runs: [run] });
   assert.equal(claimant.verdict, "agree");
   assert.equal(claimant.reason, "inside_ip_country");
   assert.equal(claimant.driftCountryCode, "bb", "the IP country, though aa is first by code");
   assert.equal(disputed.countryAt(claimant.fit!.at), "aa");
   // an address elsewhere: the first claimant by code
-  const elsewhere = drift.localDriftVerdict({ borders: disputed, ipCountryCode: "es", expected: fx.MADRID, runs: [run] });
+  const elsewhere = drift.localDriftVerdict({ k: K99, borders: disputed, ipCountryCode: "es", expected: fx.MADRID, runs: [run] });
   assert.equal(elsewhere.verdict, "disagree");
   assert.equal(elsewhere.driftCountryCode, "aa");
 });
@@ -367,7 +368,7 @@ test("W8: the verdict pools the last 3 counting runs", () => {
   const runs = [1, 2, 3, 4, 5].map((run) => frankfurtRun(run, run * 13));
   // run 4 has too few usable extenders and doesn't count
   runs[3] = { ...runs[3], extenders: runs[3].extenders.slice(0, 5) };
-  const result = drift.localDriftVerdict({ borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs });
+  const result = drift.localDriftVerdict({ k: K99, borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs });
   assert.deepEqual(result.runsInVerdict, [2, 3, 5]);
   assert.deepEqual(result.fit!.runs, [2, 3, 5]);
   assert.equal(result.fit!.lastMileMs.length, 3);
@@ -376,13 +377,13 @@ test("W8: the verdict pools the last 3 counting runs", () => {
 });
 
 test("W8: inconclusive without a counting run, or without the IP country's borders", () => {
-  const none = drift.localDriftVerdict({ borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [] });
+  const none = drift.localDriftVerdict({ k: K99, borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [] });
   assert.equal(none.verdict, "inconclusive");
   assert.equal(none.reason, "too_few_extenders");
   assert.deepEqual(none.runsInVerdict, []);
   assert.equal(none.fit, null);
   const thin = frankfurtRun(1, 3);
-  const few = drift.localDriftVerdict({
+  const few = drift.localDriftVerdict({ k: K99,
     borders: europe,
     ipCountryCode: "de",
     expected: fx.FRANKFURT,
@@ -390,7 +391,7 @@ test("W8: inconclusive without a counting run, or without the IP country's borde
   });
   assert.equal(few.reason, "too_few_extenders");
   // an IP country the map lacks: still the drift country and the ±, for testing accuracy
-  const unknown = drift.localDriftVerdict({ borders: europe, ipCountryCode: "xk", expected: fx.FRANKFURT, runs: [thin] });
+  const unknown = drift.localDriftVerdict({ k: K99, borders: europe, ipCountryCode: "xk", expected: fx.FRANKFURT, runs: [thin] });
   assert.equal(unknown.verdict, "inconclusive");
   assert.equal(unknown.reason, "ip_country_unknown");
   assert.equal(unknown.driftCountryCode, "de");
@@ -402,7 +403,7 @@ test("W8: a geometry that can't place the visitor is inconclusive", () => {
   // every extender on one far line: σ_major beyond 1,500 km
   const line = Array.from({ length: 8 }, (_, i) => ({ lat: 10 + i * 0.01, lon: 100 + i * 0.01 }));
   const run = fx.syntheticRun(1, { truth: fx.FRANKFURT, extenders: line, lastMileMs: 10, queueMs: 2, count: 16, seed: 9 });
-  const result = drift.localDriftVerdict({ borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run] });
+  const result = drift.localDriftVerdict({ k: K99, borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run] });
   assert.equal(result.verdict, "inconclusive");
   assert.equal(result.reason, "low_precision");
 });

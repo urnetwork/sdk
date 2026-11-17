@@ -57,7 +57,10 @@ export interface StopTolerance {
   areaRatio: number;
   /**
    * V11: the run's k_early (kEarly of its k, as `start` gives it), for the
-   * clear rule; 0, or anything not positive, means earlyK
+   * clear rule. Optional as lagdrift's StopTolerance.KEarly is, whose zero
+   * value means EarlyK: absent, 0 or anything not positive means earlyK, the
+   * k_early of the textbook 99% k. A run judged at another k must carry its
+   * own.
    */
   kEarly?: number;
 }
@@ -89,7 +92,7 @@ export function evaluateStop(
   nowMs: number,
   lastPongMs: number,
   country: Country | null,
-  tol: StopTolerance = browserStopTolerance,
+  tol: StopTolerance,
 ): StopReason | null {
   for (const reason of stopReasons) {
     if (stopHolds(reason, history, openedMs, nowMs, lastPongMs, country, tol)) {
@@ -107,7 +110,7 @@ export function stopHolds(
   nowMs: number,
   lastPongMs: number,
   country: Country | null,
-  tol: StopTolerance = browserStopTolerance,
+  tol: StopTolerance,
 ): boolean {
   if (nowMs < openedMs + stopEarliestMs) {
     return false;

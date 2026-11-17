@@ -417,14 +417,14 @@ test("V6: inside the country agrees, with the region's radius toward the nearest
 test("V6: outside, the region overlapping the border agrees and one clear of it disagrees", () => {
   const country = fx.squareCountry("aa", fx.CHICAGO, 200);
   const at = drift.fromAzimuthalKm(fx.CHICAGO, 300, 0);
-  const clear = drift.judge(fitAt(at, iso(20)), country);
+  const clear = drift.judge(fitAt(at, iso(20)), country, K99);
   assert.equal(clear.inside, false);
   assert.equal(clear.overlaps, false);
   close(clear.distanceKm, 100, 0.5);
   close(clear.d, 100 / 20, 0.05);
   close(clear.significanceKm, 3.0349 * 20, 1e-3);
   assert.ok(clear.marginKm > 0);
-  const touching = drift.judge(fitAt(at, iso(50)), country);
+  const touching = drift.judge(fitAt(at, iso(50)), country, K99);
   assert.equal(touching.inside, false);
   assert.equal(touching.overlaps, true);
   assert.ok(touching.marginKm < 0);
@@ -483,12 +483,12 @@ test("V6: a concave border is judged exactly", () => {
   );
   const country = { code: "aa", polygons: [[u]] };
   const notch = drift.fromAzimuthalKm(fx.MADRID, 0, 150);
-  const narrow = drift.judge(fitAt(notch, iso(15)), country);
+  const narrow = drift.judge(fitAt(notch, iso(15)), country, K99);
   assert.equal(narrow.inside, false);
   // the arms are 100 km away: D = 100 / 15 > k
   close(narrow.distanceKm, 100, 1);
   assert.equal(narrow.overlaps, false, "inside the hull but clear of the border");
-  assert.equal(drift.judge(fitAt(notch, iso(40)), country).overlaps, true);
+  assert.equal(drift.judge(fitAt(notch, iso(40)), country, K99).overlaps, true);
 });
 
 test("V6: an island inside the region counts as touching, and a hole is outside", () => {
@@ -501,19 +501,19 @@ test("V6: an island inside the region counts as touching, and a hole is outside"
     [-3, 3],
   ]);
   const withIsland = { code: "aa", polygons: [...far.polygons, [island]] };
-  assert.equal(drift.judge(fitAt(at, iso(40)), far).overlaps, false);
-  const j = drift.judge(fitAt(at, iso(40)), withIsland);
+  assert.equal(drift.judge(fitAt(at, iso(40)), far, K99).overlaps, false);
+  const j = drift.judge(fitAt(at, iso(40)), withIsland, K99);
   assert.equal(j.overlaps, true);
   close(j.distanceKm, 77, 1);
   // a lake: the fit in the hole is outside the country, 50 km from its shore
   const outer = fx.densify(fx.ringAround(fx.MADRID, [[-400, -400], [400, -400], [400, 400], [-400, 400]]), 20);
   const hole = fx.densify(fx.ringAround(fx.MADRID, [[-50, -50], [50, -50], [50, 50], [-50, 50]]), 5);
   const lake = { code: "aa", polygons: [[outer, hole]] };
-  const inHole = drift.judge(fitAt(fx.MADRID, iso(5)), lake);
+  const inHole = drift.judge(fitAt(fx.MADRID, iso(5)), lake, K99);
   assert.equal(inHole.inside, false);
   close(inHole.distanceKm, 50, 1);
   assert.equal(inHole.overlaps, false);
-  assert.equal(drift.judge(fitAt(drift.fromAzimuthalKm(fx.MADRID, 200, 0), iso(5)), lake).inside, true);
+  assert.equal(drift.judge(fitAt(drift.fromAzimuthalKm(fx.MADRID, 200, 0), iso(5)), lake, K99).inside, true);
 });
 
 test("V6: polygons at the antimeridian and around a pole", () => {
@@ -531,9 +531,9 @@ test("V6: polygons at the antimeridian and around a pole", () => {
     { lon: -180, lat: -15 },
   ];
   const fiji = { code: "fj", polygons: [[east], [west]] };
-  assert.equal(drift.judge(fitAt({ lat: -17, lon: 179.9 }, iso(10)), fiji).inside, true);
-  assert.equal(drift.judge(fitAt({ lat: -17, lon: -179.5 }, iso(10)), fiji).inside, true);
-  const off = drift.judge(fitAt({ lat: -17.5, lon: 170 }, iso(10)), fiji);
+  assert.equal(drift.judge(fitAt({ lat: -17, lon: 179.9 }, iso(10)), fiji, K99).inside, true);
+  assert.equal(drift.judge(fitAt({ lat: -17, lon: -179.5 }, iso(10)), fiji, K99).inside, true);
+  const off = drift.judge(fitAt({ lat: -17.5, lon: 170 }, iso(10)), fiji, K99);
   assert.equal(off.inside, false);
   close(off.distanceKm, drift.distanceKm({ lat: -17.5, lon: 170 }, { lat: -17.5, lon: 175 }), 2);
   // a polar cap closed along the pole, as Natural Earth draws Antarctica
@@ -547,9 +547,9 @@ test("V6: polygons at the antimeridian and around a pole", () => {
     { lon: -180, lat: -90 },
   ];
   const aq = { code: "aq", polygons: [[cap]] };
-  assert.equal(drift.judge(fitAt({ lat: -85, lon: 30 }, iso(10)), aq).inside, true);
-  assert.equal(drift.judge(fitAt({ lat: -89.5, lon: -120 }, iso(10)), aq).inside, true);
-  const north = drift.judge(fitAt({ lat: -75, lon: 0 }, iso(10)), aq);
+  assert.equal(drift.judge(fitAt({ lat: -85, lon: 30 }, iso(10)), aq, K99).inside, true);
+  assert.equal(drift.judge(fitAt({ lat: -89.5, lon: -120 }, iso(10)), aq, K99).inside, true);
+  const north = drift.judge(fitAt({ lat: -75, lon: 0 }, iso(10)), aq, K99);
   assert.equal(north.inside, false);
   close(north.distanceKm, drift.distanceKm({ lat: -75, lon: 0 }, { lat: -80, lon: 0 }), 1);
 });
@@ -569,13 +569,13 @@ test("V6: Natural Earth's cuts along the antimeridian and a pole are no border",
       [[{ lon: -180, lat: -20 }, { lon: -175, lat: -20 }, { lon: -175, lat: -15 }, { lon: -180, lat: -15 }]],
     ],
   };
-  const beside = drift.judge(fitAt({ lat: -17.5, lon: 179.9 }, iso(10)), fiji);
+  const beside = drift.judge(fitAt({ lat: -17.5, lon: 179.9 }, iso(10)), fiji, K99);
   assert.equal(beside.inside, true);
   close(beside.d, drift.distanceKm({ lat: -17.5, lon: 179.9 }, { lat: -15, lon: 179.9 }) / 10, 0.05);
   // near the pole, the pole is no border: the coast at 80°S is
   const coast = Array.from({ length: 73 }, (_, i) => ({ lon: -180 + 5 * i, lat: -80 }));
   const aq = { code: "aq", polygons: [[[...coast, { lon: 180, lat: -90 }, { lon: -180, lat: -90 }]]] };
-  const nearPole = drift.judge(fitAt({ lat: -89.5, lon: -120 }, iso(10)), aq);
+  const nearPole = drift.judge(fitAt({ lat: -89.5, lon: -120 }, iso(10)), aq, K99);
   assert.equal(nearPole.inside, true);
   close(nearPole.d, drift.distanceKm({ lat: -89.5, lon: -120 }, { lat: -80, lon: -120 }) / 10, 0.5);
 });
@@ -584,7 +584,7 @@ test("V6: the antipode of a country doesn't put the fit in it, nor near it", () 
   // Buenos Aires' antipode is in eastern China
   const buenosAires = { lat: -34.6, lon: -58.4 };
   const china = fx.squareCountry("cn", { lat: 34.6, lon: 121.6 }, 500);
-  const j = drift.judge(fitAt(buenosAires, iso(50)), china);
+  const j = drift.judge(fitAt(buenosAires, iso(50)), china, K99);
   assert.equal(j.inside, false);
   assert.equal(j.overlaps, false);
   assert.ok(j.distanceKm > 15000, `${j.distanceKm}`);
@@ -592,10 +592,10 @@ test("V6: the antipode of a country doesn't put the fit in it, nor near it", () 
 
 test("V6: no country, or one with no border, is never touched", () => {
   for (const country of [null, { code: "zz", polygons: [] }]) {
-    const j = drift.judge(fitAt(fx.MADRID, iso(10)), country);
+    const j = drift.judge(fitAt(fx.MADRID, iso(10)), country, K99);
     assert.deepEqual(j, { inside: false, overlaps: false, d: Infinity, distanceKm: Infinity, significanceKm: 0, marginKm: Infinity, k: K99 });
   }
-  assert.equal(drift.judge(null, fx.squareCountry("aa", fx.MADRID, 100)).d, Infinity);
+  assert.equal(drift.judge(null, fx.squareCountry("aa", fx.MADRID, 100), K99).d, Infinity);
 });
 
 test("V6: an edge is split every 0.25° before it is projected", () => {
@@ -616,7 +616,6 @@ test("V8: the region's ± and its outline at the region's k", () => {
   ];
   const fit = fitAt(fx.MADRID, cov);
   close(drift.regionRadiusKm(fit, K99), K99 * Math.sqrt(fit.majorKm * fit.minorKm), 1e-12);
-  close(drift.regionRadiusKm(fit), drift.regionRadiusKm(fit, K99), 0, "the textbook 99% k by default");
   close(drift.regionRadiusKm(fit, 7.88), 7.88 * Math.sqrt(fit.majorKm * fit.minorKm), 1e-12);
   const outline = drift.regionOutline(fit, K99, 48);
   assert.equal(outline.length, 48);
@@ -728,17 +727,17 @@ test("V10: nothing stops a run in its first 3 s", () => {
 
 test("V10: converged once the ellipse holds for 2 s with 8 extenders at 12 round trips", () => {
   const history = looks(3000, () => stopFit(2500));
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3000, OPENED + 2990, small), "converged");
-  assert.equal(drift.stopHolds("converged", history, OPENED, OPENED + 3000, OPENED + 2990, small), true);
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "converged");
+  assert.equal(drift.stopHolds("converged", history, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), true);
   // too few round trips: no stop before the cap
   const sparse = looks(3000, () => stopFit(2500), () => [12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11]);
-  assert.equal(drift.evaluateStop(sparse, OPENED, OPENED + 3000, OPENED + 2990, small), null);
+  assert.equal(drift.evaluateStop(sparse, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
   // a fit for less than 2 s isn't steady yet
   const late = looks(3000, (t) => (t >= 1250 ? stopFit(2500) : null));
-  assert.equal(drift.evaluateStop(late, OPENED, OPENED + 3000, OPENED + 2990, small), null);
+  assert.equal(drift.evaluateStop(late, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
   // looks after now are ignored
   const ahead = [...looks(3000, () => stopFit(2500)), { atMs: OPENED + 3250, fit: null, roundTrips: [] }];
-  assert.equal(drift.evaluateStop(ahead, OPENED, OPENED + 3000, OPENED + 2990, small), "converged");
+  assert.equal(drift.evaluateStop(ahead, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "converged");
 });
 
 test("V10: the area must stay within the tolerance, the browser's ±5% and the server's ±8%", () => {
@@ -750,26 +749,26 @@ test("V10: the area must stay within the tolerance, the browser's ±5% and the s
   assert.deepEqual(drift.serverStopTolerance, { areaRatio: 1.17, kEarly: 0 });
   // and the position must move less than a quarter of σ_minor (here 50 km)
   const drifting = looks(4000, (t) => stopFit(2500, t / 100));
-  assert.equal(drift.evaluateStop(drifting, OPENED, OPENED + 4000, OPENED + 3990, small), null);
+  assert.equal(drift.evaluateStop(drifting, OPENED, OPENED + 4000, OPENED + 3990, small, drift.browserStopTolerance), null);
   const settled = looks(4000, (t) => stopFit(2500, t / 1000));
-  assert.equal(drift.evaluateStop(settled, OPENED, OPENED + 4000, OPENED + 3990, small), "converged");
+  assert.equal(drift.evaluateStop(settled, OPENED, OPENED + 4000, OPENED + 3990, small, drift.browserStopTolerance), "converged");
 });
 
 test("V10: clear when the k_early region is wholly out of the country, or wholly in it", () => {
   // shrinking, so never steady
   const outside = looks(3000, (t) => stopFit(400 + t, 600, 0));
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small), "clear");
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "clear");
   const inside = looks(3000, (t) => stopFit(100 + t / 10, 0, 0));
-  assert.equal(drift.evaluateStop(inside, OPENED, OPENED + 3000, OPENED + 2990, fx.squareCountry("aa", fx.CHICAGO, 400)), "clear");
+  assert.equal(drift.evaluateStop(inside, OPENED, OPENED + 3000, OPENED + 2990, fx.squareCountry("aa", fx.CHICAGO, 400), drift.browserStopTolerance), "clear");
   // near the border it isn't clear
   const near = looks(3000, (t) => stopFit(400 + t, 75, 0));
-  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small), null);
+  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
   // without the IP country's borders, never clear, nor against a country with none (review F-04)
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null), null);
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [] }), null);
-  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }), false);
-  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small), true);
-  assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small), false);
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null, drift.browserStopTolerance), null);
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [] }, drift.browserStopTolerance), null);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }, drift.browserStopTolerance), false);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), true);
+  assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), false);
 });
 
 test("V11: the calibrated k per confidence and continent, never below the textbook k", () => {
@@ -814,13 +813,13 @@ test("V10, V11: the clear stop judges at the run's k_early, earlyK when none is 
 
 test("V10: interrupted after 4 s without a pong, and the cap at 12 s", () => {
   const history = looks(5000, () => null, () => []);
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 5000, OPENED + 1000, small), "interrupted");
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 4000, 0, small), "interrupted", "no pong at all");
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3500, 0, small), null);
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 5000, OPENED + 1000, small, drift.browserStopTolerance), "interrupted");
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 4000, 0, small, drift.browserStopTolerance), "interrupted", "no pong at all");
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3500, 0, small, drift.browserStopTolerance), null);
   const slow = looks(12000, (t) => stopFit(400 + t), () => [20, 20, 20, 20, 20, 20, 20, 3, 3, 3, 3, 3]);
-  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 11750, OPENED + 11700, small), null);
-  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 12000, OPENED + 11990, small), "cap");
-  assert.equal(drift.stopHolds("interrupted", slow, OPENED, OPENED + 12000, OPENED + 11990, small), false);
+  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 11750, OPENED + 11700, small, drift.browserStopTolerance), null);
+  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 12000, OPENED + 11990, small, drift.browserStopTolerance), "cap");
+  assert.equal(drift.stopHolds("interrupted", slow, OPENED, OPENED + 12000, OPENED + 11990, small, drift.browserStopTolerance), false);
   assert.deepEqual(
     [drift.stopCapMs, drift.stopInterruptedMs, drift.stopWindowMs, drift.stopExtenders, drift.stopRoundTrips],
     [12000, 4000, 2000, 8, 12],

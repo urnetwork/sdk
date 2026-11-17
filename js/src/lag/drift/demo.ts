@@ -10,8 +10,8 @@
 import { driftCountryWithinKm, type Borders } from "./borders";
 import { fitPosition, type Fit } from "./fit";
 import type { Point } from "./geo";
-import { judge, kForConfidence, regionRadiusKm, type Judgement } from "./judge";
-import { defaultConfidence, defaultModel, type Model, type Observation } from "./model";
+import { judge, regionRadiusKm, type Judgement } from "./judge";
+import { defaultModel, type Model, type Observation } from "./model";
 import { countryContains, hasBoundary } from "./polygon";
 import { estimateRoundTrip } from "./roundTrip";
 import { decide, defaultMaxSigmaKm, type DriftVerdict, type DriftVerdictReason } from "./verdict";
@@ -73,13 +73,11 @@ export interface LocalDriftVerdictOptions {
   expected: Point;
   /** the frame's runs, oldest first */
   runs: readonly DriftRun[];
-  /** default 0.99 */
-  confidence?: number;
   /**
-   * V11: the region's k, the demo run's `k` from `start`; else the textbook
-   * k at the confidence
+   * V11: the region's k, the demo run's `k` from `start`, or, from a start
+   * that lacks it, defaultK(confidence, continentForCountry(the IP country))
    */
-  k?: number;
+  k: number;
   model?: Model;
   /** σ_major beyond which the geometry can't place the visitor, km; default 1,500 */
   maxSigmaKm?: number;
@@ -91,7 +89,6 @@ export interface LocalDriftVerdict {
   reason: DriftVerdictReason;
   /** the runs pooled, oldest first */
   runsInVerdict: number[];
-  confidence: number;
   /** the region's k judged at (V11) */
   k: number;
   ipCountryCode: string;
@@ -118,8 +115,7 @@ export interface LocalDriftVerdict {
  * `inconclusive`/`inconsistent`; it never rejects.
  */
 export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDriftVerdict {
-  const confidence = options.confidence ?? defaultConfidence;
-  const k = options.k ?? kForConfidence(confidence);
+  const k = options.k;
   const model = options.model ?? defaultModel();
   const ipCountryCode = options.ipCountryCode.toLowerCase();
   const counting = options.runs
@@ -130,7 +126,6 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
     verdict: "inconclusive",
     reason: "too_few_extenders",
     runsInVerdict: window.map(({ run }) => run),
-    confidence,
     k,
     ipCountryCode,
     driftCountryCode: "",
