@@ -7,8 +7,10 @@ registerTsResolve();
 const {
   canonicalIp,
   extenderIdFromBytes,
+  extenderMeasurementFamilyHost,
   extenderMeasurementHost,
   isExtenderId,
+  parseExtenderMeasurementFamilyHost,
   parseExtenderMeasurementHost,
   trimSpaceGo,
   DEFAULT_EXTENDER_MEASUREMENT_ZONE,
@@ -157,4 +159,48 @@ test("trimSpaceGo trims what Go's strings.TrimSpace trims", () => {
   // U+FEFF is not space to Go, though String.prototype.trim removes it
   assert.equal(trimSpaceGo("\ufeff1.2.3.4"), "\ufeff1.2.3.4");
   assert.equal(trimSpaceGo(" \t\v\f\r\n"), "");
+});
+
+// lag.dev/DRIFTTEST.md K6: the hosts that resolve in one IP family alone
+test("extenderMeasurementFamilyHost is connect.ExtenderMeasurementFamilyName on every vector", () => {
+  const names = vectors.measurementFamilyNames as Array<{ id: string; zone: string; ipFamily: number; name: string }>;
+  assert.ok(140 <= names.length);
+  assert.ok(names.some((vector) => vector.name === "") && names.some((vector) => vector.name !== ""));
+  for (const { id, zone, ipFamily, name } of names) {
+    assert.equal(extenderMeasurementFamilyHost(id, ipFamily, zone), name, `${id} family ${ipFamily} in ${JSON.stringify(zone)}`);
+  }
+});
+
+test("parseExtenderMeasurementFamilyHost is connect.ParseExtenderMeasurementFamilyName on every vector", () => {
+  const hosts = vectors.measurementFamilyHosts as Array<{ host: string; zone: string; id: string | null; ipFamily: number }>;
+  assert.ok(250 < hosts.length);
+  // refusals, and round trips of each family
+  assert.ok(60 < hosts.filter((vector) => vector.id === null).length);
+  for (const ipFamily of [0, 4, 6]) {
+    assert.ok(50 < hosts.filter((vector) => vector.id !== null && vector.ipFamily === ipFamily).length, `family ${ipFamily}`);
+  }
+  for (const { host, zone, id, ipFamily } of hosts) {
+    const expected = id === null ? null : { extenderId: id, ipFamily };
+    assert.deepEqual(parseExtenderMeasurementFamilyHost(host, zone), expected, `${JSON.stringify(host)} in ${JSON.stringify(zone)}`);
+  }
+});
+
+test("the K6 example: each family's host beside the measurement host", () => {
+  const ipv4Host = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv4.extender.bringyour.com";
+  const ipv6Host = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv6.extender.bringyour.com";
+  assert.equal(extenderMeasurementFamilyHost(exampleId, 4), ipv4Host);
+  assert.equal(extenderMeasurementFamilyHost(exampleId, 6), ipv6Host);
+  assert.deepEqual(parseExtenderMeasurementFamilyHost(ipv4Host), { extenderId: exampleId, ipFamily: 4 });
+  assert.deepEqual(parseExtenderMeasurementFamilyHost(ipv6Host), { extenderId: exampleId, ipFamily: 6 });
+  assert.deepEqual(parseExtenderMeasurementFamilyHost(exampleHost), { extenderId: exampleId, ipFamily: 0 });
+  // the measurement host's own parse keeps to the measurement host
+  assert.equal(parseExtenderMeasurementHost(ipv4Host), null);
+  assert.equal(parseExtenderMeasurementHost(ipv6Host), null);
+  // no other family has a host, nor the zero id, nor an id spelled otherwise
+  for (const ipFamily of [0, 5, 46, -4, Number.NaN]) {
+    assert.equal(extenderMeasurementFamilyHost(exampleId, ipFamily), "", `family ${ipFamily}`);
+  }
+  assert.equal(extenderMeasurementFamilyHost("00000000-0000-0000-0000-000000000000", 4), "");
+  assert.equal(extenderMeasurementFamilyHost(exampleId.toUpperCase(), 6), "");
+  assert.equal(extenderMeasurementFamilyHost(exampleId, 4, "  Lab.Example. "), `${exampleId}.ipv4.lab.example`);
 });

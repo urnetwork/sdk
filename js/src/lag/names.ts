@@ -358,10 +358,77 @@ export function extenderMeasurementHost(extenderId: string, zone: string = DEFAU
  * // "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
  */
 export function parseExtenderMeasurementHost(host: string, zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE): string | null {
-  const suffix = `.${measurementZone(zone)}`;
+  return parseExtenderMeasurementLabel(host, `.${measurementZone(zone)}`);
+}
+
+// the canonical extender id that host spells before suffix, or null
+function parseExtenderMeasurementLabel(host: string, suffix: string): string | null {
   if (!host.endsWith(suffix)) {
     return null;
   }
   const extenderId = host.slice(0, host.length - suffix.length);
   return isExtenderId(extenderId) ? extenderId : null;
+}
+
+// the label between the id and the zone of the host that resolves in one IP
+// family alone, "" for anything but 4 and 6 (connect lag_names.go
+// extenderMeasurementFamilyLabel)
+function measurementFamilyLabel(ipFamily: number): string {
+  if (ipFamily === 4) {
+    return "ipv4";
+  }
+  if (ipFamily === 6) {
+    return "ipv6";
+  }
+  return "";
+}
+
+/**
+ * The host of an extender that resolves in IP family `ipFamily` alone, 4 or 6
+ * (lag.dev/DRIFTTEST.md K6): its id, '.', "ipv4" or "ipv6", '.', and the
+ * zone, as connect's ExtenderMeasurementFamilyName. Its records are those of
+ * `extenderMeasurementHost` in that family only, so a session to it uses that
+ * family. The id and the zone are taken as `extenderMeasurementHost` takes
+ * them; an id that is not canonical, the zero id and any other family have no
+ * host, "".
+ *
+ * @example
+ * extenderMeasurementFamilyHost("0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f", 6)
+ * // "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv6.extender.bringyour.com"
+ */
+export function extenderMeasurementFamilyHost(
+  extenderId: string,
+  ipFamily: number,
+  zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE,
+): string {
+  const label = measurementFamilyLabel(ipFamily);
+  return isExtenderId(extenderId) && label !== "" ? `${extenderId}.${label}.${measurementZone(zone)}` : "";
+}
+
+/**
+ * The extender id any of its measurement hosts is for, and the IP family the
+ * host resolves in, or null, as connect's ParseExtenderMeasurementFamilyName:
+ * family 0 for `extenderMeasurementHost`, which resolves in both, and 4 or 6
+ * for `extenderMeasurementFamilyHost`. Only those shapes parse, each in its
+ * canonical spelling, as `parseExtenderMeasurementHost` takes it; a family
+ * label in upper case, another label between the id and the zone, and a host
+ * at the zone's apex are refused too.
+ *
+ * @example
+ * parseExtenderMeasurementFamilyHost("0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv4.extender.bringyour.com")
+ * // { extenderId: "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f", ipFamily: 4 }
+ */
+export function parseExtenderMeasurementFamilyHost(
+  host: string,
+  zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE,
+): { extenderId: string; ipFamily: 0 | 4 | 6 } | null {
+  const normalized = measurementZone(zone);
+  for (const ipFamily of [0, 4, 6] as const) {
+    const label = measurementFamilyLabel(ipFamily);
+    const extenderId = parseExtenderMeasurementLabel(host, label === "" ? `.${normalized}` : `.${label}.${normalized}`);
+    if (extenderId !== null) {
+      return { extenderId, ipFamily };
+    }
+  }
+  return null;
 }

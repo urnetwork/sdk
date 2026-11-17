@@ -21,8 +21,10 @@ export {
   DEFAULT_EXTENDER_MEASUREMENT_ZONE,
   canonicalIp,
   extenderIdFromBytes,
+  extenderMeasurementFamilyHost,
   extenderMeasurementHost,
   isExtenderId,
+  parseExtenderMeasurementFamilyHost,
   parseExtenderMeasurementHost,
 } from "./names";
 export {
