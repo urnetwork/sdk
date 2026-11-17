@@ -156,7 +156,11 @@ func newTestWebAuthnPresenceSigner(t *testing.T) *testWebAuthnPresenceSigner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyId := sha256.Sum256([]byte(fmt.Sprintf("webauthn %p", key)))
+	publicKey, err := key.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyId := sha256.Sum256(publicKey)
 	return &testWebAuthnPresenceSigner{key: key, keyId: keyId[:16], signCount: 1}
 }
 
