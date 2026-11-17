@@ -639,6 +639,7 @@ inline constexpr const char* PurchaseErrorCodeAssetUnavailable = "asset_unavaila
 inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
 inline constexpr const char* PurchaseErrorCodeIncorrectCvc = "incorrect_cvc";
 inline constexpr const char* PurchaseErrorCodeQuoteExpired = "quote_expired";
+inline constexpr const char* PurchaseErrorCodeSandboxPurchase = "sandbox_purchase";
 inline constexpr const char* PurchaseErrorCodeUnderpaid = "underpaid";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
 inline constexpr const char* PurchaseReportStatusCredited = "credited";
@@ -40852,6 +40853,16 @@ inline bool isPurchaseReportTerminal(const std::string& status) {
 	bool r = urnet_is_purchase_report_terminal(status.c_str());
 	return r;
 }
+inline bool isSandboxPurchaseRefusal(const std::optional<VerifyStorePurchaseResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	bool r = urnet_is_sandbox_purchase_refusal(result_c);
+	return r;
+}
 inline bool isValidPaymentReference(const std::string& s) {
 	bool r = urnet_is_valid_payment_reference(s.c_str());
 	return r;
@@ -41468,6 +41479,16 @@ inline std::string publicIdentityKeyHash(const uint8_t* public_key, int32_t publ
 inline int64_t purchaseReportBackoffMillis(int64_t attempt) {
 	int64_t r = urnet_purchase_report_backoff_millis(attempt);
 	return r;
+}
+inline std::string purchaseReportErrorCode(const std::optional<VerifyStorePurchaseResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* r_c = urnet_purchase_report_error_code(result_c);
+	return detail::takeString(r_c);
 }
 inline std::string recordTunnelRecoveryStage(const std::string& stage, const std::string& result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation) {
 	char* r_c = urnet_record_tunnel_recovery_stage(stage.c_str(), result.c_str(), intended, consumer_present, has_location, provider_count, generation);

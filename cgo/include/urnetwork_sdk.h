@@ -588,6 +588,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_ERROR_CODE_GUEST_SIGN_IN_REQUIRED "guest_sign_in_required"
 #define URNET_PURCHASE_ERROR_CODE_INCORRECT_CVC "incorrect_cvc"
 #define URNET_PURCHASE_ERROR_CODE_QUOTE_EXPIRED "quote_expired"
+#define URNET_PURCHASE_ERROR_CODE_SANDBOX_PURCHASE "sandbox_purchase"
 #define URNET_PURCHASE_ERROR_CODE_UNDERPAID "underpaid"
 #define URNET_PURCHASE_REPORT_STATUS_ALREADY_CREDITED "already_credited"
 #define URNET_PURCHASE_REPORT_STATUS_CREDITED "credited"
@@ -2851,6 +2852,7 @@ bool urnet_is_cant_reach_error(const char* error_message);
 bool urnet_is_checkout_redirect(const char* uri);
 bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
+bool urnet_is_sandbox_purchase_refusal(const char* result_json);
 bool urnet_is_valid_payment_reference(const char* s);
 void urnet_log_app_info(const char* tag, const char* message);
 char* urnet_log_inventory(void);
@@ -2933,6 +2935,7 @@ int64_t urnet_points_to_nano_points(double points);
 char* urnet_pro_features_status_for(const char* result_json);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
+char* urnet_purchase_report_error_code(const char* result_json);
 char* urnet_record_tunnel_recovery_stage(const char* stage, const char* result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation);
 char* urnet_regional_control_doh_urls(const char* country_code);
 void urnet_report_memory_trim_level(int64_t level);

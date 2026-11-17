@@ -949,6 +949,7 @@ EXPORTS
 	urnet_is_checkout_redirect
 	urnet_is_points_leaderboard_sort
 	urnet_is_purchase_report_terminal
+	urnet_is_sandbox_purchase_refusal
 	urnet_is_valid_payment_reference
 	urnet_live_handle_count
 	urnet_local_auth_state_snapshot_get_by_client_jwt
@@ -1342,6 +1343,7 @@ EXPORTS
 	urnet_proxy_device_get_proxy_config_result
 	urnet_public_identity_key_hash
 	urnet_purchase_report_backoff_millis
+	urnet_purchase_report_error_code
 	urnet_record_tunnel_recovery_stage
 	urnet_referral_code_view_controller_add_referral_code_fetch_error_listener
 	urnet_referral_code_view_controller_add_referral_code_listener
