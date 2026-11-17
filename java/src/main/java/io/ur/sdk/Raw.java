@@ -1620,6 +1620,7 @@ public interface Raw extends Library {
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
+  byte urnet_is_sandbox_purchase_refusal(String a0);
   byte urnet_is_valid_payment_reference(String a0);
   void urnet_log_app_info(String a0, String a1);
   Pointer urnet_log_inventory();
@@ -1702,6 +1703,7 @@ public interface Raw extends Library {
   Pointer urnet_pro_features_status_for(String a0);
   Pointer urnet_public_identity_key_hash(Pointer a0, int a1);
   long urnet_purchase_report_backoff_millis(long a0);
+  Pointer urnet_purchase_report_error_code(String a0);
   Pointer urnet_record_tunnel_recovery_stage(String a0, String a1, byte a2, byte a3, byte a4, long a5, long a6);
   Pointer urnet_regional_control_doh_urls(String a0);
   void urnet_report_memory_trim_level(long a0);

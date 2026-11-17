@@ -2992,6 +2992,8 @@ def bind(lib):
     lib.urnet_is_points_leaderboard_sort.restype = c_bool
     lib.urnet_is_purchase_report_terminal.argtypes = [c_char_p]
     lib.urnet_is_purchase_report_terminal.restype = c_bool
+    lib.urnet_is_sandbox_purchase_refusal.argtypes = [c_char_p]
+    lib.urnet_is_sandbox_purchase_refusal.restype = c_bool
     lib.urnet_is_valid_payment_reference.argtypes = [c_char_p]
     lib.urnet_is_valid_payment_reference.restype = c_bool
     lib.urnet_log_app_info.argtypes = [c_char_p, c_char_p]
@@ -3156,6 +3158,8 @@ def bind(lib):
     lib.urnet_public_identity_key_hash.restype = c_void_p
     lib.urnet_purchase_report_backoff_millis.argtypes = [c_int64]
     lib.urnet_purchase_report_backoff_millis.restype = c_int64
+    lib.urnet_purchase_report_error_code.argtypes = [c_char_p]
+    lib.urnet_purchase_report_error_code.restype = c_void_p
     lib.urnet_record_tunnel_recovery_stage.argtypes = [c_char_p, c_char_p, c_bool, c_bool, c_bool, c_int64, c_int64]
     lib.urnet_record_tunnel_recovery_stage.restype = c_void_p
     lib.urnet_regional_control_doh_urls.argtypes = [c_char_p]

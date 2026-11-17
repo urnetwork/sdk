@@ -1619,6 +1619,7 @@ module URnetwork
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true
+      attach_function :urnet_is_sandbox_purchase_refusal, [:string], :bool, blocking: true
       attach_function :urnet_is_valid_payment_reference, [:string], :bool, blocking: true
       attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true
@@ -1701,6 +1702,7 @@ module URnetwork
       attach_function :urnet_pro_features_status_for, [:string], :pointer, blocking: true
       attach_function :urnet_public_identity_key_hash, [:pointer, :int32], :pointer, blocking: true
       attach_function :urnet_purchase_report_backoff_millis, [:int64], :int64, blocking: true
+      attach_function :urnet_purchase_report_error_code, [:string], :pointer, blocking: true
       attach_function :urnet_record_tunnel_recovery_stage, [:string, :string, :bool, :bool, :bool, :int64, :int64], :pointer, blocking: true
       attach_function :urnet_regional_control_doh_urls, [:string], :pointer, blocking: true
       attach_function :urnet_report_memory_trim_level, [:int64], :void, blocking: true
