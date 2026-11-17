@@ -3534,6 +3534,14 @@ const (
 	// sheet (StripePaymentSheet) or a NEW checkout session
 	// (CreateStripeCheckoutSession).
 	PurchaseErrorCodeIncorrectCvc = "incorrect_cvc"
+	// An App Store sandbox purchase (a TestFlight build, a sandbox tester) for
+	// a network that is not one of the server's internal testers: sandbox
+	// purchases are free, so they unlock nothing. Only the App Store purchase
+	// report (VerifyAppleTransaction, and so a restore) answers it, with the
+	// invalid status. The app finishes the transaction as for any invalid
+	// answer and shows its neutral line for this code
+	// (IsSandboxPurchaseRefusal), never a way to pay elsewhere.
+	PurchaseErrorCodeSandboxPurchase = "sandbox_purchase"
 )
 
 type SolanaPaymentIntentError struct {

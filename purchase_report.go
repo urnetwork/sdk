@@ -66,6 +66,27 @@ func IsPurchaseReportTerminal(status string) bool {
 	return false
 }
 
+// PurchaseReportErrorCode is the PurchaseErrorCode* value an invalid answer
+// names (VerifyStorePurchaseResult.Error.Code), or "" when the answer is not
+// invalid, names no code, or comes from an older server. Apps pick their
+// line from the code, never from the server's message text.
+func PurchaseReportErrorCode(result *VerifyStorePurchaseResult) string {
+	if result == nil || result.Status != PurchaseReportStatusInvalid || result.Error == nil {
+		return ""
+	}
+	return result.Error.Code
+}
+
+// IsSandboxPurchaseRefusal reports whether the answer refuses an App Store
+// sandbox purchase (a TestFlight build) because the network is not an
+// internal tester (PurchaseErrorCodeSandboxPurchase). The answer is invalid,
+// so the app finishes the transaction as usual; instead of the "couldn't be
+// verified" line it shows the neutral one: test purchases in test builds
+// don't unlock Pro.
+func IsSandboxPurchaseRefusal(result *VerifyStorePurchaseResult) bool {
+	return PurchaseReportErrorCode(result) == PurchaseErrorCodeSandboxPurchase
+}
+
 // purchaseReportBackoffMillis is the retry schedule: quick retries first (the
 // common failure is a blip), then settling at a 5 minute cap -- which also
 // keeps a well-behaved client polling a pending purchase safely under the
