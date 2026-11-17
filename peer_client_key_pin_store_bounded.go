@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -67,15 +68,16 @@ type boundedPeerPinStats struct {
 }
 
 type boundedPeerClientKeyPinStore struct {
-	stateLock  sync.Mutex
-	localState *LocalState
-	owner      *deviceAuthPublicationGate
-	generation uint64
-	budget     *connect.TransferMemoryBudget
-	path       string
-	data       *boundedPeerPinData
-	failure    error
-	stats      boundedPeerPinStats
+	stateLock     sync.Mutex
+	localState    *LocalState
+	owner         *deviceAuthPublicationGate
+	generation    uint64
+	budget        *connect.TransferMemoryBudget
+	path          string
+	durableRename peerPinDurableRename
+	data          *boundedPeerPinData
+	failure       error
+	stats         boundedPeerPinStats
 	// Installed only by tests before concurrent operations begin.
 	testingCommitStep func(string) error
 }
@@ -106,8 +108,9 @@ func prepareBoundedPeerClientKeyPinStore(state *LocalState, owner *deviceAuthPub
 	}
 	store := &boundedPeerClientKeyPinStore{
 		localState: state, owner: owner, budget: budget,
-		path: filepath.Join(state.localStorageDir, peerClientKeyPinsFileName),
-		data: new(boundedPeerPinData),
+		path:          filepath.Join(state.localStorageDir, peerClientKeyPinsFileName),
+		durableRename: peerPinDurableRenameFor(runtime.GOOS),
+		data:          new(boundedPeerPinData),
 	}
 	state.authStateLock.Lock()
 	err := store.loadWithLock()
@@ -676,7 +679,7 @@ func (self *boundedPeerClientKeyPinStore) persistWithLock(peer connect.Id, pin c
 	}
 	buffer = append(buffer, '}', '}')
 	defer clear(buffer)
-	return persistPeerClientKeyPinsWithLock(self.path, buffer, self.testingCommitStep)
+	return persistPeerClientKeyPinsWithLock(self.path, buffer, self.durableRename, self.testingCommitStep)
 }
 
 func (self *boundedPeerClientKeyPinStore) Stats() boundedPeerPinStats {
