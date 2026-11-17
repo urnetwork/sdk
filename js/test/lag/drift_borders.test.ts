@@ -229,6 +229,12 @@ test("G3: on the simplified map a disputed area belongs to every claimant, and T
   }
   const holders = (lat: number, lon: number) => world.codes().filter((code) => drift.countryContains(world.country(code)!, { lat, lon }));
   assert.deepEqual(holders(44.95, 34.1), ["ru", "ua"], "Simferopol");
+  // Natural Earth 5.1.2 predates the 2022 annexation claim: Donetsk and
+  // Luhansk go to ru as well, by drift-borders' exception, and occupied
+  // Zaporizhzhia and Kherson, with no Natural Earth piece, stay ua
+  assert.deepEqual(holders(48.0159, 37.8028), ["ru", "ua"], "Donetsk");
+  assert.deepEqual(holders(48.574, 39.3078), ["ru", "ua"], "Luhansk");
+  assert.deepEqual(holders(46.8489, 35.3675), ["ua"], "Melitopol");
   assert.deepEqual(holders(34.08, 74.8), ["in", "pk"], "Srinagar");
   assert.deepEqual(holders(27.15, -13.2), ["eh", "ma"], "Laayoune");
   assert.deepEqual(holders(42.66, 21.17), ["rs", "xk"], "Pristina");
