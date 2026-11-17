@@ -311,6 +311,25 @@ test("W8: pings that place the visitor clear of the IP country are rejected, wit
   assert.equal(result.judgement!.overlaps, false);
 });
 
+test("V6: in a disputed area the demo's drift country is the IP country when it claims the area", () => {
+  // aa and bb both claim the land around Frankfurt; aa is first by code
+  const disputed = new drift.Borders("test", [
+    fx.squareCountry("aa", fx.FRANKFURT, 250),
+    fx.squareCountry("bb", fx.FRANKFURT, 200),
+    fx.squareCountry("es", fx.MADRID, 350),
+  ]);
+  const run = frankfurtRun(1, 3);
+  const claimant = drift.localDriftVerdict({ borders: disputed, ipCountryCode: "bb", expected: fx.FRANKFURT, runs: [run] });
+  assert.equal(claimant.verdict, "agree");
+  assert.equal(claimant.reason, "inside_ip_country");
+  assert.equal(claimant.driftCountryCode, "bb", "the IP country, though aa is first by code");
+  assert.equal(disputed.countryAt(claimant.fit!.at), "aa");
+  // an address elsewhere: the first claimant by code
+  const elsewhere = drift.localDriftVerdict({ borders: disputed, ipCountryCode: "es", expected: fx.MADRID, runs: [run] });
+  assert.equal(elsewhere.verdict, "disagree");
+  assert.equal(elsewhere.driftCountryCode, "aa");
+});
+
 test("W8: the verdict pools the last 3 counting runs", () => {
   const runs = [1, 2, 3, 4, 5].map((run) => frankfurtRun(run, run * 13));
   // run 4 has too few usable extenders and doesn't count

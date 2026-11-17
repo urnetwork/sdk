@@ -12,6 +12,7 @@ import { fitPosition, type Fit } from "./fit";
 import type { Point } from "./geo";
 import { judge, regionRadiusKm, type Judgement } from "./judge";
 import { defaultConfidence, defaultModel, type Model, type Observation } from "./model";
+import { countryContains } from "./polygon";
 import { estimateRoundTrip } from "./roundTrip";
 import { decide, defaultMaxSigmaKm, type DriftVerdict, type DriftVerdictReason } from "./verdict";
 
@@ -87,7 +88,11 @@ export interface LocalDriftVerdict {
   runsInVerdict: number[];
   confidence: number;
   ipCountryCode: string;
-  /** the country containing the fit, else the nearest within 300 km, else "" at sea (V6) */
+  /**
+   * V6: the country containing the fit (the IP country when it is one of
+   * several, as in a disputed area), else the nearest within 300 km, else ""
+   * at sea
+   */
   driftCountryCode: string;
   /** V6's figures toward the IP country's nearest border point, km; null without a fit and the country */
   distanceKm: number | null;
@@ -138,7 +143,13 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
   result.reason = decision.reason;
   if (fit !== null) {
     result.fit = fit;
-    result.driftCountryCode = options.borders.countryAt(fit.at, driftCountryWithinKm);
+    // V6: a disputed area belongs to every claimant, so where the fit lies in
+    // several countries the drift country is the IP country if it is one of
+    // them, else the first by code, as countryAt gives
+    result.driftCountryCode =
+      country !== null && countryContains(country, fit.at)
+        ? country.code
+        : options.borders.countryAt(fit.at, driftCountryWithinKm);
     result.plusMinusKm = regionRadiusKm(fit, confidence);
     // the figures, even where the verdict needed none
     const judgement = decision.judgement ?? (country !== null ? judge(fit, country, confidence) : null);
