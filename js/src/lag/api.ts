@@ -179,6 +179,11 @@ export interface DriftTestStartArgs {
   token: string;
   /** W5: the parent's origin, when the frame knows it; sent as `parent_origin` */
   parentOrigin?: string | null;
+  /**
+   * K6: start the run over the family this request arrives by, after the pin
+   * origin couldn't be reached; sent as `"unpinned": true` only when true
+   */
+  unpinned?: boolean;
 }
 
 /**
@@ -196,6 +201,14 @@ export type DriftTestStartRefusalCode = "expired" | "closed" | "busy" | "origin"
  * `drift_test_id`, and its tickets carry `NoReport`.
  */
 export interface DriftTestStartResult {
+  /**
+   * K6: the request arrived over the other family from `client_ip`'s, and
+   * no run was used: send the same start to this origin
+   * (`https://api4.bringyour.com` or `https://api6.bringyour.com`), and if
+   * it can't be reached within 3 s, once more here with `unpinned`. A pin
+   * comes alone, with no tickets.
+   */
+  pin?: string;
   /** the drift test; absent for the demo token */
   drift_test_id?: string;
   /** W8: the demo token; `finish` and `result` refuse it */
@@ -367,9 +380,12 @@ export class LagApiClient extends URNetworkApiClientBase {
    * never the url. Never retried.
    */
   async driftTestStart(args: DriftTestStartArgs, options?: RequestOptions): Promise<DriftTestStartResult> {
-    const body: { token: string; parent_origin?: string } = { token: driftToken("driftTestStart", args.token) };
+    const body: { token: string; parent_origin?: string; unpinned?: true } = { token: driftToken("driftTestStart", args.token) };
     if (typeof args.parentOrigin === "string" && args.parentOrigin !== "") {
       body.parent_origin = args.parentOrigin;
+    }
+    if (args.unpinned === true) {
+      body.unpinned = true;
     }
     const result = await refusalAsResult(
       this.request<Partial<DriftTestStartResult>>(

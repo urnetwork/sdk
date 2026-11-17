@@ -85,6 +85,25 @@ test("driftTestStart without a known parent origin sends none", async () => {
   assert.deepEqual(calls[1].body, { token: TOKEN });
 });
 
+test("K6: a start over the other family is answered with a pin alone, and the retry can go unpinned", async () => {
+  const pin = { pin: "https://api4.bringyour.com" };
+  const { calls, fetchImpl } = recorder([json(200, pin), json(200, started), json(200, started), json(200, started)]);
+  const api = createLagApiClient({ fetch: fetchImpl });
+  const pinned = await api.driftTestStart({ token: TOKEN, parentOrigin: "https://example.com" });
+  assert.deepEqual(pinned, { ...pin, tickets: [] });
+  assert.equal(pinned.pin, "https://api4.bringyour.com");
+  assert.equal(pinned.run, undefined, "no run was used");
+  // the pin origin unreachable: the same start once more, unpinned
+  await api.driftTestStart({ token: TOKEN, parentOrigin: "https://example.com", unpinned: true });
+  assert.deepEqual(calls[1].body, { token: TOKEN, parent_origin: "https://example.com", unpinned: true });
+  // unpinned is sent only when true
+  await api.driftTestStart({ token: TOKEN, unpinned: false });
+  await api.driftTestStart({ token: TOKEN });
+  assert.deepEqual(calls[2].body, { token: TOKEN });
+  assert.deepEqual(calls[3].body, { token: TOKEN });
+  assert.equal(calls[0].body && (calls[0].body as Record<string, unknown>).unpinned, undefined);
+});
+
 test("W8: the demo token's start carries demo and no drift test id", async () => {
   const demo = { ...started, drift_test_id: undefined, demo: true };
   const { calls, fetchImpl } = recorder([json(200, demo)]);
