@@ -3,25 +3,32 @@
 package sdk
 
 // §22.9's link cell on T4's ios32 surrogate (BRIDGE-M8-03; D-BRIDGE-5, D-BRIDGE-12, R-BRIDGE-9, §17.5's memory row,
-// §18.4's budgets; owner decision 100): what one link costs a VPN component, and what an app host's exit NAT holds with
-// public egress flows under the sdk host table, each measured in t4cell's cell under the profile's Go limit and
-// reported in its table, since the link's figure is what decides links in the iOS tunnel and no surrogate figure is
-// evidence for a device. The cell is not vacuous: a planted link holding twice the forwarding role's steady budget fails
-// its check. Through the NAT a public flow's bytes reach their destination exactly as with no hook, and its decision
-// holds the NAT's own idle.
+// §18.4's budgets; owner decision 100; DESIGN-DETAILS 4.2.4, 4.4): what one link costs a VPN component; a forwarding
+// compile beside that link, at a personal network's six devices and at 1,000 in 4.2.4's mix (sidecartest/forwardcell's
+// network, compiled by a real Forwarder over the component's sealed store on disk), each peak reported beside the
+// admission rule's estimate for its rows and 4.4's figure for its size; and what an app host's exit NAT holds with public
+// egress flows under the sdk host table. Each is measured in t4cell's cell under the profile's Go limit and reported in
+// its table, since the link's figure is what decides links in the iOS tunnel and no surrogate figure is evidence for a
+// device. The cell is not vacuous: a planted link holding twice the forwarding role's steady budget fails its check, and
+// so does a planted compile holding twice the compile cap at its head read. Through the NAT a public flow's bytes reach
+// their destination exactly as with no hook, and its decision holds the NAT's own idle. 4.4's rows fixture itself is
+// rerun in every make check by the sidecar module's TestTheCompileEstimateCoversTheLoadedRows.
 //
-// A sidecar-role test file, so the cell harness's import passes the sdk's import rule, which keeps t4cell out of the
-// device role's files (dependency_boundary_test.go); the plan named it device_sidecar_memory_test.go.
+// A sidecar-role test file, so the cell harnesses' imports pass the sdk's import rule, which keeps t4cell and forwardcell
+// out of the device role's files (dependency_boundary_test.go); the plan named it device_sidecar_memory_test.go.
 //
 // What the cell leaves to the review phase and the surrogate devices, each in BRIDGE-M8-03's report: the link measured
 // as a real window client with its transports and sealed session on a surrogate, every LOWBAR phase, bridge flows at
 // §17.5's idles through C5's IdleTimeout in the NAT (a principal's flow needs a sealed session no in-process peer forms
-// here; device's tests hold the decisions' idles), the forwarding compile sampled beside the link against DESIGN-DETAILS
-// 4.4's table, and 4.4's rows fixture rerun, both of which wait on an exported N-device compile fixture.
+// here; device's tests hold the decisions' idles), and the device role's own check of a compile's hand, which
+// forwardcell's sink does not make (it keeps the state, as device.Bridge does). SDK-M8-15's compile cells (3,000 devices
+// within the cap, 5,000 refused, the steady heap at 5,000 identities) are that task's, on the same fixture.
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
@@ -35,9 +42,79 @@ import (
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 
+	"github.com/urnetwork/sidecar"
 	sidecardevice "github.com/urnetwork/sidecar/device"
+	"github.com/urnetwork/sidecar/sidecartest/forwardcell"
 	"github.com/urnetwork/sidecar/sidecartest/t4cell"
 )
+
+// The VPN component's sealed forwarding store on disk, empty, under a root key of its own: where a Forwarder's rows,
+// entries and heads wait between compiles (DESIGN-DETAILS 4.2.2's store).
+func testingLinkCellForwarderStore(t *testing.T) sidecar.ForwarderStore {
+	t.Helper()
+	files, err := newSdkForwardFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootKey := make([]byte, 32)
+	if _, err := rand.Read(rootKey); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := sidecardevice.NewSealedPostureStore(files, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &deviceForwarderStore{sealed: sealed, files: files}
+}
+
+// The heap a forwarding compile of forwardcell's network of deviceCount devices holds live at its hand, from a run of its
+// own (forwardcell's LiveAtHand collects garbage there, which would move a step's peak), beside the step's sampled peak.
+func testingLinkCellLiveAtHand(t *testing.T, ctx context.Context, deviceCount int) int64 {
+	t.Helper()
+	network, err := forwardcell.NewNetwork(deviceCount, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := network.Start(ctx, &forwardcell.RunArgs{Store: testingLinkCellForwarderStore(t), LiveAtHand: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer run.Close()
+	result, err := run.Compile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State == nil {
+		t.Fatalf("%d devices did not compile: %+v", deviceCount, result)
+	}
+	return result.HandLiveByteCount
+}
+
+// Runs one forwarding compile of forwardcell's network of deviceCount devices under cell's step, with sample as the
+// compile's Sample: the step's row and the compile's result. The run's Forwarder ends with the step; the state it handed
+// is the step's keep, as the device role keeps its state in force.
+func testingLinkCellCompile(t *testing.T, ctx context.Context, cell *t4cell.Cell, step string, deviceCount int, sample func()) (*t4cell.Row, *forwardcell.CompileResult) {
+	t.Helper()
+	network, err := forwardcell.NewNetwork(deviceCount, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := network.Start(ctx, &forwardcell.RunArgs{Store: testingLinkCellForwarderStore(t), Sample: sample})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer run.Close()
+	var result *forwardcell.CompileResult
+	row, err := cell.Measure(step, cell.Profile().CompileMemoryMaxByteCount, t4cell.HoldsPeak, func() (any, error) {
+		var err error
+		result, err = run.Compile(ctx)
+		return result, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return row, result
+}
 
 // A UDP datagram from 198.51.100.20:sourcePort to destination carrying payload, a fresh slice.
 func testingLinkCellDatagram(t *testing.T, destination netip.AddrPort, sourcePort uint16, payload []byte) []byte {
@@ -185,6 +262,44 @@ func TestLinkCellOnTheIos32Surrogate(t *testing.T) {
 	}
 	t.Logf("cell=link profile=%s step=%q peak=%d steady=%d budget=%d within=%t (reported: §22.9 decides links on iOS on a surrogate's run)",
 		linkRow.Profile, linkRow.Step, linkRow.PeakByteCount, linkRow.SteadyByteCount, linkRow.BudgetByteCount, linkRow.Within())
+
+	// a forwarding compile beside the link, which keep holds: forwardcell's network at a personal network's six devices
+	// and at 1,000, compiled by a real Forwarder over the component's sealed store on disk, each step's peak over the heap
+	// with the link held, reported beside the admission rule's estimate for its rows and 4.4's figure for its size
+	// a watchdog over the compiles, which a loaded host slows: never a wait
+	compileCtx, compileCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer compileCancel()
+	for _, size := range []struct {
+		deviceCount int
+		design      string
+	}{{6, "1.1 MiB"}, {1_000, "3.2 MiB"}} {
+		step := fmt.Sprintf("forwarding compile, %d devices, beside one link", size.deviceCount)
+		compileRow, result := testingLinkCellCompile(t, compileCtx, cell, step, size.deviceCount, cell.Sample)
+		if result.Admission != sidecar.ForwarderCompileAdmitted || result.State == nil || result.CompileCount != 1 {
+			t.Fatalf("%d devices did not compile: %+v", size.deviceCount, result)
+		}
+		live := testingLinkCellLiveAtHand(t, compileCtx, size.deviceCount)
+		t.Logf("cell=link profile=%s step=%q rows=%d estimate=%d design=%s peak=%d live=%d steady=%d state=%d took=%s within=%t (reported: 4.4's compile row on this host; the peak counts garbage not yet collected, live is the heap held at the hand)",
+			compileRow.Profile, compileRow.Step, result.RowsByteCount, result.EstimateByteCount, size.design, compileRow.PeakByteCount,
+			live, compileRow.SteadyByteCount, result.StateByteCount, result.Duration, compileRow.Within())
+	}
+	// the cell catches a compile past the cap: a planted one taking twice the cap at its head read and holding it
+	// through its hand
+	plantedCompile := t4cell.NewCell(profile)
+	var plantedHeld []byte
+	testingLinkCellCompile(t, compileCtx, plantedCompile, "a planted compile at twice the cap", 6, func() {
+		if plantedHeld == nil {
+			plantedHeld = make([]byte, 2*profile.CompileMemoryMaxByteCount)
+			for i := range plantedHeld {
+				plantedHeld[i] = byte(i)
+			}
+		}
+		plantedCompile.Sample()
+	})
+	if plantedCompile.CheckWithin() == nil {
+		t.Fatalf("the cell let a compile at twice the cap through:\n%s", plantedCompile.Table())
+	}
+
 	for _, kept := range keep {
 		switch kept := kept.(type) {
 		case *connect.Client:

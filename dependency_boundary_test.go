@@ -1055,10 +1055,12 @@ var (
 		sidecarImportModulePath + "/protocol/bridge",
 	}
 	// What a sidecar-role test file may import beside the role's: T4's cell harness, which imports only the standard
-	// library, so it brings nothing of sidecartest's servers into this module (SDK-M8-15). No other sidecartest
-	// package, and nothing a file that is no test may import.
+	// library, so it brings nothing of sidecartest's servers into this module (SDK-M8-15); and the forwarding compile's
+	// fixture, which imports only the role's own packages and the rows fixture's protocol messages (BRIDGE-M8-03). No
+	// other sidecartest package, and nothing a file that is no test may import.
 	sidecarImportRoleTestAllowed = []string{
 		sidecarImportModulePath + "/sidecartest/t4cell",
+		sidecarImportModulePath + "/sidecartest/forwardcell",
 	}
 )
 
