@@ -100,13 +100,26 @@ func (self *Api) AccountEpochs(callback AccountEpochsCallback) {
 
 // Head spot (Top 200)
 
-// SnHeadResult is the network's head-miner eligibility (GET /sn/head).
+// SnHeadResult is the network's head-miner eligibility (GET /sn/head). Since
+// 2026-11-17 the server calls a network eligible only while the validator can
+// measure it, the claim guide's rule; InHead is the rank alone, eligible's
+// meaning before. A server older than that sends no measurability: Measurable
+// reads false, NotMeasurableReason "", and Eligible the rank alone.
 type SnHeadResult struct {
 	Eligible     bool    `json:"eligible"`
 	Score        float64 `json:"score"`
 	Floor        float64 `json:"floor"`
 	RankEstimate int64   `json:"rank_estimate"`
 	Cutoff       int64   `json:"cutoff"`
+	// ranked inside the cutoff with a positive score, measurable or not
+	InHead bool `json:"in_head"`
+	// the validator can measure the network (the board's row)
+	Measurable bool `json:"measurable"`
+	// why not, as GET /sn/top/me gives it: "not_in_cohort", "shared_egress",
+	// "not_providing"; "" when measurable or unknown
+	NotMeasurableReason string `json:"not_measurable_reason"`
+	// the board's claim prompt: measurable, inside the cutoff, not claimed yet
+	ClaimPrompt bool `json:"claim_prompt"`
 	// a hotkey is bound to this network's fleet
 	Bound  bool   `json:"bound"`
 	Hotkey string `json:"hotkey,omitempty"`
@@ -121,19 +134,23 @@ type SnHeadResult struct {
 }
 
 type snHeadResultJson struct {
-	Eligible     bool            `json:"eligible"`
-	Score        float64         `json:"score"`
-	Floor        float64         `json:"floor"`
-	RankEstimate int64           `json:"rank_estimate"`
-	Cutoff       int64           `json:"cutoff"`
-	Bound        json.RawMessage `json:"bound"`
-	Hotkey       string          `json:"hotkey"`
-	Uid          int64           `json:"uid"`
-	Rank         int64           `json:"rank"`
-	Epoch        int64           `json:"epoch"`
-	Netuid       int64           `json:"netuid"`
-	Source       string          `json:"source"`
-	Error        *SnError        `json:"error"`
+	Eligible            bool            `json:"eligible"`
+	Score               float64         `json:"score"`
+	Floor               float64         `json:"floor"`
+	RankEstimate        int64           `json:"rank_estimate"`
+	Cutoff              int64           `json:"cutoff"`
+	InHead              bool            `json:"in_head"`
+	Measurable          bool            `json:"measurable"`
+	NotMeasurableReason string          `json:"not_measurable_reason"`
+	ClaimPrompt         bool            `json:"claim_prompt"`
+	Bound               json.RawMessage `json:"bound"`
+	Hotkey              string          `json:"hotkey"`
+	Uid                 int64           `json:"uid"`
+	Rank                int64           `json:"rank"`
+	Epoch               int64           `json:"epoch"`
+	Netuid              int64           `json:"netuid"`
+	Source              string          `json:"source"`
+	Error               *SnError        `json:"error"`
 }
 
 // UnmarshalJSON accepts `bound` either as a bool or as an object
@@ -144,18 +161,22 @@ func (self *SnHeadResult) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*self = SnHeadResult{
-		Eligible:     j.Eligible,
-		Score:        j.Score,
-		Floor:        j.Floor,
-		RankEstimate: j.RankEstimate,
-		Cutoff:       j.Cutoff,
-		Hotkey:       j.Hotkey,
-		Uid:          j.Uid,
-		Rank:         j.Rank,
-		Epoch:        j.Epoch,
-		Netuid:       j.Netuid,
-		Source:       j.Source,
-		Error:        j.Error,
+		Eligible:            j.Eligible,
+		Score:               j.Score,
+		Floor:               j.Floor,
+		RankEstimate:        j.RankEstimate,
+		Cutoff:              j.Cutoff,
+		InHead:              j.InHead,
+		Measurable:          j.Measurable,
+		NotMeasurableReason: j.NotMeasurableReason,
+		ClaimPrompt:         j.ClaimPrompt,
+		Hotkey:              j.Hotkey,
+		Uid:                 j.Uid,
+		Rank:                j.Rank,
+		Epoch:               j.Epoch,
+		Netuid:              j.Netuid,
+		Source:              j.Source,
+		Error:               j.Error,
 	}
 	if len(j.Bound) > 0 && string(j.Bound) != "null" {
 		var flag bool

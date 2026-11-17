@@ -1139,6 +1139,10 @@ export interface SnHeadResult {
   floor: number;
   rank_estimate: number;
   cutoff: number;
+  in_head: boolean;
+  measurable: boolean;
+  not_measurable_reason: string;
+  claim_prompt: boolean;
   bound: boolean;
   hotkey?: string;
   uid?: number;
