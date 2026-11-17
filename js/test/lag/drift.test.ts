@@ -755,20 +755,25 @@ test("V10: the area must stay within the tolerance, the browser's ±5% and the s
 });
 
 test("V10: clear when the k_early region is wholly out of the country, or wholly in it", () => {
+  // at the textbook k_early, 4.0, the run's when its k is the textbook 99% k
+  const textbook = { ...drift.browserStopTolerance, kEarly: drift.kEarly(K99) };
   // shrinking, so never steady
   const outside = looks(3000, (t) => stopFit(400 + t, 600, 0));
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "clear");
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, textbook), "clear");
   const inside = looks(3000, (t) => stopFit(100 + t / 10, 0, 0));
-  assert.equal(drift.evaluateStop(inside, OPENED, OPENED + 3000, OPENED + 2990, fx.squareCountry("aa", fx.CHICAGO, 400), drift.browserStopTolerance), "clear");
+  assert.equal(drift.evaluateStop(inside, OPENED, OPENED + 3000, OPENED + 2990, fx.squareCountry("aa", fx.CHICAGO, 400), textbook), "clear");
   // near the border it isn't clear
   const near = looks(3000, (t) => stopFit(400 + t, 75, 0));
-  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
+  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small, textbook), null);
   // without the IP country's borders, never clear, nor against a country with none (review F-04)
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null, drift.browserStopTolerance), null);
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [] }, drift.browserStopTolerance), null);
-  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }, drift.browserStopTolerance), false);
-  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), true);
-  assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), false);
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null, textbook), null);
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [] }, textbook), null);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }, textbook), false);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, textbook), true);
+  assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small, textbook), false);
+  // the bare tolerances carry no k_early, the run's, so they allow no clear stop (review V-4)
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.serverStopTolerance), false);
 });
 
 test("V11: the calibrated k per confidence and continent, never below the textbook k", () => {
@@ -799,16 +804,27 @@ test("V11: k_early scales with the run's k, and is earlyK at the textbook 99% k"
   close(drift.kEarly(3.71), (4.0 / 3.035) * 3.71, 1e-12);
 });
 
-test("V10, V11: the clear stop judges at the run's k_early, earlyK when none is given", () => {
+test("V10, V11: the clear stop judges at the run's k_early, and never without one", () => {
   // D about 5 at the last look (300 km at σ 58 km), shrinking, so never steady:
-  // clear at earlyK, not at Oceania's k_early of 10.4
+  // clear at the textbook k_early of 4.0, not at Oceania's of 10.4
   const outside = looks(3000, (t) => stopFit(400 + t, 360, 0));
+  const textbook = { ...drift.browserStopTolerance, kEarly: drift.kEarly(K99) };
   const oceania = { ...drift.browserStopTolerance, kEarly: drift.kEarly(drift.defaultK(0.99, "OC")) };
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "clear");
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, textbook), "clear");
   assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, oceania), null);
-  for (const kEarly of [0, -1, Number.NaN]) {
-    assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, { areaRatio: 1.105, kEarly }), true, `k_early ${kEarly}`);
+  // without the run's k_early, no clear stop: earlyK would be easier than a
+  // verdict at a k above 3.035 (review V-4)
+  for (const kEarly of [undefined, 0, -1, Number.NaN]) {
+    const tol = { areaRatio: 1.105, kEarly };
+    assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, tol), false, `k_early ${kEarly}`);
+    assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, tol), null);
   }
+  // the other rules don't need one
+  const steadyLooks = looks(3000, () => stopFit(2500));
+  assert.equal(drift.evaluateStop(steadyLooks, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "converged");
+  const unready = looks(12000, (t) => stopFit(400 + t, 360, 0), () => [20, 20, 20, 20, 20, 20, 20, 3, 3, 3, 3, 3]);
+  assert.equal(drift.evaluateStop(unready, OPENED, OPENED + 12000, OPENED + 11990, small, drift.browserStopTolerance), "cap");
+  assert.equal(drift.evaluateStop(unready, OPENED, OPENED + 5000, OPENED + 900, small, drift.browserStopTolerance), "interrupted");
 });
 
 test("V10: interrupted after 4 s without a pong, and the cap at 12 s", () => {

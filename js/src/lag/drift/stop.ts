@@ -10,9 +10,10 @@
 //     the tolerance's ratio and the position has moved less than a quarter of
 //     σ_minor;
 //   - clear: the same 12-round-trip minimum, and the whole region at the
-//     run's k_early (V11; earlyK by default) lies outside the IP country, or
-//     the fit is inside it and the whole region lies inside it. Both are
-//     D ≥ k_early (V6);
+//     run's k_early (V11) lies outside the IP country, or the fit is inside it
+//     and the whole region lies inside it. Both are D ≥ k_early (V6). A
+//     tolerance without a k_early allows no clear stop; falling back to earlyK
+//     would make one easier than a verdict at a k above 3.035 (review V-4);
 //   - interrupted: no pong from any extender for 4 s;
 //   - cap: 12 s after the sessions opened.
 //
@@ -21,7 +22,6 @@
 import type { Fit } from "./fit";
 import { hypot } from "./geo";
 import { judge } from "./judge";
-import { earlyK } from "./model";
 import { hasBoundary, type Country } from "./polygon";
 
 /** No rule stops a run before this, ms after the sessions opened. */
@@ -58,22 +58,29 @@ export interface StopTolerance {
   /**
    * V11: the run's k_early (kEarly of its k, as `start` gives it), for the
    * clear rule. Optional as lagdrift's StopTolerance.KEarly is, whose zero
-   * value means EarlyK: absent, 0 or anything not positive means earlyK, the
-   * k_early of the textbook 99% k. A run judged at another k must carry its
-   * own.
+   * value is unset: absent, 0 or anything not positive allows no clear stop
+   * at all (review V-4), since earlyK would make one easier than the verdict
+   * at a k above 3.035. Converged, interrupted and the cap don't use it.
    */
   kEarly?: number;
 }
 
-/** ±5%: 1.05 / 0.95, at earlyK: a run's tolerance is this with its own kEarly. */
+/**
+ * The browser's area ratio, ±5%: 1.05 / 0.95. It carries no k_early, which is
+ * the run's: use `{ ...browserStopTolerance, kEarly: kEarly(k) }` for the
+ * run's k, or clear never holds.
+ */
 export const browserStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.105, kEarly: 0 });
-/** ±8%, since the browser's and the extenders' clocks see the pings slightly apart (V10), at earlyK. */
+/**
+ * The server's, ±8%, since the browser's and the extenders' clocks see the
+ * pings slightly apart (V10); no k_early, as the browser's.
+ */
 export const serverStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.17, kEarly: 0 });
 
-/** the clear rule's k: the tolerance's k_early when it is positive, else earlyK */
-function toleranceKEarly(tol: StopTolerance): number {
+/** the clear rule's k: the tolerance's k_early, or null when it has none */
+function toleranceKEarly(tol: StopTolerance): number | null {
   const k = tol.kEarly ?? 0;
-  return 0 < k ? k : earlyK;
+  return 0 < k ? k : null;
 }
 
 const stopReasons: readonly StopReason[] = ["interrupted", "clear", "converged", "cap"];
@@ -83,7 +90,8 @@ const stopReasons: readonly StopReason[] = ["interrupted", "clear", "converged",
  * goes on. `history` is the run's snapshots in time order; those after nowMs
  * are ignored. `lastPongMs` is the last pong from any extender, before which
  * openedMs stands in. `country` is the IP country, null when unknown, which
- * rules out clear, as a country without a ring with a point does. When several rules hold, the first of interrupted, clear,
+ * rules out clear, as a country without a ring with a point does, and as a
+ * tolerance without the run's k_early does. When several rules hold, the first of interrupted, clear,
  * converged and cap is the reason.
  */
 export function evaluateStop(
@@ -128,6 +136,9 @@ export function stopHolds(
         return false;
       }
       const k = toleranceKEarly(tol);
+      if (k === null) {
+        return false;
+      }
       return k <= judge(latest.fit, country, k).d;
     }
     case "converged": {
