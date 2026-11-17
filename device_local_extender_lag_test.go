@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -116,7 +117,10 @@ func newTestProvideMeasurementOperator(t *testing.T) *testProvideMeasurementOper
 		}
 		measurement.stateLock.Lock()
 		measurement.certPolls += 1
-		certResult := measurement.certResult
+		// an operator since lag.dev/DRIFTTEST.md K6, which says in every
+		// answer that it issues for the family-pinned names
+		certResult := maps.Clone(measurement.certResult)
+		certResult["family_names"] = true
 		measurement.stateLock.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(certResult)
@@ -191,7 +195,8 @@ func (self *testProvideMeasurementOperator) front(ipVersion int) string {
 	return server.URL
 }
 
-// Issues a chain for a request: its key and its one name, the extender's (C5).
+// Issues a chain for a request: its key and its names, the extender's
+// measurement name and its two family-pinned names (C5, K6).
 func (self *testProvideMeasurementOperator) issue(csr string) {
 	csrBytes, err := base64.StdEncoding.DecodeString(csr)
 	if err != nil {
@@ -203,9 +208,9 @@ func (self *testProvideMeasurementOperator) issue(csr string) {
 		self.t.Errorf("the measurement request does not verify: %v", err)
 		return
 	}
-	name := connect.ExtenderMeasurementName(self.extenderId, "")
-	if !slices.Equal(request.DNSNames, []string{name}) {
-		self.t.Errorf("request names = %v, expected %s", request.DNSNames, name)
+	names := connect.ExtenderMeasurementNames(self.extenderId, "")
+	if !slices.Equal(request.DNSNames, names) {
+		self.t.Errorf("request names = %v, expected %v", request.DNSNames, names)
 		return
 	}
 	leafBytes, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
@@ -415,23 +420,28 @@ func TestDeviceLocalProviderExtenderMeasurementAdmitsATicket(t *testing.T) {
 	if post := fixture.waitPost(); post.args.MeasurementCsr == "" {
 		t.Fatal("the activation after the first carried no request")
 	}
-	name := connect.ExtenderMeasurementName(measurement.extenderId, "")
-	if names := testWaitProvideMeasurementCertificate(t, role.measurementCert); !slices.Equal(names, []string{name}) {
-		t.Fatalf("served names = %v, expected %s", names, name)
+	// the measurement name and the family-pinned names (lag.dev/DRIFTTEST.md K6)
+	names := connect.ExtenderMeasurementNames(measurement.extenderId, "")
+	name := names[0]
+	if servedNames := testWaitProvideMeasurementCertificate(t, role.measurementCert); !slices.Equal(servedNames, names) {
+		t.Fatalf("served names = %v, expected %v", servedNames, names)
 	}
 
 	rootCas := x509.NewCertPool()
 	rootCas.AddCert(measurement.caCertificate)
-	message := testOpenProvideMeasurementSession(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
-		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost))
-	if message["type"] != "hello" {
-		t.Fatalf("session answer = %v, expected hello", message)
+	// a session opens under each of the names
+	for _, sessionName := range names {
+		message := testOpenProvideMeasurementSession(t, fixture.tcpPort, sessionName, rootCas, testProvideMeasurementTicket(
+			t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost))
+		if message["type"] != "hello" {
+			t.Fatalf("session answer under %s = %v, expected hello", sessionName, message)
+		}
 	}
 	_, otherRootPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	message = testOpenProvideMeasurementSession(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+	message := testOpenProvideMeasurementSession(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
 		t, otherRootPrivateKey, role.publicKey, testProvideExtenderHost))
 	if message["type"] != "error" || message["code"] != "ticket" {
 		t.Fatalf("session answer = %v, expected a ticket error", message)
