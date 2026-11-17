@@ -349,6 +349,43 @@ func TestSnFleetClaimStaysDarkWhileBindingIsClosed(t *testing.T) {
 	}
 }
 
+// The board's claim prompt (measurable, inside the cutoff, not claimed yet) gates
+// the claim, the claim guide's rule (owner decision 2026-11-17): a network it
+// doesn't prompt makes no hotkey, signs nothing and spends no burn, whichever step
+// asks. One that started while prompted and has left the prompt since doesn't pay
+// the burn either, and one already registered goes on.
+func TestSnFleetClaimWaitsForTheClaimPrompt(t *testing.T) {
+	ctx := context.Background()
+	for _, step := range []func(c *SnFleetClaim) *SnFleetClaimState{
+		func(c *SnFleetClaim) *SnFleetClaimState { return c.TapSync(ctx) },
+		func(c *SnFleetClaim) *SnFleetClaimState { return c.AdvanceSync(ctx) },
+		func(c *SnFleetClaim) *SnFleetClaimState { return c.RefreshSync(ctx) },
+	} {
+		fixture := newTestingFleetClaim(t)
+		fixture.server.status.ClaimPrompt = false
+		testingFleetExpectStage(t, step(fixture.claim), SnFleetClaimStageNotPrompted)
+		if fixture.store.saves != 0 || len(fixture.server.authorizations) != 0 || fixture.coldkey.signed != 0 || fixture.chain.wrote() || fixture.server.topUps != 0 {
+			t.Fatal("a claim started without the prompt")
+		}
+	}
+
+	// the hotkey made and authorized while prompted, not registered yet
+	fixture := newTestingFleetClaim(t)
+	fixture.store.seed = hex.EncodeToString(testingFleetHotkeySeed[:])
+	fixture.server.status.AuthorizationMessage = testingFleetAuthorizationMessage(t, testingFleetColdkeySeed, testingFleetPublic(t, testingFleetHotkeySeed), testingFleetNetworkId)
+	fixture.server.status.ClaimPrompt = false
+	testingFleetExpectStage(t, fixture.claim.TapSync(ctx), SnFleetClaimStageNotPrompted)
+	if fixture.chain.wrote() || fixture.server.topUps != 0 {
+		t.Fatal("the burn was spent without the prompt")
+	}
+
+	// registered already: a claimed network isn't prompted again, and its claim goes on
+	fixture = newTestingFleetClaim(t)
+	fixture.authorized(t)
+	fixture.server.status.ClaimPrompt = false
+	testingFleetExpectStage(t, fixture.claim.AdvanceSync(ctx), SnFleetClaimStageChoosingDevices)
+}
+
 func TestSnFleetClaimNeedsAConsent(t *testing.T) {
 	fixture := newTestingFleetClaim(t)
 	fixture.server.status.ConsentColdkey = ""

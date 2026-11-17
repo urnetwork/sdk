@@ -736,6 +736,7 @@ inline constexpr const char* SnFleetClaimStageNeedsTap = "needs_tap";
 inline constexpr const char* SnFleetClaimStageNeedsWalletAuthorization = "needs_wallet_authorization";
 inline constexpr const char* SnFleetClaimStageNeedsWalletRegistration = "needs_wallet_registration";
 inline constexpr const char* SnFleetClaimStageNoConsent = "no_consent";
+inline constexpr const char* SnFleetClaimStageNotPrompted = "not_prompted";
 inline constexpr const char* SnFleetClaimStageRegistering = "registering";
 inline constexpr const char* SnFleetClaimStageWaitingBurn = "waiting_burn";
 inline constexpr const char* SnFleetClaimStageWaitingDevices = "waiting_devices";

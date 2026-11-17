@@ -61,6 +61,10 @@ const (
 	SnFleetClaimStageClosed = "closed"
 	// the network has no payout consent: set up payouts first
 	SnFleetClaimStageNoConsent = "no_consent"
+	// the board doesn't prompt this network to claim (claim_prompt: measurable,
+	// inside the cutoff, not claimed yet), so no claim starts and no burn is spent
+	// until it does: the claim guide's rule (owner decision 2026-11-17)
+	SnFleetClaimStageNotPrompted = "not_prompted"
 	// nothing started, and starting takes a tap
 	SnFleetClaimStageNeedsTap = "needs_tap"
 	// the fleet's hotkey is on another device of this network, so this one can't
@@ -581,6 +585,11 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 			state.Stage = SnFleetClaimStageHotkeyElsewhere
 			return state
 		}
+		// a claim starts only where the board prompts it
+		if !status.ClaimPrompt {
+			state.Stage = SnFleetClaimStageNotPrompted
+			return state
+		}
 		if mode != snFleetClaimModeTap {
 			state.Stage = SnFleetClaimStageNeedsTap
 			return state
@@ -649,6 +658,13 @@ func (self *SnFleetClaim) step(ctx context.Context, mode snFleetClaimMode, walle
 	// spend: the chain has to say so too
 	if !status.Registered && !hasRegisteredHotkey(ctx, self.chain, netuid, hotkey, state) {
 		if state.Stage != "" {
+			return state
+		}
+		// the burn is spent only while the board prompts this network to claim, as
+		// it did when the claim started; a network that left the prompt since (no
+		// longer measurable or inside the cutoff) waits until it is back
+		if !status.ClaimPrompt {
+			state.Stage = SnFleetClaimStageNotPrompted
 			return state
 		}
 		// an authorization with no manifest yet is a first claim someone tapped.
