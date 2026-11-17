@@ -31,9 +31,13 @@
 //	          be reached
 //	presence  wherever the log covers an act, the app's SidecarPresenceSigner signs its countersigned bytes before any
 //	          statement is signed (sidecar_presence.go): in process on the local backend, and on the remote one by §5.8's
-//	          two calls for RevokeDevice. A refusal, or no signer where the log covers the act, answers REVOKE_CANCELLED
-//	          with nothing signed. A remote decision runs under the daemon's own presence prompt until the daemon
-//	          serves Decide's two calls (CORE-M8-03), so an act covered by a key only the app holds is not signed there
+//	          two calls, for RevokeDevice and for Decide of an authority item (approvals.decide.begin and .finish,
+//	          CORE-M8-03), a first call that answers no bytes being an act the log does not cover or one the daemon's own
+//	          prompt countersigns at the second (QD-897). A refusal, or no signer where the log covers the act, answers
+//	          REVOKE_CANCELLED with nothing signed. A daemon from before the two calls takes Decide as the one confirmed
+//	          approvals.decide, under its own presence prompt, so an act covered by a key only the app holds is not
+//	          signed there. A request's decision is no act the log covers: the local backend signs the app's own by
+//	          presence over the decision's bytes, and the remote one signs none on presence (the decide row)
 //	listen    AddPendingListener hears GetPending's list again after each event of a kind that may change it, after
 //	          each Decide, and every PendingRefreshInterval while a listener is added, for what no event announces
 //
@@ -1066,16 +1070,18 @@ func (self *sidecarApprovalsCoreBackend) revoke(ctx context.Context, planId side
 // (sidecar_presence.go). ur approve's methods take no network: the daemon decides on its only network's sidecar; the
 // app request methods take the pairing's.
 const (
-	sidecarControlMethodApprovalsList        = "approvals.list"
-	sidecarControlMethodApprovalsDecide      = "approvals.decide"
-	sidecarControlMethodApprovalsCleanupList = "approvals.cleanup_list"
-	sidecarControlMethodApprovalsAppRequests = "approvals.app.requests"
-	sidecarControlMethodApprovalsAppRequest  = "approvals.app.request"
-	sidecarControlMethodDevicesList          = "devices.list"
-	sidecarControlMethodDevicesPreview       = "devices.preview"
-	sidecarControlMethodDevicesRevoke        = "devices.revoke"
-	sidecarControlMethodDevicesRevokeBegin   = "devices.revoke.begin"
-	sidecarControlMethodDevicesRevokeFinish  = "devices.revoke.finish"
+	sidecarControlMethodApprovalsList         = "approvals.list"
+	sidecarControlMethodApprovalsDecide       = "approvals.decide"
+	sidecarControlMethodApprovalsDecideBegin  = "approvals.decide.begin"
+	sidecarControlMethodApprovalsDecideFinish = "approvals.decide.finish"
+	sidecarControlMethodApprovalsCleanupList  = "approvals.cleanup_list"
+	sidecarControlMethodApprovalsAppRequests  = "approvals.app.requests"
+	sidecarControlMethodApprovalsAppRequest   = "approvals.app.request"
+	sidecarControlMethodDevicesList           = "devices.list"
+	sidecarControlMethodDevicesPreview        = "devices.preview"
+	sidecarControlMethodDevicesRevoke         = "devices.revoke"
+	sidecarControlMethodDevicesRevokeBegin    = "devices.revoke.begin"
+	sidecarControlMethodDevicesRevokeFinish   = "devices.revoke.finish"
 )
 
 // JSON-RPC's method not found: a daemon from before a method.
@@ -1101,6 +1107,22 @@ type sidecarControlApprovalsReply struct {
 type sidecarControlDecideParams struct {
 	ApprovalId *Id    `json:"approval_id"`
 	Decision   string `json:"decision,omitempty"`
+}
+
+// approvals.decide.begin's params: one item, one decision, on the pairing's network.
+type sidecarControlApprovalsDecideBeginParams struct {
+	Network    string `json:"network,omitempty"`
+	ApprovalId *Id    `json:"approval_id"`
+	Decision   string `json:"decision"`
+}
+
+// approvals.decide.finish's reply.
+type sidecarControlApprovalsDecideReply struct {
+	// The decision's statements are signed and kept, and a post's answer was lost: they go again with the same bytes.
+	Pending bool `json:"pending,omitempty"`
+	// §5.6's refusal: REVOKE_CANCELLED for a check that failed, was refused or sent no evidence, REVOKE_REFUSED for a
+	// statement api refused, and a revoke answer's own codes.
+	Refusal *sidecarControlDeviceRefusal `json:"refusal,omitempty"`
 }
 
 // approvals.cleanup_list's reply.
@@ -1343,13 +1365,36 @@ func sidecarCleanupListOfControl(list *sidecarControlCleanupListReply) *SidecarC
 	return bound
 }
 
-// See sidecarApprovalsBackend: the daemon's Confirm method of the item's kind, confirmed: an authority item's under the
-// daemon's own presence prompt (the file's presence row), a request's on channel device alone (the remote-mode row).
+// See sidecarApprovalsBackend: the daemon's Confirm methods of the item's kind, confirmed: an authority item's by §5.8's
+// two calls, the app's signer countersigning the bytes the first answers, else, on a daemon from before them, the one
+// approvals.decide under the daemon's own presence prompt (the file's presence row); a request's on channel device
+// alone (the remote-mode row).
 func (self *sidecarApprovalsRemoteBackend) decide(ctx context.Context, item *SidecarApprovalItem, decision string, signer SidecarPresenceSigner) (string, error) {
 	switch item.source {
 	case sidecarApprovalSourceAuthority:
-		params := &sidecarControlDecideParams{ApprovalId: item.ApprovalId, Decision: decision}
-		return "", self.remote.call(ctx, sidecarControlMethodApprovalsDecide, params, true, nil)
+		network := self.network()
+		begin := &sidecarControlApprovalsDecideBeginParams{Network: network, ApprovalId: item.ApprovalId, Decision: decision}
+		reply := &sidecarControlApprovalsDecideReply{}
+		refusal, err := sidecarRemotePresenceAct(ctx, self.remote, network, sidecarControlMethodApprovalsDecideBegin, begin,
+			sidecarControlMethodApprovalsDecideFinish, signer, reply)
+		var unknown *sidecarControlError
+		if errors.As(err, &unknown) && unknown.Code == sidecarControlCodeMethodNotFound {
+			params := &sidecarControlDecideParams{ApprovalId: item.ApprovalId, Decision: decision}
+			return "", self.remote.call(ctx, sidecarControlMethodApprovalsDecide, params, true, nil)
+		}
+		if err != nil {
+			return "", err
+		}
+		if refusal == nil {
+			refusal = reply.Refusal
+		}
+		if refusal != nil {
+			return "", sidecarDeviceRefusalErrOf(refusal)
+		}
+		if reply.Pending {
+			return "", sidecar.ErrSidecarActPending
+		}
+		return "", nil
 	case sidecarApprovalSourceRequest:
 		params := &sidecarControlRequestDecideParams{Network: self.network(), ApprovalId: item.ApprovalId, Decision: decision}
 		return "", self.remote.call(ctx, sidecarControlMethodApprovalsAppRequest, params, true, nil)

@@ -601,3 +601,175 @@ func TestRequestRemoteDesktopOverTheAppMethods(t *testing.T) {
 		t.Fatalf("an older daemon's list: %+v", pending)
 	}
 }
+
+// A remote Sidecar on the daemon at socketPath whose app holds signer, its status reads the test's own.
+func openTestRemoteSidecarSigning(t *testing.T, socketPath string, signer SidecarPresenceSigner) (*Sidecar, *sidecarRemoteBackend) {
+	t.Helper()
+	remoteSettings := defaultSidecarRemoteSettings()
+	remoteSettings.CallTimeout = testSidecarTimeout
+	remoteSettings.PairTimeout = testSidecarTimeout
+	remote, err := newSidecarRemote(context.Background(), signer, DefaultSidecarSettings(), &sidecarRemoteOptions{
+		dial:           sidecarDaemonSocketDial(socketPath, testRemoteDaemonVersion),
+		remoteSettings: remoteSettings,
+		noStatusPoll:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(remote.Close)
+	backend := remote.remote.(*sidecarRemoteBackend)
+	if _, err := backend.pair(t.Context(), "a-synthetic-child-token"); err != nil {
+		t.Fatal(err)
+	}
+	return remote, backend
+}
+
+// FS-124's app-host decision case in remote mode: Decide of an authority item goes by §5.8's two calls on the
+// pairing's network, both confirmed, the app's presence key signing exactly the bytes the first answers before the
+// second carries its evidence; the daemon's refusal of either call answers its code with nothing more sent; a refused
+// check ends the act after the first call; a first call with no bytes takes the second with no evidence; a decision
+// whose post's answer was lost is a decision made; and a daemon from before the two calls takes the one confirmed
+// approvals.decide.
+func TestRemoteAuthorityDecideByTwoCalls(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	signer := newTestPresenceSigner(t)
+	countersigned := []byte("the act's countersigned bytes")
+	ids := map[string]sidecar.Id{}
+	for _, name := range []string{"signed", "refused check", "begin refused", "finish refused", "no bytes", "pending", "older daemon"} {
+		ids[name] = sidecar.NewId()
+	}
+	nameOf := func(raw json.RawMessage) string {
+		params := struct {
+			ApprovalId sidecar.Id `json:"approval_id"`
+		}{}
+		json.Unmarshal(raw, &params)
+		for name, id := range ids {
+			if id == params.ApprovalId {
+				return name
+			}
+		}
+		return ""
+	}
+	actNames := map[string]string{}
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		switch request.Method {
+		case sidecarControlMethodApprovalsList:
+			items := []map[string]any{}
+			for _, id := range ids {
+				items = append(items, map[string]any{"approval_id": id, "kind": "admission", "decisions": []string{"approve", "deny"}})
+			}
+			return map[string]any{"items": items}, nil, true
+		case sidecarControlMethodApprovalsAppRequests:
+			return map[string]any{"items": []map[string]any{}}, nil, true
+		case sidecarControlMethodApprovalsDecideBegin:
+			if !request.UrConfirmed {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcConfirmationRequired, Message: "confirmation required"}, true
+			}
+			name := nameOf(request.Params)
+			switch name {
+			case "older daemon":
+				return nil, nil, false
+			case "begin refused":
+				return map[string]any{"refusal": map[string]any{"code": SidecarCodeRevokeNotCapable}}, nil, true
+			}
+			actId := sidecar.NewId()
+			actNames[actId.String()] = name
+			if name == "no bytes" {
+				return map[string]any{"act_id": actId}, nil, true
+			}
+			return map[string]any{"act_id": actId, "countersigned": countersigned}, nil, true
+		case sidecarControlMethodApprovalsDecideFinish:
+			if !request.UrConfirmed {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcConfirmationRequired, Message: "confirmation required"}, true
+			}
+			params := &sidecarControlPresenceFinishParams{}
+			if json.Unmarshal(request.Params, params) != nil || params.ActId == nil {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailed, Message: "no act"}, true
+			}
+			switch actNames[params.ActId.String()] {
+			case "no bytes":
+				if len(params.Evidence) != 0 {
+					return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailed, Message: "evidence for no bytes"}, true
+				}
+				return map[string]any{}, nil, true
+			case "finish refused":
+				return map[string]any{"refusal": map[string]any{"code": SidecarCodeRevokeRefused}}, nil, true
+			case "pending":
+				return map[string]any{"pending": true}, nil, true
+			}
+			if !signer.verifies(params.Evidence, countersigned) {
+				return map[string]any{"refusal": map[string]any{"code": SidecarCodeRevokeCancelled}}, nil, true
+			}
+			return map[string]any{}, nil, true
+		case sidecarControlMethodApprovalsDecide:
+			if !request.UrConfirmed || nameOf(request.Params) != "older daemon" {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailed, Message: "the one call came for another item"}, true
+			}
+			return map[string]any{}, nil, true
+		}
+		return nil, nil, false
+	}
+	daemon.start()
+	remote, backend := openTestRemoteSidecarSigning(t, socketPath, signer)
+	network := backend.network()
+	approvals := remote.GetApprovals()
+	decide := func(name string) *SidecarResult {
+		return testRequestDecide(t, approvals, ids[name], SidecarDecisionApprove)
+	}
+
+	if result := decide("signed"); !result.Ok {
+		t.Fatalf("the signed decision: %+v", result)
+	}
+	if asked := signer.asked(); len(asked) != 1 || !bytes.Equal(asked[0], countersigned) {
+		t.Fatalf("the presence key was asked over %d messages", len(asked))
+	}
+	signer.setMode(testPresenceRefuse)
+	if result := decide("refused check"); result.Ok || result.Code != SidecarCodeRevokeCancelled {
+		t.Errorf("a refused check: %+v", result)
+	}
+	signer.setMode(testPresenceSign)
+	if result := decide("begin refused"); result.Ok || result.Code != SidecarCodeRevokeNotCapable {
+		t.Errorf("a refused first call: %+v", result)
+	}
+	if result := decide("finish refused"); result.Ok || result.Code != SidecarCodeRevokeRefused {
+		t.Errorf("a refused second call: %+v", result)
+	}
+	if result := decide("no bytes"); !result.Ok {
+		t.Errorf("an act with no bytes: %+v", result)
+	}
+	if result := decide("pending"); !result.Ok || result.Message == "" {
+		t.Errorf("a post's answer lost: %+v", result)
+	}
+	if result := decide("older daemon"); !result.Ok {
+		t.Errorf("an older daemon: %+v", result)
+	}
+
+	finishes := map[string]int{}
+	for _, request := range daemon.seen() {
+		switch request.Method {
+		case sidecarControlMethodApprovalsDecideBegin:
+			params := &sidecarControlApprovalsDecideBeginParams{}
+			if !request.UrConfirmed || json.Unmarshal(request.Params, params) != nil || params.Network != network || params.Decision != SidecarDecisionApprove {
+				t.Errorf("approvals.decide.begin: confirmed %t, %s", request.UrConfirmed, request.Params)
+			}
+		case sidecarControlMethodApprovalsDecideFinish:
+			params := &sidecarControlPresenceFinishParams{}
+			json.Unmarshal(request.Params, params)
+			finishes[actNames[params.ActId.String()]] += 1
+			if params.Network != network {
+				t.Errorf("approvals.decide.finish's network %q", params.Network)
+			}
+		}
+	}
+	for _, name := range []string{"signed", "finish refused", "no bytes", "pending"} {
+		if finishes[name] != 1 {
+			t.Errorf("%s: %d second calls", name, finishes[name])
+		}
+	}
+	for _, name := range []string{"refused check", "begin refused", "older daemon"} {
+		if finishes[name] != 0 {
+			t.Errorf("%s: %d second calls", name, finishes[name])
+		}
+	}
+}

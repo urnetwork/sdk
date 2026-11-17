@@ -951,13 +951,16 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 			}
 		}
 	}
-	root := testSidecarDeclarations(t, filepath.Join("..", "sidecar", "daemon_devices.go"), filepath.Join("..", "sidecar", "daemon_approvals_app.go"))
+	root := testSidecarDeclarations(t, filepath.Join("..", "sidecar", "daemon_devices.go"), filepath.Join("..", "sidecar", "daemon_approvals_app.go"),
+		filepath.Join("..", "sidecar", "daemon_approvals.go"))
 	for own, name := range map[string]string{
-		sidecarControlMethodDevicesList:          "DaemonMethodDevicesList",
-		sidecarControlMethodDevicesPreview:       "DaemonMethodDevicesPreview",
-		sidecarControlMethodDevicesRevoke:        "DaemonMethodDevicesRevoke",
-		sidecarControlMethodApprovalsAppRequests: "DaemonMethodApprovalsAppRequests",
-		sidecarControlMethodApprovalsAppRequest:  "DaemonMethodApprovalsAppRequest",
+		sidecarControlMethodDevicesList:           "DaemonMethodDevicesList",
+		sidecarControlMethodDevicesPreview:        "DaemonMethodDevicesPreview",
+		sidecarControlMethodDevicesRevoke:         "DaemonMethodDevicesRevoke",
+		sidecarControlMethodApprovalsAppRequests:  "DaemonMethodApprovalsAppRequests",
+		sidecarControlMethodApprovalsAppRequest:   "DaemonMethodApprovalsAppRequest",
+		sidecarControlMethodApprovalsDecideBegin:  "DaemonMethodApprovalsDecideBegin",
+		sidecarControlMethodApprovalsDecideFinish: "DaemonMethodApprovalsDecideFinish",
 	} {
 		if !strings.Contains(root[name], strconv.Quote(own)) {
 			t.Errorf("%s is not %q: %s", name, own, root[name])
@@ -979,6 +982,8 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 			`json:"text,omitempty"`, `json:"refused,omitempty"`, `json:"channel,omitempty"`, `json:"decisions"`},
 		"DaemonApprovalsAppReply":        {`json:"items"`},
 		"DaemonApprovalsAppDecideParams": {`json:"network,omitempty"`, `json:"approval_id"`, `json:"decision"`},
+		"DaemonApprovalsDecideParams":    {`json:"network,omitempty"`, `json:"approval_id"`, `json:"decision"`},
+		"DaemonApprovalsDecideReply":     {`json:"pending,omitempty"`, `json:"refusal,omitempty"`},
 	} {
 		for _, field := range fields {
 			if !strings.Contains(root[declaration], field) {
