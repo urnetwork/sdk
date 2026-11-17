@@ -219,12 +219,23 @@ func openUploadLogsFiles(uploadLogsFiles []*UploadLogsFile, ownSources map[strin
 			log.Infof("[log]upload leaves out %q: not a regular file (%v)", zipName, fileInfo.Mode().Type())
 			continue
 		}
+		severity := logSeverityOf(uploadLogsFile.Name)
+		byteCount := fileInfo.Size()
+		if specialFile, special := logSpecialFileOf(uploadLogsFile.Name); special {
+			if byteCount == 0 {
+				// an unwritten crash file says nothing
+				file.Close()
+				continue
+			}
+			severity = specialFile.Severity
+			byteCount = specialFile.carriedByteCount(byteCount)
+		}
 		zipNames[zipName] = true
 		logFileInfo := &LogFileInfo{
 			Name:           uploadLogsFile.Name,
 			Source:         uploadLogsFile.Source,
-			Severity:       logSeverityOf(uploadLogsFile.Name),
-			ByteCount:      fileInfo.Size(),
+			Severity:       severity,
+			ByteCount:      byteCount,
 			ModifiedMillis: fileInfo.ModTime().UnixMilli(),
 		}
 		logFileInfos = append(logFileInfos, logFileInfo)
@@ -255,15 +266,16 @@ func isUploadLogsSource(source string) bool {
 	return true
 }
 
-// A name glog writes (<program>.<host>.<user>.log.<SEVERITY>.<time>.<pid>),
-// usable as one zip entry: valid utf-8 of at most 255 bytes, with no path
-// separator, no control character and no leading dot. The name comes from the
-// process that wrote the file, so it is checked before it names an entry.
+// A name glog writes (<program>.<host>.<user>.log.<SEVERITY>.<time>.<pid>), or
+// the name of a file of log_special_files.go, usable as one zip entry: valid
+// utf-8 of at most 255 bytes, with no path separator, no control character and
+// no leading dot. The name comes from the process that wrote the file, so it
+// is checked before it names an entry.
 func isUploadLogsFileName(name string) bool {
 	if name == "" || 255 < len(name) || !utf8.ValidString(name) {
 		return false
 	}
-	if strings.HasPrefix(name, ".") || logSeverityOf(name) == "" {
+	if _, special := logSpecialFileOf(name); strings.HasPrefix(name, ".") || logSeverityOf(name) == "" && !special {
 		return false
 	}
 	for _, c := range name {
@@ -280,15 +292,16 @@ func isUploadLogsFileName(name string) bool {
 // older small file can still follow a large one that did not fit. Files written
 // at the same time are taken in source and name order.
 //
-// The exit diagnostics files and the Go crash files are taken before all of
-// them. Each is small (exitDiagnosticsSettings, goCrashSettings) and rarely
-// written, so it is the oldest file of its directory, and the glog files of
-// the app and the extension can fill the cap on their own: newest first, it
-// would be the file left out, while it is the one that says why the app
-// closed.
+// The files that say why a process ended (logSpecialFile.First: the exit
+// diagnostics and the crash files) are taken before all of them. Each is small
+// (exitDiagnosticsSettings, goCrashSettings, javaCrashSettings) and rarely
+// written, so it is the oldest file of its directory, and the glog files of the
+// app and the extension can fill the cap on their own: newest first, it would
+// be the file left out, while it is the one that says why the app closed.
 func selectUploadLogFiles(logFileInfos []*LogFileInfo, maxByteCount int64, entryByteCount int64) []*LogFileInfo {
 	isExitDiagnostics := func(logFileInfo *LogFileInfo) bool {
-		return logFileInfo.Name == exitDiagnosticsFileName || logFileInfo.Name == goCrashFileName
+		specialFile, special := logSpecialFileOf(logFileInfo.Name)
+		return special && specialFile.First
 	}
 	newestLogFileInfos := slices.Clone(logFileInfos)
 	slices.SortStableFunc(newestLogFileInfos, func(a *LogFileInfo, b *LogFileInfo) int {
@@ -337,15 +350,35 @@ func (self *uploadLogsPlan) zipName(logFileInfo *LogFileInfo) string {
 func (self *uploadLogsPlan) writeZip(w io.Writer, log connect.Logger) (int, error) {
 	fileCount := 0
 	zipWriter := zip.NewWriter(w)
+	// one redactor for the upload, so an address masked in two files is one
+	// token in both. Without it the masked files are left out, never sent as
+	// written.
+	redactor, redactorErr := newLogRedactor()
+	// Writes one file's entry from file, a file of size bytes when planned: a
+	// file of log_special_files.go as its carried section, masked when it is
+	// masked, and a glog file from its start up to its planned size.
+	writeEntry := func(logFileInfo *LogFileInfo, file io.ReaderAt, size int64, fileInfo os.FileInfo) error {
+		specialFile, special := logSpecialFileOf(logFileInfo.Name)
+		if !special {
+			return zipWriteEntry(zipWriter, self.zipName(logFileInfo), io.NewSectionReader(file, 0, logFileInfo.ByteCount), fileInfo, nil)
+		}
+		section, err := logSpecialFileSection(file, size, specialFile.carriedByteCount(size))
+		if err != nil {
+			return err
+		}
+		if !specialFile.Masked {
+			return zipWriteEntry(zipWriter, self.zipName(logFileInfo), io.LimitReader(section, logFileInfo.ByteCount), fileInfo, nil)
+		}
+		return zipWriteMaskedEntry(zipWriter, self.zipName(logFileInfo), section, fileInfo, redactor.maskLogLine, logFileInfo.ByteCount)
+	}
 	for _, logFileInfo := range self.logFileInfos {
+		if specialFile, special := logSpecialFileOf(logFileInfo.Name); special && specialFile.Masked && redactorErr != nil {
+			log.Infof("[log]upload leaves out %q: it cannot be masked: %v", self.zipName(logFileInfo), redactorErr)
+			continue
+		}
 		if openFile, ok := self.logFileInfoOpenFiles[logFileInfo]; ok {
-			err := zipWriteEntry(
-				zipWriter,
-				self.zipName(logFileInfo),
-				io.NewSectionReader(openFile.file, 0, logFileInfo.ByteCount),
-				openFile.fileInfo,
-				nil,
-			)
+			// the size it had when planned: the bytes written since are not read
+			err := writeEntry(logFileInfo, openFile.file, openFile.fileInfo.Size(), openFile.fileInfo)
 			if err != nil {
 				zipWriter.Close()
 				return fileCount, err
@@ -365,13 +398,7 @@ func (self *uploadLogsPlan) writeZip(w io.Writer, log connect.Logger) (int, erro
 			log.Infof("[log]upload leaves out %q: %v", self.zipName(logFileInfo), err)
 			continue
 		}
-		err = zipWriteEntry(
-			zipWriter,
-			self.zipName(logFileInfo),
-			io.LimitReader(logFile, logFileInfo.ByteCount),
-			logFileStat,
-			nil,
-		)
+		err = writeEntry(logFileInfo, logFile, logFileStat.Size(), logFileStat)
 		logFile.Close()
 		if err != nil {
 			zipWriter.Close()
