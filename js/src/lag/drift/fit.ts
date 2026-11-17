@@ -33,8 +33,8 @@ const MAX_STEP_KM = 400;
 const SETTLED_KM = 1e-4;
 /** ... and every b less than this, ms */
 const SETTLED_MS = 1e-5;
-const WARM_ITERATIONS = 40;
-const COLD_ITERATIONS = 80;
+const WARM_ITERATIONS = 60;
+const COLD_ITERATIONS = 100;
 /** Levenberg–Marquardt: the diagonal is scaled by 1 + this */
 const DAMPING = 1e-3;
 
