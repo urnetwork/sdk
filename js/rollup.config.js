@@ -22,6 +22,19 @@ const downloadWorkerUrl = {
   },
 };
 
+// The drift test's world map (src/lag/drift/world.generated.json,
+// lag.dev/DRIFTTEST.md G2) is imported dynamically, so the lag entry builds
+// it as a chunk of its own that only `loadDriftWorld()` loads.
+const jsonModule = {
+  name: "lag-json-module",
+  transform(code, id) {
+    if (!id.endsWith(".json")) {
+      return null;
+    }
+    return { code: `export default JSON.parse(${JSON.stringify(JSON.stringify(JSON.parse(code)))});\n`, map: null };
+  },
+};
+
 export default [
   // Main entry point (core SDK)
   {
@@ -86,24 +99,32 @@ export default [
   // the wasm, so a page that imports only it never downloads sdk.wasm
   {
     input: "src/lag/index.ts",
+    // a directory, not a file, for the world map's chunk beside the entry
     output: [
       {
-        file: "dist/lag/index.js",
+        dir: "dist/lag",
+        entryFileNames: "index.js",
+        chunkFileNames: "[name]-[hash].js",
         format: "es",
         sourcemap: true,
       },
       {
-        file: "dist/lag/index.cjs",
+        dir: "dist/lag",
+        entryFileNames: "index.cjs",
+        chunkFileNames: "[name]-[hash].cjs",
         format: "cjs",
         sourcemap: true,
       },
     ],
     plugins: [
       downloadWorkerUrl,
+      jsonModule,
       resolve(),
       typescript({
         tsconfig: "./tsconfig.json",
         declaration: false,
+        // the plugin wants its outDir inside the output dir
+        outDir: "dist/lag",
       }),
     ],
   },
