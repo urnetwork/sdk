@@ -29,6 +29,32 @@ const maxStepLat = 89.9;
 // Go's math.Mod: the remainder with the sign of x (JavaScript's % on doubles)
 const mod = (x: number, y: number) => x % y;
 
+/**
+ * √(p² + q²) as Go's math.Hypot computes it where it has no assembly (arm64):
+ * p · √(1 + (q/p)²) with p the larger, so lagdrift's figures and this one's
+ * agree to the last bit wherever their inputs do.
+ */
+export function hypot(p: number, q: number): number {
+  p = Math.abs(p);
+  q = Math.abs(q);
+  if (p === Infinity || q === Infinity) {
+    return Infinity;
+  }
+  if (Number.isNaN(p) || Number.isNaN(q)) {
+    return Number.NaN;
+  }
+  if (p < q) {
+    const t = p;
+    p = q;
+    q = t;
+  }
+  if (p === 0) {
+    return 0;
+  }
+  q = q / p;
+  return p * Math.sqrt(1 + q * q);
+}
+
 /** Finite, with the latitude in [-90, 90] and the longitude in [-180, 180]. */
 export function pointValid(p: Point): boolean {
   return -90 <= p.lat && p.lat <= 90 && -180 <= p.lon && p.lon <= 180;
@@ -153,5 +179,5 @@ export const norm = (a: Vector3) => Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] *
 
 /** The place a unit vector points at. */
 export function vectorPoint(v: Vector3): Point {
-  return { lat: Math.atan2(v[2], Math.hypot(v[0], v[1])) * degPerRad, lon: Math.atan2(v[1], v[0]) * degPerRad };
+  return { lat: Math.atan2(v[2], hypot(v[0], v[1])) * degPerRad, lon: Math.atan2(v[1], v[0]) * degPerRad };
 }

@@ -18,7 +18,7 @@
 // projection stretches a short edge into a long chord that can pass near the
 // center.
 
-import { Azimuthal, fromAzimuthalKm, type Point } from "./geo";
+import { Azimuthal, fromAzimuthalKm, hypot, type Point } from "./geo";
 import { covEllipse, type Cov2, type Fit } from "./fit";
 import { defaultConfidence } from "./model";
 import { countryContains, type Country } from "./polygon";
@@ -107,7 +107,7 @@ export function judgeK(fit: Fit | null, country: Country | null, k: number): Jud
   const inside = countryContains(country, fit.at);
   const d = search.best;
   const [qEast, qNorth] = search.nearestKm();
-  const distanceKm = Math.hypot(qEast, qNorth);
+  const distanceKm = hypot(qEast, qNorth);
 
   let significanceKm: number;
   if (0 < d && 0 < distanceKm) {
@@ -207,7 +207,7 @@ export class BoundarySearch {
 
   private consider(x: number, y: number): void {
     this.found = true;
-    const d = Math.hypot(x, y);
+    const d = hypot(x, y);
     if (d < this.best) {
       this.best = d;
       this.bestWx = x;

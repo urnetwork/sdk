@@ -15,27 +15,43 @@
 // Huber weights (c = 2) apply per extender, to the standardized residual of
 // what its runs share: z = tᵀD⁻¹r / √(Q (1 + Q)), which is N(0, 1) under the
 // model for a block of any size and is r / σ for a single run (V5). A detoured
-// path moves every run's residual the same way, so it is discounted in every
-// run at once (V7).
+// path moves every run's residual the same way, which is z's direction, so it
+// is discounted in every run at once (V7). The rest of the block's residual,
+// ‖r⊥‖² = rᵀV⁻¹r − z², is how its runs differ, which is measurement noise, and
+// keeps its full weight. So the fit minimizes
 //
-// The solver is driftFit.ts's: Gauss–Newton on local east and north km and the
-// offsets, with the diagonal damped by 1.001 (Levenberg–Marquardt), the
-// position step capped at 400 km, warm-started from the last fit, and settled
-// once a step moves the position less than 0.05 km and every offset less than
-// 0.005 ms, or after 12 iterations from a warm start and 30 from a cold one.
-// The variances depend on p, so they and the Huber weights are recomputed at
-// every iteration. An offset at its bound of 0 whose step would go below it is
-// held there for that step.
+//   F = Σ_blocks 2ρ_H(z) + ‖r⊥‖²
 //
-// The covariance of (east, north, b) is (JᵀWJ)⁻¹ × max(1, χ²/(n − 2 − R)),
-// with W the Huber-weighted V⁻¹ at the solution and χ² = Σ h rᵀV⁻¹r. An offset
-// at 0 is held fixed, and the position's covariance is the 2 × 2 of the rest.
+// with ρ_H(z) = z²/2 within c and c|z| − c²/2 beyond. The predicted distance
+// is smoothed within 10 km of an extender, so the model is differentiable at
+// an extender's place.
+//
+// The solver is driftFit.ts's Gauss–Newton on local east and north km and the
+// offsets, with Levenberg–Marquardt damping made adaptive: the diagonal is
+// multiplied by 1 + λ, λ starting at 0.001, and a step is taken only when it
+// lowers F. λ follows Nielsen's rule: after a step taken, it is multiplied by
+// max(1/3, 1 − (2γ − 1)³), γ the gain in F over the quadratic model's, and
+// never falls below 0.001; after a step refused, it is multiplied by ν, which
+// starts at 2 and doubles with each refusal in a row. The position step is
+// capped at 400 km, the fit warm-starts from the last one, and it settles once
+// a step taken moves the position less than 0.05 km and every offset less
+// than 0.005 ms, or when no step lowers F, or after 12 steps tried from a warm
+// start and 30 from a cold one. An offset at its bound of 0 whose step would
+// go below it is held there for that step.
+//
+// The variances, whose route error grows with dᵢ, are recomputed at every
+// pass (feasible GLS in two steps): the first pass measures each dᵢ from the
+// expected place, the second from the first pass's fit, and the covariance
+// from the fit. The covariance of (east, north, b) is
+// (JᵀWJ)⁻¹ × max(1, χ²/(n − 2 − R)) at the solution, with W the
+// Huber-weighted block inverse and χ² = Σ rᵀWr. An offset at 0 is held fixed,
+// and the position's covariance is the 2 × 2 of the rest.
 //
 // Sums run in the Go's order: blocks in the order their extenders first
 // appear, and rows in a block in the observations' order.
 
-import { azimuthalKm, bearingDeg, degPerRad, distanceKm, moveKm, pointValid, radPerDeg, type Point } from "./geo";
-import { heldPlaceErrorKm, msPerKm, noiseVar, pathSigmaMs, type Model, type Observation } from "./model";
+import { azimuthalKm, bearingDeg, degPerRad, distanceKm, hypot, moveKm, pointValid, radPerDeg, type Point } from "./geo";
+import { heldPlaceErrorKm, minPlaceErrorKm, msPerKm, noiseVar, pathSigmaMs, type Model, type Observation } from "./model";
 
 /** The Huber weights' c (V5). */
 export const huberC = 2;
@@ -48,11 +64,18 @@ const settledKm = 0.05;
 const settledMs = 0.005;
 const warmIterations = 12;
 const coldIterations = 30;
-const damping = 1.001;
+// Levenberg–Marquardt's damping: the diagonal is multiplied by 1 + λ, λ
+// starting at, and never below, driftFit.ts's 0.001
+const minDamping = 0.001;
+const maxDamping = 1e9;
 // a cold start's offset, as a share of the run's lowest round trip
 const coldLastMileShare = 0.7;
 // a pivot this small is singular
 const minPivot = 1e-20;
+// the passes of feasible GLS
+const fitPasses = 2;
+// the distance is smoothed this close to an extender, km
+const smoothingKm = minPlaceErrorKm;
 
 /** A 2 × 2 covariance of east and north, km². */
 export type Cov2 = [[number, number], [number, number]];
@@ -97,6 +120,8 @@ interface FitRow {
   run: number;
   /** the observation's run number, until the runs are indexed */
   runNumber: number;
+  /** τ, the route and place error, for the pass */
+  tauMs: number;
 }
 
 interface FitBlock {
@@ -168,6 +193,7 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
       placeKm: heldPlaceErrorKm(o.placeErrorKm),
       run: 0,
       runNumber: o.run,
+      tauMs: 0,
     });
     if (!runNumbers.includes(o.run)) {
       runNumbers.push(o.run);
@@ -198,7 +224,7 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
   }
 
   let p: Point = expected;
-  const b = coldLastMile.slice();
+  let b = coldLastMile.slice();
   let maxIterations = coldIterations;
   if (warm && pointValid(warm.at)) {
     p = warm.at;
@@ -211,30 +237,79 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
     });
   }
 
-  let normal: Normal;
-  let settled = false;
-  for (let iteration = 0; ; iteration++) {
-    normal = normalEquations(model, blocks, p, b, paramCount);
-    if (settled || maxIterations <= iteration) {
-      break;
+  // τ for each row, its distance measured from a place
+  const routeErrorsFrom = (at: Point) => {
+    for (const block of blocks) {
+      for (const row of block.rows) {
+        row.tauMs = pathSigmaMs(model, distanceKm(at, row.at), row.placeKm);
+      }
     }
-    const step = constrainedStep(normal.a, normal.g, b);
-    if (step === null) {
-      break;
+  };
+
+  let reference = expected;
+  for (let pass = 0; pass < fitPasses; pass++) {
+    routeErrorsFrom(reference);
+    let lambda = minDamping;
+    let nu = 2.0;
+    let { a, g, objective } = normalEquations(blocks, p, b, paramCount);
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const step = constrainedStep(a, g, b, 1 + lambda);
+      if (step !== null) {
+        const length = hypot(step[0], step[1]);
+        let scale = 1.0;
+        if (maxStepKm < length) {
+          scale = maxStepKm / length;
+        }
+        for (let i = 0; i < step.length; i++) {
+          step[i] *= scale;
+        }
+        const nextP = moveKm(p, step[0], step[1]);
+        const nextB = new Array<number>(b.length);
+        let small = hypot(step[0], step[1]) < settledKm;
+        for (let r = 0; r < b.length; r++) {
+          nextB[r] = Math.max(0, b[r] + step[2 + r]);
+          small = small && Math.abs(nextB[r] - b[r]) < settledMs;
+        }
+        const next = normalEquations(blocks, nextP, nextB, paramCount);
+        if (next.objective <= objective) {
+          // the gain over the quadratic model's 2δᵀg − δᵀAδ
+          let predicted = 0.0;
+          for (let i = 0; i < step.length; i++) {
+            predicted += 2 * step[i] * g[i];
+            for (let j = 0; j < step.length; j++) {
+              predicted -= step[i] * a[i][j] * step[j];
+            }
+          }
+          let gain = 0.0;
+          if (0 < predicted) {
+            gain = (objective - next.objective) / predicted;
+          }
+          p = nextP;
+          b = nextB;
+          a = next.a;
+          g = next.g;
+          objective = next.objective;
+          const c = 2 * gain - 1;
+          lambda = Math.max(minDamping, lambda * Math.max(1.0 / 3, 1 - c * c * c));
+          nu = 2;
+          if (small) {
+            break;
+          }
+          continue;
+        }
+      }
+      // no step lowers F at this damping: damp more, unless no step can, which is a minimum
+      lambda *= nu;
+      nu *= 2;
+      if (maxDamping < lambda) {
+        break;
+      }
     }
-    const length = Math.hypot(step[0], step[1]);
-    let scale = 1.0;
-    if (maxStepKm < length) {
-      scale = maxStepKm / length;
-    }
-    p = moveKm(p, step[0] * scale, step[1] * scale);
-    settled = length * scale < settledKm;
-    for (let r = 0; r < b.length; r++) {
-      const next = Math.max(0, b[r] + step[2 + r] * scale);
-      settled = settled && Math.abs(next - b[r]) < settledMs;
-      b[r] = next;
-    }
+    reference = p;
   }
+  // the covariance and χ² with the route errors measured from the fit
+  routeErrorsFrom(p);
+  const { a, chi2 } = normalEquations(blocks, p, b, paramCount);
 
   // an offset at its bound is held fixed: the covariance is the rest's
   const free = new Array<boolean>(paramCount).fill(false);
@@ -243,12 +318,12 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
   for (let r = 0; r < b.length; r++) {
     free[2 + r] = 0 < b[r];
   }
-  const inverse = invertFree(normal!.a, free);
+  const inverse = invertFree(a, free);
   if (inverse === null) {
     return null;
   }
   const dof = n - 2 - runCount;
-  const chi2PerDof = normal!.chi2 / Math.max(1, dof);
+  const chi2PerDof = chi2 / Math.max(1, dof);
   const factor = Math.max(1, chi2PerDof);
   const cov: Cov2 = [
     [inverse[0][0] * factor, inverse[0][1] * factor],
@@ -280,9 +355,14 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
 }
 
 interface Normal {
+  /** JᵀWJ */
   a: number[][];
+  /** JᵀWr */
   g: number[];
+  /** Σ rᵀWr */
   chi2: number;
+  /** F = Σ 2ρ_H(z) + ‖r⊥‖² */
+  objective: number;
 }
 
 interface RowTerms {
@@ -292,82 +372,115 @@ interface RowTerms {
   r: number;
   /** the row's noise variance, D's entry */
   d: number;
-  /** τ */
-  t: number;
 }
 
 /**
- * JᵀWJ, JᵀWr and χ² = Σ h rᵀV⁻¹r at (p, b), with W the Huber-weighted block
- * inverse. The parameters are east km, north km, then b per run; J is the
- * model's slope, so a step solves (JᵀWJ) δ = JᵀWr.
+ * The normal equations at (p, b): JᵀWJ, JᵀWr, χ² = Σ rᵀWr and the objective
+ * F = Σ 2ρ_H(z) + ‖r⊥‖², with τ the rows' own. Per block, the shared component
+ * of r, z = tᵀD⁻¹r / √(Q (1 + Q)), is Huber-weighted by h, and the rest,
+ * ‖r⊥‖² = rᵀD⁻¹r − (tᵀD⁻¹r)² / Q, is not:
+ *
+ *   W = D⁻¹ − ω D⁻¹ t tᵀ D⁻¹,  ω = (1 + Q − h) / (Q (1 + Q))
+ *
+ * so rᵀWr = ‖r⊥‖² + h z², and W = V⁻¹ when h = 1. The parameters are east
+ * km, north km, then b per run; J is the model's slope, so a step solves
+ * (JᵀWJ) δ = JᵀWr.
  */
-function normalEquations(model: Model, blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): Normal {
+function normalEquations(blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): Normal {
   const a = Array.from({ length: paramCount }, () => new Array<number>(paramCount).fill(0));
   const g = new Array<number>(paramCount).fill(0);
   let chi2 = 0.0;
+  let objective = 0.0;
   const alpha = new Array<number>(paramCount).fill(0);
   for (const block of blocks) {
     const terms: RowTerms[] = [];
     alpha.fill(0);
-    // Q = tᵀD⁻¹t, ρ = tᵀD⁻¹r, α = JᵀD⁻¹t
+    // Q = tᵀD⁻¹t, ρ = tᵀD⁻¹r, rᵀD⁻¹r and α = JᵀD⁻¹t
     let q = 0.0;
     let rho = 0.0;
+    let rr = 0.0;
     for (const row of block.rows) {
       const d = distanceKm(p, row.at);
       const beta = bearingDeg(p, row.at) * radPerDeg;
+      const [smooth, slope] = smoothedDistanceKm(d);
       const term: RowTerms = {
-        jEast: -Math.sin(beta) * msPerKm,
-        jNorth: -Math.cos(beta) * msPerKm,
+        jEast: -Math.sin(beta) * msPerKm * slope,
+        jNorth: -Math.cos(beta) * msPerKm * slope,
         run: row.run,
-        r: row.y - (b[row.run] + msPerKm * d),
+        r: row.y - (b[row.run] + msPerKm * smooth),
         d: row.noiseVar,
-        t: pathSigmaMs(model, d, row.placeKm),
       };
       terms.push(term);
-      q += (term.t * term.t) / term.d;
-      rho += (term.t * term.r) / term.d;
-      alpha[0] += (term.jEast * term.t) / term.d;
-      alpha[1] += (term.jNorth * term.t) / term.d;
-      alpha[2 + term.run] += term.t / term.d;
+      const t = row.tauMs;
+      q += (t * t) / term.d;
+      rho += (t * term.r) / term.d;
+      rr += (term.r * term.r) / term.d;
+      alpha[0] += (term.jEast * t) / term.d;
+      alpha[1] += (term.jNorth * t) / term.d;
+      alpha[2 + term.run] += t / term.d;
     }
-    let h = 1.0;
+    let omega = 0.0;
     if (0 < q) {
       const z = Math.abs(rho / Math.sqrt(q * (1 + q)));
+      let h = 1.0;
+      let huber = z * z;
       if (huberC < z) {
         h = huberC / z;
+        huber = 2 * huberC * z - huberC * huberC;
       }
+      omega = (1 + q - h) / (q * (1 + q));
+      const perp = rr - (rho * rho) / q;
+      chi2 += perp + h * z * z;
+      objective += perp + huber;
+    } else {
+      chi2 += rr;
+      objective += rr;
     }
     for (const term of terms) {
       const index = [0, 1, 2 + term.run];
       const j = [term.jEast, term.jNorth, 1];
       for (let u = 0; u < 3; u++) {
-        g[index[u]] += (h * j[u] * term.r) / term.d;
+        g[index[u]] += (j[u] * term.r) / term.d;
         for (let v = 0; v < 3; v++) {
-          a[index[u]][index[v]] += (h * j[u] * j[v]) / term.d;
+          a[index[u]][index[v]] += (j[u] * j[v]) / term.d;
         }
       }
-      chi2 += (h * term.r * term.r) / term.d;
     }
-    const shrink = 1 / (1 + q);
     for (let u = 0; u < paramCount; u++) {
       if (alpha[u] === 0) {
         continue;
       }
-      g[u] -= h * alpha[u] * rho * shrink;
+      g[u] -= omega * alpha[u] * rho;
       for (let v = 0; v < paramCount; v++) {
-        a[u][v] -= h * alpha[u] * alpha[v] * shrink;
+        a[u][v] -= omega * alpha[u] * alpha[v];
       }
     }
-    chi2 -= h * rho * rho * shrink;
   }
-  return { a, g, chi2 };
+  return { a, g, chi2, objective };
 }
 
-/** The damped Gauss–Newton step, with each offset at its bound of 0 whose step would go below it held there. */
-function constrainedStep(a: number[][], g: number[], b: readonly number[]): number[] | null {
+/**
+ * The distance the model predicts a round trip from (V2), and its slope in
+ * the true distance d: d itself, except within 10 km of the extender, below
+ * its place error's floor (V3), where it is (d² + ε²) / (2ε), ε = 10 km. That
+ * is d's value and slope at ε, and smooth at the extender's place.
+ */
+export function smoothedDistanceKm(d: number): [number, number] {
+  if (smoothingKm <= d) {
+    return [d, 1];
+  }
+  return [(d * d + smoothingKm * smoothingKm) / (2 * smoothingKm), d / smoothingKm];
+}
+
+/**
+ * The Gauss–Newton step with the diagonal multiplied by diagonalFactor, each
+ * offset at its bound of 0 whose step would go below it held there. `null`
+ * when the system is singular.
+ */
+function constrainedStep(a: number[][], g: number[], b: readonly number[], diagonalFactor: number): number[] | null {
   const free = new Array<boolean>(g.length).fill(true);
   for (;;) {
-    const step = solveFree(a, g, free, damping);
+    const step = solveFree(a, g, free, diagonalFactor);
     if (step === null) {
       return null;
     }
@@ -483,7 +596,7 @@ export function covEllipse(cov: Cov2): Ellipse {
   const b = (cov[0][1] + cov[1][0]) / 2;
   const c = cov[1][1];
   const mid = (a + c) / 2;
-  const disc = Math.hypot((a - c) / 2, b);
+  const disc = hypot((a - c) / 2, b);
   const majorKm = Math.sqrt(Math.max(0, mid + disc));
   const minorKm = Math.sqrt(Math.max(0, mid - disc));
   // the major axis's angle from east, counterclockwise

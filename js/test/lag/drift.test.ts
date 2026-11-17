@@ -10,7 +10,7 @@ registerTsResolve();
 const drift = await import("../../src/lag/drift/index.ts");
 const { roundTripTau } = await import("../../src/lag/drift/roundTrip.ts");
 const { pathSigmaMs, noiseVar } = await import("../../src/lag/drift/model.ts");
-const { gaussSolve } = await import("../../src/lag/drift/fit.ts");
+const { gaussSolve, smoothedDistanceKm } = await import("../../src/lag/drift/fit.ts");
 const { splitEdge } = await import("../../src/lag/drift/judge.ts");
 const fx = await import("./drift_fixtures.ts");
 
@@ -255,6 +255,33 @@ test("V7: one position and one last-mile offset per run", () => {
   close(drift.distanceKm(fit.at, truthNearChicago), 0, 0.05);
   assert.equal(fit.extenders, 12, "the same 12 paths twice");
   assert.equal(fit.observations, 24);
+});
+
+test("V2: the predicted distance is smoothed within 10 km of an extender, keeping its value and slope at 10 km", () => {
+  assert.deepEqual(smoothedDistanceKm(250), [250, 1]);
+  assert.deepEqual(smoothedDistanceKm(10), [10, 1]);
+  assert.deepEqual(smoothedDistanceKm(0), [5, 0]);
+  const [justInside, slope] = smoothedDistanceKm(10 - 1e-9);
+  close(justInside, 10, 1e-8);
+  close(slope, 1, 1e-8);
+  close(smoothedDistanceKm(4)[0], (16 + 100) / 20, 1e-12);
+});
+
+test("V5: a visitor on an extender's own place settles there", () => {
+  // the visitor is in Milwaukee, where an extender is: d's cone at its place is smoothed away
+  const milwaukee = fx.CHICAGO_EXTENDERS[0];
+  const observations = fx.exactObservations({ truth: milwaukee, extenders: fx.CHICAGO_EXTENDERS, lastMileMs: 6 });
+  const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
+  assert.ok(drift.distanceKm(fit.at, milwaukee) < 15, `${drift.distanceKm(fit.at, milwaukee)} km from Milwaukee`);
+});
+
+test("V5: the fit depends on the data, not on where a warm start left off, once it settles", () => {
+  const observations = exactChicago({ stretch: [0.05, -0.05, 0.1, 0, 0.08, -0.04, 0.15, 0.02, 0.06, -0.01, 0.03, 0.1] });
+  const cold = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
+  for (const [e, n] of [[30, 0], [0, -40], [-25, 25]]) {
+    const warm = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, { ...cold, at: drift.fromAzimuthalKm(cold.at, e, n) })!;
+    assert.ok(drift.distanceKm(cold.at, warm.at) < 1, `${drift.distanceKm(cold.at, warm.at)} km apart`);
+  }
 });
 
 test("V5: a b at its bound of 0 is held, and the covariance is the position's alone", () => {

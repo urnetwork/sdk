@@ -18,6 +18,7 @@
 // Nothing stops a run in its first 3 s.
 
 import type { Fit } from "./fit";
+import { hypot } from "./geo";
 import { judgeK } from "./judge";
 import { earlyK } from "./model";
 import type { Country } from "./polygon";
@@ -171,7 +172,7 @@ function steady(history: readonly Snapshot[], nowMs: number, latest: Fit, tol: S
     const area = snapshot.fit.majorKm * snapshot.fit.minorKm;
     minArea = Math.min(minArea, area);
     maxArea = Math.max(maxArea, area);
-    if (!(Math.hypot(snapshot.fit.eastKm - latest.eastKm, snapshot.fit.northKm - latest.northKm) < reachKm)) {
+    if (!(hypot(snapshot.fit.eastKm - latest.eastKm, snapshot.fit.northKm - latest.northKm) < reachKm)) {
       return false;
     }
   }
