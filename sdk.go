@@ -213,6 +213,10 @@ func setLogDirWithRoot(logDir string, root string) error {
 		if err := setGoCrashOutputDir(logDir, defaultGoCrashSettings()); err != nil {
 			glog.Infof("[log]the go crash output stays on stderr only: %v", err)
 		}
+		// and the app's last Java crash joins its java crash file (java_crash.go)
+		if err := takeJavaCrashPending(logDir, defaultJavaCrashSettings()); err != nil {
+			glog.Infof("[log]the pending java crash record was not taken: %v", err)
+		}
 	}
 	glog.Infof("New glog initialized")
 	clearOldLogs(logDir)
