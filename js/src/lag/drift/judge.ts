@@ -18,10 +18,10 @@
 // projection stretches a short edge into a long chord that can pass near the
 // center.
 
-import { Azimuthal, fromAzimuthalKm, hypot, type Point } from "./geo";
+import { Azimuthal, distanceKm as greatCircleKm, fromAzimuthalKm, hypot, type Point } from "./geo";
 import { covEllipse, type Cov2, type Fit } from "./fit";
 import { defaultConfidence } from "./model";
-import { countryContains, type Country } from "./polygon";
+import { countryContains, countryIndex, type Country } from "./polygon";
 
 // an edge is split into parts no longer than this, degrees
 const maxEdgeDeg = 0.25;
@@ -96,11 +96,21 @@ export function judgeK(fit: Fit | null, country: Country | null, k: number): Jud
     return untouched();
   }
   const search = new BoundarySearch(fit.at, fit.cov);
-  for (const polygon of country.polygons) {
+  const sigmaMajorKm = search.sigmaMajorKm();
+  const index = countryIndex(country);
+  country.polygons.forEach((polygon, i) => {
+    // a polygon whose every point is farther than the best in whitened space
+    // can't hold the nearest
+    if (index !== undefined && search.found) {
+      const bound = index[i];
+      if (search.best < (greatCircleKm(fit.at, bound.center) - bound.radiusKm) / sigmaMajorKm) {
+        return;
+      }
+    }
     for (const ring of polygon) {
       search.ring(ring);
     }
-  }
+  });
   if (!search.found) {
     return untouched();
   }
@@ -150,6 +160,14 @@ export class BoundarySearch {
     this.l21 = s01 / this.l11;
     this.l22 = Math.sqrt(Math.max(minVarianceKm2, cov[1][1] - this.l21 * this.l21));
     this.projection = new Azimuthal(at);
+  }
+
+  /** the whitening's largest axis, √λ_max(LLᵀ), km: no point is nearer in whitened space than its distance over this */
+  sigmaMajorKm(): number {
+    const s00 = this.l11 * this.l11;
+    const s01 = this.l11 * this.l21;
+    const s11 = this.l21 * this.l21 + this.l22 * this.l22;
+    return Math.sqrt((s00 + s11) / 2 + hypot((s00 - s11) / 2, s01));
   }
 
   /** L⁻¹ applied to east and north km */

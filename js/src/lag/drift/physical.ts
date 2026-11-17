@@ -30,6 +30,7 @@
 import {
   add,
   cross,
+  distanceKm,
   dot,
   earthRadiusKm,
   norm,
@@ -41,7 +42,7 @@ import {
 } from "./geo";
 import { splitEdge } from "./judge";
 import { heldPlaceErrorKm, vacuumKmPerMs, type Observation } from "./model";
-import { countryContains, type Country } from "./polygon";
+import { countryContains, countryIndex, type Country, type PolygonBound } from "./polygon";
 
 // half the longest part an edge is split into, km: every point of a boundary is this close to a sample
 const boundaryCoverKm = 20;
@@ -50,6 +51,8 @@ const circleToleranceKm = 0.001;
 
 interface PhysicalDisc {
   center: Vector3;
+  /** the center as a place */
+  point: Point;
   /** the radius as an angle, radians */
   angle: number;
   /** the cosines of the radius widened by boundaryCoverKm and by circleToleranceKm; -2 for a disc that covers the earth */
@@ -84,7 +87,13 @@ export function physicallyPossible(observations: readonly Observation[], country
   }
 
   // (a) the boundary
-  for (const polygon of country.polygons) {
+  const index = countryIndex(country);
+  for (let i = 0; i < country.polygons.length; i++) {
+    const polygon = country.polygons[i];
+    // a polygon outside two widened discs has no sample that counts
+    if (index !== undefined && farFromTwo(discs, index[i])) {
+      continue;
+    }
     for (const ring of polygon) {
       let possible = false;
       eachBoundarySample(ring, (p) => {
@@ -113,6 +122,24 @@ export function physicallyPossible(observations: readonly Observation[], country
   for (const candidate of candidates) {
     if (outsideAtMostOne(discs, candidate, false) && countryContains(country, vectorPoint(candidate))) {
       return true;
+    }
+  }
+  return false;
+}
+
+/** Every point of the polygon is outside at least two discs widened by boundaryCoverKm. */
+function farFromTwo(discs: readonly PhysicalDisc[], bound: PolygonBound): boolean {
+  if (bound.radiusKm === Infinity) {
+    return false;
+  }
+  let outside = 0;
+  for (const disc of discs) {
+    const reachKm = disc.angle * earthRadiusKm + boundaryCoverKm;
+    if (reachKm < distanceKm(disc.point, bound.center) - bound.radiusKm) {
+      outside += 1;
+      if (1 < outside) {
+        return true;
+      }
     }
   }
   return false;
@@ -153,6 +180,7 @@ function physicalDiscs(observations: readonly Observation[]): PhysicalDisc[] {
     const angle = radiusKm / earthRadiusKm;
     return {
       center: unitVector(e.at),
+      point: e.at,
       angle,
       coverCos: capCos(angle + boundaryCoverKm / earthRadiusKm),
       toleranceCos: capCos(angle + circleToleranceKm / earthRadiusKm),

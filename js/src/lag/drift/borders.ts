@@ -2,74 +2,18 @@
 // the drift country (V6): the country containing a fit, else the nearest
 // within a distance, else none. As connect's lagdrift has them (borders.go).
 
-import { degPerRad, earthRadiusKm, pointValid, radPerDeg, type Point } from "./geo";
+import { pointValid, type Point } from "./geo";
 import type { Cov2 } from "./fit";
 import { BoundarySearch } from "./judge";
-import { polygonContains, type Country } from "./polygon";
+import { DegreeBox, indexCountry, polygonContains, type Country } from "./polygon";
 
 /** The drift country is the nearest within this far when none contains the fit, km (V6). */
 export const driftCountryWithinKm = 300;
 
-const kmPerDegLat = 110.574;
 const identity: Cov2 = [
   [1, 0],
   [0, 1],
 ];
-
-/** A degree box around a polygon or a country. */
-class DegreeBox {
-  minLat = Infinity;
-  minLon = Infinity;
-  maxLat = -Infinity;
-  maxLon = -Infinity;
-
-  add(p: Point): void {
-    this.minLat = Math.min(this.minLat, p.lat);
-    this.minLon = Math.min(this.minLon, p.lon);
-    this.maxLat = Math.max(this.maxLat, p.lat);
-    this.maxLon = Math.max(this.maxLon, p.lon);
-  }
-
-  contains(p: Point): boolean {
-    return this.minLat <= p.lat && p.lat <= this.maxLat && this.minLon <= p.lon && p.lon <= this.maxLon;
-  }
-
-  /**
-   * False only when every point of the box is more than km from p. Two
-   * points at latitudes within ±φ and longitudes Δλ apart are at least d
-   * apart where sin(d / 2R) = cos φ · sin(Δλ / 2), so the box is widened by
-   * km / 110.574 degrees of latitude and by 2 asin(sin(km / 2R) / cos φ) of
-   * longitude, φ the widened box's highest latitude, across the antimeridian
-   * too.
-   */
-  near(p: Point, km: number): boolean {
-    const latMargin = km / kmPerDegLat;
-    if (p.lat < this.minLat - latMargin || this.maxLat + latMargin < p.lat) {
-      return false;
-    }
-    const highLat = Math.max(Math.abs(this.minLat), Math.abs(this.maxLat)) + latMargin;
-    if (90 <= highLat || Math.PI * earthRadiusKm <= km) {
-      return true;
-    }
-    const s = Math.sin(km / (2 * earthRadiusKm)) / Math.cos(highLat * radPerDeg);
-    if (1 <= s) {
-      return true;
-    }
-    const lonMargin = 2 * Math.asin(s) * degPerRad;
-    // the longitude's distance to the box's span, around the earth
-    if (this.minLon <= p.lon && p.lon <= this.maxLon) {
-      return true;
-    }
-    const gap = Math.min(lonGap(p.lon, this.minLon), lonGap(p.lon, this.maxLon));
-    return gap <= lonMargin;
-  }
-}
-
-/** The difference between two longitudes the short way around, degrees. */
-function lonGap(a: number, b: number): number {
-  const d = Math.abs(a - b) % 360;
-  return Math.min(d, 360 - d);
-}
 
 function validCode(code: string): boolean {
   return /^[a-z]{2}$/.test(code);
@@ -119,6 +63,7 @@ export class Borders {
           }
         }
       });
+      indexCountry(country);
       this.countries.push(country);
       this.polygonBoxes.push(boxes);
       this.countryBoxes.push(countryBox);
