@@ -16517,6 +16517,20 @@ func urnet_is_purchase_report_terminal(status *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_is_sandbox_purchase_refusal
+func urnet_is_sandbox_purchase_refusal(result *C.char) C.bool {
+	defer cgoGuard("urnet_is_sandbox_purchase_refusal")
+	var result_ *sdk.VerifyStorePurchaseResult
+	if result != nil {
+		result_ = &sdk.VerifyStorePurchaseResult{}
+		if !goJson(result, result_, "urnet_is_sandbox_purchase_refusal") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.IsSandboxPurchaseRefusal(result_)
+	return C.bool(r0)
+}
+
 //export urnet_is_valid_payment_reference
 func urnet_is_valid_payment_reference(s *C.char) C.bool {
 	defer cgoGuard("urnet_is_valid_payment_reference")
@@ -21637,6 +21651,20 @@ func urnet_purchase_report_backoff_millis(attempt C.int64_t) C.int64_t {
 	defer cgoGuard("urnet_purchase_report_backoff_millis")
 	r0 := sdk.PurchaseReportBackoffMillis(int32(int64(attempt)))
 	return C.int64_t(r0)
+}
+
+//export urnet_purchase_report_error_code
+func urnet_purchase_report_error_code(result *C.char) *C.char {
+	defer cgoGuard("urnet_purchase_report_error_code")
+	var result_ *sdk.VerifyStorePurchaseResult
+	if result != nil {
+		result_ = &sdk.VerifyStorePurchaseResult{}
+		if !goJson(result, result_, "urnet_purchase_report_error_code") {
+			return nil
+		}
+	}
+	r0 := sdk.PurchaseReportErrorCode(result_)
+	return cString(string(r0))
 }
 
 //export urnet_record_tunnel_recovery_stage
