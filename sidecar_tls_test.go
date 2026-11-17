@@ -22,8 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	gojwt "github.com/golang-jwt/jwt/v5"
-
 	"github.com/urnetwork/sidecar"
 )
 
@@ -119,8 +117,8 @@ func TestSidecarCertsResourceFollowsTheSpace(t *testing.T) {
 	}
 }
 
-// The core's api for an enrollment of the child clientId: the binding at generation 1, answered with the child's token
-// re-minted under the sidecar the binding names (QD-797), and every other route a 404.
+// The core's api for an enrollment of the child clientId: the binding at generation 1, answered with its generation
+// alone, as server's bind answers since QD-1029, and every other route a 404.
 func newTestTlsCoreServer(t *testing.T, clientId string) string {
 	t.Helper()
 	server := newTestSessionServer(func(request testSessionRequest) (int, any) {
@@ -137,15 +135,10 @@ func newTestTlsCoreServer(t *testing.T, clientId string) string {
 		if err != nil {
 			return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
 		}
-		reminted := credentialTestJwt(t, gojwt.MapClaims{
-			"network_id": credentialTestNetworkId,
-			"user_id":    credentialTestUserId,
-			"client_id":  clientId,
-			"device_id":  credentialTestDeviceId,
-			"strict_exp": true,
-			"sidecar_id": binding.SidecarId.String(),
-		})
-		return http.StatusOK, map[string]any{"generation": 1, "by_client_jwt": reminted}
+		if binding.ClientId.String() != clientId {
+			return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
+		}
+		return http.StatusOK, map[string]any{"generation": 1}
 	})
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
