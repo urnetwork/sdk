@@ -145,8 +145,9 @@ func appendLogFilesIn(inventory *LogFileInfoList, dir string, source string) err
 		severity := logSeverityOf(entry.Name())
 		if severity == "" {
 			// beside the glog files, only the app's exit diagnostics
-			// (exit_diagnostics.go) and the Go crash file (crash_output.go),
-			// and only a regular file of either name
+			// (exit_diagnostics.go), the Go crash file (crash_output.go) and
+			// the java crash file (java_crash.go), and only a regular file of
+			// one of those names
 			if !entry.Type().IsRegular() {
 				continue
 			}
@@ -155,6 +156,8 @@ func appendLogFilesIn(inventory *LogFileInfoList, dir string, source string) err
 				severity = exitDiagnosticsSeverity
 			case goCrashFileName:
 				severity = goCrashSeverity
+			case javaCrashFileName:
+				severity = javaCrashSeverity
 			default:
 				continue
 			}

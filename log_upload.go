@@ -280,15 +280,20 @@ func isUploadLogsFileName(name string) bool {
 // older small file can still follow a large one that did not fit. Files written
 // at the same time are taken in source and name order.
 //
-// The exit diagnostics files and the Go crash files are taken before all of
-// them. Each is small (exitDiagnosticsSettings, goCrashSettings) and rarely
-// written, so it is the oldest file of its directory, and the glog files of
-// the app and the extension can fill the cap on their own: newest first, it
-// would be the file left out, while it is the one that says why the app
-// closed.
+// The exit diagnostics files and the Go and java crash files are taken before
+// all of them. Each is small (exitDiagnosticsSettings, goCrashSettings,
+// javaCrashSettings) and rarely written, so it is the oldest file of its
+// directory, and the glog files of the app and the extension can fill the cap
+// on their own: newest first, it would be the file left out, while it is the
+// one that says why the app closed.
 func selectUploadLogFiles(logFileInfos []*LogFileInfo, maxByteCount int64, entryByteCount int64) []*LogFileInfo {
 	isExitDiagnostics := func(logFileInfo *LogFileInfo) bool {
-		return logFileInfo.Name == exitDiagnosticsFileName || logFileInfo.Name == goCrashFileName
+		switch logFileInfo.Name {
+		case exitDiagnosticsFileName, goCrashFileName, javaCrashFileName:
+			return true
+		default:
+			return false
+		}
 	}
 	newestLogFileInfos := slices.Clone(logFileInfos)
 	slices.SortStableFunc(newestLogFileInfos, func(a *LogFileInfo, b *LogFileInfo) int {
