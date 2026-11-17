@@ -26,26 +26,36 @@
 // is smoothed within 10 km of an extender, so the model is differentiable at
 // an extender's place.
 //
-// The solver is driftFit.ts's Gauss–Newton on local east and north km and the
-// offsets, with Levenberg–Marquardt damping made adaptive: the diagonal is
-// multiplied by 1 + λ, λ starting at 0.001, and a step is taken only when it
-// lowers F. λ follows Nielsen's rule: after a step taken, it is multiplied by
-// max(1/3, 1 − (2γ − 1)³), γ the gain in F over the quadratic model's, and
-// never falls below 0.001; after a step refused, it is multiplied by ν, which
-// starts at 2 and doubles with each refusal in a row. The position step is
-// capped at 400 km, the fit warm-starts from the last one, and it settles once
-// a step taken moves the position less than 0.05 km and every offset less
-// than 0.005 ms, or when no step lowers F, or after 12 steps tried from a warm
-// start and 30 from a cold one. An offset at its bound of 0 whose step would
-// go below it is held there for that step.
+// Starts and convergence (V5): the fit starts from the expected point, the
+// places of the three fastest extenders and the warm fit, if any. It
+// iterates each start until a step lowers F by less than 10⁻⁶ of F and the
+// undamped step from there would move the position less than 0.1 km, or no
+// step lowers F, within 100 trial steps, and keeps the lowest F. It leaves the
+// warm fit's basin only for an F lower by more than 1.
 //
-// The variances, whose route error grows with dᵢ, are recomputed at every
-// pass (feasible GLS in two steps): the first pass measures each dᵢ from the
-// expected place, the second from the first pass's fit, and the covariance
-// from the fit. The covariance of (east, north, b) is
-// (JᵀWJ)⁻¹ × max(1, χ²/(n − 2 − R)) at the solution, with W the
-// Huber-weighted block inverse and χ² = Σ rᵀWr. An offset at 0 is held fixed,
-// and the position's covariance is the 2 × 2 of the rest.
+// The variances, whose route error grows with dᵢ, are fixed per pass
+// (feasible GLS in two steps), and the covariance measures them from the fit:
+//
+//  1. the first pass measures each dᵢ from the expected place and runs the
+//     cold starts, the expected point and the three fastest extenders, so it
+//     depends on the data alone;
+//  2. the second measures each dᵢ from the first pass's fit and runs from that
+//     fit and from the warm fit, which wins unless the other's F is lower by
+//     more than 1.
+//
+// Each start is minimized by variable projection: the offsets enter the
+// model linearly and F is convex in them, so at every position they are
+// solved exactly, and Levenberg–Marquardt steps the position alone on the
+// profile min_b F, with the Schur complement of Newton's matrix over the free
+// offsets. Newton's matrix is JᵀWJ plus the position's curvature that
+// Gauss–Newton leaves out, −K Σⱼ (Wr)ⱼ ∇²dⱼ. λ, which scales JᵀWJ's position
+// diagonal into the step's matrix, follows Nielsen's rule from 0.001, and a
+// step is taken only when it lowers F. The position step is capped at 400 km.
+//
+// The covariance of (east, north, b) is (JᵀWJ)⁻¹ × max(1, χ²/(n − 2 − R)) at
+// the solution, with W the Huber-weighted block inverse and χ² = Σ rᵀWr. It
+// is the full inverse, every offset free, even one the solver holds at 0
+// (V5): conditioning on b = 0 would claim a certainty the fit doesn't have.
 //
 // Sums run in the Go's order: blocks in the order their extenders first
 // appear, and rows in a block in the observations' order.
@@ -60,20 +70,29 @@ export const maxStepKm = 400;
 /** Fewer extenders can't place anyone. A run's minimum of 6 is the caller's. */
 export const minFitExtenders = 3;
 
-const settledKm = 0.05;
-const settledMs = 0.005;
-const warmIterations = 12;
-const coldIterations = 30;
-// Levenberg–Marquardt's damping: the diagonal is multiplied by 1 + λ, λ
-// starting at, and never below, driftFit.ts's 0.001
+// a start has converged when a step lowers F by less than this share of F
+// and the undamped step from there would move the position less than this, km (V5)
+const convergedKm = 0.1;
+const convergedShare = 1e-6;
+// a start's trial steps (V5)
+const maxFitIterations = 100;
+// the starts besides the warm fit and the expected point: the places of this many fastest extenders (V5)
+const startExtenders = 3;
+// the warm fit's basin is left only for an F lower by more than this (V5)
+const warmBasinMargin = 1;
+// Levenberg–Marquardt's λ, which scales JᵀWJ's diagonal into the step's
+// matrix: it starts at, and never falls below, driftFit.ts's 0.001
 const minDamping = 0.001;
 const maxDamping = 1e9;
 // a cold start's offset, as a share of the run's lowest round trip
 const coldLastMileShare = 0.7;
 // a pivot this small is singular
 const minPivot = 1e-20;
-// the passes of feasible GLS
-const fitPasses = 2;
+// solving the offsets at a position: Newton's steps until they move less than
+// this, ms, or this many, each halved at most this many times
+const offsetSettledMs = 1e-9;
+const maxOffsetIterations = 30;
+const maxOffsetBacktracks = 20;
 // the distance is smoothed this close to an extender, km
 const smoothingKm = minPlaceErrorKm;
 
@@ -129,6 +148,8 @@ interface FitBlock {
   rows: FitRow[];
 }
 
+type Matrix2 = [[number, number], [number, number]];
+
 function usableObservation(o: Observation): boolean {
   if (!pointValid(o.at)) {
     return false;
@@ -163,11 +184,10 @@ function warmLastMile(warm: Fit, run: number, index: number, runCount: number): 
  * R runs, else `null`; the 6-extender minimum of a run is the caller's. `null`
  * too for an invalid `expected` or a singular fit.
  *
- * `warm`, when given, starts the fit from its position and its offsets,
- * matched by run number through `warm.runs` (by index when it has no runs and
- * as many offsets as the observations have runs). A run it lacks starts, as a
- * cold fit's runs do, at 0.7 times the run's lowest round trip, and a cold
- * fit starts at `expected`.
+ * `warm`, when given, is a start too, with its offsets matched by run number
+ * through `warm.runs` (by index when it has no runs and as many offsets as the
+ * observations have runs). The other starts, and a run it lacks, begin each
+ * offset at 0.7 times the run's lowest round trip.
  */
 export function fitPosition(model: Model, expected: Point, observations: readonly Observation[], warm?: Fit | null): Fit | null {
   if (!pointValid(expected)) {
@@ -223,20 +243,6 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
     coldLastMile[r] *= coldLastMileShare;
   }
 
-  let p: Point = expected;
-  let b = coldLastMile.slice();
-  let maxIterations = coldIterations;
-  if (warm && pointValid(warm.at)) {
-    p = warm.at;
-    maxIterations = warmIterations;
-    runNumbers.forEach((run, r) => {
-      const lastMile = warmLastMile(warm, run, r, runCount);
-      if (lastMile !== undefined) {
-        b[r] = Math.max(0, lastMile);
-      }
-    });
-  }
-
   // τ for each row, its distance measured from a place
   const routeErrorsFrom = (at: Point) => {
     for (const block of blocks) {
@@ -246,78 +252,47 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
     }
   };
 
-  let reference = expected;
-  for (let pass = 0; pass < fitPasses; pass++) {
-    routeErrorsFrom(reference);
-    let lambda = minDamping;
-    let nu = 2.0;
-    let { a, g, objective } = normalEquations(blocks, p, b, paramCount);
-    for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const step = constrainedStep(a, g, b, 1 + lambda);
-      if (step !== null) {
-        const length = hypot(step[0], step[1]);
-        let scale = 1.0;
-        if (maxStepKm < length) {
-          scale = maxStepKm / length;
-        }
-        for (let i = 0; i < step.length; i++) {
-          step[i] *= scale;
-        }
-        const nextP = moveKm(p, step[0], step[1]);
-        const nextB = new Array<number>(b.length);
-        let small = hypot(step[0], step[1]) < settledKm;
-        for (let r = 0; r < b.length; r++) {
-          nextB[r] = Math.max(0, b[r] + step[2 + r]);
-          small = small && Math.abs(nextB[r] - b[r]) < settledMs;
-        }
-        const next = normalEquations(blocks, nextP, nextB, paramCount);
-        if (next.objective <= objective) {
-          // the gain over the quadratic model's 2δᵀg − δᵀAδ
-          let predicted = 0.0;
-          for (let i = 0; i < step.length; i++) {
-            predicted += 2 * step[i] * g[i];
-            for (let j = 0; j < step.length; j++) {
-              predicted -= step[i] * a[i][j] * step[j];
-            }
-          }
-          let gain = 0.0;
-          if (0 < predicted) {
-            gain = (objective - next.objective) / predicted;
-          }
-          p = nextP;
-          b = nextB;
-          a = next.a;
-          g = next.g;
-          objective = next.objective;
-          const c = 2 * gain - 1;
-          lambda = Math.max(minDamping, lambda * Math.max(1.0 / 3, 1 - c * c * c));
-          nu = 2;
-          if (small) {
-            break;
-          }
-          continue;
-        }
-      }
-      // no step lowers F at this damping: damp more, unless no step can, which is a minimum
-      lambda *= nu;
-      nu *= 2;
-      if (maxDamping < lambda) {
-        break;
-      }
+  // pass 1: the route errors measured from the expected place, one F that
+  // every cold start minimizes, from the expected point and the places of the
+  // three fastest extenders; the lowest F wins, so this pass depends on the
+  // data alone
+  routeErrorsFrom(expected);
+  const coldStarts = [expected, ...fastestPlaces(blocks, startExtenders)];
+  let first: FitMinimum | null = null;
+  for (const start of coldStarts) {
+    const minimum = minimizeFit(blocks, start, coldLastMile, paramCount);
+    if (first === null || minimum.objective < first.objective) {
+      first = minimum;
     }
-    reference = p;
   }
+  // pass 2: the route errors measured from the first pass's fit, from that
+  // fit and from the warm fit, if any, whose basin is left only for an F
+  // lower by more than 1
+  routeErrorsFrom(first!.p);
+  let final = minimizeFit(blocks, first!.p, first!.b, paramCount);
+  if (warm && pointValid(warm.at)) {
+    const warmB = coldLastMile.slice();
+    runNumbers.forEach((run, r) => {
+      const lastMile = warmLastMile(warm, run, r, runCount);
+      if (lastMile !== undefined) {
+        warmB[r] = Math.max(0, lastMile);
+      }
+    });
+    const fromWarm = minimizeFit(blocks, warm.at, warmB, paramCount);
+    if (!(final.objective < fromWarm.objective - warmBasinMargin)) {
+      final = fromWarm;
+    }
+  }
+  const p = final.p;
+  const b = final.b;
+
   // the covariance and χ² with the route errors measured from the fit
   routeErrorsFrom(p);
   const { a, chi2 } = normalEquations(blocks, p, b, paramCount);
 
-  // an offset at its bound is held fixed: the covariance is the rest's
-  const free = new Array<boolean>(paramCount).fill(false);
-  free[0] = true;
-  free[1] = true;
-  for (let r = 0; r < b.length; r++) {
-    free[2 + r] = 0 < b[r];
-  }
+  // V5: an offset held at its bound in the solver is free here, so the
+  // position keeps the freedom b would absorb
+  const free = new Array<boolean>(paramCount).fill(true);
   const inverse = invertFree(a, free);
   if (inverse === null) {
     return null;
@@ -354,6 +329,248 @@ export function fitPosition(model: Model, expected: Point, observations: readonl
   };
 }
 
+/** Where one start's minimization of F ended. */
+interface FitMinimum {
+  p: Point;
+  b: number[];
+  objective: number;
+  /** trial steps taken */
+  iterations: number;
+  /** it met the convergence rule, rather than the iteration cap */
+  converged: boolean;
+}
+
+/**
+ * Minimizes F, with the rows' τ as they are, from (p, b), by variable
+ * projection: at every position the offsets are solved exactly
+ * (solveOffsets), and Levenberg–Marquardt steps the position alone on the
+ * profile φ(p) = min_b F(p, b), with the Schur complement of Newton's matrix
+ * over the free offsets, damped by λ times JᵀWJ's position diagonal. A step
+ * is taken only when it lowers φ. It converges once a step taken lowers φ by
+ * less than 10⁻⁶ of φ and the undamped step from there would move the
+ * position less than 0.1 km, or when no step lowers φ, within 100 trial steps.
+ */
+function minimizeFit(blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): FitMinimum {
+  let eq = solveOffsets(blocks, p, b, paramCount);
+  let lambda = minDamping;
+  let nu = 2.0;
+  const minimum: FitMinimum = { p, b: [], objective: 0, iterations: 0, converged: false };
+  while (minimum.iterations < maxFitIterations) {
+    minimum.iterations += 1;
+    const profile = eq.profile();
+    let step: [number, number] | null = null;
+    if (profile !== null) {
+      const [s, gr] = profile;
+      step = solve2(
+        [
+          [s[0][0] + lambda * eq.a[0][0], s[0][1]],
+          [s[1][0], s[1][1] + lambda * eq.a[1][1]],
+        ],
+        gr,
+      );
+      if (step !== null) {
+        const length = hypot(step[0], step[1]);
+        if (maxStepKm < length) {
+          step[0] *= maxStepKm / length;
+          step[1] *= maxStepKm / length;
+        }
+        const next = solveOffsets(blocks, moveKm(eq.p, step[0], step[1]), eq.b, paramCount);
+        if (next.objective <= eq.objective) {
+          // the gain over the quadratic model's 2δᵀg − δᵀSδ
+          const predicted =
+            2 * (step[0] * gr[0] + step[1] * gr[1]) -
+            (step[0] * (s[0][0] * step[0] + s[0][1] * step[1]) + step[1] * (s[1][0] * step[0] + s[1][1] * step[1]));
+          let gain = 0.0;
+          if (0 < predicted) {
+            gain = (eq.objective - next.objective) / predicted;
+          }
+          const drop = eq.objective - next.objective;
+          eq = next;
+          const c = 2 * gain - 1;
+          lambda = Math.max(minDamping, lambda * Math.max(1.0 / 3, 1 - c * c * c));
+          nu = 2;
+          // converged when the whole step from here is short and φ barely
+          // moved: a damped step can be short far from the minimum
+          if (drop < convergedShare * eq.objective) {
+            const there = eq.profile();
+            if (there !== null) {
+              const whole = solve2(there[0], there[1]);
+              if (whole !== null && hypot(whole[0], whole[1]) < convergedKm) {
+                minimum.converged = true;
+                break;
+              }
+            }
+          }
+          continue;
+        }
+      }
+    }
+    // no step lowers φ at this damping: damp more, unless no step can, which is a minimum
+    lambda *= nu;
+    nu *= 2;
+    if (maxDamping < lambda) {
+      minimum.converged = true;
+      break;
+    }
+  }
+  minimum.p = eq.p;
+  minimum.b = eq.b;
+  minimum.objective = eq.objective;
+  return minimum;
+}
+
+/** A position, its offsets, and the normal equations there. */
+class FitEquations {
+  p: Point;
+  b: number[];
+  a: number[][];
+  g: number[];
+  objective: number;
+  curvature: Matrix2;
+
+  constructor(p: Point, b: number[], normal: Normal) {
+    this.p = p;
+    this.b = b;
+    this.a = normal.a;
+    this.g = normal.g;
+    this.objective = normal.objective;
+    this.curvature = normal.curvature;
+  }
+
+  /**
+   * The position's profile at these offsets: the Schur complement of Newton's
+   * matrix over the free offsets, S = H_pp − H_pf H_ff⁻¹ H_fp, and the reduced
+   * gradient g_p − H_pf H_ff⁻¹ g_f. An offset at 0 is held, not free. `null`
+   * when H_ff is singular.
+   */
+  profile(): [Matrix2, [number, number]] | null {
+    const h = newtonMatrix(this.a, this.curvature);
+    const free: number[] = [];
+    for (let r = 0; r < this.b.length; r++) {
+      if (0 < this.b[r]) {
+        free.push(2 + r);
+      }
+    }
+    const s: Matrix2 = [
+      [h[0][0], h[0][1]],
+      [h[1][0], h[1][1]],
+    ];
+    const gr: [number, number] = [this.g[0], this.g[1]];
+    if (0 < free.length) {
+      // H_ff⁻¹ [H_fp | g_f], column by column
+      const k = free.length;
+      for (let col = 0; col < 3; col++) {
+        const augmented = free.map((i) => {
+          const row = new Array<number>(k + 1);
+          free.forEach((j, c) => {
+            row[c] = h[i][j];
+          });
+          row[k] = col < 2 ? h[i][col] : this.g[i];
+          return row;
+        });
+        const x = gaussSolve(augmented);
+        if (x === null) {
+          return null;
+        }
+        for (let u = 0; u < 2; u++) {
+          let sum = 0.0;
+          free.forEach((i, row) => {
+            sum += h[u][i] * x[row];
+          });
+          if (col < 2) {
+            s[u][col] -= sum;
+          } else {
+            gr[u] -= sum;
+          }
+        }
+      }
+    }
+    return [s, gr];
+  }
+}
+
+/**
+ * The offsets that minimize F at the position p, from b: Newton's steps on
+ * the offsets alone, which F is convex in, each offset at its bound of 0 whose
+ * step would go below it held there, a step halved while it raises F, until
+ * the offsets move less than 10⁻⁹ ms or 30 steps.
+ */
+function solveOffsets(blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): FitEquations {
+  let eq = new FitEquations(p, b.slice(), normalEquations(blocks, p, b, paramCount));
+  const free = new Array<boolean>(paramCount).fill(true);
+  free[0] = false;
+  free[1] = false;
+  for (let iteration = 0; iteration < maxOffsetIterations; iteration++) {
+    const step = constrainedStepOver(eq.a, eq.g, eq.b, free);
+    if (step === null) {
+      break;
+    }
+    let largest = 0.0;
+    for (let r = 0; r < eq.b.length; r++) {
+      largest = Math.max(largest, Math.abs(step[2 + r]));
+    }
+    if (largest < offsetSettledMs) {
+      break;
+    }
+    let t = 1.0;
+    let next: FitEquations | null = null;
+    for (let tries = 0; tries < maxOffsetBacktracks; tries++) {
+      const nextB = eq.b.map((value, r) => Math.max(0, value + step[2 + r] * t));
+      const candidate = new FitEquations(p, nextB, normalEquations(blocks, p, nextB, paramCount));
+      if (candidate.objective <= eq.objective) {
+        next = candidate;
+        break;
+      }
+      t /= 2;
+    }
+    if (next === null) {
+      break;
+    }
+    eq = next;
+  }
+  return eq;
+}
+
+/** The 2 × 2 system's solution; `null` when it is singular. */
+function solve2(m: Matrix2, v: readonly [number, number]): [number, number] | null {
+  const solution = gaussSolve([
+    [m[0][0], m[0][1], v[0]],
+    [m[1][0], m[1][1], v[1]],
+  ]);
+  return solution === null ? null : [solution[0], solution[1]];
+}
+
+/** JᵀWJ with the position block's curvature added: half of F's Hessian. */
+function newtonMatrix(a: readonly (readonly number[])[], curvature: Matrix2): number[][] {
+  const h = a.map((row) => row.slice());
+  for (let u = 0; u < 2; u++) {
+    for (let v = 0; v < 2; v++) {
+      h[u][v] += curvature[u][v];
+    }
+  }
+  return h;
+}
+
+/**
+ * The places of the n extenders with the lowest round trips, each at the
+ * place of its lowest, in the order of their round trips (ties in the blocks'
+ * order).
+ */
+function fastestPlaces(blocks: readonly FitBlock[], n: number): Point[] {
+  const extenders = blocks.map((block) => {
+    let f = { at: block.rows[0].at, y: block.rows[0].y };
+    for (const row of block.rows.slice(1)) {
+      if (row.y < f.y) {
+        f = { at: row.at, y: row.y };
+      }
+    }
+    return f;
+  });
+  // Array.prototype.sort is stable, as Go's SortStableFunc
+  extenders.sort((a, b) => (a.y < b.y ? -1 : b.y < a.y ? 1 : 0));
+  return extenders.slice(0, Math.min(n, extenders.length)).map((f) => f.at);
+}
+
 interface Normal {
   /** JᵀWJ */
   a: number[][];
@@ -363,6 +580,8 @@ interface Normal {
   chi2: number;
   /** F = Σ 2ρ_H(z) + ‖r⊥‖² */
   objective: number;
+  /** the position block's curvature JᵀWJ leaves out, −K Σⱼ (Wr)ⱼ ∇²dⱼ */
+  curvature: Matrix2;
 }
 
 interface RowTerms {
@@ -372,25 +591,35 @@ interface RowTerms {
   r: number;
   /** the row's noise variance, D's entry */
   d: number;
+  /** τ */
+  t: number;
+  /** ∇²d, the smoothed distance's curvature in east and north */
+  curvature: Matrix2;
 }
 
 /**
- * The normal equations at (p, b): JᵀWJ, JᵀWr, χ² = Σ rᵀWr and the objective
- * F = Σ 2ρ_H(z) + ‖r⊥‖², with τ the rows' own. Per block, the shared component
- * of r, z = tᵀD⁻¹r / √(Q (1 + Q)), is Huber-weighted by h, and the rest,
- * ‖r⊥‖² = rᵀD⁻¹r − (tᵀD⁻¹r)² / Q, is not:
+ * The normal equations at (p, b): JᵀWJ, JᵀWr, χ² = Σ rᵀWr, the objective
+ * F = Σ 2ρ_H(z) + ‖r⊥‖², with τ the rows' own, and the position block's
+ * curvature. Per block, the shared component of r, z = tᵀD⁻¹r / √(Q (1 + Q)),
+ * is Huber-weighted by h, and the rest, ‖r⊥‖² = rᵀD⁻¹r − (tᵀD⁻¹r)² / Q, is
+ * not:
  *
  *   W = D⁻¹ − ω D⁻¹ t tᵀ D⁻¹,  ω = (1 + Q − h) / (Q (1 + Q))
  *
  * so rᵀWr = ‖r⊥‖² + h z², and W = V⁻¹ when h = 1. The parameters are east
- * km, north km, then b per run; J is the model's slope, so a step solves
- * (JᵀWJ) δ = JᵀWr.
+ * km, north km, then b per run; J is the model's slope, and JᵀWr is half of
+ * −∂F/∂δ. Half of ∂²F/∂δ² is JᵀWJ plus the curvature, with W held: Newton's
+ * matrix.
  */
 function normalEquations(blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): Normal {
   const a = Array.from({ length: paramCount }, () => new Array<number>(paramCount).fill(0));
   const g = new Array<number>(paramCount).fill(0);
   let chi2 = 0.0;
   let objective = 0.0;
+  const curvature: Matrix2 = [
+    [0, 0],
+    [0, 0],
+  ];
   const alpha = new Array<number>(paramCount).fill(0);
   for (const block of blocks) {
     const terms: RowTerms[] = [];
@@ -403,12 +632,16 @@ function normalEquations(blocks: readonly FitBlock[], p: Point, b: readonly numb
       const d = distanceKm(p, row.at);
       const beta = bearingDeg(p, row.at) * radPerDeg;
       const [smooth, slope] = smoothedDistanceKm(d);
+      const sinBeta = Math.sin(beta);
+      const cosBeta = Math.cos(beta);
       const term: RowTerms = {
-        jEast: -Math.sin(beta) * msPerKm * slope,
-        jNorth: -Math.cos(beta) * msPerKm * slope,
+        jEast: -sinBeta * msPerKm * slope,
+        jNorth: -cosBeta * msPerKm * slope,
         run: row.run,
         r: row.y - (b[row.run] + msPerKm * smooth),
         d: row.noiseVar,
+        t: row.tauMs,
+        curvature: distanceCurvature(d, sinBeta, cosBeta),
       };
       terms.push(term);
       const t = row.tauMs;
@@ -445,6 +678,13 @@ function normalEquations(blocks: readonly FitBlock[], p: Point, b: readonly numb
           a[index[u]][index[v]] += (j[u] * j[v]) / term.d;
         }
       }
+      // −K (Wr)ⱼ ∇²dⱼ, with (Wr)ⱼ = (rⱼ − ω tⱼ ρ) / Dⱼ
+      const wr = (term.r - omega * term.t * rho) / term.d;
+      for (let u = 0; u < 2; u++) {
+        for (let v = 0; v < 2; v++) {
+          curvature[u][v] -= msPerKm * wr * term.curvature[u][v];
+        }
+      }
     }
     for (let u = 0; u < paramCount; u++) {
       if (alpha[u] === 0) {
@@ -456,7 +696,25 @@ function normalEquations(blocks: readonly FitBlock[], p: Point, b: readonly numb
       }
     }
   }
-  return { a, g, chi2, objective };
+  return { a, g, chi2, objective, curvature };
+}
+
+/**
+ * ∇²d of the smoothed distance in east and north km at a distance d, β the
+ * bearing from the fit to the extender: (I − u uᵀ) / d with u the unit vector
+ * from the extender, and I / ε within ε of it.
+ */
+function distanceCurvature(d: number, sinBeta: number, cosBeta: number): Matrix2 {
+  if (d < smoothingKm) {
+    return [
+      [1 / smoothingKm, 0],
+      [0, 1 / smoothingKm],
+    ];
+  }
+  return [
+    [(cosBeta * cosBeta) / d, (-sinBeta * cosBeta) / d],
+    [(-sinBeta * cosBeta) / d, (sinBeta * sinBeta) / d],
+  ];
 }
 
 /**
@@ -473,21 +731,21 @@ export function smoothedDistanceKm(d: number): [number, number] {
 }
 
 /**
- * The Gauss–Newton step with the diagonal multiplied by diagonalFactor, each
- * offset at its bound of 0 whose step would go below it held there. `null`
- * when the system is singular.
+ * The step solving a δ = g over the free parameters, the rest held at a step
+ * of 0, and each offset at its bound of 0 whose step would go below it held
+ * there too. `null` when the system is singular.
  */
-function constrainedStep(a: number[][], g: number[], b: readonly number[], diagonalFactor: number): number[] | null {
-  const free = new Array<boolean>(g.length).fill(true);
+function constrainedStepOver(a: number[][], g: number[], b: readonly number[], free: readonly boolean[]): number[] | null {
+  const over = free.slice();
   for (;;) {
-    const step = solveFree(a, g, free, diagonalFactor);
+    const step = solveFree(a, g, over);
     if (step === null) {
       return null;
     }
     let held = false;
     for (let r = 0; r < b.length; r++) {
-      if (free[2 + r] && b[r] <= 0 && step[2 + r] < 0) {
-        free[2 + r] = false;
+      if (over[2 + r] && b[r] <= 0 && step[2 + r] < 0) {
+        over[2 + r] = false;
         held = true;
       }
     }
@@ -497,11 +755,8 @@ function constrainedStep(a: number[][], g: number[], b: readonly number[], diago
   }
 }
 
-/**
- * Solves the system over the free parameters, with their diagonal multiplied
- * by `diagonalFactor`; a held parameter's step is 0.
- */
-function solveFree(a: number[][], g: number[], free: readonly boolean[], diagonalFactor: number): number[] | null {
+/** Solves the system over the free parameters; a held parameter's step is 0. */
+function solveFree(a: number[][], g: number[], free: readonly boolean[]): number[] | null {
   const indexes: number[] = [];
   free.forEach((isFree, i) => {
     if (isFree) {
@@ -512,11 +767,7 @@ function solveFree(a: number[][], g: number[], free: readonly boolean[], diagona
   const augmented = indexes.map((i) => {
     const row = new Array<number>(k + 1);
     indexes.forEach((j, col) => {
-      let v = a[i][j];
-      if (i === j) {
-        v *= diagonalFactor;
-      }
-      row[col] = v;
+      row[col] = a[i][j];
     });
     row[k] = g[i];
     return row;
@@ -575,7 +826,7 @@ function invertFree(a: number[][], free: readonly boolean[]): number[][] | null 
     }
     const unit = new Array<number>(paramCount).fill(0);
     unit[j] = 1;
-    const column = solveFree(a, unit, free, 1);
+    const column = solveFree(a, unit, free);
     if (column === null) {
       return null;
     }

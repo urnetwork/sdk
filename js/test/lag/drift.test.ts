@@ -236,8 +236,8 @@ test("V5: a warm start settles where a cold one does", () => {
   // the last look's fit, 100 km off, with another b
   const last = { ...fitAt(drift.fromAzimuthalKm(cold.at, 80, -60), iso(10), fx.CHICAGO), lastMileMs: [4] };
   const warm = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, last)!;
-  // both stop once a step moves less than 0.05 km, after at most 12 warm and
-  // 30 cold iterations, so they settle near each other rather than on one point
+  // each start stops once a step barely lowers F and the whole step from there
+  // is under 0.1 km, so the two settle near each other rather than on one point
   close(drift.distanceKm(cold.at, warm.at), 0, 0.5, "km apart");
   close(cold.lastMileMs[0], warm.lastMileMs[0], 0.05);
   // a warm start from a fit over other runs takes its b only for the runs it shares
@@ -284,13 +284,18 @@ test("V5: the fit depends on the data, not on where a warm start left off, once 
   }
 });
 
-test("V5: a b at its bound of 0 is held, and the covariance is the position's alone", () => {
+test("V5: a b at its bound of 0 is held, and the covariance still leaves it free", () => {
   // round trips shorter than the distance allows push b below 0
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago({ lastMileMs: -2 }), null)!;
   assert.ok(fit);
   assert.equal(fit.lastMileMs[0], 0);
   assert.ok(fit.cov.every((row) => row.every(Number.isFinite)));
   assert.ok(fit.minorKm > 0);
+  // the fit slid away until b reached 0; conditioning on b = 0 would shorten
+  // the long axis to about 82 km here, and the full inverse keeps that freedom
+  const interior = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago({ lastMileMs: 5 }), null)!;
+  assert.ok(interior.lastMileMs[0] > 0);
+  assert.ok(fit.majorKm >= interior.majorKm, `at the bound ${fit.majorKm} km, inside ${interior.majorKm} km`);
 });
 
 test("V5: Huber weights keep one detoured path from dragging the position", () => {
