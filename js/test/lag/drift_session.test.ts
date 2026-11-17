@@ -133,6 +133,53 @@ test("E3: on a latency-only ticket a hello asking for more than the defaults is 
   assert.match(outcome.error.message, /downloadMs 8000, the ticket allows 5000; maxStreams 16, the ticket allows 4/);
 });
 
+// drift-server may instead issue drift and demo tickets with tiny caps, 1 ms
+// each way, 1 stream and 1 byte each way, so that an extender older than the
+// all-zero rule can't admit a load either (E3). The extender raises a window
+// to one 250 ms interval, so its hello names 250 ms each way over 1 stream,
+// and the session holds a hello to the ticket as the extender reads it.
+const TINY: Caps = { downloadMs: 1, uploadMs: 1, maxStreams: 1, maxDownloadBytes: 1, maxUploadBytes: 1, reportPromptly: true };
+
+test("E3: a tiny-cap drift ticket reads as its caps", () => {
+  const body = decodeLagTicketBody(decodeLagTicket(ticketText({ ...TINY, noReport: true })).body);
+  assert.deepEqual(
+    [body.downloadMs, body.uploadMs, body.maxStreams, body.maxDownloadBytes, body.maxUploadBytes],
+    [1, 1, 1, 1, 1],
+  );
+});
+
+test("E3: a tiny-cap ticket's session opens and pings, with the extender's hello or one naming exactly its caps", { timeout: 30_000 }, async () => {
+  for (const hello of [
+    { downloadMs: 250, uploadMs: 250, maxStreams: 1 },
+    { downloadMs: 1, uploadMs: 1, maxStreams: 1 },
+  ]) {
+    for (const ticket of [ticketText(TINY), ticketText({ ...TINY, noReport: true })]) {
+      const outcome = await openWith(hello, ticket, 3);
+      assert.equal(outcome.error, undefined, String(outcome.error));
+      assert.equal(outcome.hello?.downloadMs, hello.downloadMs);
+      assert.equal(outcome.hello?.maxStreams, 1);
+      assert.ok(outcome.rtts.length >= 3, `only ${outcome.rtts.length} round trips`);
+      assert.equal(outcome.record.loadRequests, 0, "no load is asked for");
+    }
+  }
+});
+
+test("E3: on a tiny-cap ticket a hello naming more is refused", { timeout: 30_000 }, async () => {
+  const cases: [Partial<MockHello>, RegExp][] = [
+    [DEFAULT_LOAD, /downloadMs 5000, the ticket allows 250; uploadMs 5000, the ticket allows 250; maxStreams 4, the ticket allows 1/],
+    [{ downloadMs: 251, uploadMs: 250, maxStreams: 1 }, /^the extender's hello asks for more than its ticket allows: downloadMs 251, the ticket allows 250$/],
+    [{ downloadMs: 250, uploadMs: 300, maxStreams: 1 }, /uploadMs 300, the ticket allows 250/],
+    [{ downloadMs: 250, uploadMs: 250, maxStreams: 2 }, /maxStreams 2, the ticket allows 1/],
+  ];
+  for (const [hello, beyond] of cases) {
+    const outcome = await openWith(hello, ticketText(TINY));
+    assert.ok(outcome.error instanceof LagSessionError, `the session opened with ${JSON.stringify(hello)}`);
+    assert.equal(outcome.error.code, "protocol");
+    assert.match(outcome.error.message, beyond);
+    assert.equal(outcome.record.loadRequests, 0);
+  }
+});
+
 test("E3: an ordinary ticket still fails on a hello larger than its caps", { timeout: 30_000 }, async () => {
   const ordinary = ticketText({ downloadMs: 2000, uploadMs: 1000, maxStreams: 2 });
   const outcome = await openWith(DEFAULT_LOAD, ordinary);
