@@ -911,6 +911,11 @@ func (self *NetworkSpace) clearExtenderWebRtcDialClient(manager *connect.WebRtcM
 	self.extenderWebRtcDial.ClearClient(manager)
 }
 
+// testingExtenderDirectoryBuilt, when set, is called each time a space builds
+// the extender directory its stack is rooted at, so a test counts the stacks
+// its constructions built. Production never sets it.
+var testingExtenderDirectoryBuilt atomic.Pointer[func()]
+
 // The space's extender directory (E1, F1). It persists under the space's own
 // storage; without storage it runs in memory, which is what a headless or
 // ephemeral host gets.
@@ -930,6 +935,9 @@ func newSpaceExtenderDirectory(
 	directory := connect.NewExtenderDirectory(ctx, settings)
 	if rootKeySet := spaceExtenderRootKeySet(key, values); rootKeySet != nil {
 		directory.SetRootKeys(rootKeySet)
+	}
+	if hook := testingExtenderDirectoryBuilt.Load(); hook != nil {
+		(*hook)()
 	}
 	return directory
 }

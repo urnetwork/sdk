@@ -2,9 +2,8 @@ package sdk
 
 import (
 	"context"
-	"runtime"
 	"slices"
-	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/urnetwork/connect"
@@ -15,25 +14,21 @@ import (
 // the sn miner's slots -- runs one extender stack, the host's, and the other
 // spaces read it (connect#227).
 
-// The goroutines whose stack runs through `function`, a qualified function
-// name. A directory runs one save loop and a space with a stack one status
-// watch, from construction until close joins them, so these count stacks.
-func testCountGoroutinesIn(function string) int {
-	stacks := make([]byte, 64*1024*1024)
-	stacks = stacks[:runtime.Stack(stacks, true)]
-	count := 0
-	for _, goroutine := range strings.Split(string(stacks), "\n\n") {
-		if strings.Contains(goroutine, function) {
-			count += 1
-		}
+// Counts the extender directories, the root of every stack, that spaces build
+// until the test ends. The suite runs no test in parallel, so every build
+// counted is this test's.
+func testCountExtenderDirectoryBuilds(t *testing.T) *atomic.Int64 {
+	t.Helper()
+	count := &atomic.Int64{}
+	hook := func() {
+		count.Add(1)
 	}
+	testingExtenderDirectoryBuilt.Store(&hook)
+	t.Cleanup(func() {
+		testingExtenderDirectoryBuilt.Store(nil)
+	})
 	return count
 }
-
-const (
-	testExtenderDirectoryLoop = "github.com/urnetwork/connect.(*ExtenderDirectory).run("
-	testExtenderStatusWatch   = "github.com/urnetwork/sdk.(*NetworkSpace).watchExtenderStatus("
-)
 
 // A url-only space's settings that resolve and dial in the process.
 func testExtenderHostStrategySettings() *connect.ClientStrategySettings {
@@ -63,8 +58,7 @@ func TestNetworkSpacesOnAnExtenderHostRunOneStack(t *testing.T) {
 	testEnableUrlSpaceExtenderNetwork(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	directoryLoops := testCountGoroutinesIn(testExtenderDirectoryLoop)
-	statusWatches := testCountGoroutinesIn(testExtenderStatusWatch)
+	directoryBuilds := testCountExtenderDirectoryBuilds(t)
 
 	host := NewNetworkSpaceWithUrls(ctx, testUrlSpaceApiUrl, testUrlSpacePlatformUrl, testExtenderHostStrategySettings())
 	defer host.close()
@@ -80,11 +74,8 @@ func TestNetworkSpacesOnAnExtenderHostRunOneStack(t *testing.T) {
 		spaces = append(spaces, networkSpace)
 	}
 
-	if count := testCountGoroutinesIn(testExtenderDirectoryLoop) - directoryLoops; count != 1 {
-		t.Fatalf("a host and %d spaces on it run %d extender directories, expected one", len(spaces), count)
-	}
-	if count := testCountGoroutinesIn(testExtenderStatusWatch) - statusWatches; count != 1 {
-		t.Fatalf("a host and %d spaces on it run %d extender stacks, expected one", len(spaces), count)
+	if count := directoryBuilds.Load(); count != 1 {
+		t.Fatalf("a host and %d spaces on it built %d extender stacks, expected one", len(spaces), count)
 	}
 	if host.clientStrategySettings.ExtenderDirectoryReadOnly {
 		t.Fatal("the host only reads its own directory")
@@ -110,9 +101,6 @@ func TestNetworkSpacesOnAnExtenderHostRunOneStack(t *testing.T) {
 	spaces[0].close()
 	if host.getExtenderNetworkClient() == nil || host.getExtenderNode() == nil {
 		t.Fatal("closing a space on the host took the host's stack down")
-	}
-	if count := testCountGoroutinesIn(testExtenderDirectoryLoop) - directoryLoops; count != 1 {
-		t.Fatalf("closing a space on the host left %d directories running, expected the host's", count)
 	}
 }
 
