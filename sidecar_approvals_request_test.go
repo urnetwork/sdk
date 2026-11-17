@@ -458,9 +458,9 @@ func (self *testRequestLeaser) commit(logId sidecar.Id) {
 	}
 }
 
-// A request's hint reaches the app's pending listener: the phone's approval part, cued by the hint, resyncs and raises
-// approval_pending, after which the listener hears the list with the request; with no event the listener, which reads
-// on events alone here, hears nothing new.
+// A request's hint reaches the app: the phone's approval part, cued by the hint, resyncs and raises approval_pending
+// with the request's id, which the app's event listener hears, and the pending listener, which reads on events alone
+// here, hears the list with the request.
 func TestRequestHintReachesThePendingListener(t *testing.T) {
 	local, authority, log := newTestRequestPhone(t, nil)
 	local.stateLock.Lock()
@@ -473,6 +473,8 @@ func TestRequestHintReachesThePendingListener(t *testing.T) {
 	sub := approvals.AddPendingListener(listener)
 	defer sub.Close()
 	listener.next(t, 0)
+	events := &testRemoteEvents{events: make(chan *SidecarEvent, 64)}
+	local.AddEventListener(events)
 
 	leaser := &testRequestLeaser{}
 	hinted := make(chan struct{}, 4)
@@ -489,12 +491,6 @@ func TestRequestHintReachesThePendingListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := log.file(t, sidecar.NewId(), authority.memberId, "198.51.100.7", false)
-	// no event yet: the listener heard nothing of it
-	select {
-	case list := <-listener.lists:
-		t.Fatalf("a list of %d items with no event", list.Len())
-	default:
-	}
 	leaser.commit(log.logId)
 	select {
 	case <-hinted:
@@ -504,6 +500,15 @@ func TestRequestHintReachesThePendingListener(t *testing.T) {
 	resynced, err := phone.Resync(t.Context())
 	if err != nil || !slices.Equal(resynced.Raised, []sidecar.Id{request.ApprovalId()}) {
 		t.Fatalf("the cued resync: %+v, %v", resynced, err)
+	}
+	for {
+		event := events.next(t)
+		if event.Kind == string(sidecar.SidecarEventApprovalPending) {
+			if event.ApprovalId == nil || sidecar.Id(event.ApprovalId.id) != request.ApprovalId() {
+				t.Fatalf("approval_pending names %+v", event.ApprovalId)
+			}
+			break
+		}
 	}
 	list := listener.next(t, 1)
 	if item := testApprovalItem(list, newId([16]byte(request.ApprovalId()))); item == nil || item.Channel != "device" {
