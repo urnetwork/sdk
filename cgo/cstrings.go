@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"unsafe"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 )
 
 // strings returned to the C side are malloc'd copies that the caller
