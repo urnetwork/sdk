@@ -4,9 +4,8 @@ package sdk
 
 // §22.5's §18 row at the sdk (SDK-M8-01): the child token's Api session refreshes only once it holds the core's
 // signer and sends no refresh without one, a logout event released after a newer token is dropped, the session holds
-// no network credential and never the device's token, and the host classes' budgets and background rule. The session
-// takes bind's re-mint of its own token alone, and no closed or emptied session takes one (QD-805). A local server
-// stands in for api; every wait is on a channel.
+// no network credential and never the device's token, and the host classes' budgets and background rule. A local
+// server stands in for api; every wait is on a channel.
 
 import (
 	"encoding/json"
@@ -33,69 +32,6 @@ func testSidecarChildToken(t *testing.T, networkId string, clientId string, refr
 		"strict_exp": true,
 		"refresh":    refresh,
 	})
-}
-
-// byJwt's claims, read unverified, edited by edit and signed again with no signature, as every stand-in token here
-// is. An error for a byJwt that is not a token, so a stand-in server can answer it.
-func testEditedSidecarToken(byJwt string, edit func(claims gojwt.MapClaims)) (string, error) {
-	claims := gojwt.MapClaims{}
-	if _, _, err := gojwt.NewParser().ParseUnverified(byJwt, claims); err != nil {
-		return "", err
-	}
-	edit(claims)
-	return gojwt.NewWithClaims(gojwt.SigningMethodNone, claims).SignedString(gojwt.UnsafeAllowNoneSignatureType)
-}
-
-// presented re-minted with sidecarId as its sidecar_id claim, as server's RemintSidecarCredential re-mints the bearer
-// at POST /sidecar/bind (QD-040, QD-797): every other claim and its lifetime as presented, and a new jti.
-func testRemintedSidecarToken(presented string, sidecarId sidecar.Id) (string, error) {
-	return testEditedSidecarToken(presented, func(claims gojwt.MapClaims) {
-		claims["sidecar_id"] = sidecarId.String()
-		claims["jti"] = sidecar.NewId().String()
-	})
-}
-
-// presented refreshed as server's GET /auth/refresh answers it: every claim kept, sidecar_id among them when presented
-// carries one, and none added, with a new jti and a new lifetime from now.
-func testRefreshedSidecarToken(presented string) (string, error) {
-	return testEditedSidecarToken(presented, func(claims gojwt.MapClaims) {
-		now := time.Now()
-		claims["iat"] = now.Unix()
-		claims["exp"] = now.Add(30 * 24 * time.Hour).Unix()
-		claims["jti"] = sidecar.NewId().String()
-	})
-}
-
-// testRemintedSidecarToken's re-mint, on the test's goroutine.
-func testSidecarRemint(t *testing.T, presented string, sidecarId sidecar.Id) string {
-	t.Helper()
-	reminted, err := testRemintedSidecarToken(presented, sidecarId)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return reminted
-}
-
-// testEditedSidecarToken's token, on the test's goroutine.
-func testSidecarTokenEdited(t *testing.T, byJwt string, edit func(claims gojwt.MapClaims)) string {
-	t.Helper()
-	edited, err := testEditedSidecarToken(byJwt, edit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return edited
-}
-
-// Fails unless byJwt names clientId and carries sidecarId as its sidecar_id claim.
-func requireTestSidecarClaim(t *testing.T, byJwt string, clientId string, sidecarId sidecar.Id) {
-	t.Helper()
-	claims, ok := unverifiedCredentialClaims(byJwt)
-	if !ok {
-		t.Fatal("not a token")
-	}
-	if claims["client_id"] != clientId || claims["sidecar_id"] != sidecarId.String() {
-		t.Fatalf("the token names client %v and sidecar %v, not %s and %s", claims["client_id"], claims["sidecar_id"], clientId, sidecarId)
-	}
 }
 
 // The token the session's state holds, beside the one its Api presents.
@@ -325,97 +261,6 @@ func TestApiSessionHoldsNoNetworkCredential(t *testing.T) {
 	}
 }
 
-// A closed session takes no re-mint (QD-805): AdoptByJwt refuses, and the session and its Api keep the token they held,
-// as install does on a closed session.
-func TestAdoptByJwtRefusedOnAClosedSession(t *testing.T) {
-	server := newTestSessionServer(func(request testSessionRequest) (int, any) {
-		return http.StatusOK, map[string]any{}
-	})
-	ctx, deviceApi := newTestApi(t, server)
-	session := newSidecarApiSession(deviceApi.newSession(ctx))
-	t.Cleanup(session.close)
-	child := testSidecarChildToken(t, credentialTestNetworkId, credentialTestClientId, 0)
-	if !session.install(child) {
-		t.Fatal("an open session did not take the child's token")
-	}
-	reminted := testSidecarRemint(t, child, sidecar.NewId())
-	session.close()
-	if err := session.AdoptByJwt(reminted); !errors.Is(err, errSidecarSessionClosed) {
-		t.Fatalf("a closed session's AdoptByJwt: %v", err)
-	}
-	if session.api.GetByJwt() != child || testSessionHeldByJwt(session) != child {
-		t.Fatal("a closed session took the re-mint")
-	}
-	if session.install(reminted) || session.api.GetByJwt() != child || testSessionHeldByJwt(session) != child {
-		t.Fatal("a closed session installed a token")
-	}
-	if seen := server.seen(); len(seen) != 0 {
-		t.Fatalf("a closed session sent %v", seen)
-	}
-}
-
-// AdoptByJwt takes only a re-mint of the token the session holds, read as the core reads one (QD-805): the same
-// network, client and device, naming a sidecar. A session that holds no token refuses, and so does one a confirmed
-// rejection emptied, so no re-mint brings a rejected client back; anything else is refused with the session's own token
-// kept, presented and held. The re-mint taken is what the session presents and holds.
-func TestAdoptByJwtTakesOnlyTheSessionsRemint(t *testing.T) {
-	server := newTestSessionServer(func(request testSessionRequest) (int, any) {
-		return http.StatusOK, map[string]any{}
-	})
-	ctx, deviceApi := newTestApi(t, server)
-	session := newSidecarApiSession(deviceApi.newSession(ctx))
-	t.Cleanup(session.close)
-	child := testSidecarChildToken(t, credentialTestNetworkId, credentialTestClientId, 0)
-	sidecarId := sidecar.NewId()
-	reminted := testSidecarRemint(t, child, sidecarId)
-	if err := session.AdoptByJwt(reminted); !errors.Is(err, errSidecarSessionEmpty) || session.api.GetByJwt() != "" {
-		t.Fatalf("a session holding no token: %v", err)
-	}
-
-	session.install(child)
-	otherId := sidecar.NewId().String()
-	for _, c := range []struct {
-		name  string
-		byJwt string
-	}{
-		{name: "another client's re-mint", byJwt: testSidecarRemint(t, testSidecarChildToken(t, credentialTestNetworkId, credentialTestKeyClientId, 0), sidecarId)},
-		{name: "another device's re-mint", byJwt: testSidecarTokenEdited(t, reminted, func(claims gojwt.MapClaims) { claims["device_id"] = otherId })},
-		{name: "another network's re-mint", byJwt: testSidecarTokenEdited(t, reminted, func(claims gojwt.MapClaims) { claims["network_id"] = otherId })},
-		{name: "a token naming no sidecar", byJwt: testSidecarTokenEdited(t, child, func(claims gojwt.MapClaims) { claims["jti"] = otherId })},
-		{name: "a token naming the zero sidecar", byJwt: testSidecarRemint(t, child, sidecar.Id{})},
-		{name: "a token naming a malformed sidecar", byJwt: testSidecarTokenEdited(t, reminted, func(claims gojwt.MapClaims) { claims["sidecar_id"] = "sidecar" })},
-		{name: "not a token", byJwt: "not-a-token"},
-		{name: "no token", byJwt: ""},
-	} {
-		if err := session.AdoptByJwt(c.byJwt); !errors.Is(err, errSidecarRemintMismatch) {
-			t.Errorf("%s: %v", c.name, err)
-		}
-		if session.api.GetByJwt() != child || testSessionHeldByJwt(session) != child {
-			t.Fatalf("%s replaced the session's token", c.name)
-		}
-	}
-
-	if err := session.AdoptByJwt(reminted); err != nil {
-		t.Fatal(err)
-	}
-	if byJwt, err := session.ByJwt(); err != nil || byJwt != reminted || testSessionHeldByJwt(session) != reminted || !session.holdsToken() {
-		t.Fatal("the session does not present and hold the re-mint")
-	}
-	// a confirmed rejection empties it, and a later re-mint does not fill it again
-	if !session.api.rejectByJwt(reminted, "") {
-		t.Fatal("the rejection did not commit")
-	}
-	if err := session.AdoptByJwt(testSidecarRemint(t, reminted, sidecarId)); !errors.Is(err, errSidecarSessionEmpty) {
-		t.Fatalf("a rejected session's AdoptByJwt: %v", err)
-	}
-	if session.api.GetByJwt() != "" || session.holdsToken() {
-		t.Fatal("a re-mint brought a rejected session's token back")
-	}
-	if seen := server.seen(); len(seen) != 0 {
-		t.Fatalf("the session sent %v", seen)
-	}
-}
-
 // §18.4's budgets by host class, an app's own budget in their place where it sets one, and an unknown class refused.
 func TestHostClassBudgets(t *testing.T) {
 	for _, c := range []struct {
@@ -473,5 +318,28 @@ func TestAndroidHostClassStartsNoBackgroundSidecar(t *testing.T) {
 	}
 	if _, err := checkedSidecarSettings(&SidecarSettings{HostClass: "tv"}, false); err == nil {
 		t.Fatal("NewSidecarLocal took an unknown class")
+	}
+}
+
+// A closed session takes no token: install refuses, and the session and its Api keep the token they held, sending
+// nothing.
+func TestClosedApiSessionInstallsNothing(t *testing.T) {
+	server := newTestSessionServer(func(request testSessionRequest) (int, any) {
+		return http.StatusOK, map[string]any{}
+	})
+	ctx, deviceApi := newTestApi(t, server)
+	session := newSidecarApiSession(deviceApi.newSession(ctx))
+	t.Cleanup(session.close)
+	child := testSidecarChildToken(t, credentialTestNetworkId, credentialTestClientId, 0)
+	if !session.install(child) {
+		t.Fatal("an open session did not take the child's token")
+	}
+	session.close()
+	later := testSidecarChildToken(t, credentialTestNetworkId, credentialTestClientId, 0)
+	if session.install(later) || session.api.GetByJwt() != child || testSessionHeldByJwt(session) != child {
+		t.Fatal("a closed session installed a token")
+	}
+	if seen := server.seen(); len(seen) != 0 {
+		t.Fatalf("a closed session sent %v", seen)
 	}
 }

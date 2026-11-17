@@ -11,8 +11,6 @@
 // The child's token goes into a new Api session, a session of the device's Api with none of its credentials, which
 // becomes the host's TokenSource before the enrollment runs, so the generation that enrollment starts finds it; a
 // refused enrollment drops it and keeps the session that was there. The device's Api never holds the child's token.
-// Bind answers the child's token re-minted with the sidecar_id, and the core hands that to the session before the
-// generation starts (AdoptByJwt, QD-805), so the session, the keychain and the generation all hold the claim's token.
 //
 // The remote backend pairs instead (§5.8's pairing; pairWithDeviceApi in sidecar_remote.go), and after an enrollment or
 // a pairing forwarding's setup runs for the device's VPN component (sidecar_forward_setup.go).
