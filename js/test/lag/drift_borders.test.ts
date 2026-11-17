@@ -209,6 +209,34 @@ test("G2: the world map loads once, lazily", async () => {
   assert.equal(world.countryAt(fx.MADRID, 0), "es");
   assert.equal(world.countryAt(atlantic, 300), "", "mid-Atlantic");
   assert.ok(world.country("fr"));
+  // Natural Earth 1:50m, every code GeoLite2 gives a country
+  assert.match(world.version, /^ne-admin0-50m-v/);
+  assert.ok(world.codes().length >= 240, `${world.codes().length} countries`);
+  // across the antimeridian, at a pole, and off a coast
+  assert.equal(world.countryAt({ lat: -17.8, lon: 178.0 }, 0), "fj", "Viti Levu");
+  assert.equal(world.countryAt({ lat: 66.0, lon: -172.0 }, 0), "ru", "Chukotka, west of the antimeridian");
+  assert.equal(world.countryAt({ lat: -85, lon: 0 }, 0), "aq");
+  assert.equal(world.countryAt({ lat: 38.7, lon: -10.5 }, 0), "", "at sea off Lisbon");
+  assert.equal(world.countryAt({ lat: 38.7, lon: -10.5 }, 300), "pt", "the nearest within 300 km");
+});
+
+test("W8: the demo's verdict against the simplified map", async () => {
+  const world = await drift.loadDriftWorld();
+  if (world.codes().length === 0) {
+    return;
+  }
+  const run = (truth: { lat: number; lon: number }, seed: number) =>
+    fx.syntheticRun(1, { truth, extenders: fx.EUROPE_EXTENDERS, lastMileMs: 10, queueMs: 2, count: 16, seed });
+  const frankfurt = { lat: 50.105, lon: 8.66 };
+  const home = drift.localDriftVerdict({ borders: world, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run(frankfurt, 3)] });
+  assert.equal(home.verdict, "agree");
+  assert.equal(home.driftCountryCode, "de");
+  // pings from Frankfurt on an address that says Spain: rejected, the pings pointing to Germany
+  const away = drift.localDriftVerdict({ borders: world, ipCountryCode: "es", expected: fx.MADRID, runs: [run(frankfurt, 5)] });
+  assert.equal(away.verdict, "disagree");
+  assert.equal(away.reason, "region_outside");
+  assert.equal(away.driftCountryCode, "de");
+  assert.ok(away.marginKm! > 0 && away.distanceKm! > 300, `distance ${away.distanceKm}, margin ${away.marginKm}`);
 });
 
 // ---- W8
