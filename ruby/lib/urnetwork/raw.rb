@@ -828,6 +828,7 @@ module URnetwork
       attach_function :urnet_device_local_get_pinned_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_probe_results, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_provide_secret_keys, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_local_get_provider_client_key_published, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_get_provider_client_key_registered, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_get_provider_connected, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_get_provider_ready, [:uint64], :bool, blocking: true

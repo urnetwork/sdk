@@ -133,6 +133,64 @@ func TestDeviceLocalProviderRegistrationGatesCarrierReadiness(t *testing.T) {
 	}
 }
 
+// A provider that requires no processed registration -- a standalone sn launch
+// -- never reads registered, so its key's standing is its publication: false
+// until the platform acknowledges the ClientKey control, true after, and false
+// for a closed device. The platform is an in-process ControlId client wired to
+// the provider client, which acknowledges what it receives.
+func TestDeviceLocalProviderClientKeyPublishedWithoutRegistration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	settings := connect.DefaultClientSettings()
+	settings.ControlPingTimeout = 0
+	settings.EncryptionSettings.Mode = connect.EncryptionModeOff
+	settings.ClientKeySeed = bytes.Repeat([]byte{33}, ed25519.SeedSize)
+	client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), settings)
+	control := connect.NewClientWithDefaults(ctx, connect.ControlId, connect.NewNoContractClientOob())
+	control.ContractManager().AddNoContractPeer(client.ClientId())
+	t.Cleanup(func() {
+		cancel()
+		joinCtx, joinCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer joinCancel()
+		if err := client.CloseAndWait(joinCtx); err != nil {
+			t.Error(err)
+		}
+		if err := control.CloseAndWait(joinCtx); err != nil {
+			t.Error(err)
+		}
+	})
+	transport := newFakeMigratablePlatformTransport(&connect.ClientAuth{ByJwt: "synthetic-standalone", InstanceId: connect.NewId(), AppVersion: "0.0.0"}, true)
+	device := &DeviceLocal{provider: &deviceLocalProvider{client: client, platformTransport: transport}}
+	if device.GetProviderClientKeyPublished() {
+		t.Fatal("a key the platform has not acknowledged reads published")
+	}
+
+	toControl := make(connect.Route)
+	toClient := make(connect.Route)
+	client.RouteManager().UpdateTransport(connect.NewSendGatewayTransport(), []connect.Route{toControl})
+	client.RouteManager().UpdateTransport(connect.NewReceiveGatewayTransport(), []connect.Route{toClient})
+	control.RouteManager().UpdateTransport(connect.NewSendGatewayTransport(), []connect.Route{toClient})
+	control.RouteManager().UpdateTransport(connect.NewReceiveGatewayTransport(), []connect.Route{toControl})
+	if err := client.ClientKeyManager().WaitForPublication(ctx); err != nil {
+		t.Fatal("the platform never acknowledged the key", err)
+	}
+	if !device.GetProviderClientKeyPublished() {
+		t.Fatal("an acknowledged key does not read published")
+	}
+	if device.GetProviderClientKeyRegistered() || device.GetProviderReady() {
+		t.Fatal("a native acknowledgment released processed readiness")
+	}
+	device.stateLock.Lock()
+	device.closed = true
+	device.stateLock.Unlock()
+	if device.GetProviderClientKeyPublished() {
+		t.Fatal("a closed device reads published")
+	}
+	if (&DeviceLocal{}).GetProviderClientKeyPublished() {
+		t.Fatal("a device without a provider reads published")
+	}
+}
+
 // An existing custom/legacy client is not silently upgraded by a connected
 // carrier. Missing and closed devices likewise cannot report registration.
 func TestDeviceLocalProviderRegistrationRejectsLegacyCarrier(t *testing.T) {

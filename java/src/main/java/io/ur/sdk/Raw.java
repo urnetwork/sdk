@@ -829,6 +829,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_get_pinned_app_ids(long a0);
   Pointer urnet_device_local_get_probe_results(long a0);
   Pointer urnet_device_local_get_provide_secret_keys(long a0);
+  byte urnet_device_local_get_provider_client_key_published(long a0);
   byte urnet_device_local_get_provider_client_key_registered(long a0);
   byte urnet_device_local_get_provider_connected(long a0);
   byte urnet_device_local_get_provider_ready(long a0);

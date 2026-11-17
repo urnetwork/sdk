@@ -1910,6 +1910,7 @@ char* urnet_device_local_get_memory_stats(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
+bool urnet_device_local_get_provider_client_key_published(uint64_t self);
 bool urnet_device_local_get_provider_client_key_registered(uint64_t self);
 bool urnet_device_local_get_provider_connected(uint64_t self);
 bool urnet_device_local_get_provider_ready(uint64_t self);
