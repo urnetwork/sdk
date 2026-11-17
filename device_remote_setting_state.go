@@ -60,6 +60,22 @@
 // told, and a provide mode tell never touches it (upgrading to Pro must never
 // change the provide control mode, owner rule 2026-10-02).
 //
+// The value settings keep the same order of pending writes, without the
+// told-value delivery above: the performance profile (the connect options:
+// connection mode, Fixed IP, strong anonymization, post-quantum encryption),
+// the provide network mode, the rating and intro funnel prompts, can refer,
+// allow foreground, the default location, the provider extender, measurements
+// and router port mapping settings, both transport settings, the split rules
+// and the dns resolver settings. A pending write is the getter's answer before
+// the device's, and it is kept as last known while the sync that took it is in
+// flight and over the reply of a sync that predates it; a report the device
+// makes while it is pending is dropped. Before this, a write queued for the
+// first sync, as every app queues its saved settings into a new remote, read
+// back as the default while that sync was in flight: an app that opened into a
+// running tunnel showed its connect options reset to the defaults, and the next
+// change of any of them saved those defaults (the owner's 2026-11-17 report,
+// post-quantum encryption off after an update or a restart).
+//
 // The state below is guarded by `DeviceRemote.stateLock`.
 package sdk
 
@@ -263,9 +279,9 @@ func (self *DeviceRemote) offlineWithLock() deviceRemoteOffline {
 	}
 }
 
-// Keeps the pending setting writes as last known, so the getters still answer
-// with them while a sync that took them is in flight. Must be called with
-// stateLock.
+// Keeps the pending setting writes as last known over a sync's reply, which
+// predates them, so the getters still answer with them while the next sync
+// that takes them is in flight. Must be called with stateLock.
 func (self *DeviceRemote) recordPendingSettingWritesWithLock() {
 	self.lastKnownState.ProvideMode.Merge(self.state.ProvideMode)
 	self.lastKnownState.ProvideControlMode.Merge(self.state.ProvideControlMode)
@@ -274,6 +290,21 @@ func (self *DeviceRemote) recordPendingSettingWritesWithLock() {
 	self.lastKnownState.VpnInterfaceWhileOffline.Merge(self.state.VpnInterfaceWhileOffline)
 	self.lastKnownState.RouteLocal.Merge(self.state.RouteLocal)
 	self.lastKnownState.BlockerEnabled.Merge(self.state.BlockerEnabled)
+	// the value settings (the file header)
+	self.lastKnownState.PerformanceProfile.Merge(self.state.PerformanceProfile)
+	self.lastKnownState.ProvideNetworkMode.Merge(self.state.ProvideNetworkMode)
+	self.lastKnownState.CanShowRatingDialog.Merge(self.state.CanShowRatingDialog)
+	self.lastKnownState.CanPromptIntroFunnel.Merge(self.state.CanPromptIntroFunnel)
+	self.lastKnownState.CanRefer.Merge(self.state.CanRefer)
+	self.lastKnownState.AllowForeground.Merge(self.state.AllowForeground)
+	self.lastKnownState.DefaultLocation.Merge(self.state.DefaultLocation)
+	self.lastKnownState.ProvideExtender.Merge(self.state.ProvideExtender)
+	self.lastKnownState.MeasurementsEnabled.Merge(self.state.MeasurementsEnabled)
+	self.lastKnownState.ProvideExtenderPortMapping.Merge(self.state.ProvideExtenderPortMapping)
+	self.lastKnownState.TransportSettings.Merge(self.state.TransportSettings)
+	self.lastKnownState.ProviderTransportSettings.Merge(self.state.ProviderTransportSettings)
+	self.lastKnownState.BlockActionOverrides.Merge(self.state.BlockActionOverrides)
+	self.lastKnownState.DnsResolverSettings.Merge(self.state.DnsResolverSettings)
 	if self.provideQueuedWithLock() {
 		// provide enabled follows the pending writes
 		self.lastKnownState.ProvideEnabled.Set(self.derivedProvideEnabledWithLock())
