@@ -418,6 +418,48 @@ func TestForwardSinkDecisionMapping(t *testing.T) {
 	}
 }
 
+// The sink reports a posture's overdue raise once: a later read finding the same raise among the alarms is no new
+// raise, and a raise at the next point, or naming a further entry, is (QD-696; BRIDGE-M8-07's app host schedules
+// found the Forwarder raising one point's bridge_alarm at every later read).
+func TestForwardSinkReportsEachOverdueRaiseOnce(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	decisionAt := func(n uint64, age time.Duration) sidecardevice.PostureDecision {
+		return sidecardevice.PostureDecision{
+			State:       sidecardevice.PostureEnforcingDocument,
+			BridgeState: &bridge.BridgeState{Auth: &bridge.AuthPin{Version: 5}},
+			Waiting:     []sidecardevice.PostureWaitingEntry{{N: 6, ThroughN: 6, FirstSeen: now}, {N: 7, ThroughN: 7, FirstSeen: now.Add(time.Minute)}},
+			Overdue:     &sidecardevice.PostureOverdue{N: 6, Age: age, NextAlarmAt: now.Add(time.Hour)},
+			Alarms:      []sidecardevice.PostureAlarm{{Kind: sidecardevice.PostureAlarmCompileOverdue, N: n, Age: age}},
+		}
+	}
+	raises := &deviceForwardRaises{}
+	for i, step := range []struct {
+		decision sidecardevice.PostureDecision
+		raised   bool
+	}{
+		{decisionAt(6, 10*time.Minute), true},
+		{decisionAt(6, 10*time.Minute), false},
+		{decisionAt(6, 10*time.Minute), false},
+		{decisionAt(7, 10*time.Minute), true},
+		{decisionAt(6, 30*time.Minute), true},
+		{decisionAt(6, 30*time.Minute), false},
+	} {
+		sink := deviceForwardSinkDecisionOf(step.decision, 10*time.Minute)
+		raises.once(step.decision, &sink)
+		if sink.Overdue == nil || sink.Overdue.Raised != step.raised {
+			t.Fatalf("read %d: overdue %+v, want raised %t", i, sink.Overdue, step.raised)
+		}
+	}
+	// a decision with no raise among its alarms reports none, and leaves the last raise as it was
+	quiet := decisionAt(6, 30*time.Minute)
+	quiet.Alarms = nil
+	sink := deviceForwardSinkDecisionOf(quiet, 10*time.Minute)
+	raises.once(quiet, &sink)
+	if sink.Overdue == nil || sink.Overdue.Raised {
+		t.Fatalf("a read with no raise: %+v", sink.Overdue)
+	}
+}
+
 // F refreshes at a point between 40% and 50% of its lifetime, the same point for one token, and a token that does not
 // read has none.
 func TestForwardRefreshPointInWindow(t *testing.T) {

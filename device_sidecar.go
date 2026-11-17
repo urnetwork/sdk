@@ -85,6 +85,8 @@ type deviceBridgeOwned interface {
 	Close()
 	SetFork(fork bool) error
 	Decision() sidecardevice.PostureDecision
+	// The posture's decision at the clock's now, where its overdue alarm is raised (device.Bridge.DecisionNow).
+	DecisionNow() sidecardevice.PostureDecision
 	SetLocalAddresses(addresses []netip.Addr)
 	// Signs each live window client of the shares' links again, once a share's signer changed (§17.10).
 	ResignShares(shareIds []connect.Id) error
@@ -842,6 +844,17 @@ func (self *deviceLocalBridgeOwner) roleDecision(networkId connect.Id) sidecarde
 	decision := sidecardevice.PostureDecision{State: sidecardevice.PostureLegacy}
 	self.onRole(networkId, false, func(bridge deviceBridgeOwned) error {
 		decision = bridge.Decision()
+		return nil
+	})
+	return decision
+}
+
+// networkId's posture decision read at the clock's now, legacy's with no bridge: what a Forwarder reads at each of the
+// posture's alarm times, where roleDecision answers the decision last adopted.
+func (self *deviceLocalBridgeOwner) roleDecisionNow(networkId connect.Id) sidecardevice.PostureDecision {
+	decision := sidecardevice.PostureDecision{State: sidecardevice.PostureLegacy}
+	self.onRole(networkId, false, func(bridge deviceBridgeOwned) error {
+		decision = bridge.DecisionNow()
 		return nil
 	})
 	return decision
