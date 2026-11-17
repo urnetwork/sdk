@@ -166,7 +166,10 @@ export interface DriftTestTicket {
   ticket: string;
   /** A4: the extender's place */
   location?: LagExtenderLocation;
-  /** V3: the place's error, km (s_ext); the model takes 50 km when absent */
+  /**
+   * V3: the place's error, km (s_ext), should the api send it; it doesn't
+   * yet, and the model then takes a derived place's 50 km
+   */
   place_error_km?: number;
 }
 
@@ -179,19 +182,13 @@ export interface DriftTestStartArgs {
 }
 
 /**
- * P5: why a start was refused: the token unknown, expired, closed or out of
- * runs, another of its runs still measuring, the origin not allowed, or a
- * limit (P7, W8).
+ * P5: why a start was refused: `expired`, the token unknown or its first run
+ * not started in time; `closed`, out of runs, past its retest window or
+ * failed; `busy`, another of its runs still measuring; `origin`, the page may
+ * not run it (W5, P3); `limit`, with `retry_after_ms` (P7, W8); `unavailable`,
+ * too few extenders or no borders now.
  */
-export type DriftTestStartRefusalCode =
-  | "unknown"
-  | "expired"
-  | "closed"
-  | "no_runs_left"
-  | "measuring"
-  | "origin"
-  | "limit"
-  | "unavailable";
+export type DriftTestStartRefusalCode = "expired" | "closed" | "busy" | "origin" | "limit" | "unavailable";
 
 /**
  * P5: a run started: its track and tickets, the IP place and how long it may
@@ -213,6 +210,8 @@ export interface DriftTestStartResult {
   ip?: DriftTestPlace;
   /** V10's cap, 12000 */
   measure_ms?: number;
+  /** the token's confidence, at which the radar draws the region (V8) */
+  confidence?: number;
   /** RFC 3339; every session must open before this */
   expires_at?: string;
   error?: LagApiRefusal & { code?: DriftTestStartRefusalCode | (string & {}) };
@@ -383,7 +382,8 @@ export class LagApiClient extends URNetworkApiClientBase {
 
   /**
    * P5: the frame closed a run's sessions, and why (V10). Idempotent. The
-   * api refuses the demo token.
+   * api refuses the demo token with a 400, which rejects as a
+   * URNetworkApiError.
    */
   driftTestFinish(args: DriftTestFinishArgs, options?: RequestOptions): Promise<DriftTestFinishResult> {
     const token = driftToken("driftTestFinish", args.token);
@@ -406,7 +406,10 @@ export class LagApiClient extends URNetworkApiClientBase {
     );
   }
 
-  /** P5: what the widget shows. The api refuses the demo token. */
+  /**
+   * P5: what the widget shows. The api refuses the demo token with a 400,
+   * which rejects as a URNetworkApiError.
+   */
   async driftTestResult(args: DriftTestResultArgs, options?: RequestOptions): Promise<DriftTestResultResult> {
     const token = driftToken("driftTestResult", args.token);
     const result = await refusalAsResult(

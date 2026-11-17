@@ -59,6 +59,7 @@ const started = {
   tickets: [ticket],
   ip: { country_code: "de", country_name: "Germany", region: "Hesse", city: "Frankfurt", latitude: 50.11, longitude: 8.68 },
   measure_ms: 12000,
+  confidence: 0.99,
   expires_at: "2026-11-17T18:05:00Z",
 };
 
@@ -97,7 +98,7 @@ test("W8: the demo token's start carries demo and no drift test id", async () =>
 });
 
 test("driftTestStart answers a refusal as a result, and always lists tickets", async () => {
-  const refusal = { error: { code: "measuring", message: "another run is measuring" } };
+  const refusal = { error: { code: "busy", message: "A check is still running.", retry_after_ms: 0 } };
   const { fetchImpl } = recorder([json(409, refusal), json(200, { error: { code: "origin" } })]);
   const api = createLagApiClient({ fetch: fetchImpl });
   assert.deepEqual(await api.driftTestStart({ token: TOKEN }), { ...refusal, tickets: [] });
@@ -148,11 +149,13 @@ test("driftTestResult posts the token and reads only what the widget shows", asy
   assert.deepEqual(await api.driftTestResult({ token: TOKEN }), { state: "created", run: 0, verdict: null, runs_in_verdict: [] });
 });
 
-test("W8: finish and result answer the demo token's refusal as a result, and other errors throw", async () => {
-  const refusal = { error: { code: "demo", message: "the demo token stores nothing" } };
-  const { fetchImpl } = recorder([json(400, refusal), json(400, refusal), json(400, { message: "bad request" })]);
+test("W8: the api's 400 for the demo token's finish and result rejects; a coded refusal is a result", async () => {
+  const plain = () => new Response("The demo token has no runs to finish.", { status: 400, headers: { "Content-Type": "text/plain" } });
+  const refusal = { error: { code: "busy", message: "A check is still running." } };
+  const { fetchImpl } = recorder([plain(), plain(), json(409, refusal)]);
   const api = createLagApiClient({ fetch: fetchImpl });
-  assert.deepEqual(await api.driftTestFinish({ token: "demo", run: 1, stop: "clear" }), refusal);
-  assert.deepEqual(await api.driftTestResult({ token: "demo" }), { ...refusal, runs_in_verdict: [] });
-  await assert.rejects(api.driftTestResult({ token: "demo" }), (error: unknown) => error instanceof URNetworkApiError && error.status === 400);
+  const is400 = (error: unknown) => error instanceof URNetworkApiError && error.status === 400;
+  await assert.rejects(api.driftTestFinish({ token: "demo", run: 1, stop: "clear" }), is400);
+  await assert.rejects(api.driftTestResult({ token: "demo" }), is400);
+  assert.deepEqual(await api.driftTestResult({ token: TOKEN }), { ...refusal, runs_in_verdict: [] });
 });
