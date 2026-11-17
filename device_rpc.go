@@ -1299,16 +1299,24 @@ func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceP
 		}()
 		if success {
 			self.state.PerformanceProfile.Unset()
-			self.lastKnownState.PerformanceProfile.Set(performanceProfile)
 		} else {
 			self.state.PerformanceProfile.Set(performanceProfile)
 		}
+		// kept as last known also while pending, so the getter answers it
+		// while a sync that took it is in flight (device_remote_setting_state.go)
+		self.lastKnownState.PerformanceProfile.Set(performanceProfile)
 	}()
 }
 
 func (self *DeviceRemote) GetPerformanceProfile() *PerformanceProfile {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.PerformanceProfile.IsSet {
+		return clonePerformanceProfile(self.state.PerformanceProfile.Value)
+	}
 
 	performanceProfile, success := func() (*PerformanceProfile, bool) {
 		if self.service == nil {
@@ -1645,6 +1653,11 @@ func (self *DeviceRemote) GetProvideExtender() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.ProvideExtender.IsSet {
+		return self.state.ProvideExtender.Value
+	}
 	if self.service != nil {
 		// as the status above: a device process that does not have the method
 		// yet keeps its session. The row is hidden against it, since its status
@@ -1678,8 +1691,11 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a queued value is kept as last known too, so the getter answers it while
+	// a sync that took it is in flight (device_remote_setting_state.go)
 	if self.service == nil {
 		self.state.ProvideExtender.Set(provideExtender)
+		self.lastKnownState.ProvideExtender.Set(provideExtender)
 		return
 	}
 	err := rpcCallVoidAllowMissingMethod(
@@ -1697,6 +1713,7 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 		self.log.Infof("[dr]provide extender dropped: the device process has no setter")
 	default:
 		self.state.ProvideExtender.Set(provideExtender)
+		self.lastKnownState.ProvideExtender.Set(provideExtender)
 	}
 }
 
@@ -1709,6 +1726,11 @@ func (self *DeviceRemote) GetProvideExtenderPortMapping() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.ProvideExtenderPortMapping.IsSet {
+		return self.state.ProvideExtenderPortMapping.Value
+	}
 	if self.service != nil {
 		portMapping, err := rpcCallNoArgAllowMissingMethod[bool](
 			self.service,
@@ -1737,8 +1759,10 @@ func (self *DeviceRemote) SetProvideExtenderPortMapping(portMapping bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a queued value is kept as last known too, as SetProvideExtender keeps it
 	if self.service == nil {
 		self.state.ProvideExtenderPortMapping.Set(portMapping)
+		self.lastKnownState.ProvideExtenderPortMapping.Set(portMapping)
 		return
 	}
 	err := rpcCallVoidAllowMissingMethod(
@@ -1756,6 +1780,7 @@ func (self *DeviceRemote) SetProvideExtenderPortMapping(portMapping bool) {
 		self.log.Infof("[dr]provide extender port mapping dropped: the device process has no setter")
 	default:
 		self.state.ProvideExtenderPortMapping.Set(portMapping)
+		self.lastKnownState.ProvideExtenderPortMapping.Set(portMapping)
 	}
 }
 
@@ -1767,6 +1792,11 @@ func (self *DeviceRemote) GetMeasurementsEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.MeasurementsEnabled.IsSet {
+		return self.state.MeasurementsEnabled.Value
+	}
 	if self.service != nil {
 		measurementsEnabled, err := rpcCallNoArgAllowMissingMethod[bool](
 			self.service,
@@ -1796,8 +1826,10 @@ func (self *DeviceRemote) SetMeasurementsEnabled(measurementsEnabled bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a queued value is kept as last known too, as SetProvideExtender keeps it
 	if self.service == nil {
 		self.state.MeasurementsEnabled.Set(measurementsEnabled)
+		self.lastKnownState.MeasurementsEnabled.Set(measurementsEnabled)
 		return
 	}
 	err := rpcCallVoidAllowMissingMethod(
@@ -1815,6 +1847,7 @@ func (self *DeviceRemote) SetMeasurementsEnabled(measurementsEnabled bool) {
 		self.log.Infof("[dr]measurements enabled dropped: the device process has no setter")
 	default:
 		self.state.MeasurementsEnabled.Set(measurementsEnabled)
+		self.lastKnownState.MeasurementsEnabled.Set(measurementsEnabled)
 	}
 }
 
@@ -2225,6 +2258,12 @@ func (self *DeviceRemote) GetCanShowRatingDialog() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.CanShowRatingDialog.IsSet {
+		return self.state.CanShowRatingDialog.Value
+	}
+
 	canShowRatingDialog, success := func() (bool, bool) {
 		if self.service == nil {
 			return false, false
@@ -2272,7 +2311,7 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 		}
 	}()
 	if event {
-		self.canShowRatingDialogChanged(self.GetCanShowRatingDialog())
+		self.canShowRatingDialogChanged(self.GetCanShowRatingDialog(), false)
 	}
 }
 
@@ -2283,6 +2322,12 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 func (self *DeviceRemote) GetCanPromptIntroFunnel() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.CanPromptIntroFunnel.IsSet {
+		return self.state.CanPromptIntroFunnel.Value
+	}
 
 	canPromptIntroFunnel, success := func() (bool, bool) {
 		if self.service == nil {
@@ -2331,13 +2376,19 @@ func (self *DeviceRemote) SetCanPromptIntroFunnel(canPromptIntroFunnel bool) {
 		}
 	}()
 	if event {
-		self.canPromptIntroFunnelChanged(self.GetCanPromptIntroFunnel())
+		self.canPromptIntroFunnelChanged(self.GetCanPromptIntroFunnel(), false)
 	}
 }
 
 func (self *DeviceRemote) GetCanRefer() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.CanRefer.IsSet {
+		return self.state.CanRefer.Value
+	}
 
 	canRefer, success := func() (bool, bool) {
 		if self.service == nil {
@@ -2386,13 +2437,19 @@ func (self *DeviceRemote) SetCanRefer(canRefer bool) {
 		}
 	}()
 	if event {
-		self.canReferChanged(self.GetCanRefer())
+		self.canReferChanged(self.GetCanRefer(), false)
 	}
 }
 
 func (self *DeviceRemote) GetAllowForeground() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.AllowForeground.IsSet {
+		return self.state.AllowForeground.Value
+	}
 
 	allowForeground, success := func() (bool, bool) {
 		if self.service == nil {
@@ -2441,7 +2498,7 @@ func (self *DeviceRemote) SetAllowForeground(allowForeground bool) {
 		}
 	}()
 	if event {
-		self.allowForegroundChanged(self.GetAllowForeground())
+		self.allowForegroundChanged(self.GetAllowForeground(), false)
 	}
 }
 
@@ -3527,13 +3584,19 @@ func (self *DeviceRemote) SetProvideNetworkMode(provideNetworkMode ProvideNetwor
 		}
 	}()
 	if event {
-		self.provideNetworkModeChanged(self.GetProvideNetworkMode())
+		self.provideNetworkModeChanged(self.GetProvideNetworkMode(), false)
 	}
 }
 
 func (self *DeviceRemote) GetProvideNetworkMode() ProvideNetworkMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.ProvideNetworkMode.IsSet {
+		return self.state.ProvideNetworkMode.Value
+	}
 
 	provideNetworkMode, success := func() (ProvideNetworkMode, bool) {
 		if self.service == nil {
@@ -3984,6 +4047,15 @@ func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if self.state.DefaultLocation.IsSet {
+		if self.state.DefaultLocation.Value == nil {
+			return nil
+		}
+		return self.state.DefaultLocation.Value.toConnectLocation()
+	}
+
 	defaultLocation, success := func() (*ConnectLocation, bool) {
 		if self.service == nil {
 			return nil, false
@@ -3999,12 +4071,6 @@ func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
 	if success {
 		return defaultLocation
 	} else {
-		if self.state.DefaultLocation.IsSet {
-			if self.state.DefaultLocation.Value == nil {
-				return nil
-			}
-			return self.state.DefaultLocation.Value.toConnectLocation()
-		}
 		if self.lastKnownState.DefaultLocation.IsSet {
 			if self.lastKnownState.DefaultLocation.Value == nil {
 				return nil
@@ -4060,7 +4126,7 @@ func (self *DeviceRemote) SetDefaultLocation(connectLocation *ConnectLocation) {
 		}
 	}()
 	if event {
-		self.defaultLocationChanged(self.GetDefaultLocation())
+		self.defaultLocationChanged(self.GetDefaultLocation(), false)
 	}
 }
 
@@ -4618,10 +4684,16 @@ func listenerList[T any](listenerMap map[connect.Id]T) []T {
 	return listeners
 }
 
-func (self *DeviceRemote) canShowRatingDialogChanged(canShowRatingDialog bool) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) canShowRatingDialogChanged(canShowRatingDialog bool, reported bool) {
 	listenerList := func() []CanShowRatingDialogChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.CanShowRatingDialog.IsSet {
+			return nil
+		}
 		self.lastKnownState.CanShowRatingDialog.Set(canShowRatingDialog)
 		return listenerList(self.canShowRatingDialogChangeListeners)
 	}()
@@ -4632,10 +4704,16 @@ func (self *DeviceRemote) canShowRatingDialogChanged(canShowRatingDialog bool) {
 	}
 }
 
-func (self *DeviceRemote) canPromptIntroFunnelChanged(canPromptIntroFunnel bool) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) canPromptIntroFunnelChanged(canPromptIntroFunnel bool, reported bool) {
 	listenerList := func() []CanPromptIntroFunnelChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.CanPromptIntroFunnel.IsSet {
+			return nil
+		}
 		self.lastKnownState.CanPromptIntroFunnel.Set(canPromptIntroFunnel)
 		return listenerList(self.canPromptIntroFunnelChangeListeners)
 	}()
@@ -4646,10 +4724,16 @@ func (self *DeviceRemote) canPromptIntroFunnelChanged(canPromptIntroFunnel bool)
 	}
 }
 
-func (self *DeviceRemote) allowForegroundChanged(allowForeground bool) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) allowForegroundChanged(allowForeground bool, reported bool) {
 	listenerList := func() []AllowForegroundChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.AllowForeground.IsSet {
+			return nil
+		}
 		self.lastKnownState.AllowForeground.Set(allowForeground)
 		return listenerList(self.allowForegroundChangeListeners)
 	}()
@@ -4660,10 +4744,16 @@ func (self *DeviceRemote) allowForegroundChanged(allowForeground bool) {
 	}
 }
 
-func (self *DeviceRemote) canReferChanged(canRefer bool) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) canReferChanged(canRefer bool, reported bool) {
 	listenerList := func() []CanReferChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.CanRefer.IsSet {
+			return nil
+		}
 		self.lastKnownState.CanRefer.Set(canRefer)
 		return listenerList(self.canReferChangeListeners)
 	}()
@@ -4692,11 +4782,17 @@ func (self *DeviceRemote) providerIdentitiesChanged(providerIdentities *Provider
 	}
 }
 
-func (self *DeviceRemote) performanceProfileChanged(performanceProfile *PerformanceProfile) {
+// The device's report of its performance profile (reverse rpc). A report made
+// while a write is pending predates the write, which the next sync applies over
+// it: it is neither kept as last known nor told.
+func (self *DeviceRemote) performanceProfileReported(performanceProfile *PerformanceProfile) {
 	performanceProfile = clonePerformanceProfile(performanceProfile)
 	listenerList := func() []PerformanceProfileChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if self.state.PerformanceProfile.IsSet {
+			return nil
+		}
 		self.lastKnownState.PerformanceProfile.Set(performanceProfile)
 		return listenerList(self.performanceProfileChangeListeners)
 	}()
@@ -4709,10 +4805,16 @@ func (self *DeviceRemote) performanceProfileChanged(performanceProfile *Performa
 	}
 }
 
-func (self *DeviceRemote) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode, reported bool) {
 	listenerList := func() []ProvideNetworkModeChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.ProvideNetworkMode.IsSet {
+			return nil
+		}
 		self.lastKnownState.ProvideNetworkMode.Set(provideNetworkMode)
 		return listenerList(self.provideNetworkModeChangeListeners)
 	}()
@@ -4723,10 +4825,16 @@ func (self *DeviceRemote) provideNetworkModeChanged(provideNetworkMode ProvideNe
 	}
 }
 
-func (self *DeviceRemote) defaultLocationChanged(location *ConnectLocation) {
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc. A report made while a write is pending predates the write, which
+// the next sync applies over it: it is neither kept as last known nor told.
+func (self *DeviceRemote) defaultLocationChanged(location *ConnectLocation, reported bool) {
 	listenerList := func() []DefaultLocationChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if reported && self.state.DefaultLocation.IsSet {
+			return nil
+		}
 		self.lastKnownState.DefaultLocation.Set(newDeviceRemoteDefaultLocation(location))
 		return listenerList(self.defaultLocationChangeListeners)
 	}()
@@ -4940,6 +5048,11 @@ func (self *DeviceRemote) blockActionOverridesChanged(
 	listenerList := func() []BlockActionOverridesChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if source == deviceRemoteSettingReported && self.state.BlockActionOverrides.IsSet {
+			// made before the device had the pending write, which the next
+			// sync applies over it: neither kept, told nor saved
+			return nil
+		}
 		save = self.learnBlockActionOverridesWithLock(overridesRpc, source)
 		return listenerList(self.blockActionOverridesChangeListeners)
 	}()
@@ -5084,9 +5197,14 @@ func (self *DeviceRemote) providerIngressContractDetailsChanged(contractDetails 
 	}
 }
 
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc with its status. Settings the device reports while a write is
+// pending predate the write, which the next sync applies over them: they are
+// neither kept as last known nor told, and the status still is.
 func (self *DeviceRemote) transportSettingsChanged(
 	settingsRpc *TransportSettingsRpc,
 	statusRpc *TransportStatusRpc,
+	reported bool,
 ) {
 	transportSettings := settingsRpc.toTransportSettings(false)
 	settingsRpc = newTransportSettingsRpc(transportSettings, false)
@@ -5097,13 +5215,20 @@ func (self *DeviceRemote) transportSettingsChanged(
 	) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.lastKnownState.TransportSettings.Set(settingsRpc)
+		stale := reported && self.state.TransportSettings.IsSet
+		if !stale {
+			self.lastKnownState.TransportSettings.Set(settingsRpc)
+		}
 		var status *TransportStatus
 		if statusRpc != nil {
 			self.lastKnownState.TransportStatus.Set(statusRpc)
 			status = statusRpc.toTransportStatus()
 		}
-		return listenerList(self.transportSettingsChangeListeners),
+		var settingsListeners []TransportSettingsChangeListener
+		if !stale {
+			settingsListeners = listenerList(self.transportSettingsChangeListeners)
+		}
+		return settingsListeners,
 			listenerList(self.transportStatusChangeListeners), status
 	}()
 	for _, listener := range settingsListeners {
@@ -5120,9 +5245,14 @@ func (self *DeviceRemote) transportSettingsChanged(
 	}
 }
 
+// Tells the listeners the remote's own write, or the device's report over the
+// reverse rpc with its status. Settings the device reports while a write is
+// pending predate the write, which the next sync applies over them: they are
+// neither kept as last known nor told, and the status still is.
 func (self *DeviceRemote) providerTransportSettingsChanged(
 	settingsRpc *TransportSettingsRpc,
 	statusRpc *TransportStatusRpc,
+	reported bool,
 ) {
 	transportSettings := settingsRpc.toTransportSettings(true)
 	settingsRpc = newTransportSettingsRpc(transportSettings, true)
@@ -5133,13 +5263,20 @@ func (self *DeviceRemote) providerTransportSettingsChanged(
 	) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.lastKnownState.ProviderTransportSettings.Set(settingsRpc)
+		stale := reported && self.state.ProviderTransportSettings.IsSet
+		if !stale {
+			self.lastKnownState.ProviderTransportSettings.Set(settingsRpc)
+		}
 		var status *TransportStatus
 		if statusRpc != nil {
 			self.lastKnownState.ProviderTransportStatus.Set(statusRpc)
 			status = statusRpc.toTransportStatus()
 		}
-		return listenerList(self.providerTransportSettingsChangeListeners),
+		var settingsListeners []ProviderTransportSettingsChangeListener
+		if !stale {
+			settingsListeners = listenerList(self.providerTransportSettingsChangeListeners)
+		}
+		return settingsListeners,
 			listenerList(self.providerTransportStatusChangeListeners), status
 	}()
 	for _, listener := range settingsListeners {
@@ -5167,6 +5304,11 @@ func (self *DeviceRemote) dnsResolverSettingsChanged(
 	listenerList := func() []DnsResolverSettingsChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if source == deviceRemoteSettingReported && self.state.DnsResolverSettings.IsSet {
+			// made before the device had the pending write, which the next
+			// sync applies over it: neither kept, told nor saved
+			return nil
+		}
 		save = self.learnDnsResolverSettingsWithLock(settingsRpc, source)
 		return listenerList(self.dnsResolverSettingsChangeListeners)
 	}()
@@ -5735,6 +5877,12 @@ func (self *DeviceRemote) GetBlockActionOverrides() *BlockActionOverrideList {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		// a pending write is the device's state once delivered; the device's
+		// own answer predates it
+		if self.state.BlockActionOverrides.IsSet {
+			return toBlockActionOverrideList(self.state.BlockActionOverrides.Value)
+		}
+
 		overridesRpc, success := func() ([]*BlockActionOverrideRpc, bool) {
 			if self.service == nil {
 				return nil, false
@@ -6218,6 +6366,12 @@ func (self *DeviceRemote) GetDnsResolverSettings() *DnsResolverSettings {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		// a pending write is the device's state once delivered; the device's
+		// own answer predates it
+		if self.state.DnsResolverSettings.IsSet {
+			return self.state.DnsResolverSettings.Value.toDnsResolverSettings()
+		}
+
 		settingsRpc, success := func() (*DnsResolverSettingsRpc, bool) {
 			if self.service == nil {
 				return nil, false
@@ -6404,9 +6558,9 @@ func (self *DeviceRemote) setTransportSettings(transportSettings *TransportSetti
 	}()
 	if event {
 		if provider {
-			self.providerTransportSettingsChanged(settingsRpc, nil)
+			self.providerTransportSettingsChanged(settingsRpc, nil, false)
 		} else {
-			self.transportSettingsChanged(settingsRpc, nil)
+			self.transportSettingsChanged(settingsRpc, nil, false)
 		}
 	}
 }
@@ -6425,6 +6579,15 @@ func (self *DeviceRemote) getTransportSettings(provider bool) *TransportSettings
 	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+
+	// a pending write is the device's state once delivered; the device's own
+	// answer predates it
+	if provider && self.state.ProviderTransportSettings.IsSet {
+		return self.state.ProviderTransportSettings.Value.toTransportSettings(provider)
+	}
+	if !provider && self.state.TransportSettings.IsSet {
+		return self.state.TransportSettings.Value.toTransportSettings(provider)
+	}
 
 	method := "DeviceLocalRpc.GetTransportSettings"
 	if provider {
@@ -14547,7 +14710,7 @@ func (self *DeviceRemoteRpc) ProvideChanged(provideEnabled bool, _ RpcVoid) erro
 func (self *DeviceRemoteRpc) CanShowRatingDialogChanged(canShowRatingDialog bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]CanShowRatingDialogChanged canShowRatingDialog=%t", canShowRatingDialog)
 	self.dispatch(func() {
-		self.deviceRemote.canShowRatingDialogChanged(canShowRatingDialog)
+		self.deviceRemote.canShowRatingDialogChanged(canShowRatingDialog, true)
 	})
 	return nil
 }
@@ -14555,7 +14718,7 @@ func (self *DeviceRemoteRpc) CanShowRatingDialogChanged(canShowRatingDialog bool
 func (self *DeviceRemoteRpc) CanPromptIntroFunnelChanged(canPromptIntroFunnel bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]CanPromptIntroFunnelChanged canPromptIntroFunnel=%t", canPromptIntroFunnel)
 	self.dispatch(func() {
-		self.deviceRemote.canPromptIntroFunnelChanged(canPromptIntroFunnel)
+		self.deviceRemote.canPromptIntroFunnelChanged(canPromptIntroFunnel, true)
 	})
 	return nil
 }
@@ -14563,7 +14726,7 @@ func (self *DeviceRemoteRpc) CanPromptIntroFunnelChanged(canPromptIntroFunnel bo
 func (self *DeviceRemoteRpc) AllowForegroundChanged(allowForeground bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]AllowForegroundChanged allowForeground=%t", allowForeground)
 	self.dispatch(func() {
-		self.deviceRemote.allowForegroundChanged(allowForeground)
+		self.deviceRemote.allowForegroundChanged(allowForeground, true)
 	})
 	return nil
 }
@@ -14571,7 +14734,7 @@ func (self *DeviceRemoteRpc) AllowForegroundChanged(allowForeground bool, _ RpcV
 func (self *DeviceRemoteRpc) CanReferChanged(canRefer bool, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]CanReferChanged canRefer=%t", canRefer)
 	self.dispatch(func() {
-		self.deviceRemote.canReferChanged(canRefer)
+		self.deviceRemote.canReferChanged(canRefer, true)
 	})
 	return nil
 }
@@ -14603,7 +14766,7 @@ func (self *DeviceRemoteRpc) ProvideControlModeChanged(provideControlMode Provid
 func (self *DeviceRemoteRpc) ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ProvideNetworkModeChanged provideNetworkMode=%s", provideNetworkMode)
 	self.dispatch(func() {
-		self.deviceRemote.provideNetworkModeChanged(provideNetworkMode)
+		self.deviceRemote.provideNetworkModeChanged(provideNetworkMode, true)
 	})
 	return nil
 }
@@ -14611,7 +14774,7 @@ func (self *DeviceRemoteRpc) ProvideNetworkModeChanged(provideNetworkMode Provid
 func (self *DeviceRemoteRpc) PerformanceProfileChanged(event *DevicePerformanceProfile, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]PerformanceProfileChanged")
 	self.dispatch(func() {
-		self.deviceRemote.performanceProfileChanged(event.PerformanceProfile)
+		self.deviceRemote.performanceProfileReported(event.PerformanceProfile)
 	})
 	return nil
 }
@@ -14675,7 +14838,7 @@ func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLo
 func (self *DeviceRemoteRpc) DefaultLocationChanged(event *DeviceRemoteConnectLocation, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]DefaultLocationChanged")
 	self.dispatch(func() {
-		self.deviceRemote.defaultLocationChanged(event.toConnectLocation())
+		self.deviceRemote.defaultLocationChanged(event.toConnectLocation(), true)
 	})
 	return nil
 }
@@ -14877,7 +15040,7 @@ func (self *DeviceRemoteRpc) ProviderIngressContractDetailsChanged(event *Device
 func (self *DeviceRemoteRpc) TransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]TransportSettingsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.transportSettingsChanged(event.TransportSettings, event.TransportStatus)
+		self.deviceRemote.transportSettingsChanged(event.TransportSettings, event.TransportStatus, true)
 	})
 	return nil
 }
@@ -14885,7 +15048,7 @@ func (self *DeviceRemoteRpc) TransportSettingsChanged(event *DeviceRemoteTranspo
 func (self *DeviceRemoteRpc) ProviderTransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ProviderTransportSettingsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.providerTransportSettingsChanged(event.TransportSettings, event.TransportStatus)
+		self.deviceRemote.providerTransportSettingsChanged(event.TransportSettings, event.TransportStatus, true)
 	})
 	return nil
 }
