@@ -38,6 +38,15 @@ else
 	echo "not run: no second architecture on this host"
 fi
 
+echo "== the search index's vectors under the sdk's module graph, on darwin/arm64 and, under Rosetta, darwin/amd64"
+"$go_command" test -count=1 -run '^(TestSdkLinksNormalizerOne|TestSdkLinksNormalizerOneFailsOnAnotherTextModule)$' .
+"$go_command" test -count=1 -tags sidecar_testhooks -run '^TestSdkReproducesTheIndexVectors$' .
+if [ "$(uname -s)" = Darwin ] && arch -x86_64 /usr/bin/true 2>/dev/null; then
+	GOARCH=amd64 "$go_command" test -count=1 -tags sidecar_testhooks -run '^(TestSdkLinksNormalizerOne|TestSdkReproducesTheIndexVectors)$' .
+else
+	echo "not run: no second architecture on this host"
+fi
+
 echo "== the DeviceRemote mirror and receiver hosting through the bound API"
 "$go_command" test -count=1 -run '^(TestRpcMirrorBridgeStatusComplete|TestBridgeStatusMirrorFollowsAResync|TestBridgeStatusListenerLeavesWithItsConnection|TestSetupRunsAfterEnrollment|TestForeignRevocationWaitsForConfirm|TestHandOffQueuedWhileDisconnected|TestDesktopPathThroughControl|TestForwardingChannelCarriesNoPrivateKey|TestUnsignedResponseOverRpcIgnored|TestBridgeStatusCarriesTheForwardingFields|TestMailVaultReadsMapAndRefuse|TestMailCallsAwaitingTheCoreAnswerUnavailable|TestMailCoverageValues)$' .
 
