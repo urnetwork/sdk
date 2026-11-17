@@ -265,8 +265,8 @@ func TestLinkCellOnTheIos32Surrogate(t *testing.T) {
 
 	// a forwarding compile beside the link, which keep holds: forwardcell's network at a personal network's six devices
 	// and at 1,000, compiled by a real Forwarder over the component's sealed store on disk, each step's peak over the heap
-	// with the link held, reported beside the admission rule's estimate for its rows and 4.4's figure for its size
-	// a watchdog over the compiles, which a loaded host slows: never a wait
+	// with the link held, reported beside the admission rule's estimate for its rows and 4.4's figure for its size. The
+	// compiles run under a watchdog, which a loaded host's slowness must not trip, never a wait.
 	compileCtx, compileCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer compileCancel()
 	for _, size := range []struct {
