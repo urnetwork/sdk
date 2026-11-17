@@ -318,7 +318,13 @@ test("W8: a visitor in their IP country is verified", () => {
   assert.ok(result.marginKm! < 0);
   assert.equal(result.confidence, 0.99);
   assert.ok(result.fit && result.judgement);
-  close(result.plusMinusKm!, drift.regionRadiusKm(result.fit!, 0.99), 1e-9);
+  assert.equal(result.k, drift.kForConfidence(0.99), "the textbook 99% k unless start gives the run's");
+  close(result.plusMinusKm!, drift.regionRadiusKm(result.fit!, result.k), 1e-9);
+  // at the run's own k, from start (V11): the region and the ± grow with it
+  const oceania = drift.localDriftVerdict({ borders: europe, ipCountryCode: "DE", expected: fx.FRANKFURT, runs: [frankfurtRun(1, 3)], k: 7.88 });
+  assert.equal(oceania.k, 7.88);
+  close(oceania.plusMinusKm!, drift.regionRadiusKm(oceania.fit!, 7.88), 1e-9);
+  assert.equal(oceania.judgement!.k, 7.88);
   assert.ok(drift.distanceKm(result.fit!.at, { lat: 50.105, lon: 8.66 }) < 100);
 });
 

@@ -39,6 +39,11 @@ function fitAt(at: Point, cov: Cov2, expected: Point = at): Fit {
   };
 }
 
+// the textbook k at 95%, 99% and 99.9% (V6); V11 calibrates them per continent
+const K95 = drift.kForConfidence(0.95);
+const K99 = drift.kForConfidence(0.99);
+const K999 = drift.kForConfidence(0.999);
+
 const iso = (sigmaKm: number): Cov2 => [
   [sigmaKm * sigmaKm, 0],
   [0, sigmaKm * sigmaKm],
@@ -399,14 +404,14 @@ test("the 1σ ellipse of a covariance: its axes and the major axis' bearing", ()
 
 test("V6: inside the country agrees, with the region's radius toward the nearest border", () => {
   const country = fx.squareCountry("aa", fx.CHICAGO, 200);
-  const j = drift.judge(fitAt(fx.CHICAGO, iso(20)), country, 0.99);
+  const j = drift.judge(fitAt(fx.CHICAGO, iso(20)), country, K99);
   assert.equal(j.inside, true);
   assert.equal(j.overlaps, true);
   assert.equal(j.distanceKm, 0);
   close(j.d, 200 / 20, 0.05);
-  close(j.significanceKm, drift.kForConfidence(0.99) * 20, 1e-6, "isotropic: k σ every way");
+  close(j.significanceKm, K99 * 20, 1e-6, "isotropic: k σ every way");
   assert.equal(j.marginKm, -j.significanceKm);
-  assert.equal(j.k, drift.kForConfidence(0.99));
+  assert.equal(j.k, K99);
 });
 
 test("V6: outside, the region overlapping the border agrees and one clear of it disagrees", () => {
@@ -423,9 +428,10 @@ test("V6: outside, the region overlapping the border agrees and one clear of it 
   assert.equal(touching.inside, false);
   assert.equal(touching.overlaps, true);
   assert.ok(touching.marginKm < 0);
-  // a lower confidence draws a smaller region
-  assert.equal(drift.judge(fitAt(at, iso(38)), country, 0.95).overlaps, false);
-  assert.equal(drift.judge(fitAt(at, iso(38)), country, 0.999).overlaps, true);
+  // a smaller k draws a smaller region, and a calibrated one a larger
+  assert.equal(drift.judge(fitAt(at, iso(38)), country, K95).overlaps, false);
+  assert.equal(drift.judge(fitAt(at, iso(38)), country, K999).overlaps, true);
+  assert.equal(drift.judge(fitAt(at, iso(20)), country, drift.defaultK(0.99, "OC")).overlaps, true, "Oceania's 7.88");
 });
 
 test("V6: margin > 0 exactly when D > k, and the radius is along the line to q, for tilted ellipses", () => {
@@ -442,11 +448,11 @@ test("V6: margin > 0 exactly when D > k, and the radius is along the line to q, 
       [a * a * c * c + b * b * s * s, (a * a - b * b) * c * s],
       [(a * a - b * b) * c * s, a * a * s * s + b * b * c * c],
     ];
-    const confidence = [0.95, 0.99, 0.999][i % 3];
-    const k = drift.kForConfidence(confidence);
-    const j = drift.judge(fitAt(at, cov), country, confidence);
+    const k = [K95, K99, 3.13, 3.71, 7.88][i % 5];
+    const j = drift.judge(fitAt(at, cov), country, k);
     if (!j.inside) {
       assert.equal(j.marginKm > 0, j.d > k, `case ${i}: margin ${j.marginKm}, D ${j.d}, k ${k}`);
+      assert.equal(j.k, k);
       assert.equal(j.overlaps, j.d <= k);
       close(j.marginKm, j.distanceKm - j.significanceKm, 1e-9 * j.distanceKm);
       // the radius toward q from the region's own equation: k / √(uᵀΣ⁻¹u)
@@ -587,7 +593,7 @@ test("V6: the antipode of a country doesn't put the fit in it, nor near it", () 
 test("V6: no country, or one with no border, is never touched", () => {
   for (const country of [null, { code: "zz", polygons: [] }]) {
     const j = drift.judge(fitAt(fx.MADRID, iso(10)), country);
-    assert.deepEqual(j, { inside: false, overlaps: false, d: Infinity, distanceKm: Infinity, significanceKm: 0, marginKm: Infinity, k: drift.kForConfidence(0.99) });
+    assert.deepEqual(j, { inside: false, overlaps: false, d: Infinity, distanceKm: Infinity, significanceKm: 0, marginKm: Infinity, k: K99 });
   }
   assert.equal(drift.judge(null, fx.squareCountry("aa", fx.MADRID, 100)).d, Infinity);
 });
@@ -603,20 +609,22 @@ test("V6: an edge is split every 0.25° before it is projected", () => {
   assert.deepEqual(one, [{ lat: 0, lon: 0 }]);
 });
 
-test("V8: the region's ± and its outline at the confidence", () => {
+test("V8: the region's ± and its outline at the region's k", () => {
   const cov: Cov2 = [
     [900, 300],
     [300, 400],
   ];
   const fit = fitAt(fx.MADRID, cov);
-  close(drift.regionRadiusKm(fit, 0.99), drift.kForConfidence(0.99) * Math.sqrt(fit.majorKm * fit.minorKm), 1e-12);
-  const outline = drift.regionOutline(fit, 0.99, 48);
+  close(drift.regionRadiusKm(fit, K99), K99 * Math.sqrt(fit.majorKm * fit.minorKm), 1e-12);
+  close(drift.regionRadiusKm(fit), drift.regionRadiusKm(fit, K99), 0, "the textbook 99% k by default");
+  close(drift.regionRadiusKm(fit, 7.88), 7.88 * Math.sqrt(fit.majorKm * fit.minorKm), 1e-12);
+  const outline = drift.regionOutline(fit, K99, 48);
   assert.equal(outline.length, 48);
   const det = cov[0][0] * cov[1][1] - cov[0][1] * cov[1][0];
   for (const p of outline) {
     const { eastKm: e, northKm: n } = drift.azimuthalKm(fit.at, p);
     const m2 = (e * e * cov[1][1] - 2 * e * n * cov[0][1] + n * n * cov[0][0]) / det;
-    close(Math.sqrt(m2), drift.kForConfidence(0.99), 1e-6);
+    close(Math.sqrt(m2), K99, 1e-6);
   }
 });
 
@@ -668,27 +676,27 @@ test("V6: the verdict over a fit, as the api decides it", () => {
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
   const home = fx.squareCountry("aa", fx.CHICAGO, 200);
   assert.deepEqual(
-    { ...drift.decide(fit, home, observations, 0.99), judgement: null },
+    { ...drift.decide(fit, home, observations, K99), judgement: null },
     { verdict: "agree", reason: "inside_ip_country", judgement: null },
   );
   const near = fx.squareCountry("bb", drift.fromAzimuthalKm(truthNearChicago, 260, 0), 100);
-  const nearDecision = drift.decide(fit, near, observations, 0.99);
+  const nearDecision = drift.decide(fit, near, observations, K99);
   assert.equal(nearDecision.reason, nearDecision.judgement!.overlaps ? "region_overlaps" : "region_outside");
   const far = fx.squareCountry("cc", fx.MADRID, 200);
-  const farDecision = drift.decide(fit, far, observations, 0.99);
+  const farDecision = drift.decide(fit, far, observations, K99);
   assert.equal(farDecision.verdict, "disagree");
   assert.equal(farDecision.reason, "region_outside");
-  assert.deepEqual(drift.decide(fit, null, observations, 0.99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
+  assert.deepEqual(drift.decide(fit, null, observations, K99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
   // a country with no ring that has a point is unknown too, before the precision check (review F-04)
   for (const empty of [{ code: "zz", polygons: [] }, { code: "zz", polygons: [[[]]] }, { code: "zz", polygons: [[]] }]) {
-    assert.deepEqual(drift.decide(fit, empty, observations, 0.99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
-    assert.deepEqual(drift.decide(null, empty, observations, 0.99).reason, "ip_country_unknown");
+    assert.deepEqual(drift.decide(fit, empty, observations, K99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
+    assert.deepEqual(drift.decide(null, empty, observations, K99).reason, "ip_country_unknown");
   }
-  assert.deepEqual(drift.decide(null, home, observations, 0.99), { verdict: "inconclusive", reason: "low_precision", judgement: null });
-  assert.equal(drift.decide(fit, home, observations, 0.99, fit.majorKm - 1).reason, "low_precision");
+  assert.deepEqual(drift.decide(null, home, observations, K99), { verdict: "inconclusive", reason: "low_precision", judgement: null });
+  assert.equal(drift.decide(fit, home, observations, K99, fit.majorKm - 1).reason, "low_precision");
   // a region wide enough to touch Spain, while the light discs keep Spain out of reach
   const wide = fitAt(fx.CHICAGO, iso(2400));
-  const inconsistent = drift.decide(wide, far, observations, 0.99, 1e9);
+  const inconsistent = drift.decide(wide, far, observations, K99, 1e9);
   assert.equal(inconsistent.judgement!.overlaps, true);
   assert.equal(inconsistent.verdict, "inconclusive");
   assert.equal(inconsistent.reason, "inconsistent");
@@ -738,8 +746,8 @@ test("V10: the area must stay within the tolerance, the browser's ±5% and the s
   const wobbly = looks(4000, (t) => stopFit(t % 500 === 0 ? 2500 : 2825));
   assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, small, drift.browserStopTolerance), null);
   assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, small, drift.serverStopTolerance), "converged");
-  assert.deepEqual(drift.browserStopTolerance, { areaRatio: 1.105 });
-  assert.deepEqual(drift.serverStopTolerance, { areaRatio: 1.17 });
+  assert.deepEqual(drift.browserStopTolerance, { areaRatio: 1.105, kEarly: 0 });
+  assert.deepEqual(drift.serverStopTolerance, { areaRatio: 1.17, kEarly: 0 });
   // and the position must move less than a quarter of σ_minor (here 50 km)
   const drifting = looks(4000, (t) => stopFit(2500, t / 100));
   assert.equal(drift.evaluateStop(drifting, OPENED, OPENED + 4000, OPENED + 3990, small), null);
@@ -762,6 +770,46 @@ test("V10: clear when the k_early region is wholly out of the country, or wholly
   assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, { code: "zz", polygons: [[[]]] }), false);
   assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small), true);
   assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small), false);
+});
+
+test("V11: the calibrated k per confidence and continent, never below the textbook k", () => {
+  assert.equal(drift.defaultK(0.99, "EU"), K99);
+  assert.equal(drift.defaultK(0.99, "as"), K99);
+  assert.equal(drift.defaultK(0.99, "NA"), 3.13);
+  assert.equal(drift.defaultK(0.99, "sa"), 3.5);
+  assert.equal(drift.defaultK(0.99, "AF"), 3.71);
+  assert.equal(drift.defaultK(0.99, "Oc"), 7.88);
+  assert.equal(drift.defaultK(0.99, "AN"), 3.49);
+  assert.equal(drift.defaultK(0.99, ""), 3.49, "unknown");
+  assert.equal(drift.defaultK(0.99, "XX"), 3.49, "unknown");
+  assert.equal(drift.defaultK(0.99, " EU"), 3.49, "no trimming");
+  assert.equal(drift.defaultK(0.95, "AF"), 2.5);
+  assert.equal(drift.defaultK(0.95, "OC"), 2.79);
+  assert.equal(drift.defaultK(0.95, "NA"), K95);
+  assert.equal(drift.defaultK(0.95, ""), K95);
+  // V11 allows 95% and 99% only; anything else is the textbook k
+  assert.equal(drift.defaultK(0.999, "OC"), K999);
+  assert.equal(drift.defaultK(0.9, "OC"), drift.kForConfidence(0.9));
+});
+
+test("V11: k_early scales with the run's k, and is earlyK at the textbook 99% k", () => {
+  assert.equal(drift.kEarlyScale, 4.0 / 3.035);
+  assert.equal(drift.kEarly(K99), drift.earlyK);
+  assert.equal(drift.kEarly(2), drift.earlyK);
+  close(drift.kEarly(7.88), (4.0 / 3.035) * 7.88, 1e-12);
+  close(drift.kEarly(3.71), (4.0 / 3.035) * 3.71, 1e-12);
+});
+
+test("V10, V11: the clear stop judges at the run's k_early, earlyK when none is given", () => {
+  // D about 5 at the last look (300 km at σ 58 km), shrinking, so never steady:
+  // clear at earlyK, not at Oceania's k_early of 10.4
+  const outside = looks(3000, (t) => stopFit(400 + t, 360, 0));
+  const oceania = { ...drift.browserStopTolerance, kEarly: drift.kEarly(drift.defaultK(0.99, "OC")) };
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "clear");
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small, oceania), null);
+  for (const kEarly of [0, -1, Number.NaN]) {
+    assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small, { areaRatio: 1.105, kEarly }), true, `k_early ${kEarly}`);
+  }
 });
 
 test("V10: interrupted after 4 s without a pong, and the cap at 12 s", () => {

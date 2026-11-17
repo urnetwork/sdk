@@ -8,6 +8,7 @@
   "roundTripQuantile": 0.1,
   "defaultConfidence": 0.99,
   "earlyK": 4,
+  "kEarlyScale": 1.3179571663920921,
   "earthRadiusKm": 6371.0088,
   "msPerKm": 0.015010507355148604,
   "huberC": 2,
@@ -30,10 +31,12 @@
   "stopExtenders": 8,
   "stopRoundTrips": 12,
   "browserStopTolerance": {
-   "areaRatio": 1.105
+   "areaRatio": 1.105,
+   "kEarly": 0
   },
   "serverStopTolerance": {
-   "areaRatio": 1.17
+   "areaRatio": 1.17,
+   "kEarly": 0
   }
  },
  "geometry": [
@@ -592,6 +595,310 @@
   {
    "confidence": 0.999,
    "k": 3.71692218885
+  }
+ ],
+ "defaultK": [
+  {
+   "confidence": 0.95,
+   "continent": "AF",
+   "k": 2.5
+  },
+  {
+   "confidence": 0.95,
+   "continent": "af",
+   "k": 2.5
+  },
+  {
+   "confidence": 0.95,
+   "continent": "AN",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "AS",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "EU",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "Eu",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "NA",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "OC",
+   "k": 2.79
+  },
+  {
+   "confidence": 0.95,
+   "continent": "oc",
+   "k": 2.79
+  },
+  {
+   "confidence": 0.95,
+   "continent": "SA",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": "XX",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.95,
+   "continent": " EU",
+   "k": 2.44774683068
+  },
+  {
+   "confidence": 0.99,
+   "continent": "AF",
+   "k": 3.71
+  },
+  {
+   "confidence": 0.99,
+   "continent": "af",
+   "k": 3.71
+  },
+  {
+   "confidence": 0.99,
+   "continent": "AN",
+   "k": 3.49
+  },
+  {
+   "confidence": 0.99,
+   "continent": "AS",
+   "k": 3.03485425877
+  },
+  {
+   "confidence": 0.99,
+   "continent": "EU",
+   "k": 3.03485425877
+  },
+  {
+   "confidence": 0.99,
+   "continent": "Eu",
+   "k": 3.03485425877
+  },
+  {
+   "confidence": 0.99,
+   "continent": "NA",
+   "k": 3.13
+  },
+  {
+   "confidence": 0.99,
+   "continent": "OC",
+   "k": 7.88
+  },
+  {
+   "confidence": 0.99,
+   "continent": "oc",
+   "k": 7.88
+  },
+  {
+   "confidence": 0.99,
+   "continent": "SA",
+   "k": 3.5
+  },
+  {
+   "confidence": 0.99,
+   "continent": "",
+   "k": 3.49
+  },
+  {
+   "confidence": 0.99,
+   "continent": "XX",
+   "k": 3.49
+  },
+  {
+   "confidence": 0.99,
+   "continent": " EU",
+   "k": 3.49
+  },
+  {
+   "confidence": 0.999,
+   "continent": "AF",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "af",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "AN",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "AS",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "EU",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "Eu",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "NA",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "OC",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "oc",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "SA",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": "XX",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.999,
+   "continent": " EU",
+   "k": 3.71692218885
+  },
+  {
+   "confidence": 0.9,
+   "continent": "AF",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "af",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "AN",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "AS",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "EU",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "Eu",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "NA",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "OC",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "oc",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "SA",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": "XX",
+   "k": 2.14596602629
+  },
+  {
+   "confidence": 0.9,
+   "continent": " EU",
+   "k": 2.14596602629
+  }
+ ],
+ "kEarly": [
+  {
+   "k": 0,
+   "kEarly": 4
+  },
+  {
+   "k": 2.447747,
+   "kEarly": 4
+  },
+  {
+   "k": 3.034854,
+   "kEarly": 4
+  },
+  {
+   "k": 3.035,
+   "kEarly": 4
+  },
+  {
+   "k": 3.13,
+   "kEarly": 4.12520593081
+  },
+  {
+   "k": 3.49,
+   "kEarly": 4.59967051071
+  },
+  {
+   "k": 3.5,
+   "kEarly": 4.61285008237
+  },
+  {
+   "k": 3.71,
+   "kEarly": 4.88962108731
+  },
+  {
+   "k": 7.88,
+   "kEarly": 10.3855024712
+  },
+  {
+   "k": 12,
+   "kEarly": 15.8154859967
   }
  ],
  "covEllipse": [
@@ -5236,15 +5543,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 3.70593808332,
     "distanceKm": 0,
-    "significanceKm": 91.0456277631,
-    "marginKm": -91.0456277631,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -91.04562,
+    "k": 3.034854
    }
   },
   {
@@ -5304,15 +5611,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.85296906897,
     "distanceKm": 55.589072069,
-    "significanceKm": 91.0456277631,
-    "marginKm": -35.4565556941,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -35.456547931,
+    "k": 3.034854
    }
   },
   {
@@ -5372,15 +5679,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 11.1178125027,
     "distanceKm": 333.53437508,
-    "significanceKm": 91.0456277631,
-    "marginKm": 242.488747317,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": 242.48875508,
+    "k": 3.034854
    }
   },
   {
@@ -5440,19 +5747,19 @@
      ]
     ]
    },
-   "confidence": 0.95,
+   "k": 2.447747,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 3.33534428744,
     "distanceKm": 100.060328623,
-    "significanceKm": 73.4324049204,
-    "marginKm": 26.6279237027,
-    "k": 2.44774683068
+    "significanceKm": 73.43241,
+    "marginKm": 26.6279186231,
+    "k": 2.447747
    }
   },
   {
-   "name": "outside at 99.9%",
+   "name": "overlapping at Africa's 99% k",
    "fit": {
     "at": {
      "lat": 1,
@@ -5508,15 +5815,151 @@
      ]
     ]
    },
-   "confidence": 0.999,
+   "k": 3.71,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 3.33534428744,
     "distanceKm": 100.060328623,
-    "significanceKm": 111.507665665,
-    "marginKm": -11.4473370424,
-    "k": 3.71692218885
+    "significanceKm": 111.3,
+    "marginKm": -11.2396713769,
+    "k": 3.71
+   }
+  },
+  {
+   "name": "outside at North America's 99% k",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": -1.5
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "k": 3.13,
+   "judgement": {
+    "inside": false,
+    "overlaps": false,
+    "d": 5.55890698844,
+    "distanceKm": 166.767209653,
+    "significanceKm": 93.9,
+    "marginKm": 72.8672096532,
+    "k": 3.13
+   }
+  },
+  {
+   "name": "overlapping at Oceania's 99% k",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": -1.5
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "k": 7.88,
+   "judgement": {
+    "inside": false,
+    "overlaps": true,
+    "d": 5.55890698844,
+    "distanceKm": 166.767209653,
+    "significanceKm": 236.4,
+    "marginKm": -69.6327903468,
+    "k": 7.88
    }
   },
   {
@@ -5576,15 +6019,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 8.33813168864,
     "distanceKm": 167.789005954,
-    "significanceKm": 61.0706568702,
-    "marginKm": 106.718349084,
-    "k": 3.03485425877
+    "significanceKm": 61.0706516629,
+    "marginKm": 106.718354292,
+    "k": 3.034854
    }
   },
   {
@@ -5644,15 +6087,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 0.555890757053,
     "distanceKm": 166.767227051,
-    "significanceKm": 910.456277278,
-    "marginKm": -743.689050226,
-    "k": 3.03485425877
+    "significanceKm": 910.456199647,
+    "marginKm": -743.688972595,
+    "k": 3.034854
    }
   },
   {
@@ -5712,15 +6155,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.70396616189,
     "distanceKm": 82.4089925066,
-    "significanceKm": 146.774793692,
-    "marginKm": -64.3658011854,
-    "k": 3.03485425877
+    "significanceKm": 146.774781177,
+    "marginKm": -64.3657886705,
+    "k": 3.034854
    }
   },
   {
@@ -5780,15 +6223,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.73078834503,
     "distanceKm": 190.865938524,
-    "significanceKm": 334.674258724,
-    "marginKm": -143.808320201,
-    "k": 3.03485425877
+    "significanceKm": 334.674230188,
+    "marginKm": -143.808291664,
+    "k": 3.034854
    }
   },
   {
@@ -5848,15 +6291,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 3.48972332815,
     "distanceKm": 152.821584002,
-    "significanceKm": 132.902007245,
-    "marginKm": 19.919576757,
-    "k": 3.03485425877
+    "significanceKm": 132.901995913,
+    "marginKm": 19.919588089,
+    "k": 3.034854
    }
   },
   {
@@ -5916,15 +6359,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 5.52437614033,
     "distanceKm": 179.637045099,
-    "significanceKm": 98.6848537288,
-    "marginKm": 80.9521913699,
-    "k": 3.03485425877
+    "significanceKm": 98.6848453143,
+    "marginKm": 80.9521997844,
+    "k": 3.034854
    }
   },
   {
@@ -5984,15 +6427,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.5384669139,
     "distanceKm": 154.504071869,
-    "significanceKm": 304.782206411,
-    "marginKm": -150.278134542,
-    "k": 3.03485425877
+    "significanceKm": 304.782180423,
+    "marginKm": -150.278108554,
+    "k": 3.034854
    }
   },
   {
@@ -6052,15 +6495,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 0.982666261416,
     "distanceKm": 41.9967885515,
-    "significanceKm": 129.702359381,
-    "marginKm": -87.7055708299,
-    "k": 3.03485425877
+    "significanceKm": 129.702348322,
+    "marginKm": -87.7055597707,
+    "k": 3.034854
    }
   },
   {
@@ -6136,15 +6579,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 2.22254682507,
     "distanceKm": 55.5636706268,
-    "significanceKm": 75.8713564693,
-    "marginKm": -20.3076858425,
-    "k": 3.03485425877
+    "significanceKm": 75.87135,
+    "marginKm": -20.3076793732,
+    "k": 3.034854
    }
   },
   {
@@ -6220,15 +6663,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 5.55636706268,
     "distanceKm": 55.5636706268,
-    "significanceKm": 30.3485425877,
-    "marginKm": 25.2151280391,
-    "k": 3.03485425877
+    "significanceKm": 30.34854,
+    "marginKm": 25.2151306268,
+    "k": 3.034854
    }
   },
   {
@@ -6308,15 +6751,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.48260106978,
     "distanceKm": 44.4780320934,
-    "significanceKm": 91.0456277631,
-    "marginKm": -46.5675956697,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -46.5675879066,
+    "k": 3.034854
    }
   },
   {
@@ -6394,15 +6837,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 5.53859522493,
     "distanceKm": 110.771904499,
-    "significanceKm": 60.6970851754,
-    "marginKm": 50.0748193231,
-    "k": 3.03485425877
+    "significanceKm": 60.69708,
+    "marginKm": 50.0748244985,
+    "k": 3.034854
    }
   },
   {
@@ -6480,15 +6923,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.84619840831,
     "distanceKm": 110.771904499,
-    "significanceKm": 182.091255526,
-    "marginKm": -71.3193510277,
-    "k": 3.03485425877
+    "significanceKm": 182.09124,
+    "marginKm": -71.3193355015,
+    "k": 3.034854
    }
   },
   {
@@ -6568,15 +7011,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 2.22390160449,
     "distanceKm": 55.5975401123,
-    "significanceKm": 75.8713564693,
-    "marginKm": -20.273816357,
-    "k": 3.03485425877
+    "significanceKm": 75.87135,
+    "marginKm": -20.2738098877,
+    "k": 3.034854
    }
   },
   {
@@ -6656,15 +7099,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 2.22390160449,
     "distanceKm": 55.5975401123,
-    "significanceKm": 75.8713564693,
-    "marginKm": -20.273816357,
-    "k": 3.03485425877
+    "significanceKm": 75.87135,
+    "marginKm": -20.2738098877,
+    "k": 3.034854
    }
   },
   {
@@ -6744,15 +7187,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 2.22381692191,
     "distanceKm": 0,
-    "significanceKm": 75.8713564693,
-    "marginKm": -75.8713564693,
-    "k": 3.03485425877
+    "significanceKm": 75.87135,
+    "marginKm": -75.87135,
+    "k": 3.034854
    }
   },
   {
@@ -6832,15 +7275,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 20.0151144368,
     "distanceKm": 0,
-    "significanceKm": 15.1742712939,
-    "marginKm": -15.1742712939,
-    "k": 3.03485425877
+    "significanceKm": 15.17427,
+    "marginKm": -15.17427,
+    "k": 3.034854
    }
   },
   {
@@ -6920,15 +7363,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 20.0151144368,
     "distanceKm": 0,
-    "significanceKm": 15.1742712939,
-    "marginKm": -15.1742712939,
-    "k": 3.03485425877
+    "significanceKm": 15.17427,
+    "marginKm": -15.17427,
+    "k": 3.034854
    }
   },
   {
@@ -6988,15 +7431,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 388.662401051,
     "distanceKm": 19433.1200526,
-    "significanceKm": 151.742712939,
-    "marginKm": 19281.3773396,
-    "k": 3.03485425877
+    "significanceKm": 151.7427,
+    "marginKm": 19281.3773526,
+    "k": 3.034854
    }
   },
   {
@@ -7068,15 +7511,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 15.4440981756,
     "distanceKm": 0,
-    "significanceKm": 303.485425877,
-    "marginKm": -303.485425877,
-    "k": 3.03485425877
+    "significanceKm": 303.4854,
+    "marginKm": -303.4854,
+    "k": 3.034854
    }
   },
   {
@@ -7148,15 +7591,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 8.77655558046,
     "distanceKm": 877.655558046,
-    "significanceKm": 303.485425877,
-    "marginKm": 574.170132169,
-    "k": 3.03485425877
+    "significanceKm": 303.4854,
+    "marginKm": 574.170158046,
+    "k": 3.034854
    }
   },
   {
@@ -7228,15 +7671,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": false,
     "d": 20.7349530921,
     "distanceKm": 2073.49530921,
-    "significanceKm": 303.485425877,
-    "marginKm": 1770.00988333,
-    "k": 3.03485425877
+    "significanceKm": 303.4854,
+    "marginKm": 1770.00990921,
+    "k": 3.034854
    }
   },
   {
@@ -7300,15 +7743,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": false,
     "overlaps": true,
     "d": 1.36462492206,
     "distanceKm": 81.1144134159,
-    "significanceKm": 180.394201384,
-    "marginKm": -99.2797879679,
-    "k": 3.03485425877
+    "significanceKm": 180.394186002,
+    "marginKm": -99.2797725864,
+    "k": 3.034854
    }
   },
   {
@@ -7368,15 +7811,15 @@
      ]
     ]
    },
-   "confidence": 0.99,
+   "k": 3.034854,
    "judgement": {
     "inside": true,
     "overlaps": true,
     "d": 0,
     "distanceKm": 0,
-    "significanceKm": 91.0456277631,
-    "marginKm": -91.0456277631,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -91.04562,
+    "k": 3.034854
    }
   }
  ],
@@ -9174,7 +9617,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -9641,7 +10085,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "clear",
@@ -10495,7 +10940,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -11349,7 +11795,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "cap",
@@ -11771,7 +12218,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -12193,7 +12641,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "interrupted",
@@ -12212,7 +12661,8 @@
    "lastPongMs": 0,
    "country": null,
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "interrupted",
@@ -12773,7 +13223,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "converged",
@@ -13334,7 +13785,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -13754,7 +14206,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -14286,7 +14739,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -14847,7 +15301,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -15408,7 +15863,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "converged",
@@ -15969,7 +16425,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -16530,7 +16987,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.17
+    "areaRatio": 1.17,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "converged",
@@ -17091,7 +17549,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.17
+    "areaRatio": 1.17,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -17182,7 +17641,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "clear",
@@ -17273,7 +17733,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "clear",
@@ -17364,7 +17825,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -17455,7 +17917,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -17546,7 +18009,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -17613,7 +18077,8 @@
    "lastPongMs": 1003000,
    "country": null,
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
@@ -17683,13 +18148,474 @@
     "polygons": []
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": false,
    "reason": "",
    "holds": {
     "cap": false,
     "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "clear at EarlyK",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -1.5
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        625,
+        0
+       ],
+       [
+        0,
+        625
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 25,
+      "minorKm": 25,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 0
+   },
+   "stop": true,
+   "reason": "clear",
+   "holds": {
+    "cap": false,
+    "clear": true,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "clear at Antarctica's k_early",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -1.5
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        625,
+        0
+       ],
+       [
+        0,
+        625
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 25,
+      "minorKm": 25,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 4.599671
+   },
+   "stop": true,
+   "reason": "clear",
+   "holds": {
+    "cap": false,
+    "clear": true,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "not clear at Oceania's k_early",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -1.5
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        625,
+        0
+       ],
+       [
+        0,
+        625
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 25,
+      "minorKm": 25,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 10.385502
+   },
+   "stop": false,
+   "reason": "",
+   "holds": {
+    "cap": false,
+    "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "not clear at Oceania's k_early, the server",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -1.5
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        625,
+        0
+       ],
+       [
+        0,
+        625
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 25,
+      "minorKm": 25,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.17,
+    "kEarly": 10.385502
+   },
+   "stop": false,
+   "reason": "",
+   "holds": {
+    "cap": false,
+    "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "a k_early below 0 is EarlyK",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -1.5
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        625,
+        0
+       ],
+       [
+        0,
+        625
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 25,
+      "minorKm": 25,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      5,
+      5,
+      5,
+      5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": -1
+   },
+   "stop": true,
+   "reason": "clear",
+   "holds": {
+    "cap": false,
+    "clear": true,
     "converged": false,
     "interrupted": false
    }
@@ -19842,7 +20768,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "interrupted",
@@ -22001,7 +22928,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "clear",
@@ -24160,7 +25088,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "converged",
@@ -24726,7 +25655,8 @@
     ]
    },
    "tolerance": {
-    "areaRatio": 1.105
+    "areaRatio": 1.105,
+    "kEarly": 0
    },
    "stop": true,
    "reason": "converged",
@@ -25016,7 +25946,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "inconclusive",
    "reason": "ip_country_unknown",
@@ -25188,7 +26118,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "inconclusive",
    "reason": "ip_country_unknown",
@@ -25364,7 +26294,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "inconclusive",
    "reason": "ip_country_unknown",
@@ -25557,7 +26487,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "inconclusive",
    "reason": "low_precision",
@@ -25750,7 +26680,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "agree",
    "reason": "inside_ip_country",
@@ -25759,9 +26689,9 @@
     "overlaps": true,
     "d": 3.70593808332,
     "distanceKm": 0,
-    "significanceKm": 91.0456277631,
-    "marginKm": -91.0456277631,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -91.04562,
+    "k": 3.034854
    }
   },
   {
@@ -25943,7 +26873,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "agree",
    "reason": "region_overlaps",
@@ -25952,9 +26882,9 @@
     "overlaps": true,
     "d": 1.85296906897,
     "distanceKm": 55.589072069,
-    "significanceKm": 91.0456277631,
-    "marginKm": -35.4565556941,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -35.456547931,
+    "k": 3.034854
    }
   },
   {
@@ -26136,7 +27066,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "disagree",
    "reason": "region_outside",
@@ -26145,9 +27075,9 @@
     "overlaps": false,
     "d": 11.1178125027,
     "distanceKm": 333.53437508,
-    "significanceKm": 91.0456277631,
-    "marginKm": 242.488747317,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": 242.48875508,
+    "k": 3.034854
    }
   },
   {
@@ -26329,7 +27259,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "inconclusive",
    "reason": "inconsistent",
@@ -26338,9 +27268,9 @@
     "overlaps": true,
     "d": 3.70593808332,
     "distanceKm": 0,
-    "significanceKm": 91.0456277631,
-    "marginKm": -91.0456277631,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": -91.04562,
+    "k": 3.034854
    }
   },
   {
@@ -26522,7 +27452,7 @@
      }
     }
    ],
-   "confidence": 0.99,
+   "k": 3.034854,
    "maxSigmaKm": 1500,
    "verdict": "disagree",
    "reason": "region_outside",
@@ -26531,9 +27461,395 @@
     "overlaps": false,
     "d": 11.1178125027,
     "distanceKm": 333.53437508,
-    "significanceKm": 91.0456277631,
-    "marginKm": 242.488747317,
-    "k": 3.03485425877
+    "significanceKm": 91.04562,
+    "marginKm": 242.48875508,
+    "k": 3.034854
+   }
+  },
+  {
+   "name": "outside at North America's 99% k",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": -1.5
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "observations": [
+    {
+     "extenderId": "e0",
+     "at": {
+      "lat": 1,
+      "lon": 3
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e1",
+     "at": {
+      "lat": 3,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e2",
+     "at": {
+      "lat": -1,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e3",
+     "at": {
+      "lat": 1,
+      "lon": -1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e4",
+     "at": {
+      "lat": 10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 24.184001,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 23.184001
+     }
+    },
+    {
+     "extenderId": "e5",
+     "at": {
+      "lat": -10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.678107,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.678107
+     }
+    },
+    {
+     "extenderId": "e6",
+     "at": {
+      "lat": 10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.641792,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.641792
+     }
+    },
+    {
+     "extenderId": "e7",
+     "at": {
+      "lat": -10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 28.904656,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 27.904656
+     }
+    }
+   ],
+   "k": 3.13,
+   "maxSigmaKm": 1500,
+   "verdict": "disagree",
+   "reason": "region_outside",
+   "judgement": {
+    "inside": false,
+    "overlaps": false,
+    "d": 5.55890698844,
+    "distanceKm": 166.767209653,
+    "significanceKm": 93.9,
+    "marginKm": 72.8672096532,
+    "k": 3.13
+   }
+  },
+  {
+   "name": "overlapping at Oceania's 99% k",
+   "fit": {
+    "at": {
+     "lat": 1,
+     "lon": -1.5
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      900,
+      0
+     ],
+     [
+      0,
+      900
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 30,
+    "minorKm": 30,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "observations": [
+    {
+     "extenderId": "e0",
+     "at": {
+      "lat": 1,
+      "lon": 3
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e1",
+     "at": {
+      "lat": 3,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e2",
+     "at": {
+      "lat": -1,
+      "lon": 1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.338189,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.338189
+     }
+    },
+    {
+     "extenderId": "e3",
+     "at": {
+      "lat": 1,
+      "lon": -1
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 6.337681,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 5.337681
+     }
+    },
+    {
+     "extenderId": "e4",
+     "at": {
+      "lat": 10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 24.184001,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 23.184001
+     }
+    },
+    {
+     "extenderId": "e5",
+     "at": {
+      "lat": -10,
+      "lon": 10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.678107,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.678107
+     }
+    },
+    {
+     "extenderId": "e6",
+     "at": {
+      "lat": 10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 26.641792,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 25.641792
+     }
+    },
+    {
+     "extenderId": "e7",
+     "at": {
+      "lat": -10,
+      "lon": -10
+     },
+     "placeErrorKm": 10,
+     "run": 0,
+     "roundTrip": {
+      "ms": 28.904656,
+      "sigmaMs": 0.2,
+      "count": 40,
+      "minMs": 27.904656
+     }
+    }
+   ],
+   "k": 7.88,
+   "maxSigmaKm": 1500,
+   "verdict": "agree",
+   "reason": "region_overlaps",
+   "judgement": {
+    "inside": false,
+    "overlaps": true,
+    "d": 5.55890698844,
+    "distanceKm": 166.767209653,
+    "significanceKm": 236.4,
+    "marginKm": -69.6327903468,
+    "k": 7.88
    }
   }
  ],

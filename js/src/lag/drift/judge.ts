@@ -61,14 +61,18 @@ export interface Judgement {
   significanceKm: number;
   /** distanceKm − significanceKm: positive exactly when the whole region is outside, km */
   marginKm: number;
-  /** an extension of I3: the k the confidence gave */
+  /** an extension of I3: the k judged at */
   k: number;
 }
 
+/** The textbook 99% k, the default where no run's k is given: kForConfidence(0.99). */
+const textbookK = kForConfidence(defaultConfidence);
+
 /**
- * The region test of a fit against a country at a confidence (V6). The
- * figures are toward q, the boundary point nearest the fit in whitened
- * space, with u the unit vector from p̂ to q:
+ * The region test of a fit against a country at the region's k (V6, V11): a
+ * run's k, from defaultK or the api's `start`, or kForConfidence's textbook k
+ * (the default, at 99%). The figures are toward q, the boundary point nearest
+ * the fit in whitened space, with u the unit vector from p̂ to q:
  *
  *   distanceKm = ‖q − p̂‖, 0 when inside
  *   significanceKm = k / √(uᵀΣ⁻¹u) = k ‖q − p̂‖ / D
@@ -80,11 +84,7 @@ export interface Judgement {
  * k σ_minor. A null or empty country is never touched: d, distanceKm and
  * marginKm are Infinity.
  */
-export function judge(fit: Fit | null, country: Country | null, confidence: number = defaultConfidence): Judgement {
-  return judgeK(fit, country, kForConfidence(confidence));
-}
-
-export function judgeK(fit: Fit | null, country: Country | null, k: number): Judgement {
+export function judge(fit: Fit | null, country: Country | null, k: number = textbookK): Judgement {
   const untouched = (): Judgement => ({
     inside: false,
     overlaps: false,
@@ -266,19 +266,20 @@ export function splitEdge(a: Point, b: Point, f: (p: Point) => void): void {
 }
 
 /**
- * V8: the radius of a circle with the area of the fit's region at
- * `confidence`, k · √(σ_major · σ_minor), km: the ± of the readout.
+ * V8: the radius of a circle with the area of the fit's region at the
+ * region's k (V11; the textbook 99% k by default), k · √(σ_major · σ_minor),
+ * km: the ± of the readout.
  */
-export function regionRadiusKm(fit: Fit, confidence: number = defaultConfidence): number {
-  return kForConfidence(confidence) * Math.sqrt(fit.majorKm * fit.minorKm);
+export function regionRadiusKm(fit: Fit, k: number = textbookK): number {
+  return k * Math.sqrt(fit.majorKm * fit.minorKm);
 }
 
 /**
- * V8: `count` places around the edge of the fit's region at `confidence`,
- * the ellipse a radar draws (dashed, through its own scale).
+ * V8: `count` places around the edge of the fit's region at the region's k
+ * (V11; the textbook 99% k by default), the ellipse a radar draws (dashed,
+ * through its own scale).
  */
-export function regionOutline(fit: Fit, confidence: number = defaultConfidence, count = 48): Point[] {
-  const k = kForConfidence(confidence);
+export function regionOutline(fit: Fit, k: number = textbookK, count = 48): Point[] {
   const S = fit.cov;
   const l11 = Math.sqrt(Math.max(minVarianceKm2, S[0][0]));
   const l21 = (S[0][1] + S[1][0]) / 2 / l11;

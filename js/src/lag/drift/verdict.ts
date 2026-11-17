@@ -39,8 +39,8 @@ export interface Decision {
 }
 
 /**
- * The verdict of a fit against the IP country (V6), with the fit's
- * observations for the physical check (V5):
+ * The verdict of a fit against the IP country (V6) at the region's k (V11),
+ * with the fit's observations for the physical check (V5):
  *
  *  1. the country unknown (null, or without a ring with a point) →
  *     inconclusive, ip_country_unknown;
@@ -55,7 +55,7 @@ export function decide(
   fit: Fit | null,
   country: Country | null,
   observations: readonly Observation[],
-  confidence: number,
+  k: number,
   maxSigmaKm: number = defaultMaxSigmaKm,
 ): Decision {
   if (country === null || !hasBoundary(country)) {
@@ -64,7 +64,7 @@ export function decide(
   if (fit === null || !(fit.majorKm <= maxSigmaKm)) {
     return { verdict: "inconclusive", reason: "low_precision", judgement: null };
   }
-  const j = judge(fit, country, confidence);
+  const j = judge(fit, country, k);
   if (j.overlaps && !physicallyPossible(observations, country)) {
     return { verdict: "inconclusive", reason: "inconsistent", judgement: j };
   }

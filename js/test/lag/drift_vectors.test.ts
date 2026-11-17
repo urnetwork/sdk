@@ -127,7 +127,9 @@ if (!existsSync(VECTORS)) {
       }
       assertParity(fit, c.fit, "fit");
     },
-    judge: (c) => assertParity(drift.judge(c.fit, c.country, c.confidence), c.judgement, "judgement"),
+    judge: (c) => assertParity(drift.judge(c.fit, c.country, c.k), c.judgement, "judgement"),
+    defaultK: (c) => assertParity(drift.defaultK(c.confidence, c.continent), c.k, "k"),
+    kEarly: (c) => assertParity(drift.kEarly(c.k), c.kEarly, "kEarly"),
     physicallyPossible: (c) => assert.equal(drift.physicallyPossible(c.observations, c.country), c.possible),
     evaluateStop: (c) => {
       const stop = drift.evaluateStop(c.history, c.openedMs, c.nowMs, c.lastPongMs, c.country, c.tolerance);
@@ -145,7 +147,7 @@ if (!existsSync(VECTORS)) {
       assert.equal(named.countryAt(c.point, c.withinKm), c.code);
     },
     decide: (c) => {
-      const decision = drift.decide(c.fit, c.country, c.observations, c.confidence, c.maxSigmaKm);
+      const decision = drift.decide(c.fit, c.country, c.observations, c.k, c.maxSigmaKm);
       assert.equal(decision.verdict, c.verdict);
       assert.equal(decision.reason, c.reason);
       assertParity(decision.judgement ?? zeroJudgement, c.judgement, "judgement");

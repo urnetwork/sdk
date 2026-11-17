@@ -10,7 +10,7 @@
 import { driftCountryWithinKm, type Borders } from "./borders";
 import { fitPosition, type Fit } from "./fit";
 import type { Point } from "./geo";
-import { judge, regionRadiusKm, type Judgement } from "./judge";
+import { judge, kForConfidence, regionRadiusKm, type Judgement } from "./judge";
 import { defaultConfidence, defaultModel, type Model, type Observation } from "./model";
 import { countryContains, hasBoundary } from "./polygon";
 import { estimateRoundTrip } from "./roundTrip";
@@ -75,6 +75,11 @@ export interface LocalDriftVerdictOptions {
   runs: readonly DriftRun[];
   /** default 0.99 */
   confidence?: number;
+  /**
+   * V11: the region's k, the demo run's `k` from `start`; else the textbook
+   * k at the confidence
+   */
+  k?: number;
   model?: Model;
   /** σ_major beyond which the geometry can't place the visitor, km; default 1,500 */
   maxSigmaKm?: number;
@@ -87,6 +92,8 @@ export interface LocalDriftVerdict {
   /** the runs pooled, oldest first */
   runsInVerdict: number[];
   confidence: number;
+  /** the region's k judged at (V11) */
+  k: number;
   ipCountryCode: string;
   /**
    * V6: the country containing the fit (the IP country when it is one of
@@ -112,6 +119,7 @@ export interface LocalDriftVerdict {
  */
 export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDriftVerdict {
   const confidence = options.confidence ?? defaultConfidence;
+  const k = options.k ?? kForConfidence(confidence);
   const model = options.model ?? defaultModel();
   const ipCountryCode = options.ipCountryCode.toLowerCase();
   const counting = options.runs
@@ -123,6 +131,7 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
     reason: "too_few_extenders",
     runsInVerdict: window.map(({ run }) => run),
     confidence,
+    k,
     ipCountryCode,
     driftCountryCode: "",
     distanceKm: null,
@@ -138,7 +147,7 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
   const observations = window.flatMap(({ observations }) => observations);
   const fit = fitPosition(model, options.expected, observations, null);
   const country = ipCountryCode === "" ? null : options.borders.country(ipCountryCode);
-  const decision = decide(fit, country, observations, confidence, options.maxSigmaKm ?? defaultMaxSigmaKm);
+  const decision = decide(fit, country, observations, k, options.maxSigmaKm ?? defaultMaxSigmaKm);
   result.verdict = decision.verdict;
   result.reason = decision.reason;
   if (fit !== null) {
@@ -150,9 +159,9 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
       country !== null && countryContains(country, fit.at)
         ? country.code
         : options.borders.countryAt(fit.at, driftCountryWithinKm);
-    result.plusMinusKm = regionRadiusKm(fit, confidence);
+    result.plusMinusKm = regionRadiusKm(fit, k);
     // the figures, even where the verdict needed none
-    const judgement = decision.judgement ?? (country !== null && hasBoundary(country) ? judge(fit, country, confidence) : null);
+    const judgement = decision.judgement ?? (country !== null && hasBoundary(country) ? judge(fit, country, k) : null);
     if (judgement !== null) {
       result.judgement = judgement;
       result.distanceKm = judgement.distanceKm;

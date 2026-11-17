@@ -9,9 +9,10 @@
 //     trailing 2 s the ellipse's area (σ_major · σ_minor) has stayed within
 //     the tolerance's ratio and the position has moved less than a quarter of
 //     σ_minor;
-//   - clear: the same 12-round-trip minimum, and the whole region at earlyK
-//     lies outside the IP country, or the fit is inside it and the whole
-//     region lies inside it. Both are D ≥ earlyK (V6);
+//   - clear: the same 12-round-trip minimum, and the whole region at the
+//     run's k_early (V11; earlyK by default) lies outside the IP country, or
+//     the fit is inside it and the whole region lies inside it. Both are
+//     D ≥ k_early (V6);
 //   - interrupted: no pong from any extender for 4 s;
 //   - cap: 12 s after the sessions opened.
 //
@@ -19,7 +20,7 @@
 
 import type { Fit } from "./fit";
 import { hypot } from "./geo";
-import { judgeK } from "./judge";
+import { judge } from "./judge";
 import { earlyK } from "./model";
 import { hasBoundary, type Country } from "./polygon";
 
@@ -48,15 +49,29 @@ export interface Snapshot {
 /** Why a run stopped (V10, the `stop` of P5). */
 export type StopReason = "converged" | "clear" | "interrupted" | "cap";
 
-/** How far converged lets the ellipse's area move: the largest area over the window divided by the smallest. */
+/**
+ * How far converged lets the ellipse's area move: the largest area over the
+ * window divided by the smallest; and the run's k_early for clear.
+ */
 export interface StopTolerance {
   areaRatio: number;
+  /**
+   * V11: the run's k_early (kEarly of its k, as `start` gives it), for the
+   * clear rule; 0, or anything not positive, means earlyK
+   */
+  kEarly?: number;
 }
 
-/** ±5%: 1.05 / 0.95. */
-export const browserStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.105 });
-/** ±8%, since the browser's and the extenders' clocks see the pings slightly apart (V10). */
-export const serverStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.17 });
+/** ±5%: 1.05 / 0.95, at earlyK: a run's tolerance is this with its own kEarly. */
+export const browserStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.105, kEarly: 0 });
+/** ±8%, since the browser's and the extenders' clocks see the pings slightly apart (V10), at earlyK. */
+export const serverStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.17, kEarly: 0 });
+
+/** the clear rule's k: the tolerance's k_early when it is positive, else earlyK */
+function toleranceKEarly(tol: StopTolerance): number {
+  const k = tol.kEarly ?? 0;
+  return 0 < k ? k : earlyK;
+}
 
 const stopReasons: readonly StopReason[] = ["interrupted", "clear", "converged", "cap"];
 
@@ -109,7 +124,8 @@ export function stopHolds(
       if (latest === null || latest.fit === null || country === null || !hasBoundary(country) || !enoughRoundTrips(latest.roundTrips)) {
         return false;
       }
-      return earlyK <= judgeK(latest.fit, country, earlyK).d;
+      const k = toleranceKEarly(tol);
+      return k <= judge(latest.fit, country, k).d;
     }
     case "converged": {
       const latest = latestSnapshot(history, nowMs);
