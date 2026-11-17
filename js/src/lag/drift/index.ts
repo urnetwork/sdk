@@ -32,7 +32,7 @@ export {
   vacuumKmPerMs,
 } from "./model";
 export type { Model, Observation } from "./model";
-export { covEllipse, fitPosition, huberC, maxStepKm, minFitExtenders } from "./fit";
+export { covEllipse, fitPosition, huberC, maxStepKm, minFitExtenders, refitPosition } from "./fit";
 export type { Cov2, Ellipse, Fit } from "./fit";
 export { countryContains } from "./polygon";
 export type { Country } from "./polygon";

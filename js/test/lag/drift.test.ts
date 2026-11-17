@@ -245,6 +245,37 @@ test("V5: a warm start settles where a cold one does", () => {
   close(drift.distanceKm(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, otherRuns)!.at, cold.at), 0, 0.5);
 });
 
+test("V10: a refit from the warm fit lands where the full fit does", () => {
+  const observations = exactChicago({ stretch: [0.05, -0.05, 0.1, 0, 0.08, -0.04, 0.15, 0.02, 0.06, -0.01, 0.03, 0.1] });
+  const full = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
+  const refit = drift.refitPosition(drift.defaultModel(), fx.CHICAGO, observations, full)!;
+  assert.ok(drift.distanceKm(refit.at, full.at) < 0.1, `${drift.distanceKm(refit.at, full.at)} km apart`);
+  close(refit.majorKm, full.majorKm, full.majorKm * 1e-3);
+  assert.deepEqual(refit.runs, full.runs);
+  // a tick later: a few more pings, the same basin
+  const later = observations.map((o) => ({ ...o, roundTrip: { ...o.roundTrip, ms: o.roundTrip.ms + 0.05 } }));
+  const fullLater = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, later, null)!;
+  const refitLater = drift.refitPosition(drift.defaultModel(), fx.CHICAGO, later, full)!;
+  assert.ok(drift.distanceKm(refitLater.at, fullLater.at) < 0.1);
+});
+
+test("V10: without a warm fit a refit is the full fit, and a far warm fit still settles", () => {
+  const observations = exactChicago();
+  assert.deepEqual(
+    drift.refitPosition(drift.defaultModel(), fx.CHICAGO, observations, null),
+    drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null),
+  );
+  const invalid = { ...fitAt({ lat: 95, lon: 0 }, iso(10)) };
+  assert.deepEqual(
+    drift.refitPosition(drift.defaultModel(), fx.CHICAGO, observations, invalid),
+    drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null),
+  );
+  const far = { ...fitAt(drift.fromAzimuthalKm(truthNearChicago, 300, -200), iso(10), fx.CHICAGO), lastMileMs: [2] };
+  const refit = drift.refitPosition(drift.defaultModel(), fx.CHICAGO, observations, far)!;
+  assert.ok(drift.distanceKm(refit.at, truthNearChicago) < 1, `${drift.distanceKm(refit.at, truthNearChicago)} km from the truth`);
+  assert.equal(drift.refitPosition(drift.defaultModel(), fx.CHICAGO, observations.slice(0, 2), far), null, "two extenders");
+});
+
 test("V7: one position and one last-mile offset per run", () => {
   const run = (run: number, lastMileMs: number) =>
     fx.exactObservations({ truth: truthNearChicago, extenders: fx.CHICAGO_EXTENDERS, lastMileMs, run });
