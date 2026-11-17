@@ -281,8 +281,13 @@ type NetworkSpace struct {
 
 	// The extender directory of this space (EXTENDER.md E1, F1). Nil for a
 	// url-only space, which names its endpoints outright and has nothing to
-	// discover.
+	// discover, and for a space on an extender host, whose strategy reads the
+	// host's.
 	extenderDirectory *connect.ExtenderDirectory
+	// The space whose extender stack this one reads and runs none of its own
+	// (NewNetworkSpaceWithUrlsOnExtenderHost), nil for every other space. Set
+	// at construction.
+	extenderHost *NetworkSpace
 	// The dial side of the peer-to-peer webrtc extender carrier (EXTENDER.md
 	// S8): the client the device signals its dials through, which opens the
 	// directory's webrtc gate while one is set. Nil without a directory, and
@@ -562,8 +567,13 @@ func (self *NetworkSpace) valuesCopy() NetworkSpaceValues {
 // network, the space presents that key. A space without keeps it in memory,
 // seeded by whatever an embedder supplied through the device's key material,
 // so a headless host that saves the seed back keeps one identity across
-// restarts.
+// restarts. A space on an extender host has none.
 func (self *NetworkSpace) getOrCreateExtenderKeySeed() ([]byte, error) {
+	if self.extenderHost != nil {
+		// it runs no node and no extender role, so it has no identity to
+		// present, and making one would only hand an embedder a key to keep
+		return nil, nil
+	}
 	if self.asyncLocalState != nil {
 		localState := self.asyncLocalState.GetLocalState()
 		if networkId := self.currentExtenderKeyNetworkId(); networkId != (connect.Id{}) {
@@ -599,12 +609,13 @@ func (self *NetworkSpace) extenderIdentityKeySeed() []byte {
 
 // Installs the extender identity an embedder supplied through the device's key
 // material (G2, B1). A space that keeps local state has its own `.extender_key`
-// and ignores this, so an embedder never overwrites a persisted identity.
+// and ignores this, so an embedder never overwrites a persisted identity, and
+// a space on an extender host, which presents no identity, ignores it too.
 //
 // A member node the space built before this arrives is rebuilt on the new
 // identity, so the space never runs two identities at once.
 func (self *NetworkSpace) setExtenderKeySeed(extenderKeySeed []byte) {
-	if self.asyncLocalState != nil || len(extenderKeySeed) == 0 {
+	if self.asyncLocalState != nil || self.extenderHost != nil || len(extenderKeySeed) == 0 {
 		return
 	}
 	changed := func() bool {
@@ -623,10 +634,11 @@ func (self *NetworkSpace) setExtenderKeySeed(extenderKeySeed []byte) {
 
 // Installs the file an embedder keeps the extender measurement key in (C4). A
 // space that keeps local state keeps the key beside its own `.extender_key`
-// and ignores this. A role already running keeps the key it started with until
-// it restarts, as it does its identity.
+// and ignores this, as a space on an extender host, which runs no role, does.
+// A role already running keeps the key it started with until it restarts, as
+// it does its identity.
 func (self *NetworkSpace) setExtenderMeasurementKeyFile(extenderMeasurementKeyFile string) {
-	if self.asyncLocalState != nil || extenderMeasurementKeyFile == "" {
+	if self.asyncLocalState != nil || self.extenderHost != nil || extenderMeasurementKeyFile == "" {
 		return
 	}
 	self.stateLock.Lock()
@@ -1444,6 +1456,82 @@ func NewNetworkSpaceWithUrls(
 	platformUrl string,
 	clientStrategySettings *connect.ClientStrategySettings,
 ) *NetworkSpace {
+	return newNetworkSpaceWithUrls(ctx, apiUrl, platformUrl, clientStrategySettings, nil)
+}
+
+// NewNetworkSpaceWithUrlsOnExtenderHost builds a url-only space as
+// NewNetworkSpaceWithUrls does, except that it runs no extender stack of its
+// own and reads the one `extenderHost` runs (connect/EXTENDER.md E1-E3, D1).
+// It builds no directory, network client, gossip node, release fetch,
+// camouflage or block report, seed bootstrap or webrtc dial side. Its strategy
+// draws its extenders from the host's directory and only reads it (connect
+// `ClientStrategySettings.ExtenderDirectoryReadOnly`): the outcomes of its own
+// dials stay with it, since they are evidence of its own path, which may be a
+// proxy the host does not dial through. A device in the space presents no
+// extender identity and attests no probes, and the provider extender role
+// does not run there: those are the host's.
+//
+// For a process that runs many providers on one host, each through its own
+// proxy, such as the sn miner's slots, so the process runs one extender stack
+// instead of one per provider (connect#227). The host is a space of this
+// process built by NewNetworkSpaceWithUrls for the same network, and it must
+// outlive every space built on it. With no host, a closed one, or one that
+// runs no stack of its own for this space's network, the space runs its own
+// stack, as NewNetworkSpaceWithUrls builds it.
+//
+//gomobile:noexport
+func NewNetworkSpaceWithUrlsOnExtenderHost(
+	ctx context.Context,
+	apiUrl string,
+	platformUrl string,
+	clientStrategySettings *connect.ClientStrategySettings,
+	extenderHost *NetworkSpace,
+) *NetworkSpace {
+	return newNetworkSpaceWithUrls(ctx, apiUrl, platformUrl, clientStrategySettings, extenderHost)
+}
+
+// The space whose extender stack a space built on this one reads, for the
+// extender network `networkHost`: this space, or the host it reads itself,
+// when that one runs its own stack for that network and is open. Nil
+// otherwise, and for a nil space.
+func (self *NetworkSpace) extenderStackHost(networkHost string) *NetworkSpace {
+	if self == nil {
+		return nil
+	}
+	host := self
+	if self.extenderHost != nil {
+		host = self.extenderHost
+	}
+	if host.extenderDirectory == nil || host.hostedIncompatible {
+		return nil
+	}
+	values := host.valuesCopy()
+	if extenderNetworkHostName(&host.key, &values) != networkHost {
+		return nil
+	}
+	host.stateLock.Lock()
+	defer host.stateLock.Unlock()
+	if host.closed {
+		return nil
+	}
+	return host
+}
+
+// Whether this space reads another space's extender stack and runs none of
+// its own (NewNetworkSpaceWithUrlsOnExtenderHost).
+func (self *NetworkSpace) readsExtenderHost() bool {
+	return self != nil && self.extenderHost != nil
+}
+
+// The url-only space of NewNetworkSpaceWithUrls, on the extender stack of
+// `extenderHost` when that one can host it (extenderStackHost).
+func newNetworkSpaceWithUrls(
+	ctx context.Context,
+	apiUrl string,
+	platformUrl string,
+	clientStrategySettings *connect.ClientStrategySettings,
+	extenderHost *NetworkSpace,
+) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	if clientStrategySettings == nil {
 		clientStrategySettings = connect.DefaultClientStrategySettings()
@@ -1476,10 +1564,17 @@ func NewNetworkSpaceWithUrls(
 	// dialers come from it (E2). The settings are copied first: installing
 	// anything into the caller's own settings would reach every other space
 	// built from the same value.
+	//
+	// A space on an extender host builds no directory: its strategy reads the
+	// host's.
 	altUrl := spaceAltUrl(&values, values.PlatformUrl)
 	var extenderDirectory *connect.ExtenderDirectory
-	if extenderNetworkHostName(&key, &values) != "" {
-		extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
+	var sharedExtenderHost *NetworkSpace
+	if networkHost := extenderNetworkHostName(&key, &values); networkHost != "" {
+		sharedExtenderHost = extenderHost.extenderStackHost(networkHost)
+		if sharedExtenderHost == nil {
+			extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
+		}
 	}
 	copiedSettings := *clientStrategySettings
 	// the space's own api, whose authenticated Date corrects the clock a
@@ -1490,7 +1585,12 @@ func NewNetworkSpaceWithUrls(
 		familyServiceUrl(values.ApiUrl, 6),
 	)
 	if extenderDirectory != nil {
+		// the space's own directory, which its strategy reports to
 		copiedSettings.ExtenderDirectory = extenderDirectory
+		copiedSettings.ExtenderDirectoryReadOnly = false
+	} else if sharedExtenderHost != nil {
+		copiedSettings.ExtenderDirectory = sharedExtenderHost.extenderDirectory
+		copiedSettings.ExtenderDirectoryReadOnly = true
 	}
 	// the webrtc carrier's dial side, on the copy the strategy is built from
 	// (S8)
@@ -1522,6 +1622,7 @@ func NewNetworkSpaceWithUrls(
 		log:                           log,
 		extenderDirectory:             extenderDirectory,
 		extenderWebRtcDial:            extenderWebRtcDial,
+		extenderHost:                  sharedExtenderHost,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 		ingressDnsChangeCallbacks:     connect.NewCallbackList[ingressDnsChangeCallback](),

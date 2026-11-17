@@ -2437,8 +2437,10 @@ func newDeviceLocalWithOverridesForPlatform(
 	// but provide mode none -- what every app build is -- probes to rank only.
 	// A hosted device enables none: it never provides, and its space is shared
 	// across unrelated customers, whose probes it would attest -- and report --
-	// in this tenant's name.
-	if provider != nil && !settings.HostedIncompatible {
+	// in this tenant's name. Nor does a device in a space on an extender host:
+	// the space probes nothing, and the host's own device attests the host's
+	// probes.
+	if provider != nil && !settings.HostedIncompatible && !networkSpace.readsExtenderHost() {
 		provider.enableProbeAttestor(log, settings.providerPingReporterSettings)
 	}
 
