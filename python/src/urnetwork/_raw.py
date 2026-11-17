@@ -1410,6 +1410,8 @@ def bind(lib):
     lib.urnet_device_local_get_probe_results.restype = c_void_p
     lib.urnet_device_local_get_provide_secret_keys.argtypes = [c_uint64]
     lib.urnet_device_local_get_provide_secret_keys.restype = c_void_p
+    lib.urnet_device_local_get_provider_client_key_published.argtypes = [c_uint64]
+    lib.urnet_device_local_get_provider_client_key_published.restype = c_bool
     lib.urnet_device_local_get_provider_client_key_registered.argtypes = [c_uint64]
     lib.urnet_device_local_get_provider_client_key_registered.restype = c_bool
     lib.urnet_device_local_get_provider_connected.argtypes = [c_uint64]
