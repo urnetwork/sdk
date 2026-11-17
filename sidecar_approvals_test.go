@@ -641,9 +641,9 @@ func TestEveryPendingKindMaps(t *testing.T) {
 					"sidecar_id": workerId, "admitted_at": 7, "admitted_time_ms": 1700000000000, "last_change_ms": 1700000001000, "signatures": 2,
 				}}}},
 			}, nil, true
-		case sidecarControlMethodApprovalsRequests:
+		case sidecarControlMethodApprovalsAppRequests:
 			return map[string]any{"items": []map[string]any{
-				{"approval_id": requestId, "entry_id": sidecar.NewId(), "kind": "dns_set", "template": true, "text": "request: dns_set",
+				{"approval_id": requestId, "entry_id": sidecar.NewId(), "sidecar_id": workerId, "kind": "dns_set", "template": true, "text": "request: dns_set",
 					"channel": "device", "decisions": []string{"approve", "deny"}},
 				{"entry_id": sidecar.NewId(), "refused": "the request's bytes do not check", "decisions": []string{}},
 			}}, nil, true
@@ -682,7 +682,8 @@ func TestEveryPendingKindMaps(t *testing.T) {
 	}
 	request := testApprovalItem(pending, newId([16]byte(requestId)))
 	if request == nil || request.Kind != SidecarApprovalKindRequest || request.Action != "dns_set" || !request.Template ||
-		request.Channel != "device" || request.Text == "" || !request.Decisions.Contains(SidecarDecisionApprove) {
+		request.Channel != "device" || request.Text == "" || !request.Decisions.Contains(SidecarDecisionApprove) ||
+		request.SidecarId == nil || sidecar.Id(request.SidecarId.id) != workerId {
 		t.Fatalf("the request: %+v", request)
 	}
 	refusedCount := 0
@@ -865,7 +866,7 @@ func TestPendingListenerHearsEventsAndDecisions(t *testing.T) {
 }
 
 // Over the daemon, reads go unconfirmed and a decision confirmed, by the Confirm method of the item's kind: an
-// authority item's approvals.decide, a request's approvals.request.
+// authority item's approvals.decide, a request's approvals.app.request.
 func TestDecideRemoteGoesConfirmed(t *testing.T) {
 	socketPath := testRemoteSocketPath(t)
 	daemon := newTestRemoteDaemon(t, socketPath)
@@ -874,9 +875,9 @@ func TestDecideRemoteGoesConfirmed(t *testing.T) {
 		switch request.Method {
 		case sidecarControlMethodApprovalsList:
 			return map[string]any{"items": []map[string]any{{"approval_id": authorityId, "kind": "recovery_window", "decisions": []string{"approve", "deny"}}}}, nil, true
-		case sidecarControlMethodApprovalsRequests:
+		case sidecarControlMethodApprovalsAppRequests:
 			return map[string]any{"items": []map[string]any{{"approval_id": requestId, "entry_id": sidecar.NewId(), "kind": "mail_send", "decisions": []string{"approve", "deny"}}}}, nil, true
-		case sidecarControlMethodApprovalsDecide, sidecarControlMethodApprovalsRequest:
+		case sidecarControlMethodApprovalsDecide, sidecarControlMethodApprovalsAppRequest:
 			if !request.UrConfirmed {
 				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcConfirmationRequired, Message: "confirmation required"}, true
 			}
@@ -908,21 +909,21 @@ func TestDecideRemoteGoesConfirmed(t *testing.T) {
 			}
 		}
 	}
-	for _, method := range []string{sidecarControlMethodApprovalsList, sidecarControlMethodApprovalsRequests} {
+	for _, method := range []string{sidecarControlMethodApprovalsList, sidecarControlMethodApprovalsAppRequests} {
 		if len(seen[method]) == 0 || slices.Contains(seen[method], true) {
 			t.Errorf("%s: %v", method, seen[method])
 		}
 	}
-	for _, method := range []string{sidecarControlMethodApprovalsDecide, sidecarControlMethodApprovalsRequest} {
+	for _, method := range []string{sidecarControlMethodApprovalsDecide, sidecarControlMethodApprovalsAppRequest} {
 		if len(seen[method]) != 1 || !seen[method][0] {
 			t.Errorf("%s: %v", method, seen[method])
 		}
 	}
 }
 
-// The control methods and fields the remote backend sends and reads are cli's ur approve's and the root's devices
-// methods', read from their source since cli is package main and the root's method file builds on no mobile leg, so a
-// renamed method or field fails here rather than at the daemon, which reads params strictly.
+// The control methods and fields the remote backend sends and reads are cli's ur approve's and the root's app request
+// and devices methods', read from their source since cli is package main and the root's method files build on no
+// mobile leg, so a renamed method or field fails here rather than at the daemon, which reads params strictly.
 func TestApprovalsControlWireMatchesUr(t *testing.T) {
 	cliDirectory := filepath.Join("..", "sidecar", "cli")
 	cli := testSidecarDeclarations(t, filepath.Join(cliDirectory, "cmd_approve.go"), filepath.Join(cliDirectory, "cmd_approve_request.go"))
@@ -930,8 +931,6 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 		sidecarControlMethodApprovalsList:        "urMethodApprovalsList",
 		sidecarControlMethodApprovalsDecide:      "urMethodApprovalsDecide",
 		sidecarControlMethodApprovalsCleanupList: "urMethodApprovalsCleanupList",
-		sidecarControlMethodApprovalsRequests:    "urMethodApprovalsRequests",
-		sidecarControlMethodApprovalsRequest:     "urMethodApprovalsRequest",
 	} {
 		if !strings.Contains(cli[name], strconv.Quote(own)) {
 			t.Errorf("%s is not %q: %s", name, own, cli[name])
@@ -945,9 +944,6 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 		"urCleanupListReply":         {`json:"admission_count"`, `json:"admission_cap"`, `json:"members"`, `json:"presence,omitempty"`},
 		"urCleanupMember":            {`json:"member_id"`, `json:"workers"`},
 		"urCleanupWorker":            {`json:"sidecar_id"`, `json:"admitted_at"`, `json:"admitted_time_ms,omitempty"`, `json:"last_change_ms,omitempty"`, `json:"signatures"`},
-		"urRequestItem":              {`json:"approval_id,omitempty"`, `json:"entry_id"`, `json:"kind,omitempty"`, `json:"template,omitempty"`, `json:"text,omitempty"`, `json:"refused,omitempty"`, `json:"channel,omitempty"`, `json:"decisions"`},
-		"urRequestsReply":            {`json:"items"`},
-		"urRequestDecideParams":      {`json:"approval_id"`, `json:"decision"`},
 	} {
 		for _, field := range fields {
 			if !strings.Contains(cli[declaration], field) {
@@ -955,11 +951,13 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 			}
 		}
 	}
-	root := testSidecarDeclarations(t, filepath.Join("..", "sidecar", "daemon_devices.go"))
+	root := testSidecarDeclarations(t, filepath.Join("..", "sidecar", "daemon_devices.go"), filepath.Join("..", "sidecar", "daemon_approvals_app.go"))
 	for own, name := range map[string]string{
-		sidecarControlMethodDevicesList:    "DaemonMethodDevicesList",
-		sidecarControlMethodDevicesPreview: "DaemonMethodDevicesPreview",
-		sidecarControlMethodDevicesRevoke:  "DaemonMethodDevicesRevoke",
+		sidecarControlMethodDevicesList:          "DaemonMethodDevicesList",
+		sidecarControlMethodDevicesPreview:       "DaemonMethodDevicesPreview",
+		sidecarControlMethodDevicesRevoke:        "DaemonMethodDevicesRevoke",
+		sidecarControlMethodApprovalsAppRequests: "DaemonMethodApprovalsAppRequests",
+		sidecarControlMethodApprovalsAppRequest:  "DaemonMethodApprovalsAppRequest",
 	} {
 		if !strings.Contains(root[name], strconv.Quote(own)) {
 			t.Errorf("%s is not %q: %s", name, own, root[name])
@@ -976,6 +974,11 @@ func TestApprovalsControlWireMatchesUr(t *testing.T) {
 		"DaemonDevicesPreviewReply":  {`json:"plan,omitempty"`, `json:"refusal,omitempty"`},
 		"DaemonDevicesRevokeParams":  {`json:"network,omitempty"`, `json:"plan_id"`, `json:"revoke_key_ids,omitempty"`},
 		"DaemonDevicesRevokeReply":   {`json:"position,omitempty"`, `json:"proposal_id,omitempty"`, `json:"joined,omitempty"`, `json:"revoked_key_ids,omitempty"`, `json:"pending,omitempty"`, `json:"refusal,omitempty"`},
+		"DaemonApprovalsAppParams":   {`json:"network,omitempty"`},
+		"DaemonApprovalsAppItem": {`json:"approval_id,omitempty"`, `json:"entry_id"`, `json:"sidecar_id,omitempty"`, `json:"kind,omitempty"`, `json:"template,omitempty"`,
+			`json:"text,omitempty"`, `json:"refused,omitempty"`, `json:"channel,omitempty"`, `json:"decisions"`},
+		"DaemonApprovalsAppReply":        {`json:"items"`},
+		"DaemonApprovalsAppDecideParams": {`json:"network,omitempty"`, `json:"approval_id"`, `json:"decision"`},
 	} {
 		for _, field := range fields {
 			if !strings.Contains(root[declaration], field) {
