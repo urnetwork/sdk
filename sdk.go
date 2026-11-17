@@ -209,6 +209,10 @@ func setLogDirWithRoot(logDir string, root string) error {
 		currentLogDir = logDir
 		currentLogRoot = root
 		currentLogDirMu.Unlock()
+		// a Go crash of this process lands beside its logs too (crash_output.go)
+		if err := setGoCrashOutputDir(logDir, defaultGoCrashSettings()); err != nil {
+			glog.Infof("[log]the go crash output stays on stderr only: %v", err)
+		}
 	}
 	glog.Infof("New glog initialized")
 	clearOldLogs(logDir)
