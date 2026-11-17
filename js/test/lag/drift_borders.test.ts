@@ -220,6 +220,26 @@ test("G2: the world map loads once, lazily", async () => {
   assert.equal(world.countryAt({ lat: 38.7, lon: -10.5 }, 300), "pt", "the nearest within 300 km");
 });
 
+test("G3: on the simplified map a disputed area belongs to every claimant, and Taiwan and China never overlap", async () => {
+  const world = await drift.loadDriftWorld();
+  if (world.codes().length === 0) {
+    return;
+  }
+  const holders = (lat: number, lon: number) => world.codes().filter((code) => drift.countryContains(world.country(code)!, { lat, lon }));
+  assert.deepEqual(holders(44.95, 34.1), ["ru", "ua"], "Simferopol");
+  assert.deepEqual(holders(34.08, 74.8), ["in", "pk"], "Srinagar");
+  assert.deepEqual(holders(27.15, -13.2), ["eh", "ma"], "Laayoune");
+  assert.deepEqual(holders(42.66, 21.17), ["rs", "xk"], "Pristina");
+  assert.deepEqual(holders(33.27, 35.77), ["il", "sy"], "the Golan");
+  assert.deepEqual(holders(27.08, 93.61), ["cn", "in", "tw"], "Itanagar");
+  assert.deepEqual(holders(25.03, 121.57), ["tw"], "Taipei");
+  assert.deepEqual(holders(24.45, 118.38), ["tw"], "Kinmen");
+  assert.deepEqual(holders(39.9, 116.4), ["cn"], "Beijing");
+  assert.deepEqual(holders(31.23, 121.47), ["cn"], "Shanghai");
+  // countryAt names the first claimant by code; the demo prefers the IP country among them
+  assert.equal(world.countryAt({ lat: 44.95, lon: 34.1 }, 0), "ru");
+});
+
 test("W8: the demo's verdict against the simplified map", async () => {
   const world = await drift.loadDriftWorld();
   if (world.codes().length === 0) {
