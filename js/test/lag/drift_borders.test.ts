@@ -236,6 +236,13 @@ test("G3: on the simplified map a disputed area belongs to every claimant, and T
   assert.deepEqual(holders(24.45, 118.38), ["tw"], "Kinmen");
   assert.deepEqual(holders(39.9, 116.4), ["cn"], "Beijing");
   assert.deepEqual(holders(31.23, 121.47), ["cn"], "Shanghai");
+  // claims count only inside Natural Earth's disputed pieces, and the 1:10m's are carried
+  assert.deepEqual(holders(32.08, 34.78), ["il"], "Tel Aviv");
+  assert.deepEqual(holders(31.9, 35.2), ["il", "ps"], "Ramallah");
+  assert.deepEqual(holders(31.5, 34.47), ["il", "ps"], "Gaza City");
+  assert.deepEqual(holders(36.14, -5.35), ["es", "gb", "gi"], "Gibraltar");
+  assert.deepEqual(holders(-51.7, -57.85), ["ar", "fk", "gb"], "Stanley");
+  assert.deepEqual(holders(27.47, 89.64), ["bt"], "Thimphu");
   // countryAt names the first claimant by code; the demo prefers the IP country among them
   assert.equal(world.countryAt({ lat: 44.95, lon: 34.1 }, 0), "ru");
 });
