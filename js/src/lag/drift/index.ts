@@ -38,6 +38,7 @@ export { countryContains } from "./polygon";
 export type { Country } from "./polygon";
 export { judge, kForConfidence, regionOutline, regionRadiusKm } from "./judge";
 export { defaultK, kEarly, kEarlyScale } from "./calibratedK";
+export { continentCodes, continentForCountry } from "./continents";
 export type { Judgement } from "./judge";
 export { physicallyPossible } from "./physical";
 export {
