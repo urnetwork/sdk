@@ -736,6 +736,7 @@ inline constexpr const char* SnFleetClaimStageNeedsTap = "needs_tap";
 inline constexpr const char* SnFleetClaimStageNeedsWalletAuthorization = "needs_wallet_authorization";
 inline constexpr const char* SnFleetClaimStageNeedsWalletRegistration = "needs_wallet_registration";
 inline constexpr const char* SnFleetClaimStageNoConsent = "no_consent";
+inline constexpr const char* SnFleetClaimStageNotPrompted = "not_prompted";
 inline constexpr const char* SnFleetClaimStageRegistering = "registering";
 inline constexpr const char* SnFleetClaimStageWaitingBurn = "waiting_burn";
 inline constexpr const char* SnFleetClaimStageWaitingDevices = "waiting_devices";
@@ -4467,6 +4468,10 @@ struct SnHeadResult {
 	double floor{};
 	int64_t rank_estimate{};
 	int64_t cutoff{};
+	bool in_head{};
+	bool measurable{};
+	std::string not_measurable_reason{};
+	bool claim_prompt{};
 	bool bound{};
 	std::optional<std::string> hotkey;
 	std::optional<int64_t> uid;
@@ -19997,6 +20002,10 @@ inline void to_json(nlohmann::json& j, const SnHeadResult& v) {
 	j["floor"] = v.floor;
 	j["rank_estimate"] = v.rank_estimate;
 	j["cutoff"] = v.cutoff;
+	j["in_head"] = v.in_head;
+	j["measurable"] = v.measurable;
+	j["not_measurable_reason"] = v.not_measurable_reason;
+	j["claim_prompt"] = v.claim_prompt;
 	j["bound"] = v.bound;
 	if (v.hotkey) {
 		j["hotkey"] = *v.hotkey;
@@ -20032,6 +20041,18 @@ inline void from_json(const nlohmann::json& j, SnHeadResult& v) {
 	}
 	if (auto it = j.find("cutoff"); it != j.end() && !it->is_null()) {
 		it->get_to(v.cutoff);
+	}
+	if (auto it = j.find("in_head"); it != j.end() && !it->is_null()) {
+		it->get_to(v.in_head);
+	}
+	if (auto it = j.find("measurable"); it != j.end() && !it->is_null()) {
+		it->get_to(v.measurable);
+	}
+	if (auto it = j.find("not_measurable_reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.not_measurable_reason);
+	}
+	if (auto it = j.find("claim_prompt"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_prompt);
 	}
 	if (auto it = j.find("bound"); it != j.end() && !it->is_null()) {
 		it->get_to(v.bound);

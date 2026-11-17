@@ -916,6 +916,34 @@ func TestSnHeadResultBoundShapes(t *testing.T) {
 	}
 }
 
+// GET /sn/head's measurability (server, 2026-11-17): a network qualifies only
+// while the validator can measure it, so a network ranked inside the cutoff
+// that it can't measure reads in_head, not eligible, with the board's reason.
+// A server older than those fields leaves them zero.
+func TestSnHeadResultMeasurability(t *testing.T) {
+	var unmeasured SnHeadResult
+	if err := json.Unmarshal([]byte(`{"eligible":false,"score":48.99,"rank_estimate":26,"cutoff":200,"in_head":true,"measurable":false,"not_measurable_reason":"not_in_cohort","claim_prompt":false,"bound":false,"epoch":6,"netuid":25,"source":"server"}`), &unmeasured); err != nil {
+		t.Fatal(err)
+	}
+	if unmeasured.Eligible || !unmeasured.InHead || unmeasured.Measurable || unmeasured.NotMeasurableReason != "not_in_cohort" || unmeasured.ClaimPrompt || unmeasured.RankEstimate != 26 {
+		t.Fatalf("%+v", unmeasured)
+	}
+	var measured SnHeadResult
+	if err := json.Unmarshal([]byte(`{"eligible":true,"score":3,"rank_estimate":12,"cutoff":200,"in_head":true,"measurable":true,"not_measurable_reason":"","claim_prompt":true,"bound":false,"epoch":6,"netuid":25,"source":"server"}`), &measured); err != nil {
+		t.Fatal(err)
+	}
+	if !measured.Eligible || !measured.InHead || !measured.Measurable || measured.NotMeasurableReason != "" || !measured.ClaimPrompt {
+		t.Fatalf("%+v", measured)
+	}
+	var older SnHeadResult
+	if err := json.Unmarshal([]byte(`{"eligible":true,"score":3,"rank_estimate":12,"cutoff":200,"bound":false,"epoch":6,"source":"server"}`), &older); err != nil {
+		t.Fatal(err)
+	}
+	if !older.Eligible || older.InHead || older.Measurable || older.NotMeasurableReason != "" || older.ClaimPrompt {
+		t.Fatalf("%+v", older)
+	}
+}
+
 func TestSnFleetBindingDigestFromJson(t *testing.T) {
 	// the sn/protocol golden, fields as hex strings
 	bindingJson := `{"chain_id":945,"netuid":17,"coordinator":"0x1111111111111111111111111111111111111111","fleet_id":"0x2222222222222222222222222222222222222222222222222222222222222222","hotkey":"0x94ad8d1ead1a2bff9bbbac89aa89b13df2fe9ec929a09c90bc5ddb1dff723b47","client_id":"0x33333333333333333333333333333333","client_key":"0x03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8","generation":3,"valid_from_epoch":11,"valid_to_epoch":42,"commitment_hash":"0x4444444444444444444444444444444444444444444444444444444444444444"}`

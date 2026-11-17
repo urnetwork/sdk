@@ -683,6 +683,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_FLEET_CLAIM_STAGE_NEEDS_TAP "needs_tap"
 #define URNET_SN_FLEET_CLAIM_STAGE_NEEDS_WALLET_AUTHORIZATION "needs_wallet_authorization"
 #define URNET_SN_FLEET_CLAIM_STAGE_NEEDS_WALLET_REGISTRATION "needs_wallet_registration"
+#define URNET_SN_FLEET_CLAIM_STAGE_NOT_PROMPTED "not_prompted"
 #define URNET_SN_FLEET_CLAIM_STAGE_NO_CONSENT "no_consent"
 #define URNET_SN_FLEET_CLAIM_STAGE_REGISTERING "registering"
 #define URNET_SN_FLEET_CLAIM_STAGE_WAITING_BURN "waiting_burn"
@@ -6191,6 +6192,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   floor: number
  *   rank_estimate: number
  *   cutoff: number
+ *   in_head: boolean
+ *   measurable: boolean
+ *   not_measurable_reason: string
+ *   claim_prompt: boolean
  *   bound: boolean
  *   hotkey?: string
  *   uid?: number
