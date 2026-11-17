@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import { registerTsResolve } from "../ts-resolve.ts";
 
 // The drift model (lag.dev/DRIFTTEST.md V1-V7, V10; T2), on synthetic
-// geometries with known positions. Parity with the Go model is
-// drift_vectors.test.ts.
+// geometries with known positions. Parity with connect's lagdrift, the
+// authoritative Go model, is drift_vectors.test.ts.
 
 registerTsResolve();
 const drift = await import("../../src/lag/drift/index.ts");
-const { autocorrelationTime } = await import("../../src/lag/drift/roundTrip.ts");
-const { placeErrorKm, pathVariance } = await import("../../src/lag/drift/model.ts");
-const { invert, invertSharedVariance, solve } = await import("../../src/lag/drift/linalg.ts");
+const { roundTripTau } = await import("../../src/lag/drift/roundTrip.ts");
+const { pathSigmaMs, noiseVar } = await import("../../src/lag/drift/model.ts");
+const { gaussSolve } = await import("../../src/lag/drift/fit.ts");
+const { splitEdge } = await import("../../src/lag/drift/judge.ts");
 const fx = await import("./drift_fixtures.ts");
 
 type Fit = import("../../src/lag/drift/index.ts").Fit;
@@ -22,7 +23,7 @@ const close = (actual: number, expected: number, tolerance: number, message?: st
 
 /** a fit at a place with a covariance, for the geometry that reads only those */
 function fitAt(at: Point, cov: Cov2, expected: Point = at): Fit {
-  const offset = drift.toEastNorth(expected, at);
+  const offset = drift.azimuthalKm(expected, at);
   return {
     at,
     eastKm: offset.eastKm,
@@ -32,7 +33,8 @@ function fitAt(at: Point, cov: Cov2, expected: Point = at): Fit {
     cov,
     chi2PerDof: 1,
     extenders: 12,
-    ...drift.ellipse(cov),
+    observations: 12,
+    ...drift.covEllipse(cov),
   };
 }
 
@@ -55,6 +57,18 @@ test("distances and bearings on the sphere", () => {
   close(drift.bearingDeg(origin, { lat: 0, lon: 10 }), 90, 1e-12);
   close(drift.bearingDeg(origin, { lat: -10, lon: 0 }), 180, 1e-12);
   close(drift.bearingDeg(origin, { lat: 0, lon: -10 }), 270, 1e-12);
+  assert.ok(drift.bearingDeg(paris, london) >= 0 && drift.bearingDeg(paris, london) < 360);
+  assert.equal(drift.pointValid({ lat: 90, lon: -180 }), true);
+  assert.equal(drift.pointValid({ lat: 90.1, lon: 0 }), false);
+  assert.equal(drift.pointValid({ lat: Number.NaN, lon: 0 }), false);
+});
+
+test("the fit's step: east and north km on the local flat earth, as driftFit.ts moves", () => {
+  assert.deepEqual(drift.moveKm({ lat: 10, lon: 20 }, 0, 110.574), { lat: 11, lon: 20 });
+  close(drift.moveKm({ lat: 0, lon: 20 }, 111.32, 0).lon, 21, 1e-12);
+  close(drift.moveKm({ lat: 60, lon: 20 }, 111.32, 0).lon, 22, 1e-9, "a degree of longitude is half as long at 60°");
+  assert.equal(drift.moveKm({ lat: 89.8, lon: 0 }, 0, 500).lat, 89.9, "held short of the pole");
+  close(drift.moveKm({ lat: 0, lon: 179.5 }, 111.32, 0).lon, -179.5, 1e-9, "across the antimeridian");
 });
 
 test("the azimuthal equidistant projection keeps distance and bearing from its center, and inverts", () => {
@@ -63,56 +77,49 @@ test("the azimuthal equidistant projection keeps distance and bearing from its c
     const origin = { lat: -80 + 160 * rng(), lon: -180 + 360 * rng() };
     const e = (rng() - 0.5) * 8000;
     const n = (rng() - 0.5) * 8000;
-    const p = drift.fromEastNorth(origin, e, n);
+    const p = drift.fromAzimuthalKm(origin, e, n);
     close(drift.distanceKm(origin, p), Math.hypot(e, n), 1e-6, "distance");
-    const back = drift.toEastNorth(origin, p);
+    const back = drift.azimuthalKm(origin, p);
     close(back.eastKm, e, 1e-6, "east");
     close(back.northKm, n, 1e-6, "north");
     assert.ok(p.lon >= -180 && p.lon < 180, `lon ${p.lon} wrapped`);
   }
-  assert.deepEqual(drift.toEastNorth(fx.CHICAGO, fx.CHICAGO), { eastKm: 0, northKm: 0 });
-  assert.deepEqual(drift.fromEastNorth(fx.CHICAGO, 0, 0), fx.CHICAGO);
+  assert.deepEqual(drift.azimuthalKm(fx.CHICAGO, fx.CHICAGO), { eastKm: 0, northKm: 0 });
+  assert.deepEqual(drift.fromAzimuthalKm(fx.CHICAGO, 0, 0), fx.CHICAGO);
 });
 
-test("small dense solves, inverses and the shared-variance block inverse", () => {
+test("Gauss–Jordan elimination with partial pivoting, and a singular system", () => {
   const A = [
     [4, 1, 0.5],
     [1, 3, 0.25],
     [0.5, 0.25, 2],
   ];
-  const x = solve(A, [1, 2, 3])!;
+  const x = gaussSolve(A.map((row, i) => [...row, [1, 2, 3][i]]))!;
   A.forEach((row, i) => close(row.reduce((s, a, j) => s + a * x[j], 0), [1, 2, 3][i], 1e-12));
-  const inverse = invert(A)!;
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 3; j++) {
-      close(A[i].reduce((s, a, k) => s + a * inverse[k][j], 0), i === j ? 1 : 0, 1e-12);
-    }
-  }
-  assert.equal(solve([[1, 2], [2, 4]], [1, 2]), null, "singular");
-  // (D + τ² 11ᵀ)⁻¹ against a direct inverse
-  const variances = [0.7, 1.3, 2.1];
-  const tau2 = 0.9;
-  const block = variances.map((v, j) => variances.map((_, k) => (j === k ? v : 0) + tau2));
-  const direct = invert(block)!;
-  const shared = invertSharedVariance(variances, tau2);
-  direct.forEach((row, j) => row.forEach((v, k) => close(shared[j][k], v, 1e-12)));
+  assert.deepEqual(gaussSolve([[0, 2, 4], [3, 0, 3]]), [1, 2], "a zero pivot is swapped away");
+  assert.equal(gaussSolve([[1, 2, 1], [2, 4, 2]]), null, "singular");
 });
 
 // ---- V1
 
-test("V1: the 10th percentile by nearest rank, below 4 samples none, lost pings left out", () => {
+test("V1: the 10th percentile by nearest rank; below 4 samples none; lost pings left out", () => {
   assert.equal(drift.estimateRoundTrip([]), null);
   assert.equal(drift.estimateRoundTrip([10, 11, 12]), null);
   assert.equal(drift.estimateRoundTrip([10, Number.NaN, 11, 12]), null, "a lost ping is no sample");
+  assert.equal(drift.estimateRoundTrip([10, 0, -3, 11, 12, Infinity]), null, "nor is a round trip that isn't positive and finite");
   const shuffle = (n: number) => Array.from({ length: n }, (_, i) => ((i * 7) % n) + 1);
   assert.equal(drift.estimateRoundTrip(shuffle(20))!.ms, 2);
   assert.equal(drift.estimateRoundTrip(shuffle(10))!.ms, 1);
   assert.equal(drift.estimateRoundTrip(shuffle(11))!.ms, 2);
+  assert.equal(drift.estimateRoundTrip(shuffle(30))!.ms, 3, "q n exactly whole stays on its rank");
   assert.equal(drift.estimateRoundTrip([5, 6, 7, 8])!.ms, 5);
-  assert.equal(drift.estimateRoundTrip([12, Number.NaN, 9, 30, 15])!.count, 4);
+  const counted = drift.estimateRoundTrip([12, Number.NaN, 9, 30, 15])!;
+  assert.equal(counted.count, 4);
+  assert.equal(counted.minMs, 9, "the lowest sample, for the physical check");
   const samples = [30, 10, 20, 40];
   drift.estimateRoundTrip(samples);
   assert.deepEqual(samples, [30, 10, 20, 40], "the input is not reordered");
+  assert.equal(drift.minRoundTripSamples, 4);
 });
 
 test("V1: the error from order statistics at the effective sample size", () => {
@@ -122,7 +129,7 @@ test("V1: the error from order statistics at the effective sample size", () => {
     const high = Array.from({ length: Math.floor(n / 2) }, (_, i) => n - i);
     return low.flatMap((l, i) => (i < high.length ? [l, high[i]] : [l]));
   };
-  assert.equal(autocorrelationTime(alternating(100)), 1);
+  assert.equal(roundTripTau(alternating(100)), 1);
   // n = 100: rank 10, half-width 1.96 √(100 · 0.09) = 5.88, so ranks 4 and 16
   const hundred = drift.estimateRoundTrip(alternating(100))!;
   assert.equal(hundred.ms, 10);
@@ -133,14 +140,14 @@ test("V1: the error from order statistics at the effective sample size", () => {
   assert.equal(twenty.ms, 2);
   close(twenty.sigmaMs, (2 * (5 - 2)) / (2 * 1.96), 1e-12);
   // the same values in a slow drift are correlated: a wider interval
-  const ramp = drift.estimateRoundTrip(Array.from({ length: 100 }, (_, i) => i + 1))!;
-  assert.equal(autocorrelationTime(Array.from({ length: 100 }, (_, i) => i + 1)), 8, "held to 8");
+  const rampSamples = Array.from({ length: 100 }, (_, i) => i + 1);
+  const ramp = drift.estimateRoundTrip(rampSamples)!;
+  assert.equal(roundTripTau(rampSamples), 8, "held to 8");
   assert.equal(ramp.ms, 10);
   assert.ok(ramp.sigmaMs > hundred.sigmaMs * 2, `${ramp.sigmaMs} vs ${hundred.sigmaMs}`);
   // no spread, no error
-  assert.deepEqual(drift.estimateRoundTrip([7, 7, 7, 7, 7, 7]), { ms: 7, sigmaMs: 0, count: 6 });
-  assert.equal(autocorrelationTime([7, 7, 7, 7]), 1);
-  assert.equal(autocorrelationTime([7]), 1);
+  assert.deepEqual(drift.estimateRoundTrip([7, 7, 7, 7, 7, 7]), { ms: 7, sigmaMs: 0, count: 6, minMs: 7 });
+  assert.equal(roundTripTau([7, 7, 7, 7]), 1);
 });
 
 // ---- V2, V3, V6 constants
@@ -149,57 +156,76 @@ test("V2, V3, V6, V10: the model's constants", () => {
   assert.deepEqual(drift.defaultModel(), { kappa: 0.25, sigma0Ms: 1 });
   assert.equal(drift.speedKmPerMs, 133.24);
   assert.equal(drift.vacuumKmPerMs, 299.792458);
+  assert.equal(drift.msPerKm, 2 / 133.24);
   assert.equal(drift.roundTripQuantile, 0.1);
   assert.equal(drift.defaultConfidence, 0.99);
   assert.equal(drift.earlyK, 4);
+  assert.equal(drift.huberC, 2);
+  assert.equal(drift.maxStepKm, 400);
+  assert.equal(drift.minFitExtenders, 3);
+  assert.equal(drift.defaultMaxSigmaKm, 1500);
   close(drift.kForConfidence(0.95), 2.448, 1e-3);
   close(drift.kForConfidence(0.99), 3.035, 1e-3);
   close(drift.kForConfidence(0.999), 3.717, 1e-3);
   assert.equal(drift.kForConfidence(0.99), Math.sqrt(-2 * Math.log(0.01)));
+  assert.equal(drift.kForConfidence(0), 0);
+  assert.equal(drift.kForConfidence(-1), 0);
+  assert.equal(drift.kForConfidence(1), Infinity);
   // s_ext is held to [10, 100] km, and an unknown one is a derived place's 50 km
-  assert.equal(placeErrorKm(3), 10);
-  assert.equal(placeErrorKm(40), 40);
-  assert.equal(placeErrorKm(500), 100);
-  assert.equal(placeErrorKm(0), 50);
-  assert.equal(placeErrorKm(Number.NaN), 50);
-  // τ² = (κ K d)² + (K s)²
-  close(pathVariance(drift.defaultModel(), 1000, 25), (0.25 * fx.K * 1000) ** 2 + (fx.K * 25) ** 2, 1e-15);
+  assert.equal(drift.heldPlaceErrorKm(3), 10);
+  assert.equal(drift.heldPlaceErrorKm(40), 40);
+  assert.equal(drift.heldPlaceErrorKm(500), 100);
+  assert.equal(drift.heldPlaceErrorKm(0), 50);
+  assert.equal(drift.heldPlaceErrorKm(-5), 50);
+  assert.equal(drift.heldPlaceErrorKm(Number.NaN), 50);
+  assert.equal(drift.heldPlaceErrorKm(Infinity), 50);
+  // τ = √((κ K d)² + (K s)²), and σ_meas² + σ₀²
+  close(pathSigmaMs(drift.defaultModel(), 1000, 25), Math.sqrt((0.25 * fx.K * 1000) ** 2 + (fx.K * 25) ** 2), 1e-15);
+  assert.equal(noiseVar(drift.defaultModel(), 0.5), 1.25);
 });
 
 // ---- V5, V7
 
+const truthNearChicago = { lat: 41.862, lon: -87.842 };
 const exactChicago = (extra: Partial<Parameters<typeof fx.exactObservations>[0]> = {}) =>
-  fx.exactObservations({ truth: { lat: 41.862, lon: -87.842 }, extenders: fx.CHICAGO_EXTENDERS, lastMileMs: 7.5, ...extra });
+  fx.exactObservations({ truth: truthNearChicago, extenders: fx.CHICAGO_EXTENDERS, lastMileMs: 7.5, ...extra });
 
 test("V5: a single run's fit finds the place exact round trips come from", () => {
-  const truth = { lat: 41.862, lon: -87.842 };
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago(), null)!;
   assert.ok(fit);
-  close(drift.distanceKm(fit.at, truth), 0, 0.01, "position, km");
-  close(fit.lastMileMs[0], 7.5, 1e-3, "b");
+  close(drift.distanceKm(fit.at, truthNearChicago), 0, 0.05, "position, km");
+  close(fit.lastMileMs[0], 7.5, 0.005, "b");
   assert.deepEqual(fit.runs, [1]);
   assert.equal(fit.extenders, 12);
-  close(fit.chi2PerDof, 0, 1e-6);
-  const offset = drift.toEastNorth(fx.CHICAGO, fit.at);
-  close(fit.eastKm, offset.eastKm, 1e-9);
-  close(fit.northKm, offset.northKm, 1e-9);
+  assert.equal(fit.observations, 12);
+  close(fit.chi2PerDof, 0, 1e-3);
+  const offset = drift.azimuthalKm(fx.CHICAGO, fit.at);
+  assert.equal(fit.eastKm, offset.eastKm);
+  assert.equal(fit.northKm, offset.northKm);
   assert.ok(fit.majorKm >= fit.minorKm && fit.minorKm > 0);
   assert.ok(fit.bearingDeg >= 0 && fit.bearingDeg < 180);
-  assert.deepEqual({ majorKm: fit.majorKm, minorKm: fit.minorKm, bearingDeg: fit.bearingDeg }, drift.ellipse(fit.cov));
-  assert.equal(fit.cov[0][1], fit.cov[1][0], "symmetric");
+  assert.deepEqual({ majorKm: fit.majorKm, minorKm: fit.minorKm, bearingDeg: fit.bearingDeg }, drift.covEllipse(fit.cov));
 });
 
-test("V5: no fit from fewer than 6 extenders", () => {
-  const six = exactChicago().slice(0, 6);
-  assert.ok(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, six, null));
-  assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, six.slice(0, 5), null), null);
+test("V5: no fit from fewer than 3 extenders or 3 + R observations, an invalid place, or unusable round trips", () => {
+  const all = exactChicago();
+  assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, all.slice(0, 3), null), null, "3 observations for 3 parameters");
+  assert.ok(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, all.slice(0, 4), null));
   assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, [], null), null);
-  // one extender measured twice is still one extender
-  const repeated = six.slice(0, 5).concat([{ ...six[0], run: 2 }]);
+  // one extender measured in two runs is still one extender
+  const repeated = [all[0], all[1], { ...all[0], run: 2 }, { ...all[1], run: 2 }, { ...all[0], run: 3 }];
   assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, repeated, null), null);
+  assert.equal(drift.fitPosition(drift.defaultModel(), { lat: 91, lon: 0 }, all, null), null, "an invalid expected place");
+  // an unusable observation is left out
+  const broken = all.map((o, i) =>
+    i < 9 ? { ...o, roundTrip: { ...o.roundTrip, ms: i % 3 === 0 ? 0 : i % 3 === 1 ? Number.NaN : o.roundTrip.ms, sigmaMs: i % 3 === 2 ? -1 : o.roundTrip.sigmaMs } } : o,
+  );
+  assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, broken, null), null, "3 usable");
+  const placeless = all.map((o, i) => (i === 0 ? { ...o, at: { lat: 0, lon: 200 } } : o));
+  assert.equal(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, placeless, null)!.extenders, 11);
 });
 
-test("V5: a warm start ends where a cold one does", () => {
+test("V5: a warm start settles where a cold one does", () => {
   const observations = fx.exactObservations({
     truth: { lat: 42.4, lon: -88.3 },
     extenders: fx.CHICAGO_EXTENDERS,
@@ -208,26 +234,27 @@ test("V5: a warm start ends where a cold one does", () => {
   });
   const cold = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
   // the last look's fit, 100 km off, with another b
-  const last = { ...fitAt(drift.fromEastNorth(cold.at, 80, -60), iso(10), fx.CHICAGO), lastMileMs: [4] };
+  const last = { ...fitAt(drift.fromAzimuthalKm(cold.at, 80, -60), iso(10), fx.CHICAGO), lastMileMs: [4] };
   const warm = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, last)!;
-  close(drift.distanceKm(cold.at, warm.at), 0, 1e-3, "km apart");
-  close(cold.lastMileMs[0], warm.lastMileMs[0], 1e-4);
-  close(cold.cov[0][0], warm.cov[0][0], cold.cov[0][0] * 1e-4);
+  // both stop once a step moves less than 0.05 km, after at most 12 warm and
+  // 30 cold iterations, so they settle near each other rather than on one point
+  close(drift.distanceKm(cold.at, warm.at), 0, 0.5, "km apart");
+  close(cold.lastMileMs[0], warm.lastMileMs[0], 0.05);
   // a warm start from a fit over other runs takes its b only for the runs it shares
   const otherRuns = { ...last, runs: [7], lastMileMs: [4] };
-  close(drift.distanceKm(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, otherRuns)!.at, cold.at), 0, 1e-3);
+  close(drift.distanceKm(drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, otherRuns)!.at, cold.at), 0, 0.5);
 });
 
 test("V7: one position and one last-mile offset per run", () => {
-  const truth = { lat: 41.862, lon: -87.842 };
   const run = (run: number, lastMileMs: number) =>
-    fx.exactObservations({ truth, extenders: fx.CHICAGO_EXTENDERS, lastMileMs, run });
+    fx.exactObservations({ truth: truthNearChicago, extenders: fx.CHICAGO_EXTENDERS, lastMileMs, run });
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, [...run(3, 12), ...run(1, 5)], null)!;
   assert.deepEqual(fit.runs, [1, 3]);
-  close(fit.lastMileMs[0], 5, 1e-3);
-  close(fit.lastMileMs[1], 12, 1e-3);
-  close(drift.distanceKm(fit.at, truth), 0, 0.01);
+  close(fit.lastMileMs[0], 5, 0.01);
+  close(fit.lastMileMs[1], 12, 0.01);
+  close(drift.distanceKm(fit.at, truthNearChicago), 0, 0.05);
   assert.equal(fit.extenders, 12, "the same 12 paths twice");
+  assert.equal(fit.observations, 24);
 });
 
 test("V5: a b at its bound of 0 is held, and the covariance is the position's alone", () => {
@@ -240,43 +267,40 @@ test("V5: a b at its bound of 0 is held, and the covariance is the position's al
 });
 
 test("V5: Huber weights keep one detoured path from dragging the position", () => {
-  const truth = { lat: 41.862, lon: -87.842 };
   const clean = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago(), null)!;
   const detoured = exactChicago();
   // Atlanta's path detours by 40 ms, about 2,700 km of fiber; unweighted, it
-  // would pull the fit about 345 km
+  // would pull the fit over 300 km
   detoured[5] = { ...detoured[5], roundTrip: { ...detoured[5].roundTrip, ms: detoured[5].roundTrip.ms + 40 } };
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, detoured, null)!;
-  const shift = drift.distanceKm(fit.at, truth);
+  const shift = drift.distanceKm(fit.at, truthNearChicago);
   assert.ok(shift < 60, `the fit moved ${shift} km`);
-  assert.ok(drift.distanceKm(clean.at, truth) < 0.01);
+  assert.ok(drift.distanceKm(clean.at, truthNearChicago) < 0.05);
   // the residuals are larger than the model expects, so the ellipse widens
   assert.ok(fit.chi2PerDof > 1);
   assert.ok(fit.majorKm * fit.minorKm > clean.majorKm * clean.minorKm);
 });
 
-test("V5: the covariance widens with the residuals and never narrows below the model's", () => {
+test("V5: the covariance widens with the residuals and with the measurement error", () => {
   const rng = fx.random(11);
   const noisy = exactChicago().map((o) => ({ ...o, roundTrip: { ...o.roundTrip, ms: o.roundTrip.ms + fx.gaussian(rng) * 6 } }));
   const clean = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago(), null)!;
   const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, noisy, null)!;
   assert.ok(fit.chi2PerDof > 1, `χ²/dof ${fit.chi2PerDof}`);
   assert.ok(fit.majorKm > clean.majorKm);
-  // a larger measurement error alone widens the ellipse too
   const loose = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, exactChicago({ sigmaMs: 5 }), null)!;
   assert.ok(loose.majorKm > clean.majorKm);
 });
 
 test("T2: a repeated path's route error isn't counted twice", () => {
-  const truth = { lat: 41.862, lon: -87.842 };
   // three runs on the same 12 paths, and three runs on 36 distinct paths of the same geometry
-  const shifted = (k: number) => fx.CHICAGO_EXTENDERS.map((p) => drift.fromEastNorth(p, 40 * k, -30 * k));
+  const shifted = (k: number) => fx.CHICAGO_EXTENDERS.map((p) => drift.fromAzimuthalKm(p, 40 * k, -30 * k));
   const same = [1, 2, 3].flatMap((run) =>
-    fx.exactObservations({ truth, extenders: fx.CHICAGO_EXTENDERS, lastMileMs: 7, run }),
+    fx.exactObservations({ truth: truthNearChicago, extenders: fx.CHICAGO_EXTENDERS, lastMileMs: 7, run }),
   );
   const distinct = [1, 2, 3].flatMap((run) =>
     fx.exactObservations({
-      truth,
+      truth: truthNearChicago,
       extenders: shifted(run - 2),
       lastMileMs: 7,
       run,
@@ -296,13 +320,15 @@ test("T2: a repeated path's route error isn't counted twice", () => {
 });
 
 test("the 1σ ellipse of a covariance: its axes and the major axis' bearing", () => {
-  assert.deepEqual(drift.ellipse([[400, 0], [0, 100]]), { majorKm: 20, minorKm: 10, bearingDeg: 90 });
-  assert.deepEqual(drift.ellipse([[100, 0], [0, 400]]), { majorKm: 20, minorKm: 10, bearingDeg: 0 });
-  const ne = drift.ellipse([[250, 150], [150, 250]]);
+  assert.deepEqual(drift.covEllipse([[400, 0], [0, 100]]), { majorKm: 20, minorKm: 10, bearingDeg: 90 });
+  assert.deepEqual(drift.covEllipse([[100, 0], [0, 400]]), { majorKm: 20, minorKm: 10, bearingDeg: 0 });
+  const ne = drift.covEllipse([[250, 150], [150, 250]]);
   close(ne.majorKm, 20, 1e-12);
   close(ne.minorKm, 10, 1e-12);
   close(ne.bearingDeg, 45, 1e-12);
-  close(drift.ellipse([[250, -150], [-150, 250]]).bearingDeg, 135, 1e-12);
+  close(drift.covEllipse([[250, -150], [-150, 250]]).bearingDeg, 135, 1e-12);
+  // the off-diagonal is the mean of the two
+  close(drift.covEllipse([[250, 140], [160, 250]]).bearingDeg, 45, 1e-12);
 });
 
 // ---- V6
@@ -316,11 +342,12 @@ test("V6: inside the country agrees, with the region's radius toward the nearest
   close(j.d, 200 / 20, 0.05);
   close(j.significanceKm, drift.kForConfidence(0.99) * 20, 1e-6, "isotropic: k σ every way");
   assert.equal(j.marginKm, -j.significanceKm);
+  assert.equal(j.k, drift.kForConfidence(0.99));
 });
 
 test("V6: outside, the region overlapping the border agrees and one clear of it disagrees", () => {
   const country = fx.squareCountry("aa", fx.CHICAGO, 200);
-  const at = drift.fromEastNorth(fx.CHICAGO, 300, 0);
+  const at = drift.fromAzimuthalKm(fx.CHICAGO, 300, 0);
   const clear = drift.judge(fitAt(at, iso(20)), country);
   assert.equal(clear.inside, false);
   assert.equal(clear.overlaps, false);
@@ -333,17 +360,15 @@ test("V6: outside, the region overlapping the border agrees and one clear of it 
   assert.equal(touching.overlaps, true);
   assert.ok(touching.marginKm < 0);
   // a lower confidence draws a smaller region
-  const looser = drift.judge(fitAt(at, iso(38)), country, 0.95);
-  const stricter = drift.judge(fitAt(at, iso(38)), country, 0.999);
-  assert.equal(looser.overlaps, false);
-  assert.equal(stricter.overlaps, true);
+  assert.equal(drift.judge(fitAt(at, iso(38)), country, 0.95).overlaps, false);
+  assert.equal(drift.judge(fitAt(at, iso(38)), country, 0.999).overlaps, true);
 });
 
 test("V6: margin > 0 exactly when D > k, and the radius is along the line to q, for tilted ellipses", () => {
   const rng = fx.random(5);
   const country = fx.squareCountry("aa", fx.MADRID, 250);
   for (let i = 0; i < 300; i++) {
-    const at = drift.fromEastNorth(fx.MADRID, (rng() - 0.5) * 1400, (rng() - 0.5) * 1400);
+    const at = drift.fromAzimuthalKm(fx.MADRID, (rng() - 0.5) * 1400, (rng() - 0.5) * 1400);
     const a = 5 + rng() * 120;
     const b = 5 + rng() * 120;
     const theta = rng() * Math.PI;
@@ -359,9 +384,11 @@ test("V6: margin > 0 exactly when D > k, and the radius is along the line to q, 
     if (!j.inside) {
       assert.equal(j.marginKm > 0, j.d > k, `case ${i}: margin ${j.marginKm}, D ${j.d}, k ${k}`);
       assert.equal(j.overlaps, j.d <= k);
-      close(j.marginKm, j.distanceKm - j.significanceKm, 1e-9);
-      // D = ‖q − p̂‖ √(uᵀΣ⁻¹u), so the radius toward q is k ‖q − p̂‖ / D
-      close(j.significanceKm, (k * j.distanceKm) / j.d, 1e-6 * j.distanceKm);
+      close(j.marginKm, j.distanceKm - j.significanceKm, 1e-9 * j.distanceKm);
+      // the radius toward q from the region's own equation: k / √(uᵀΣ⁻¹u)
+      const q = drift.azimuthalKm(at, at);
+      assert.deepEqual(q, { eastKm: 0, northKm: 0 });
+      close(j.significanceKm, (k * j.distanceKm) / j.d, 1e-9 * j.distanceKm);
     } else {
       assert.equal(j.overlaps, true);
       assert.ok(j.marginKm < 0);
@@ -385,7 +412,7 @@ test("V6: a concave border is judged exactly", () => {
     10,
   );
   const country = { code: "aa", polygons: [[u]] };
-  const notch = drift.fromEastNorth(fx.MADRID, 0, 150);
+  const notch = drift.fromAzimuthalKm(fx.MADRID, 0, 150);
   const narrow = drift.judge(fitAt(notch, iso(15)), country);
   assert.equal(narrow.inside, false);
   // the arms are 100 km away: D = 100 / 15 > k
@@ -396,8 +423,8 @@ test("V6: a concave border is judged exactly", () => {
 
 test("V6: an island inside the region counts as touching, and a hole is outside", () => {
   const far = fx.squareCountry("aa", fx.MADRID, 100);
-  const at = drift.fromEastNorth(fx.MADRID, 900, 0);
-  const island = fx.ringAround(drift.fromEastNorth(at, 0, 80), [
+  const at = drift.fromAzimuthalKm(fx.MADRID, 900, 0);
+  const island = fx.ringAround(drift.fromAzimuthalKm(at, 0, 80), [
     [-3, -3],
     [3, -3],
     [3, 3],
@@ -416,7 +443,7 @@ test("V6: an island inside the region counts as touching, and a hole is outside"
   assert.equal(inHole.inside, false);
   close(inHole.distanceKm, 50, 1);
   assert.equal(inHole.overlaps, false);
-  assert.equal(drift.judge(fitAt(drift.fromEastNorth(fx.MADRID, 200, 0), iso(5)), lake).inside, true);
+  assert.equal(drift.judge(fitAt(drift.fromAzimuthalKm(fx.MADRID, 200, 0), iso(5)), lake).inside, true);
 });
 
 test("V6: polygons at the antimeridian and around a pole", () => {
@@ -457,15 +484,33 @@ test("V6: polygons at the antimeridian and around a pole", () => {
   close(north.distanceKm, drift.distanceKm({ lat: -75, lon: 0 }, { lat: -80, lon: 0 }), 1);
 });
 
-test("V6: the antipode of a country doesn't put the fit in it", () => {
-  // Buenos Aires' antipode is in eastern China; the fit is not in a country around it
+test("V6: the antipode of a country doesn't put the fit in it, nor near it", () => {
+  // Buenos Aires' antipode is in eastern China
   const buenosAires = { lat: -34.6, lon: -58.4 };
-  const antipode = { lat: 34.6, lon: 121.6 };
-  const china = fx.squareCountry("cn", antipode, 500);
+  const china = fx.squareCountry("cn", { lat: 34.6, lon: 121.6 }, 500);
   const j = drift.judge(fitAt(buenosAires, iso(50)), china);
   assert.equal(j.inside, false);
   assert.equal(j.overlaps, false);
-  assert.ok(j.distanceKm > 15000);
+  assert.ok(j.distanceKm > 15000, `${j.distanceKm}`);
+});
+
+test("V6: no country, or one with no border, is never touched", () => {
+  for (const country of [null, { code: "zz", polygons: [] }]) {
+    const j = drift.judge(fitAt(fx.MADRID, iso(10)), country);
+    assert.deepEqual(j, { inside: false, overlaps: false, d: Infinity, distanceKm: Infinity, significanceKm: 0, marginKm: Infinity, k: drift.kForConfidence(0.99) });
+  }
+  assert.equal(drift.judge(null, fx.squareCountry("aa", fx.MADRID, 100)).d, Infinity);
+});
+
+test("V6: an edge is split every 0.25° before it is projected", () => {
+  const points: Point[] = [];
+  splitEdge({ lat: 0, lon: 0 }, { lat: 1, lon: 0.1 }, (p) => points.push(p));
+  assert.equal(points.length, 4);
+  assert.deepEqual(points[3], { lat: 1, lon: 0.1 });
+  close(points[0].lat, 0.25, 1e-15);
+  const one: Point[] = [];
+  splitEdge({ lat: 0, lon: 0 }, { lat: 0, lon: 0 }, (p) => one.push(p));
+  assert.deepEqual(one, [{ lat: 0, lon: 0 }]);
 });
 
 test("V8: the region's ± and its outline at the confidence", () => {
@@ -479,7 +524,7 @@ test("V8: the region's ± and its outline at the confidence", () => {
   assert.equal(outline.length, 48);
   const det = cov[0][0] * cov[1][1] - cov[0][1] * cov[1][0];
   for (const p of outline) {
-    const { eastKm: e, northKm: n } = drift.toEastNorth(fit.at, p);
+    const { eastKm: e, northKm: n } = drift.azimuthalKm(fit.at, p);
     const m2 = (e * e * cov[1][1] - 2 * e * n * cov[0][1] + n * n * cov[0][0]) / det;
     close(Math.sqrt(m2), drift.kForConfidence(0.99), 1e-6);
   }
@@ -491,10 +536,12 @@ test("V5: the physical check passes a consistent run and fails a country out of 
   const observations = exactChicago();
   assert.equal(drift.physicallyPossible(observations, fx.squareCountry("aa", fx.CHICAGO, 200)), true);
   assert.equal(drift.physicallyPossible(observations, fx.squareCountry("bb", fx.MADRID, 200)), false);
-  // a country just beyond the near discs' reach
   assert.equal(drift.physicallyPossible(observations, fx.squareCountry("cc", { lat: 20, lon: -155 }, 100)), false);
-  assert.equal(drift.physicallyPossible([], fx.squareCountry("aa", fx.CHICAGO, 200)), true, "nothing rules it out");
-  assert.equal(drift.physicallyPossible(observations, { code: "zz", polygons: [] }), false);
+  // nothing rules a country out without two discs, and no country is never impossible
+  assert.equal(drift.physicallyPossible([], fx.squareCountry("bb", fx.MADRID, 200)), true);
+  assert.equal(drift.physicallyPossible(observations.slice(0, 1), fx.squareCountry("bb", fx.MADRID, 200)), true);
+  assert.equal(drift.physicallyPossible(observations, { code: "zz", polygons: [] }), true);
+  assert.equal(drift.physicallyPossible(observations, null), true);
 });
 
 test("V5: one misplaced extender can't make a country impossible, two can", () => {
@@ -508,18 +555,55 @@ test("V5: one misplaced extender can't make a country impossible, two can", () =
   assert.equal(drift.physicallyPossible(two, country), false);
 });
 
-test("V5: the check finds a country inside the discs' intersection without touching a border", () => {
-  // a large country holding every disc's crossing: no border edge is in reach of the near discs
+test("V5: a disc reaches as far as the extender's lowest round trip in any run", () => {
   const observations = exactChicago();
-  const big = fx.squareCountry("aa", fx.CHICAGO, 3000);
-  assert.equal(drift.physicallyPossible(observations, big), true);
+  const country = fx.squareCountry("cc", { lat: 20, lon: -155 }, 100);
+  assert.equal(drift.physicallyPossible(observations, country), false);
+  // round trips of 100 ms reach about 15,000 km from every extender, London's and São Paulo's too
+  const far = observations.map((o) => ({ ...o, roundTrip: { ...o.roundTrip, ms: 100, minMs: 0 } }));
+  assert.equal(drift.physicallyPossible(far, country), true);
+  // minMs, when known and below ms, is the one used
+  const lowered = far.map((o) => ({ ...o, roundTrip: { ...o.roundTrip, minMs: 5 } }));
+  assert.equal(drift.physicallyPossible(lowered, country), false);
+});
+
+test("V5: the check finds a country holding the discs' intersection without touching a border", () => {
+  assert.equal(drift.physicallyPossible(exactChicago(), fx.squareCountry("aa", fx.CHICAGO, 3000)), true);
+});
+
+// ---- V6's verdict over a fit
+
+test("V6: the verdict over a fit, as the api decides it", () => {
+  const observations = exactChicago();
+  const fit = drift.fitPosition(drift.defaultModel(), fx.CHICAGO, observations, null)!;
+  const home = fx.squareCountry("aa", fx.CHICAGO, 200);
+  assert.deepEqual(
+    { ...drift.decide(fit, home, observations, 0.99), judgement: null },
+    { verdict: "agree", reason: "inside_ip_country", judgement: null },
+  );
+  const near = fx.squareCountry("bb", drift.fromAzimuthalKm(truthNearChicago, 260, 0), 100);
+  const nearDecision = drift.decide(fit, near, observations, 0.99);
+  assert.equal(nearDecision.reason, nearDecision.judgement!.overlaps ? "region_overlaps" : "region_outside");
+  const far = fx.squareCountry("cc", fx.MADRID, 200);
+  const farDecision = drift.decide(fit, far, observations, 0.99);
+  assert.equal(farDecision.verdict, "disagree");
+  assert.equal(farDecision.reason, "region_outside");
+  assert.deepEqual(drift.decide(fit, null, observations, 0.99), { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null });
+  assert.deepEqual(drift.decide(null, home, observations, 0.99), { verdict: "inconclusive", reason: "low_precision", judgement: null });
+  assert.equal(drift.decide(fit, home, observations, 0.99, fit.majorKm - 1).reason, "low_precision");
+  // a region wide enough to touch Spain, while the light discs keep Spain out of reach
+  const wide = fitAt(fx.CHICAGO, iso(2400));
+  const inconsistent = drift.decide(wide, far, observations, 0.99, 1e9);
+  assert.equal(inconsistent.judgement!.overlaps, true);
+  assert.equal(inconsistent.verdict, "inconclusive");
+  assert.equal(inconsistent.reason, "inconsistent");
 });
 
 // ---- V10
 
 const stopFit = (areaKm2: number, eastKm = 0, northKm = 0): Fit => {
   const sigma = Math.sqrt(areaKm2);
-  return fitAt(drift.fromEastNorth(fx.CHICAGO, eastKm, northKm), iso(sigma), fx.CHICAGO);
+  return fitAt(drift.fromAzimuthalKm(fx.CHICAGO, eastKm, northKm), iso(sigma), fx.CHICAGO);
 };
 const ready = Array.from({ length: 12 }, () => 14);
 /** looks every 250 ms from the sessions' opening until `untilMs` */
@@ -531,58 +615,69 @@ function looks(untilMs: number, at: (t: number) => Fit | null, roundTrips: (t: n
   return history;
 }
 const OPENED = 1_000_000;
-const big = fx.squareCountry("aa", fx.CHICAGO, 60);
+const small = fx.squareCountry("aa", fx.CHICAGO, 60);
 
 test("V10: nothing stops a run in its first 3 s", () => {
   const history = looks(2750, () => stopFit(2500));
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 2750, OPENED + 2700, big, drift.browserStopTolerance), null);
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 2750, OPENED + 2700, small, drift.browserStopTolerance), null);
+  assert.equal(drift.stopEarliestMs, 3000);
 });
 
 test("V10: converged once the ellipse holds for 2 s with 8 extenders at 12 round trips", () => {
   const history = looks(3000, () => stopFit(2500));
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3000, OPENED + 2990, big), "converged");
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3000, OPENED + 2990, small), "converged");
+  assert.equal(drift.stopHolds("converged", history, OPENED, OPENED + 3000, OPENED + 2990, small), true);
   // too few round trips: no stop before the cap
   const sparse = looks(3000, () => stopFit(2500), () => [12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11]);
-  assert.equal(drift.evaluateStop(sparse, OPENED, OPENED + 3000, OPENED + 2990, big), null);
+  assert.equal(drift.evaluateStop(sparse, OPENED, OPENED + 3000, OPENED + 2990, small), null);
   // a fit for less than 2 s isn't steady yet
   const late = looks(3000, (t) => (t >= 1250 ? stopFit(2500) : null));
-  assert.equal(drift.evaluateStop(late, OPENED, OPENED + 3000, OPENED + 2990, big), null);
+  assert.equal(drift.evaluateStop(late, OPENED, OPENED + 3000, OPENED + 2990, small), null);
+  // looks after now are ignored
+  const ahead = [...looks(3000, () => stopFit(2500)), { atMs: OPENED + 3250, fit: null, roundTrips: [] }];
+  assert.equal(drift.evaluateStop(ahead, OPENED, OPENED + 3000, OPENED + 2990, small), "converged");
 });
 
 test("V10: the area must stay within the tolerance, the browser's ±5% and the server's ±8%", () => {
   // 13% apart over the window
   const wobbly = looks(4000, (t) => stopFit(t % 500 === 0 ? 2500 : 2825));
-  assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, big, drift.browserStopTolerance), null);
-  assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, big, drift.serverStopTolerance), "converged");
+  assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, small, drift.browserStopTolerance), null);
+  assert.equal(drift.evaluateStop(wobbly, OPENED, OPENED + 4000, OPENED + 3990, small, drift.serverStopTolerance), "converged");
   assert.deepEqual(drift.browserStopTolerance, { areaRatio: 1.105 });
   assert.deepEqual(drift.serverStopTolerance, { areaRatio: 1.17 });
   // and the position must move less than a quarter of σ_minor (here 50 km)
   const drifting = looks(4000, (t) => stopFit(2500, t / 100));
-  assert.equal(drift.evaluateStop(drifting, OPENED, OPENED + 4000, OPENED + 3990, big), null);
+  assert.equal(drift.evaluateStop(drifting, OPENED, OPENED + 4000, OPENED + 3990, small), null);
   const settled = looks(4000, (t) => stopFit(2500, t / 1000));
-  assert.equal(drift.evaluateStop(settled, OPENED, OPENED + 4000, OPENED + 3990, big), "converged");
+  assert.equal(drift.evaluateStop(settled, OPENED, OPENED + 4000, OPENED + 3990, small), "converged");
 });
 
 test("V10: clear when the k_early region is wholly out of the country, or wholly in it", () => {
   // shrinking, so never steady
   const outside = looks(3000, (t) => stopFit(400 + t, 600, 0));
-  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, big), "clear");
+  assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, small), "clear");
   const inside = looks(3000, (t) => stopFit(100 + t / 10, 0, 0));
   assert.equal(drift.evaluateStop(inside, OPENED, OPENED + 3000, OPENED + 2990, fx.squareCountry("aa", fx.CHICAGO, 400)), "clear");
   // near the border it isn't clear
   const near = looks(3000, (t) => stopFit(400 + t, 75, 0));
-  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, big), null);
+  assert.equal(drift.evaluateStop(near, OPENED, OPENED + 3000, OPENED + 2990, small), null);
   // without the IP country's borders, never clear
   assert.equal(drift.evaluateStop(outside, OPENED, OPENED + 3000, OPENED + 2990, null), null);
+  assert.equal(drift.stopHolds("clear", outside, OPENED, OPENED + 3000, OPENED + 2990, small), true);
+  assert.equal(drift.stopHolds("converged", outside, OPENED, OPENED + 3000, OPENED + 2990, small), false);
 });
 
 test("V10: interrupted after 4 s without a pong, and the cap at 12 s", () => {
   const history = looks(5000, () => null, () => []);
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 5000, OPENED + 1000, big), "interrupted");
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 4000, 0, big), "interrupted", "no pong at all");
-  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3500, 0, big), null);
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 5000, OPENED + 1000, small), "interrupted");
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 4000, 0, small), "interrupted", "no pong at all");
+  assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3500, 0, small), null);
   const slow = looks(12000, (t) => stopFit(400 + t), () => [20, 20, 20, 20, 20, 20, 20, 3, 3, 3, 3, 3]);
-  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 11750, OPENED + 11700, big), null);
-  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 12000, OPENED + 11990, big), "cap");
-  assert.equal(drift.stopCapMs, 12000);
+  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 11750, OPENED + 11700, small), null);
+  assert.equal(drift.evaluateStop(slow, OPENED, OPENED + 12000, OPENED + 11990, small), "cap");
+  assert.equal(drift.stopHolds("interrupted", slow, OPENED, OPENED + 12000, OPENED + 11990, small), false);
+  assert.deepEqual(
+    [drift.stopCapMs, drift.stopInterruptedMs, drift.stopWindowMs, drift.stopExtenders, drift.stopRoundTrips],
+    [12000, 4000, 2000, 8, 12],
+  );
 });

@@ -2,36 +2,18 @@
 // W8, V6, V7). A real token's verdict is the server's, from the extenders'
 // signed reports and the 1:10m borders; the demo has no reports and stores
 // nothing, so the frame pools its own last 3 counting runs, fits them with
-// the same model and judges them against the simplified map (G2) by V6's
-// rule. It also returns the figures the demo shows and a real token never
-// shows the visitor: the drift country, the distance and margin to the IP
-// country, and the ±.
+// the same model and decides them against the simplified map (G2) as the api
+// does (lagdrift's Decide). It also returns the figures the demo shows and a
+// real token never shows the visitor: the drift country, the distance and
+// margin to the IP country, and the ±.
 
-import type { Borders } from "./borders";
-import { driftCountryWithinKm } from "./borders";
+import { driftCountryWithinKm, type Borders } from "./borders";
 import { fitPosition, type Fit } from "./fit";
 import type { Point } from "./geo";
 import { judge, regionRadiusKm, type Judgement } from "./judge";
 import { defaultConfidence, defaultModel, type Model, type Observation } from "./model";
-import { physicallyPossible } from "./physical";
 import { estimateRoundTrip } from "./roundTrip";
-
-/** V6, P4: a verdict. */
-export type DriftVerdict = "agree" | "disagree" | "inconclusive";
-
-/** P4: why. */
-export type DriftVerdictReason =
-  | "inside_ip_country"
-  | "region_overlaps"
-  | "region_outside"
-  | "inconsistent"
-  | "too_few_extenders"
-  | "low_precision"
-  | "ip_mismatch"
-  | "ip_family_mismatch"
-  | "ip_country_unknown"
-  | "reports_missing"
-  | "stopped_early";
+import { decide, defaultMaxSigmaKm, type DriftVerdict, type DriftVerdictReason } from "./verdict";
 
 /** E5: an extender is usable in a run with this many round trips. */
 export const driftUsableRoundTrips = 12;
@@ -39,15 +21,13 @@ export const driftUsableRoundTrips = 12;
 export const driftMinRunExtenders = 6;
 /** V7: the verdict pools this many of the last counting runs. */
 export const driftWindowRuns = 3;
-/** V6: above this σ_major the geometry can't place the visitor, km. */
-export const driftMaxSigmaKm = 1500;
 
 /** One extender's round trips in one run the frame measured. */
 export interface DriftRunExtender {
   extenderId: string;
   /** the extender's place, from `start` */
   at: Point;
-  /** s_ext (V3), km; the derived place's 50 km when unknown */
+  /** s_ext (V3), km; the model takes a derived place's 50 km when unknown */
   placeErrorKm?: number;
   /** the run's round trips to it, in the order sent, lost pings left out */
   roundTripsMs: readonly number[];
@@ -64,12 +44,8 @@ export interface DriftRun {
 export function driftRunObservations(run: DriftRun): Observation[] {
   const observations: Observation[] = [];
   for (const extender of run.extenders) {
-    const samples = extender.roundTripsMs.filter((ms) => Number.isFinite(ms));
-    if (samples.length < driftUsableRoundTrips) {
-      continue;
-    }
-    const roundTrip = estimateRoundTrip(samples);
-    if (roundTrip !== null) {
+    const roundTrip = estimateRoundTrip(extender.roundTripsMs);
+    if (roundTrip !== null && driftUsableRoundTrips <= roundTrip.count) {
       observations.push({
         extenderId: extender.extenderId,
         at: extender.at,
@@ -99,6 +75,8 @@ export interface LocalDriftVerdictOptions {
   /** default 0.99 */
   confidence?: number;
   model?: Model;
+  /** σ_major beyond which the geometry can't place the visitor, km; default 1,500 */
+  maxSigmaKm?: number;
 }
 
 /** W8: the demo's verdict and figures. */
@@ -111,7 +89,7 @@ export interface LocalDriftVerdict {
   ipCountryCode: string;
   /** the country containing the fit, else the nearest within 300 km, else "" at sea (V6) */
   driftCountryCode: string;
-  /** V6's figures toward the IP country's nearest border point, km; null without a fit and a country */
+  /** V6's figures toward the IP country's nearest border point, km; null without a fit and the country */
   distanceKm: number | null;
   significanceKm: number | null;
   marginKm: number | null;
@@ -123,8 +101,9 @@ export interface LocalDriftVerdict {
 
 /**
  * W8: pools the last 3 of the frame's runs that count (V7), fits them, and
- * judges the fit against the simplified map by V6's rule. The physical check
- * (V5) turns an agree into `inconclusive`/`inconsistent`; it never rejects.
+ * decides the fit against the simplified map as the api decides a real
+ * token's (V6, V5). The physical check turns an agree into
+ * `inconclusive`/`inconsistent`; it never rejects.
  */
 export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDriftVerdict {
   const confidence = options.confidence ?? defaultConfidence;
@@ -153,32 +132,22 @@ export function localDriftVerdict(options: LocalDriftVerdictOptions): LocalDrift
   }
   const observations = window.flatMap(({ observations }) => observations);
   const fit = fitPosition(model, options.expected, observations, null);
-  if (fit === null) {
-    return { ...result, reason: "low_precision" };
+  const country = ipCountryCode === "" ? null : options.borders.country(ipCountryCode);
+  const decision = decide(fit, country, observations, confidence, options.maxSigmaKm ?? defaultMaxSigmaKm);
+  result.verdict = decision.verdict;
+  result.reason = decision.reason;
+  if (fit !== null) {
+    result.fit = fit;
+    result.driftCountryCode = options.borders.countryAt(fit.at, driftCountryWithinKm);
+    result.plusMinusKm = regionRadiusKm(fit, confidence);
+    // the figures, even where the verdict needed none
+    const judgement = decision.judgement ?? (country !== null ? judge(fit, country, confidence) : null);
+    if (judgement !== null) {
+      result.judgement = judgement;
+      result.distanceKm = judgement.distanceKm;
+      result.significanceKm = judgement.significanceKm;
+      result.marginKm = judgement.marginKm;
+    }
   }
-  result.fit = fit;
-  result.driftCountryCode = options.borders.countryAt(fit.at, driftCountryWithinKm);
-  result.plusMinusKm = regionRadiusKm(fit, confidence);
-  const country = options.borders.country(ipCountryCode);
-  if (country !== null) {
-    const judgement = judge(fit, country, confidence);
-    result.judgement = judgement;
-    result.distanceKm = judgement.distanceKm;
-    result.significanceKm = judgement.significanceKm;
-    result.marginKm = judgement.marginKm;
-  }
-  if (fit.majorKm > driftMaxSigmaKm) {
-    return { ...result, reason: "low_precision" };
-  }
-  if (country === null || result.judgement === null) {
-    return { ...result, reason: "ip_country_unknown" };
-  }
-  const { inside, overlaps } = result.judgement;
-  if (!inside && !overlaps) {
-    return { ...result, verdict: "disagree", reason: "region_outside" };
-  }
-  if (!physicallyPossible(observations, country)) {
-    return { ...result, reason: "inconsistent" };
-  }
-  return { ...result, verdict: "agree", reason: inside ? "inside_ip_country" : "region_overlaps" };
+  return result;
 }

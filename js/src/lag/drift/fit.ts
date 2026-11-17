@@ -1,42 +1,58 @@
-// V5 and V7: where the round trips place the visitor (lag.dev/DRIFTTEST.md).
+// The fit (lag.dev/DRIFTTEST.md V2, V5, V7), as connect's lagdrift computes it
+// (fit.go): one position p for every run, a last-mile offset b_r ≥ 0 per run,
+// and a route and place error uᵢ shared by every run that used extender i:
 //
-// One position p for every run, one last-mile offset b_r ≥ 0 per run, and a
-// route and place error uᵢ ~ N(0, τᵢ²) shared by every run that used extender
-// i, so
+//   y_{r,i} = b_r + K · d(p, eᵢ) + uᵢ + ε_{r,i}
 //
-//   y_{r,i} = b_r + K · d(p, eᵢ) + uᵢ + ε_{r,i},  ε_{r,i} ~ N(0, σ_meas,r,i² + σ₀²).
+// uᵢ ~ N(0, τᵢ²) and ε_{r,i} ~ N(0, σ_meas,r,i² + σ₀²) (V3). Generalized least
+// squares minimizes rᵀV⁻¹r, where V is block-diagonal by extender: each block
+// is the diagonal of its runs' ε variances, D, plus τᵢ² everywhere. A block is
+// D + t tᵀ with t_j the τ of its j-th row, so Sherman–Morrison inverts it in
+// closed form, whatever its size:
 //
-// Generalized least squares minimizes rᵀV⁻¹r, with V block-diagonal by
-// extender: each block is the diagonal of its runs' ε variances plus τᵢ²
-// everywhere. Huber weights (c = 2) apply per extender, on its block's
-// standardized residual, so a detoured path is discounted in every run at
-// once. A single run is the same fit with one b and blocks of one.
+//   V⁻¹ = D⁻¹ − D⁻¹ t tᵀ D⁻¹ / (1 + Q),  Q = tᵀ D⁻¹ t
 //
-// The solver is Gauss–Newton on east and north km about the current position
-// (its azimuthal equidistant projection) and the b's, with a little
-// Levenberg–Marquardt damping, warm starts and a step cap (PLAN.md L18). The
-// variances depend on p through dᵢ, so they are recomputed at every
-// iteration.
+// Huber weights (c = 2) apply per extender, to the standardized residual of
+// what its runs share: z = tᵀD⁻¹r / √(Q (1 + Q)), which is N(0, 1) under the
+// model for a block of any size and is r / σ for a single run (V5). A detoured
+// path moves every run's residual the same way, so it is discounted in every
+// run at once (V7).
+//
+// The solver is driftFit.ts's: Gauss–Newton on local east and north km and the
+// offsets, with the diagonal damped by 1.001 (Levenberg–Marquardt), the
+// position step capped at 400 km, warm-started from the last fit, and settled
+// once a step moves the position less than 0.05 km and every offset less than
+// 0.005 ms, or after 12 iterations from a warm start and 30 from a cold one.
+// The variances depend on p, so they and the Huber weights are recomputed at
+// every iteration. An offset at its bound of 0 whose step would go below it is
+// held there for that step.
+//
+// The covariance of (east, north, b) is (JᵀWJ)⁻¹ × max(1, χ²/(n − 2 − R)),
+// with W the Huber-weighted V⁻¹ at the solution and χ² = Σ h rᵀV⁻¹r. An offset
+// at 0 is held fixed, and the position's covariance is the 2 × 2 of the rest.
+//
+// Sums run in the Go's order: blocks in the order their extenders first
+// appear, and rows in a block in the observations' order.
 
-import { DEG, fromEastNorth, toEastNorth, bearingRad, distanceKm, type Point } from "./geo";
-import { invert, invertSharedVariance, solve } from "./linalg";
-import { measurementVariance, msPerKm, pathVariance, type Model, type Observation } from "./model";
+import { azimuthalKm, bearingDeg, degPerRad, distanceKm, moveKm, pointValid, radPerDeg, type Point } from "./geo";
+import { heldPlaceErrorKm, msPerKm, noiseVar, pathSigmaMs, type Model, type Observation } from "./model";
 
-/** No fit is made from fewer extenders (PLAN.md L18, DRIFTTEST.md E5). */
-export const minFitExtenders = 6;
+/** The Huber weights' c (V5). */
+export const huberC = 2;
+/** The largest position step, km (driftFit.ts). */
+export const maxStepKm = 400;
+/** Fewer extenders can't place anyone. A run's minimum of 6 is the caller's. */
+export const minFitExtenders = 3;
 
-/** V5: Huber's c, on the normalized residuals. */
-const HUBER_C = 2;
-/** a step moves the position at most this far (L18), km */
-const MAX_STEP_KM = 400;
-/** the fit has settled once a step moves the position less than this, km ... */
-const SETTLED_KM = 1e-4;
-/** ... and every b less than this, ms */
-const SETTLED_MS = 1e-5;
-const WARM_ITERATIONS = 60;
-const COLD_ITERATIONS = 100;
-/** Levenberg–Marquardt: the diagonal is scaled by 1 + this */
-const DAMPING = 1e-3;
+const settledKm = 0.05;
+const settledMs = 0.005;
+const warmIterations = 12;
+const coldIterations = 30;
+const damping = 1.001;
+// a cold start's offset, as a share of the run's lowest round trip
+const coldLastMileShare = 0.7;
+// a pivot this small is singular
+const minPivot = 1e-20;
 
 /** A 2 × 2 covariance of east and north, km². */
 export type Cov2 = [[number, number], [number, number]];
@@ -45,253 +61,433 @@ export type Cov2 = [[number, number], [number, number]];
 export interface Ellipse {
   majorKm: number;
   minorKm: number;
-  /** the major axis, degrees clockwise from north, in [0, 180) */
+  /** the major axis, degrees clockwise from north in [0, 180) */
   bearingDeg: number;
 }
 
-/** V5, V7: one fit over one or more runs. */
+/** A fit of one or more runs (V5, V7). */
 export interface Fit extends Ellipse {
   /** the fitted position */
   at: Point;
-  /** the fitted position from the expected place, km (azimuthal equidistant) */
+  /** the position's offset from the expected place, km, in the azimuthal equidistant projection centered on it */
   eastKm: number;
   northKm: number;
   /** b per run, ms, in the order of `runs` */
   lastMileMs: number[];
-  /** the runs in the fit, ascending */
-  runs: number[];
-  /** the position's covariance, east and north at `at`, km² */
+  /** the position's covariance: east and north at the fit, km² */
   cov: Cov2;
+  /** χ² / (n − 2 − R) */
   chi2PerDof: number;
   /** distinct extenders in the fit */
   extenders: number;
-}
-
-/**
- * The 1σ ellipse of a position covariance: the square roots of its
- * eigenvalues, and its major eigenvector's bearing.
- */
-export function ellipse(cov: Cov2): Ellipse {
-  const a = cov[0][0];
-  const b = cov[0][1];
-  const c = cov[1][1];
-  const mean = (a + c) / 2;
-  const r = Math.hypot((a - c) / 2, b);
-  // the major axis from east, counterclockwise
-  const theta = Math.atan2(2 * b, a - c) / 2;
-  let bearing = 90 - theta * DEG;
-  bearing = ((bearing % 180) + 180) % 180;
-  return { majorKm: Math.sqrt(Math.max(0, mean + r)), minorKm: Math.sqrt(Math.max(0, mean - r)), bearingDeg: bearing };
-}
-
-interface Block {
-  at: Point;
-  placeErrorKm: number;
-  /** the run index of each of its observations */
+  /** an extension of I3: the run numbers, ascending, that `lastMileMs` follows */
   runs: number[];
-  ys: number[];
-  /** σ_meas² + σ₀² of each */
-  variances: number[];
+  /** an extension of I3: the observations in the fit */
+  observations: number;
 }
 
-interface Normal {
-  /** JᵀWJ and JᵀWr, over (east, north, b₀ … b_R−1) */
-  A: number[][];
-  g: number[];
-  /** Σ hᵢ rᵢᵀVᵢ⁻¹rᵢ */
-  chi2: number;
+interface FitRow {
+  at: Point;
+  y: number;
+  /** σ_meas² + σ₀² */
+  noiseVar: number;
+  /** s_ext, held */
+  placeKm: number;
+  /** the run's index in the fit's runs */
+  run: number;
+  /** the observation's run number, until the runs are indexed */
+  runNumber: number;
 }
 
-function normalEquations(model: Model, blocks: readonly Block[], p: Point, b: readonly number[]): Normal {
-  const P = 2 + b.length;
-  const A = Array.from({ length: P }, () => new Array<number>(P).fill(0));
-  const g = new Array<number>(P).fill(0);
-  let chi2 = 0;
-  for (const block of blocks) {
-    const d = distanceKm(p, block.at);
-    const beta = bearingRad(p, block.at);
-    // the slope of K · d(p, e) in east and north km
-    const de = -Math.sin(beta) * msPerKm;
-    const dn = -Math.cos(beta) * msPerKm;
-    const Vinv = invertSharedVariance(block.variances, pathVariance(model, d, block.placeErrorKm));
-    const r = block.ys.map((y, j) => y - (b[block.runs[j]] + msPerKm * d));
-    let z2 = 0;
-    for (let j = 0; j < r.length; j++) {
-      for (let k = 0; k < r.length; k++) {
-        z2 += r[j] * Vinv[j][k] * r[k];
-      }
-    }
-    const z = Math.sqrt(z2);
-    const h = z <= HUBER_C ? 1 : HUBER_C / z;
-    chi2 += h * z2;
-    for (let j = 0; j < r.length; j++) {
-      for (let k = 0; k < r.length; k++) {
-        const w = h * Vinv[j][k];
-        if (w === 0) {
-          continue;
-        }
-        // J_j = (de, dn, e_{run j}), and the same for k
-        const rj = 2 + block.runs[j];
-        const rk = 2 + block.runs[k];
-        A[0][0] += w * de * de;
-        A[0][1] += w * de * dn;
-        A[1][0] += w * dn * de;
-        A[1][1] += w * dn * dn;
-        A[0][rk] += w * de;
-        A[1][rk] += w * dn;
-        A[rj][0] += w * de;
-        A[rj][1] += w * dn;
-        A[rj][rk] += w;
-        g[0] += w * de * r[k];
-        g[1] += w * dn * r[k];
-        g[rj] += w * r[k];
-      }
-    }
+interface FitBlock {
+  extenderId: string;
+  rows: FitRow[];
+}
+
+function usableObservation(o: Observation): boolean {
+  if (!pointValid(o.at)) {
+    return false;
   }
-  return { A, g, chi2 };
+  if (!(0 < o.roundTrip.ms) || o.roundTrip.ms === Infinity) {
+    return false;
+  }
+  if (!(0 <= o.roundTrip.sigmaMs) || o.roundTrip.sigmaMs === Infinity) {
+    return false;
+  }
+  return true;
 }
 
-/** the parameters a step may move: east, north and each b not held at its bound */
-function solveStep(A: number[][], g: number[], free: readonly boolean[]): number[] | null {
-  const index = free.map((f, i) => (f ? i : -1)).filter((i) => i >= 0);
-  const Af = index.map((i) => index.map((j) => (i === j ? A[i][j] * (1 + DAMPING) : A[i][j])));
-  const step = solve(
-    Af,
-    index.map((i) => g[i]),
-  );
-  if (step === null) {
-    return null;
+/** The warm fit's offset for a run, if it has one. */
+function warmLastMile(warm: Fit, run: number, index: number, runCount: number): number | undefined {
+  const runs = warm.runs ?? [];
+  if (runs.length === warm.lastMileMs.length && 0 < runs.length) {
+    const i = runs.indexOf(run);
+    return 0 <= i ? warm.lastMileMs[i] : undefined;
   }
-  const full = new Array<number>(free.length).fill(0);
-  index.forEach((i, k) => {
-    full[i] = step[k];
-  });
-  return full;
+  if (runs.length === 0 && warm.lastMileMs.length === runCount) {
+    return warm.lastMileMs[index];
+  }
+  return undefined;
 }
 
 /**
- * V5, V7: the position and per-run offsets the observations fit best, with
- * their covariance. `expected` is the place the IP address gives: the cold
- * start, and the origin of `eastKm` and `northKm`. `warm` is the last fit,
- * to start from. `null` with fewer than 6 extenders, or when the geometry
- * can't place the visitor at all.
+ * Fits the position of the observations, one or more runs, from `expected`
+ * (V2, V5, V7). An observation with a round trip that is not a positive
+ * finite number, a negative or non-finite standard error, or an invalid
+ * place is left out. It needs 3 distinct extenders and 3 + R observations for
+ * R runs, else `null`; the 6-extender minimum of a run is the caller's. `null`
+ * too for an invalid `expected` or a singular fit.
+ *
+ * `warm`, when given, starts the fit from its position and its offsets,
+ * matched by run number through `warm.runs` (by index when it has no runs and
+ * as many offsets as the observations have runs). A run it lacks starts, as a
+ * cold fit's runs do, at 0.7 times the run's lowest round trip, and a cold
+ * fit starts at `expected`.
  */
-export function fitPosition(
-  model: Model,
-  expected: Point,
-  observations: readonly Observation[],
-  warm?: Fit | null,
-): Fit | null {
-  const usable = observations.filter(
-    (o) =>
-      Number.isFinite(o.roundTrip.ms) &&
-      Number.isFinite(o.roundTrip.sigmaMs) &&
-      Number.isFinite(o.at.lat) &&
-      Number.isFinite(o.at.lon) &&
-      Number.isFinite(o.run),
-  );
-  const runs = [...new Set(usable.map((o) => o.run))].sort((a, b) => a - b);
-  const runIndex = new Map(runs.map((run, i) => [run, i]));
-  const byExtender = new Map<string, Block>();
-  for (const o of usable) {
-    let block = byExtender.get(o.extenderId);
-    if (block === undefined) {
-      block = { at: o.at, placeErrorKm: o.placeErrorKm, runs: [], ys: [], variances: [] };
-      byExtender.set(o.extenderId, block);
-    }
-    block.runs.push(runIndex.get(o.run)!);
-    block.ys.push(o.roundTrip.ms);
-    block.variances.push(measurementVariance(model, o.roundTrip));
-  }
-  const blocks = [...byExtender.values()];
-  const n = usable.length;
-  const R = runs.length;
-  if (blocks.length < minFitExtenders || n < 3 + R) {
+export function fitPosition(model: Model, expected: Point, observations: readonly Observation[], warm?: Fit | null): Fit | null {
+  if (!pointValid(expected)) {
     return null;
   }
+  const blocks: FitBlock[] = [];
+  const extenderBlocks = new Map<string, FitBlock>();
+  const runNumbers: number[] = [];
+  for (const o of observations) {
+    if (!usableObservation(o)) {
+      continue;
+    }
+    let block = extenderBlocks.get(o.extenderId);
+    if (block === undefined) {
+      block = { extenderId: o.extenderId, rows: [] };
+      extenderBlocks.set(o.extenderId, block);
+      blocks.push(block);
+    }
+    block.rows.push({
+      at: o.at,
+      y: o.roundTrip.ms,
+      noiseVar: noiseVar(model, o.roundTrip.sigmaMs),
+      placeKm: heldPlaceErrorKm(o.placeErrorKm),
+      run: 0,
+      runNumber: o.run,
+    });
+    if (!runNumbers.includes(o.run)) {
+      runNumbers.push(o.run);
+    }
+  }
+  runNumbers.sort((a, b) => a - b);
+  const runCount = runNumbers.length;
+  let n = 0;
+  for (const block of blocks) {
+    for (const row of block.rows) {
+      row.run = runNumbers.indexOf(row.runNumber);
+    }
+    n += block.rows.length;
+  }
+  if (blocks.length < minFitExtenders || n < 3 + runCount) {
+    return null;
+  }
+  const paramCount = 2 + runCount;
 
-  // a cold start is at the expected place, with each b at 0.7 times its run's lowest round trip
-  let p: Point = warm ? { lat: warm.at.lat, lon: warm.at.lon } : { lat: expected.lat, lon: expected.lon };
-  const b = runs.map((run, r) => {
-    const w = warm ? warm.lastMileMs[warm.runs.indexOf(run)] : undefined;
-    if (w !== undefined && Number.isFinite(w)) {
-      return Math.max(0, w);
+  const coldLastMile = new Array<number>(runCount).fill(Infinity);
+  for (const block of blocks) {
+    for (const row of block.rows) {
+      coldLastMile[row.run] = Math.min(coldLastMile[row.run], row.y);
     }
-    let lowest = Infinity;
-    for (const o of usable) {
-      if (runIndex.get(o.run) === r) {
-        lowest = Math.min(lowest, o.roundTrip.ms);
-      }
-    }
-    return Math.max(0, 0.7 * lowest);
-  });
+  }
+  for (let r = 0; r < runCount; r++) {
+    coldLastMile[r] *= coldLastMileShare;
+  }
 
-  const maxIterations = warm ? WARM_ITERATIONS : COLD_ITERATIONS;
-  let normal = normalEquations(model, blocks, p, b);
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    // a b at its bound that the step would push below it is held there
-    const free = [true, true, ...b.map(() => true)];
-    let step = solveStep(normal.A, normal.g, free);
-    for (let held = true; step !== null && held; ) {
-      held = false;
-      for (let r = 0; r < R; r++) {
-        if (free[2 + r] && b[r] <= 0 && step[2 + r] < 0) {
-          free[2 + r] = false;
-          held = true;
-        }
+  let p: Point = expected;
+  const b = coldLastMile.slice();
+  let maxIterations = coldIterations;
+  if (warm && pointValid(warm.at)) {
+    p = warm.at;
+    maxIterations = warmIterations;
+    runNumbers.forEach((run, r) => {
+      const lastMile = warmLastMile(warm, run, r, runCount);
+      if (lastMile !== undefined) {
+        b[r] = Math.max(0, lastMile);
       }
-      if (held) {
-        step = solveStep(normal.A, normal.g, free);
-      }
-    }
-    if (step === null) {
-      return null;
-    }
-    const length = Math.hypot(step[0], step[1]);
-    const scale = length > MAX_STEP_KM ? MAX_STEP_KM / length : 1;
-    p = fromEastNorth(p, step[0] * scale, step[1] * scale);
-    let moved = length * scale;
-    let movedMs = 0;
-    for (let r = 0; r < R; r++) {
-      const next = Math.max(0, b[r] + step[2 + r] * scale);
-      movedMs = Math.max(movedMs, Math.abs(next - b[r]));
-      b[r] = next;
-    }
-    normal = normalEquations(model, blocks, p, b);
-    if (moved < SETTLED_KM && movedMs < SETTLED_MS) {
+    });
+  }
+
+  let normal: Normal;
+  let settled = false;
+  for (let iteration = 0; ; iteration++) {
+    normal = normalEquations(model, blocks, p, b, paramCount);
+    if (settled || maxIterations <= iteration) {
       break;
     }
+    const step = constrainedStep(normal.a, normal.g, b);
+    if (step === null) {
+      break;
+    }
+    const length = Math.hypot(step[0], step[1]);
+    let scale = 1.0;
+    if (maxStepKm < length) {
+      scale = maxStepKm / length;
+    }
+    p = moveKm(p, step[0] * scale, step[1] * scale);
+    settled = length * scale < settledKm;
+    for (let r = 0; r < b.length; r++) {
+      const next = Math.max(0, b[r] + step[2 + r] * scale);
+      settled = settled && Math.abs(next - b[r]) < settledMs;
+      b[r] = next;
+    }
   }
 
-  // V5: a b at its bound of 0 is held fixed, and the position covariance is
-  // the 2 × 2 of the rest
-  const free = [0, 1, ...b.map((value, r) => (value > 0 ? 2 + r : -1)).filter((i) => i >= 0)];
-  const inverse = invert(free.map((i) => free.map((j) => normal.A[i][j])));
+  // an offset at its bound is held fixed: the covariance is the rest's
+  const free = new Array<boolean>(paramCount).fill(false);
+  free[0] = true;
+  free[1] = true;
+  for (let r = 0; r < b.length; r++) {
+    free[2 + r] = 0 < b[r];
+  }
+  const inverse = invertFree(normal!.a, free);
   if (inverse === null) {
     return null;
   }
-  const dof = n - 2 - R;
-  const chi2PerDof = normal.chi2 / Math.max(1, dof);
+  const dof = n - 2 - runCount;
+  const chi2PerDof = normal!.chi2 / Math.max(1, dof);
   const factor = Math.max(1, chi2PerDof);
   const cov: Cov2 = [
     [inverse[0][0] * factor, inverse[0][1] * factor],
     [inverse[1][0] * factor, inverse[1][1] * factor],
   ];
-  if (!cov.every((row) => row.every(Number.isFinite)) || !(cov[0][0] > 0 && cov[1][1] > 0)) {
+  for (const row of cov) {
+    for (const v of row) {
+      if (!Number.isFinite(v)) {
+        return null;
+      }
+    }
+  }
+  if (!(0 < cov[0][0]) || !(0 < cov[1][1])) {
     return null;
   }
-  // symmetric to the last bit, so the ellipse and the verdict see one matrix
-  cov[0][1] = cov[1][0] = (cov[0][1] + cov[1][0]) / 2;
-  const offset = toEastNorth(expected, p);
+  const { eastKm, northKm } = azimuthalKm(expected, p);
   return {
     at: p,
-    eastKm: offset.eastKm,
-    northKm: offset.northKm,
-    lastMileMs: b.slice(),
-    runs,
+    eastKm,
+    northKm,
+    lastMileMs: b,
     cov,
     chi2PerDof,
     extenders: blocks.length,
-    ...ellipse(cov),
+    ...covEllipse(cov),
+    runs: runNumbers,
+    observations: n,
   };
+}
+
+interface Normal {
+  a: number[][];
+  g: number[];
+  chi2: number;
+}
+
+interface RowTerms {
+  jEast: number;
+  jNorth: number;
+  run: number;
+  r: number;
+  /** the row's noise variance, D's entry */
+  d: number;
+  /** τ */
+  t: number;
+}
+
+/**
+ * JᵀWJ, JᵀWr and χ² = Σ h rᵀV⁻¹r at (p, b), with W the Huber-weighted block
+ * inverse. The parameters are east km, north km, then b per run; J is the
+ * model's slope, so a step solves (JᵀWJ) δ = JᵀWr.
+ */
+function normalEquations(model: Model, blocks: readonly FitBlock[], p: Point, b: readonly number[], paramCount: number): Normal {
+  const a = Array.from({ length: paramCount }, () => new Array<number>(paramCount).fill(0));
+  const g = new Array<number>(paramCount).fill(0);
+  let chi2 = 0.0;
+  const alpha = new Array<number>(paramCount).fill(0);
+  for (const block of blocks) {
+    const terms: RowTerms[] = [];
+    alpha.fill(0);
+    // Q = tᵀD⁻¹t, ρ = tᵀD⁻¹r, α = JᵀD⁻¹t
+    let q = 0.0;
+    let rho = 0.0;
+    for (const row of block.rows) {
+      const d = distanceKm(p, row.at);
+      const beta = bearingDeg(p, row.at) * radPerDeg;
+      const term: RowTerms = {
+        jEast: -Math.sin(beta) * msPerKm,
+        jNorth: -Math.cos(beta) * msPerKm,
+        run: row.run,
+        r: row.y - (b[row.run] + msPerKm * d),
+        d: row.noiseVar,
+        t: pathSigmaMs(model, d, row.placeKm),
+      };
+      terms.push(term);
+      q += (term.t * term.t) / term.d;
+      rho += (term.t * term.r) / term.d;
+      alpha[0] += (term.jEast * term.t) / term.d;
+      alpha[1] += (term.jNorth * term.t) / term.d;
+      alpha[2 + term.run] += term.t / term.d;
+    }
+    let h = 1.0;
+    if (0 < q) {
+      const z = Math.abs(rho / Math.sqrt(q * (1 + q)));
+      if (huberC < z) {
+        h = huberC / z;
+      }
+    }
+    for (const term of terms) {
+      const index = [0, 1, 2 + term.run];
+      const j = [term.jEast, term.jNorth, 1];
+      for (let u = 0; u < 3; u++) {
+        g[index[u]] += (h * j[u] * term.r) / term.d;
+        for (let v = 0; v < 3; v++) {
+          a[index[u]][index[v]] += (h * j[u] * j[v]) / term.d;
+        }
+      }
+      chi2 += (h * term.r * term.r) / term.d;
+    }
+    const shrink = 1 / (1 + q);
+    for (let u = 0; u < paramCount; u++) {
+      if (alpha[u] === 0) {
+        continue;
+      }
+      g[u] -= h * alpha[u] * rho * shrink;
+      for (let v = 0; v < paramCount; v++) {
+        a[u][v] -= h * alpha[u] * alpha[v] * shrink;
+      }
+    }
+    chi2 -= h * rho * rho * shrink;
+  }
+  return { a, g, chi2 };
+}
+
+/** The damped Gauss–Newton step, with each offset at its bound of 0 whose step would go below it held there. */
+function constrainedStep(a: number[][], g: number[], b: readonly number[]): number[] | null {
+  const free = new Array<boolean>(g.length).fill(true);
+  for (;;) {
+    const step = solveFree(a, g, free, damping);
+    if (step === null) {
+      return null;
+    }
+    let held = false;
+    for (let r = 0; r < b.length; r++) {
+      if (free[2 + r] && b[r] <= 0 && step[2 + r] < 0) {
+        free[2 + r] = false;
+        held = true;
+      }
+    }
+    if (!held) {
+      return step;
+    }
+  }
+}
+
+/**
+ * Solves the system over the free parameters, with their diagonal multiplied
+ * by `diagonalFactor`; a held parameter's step is 0.
+ */
+function solveFree(a: number[][], g: number[], free: readonly boolean[], diagonalFactor: number): number[] | null {
+  const indexes: number[] = [];
+  free.forEach((isFree, i) => {
+    if (isFree) {
+      indexes.push(i);
+    }
+  });
+  const k = indexes.length;
+  const augmented = indexes.map((i) => {
+    const row = new Array<number>(k + 1);
+    indexes.forEach((j, col) => {
+      let v = a[i][j];
+      if (i === j) {
+        v *= diagonalFactor;
+      }
+      row[col] = v;
+    });
+    row[k] = g[i];
+    return row;
+  });
+  const solution = gaussSolve(augmented);
+  if (solution === null) {
+    return null;
+  }
+  const step = new Array<number>(g.length).fill(0);
+  indexes.forEach((i, row) => {
+    step[i] = solution[row];
+  });
+  return step;
+}
+
+/** Solves the augmented k × (k + 1) system in place, by Gauss–Jordan elimination with partial pivoting. */
+export function gaussSolve(m: number[][]): number[] | null {
+  const k = m.length;
+  for (let c = 0; c < k; c++) {
+    let p = c;
+    for (let r = c + 1; r < k; r++) {
+      if (Math.abs(m[p][c]) < Math.abs(m[r][c])) {
+        p = r;
+      }
+    }
+    if (!(minPivot < Math.abs(m[p][c]))) {
+      return null;
+    }
+    const swap = m[c];
+    m[c] = m[p];
+    m[p] = swap;
+    for (let r = 0; r < k; r++) {
+      if (r === c) {
+        continue;
+      }
+      const f = m[r][c] / m[c][c];
+      for (let j = c; j <= k; j++) {
+        m[r][j] -= f * m[c][j];
+      }
+    }
+  }
+  const solution = new Array<number>(k);
+  for (let i = 0; i < k; i++) {
+    solution[i] = m[i][k] / m[i][i];
+  }
+  return solution;
+}
+
+/** The inverse of a over the free parameters, as a full-size matrix whose held rows and columns are 0. */
+function invertFree(a: number[][], free: readonly boolean[]): number[][] | null {
+  const paramCount = a.length;
+  const inverse = Array.from({ length: paramCount }, () => new Array<number>(paramCount).fill(0));
+  for (let j = 0; j < paramCount; j++) {
+    if (!free[j]) {
+      continue;
+    }
+    const unit = new Array<number>(paramCount).fill(0);
+    unit[j] = 1;
+    const column = solveFree(a, unit, free, 1);
+    if (column === null) {
+      return null;
+    }
+    for (let i = 0; i < paramCount; i++) {
+      inverse[i][j] = column[i];
+    }
+  }
+  return inverse;
+}
+
+/**
+ * The 1σ ellipse of a 2 × 2 east and north covariance: the square roots of
+ * its eigenvalues, km, and the major axis's bearing, degrees clockwise from
+ * north in [0, 180).
+ */
+export function covEllipse(cov: Cov2): Ellipse {
+  const a = cov[0][0];
+  const b = (cov[0][1] + cov[1][0]) / 2;
+  const c = cov[1][1];
+  const mid = (a + c) / 2;
+  const disc = Math.hypot((a - c) / 2, b);
+  const majorKm = Math.sqrt(Math.max(0, mid + disc));
+  const minorKm = Math.sqrt(Math.max(0, mid - disc));
+  // the major axis's angle from east, counterclockwise
+  const theta = Math.atan2(2 * b, a - c) / 2;
+  const bearing = (((90 - theta * degPerRad) % 180) + 180) % 180;
+  return { majorKm, minorKm, bearingDeg: bearing };
 }

@@ -1,102 +1,71 @@
-// V10: stopping early (lag.dev/DRIFTTEST.md V10). The ellipse is set by how
-// many paths there are, not by how many round trips: once each extender has
-// a few, its route and place error dominates and doesn't average away. So a
-// run stops as soon as more pinging can't change the answer. The frame
-// evaluates the rules on its own fit after every ping round (250 ms), from
-// 3 s after the sessions open; the server checks the stop it reports against
-// the signed reports, with a wider tolerance.
+// Stopping a run early (lag.dev/DRIFTTEST.md V10), as connect's lagdrift
+// rules it (stop.go). The ellipse is set by how many paths there are, not how
+// many round trips, so a run stops once more pinging can't change the answer.
+// The frame evaluates the rules on its own fit after every ping round
+// (250 ms), and the server evaluates the same rules on the signed reports at
+// the moment the sessions closed, with wider tolerances.
+//
+//   - converged: at least 8 extenders have 12 round trips each, and over the
+//     trailing 2 s the ellipse's area (σ_major · σ_minor) has stayed within
+//     the tolerance's ratio and the position has moved less than a quarter of
+//     σ_minor;
+//   - clear: the same 12-round-trip minimum, and the whole region at earlyK
+//     lies outside the IP country, or the fit is inside it and the whole
+//     region lies inside it. Both are D ≥ earlyK (V6);
+//   - interrupted: no pong from any extender for 4 s;
+//   - cap: 12 s after the sessions opened.
+//
+// Nothing stops a run in its first 3 s.
 
 import type { Fit } from "./fit";
-import { judge } from "./judge";
+import { judgeK } from "./judge";
 import { earlyK } from "./model";
 import type { Country } from "./polygon";
 
-/** One look at a run: its fit then, and each extender's round trips so far. */
+/** No rule stops a run before this, ms after the sessions opened. */
+export const stopEarliestMs = 3000;
+/** converged looks back this far, ms. */
+export const stopWindowMs = 2000;
+/** interrupted: no pong for this long, ms. */
+export const stopInterruptedMs = 4000;
+/** cap: this long after the sessions opened, ms. */
+export const stopCapMs = 12000;
+/** converged and clear need this many extenders with `stopRoundTrips` each. */
+export const stopExtenders = 8;
+export const stopRoundTrips = 12;
+
+/** The run's state after a ping round. */
 export interface Snapshot {
+  /** when, ms, on the clock of openedMs and nowMs */
   atMs: number;
+  /** the fit then, or null before the first */
   fit: Fit | null;
   /** round trips so far, per extender */
   roundTrips: number[];
 }
 
-/** V10, and `finish`'s `stop` (P5). */
+/** Why a run stopped (V10, the `stop` of P5). */
 export type StopReason = "converged" | "clear" | "interrupted" | "cap";
 
-/** How far the area σ_major · σ_minor may stray over the last 2 s, as max / min. */
+/** How far converged lets the ellipse's area move: the largest area over the window divided by the smallest. */
 export interface StopTolerance {
   areaRatio: number;
 }
 
-/** The browser's tolerance: ±5%, 1.05 / 0.95. */
+/** ±5%: 1.05 / 0.95. */
 export const browserStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.105 });
-/** The server's, for the browser's and the extender's clocks seeing the pings slightly apart: ±8%. */
+/** ±8%, since the browser's and the extenders' clocks see the pings slightly apart (V10). */
 export const serverStopTolerance: Readonly<StopTolerance> = Object.freeze({ areaRatio: 1.17 });
 
-/** No stop is decided before the sessions have been open this long, ms. */
-export const stopFromMs = 3000;
-/** `cap`: a run ends this long after its sessions open, ms. */
-export const stopCapMs = 12000;
-/** `interrupted`: no pong from any extender for this long, ms. */
-export const stopSilenceMs = 4000;
-/** `converged`: the window the ellipse must hold steady over, ms. */
-export const stopSteadyMs = 2000;
-/** both stops need this many extenders ... */
-export const stopMinExtenders = 8;
-/** ... with this many round trips each */
-export const stopMinRoundTrips = 12;
-
-function enoughRoundTrips(snapshot: Snapshot): boolean {
-  let extenders = 0;
-  for (const count of snapshot.roundTrips) {
-    if (count >= stopMinRoundTrips) {
-      extenders++;
-    }
-  }
-  return extenders >= stopMinExtenders;
-}
+const stopReasons: readonly StopReason[] = ["interrupted", "clear", "converged", "cap"];
 
 /**
- * Over the last 2 s, from the last look at or before its start, every look
- * has a fit, the area σ_major · σ_minor stays within the tolerance, and the
- * position stays within a quarter of the latest σ_minor of the latest.
- */
-function steady(history: readonly Snapshot[], latest: number, nowMs: number, tol: StopTolerance): boolean {
-  const from = nowMs - stopSteadyMs;
-  let start = -1;
-  for (let i = latest; i >= 0; i--) {
-    if (history[i].atMs <= from) {
-      start = i;
-      break;
-    }
-  }
-  if (start < 0) {
-    return false;
-  }
-  const last = history[latest].fit!;
-  const reach = 0.25 * last.minorKm;
-  let low = Infinity;
-  let high = 0;
-  for (let i = start; i <= latest; i++) {
-    const fit = history[i].fit;
-    if (fit === null) {
-      return false;
-    }
-    const area = fit.majorKm * fit.minorKm;
-    low = Math.min(low, area);
-    high = Math.max(high, area);
-    if (Math.hypot(fit.eastKm - last.eastKm, fit.northKm - last.northKm) >= reach) {
-      return false;
-    }
-  }
-  return low > 0 && high / low <= tol.areaRatio;
-}
-
-/**
- * V10: whether a run stops now, and why. `history` is the run's looks in
- * time order, the last at or before `nowMs`; `openedMs` is when its sessions
- * opened and `lastPongMs` the last pong from any extender (any value at or
- * before `openedMs` for none). `country` is the IP country, for `clear`.
- * `null` while the run goes on.
+ * The rule that stops the run at nowMs, if one does (V10); `null` while it
+ * goes on. `history` is the run's snapshots in time order; those after nowMs
+ * are ignored. `lastPongMs` is the last pong from any extender, before which
+ * openedMs stands in. `country` is the IP country, null when unknown, which
+ * rules out clear. When several rules hold, the first of interrupted, clear,
+ * converged and cap is the reason.
  */
 export function evaluateStop(
   history: readonly Snapshot[],
@@ -106,30 +75,105 @@ export function evaluateStop(
   country: Country | null,
   tol: StopTolerance = browserStopTolerance,
 ): StopReason | null {
-  const elapsed = nowMs - openedMs;
-  if (elapsed < stopFromMs) {
-    return null;
-  }
-  if (nowMs - Math.max(lastPongMs, openedMs) >= stopSilenceMs) {
-    return "interrupted";
-  }
-  let latest = history.length - 1;
-  while (latest >= 0 && history[latest].atMs > nowMs) {
-    latest--;
-  }
-  const snapshot = latest >= 0 ? history[latest] : null;
-  if (snapshot !== null && snapshot.fit !== null && enoughRoundTrips(snapshot)) {
-    // out: the whole k_early region is outside the country; in: the fit is
-    // inside and so is its whole k_early region. Either way, D ≥ k_early.
-    if (country !== null && judge(snapshot.fit, country).d >= earlyK) {
-      return "clear";
+  for (const reason of stopReasons) {
+    if (stopHolds(reason, history, openedMs, nowMs, lastPongMs, country, tol)) {
+      return reason;
     }
-    if (steady(history, latest, nowMs, tol)) {
-      return "converged";
-    }
-  }
-  if (elapsed >= stopCapMs) {
-    return "cap";
   }
   return null;
+}
+
+/** The rule holds at nowMs, as `evaluateStop` evaluates it: an extension of I3, for checking a reported stop (E5). */
+export function stopHolds(
+  reason: StopReason,
+  history: readonly Snapshot[],
+  openedMs: number,
+  nowMs: number,
+  lastPongMs: number,
+  country: Country | null,
+  tol: StopTolerance = browserStopTolerance,
+): boolean {
+  if (nowMs < openedMs + stopEarliestMs) {
+    return false;
+  }
+  switch (reason) {
+    case "interrupted":
+      return Math.max(lastPongMs, openedMs) + stopInterruptedMs <= nowMs;
+    case "cap":
+      return openedMs + stopCapMs <= nowMs;
+    case "clear": {
+      const latest = latestSnapshot(history, nowMs);
+      if (latest === null || latest.fit === null || country === null || !enoughRoundTrips(latest.roundTrips)) {
+        return false;
+      }
+      return earlyK <= judgeK(latest.fit, country, earlyK).d;
+    }
+    case "converged": {
+      const latest = latestSnapshot(history, nowMs);
+      if (latest === null || latest.fit === null || !enoughRoundTrips(latest.roundTrips)) {
+        return false;
+      }
+      return steady(history, nowMs, latest.fit, tol);
+    }
+    default:
+      return false;
+  }
+}
+
+function latestSnapshot(history: readonly Snapshot[], nowMs: number): Snapshot | null {
+  for (let i = history.length - 1; 0 <= i; i -= 1) {
+    if (history[i].atMs <= nowMs) {
+      return history[i];
+    }
+  }
+  return null;
+}
+
+/** at least 8 extenders have 12 round trips each */
+function enoughRoundTrips(roundTrips: readonly number[]): boolean {
+  let count = 0;
+  for (const n of roundTrips) {
+    if (stopRoundTrips <= n) {
+      count += 1;
+    }
+  }
+  return stopExtenders <= count;
+}
+
+/**
+ * Over the trailing 2 s, every snapshot has a fit, the largest area over the
+ * smallest is within the tolerance, and every position is less than a
+ * quarter of the latest σ_minor from the latest. The window reaches back to
+ * the last snapshot at or before nowMs − 2 s, so a history shorter than 2 s
+ * is never steady.
+ */
+function steady(history: readonly Snapshot[], nowMs: number, latest: Fit, tol: StopTolerance): boolean {
+  let start = -1;
+  history.forEach((snapshot, i) => {
+    if (snapshot.atMs <= nowMs - stopWindowMs) {
+      start = i;
+    }
+  });
+  if (start < 0) {
+    return false;
+  }
+  let minArea = Infinity;
+  let maxArea = 0.0;
+  const reachKm = latest.minorKm / 4;
+  for (let i = start; i < history.length; i++) {
+    const snapshot = history[i];
+    if (nowMs < snapshot.atMs) {
+      break;
+    }
+    if (snapshot.fit === null) {
+      return false;
+    }
+    const area = snapshot.fit.majorKm * snapshot.fit.minorKm;
+    minArea = Math.min(minArea, area);
+    maxArea = Math.max(maxArea, area);
+    if (!(Math.hypot(snapshot.fit.eastKm - latest.eastKm, snapshot.fit.northKm - latest.northKm) < reachKm)) {
+      return false;
+    }
+  }
+  return 0 < minArea && maxArea / minArea <= tol.areaRatio;
 }

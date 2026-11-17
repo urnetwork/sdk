@@ -3,7 +3,7 @@
 // model's own form with seeded noise, and square or shaped countries.
 
 import type { Country, DriftRun, Observation, Point } from "../../src/lag/drift/index.ts";
-import { distanceKm, fromEastNorth, speedKmPerMs } from "../../src/lag/drift/index.ts";
+import { distanceKm, fromAzimuthalKm, speedKmPerMs } from "../../src/lag/drift/index.ts";
 
 export const K = 2 / speedKmPerMs;
 
@@ -76,7 +76,7 @@ export function squareCountry(code: string, center: Point, halfKm: number): Coun
     const steps = Math.max(1, Math.ceil((2 * halfKm) / 10));
     for (let s = 0; s < steps; s++) {
       const f = s / steps;
-      ring.push(fromEastNorth(center, ae + (be - ae) * f, an + (bn - an) * f));
+      ring.push(fromAzimuthalKm(center, ae + (be - ae) * f, an + (bn - an) * f));
     }
   }
   return { code, polygons: [[ring]] };
@@ -99,7 +99,7 @@ export function densify(ring: Point[], stepKm: number): Point[] {
 
 /** a ring of places at the given east and north km from a center */
 export function ringAround(center: Point, offsetsKm: [number, number][]): Point[] {
-  return offsetsKm.map(([e, n]) => fromEastNorth(center, e, n));
+  return offsetsKm.map(([e, n]) => fromAzimuthalKm(center, e, n));
 }
 
 export interface SyntheticOptions {
@@ -139,6 +139,8 @@ export function exactObservations(options: SyntheticOptions & { run?: number; si
       ms: options.lastMileMs + K * distanceKm(options.truth, at) * (1 + (options.stretch?.[i] ?? 0)),
       sigmaMs: options.sigmaMs ?? 0.5,
       count: 16,
+      // the lowest sample unknown: the physical check uses ms
+      minMs: 0,
     },
   }));
 }

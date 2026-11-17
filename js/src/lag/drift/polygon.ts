@@ -1,34 +1,34 @@
-// Country polygons (lag.dev/DRIFTTEST.md G1, G2): containment in longitude
-// and latitude, as Natural Earth draws them. Its rings never cross the
-// antimeridian, and a ring around a pole closes along it, so a planar test
-// in degrees is exact for them.
+// A country's land (lag.dev/DRIFTTEST.md V6, G1, G2), as connect's lagdrift
+// tests it (judge.go): inside is in one of its polygons and in none of that
+// polygon's holes, tested in degrees by ray casting along the parallel, which
+// is how Natural Earth draws its polygons (edges straight in degrees, split at
+// the antimeridian, Antarctica closed along the pole). An azimuthal projection
+// can't decide it: a country holding the fit's antipode wraps around the
+// projection's center.
 
 import type { Point } from "./geo";
 
-/** A country's borders: each polygon's first ring is its outline, the rest are holes. */
+/**
+ * A country's land: polygons whose first ring is the outline and whose other
+ * rings are holes. A ring's last point may repeat its first or not. Its
+ * edges are straight in degrees and never cross the antimeridian.
+ */
 export interface Country {
-  /** ISO 3166-1 alpha-2 as GeoLite2 gives it, lower case */
+  /** GeoLite2's code, lower case */
   code: string;
   polygons: Point[][][];
 }
 
-/** Whether p is inside a ring, by the crossings of a ray east of it. */
-export function ringContains(ring: readonly Point[], p: Point): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i];
-    const b = ring[j];
-    if (a.lat > p.lat !== b.lat > p.lat) {
-      const lon = a.lon + ((p.lat - a.lat) * (b.lon - a.lon)) / (b.lat - a.lat);
-      if (p.lon < lon) {
-        inside = !inside;
-      }
+/** p is inside one of the country's polygons and in none of that polygon's holes. */
+export function countryContains(country: Country, p: Point): boolean {
+  for (const polygon of country.polygons) {
+    if (polygonContains(polygon, p)) {
+      return true;
     }
   }
-  return inside;
+  return false;
 }
 
-/** Whether p is inside a polygon's outline and outside its holes. */
 export function polygonContains(polygon: readonly (readonly Point[])[], p: Point): boolean {
   if (polygon.length === 0 || !ringContains(polygon[0], p)) {
     return false;
@@ -41,16 +41,19 @@ export function polygonContains(polygon: readonly (readonly Point[])[], p: Point
   return true;
 }
 
-/** Whether p is inside any of a country's polygons. */
-export function countryContains(country: Country, p: Point): boolean {
-  return country.polygons.some((polygon) => polygonContains(polygon, p));
-}
-
-/** The point of the segment from a to b nearest the origin. */
-export function nearestOnSegment(ax: number, ay: number, bx: number, by: number): { x: number; y: number } {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const length2 = dx * dx + dy * dy;
-  const t = length2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length2)) : 0;
-  return { x: ax + t * dx, y: ay + t * dy };
+/** Ray casting along the parallel toward the east, with edges straight in degrees. */
+export function ringContains(ring: readonly Point[], p: Point): boolean {
+  let inside = false;
+  const n = ring.length;
+  for (let i = 0, j = n - 1; i < n; j = i, i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (p.lat < a.lat !== p.lat < b.lat) {
+      const x = ((b.lon - a.lon) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lon;
+      if (p.lon < x) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
 }

@@ -7,6 +7,7 @@ import { registerTsResolve } from "../ts-resolve.ts";
 
 registerTsResolve();
 const drift = await import("../../src/lag/drift/index.ts");
+const { crc32 } = await import("../../src/lag/drift/bordersFormat.ts");
 const fx = await import("./drift_fixtures.ts");
 
 type Point = import("../../src/lag/drift/index.ts").Point;
@@ -16,35 +17,43 @@ const close = (actual: number, expected: number, tolerance: number, message?: st
 
 const atlantic: Point = { lat: 40, lon: -40 };
 
-test("borders: a country by code in either case, and every code", () => {
-  const borders = new drift.Borders([fx.squareCountry("AA", fx.CHICAGO, 100), fx.squareCountry("bb", fx.MADRID, 100)], "test-1");
+test("borders: a country by code in either case, and every code, sorted", () => {
+  const borders = new drift.Borders("test-1", [fx.squareCountry("bb", fx.MADRID, 100), fx.squareCountry("aa", fx.CHICAGO, 100)]);
   assert.equal(borders.version, "test-1");
-  assert.deepEqual(borders.codes().sort(), ["aa", "bb"]);
+  assert.deepEqual(borders.codes(), ["aa", "bb"]);
   assert.equal(borders.country("aa")?.code, "aa");
   assert.equal(borders.country("AA")?.code, "aa");
   assert.equal(borders.country("cc"), null);
   // a code listed twice is one country with both polygons
-  const twice = new drift.Borders([fx.squareCountry("aa", fx.CHICAGO, 100), fx.squareCountry("aa", fx.MADRID, 100)]);
+  const twice = new drift.Borders("", [fx.squareCountry("aa", fx.CHICAGO, 100), fx.squareCountry("aa", fx.MADRID, 100)]);
   assert.equal(twice.country("aa")!.polygons.length, 2);
   assert.equal(twice.countryAt(fx.MADRID, 0), "aa");
+  // GeoLite2's codes: two lower-case letters
+  for (const code of ["AA", "a", "abc", "a1", ""]) {
+    assert.throws(() => new drift.Borders("", [fx.squareCountry(code, fx.MADRID, 100)]), TypeError, code);
+  }
 });
 
 test("V6: the drift country is the one containing the fit, else the nearest within 300 km, else none", () => {
-  const borders = new drift.Borders([
+  const borders = new drift.Borders("", [
     fx.squareCountry("aa", fx.CHICAGO, 100),
-    fx.squareCountry("bb", drift.fromEastNorth(fx.CHICAGO, 500, 0), 100),
+    fx.squareCountry("bb", drift.fromAzimuthalKm(fx.CHICAGO, 500, 0), 100),
   ]);
   assert.equal(drift.driftCountryWithinKm, 300);
   assert.equal(borders.countryAt(fx.CHICAGO, 300), "aa");
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 500, 50), 300), "bb");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 500, 50), 300), "bb");
   // 150 km east of aa's border and 150 km west of bb's: the nearer by a little
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 240, 0), 300), "aa");
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 260, 0), 300), "bb");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 240, 0), 300), "aa");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 260, 0), 300), "bb");
   // 250 km north of aa: within 300 km, not within 200
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 0, 350), 300), "aa");
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 0, 350), 200), "");
-  assert.equal(borders.countryAt(drift.fromEastNorth(fx.CHICAGO, 0, 350)), "aa", "300 km by default");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 0, 350), 300), "aa");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 0, 350), 200), "");
+  assert.equal(borders.countryAt(drift.fromAzimuthalKm(fx.CHICAGO, 0, 350)), "aa", "300 km by default");
   assert.equal(borders.countryAt(atlantic, 300), "", "at sea");
+  assert.equal(borders.countryAt({ lat: 91, lon: 0 }, 300), "", "not a place");
+  // overlapping countries, as a disputed area given to each claimant: the first code wins
+  const disputed = new drift.Borders("", [fx.squareCountry("zz", fx.MADRID, 100), fx.squareCountry("yy", fx.MADRID, 50)]);
+  assert.equal(disputed.countryAt(fx.MADRID, 0), "yy");
 });
 
 test("borders: containment across the antimeridian and around a pole", () => {
@@ -58,7 +67,7 @@ test("borders: containment across the antimeridian and around a pole", () => {
   // closed along the pole, with a vertex every 5° along the coast, as Natural Earth's are dense
   const coast = Array.from({ length: 73 }, (_, i) => ({ lon: -180 + 5 * i, lat: -80 }));
   const antarctica = { code: "aq", polygons: [[[...coast, { lon: 180, lat: -90 }, { lon: -180, lat: -90 }]]] };
-  const borders = new drift.Borders([fiji, antarctica]);
+  const borders = new drift.Borders("", [fiji, antarctica]);
   assert.equal(borders.countryAt({ lat: -17, lon: 179.9 }, 0), "fj");
   assert.equal(borders.countryAt({ lat: -17, lon: -179.9 }, 0), "fj");
   assert.equal(borders.countryAt({ lat: -17, lon: 172 }, 0), "");
@@ -71,20 +80,116 @@ test("borders: containment across the antimeridian and around a pole", () => {
   assert.equal(borders.countryAt({ lat: -70, lon: 45 }, 300), "");
 });
 
-test("G2: the world map's data reads into borders, quantized or in degrees", () => {
-  const borders = drift.readBorders({
+test("G2: the world map reads as lagdrift's ReadWorld reads it", () => {
+  const data = {
+    format: "lagdrift-world/1",
     version: "ne-test",
+    simplifyKm: 5,
     scale: 100,
-    countries: [{ code: "AA", polygons: [[[100, 200, 300, 200, 300, 400, 100, 400]]] }],
-  });
+    countries: [{ code: "aa", polygons: [[[100, 200, 300, 200, 300, 400, 100, 400]]] }],
+  };
+  const borders = drift.readWorld(data);
+  assert.equal(drift.worldFormat, "lagdrift-world/1");
   assert.equal(borders.version, "ne-test");
   assert.deepEqual(borders.country("aa")!.polygons[0][0][1], { lon: 3, lat: 2 });
   assert.equal(borders.countryAt({ lat: 3, lon: 2 }, 0), "aa");
-  const degrees = drift.readBorders({ countries: [{ code: "bb", polygons: [[[1, 2, 3, 2, 3, 4]]] }] });
-  assert.equal(degrees.version, "");
-  assert.deepEqual(degrees.country("bb")!.polygons[0][0][2], { lon: 3, lat: 4 });
-  assert.throws(() => drift.readBorders({} as never), TypeError);
-  assert.throws(() => drift.readBorders({ scale: 0, countries: [] }), TypeError);
+  assert.deepEqual(drift.readWorld(JSON.stringify(data)).codes(), ["aa"], "or its text");
+  const broken = (change: Record<string, unknown>) => () => drift.readWorld({ ...data, ...change } as never);
+  assert.throws(broken({ format: "lagdrift-world/2" }), TypeError);
+  assert.throws(broken({ scale: 0 }), TypeError);
+  assert.throws(broken({ countries: [{ code: "aa", polygons: [[[1, 2, 3, 4]]] }] }), TypeError, "a ring of 2 points");
+  assert.throws(broken({ countries: [{ code: "aa", polygons: [[[1, 2, 3, 4, 5]]] }] }), TypeError, "an odd ring");
+  assert.throws(broken({ countries: [{ code: "aa", polygons: [[]] }] }), TypeError, "a polygon with no rings");
+  assert.throws(broken({ countries: [{ code: "aa", polygons: [[[0, 0, 100, 0, 100, 9100]]] }] }), TypeError, "a point past the pole");
+  assert.throws(broken({ countries: [{ code: "AA", polygons: [[[100, 200, 300, 200, 300, 400]]] }] }), TypeError, "an upper-case code");
+});
+
+// lagdrift's borders format (G1, I5), written here for the reader's tests
+function writeBordersFile(version: string, countries: { code: string; polygons: [number, number][][][] }[]): Uint8Array {
+  const out: number[] = [];
+  const uvarint = (v: number) => {
+    while (0x80 <= v) {
+      out.push((v % 0x80) | 0x80);
+      v = Math.floor(v / 0x80);
+    }
+    out.push(v);
+  };
+  const varint = (v: number) => uvarint(v < 0 ? -2 * v - 1 : 2 * v);
+  out.push(...new TextEncoder().encode("lagdrift-borders"));
+  uvarint(1);
+  const versionBytes = new TextEncoder().encode(version);
+  uvarint(versionBytes.length);
+  out.push(...versionBytes);
+  uvarint(countries.length);
+  for (const country of countries) {
+    out.push(...new TextEncoder().encode(country.code));
+    const all = country.polygons.flat(2);
+    for (const v of [
+      Math.min(...all.map(([lat]) => lat)),
+      Math.min(...all.map(([, lon]) => lon)),
+      Math.max(...all.map(([lat]) => lat)),
+      Math.max(...all.map(([, lon]) => lon)),
+    ]) {
+      varint(v);
+    }
+    uvarint(country.polygons.length);
+    for (const polygon of country.polygons) {
+      uvarint(polygon.length);
+      for (const ring of polygon) {
+        uvarint(ring.length);
+        let lat = 0;
+        let lon = 0;
+        for (const [pLat, pLon] of ring) {
+          varint(pLat - lat);
+          varint(pLon - lon);
+          lat = pLat;
+          lon = pLon;
+        }
+      }
+    }
+  }
+  const body = Uint8Array.from(out);
+  const file = new Uint8Array(body.length + 4);
+  file.set(body);
+  new DataView(file.buffer).setUint32(body.length, crc32(body), true);
+  return file;
+}
+
+test("G1: the borders file reads as lagdrift's ReadBorders reads it, and a damaged one is refused", () => {
+  const square: [number, number][] = [
+    [40_000_000, -4_000_000],
+    [40_000_000, -3_000_000],
+    [41_000_000, -3_000_000],
+    [41_000_000, -4_000_000],
+  ];
+  const hole: [number, number][] = [
+    [40_400_000, -3_600_000],
+    [40_400_000, -3_400_000],
+    [40_600_000, -3_400_000],
+  ];
+  const file = writeBordersFile("ne-admin0-10m-test", [
+    { code: "ad", polygons: [[[[42_500_000, 1_500_000], [42_600_000, 1_600_000], [42_500_000, 1_700_000]]]] },
+    { code: "es", polygons: [[square, hole]] },
+  ]);
+  // CRC-32 (IEEE), as Go's crc32.ChecksumIEEE: the standard check value
+  assert.equal(crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+  const borders = drift.readBorders(file);
+  assert.equal(borders.version, "ne-admin0-10m-test");
+  assert.deepEqual(borders.codes(), ["ad", "es"]);
+  assert.deepEqual(borders.country("es")!.polygons[0][0][1], { lat: 40, lon: -3 });
+  assert.equal(borders.countryAt({ lat: 40.2, lon: -3.2 }, 0), "es");
+  assert.equal(borders.countryAt({ lat: 40.45, lon: -3.45 }, 0), "", "in the hole");
+  // every byte counts
+  const flipped = file.slice();
+  flipped[30] ^= 1;
+  assert.throws(() => drift.readBorders(flipped), TypeError, "the checksum");
+  assert.throws(() => drift.readBorders(file.subarray(0, file.length - 1)), TypeError, "truncated");
+  assert.throws(() => drift.readBorders(new TextEncoder().encode("not-a-borders-file")), TypeError);
+  const unordered = writeBordersFile("v", [
+    { code: "es", polygons: [[square]] },
+    { code: "ad", polygons: [[square]] },
+  ]);
+  assert.throws(() => drift.readBorders(unordered), TypeError, "out of order");
 });
 
 test("G2: the world map loads once, lazily", async () => {
@@ -119,7 +224,7 @@ const frankfurtRun = (run: number, seed: number, extra: Partial<Parameters<typeo
     ...extra,
   });
 
-const europe = new drift.Borders([
+const europe = new drift.Borders("test", [
   fx.squareCountry("es", fx.MADRID, 350),
   fx.squareCountry("de", fx.FRANKFURT, 250),
   fx.squareCountry("fr", { lat: 47, lon: 2.5 }, 250),
