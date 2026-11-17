@@ -11,7 +11,8 @@ const drift = await import("../../src/lag/drift/index.ts");
 const { roundTripTau } = await import("../../src/lag/drift/roundTrip.ts");
 const { pathSigmaMs, noiseVar } = await import("../../src/lag/drift/model.ts");
 const { gaussSolve, smoothedDistanceKm } = await import("../../src/lag/drift/fit.ts");
-const { splitEdge } = await import("../../src/lag/drift/judge.ts");
+const judgeModule = await import("../../src/lag/drift/judge.ts");
+const { splitEdge } = judgeModule;
 const fx = await import("./drift_fixtures.ts");
 
 type Fit = import("../../src/lag/drift/index.ts").Fit;
@@ -545,6 +546,32 @@ test("V6: polygons at the antimeridian and around a pole", () => {
   const north = drift.judge(fitAt({ lat: -75, lon: 0 }, iso(10)), aq);
   assert.equal(north.inside, false);
   close(north.distanceKm, drift.distanceKm({ lat: -75, lon: 0 }, { lat: -80, lon: 0 }), 1);
+});
+
+test("V6: Natural Earth's cuts along the antimeridian and a pole are no border", () => {
+  const { isCut } = judgeModule;
+  assert.equal(isCut({ lat: -20, lon: 180 }, { lat: -15, lon: 180 }), true);
+  assert.equal(isCut({ lat: -20, lon: -180 }, { lat: -15, lon: -180 }), true);
+  assert.equal(isCut({ lat: -90, lon: 180 }, { lat: -90, lon: -180 }), true);
+  assert.equal(isCut({ lat: -20, lon: 180 }, { lat: -15, lon: -180 }), false, "across, not along");
+  assert.equal(isCut({ lat: -20, lon: 179.999 }, { lat: -15, lon: 179.999 }), false);
+  // a fit beside the cut in a country split there is as far from the border as from its real edges, 2.5° of latitude
+  const fiji = {
+    code: "fj",
+    polygons: [
+      [[{ lon: 175, lat: -20 }, { lon: 180, lat: -20 }, { lon: 180, lat: -15 }, { lon: 175, lat: -15 }]],
+      [[{ lon: -180, lat: -20 }, { lon: -175, lat: -20 }, { lon: -175, lat: -15 }, { lon: -180, lat: -15 }]],
+    ],
+  };
+  const beside = drift.judge(fitAt({ lat: -17.5, lon: 179.9 }, iso(10)), fiji);
+  assert.equal(beside.inside, true);
+  close(beside.d, drift.distanceKm({ lat: -17.5, lon: 179.9 }, { lat: -15, lon: 179.9 }) / 10, 0.05);
+  // near the pole, the pole is no border: the coast at 80°S is
+  const coast = Array.from({ length: 73 }, (_, i) => ({ lon: -180 + 5 * i, lat: -80 }));
+  const aq = { code: "aq", polygons: [[[...coast, { lon: 180, lat: -90 }, { lon: -180, lat: -90 }]]] };
+  const nearPole = drift.judge(fitAt({ lat: -89.5, lon: -120 }, iso(10)), aq);
+  assert.equal(nearPole.inside, true);
+  close(nearPole.d, drift.distanceKm({ lat: -89.5, lon: -120 }, { lat: -80, lon: -120 }) / 10, 0.5);
 });
 
 test("V6: the antipode of a country doesn't put the fit in it, nor near it", () => {

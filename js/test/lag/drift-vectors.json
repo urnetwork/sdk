@@ -6756,6 +6756,182 @@
    }
   },
   {
+   "name": "inside beside the cut, west",
+   "fit": {
+    "at": {
+     "lat": 0,
+     "lon": 179.9
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      25,
+      0
+     ],
+     [
+      0,
+      25
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 5,
+    "minorKm": 5,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zf",
+    "polygons": [
+     [
+      [
+       {
+        "lat": -1,
+        "lon": 179
+       },
+       {
+        "lat": -1,
+        "lon": 180
+       },
+       {
+        "lat": 1,
+        "lon": 180
+       },
+       {
+        "lat": 1,
+        "lon": 179
+       }
+      ]
+     ],
+     [
+      [
+       {
+        "lat": -1,
+        "lon": -180
+       },
+       {
+        "lat": -1,
+        "lon": -179
+       },
+       {
+        "lat": 1,
+        "lon": -179
+       },
+       {
+        "lat": 1,
+        "lon": -180
+       }
+      ]
+     ]
+    ]
+   },
+   "confidence": 0.99,
+   "judgement": {
+    "inside": true,
+    "overlaps": true,
+    "d": 20.0151144368,
+    "distanceKm": 0,
+    "significanceKm": 15.1742712939,
+    "marginKm": -15.1742712939,
+    "k": 3.03485425877
+   }
+  },
+  {
+   "name": "inside beside the cut, east",
+   "fit": {
+    "at": {
+     "lat": 0,
+     "lon": -179.9
+    },
+    "eastKm": 0,
+    "northKm": 0,
+    "lastMileMs": [
+     5
+    ],
+    "cov": [
+     [
+      25,
+      0
+     ],
+     [
+      0,
+      25
+     ]
+    ],
+    "chi2PerDof": 1,
+    "extenders": 12,
+    "majorKm": 5,
+    "minorKm": 5,
+    "bearingDeg": 90,
+    "runs": [
+     1
+    ],
+    "observations": 0
+   },
+   "country": {
+    "code": "zf",
+    "polygons": [
+     [
+      [
+       {
+        "lat": -1,
+        "lon": 179
+       },
+       {
+        "lat": -1,
+        "lon": 180
+       },
+       {
+        "lat": 1,
+        "lon": 180
+       },
+       {
+        "lat": 1,
+        "lon": 179
+       }
+      ]
+     ],
+     [
+      [
+       {
+        "lat": -1,
+        "lon": -180
+       },
+       {
+        "lat": -1,
+        "lon": -179
+       },
+       {
+        "lat": 1,
+        "lon": -179
+       },
+       {
+        "lat": 1,
+        "lon": -180
+       }
+      ]
+     ]
+    ]
+   },
+   "confidence": 0.99,
+   "judgement": {
+    "inside": true,
+    "overlaps": true,
+    "d": 20.0151144368,
+    "distanceKm": 0,
+    "significanceKm": 15.1742712939,
+    "marginKm": -15.1742712939,
+    "k": 3.03485425877
+   }
+  },
+  {
    "name": "the fit's antipode",
    "fit": {
     "at": {
@@ -6896,7 +7072,7 @@
    "judgement": {
     "inside": true,
     "overlaps": true,
-    "d": 5.55975401168,
+    "d": 15.4440981756,
     "distanceKm": 0,
     "significanceKm": 303.485425877,
     "marginKm": -303.485425877,
@@ -24560,8 +24736,18 @@
     "lat": 0,
     "lon": -179.5
    },
-   "withinKm": 100,
+   "withinKm": 150,
    "code": "zy"
+  },
+  {
+   "name": "across the antimeridian, whose cut is no border",
+   "countries": "synthetic",
+   "point": {
+    "lat": 0,
+    "lon": -179.5
+   },
+   "withinKm": 100,
+   "code": ""
   },
   {
    "name": "at sea",

@@ -4,7 +4,9 @@
 // around the fit, lies outside it.
 //
 // Inside is tested in degrees (polygon.ts). Otherwise the region touches the
-// country exactly when it contains a point of its boundary. Every ring of
+// country exactly when it contains a point of its boundary. Natural Earth's
+// cuts, along the antimeridian and along a pole, are no border and are
+// skipped: the country goes on across them. Every ring of
 // every polygon is projected onto the azimuthal equidistant plane centered on
 // p̂, whitened with Σ = LLᵀ, and searched for the point q nearest p̂:
 // D = ‖L⁻¹(q − p̂)‖. D ≤ k overlaps, D > k is outside. No convexity is
@@ -181,7 +183,7 @@ export class BoundarySearch {
     return [this.l11 * this.bestWx, this.l21 * this.bestWx + this.l22 * this.bestWy];
   }
 
-  /** searches a closed ring's edges, starting with the one from its last point to its first */
+  /** searches a closed ring's edges, starting with the one from its last point to its first, all but its cuts */
   ring(ring: readonly Point[]): void {
     const n = ring.length;
     if (n === 0) {
@@ -194,13 +196,17 @@ export class BoundarySearch {
       return;
     }
     for (const cur of ring) {
-      splitEdge(prev, cur, (p) => {
-        const [e, nn, d] = this.projection.project(p);
-        this.segment(prevE, prevN, prevD, e, nn, d);
-        prevE = e;
-        prevN = nn;
-        prevD = d;
-      });
+      if (isCut(prev, cur)) {
+        [prevE, prevN, prevD] = this.projection.project(cur);
+      } else {
+        splitEdge(prev, cur, (p) => {
+          const [e, nn, d] = this.projection.project(p);
+          this.segment(prevE, prevN, prevD, e, nn, d);
+          prevE = e;
+          prevN = nn;
+          prevD = d;
+        });
+      }
       prev = cur;
     }
   }
@@ -232,6 +238,16 @@ export class BoundarySearch {
       this.bestWy = y;
     }
   }
+}
+
+/**
+ * An edge Natural Earth draws to cut a polygon, not a border: along the
+ * antimeridian, both ends at longitude 180 or both at −180, or along a pole,
+ * both ends at latitude 90 or both at −90. The country goes on across it, so
+ * the boundary search skips it (V6, lagdrift's isCut).
+ */
+export function isCut(a: Point, b: Point): boolean {
+  return (Math.abs(a.lon) === 180 && a.lon === b.lon) || (Math.abs(a.lat) === 90 && a.lat === b.lat);
 }
 
 /**
