@@ -18,8 +18,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	gojwt "github.com/golang-jwt/jwt/v5"
-
 	"github.com/urnetwork/sidecar"
 	"github.com/urnetwork/sidecar/sidecartest/t4cell"
 )
@@ -133,15 +131,11 @@ func testT4EnrollWakeReadCell(t *testing.T, cell *t4cell.Cell, class string, pla
 			if err != nil {
 				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
 			}
-			reminted := credentialTestJwt(t, gojwt.MapClaims{
-				"network_id": credentialTestNetworkId,
-				"user_id":    credentialTestUserId,
-				"client_id":  childClientId.String(),
-				"device_id":  credentialTestDeviceId,
-				"strict_exp": true,
-				"sidecar_id": binding.SidecarId.String(),
-			})
-			return http.StatusOK, map[string]any{"generation": 1, "by_client_jwt": reminted}
+			// the generation alone, as server's bind answers since QD-1029
+			if binding.ClientId != childClientId {
+				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
+			}
+			return http.StatusOK, map[string]any{"generation": 1}
 		case "/sidecar/push-token":
 			return http.StatusOK, map[string]any{}
 		}

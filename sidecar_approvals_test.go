@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	gojwt "github.com/golang-jwt/jwt/v5"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/urnetwork/connect"
@@ -246,15 +245,11 @@ func newTestApprovalsSidecar(t *testing.T, signer SidecarPresenceSigner) (*Sidec
 			if err != nil {
 				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
 			}
-			reminted := credentialTestJwt(t, gojwt.MapClaims{
-				"network_id": credentialTestNetworkId,
-				"user_id":    credentialTestUserId,
-				"client_id":  childClientId.String(),
-				"device_id":  credentialTestDeviceId,
-				"strict_exp": true,
-				"sidecar_id": binding.SidecarId.String(),
-			})
-			return http.StatusOK, map[string]any{"generation": 1, "by_client_jwt": reminted}
+			// the generation alone, as server's bind answers since QD-1029
+			if binding.ClientId != childClientId {
+				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
+			}
+			return http.StatusOK, map[string]any{"generation": 1}
 		case "/network/config/delta":
 			return api.post(request)
 		}
