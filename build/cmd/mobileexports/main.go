@@ -152,7 +152,9 @@ func allowedMobileOmission(identifier string) bool {
 	}
 	if strings.Contains(identifier, "SyncWithContext") || memberName == "NewApi" ||
 		memberName == "NewNetworkSpaceWithUrls" || identifier == "NewApi" ||
-		identifier == "NewNetworkSpaceWithUrls" {
+		identifier == "NewNetworkSpaceWithUrls" ||
+		memberName == "NewNetworkSpaceWithUrlsOnExtenderHost" ||
+		identifier == "NewNetworkSpaceWithUrlsOnExtenderHost" {
 		return true
 	}
 	if strings.HasPrefix(identifier, "SnPoolClaimResult") ||

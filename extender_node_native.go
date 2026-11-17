@@ -121,16 +121,17 @@ func newSpaceExtenderNodeWithRole(
 		seed = identityKeySeed()
 	}
 
-	settings := gossip.DefaultNodeSettings(nodeRole)
-	settings.Log = log
-	settings.NetworkHost = extenderNetworkHostName(key, values)
-	settings.Directory = directory
-	settings.IdentityKeySeed = seed
-	settings.ExtenderListener = listener
-	settings.ListenAddrs = listenAddrs
-	if clientStrategySettings != nil {
-		settings.ConnectSettings = &clientStrategySettings.ConnectSettings
-	}
+	settings := spaceExtenderNodeSettings(
+		key,
+		values,
+		nodeRole,
+		listener,
+		listenAddrs,
+		directory,
+		seed,
+		clientStrategySettings,
+		log,
+	)
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	node, err := gossip.NewNode(cancelCtx, settings)
@@ -154,6 +155,41 @@ func newSpaceExtenderNodeWithRole(
 		self.watchOperator(cancelCtx)
 	}, cancel)
 	return self
+}
+
+// The settings of one space's node in one gossip role (D1). Its carrier dials
+// take the space's connect settings. A space that dials through a proxy or a
+// dialer of its own -- a miner proxy slot, or a test harness -- gives the node
+// that dial for every connection it makes, the operator link included, so its
+// mesh traffic leaves the way the rest of the space's traffic does
+// (connect#227, gossip `NodeSettings.DialContext`). Every other space's node
+// dials as it always has.
+func spaceExtenderNodeSettings(
+	key *NetworkSpaceKey,
+	values *NetworkSpaceValues,
+	nodeRole string,
+	listener *gossip.InProcessListener,
+	listenAddrs []ma.Multiaddr,
+	directory *connect.ExtenderDirectory,
+	seed []byte,
+	clientStrategySettings *connect.ClientStrategySettings,
+	log connect.Logger,
+) *gossip.NodeSettings {
+	settings := gossip.DefaultNodeSettings(nodeRole)
+	settings.Log = log
+	settings.NetworkHost = extenderNetworkHostName(key, values)
+	settings.Directory = directory
+	settings.IdentityKeySeed = seed
+	settings.ExtenderListener = listener
+	settings.ListenAddrs = listenAddrs
+	if clientStrategySettings != nil {
+		connectSettings := &clientStrategySettings.ConnectSettings
+		settings.ConnectSettings = connectSettings
+		if connectSettings.ProxySettings != nil || connectSettings.DialContextSettings != nil {
+			settings.DialContext = connectSettings.DialContext
+		}
+	}
+	return settings
 }
 
 // Hands the node the operator address as soon as hello carries the operator's

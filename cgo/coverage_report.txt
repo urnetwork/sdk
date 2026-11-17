@@ -1484,7 +1484,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1387) ==
+== skipped (1388) ==
 AccountCurrentBlock: data: crosses as json
 AccountCurrentEpoch: data: crosses as json
 AccountEpoch: data: crosses as json
@@ -2408,6 +2408,7 @@ NewNetworkPeerList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSessionInfoList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSpaceList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkSpaceWithUrls: unmappable: param ctx: external type context.Context
+NewNetworkSpaceWithUrlsOnExtenderHost: unmappable: param ctx: external type context.Context
 NewNetworkUserUserAuthList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewNetworkUserViewControllerWithApi: unmappable: param ctx: external type context.Context
 NewPlatformDeviceLocal: skipped: platform constructor (macOS parity: ignored)
