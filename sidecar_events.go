@@ -63,11 +63,14 @@ type SidecarEvent struct {
 	SendId *Id `json:"send_id,omitempty"`
 	// approval_pending.
 	ApprovalId *Id `json:"approval_id,omitempty"`
-	// head_alarm: fork, withheld, unverified or unwitnessed.
+	// head_alarm: fork, withheld, unverified or unwitnessed (§6.4), or rollback, a push reset that presented a durable
+	// topic below the version this device holds (§6.8; owner decision 300).
 	HeadAlarm string `json:"head_alarm,omitempty"`
-	// head_alarm: this device's pin; recovery_rebind at a void: the AuthPin keychain.wrap was sealed at.
+	// head_alarm: this device's pin, or for rollback the TopicVersion held; recovery_rebind at a void: the AuthPin
+	// keychain.wrap was sealed at.
 	FirstEvidence []byte `json:"first_evidence,omitempty"`
-	// head_alarm: the peer's or api's pin; recovery_rebind at a void: the AuthPin it was re-sealed at.
+	// head_alarm: the peer's or api's pin, or for rollback the TopicVersion offered; recovery_rebind at a void: the
+	// AuthPin it was re-sealed at.
 	SecondEvidence []byte `json:"second_evidence,omitempty"`
 	// erasure.
 	Erasure *SidecarErasure `json:"erasure,omitempty"`
