@@ -223,8 +223,12 @@ export interface DriftTestStartResult {
   ip?: DriftTestPlace;
   /** V10's cap, 12000 */
   measure_ms?: number;
-  /** the token's confidence, at which the radar draws the region (V8) */
+  /** the token's confidence (V8) */
   confidence?: number;
+  /** V11: the run's k, at which the radar draws the region and the demo judges it */
+  k?: number;
+  /** V11: the run's k_early, for the frame's clear stop (`StopTolerance.kEarly`) */
+  k_early?: number;
   /** RFC 3339; every session must open before this */
   expires_at?: string;
   error?: LagApiRefusal & { code?: DriftTestStartRefusalCode | (string & {}) };
