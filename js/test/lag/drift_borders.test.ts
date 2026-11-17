@@ -19,7 +19,7 @@ const atlantic: Point = { lat: 40, lon: -40 };
 
 test("borders: a country by code in either case, and every code, sorted", () => {
   const borders = new drift.Borders("test-1", [fx.squareCountry("bb", fx.MADRID, 100), fx.squareCountry("aa", fx.CHICAGO, 100)]);
-  assert.equal(borders.version, "test-1");
+  assert.equal(borders.version(), "test-1");
   assert.deepEqual(borders.codes(), ["aa", "bb"]);
   assert.equal(borders.country("aa")?.code, "aa");
   assert.equal(borders.country("AA")?.code, "aa");
@@ -90,7 +90,7 @@ test("G2: the world map reads as lagdrift's ReadWorld reads it", () => {
   };
   const borders = drift.readWorld(data);
   assert.equal(drift.worldFormat, "lagdrift-world/1");
-  assert.equal(borders.version, "ne-test");
+  assert.equal(borders.version(), "ne-test");
   assert.deepEqual(borders.country("aa")!.polygons[0][0][1], { lon: 3, lat: 2 });
   assert.equal(borders.countryAt({ lat: 3, lon: 2 }, 0), "aa");
   assert.deepEqual(drift.readWorld(JSON.stringify(data)).codes(), ["aa"], "or its text");
@@ -174,7 +174,7 @@ test("G1: the borders file reads as lagdrift's ReadBorders reads it, and a damag
   // CRC-32 (IEEE), as Go's crc32.ChecksumIEEE: the standard check value
   assert.equal(crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
   const borders = drift.readBorders(file);
-  assert.equal(borders.version, "ne-admin0-10m-test");
+  assert.equal(borders.version(), "ne-admin0-10m-test");
   assert.deepEqual(borders.codes(), ["ad", "es"]);
   assert.deepEqual(borders.country("es")!.polygons[0][0][1], { lat: 40, lon: -3 });
   assert.equal(borders.countryAt({ lat: 40.2, lon: -3.2 }, 0), "es");
@@ -210,7 +210,7 @@ test("G2: the world map loads once, lazily", async () => {
   assert.equal(world.countryAt(atlantic, 300), "", "mid-Atlantic");
   assert.ok(world.country("fr"));
   // Natural Earth 1:50m, every code GeoLite2 gives a country
-  assert.match(world.version, /^ne-admin0-50m-v/);
+  assert.match(world.version(), /^ne-admin0-50m-v/);
   assert.ok(world.codes().length >= 240, `${world.codes().length} countries`);
   // across the antimeridian, at a pole, and off a coast
   assert.equal(world.countryAt({ lat: -17.8, lon: 178.0 }, 0), "fj", "Viti Levu");

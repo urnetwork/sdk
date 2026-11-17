@@ -77,8 +77,7 @@ function validCode(code: string): boolean {
 
 /** Countries by code (G1, G2). Read-only once made. */
 export class Borders {
-  /** the geometry's version, e.g. ne-admin0-50m-v5.1.2 */
-  readonly version: string;
+  private readonly geometryVersion: string;
   // sorted by code
   private readonly countries: Country[] = [];
   // per country, a box around each polygon's outline, and around all of them
@@ -92,7 +91,7 @@ export class Borders {
    * throws a TypeError.
    */
   constructor(version: string, countries: Iterable<Country>) {
-    this.version = version;
+    this.geometryVersion = version;
     const codeCountries = new Map<string, Country>();
     const codes: string[] = [];
     for (const country of countries) {
@@ -125,6 +124,14 @@ export class Borders {
       this.countryBoxes.push(countryBox);
       this.byCode.set(code, country);
     }
+  }
+
+  /**
+   * The geometry's version, e.g. ne-admin0-50m-v5.1.2, from the file's header:
+   * what a verdict records as geometry_version (G1, P4).
+   */
+  version(): string {
+    return this.geometryVersion;
   }
 
   /** Every country's code, sorted. */
