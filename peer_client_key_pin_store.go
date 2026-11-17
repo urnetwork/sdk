@@ -16,12 +16,31 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/urnetwork/connect"
 )
 
 const peerClientKeyPinsFileName = ".peer_client_key_pins"
+
+// How a platform makes the rename that publishes a pin file durable.
+type peerPinDurableRename struct {
+	rename func(from string, to string) error
+	// whether the directory is flushed after the rename. Windows can never
+	// flush a directory handle (FlushFileBuffers needs GENERIC_WRITE, which a
+	// directory handle cannot have), so there the rename is written through
+	// instead and no directory is flushed.
+	flushDirectory bool
+}
+
+// The durable rename of the platform named by goos (a runtime.GOOS value).
+func peerPinDurableRenameFor(goos string) peerPinDurableRename {
+	if goos == "windows" {
+		return peerPinDurableRename{rename: renamePeerPinFileWithoutDirectoryFlush, flushDirectory: false}
+	}
+	return peerPinDurableRename{rename: os.Rename, flushDirectory: true}
+}
 
 type peerClientKeyPinRecord struct {
 	DomainDigest [32]byte                 `json:"domain_digest"`
@@ -43,7 +62,8 @@ type peerClientKeyPinsStorage struct {
 // A failed load or commit refuses subsequent checked admission. The app-private
 // directory has one external owner; unrelated store instances must not write it.
 type localStatePeerClientKeyPinStore struct {
-	path string
+	path          string
+	durableRename peerPinDurableRename
 
 	stateLock sync.Mutex
 	storage   peerClientKeyPinsStorage
@@ -57,7 +77,8 @@ var _ connect.AtomicPeerClientKeyPinStore = (*localStatePeerClientKeyPinStore)(n
 // Loads before publication; an unreadable or corrupt existing file fails closed.
 func newLocalStatePeerClientKeyPinStore(localStorageDir string) *localStatePeerClientKeyPinStore {
 	store := &localStatePeerClientKeyPinStore{
-		path: filepath.Join(localStorageDir, peerClientKeyPinsFileName),
+		path:          filepath.Join(localStorageDir, peerClientKeyPinsFileName),
+		durableRename: peerPinDurableRenameFor(runtime.GOOS),
 		storage: peerClientKeyPinsStorage{
 			SignedHistorySeen: false,
 			Pins:              map[string]peerClientKeyPinRecord{},
@@ -231,7 +252,7 @@ func (self *localStatePeerClientKeyPinStore) commitPeerClientKeyPinWithLock(peer
 func (self *localStatePeerClientKeyPinStore) persistWithLock(candidate peerClientKeyPinsStorage) error {
 	encoded, err := json.Marshal(candidate)
 	if err == nil {
-		err = persistPeerClientKeyPinsWithLock(self.path, encoded, self.testingCommitStep)
+		err = persistPeerClientKeyPinsWithLock(self.path, encoded, self.durableRename, self.testingCommitStep)
 	}
 	if err != nil {
 		self.failure = errPeerPinStoreIO
@@ -276,7 +297,10 @@ func peerClientKeyPinCanAdvance(previous, next connect.ClientKeyPin, allowSigner
 // Borrows encoded bytes while the caller holds its store lock. Rename publishes
 // only a complete file. A directory-sync failure after rename has an uncertain
 // durability outcome; callers keep their old memory and fail closed thereafter.
-func persistPeerClientKeyPinsWithLock(path string, encoded []byte, testingCommitStep func(string) error) error {
+// A platform that cannot flush a directory (Windows) writes the rename through
+// and never asks for the sync: it was refused every time, so every commit
+// there failed and closed the store.
+func persistPeerClientKeyPinsWithLock(path string, encoded []byte, durableRename peerPinDurableRename, testingCommitStep func(string) error) error {
 	fail := func(step string) bool { return testingCommitStep != nil && testingCommitStep(step) != nil }
 	if info, err := os.Lstat(path); (err == nil && !info.Mode().IsRegular()) ||
 		(err != nil && !errors.Is(err, os.ErrNotExist)) {
@@ -301,8 +325,11 @@ func persistPeerClientKeyPinsWithLock(path string, encoded []byte, testingCommit
 	if fail("sync") || file.Sync() != nil || fail("close") || file.Close() != nil {
 		return errPeerPinStoreIO
 	}
-	if fail("rename") || os.Rename(temporary, path) != nil {
+	if fail("rename") || durableRename.rename(temporary, path) != nil {
 		return errPeerPinStoreIO
+	}
+	if !durableRename.flushDirectory {
+		return nil
 	}
 	directory, err := os.Open(filepath.Dir(path))
 	if err != nil {

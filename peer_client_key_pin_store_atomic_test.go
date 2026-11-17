@@ -45,6 +45,28 @@ func (self *atomicPeerPinFixture) commitStep(hook func(string) error) {
 	}
 }
 
+// Like the fault hooks, set only between operations, before concurrent work.
+func (self *atomicPeerPinFixture) setDurableRename(durableRename peerPinDurableRename) {
+	switch store := self.store.(type) {
+	case *localStatePeerClientKeyPinStore:
+		store.durableRename = durableRename
+	case *boundedPeerClientKeyPinStore:
+		store.durableRename = durableRename
+	}
+}
+
+// The platform's durable rename the store was built with.
+func (self *atomicPeerPinFixture) durableRename() peerPinDurableRename {
+	switch store := self.store.(type) {
+	case *localStatePeerClientKeyPinStore:
+		return store.durableRename
+	case *boundedPeerClientKeyPinStore:
+		return store.durableRename
+	default:
+		panic("unknown atomic pin fixture")
+	}
+}
+
 // Inspects the retained ratchet after a failure has intentionally closed reads.
 func (self *atomicPeerPinFixture) retainedSnapshot(peer connect.Id) connect.ClientKeyPinSnapshot {
 	switch store := self.store.(type) {
@@ -237,6 +259,10 @@ func TestPeerPinStoresAtomicPersistenceFailure(t *testing.T) {
 		for _, seeded := range []bool{false, true} {
 			for _, phase := range []string{"create", "write", "sync", "close", "rename", "directory sync"} {
 				f := newAtomicPeerPinFixture(t, kind)
+				if phase == "directory sync" && !f.durableRename().flushDirectory {
+					// a platform that writes its rename through has no such step
+					continue
+				}
 				peer, pin := testBoundedPin(6)
 				pin.Generation = 10
 				if seeded {
