@@ -7,6 +7,7 @@
 
 export * from "./api_client";
 export * from "./client_info";
+export * from "./session_limit";
 export {
   URNetworkApiClient,
   createURNetworkApiClient,
