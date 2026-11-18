@@ -1,8 +1,14 @@
-//go:build !ios_extension && !js && !ios && !android
+//go:build !ios_extension && !js && (!ios || macos) && !android
 
 // The remote backend's control session on a desktop (§5.8): the root's DaemonClient on the instance's socket or pipe,
 // or on the socket in a sandboxed app's app-group container, in control mode at this build's version. The daemon
 // checks the peer's uid and refuses another version; nothing here spawns one (R-SDK-9).
+//
+// The macOS app is a desktop. gomobile runs each of its slices in two configurations and fails the bind if either
+// fails: the binding step type-checks with GOOS=ios and the macos tag, and the archive the slice links compiles with
+// GOOS=darwin and the bind's tags alone. `|| macos` puts this file in both, as the root's daemon client is, so the
+// macOS app's NewSidecarRemote reaches ur daemon from the one xcframework (§18.4, §18.5, §18.10's tags; owner
+// decisions 493, 554).
 
 package sdk
 
