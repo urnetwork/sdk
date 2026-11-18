@@ -1,12 +1,14 @@
-// The T4 cell runner (SDK-M8-15; sidecar §22.4's T4, §22.9's Memory, size row; owner decision 100): builds the sdk's
-// cell tests (sidecar_t4_cells_test.go, sidecar_memory_t4_test.go) for a target and runs them there, printing each
+// The T4 cell runner (SDK-M8-15, SDK-M10-06; sidecar §22.4's T4, §22.9's Memory, size row and Index determinism row;
+// owner decision 100): builds the sdk's cell tests (sidecar_t4_cells_test.go, sidecar_memory_t4_test.go, and from M10
+// the search cells, the requester surrogate and the index vectors) for a target and runs them there, printing each
 // cell's rows: on this host, or on an Android surrogate attached to adb, where the same cells measure the device. A
 // target that cannot run here reports not run, which a gate lists as open and never as a pass (§22.4's T1 rule).
 //
 // An Android surrogate's cells build as the app's bind builds the sdk (build/Makefile's android target): the
 // sdk_mobile_bind tag, which selects the mobile files of the sdk and of the sidecar module, and the linker's
 // -checklinkname=0, which the Android network helper's linkname into net needs. Without cgo, since no NDK is needed
-// to build or run a test binary there.
+// to build or run a test binary there. Every target's binary carries sidecar_testhooks too, for the search world the
+// search cells run on (SearchTestWorld) and the index vectors' seam: it is a test binary, never a release leg (§22.4).
 //
 // The cells boot the app's sidecar role on a network space that discovers nothing, and enroll, take a wake and read
 // against test servers on loopback, so a run reaches no host. The iOS surrogate's run needs a signed test host and is
@@ -45,7 +47,21 @@ var t4CellTests = []string{
 	"TestForwardingChannelCarriesNoPrivateKey",
 	"TestUnsignedResponseOverRpcIgnored",
 	"TestBridgeStatusCarriesTheForwardingFields",
+	// from M10 (SDK-M10-03, SDK-M10-06): the requester surrogate, the phone that searches, downloads and asks within
+	// §18.4's working set, SEARCH-M10-38's phone cells, and the index vectors on the leg (D-TEST-15)
+	"TestT4SurrogateBootsAgainstAFakeIndexer",
+	"TestT4SurrogateDirectorySearchMoreAsksAnIndexer",
+	"TestIos32CellSearchesDownloadsAndAsks",
+	"TestAndroidCellSearchesDownloadsAndAsks",
+	"TestT4SearchBudgetCatchesAPerSearchKeyCollection",
+	"TestIos32CellSearchesWithinItsWorkingSet",
+	"TestAndroidCellSearchesWithinItsWorkingSet",
+	"TestSdkLinksNormalizerOne",
+	"TestSdkReproducesTheIndexVectors",
 }
+
+// The tags every target's cells build with, beside the target's own.
+const t4CellTags = "sidecar_testhooks"
 
 // The targets, as -target names them.
 const (
@@ -74,9 +90,9 @@ func main() {
 func cellBuild(target string, binaryPath string) (*exec.Cmd, error) {
 	switch target {
 	case t4TargetHost:
-		return exec.Command("go", "test", "-c", "-o", binaryPath, t4CellPackage), nil
+		return exec.Command("go", "test", "-c", "-o", binaryPath, "-tags", t4CellTags, t4CellPackage), nil
 	case t4TargetAndroid:
-		build := exec.Command("go", "test", "-c", "-o", binaryPath, "-tags", "sdk_mobile_bind", "-ldflags", "-checklinkname=0", t4CellPackage)
+		build := exec.Command("go", "test", "-c", "-o", binaryPath, "-tags", "sdk_mobile_bind,"+t4CellTags, "-ldflags", "-checklinkname=0", t4CellPackage)
 		build.Env = append(os.Environ(), "GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0")
 		return build, nil
 	}
