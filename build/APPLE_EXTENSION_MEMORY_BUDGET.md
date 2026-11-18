@@ -30,13 +30,19 @@ Retrieve a device sample from the extension's data container and search it for
 | --- | ---: | ---: |
 | Full iOS arm64 SDK archive | 54.993 MiB (2026-08-18; 53.897 on 2026-08-15) | 96 MiB |
 | Extension iOS arm64 SDK archive | 52.070 MiB (2026-08-18; 51.168 on 2026-08-15) | 92 MiB |
-| Signed extension executable | 37.164 MiB (2026-08-18, unsigned Release; 36.598 signed on 2026-08-15) | 50 MiB |
+| Signed extension executable | 37.164 MiB (2026-08-18, unsigned Release; 36.598 signed on 2026-08-15) | 54 MiB |
 
 The SDK archive ceilings were raised to 96/92 MiB on 2026-09-13 for the
 extender-network additions. On 2026-09-14 the signed extension executable
 ceiling was raised from 39 to 48 MiB as an explicitly reviewed release budget.
 On 2026-10-08 it was raised to 50 MiB (52,428,800 bytes) by explicit operator
 request after release `2026.10.8-1066912010` measured 50,437,408 bytes (48.101 MiB).
+On 2026-11-10 the owner raised it to 54 MiB (56,623,104 bytes) for the sidecar
+forwarding role the extension links (sidecar owner decision 215), which then
+added at most 6 MiB of stripped executable; on 2026-11-16 that leg's budget rose
+to 7.5 MiB (7,864,320 bytes, owner decision 491) with this ceiling unchanged.
+The sidecar module's `make size` holds the leg; no signed extension with the
+leg has been measured against this ceiling yet.
 These compiled-artifact ceilings do not change the runtime-memory limits or
 the FIPS build-metadata gate. The release builder uses this shared check.
 
