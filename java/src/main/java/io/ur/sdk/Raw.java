@@ -333,6 +333,7 @@ public interface Raw extends Library {
   void urnet_api_generate_seedphrase(long a0, String a1, urnet_generate_seedphrase_cb a2, Pointer a3);
   void urnet_api_get_account_payments(long a0, urnet_get_account_payments_cb a1, Pointer a2);
   void urnet_api_get_account_points(long a0, urnet_get_account_points_cb a1, Pointer a2);
+  Pointer urnet_api_get_account_sign_in_required_cause(long a0);
   void urnet_api_get_account_wallets(long a0, urnet_get_account_wallets_cb a1, Pointer a2);
   Pointer urnet_api_get_auth_logout_cause(long a0);
   Pointer urnet_api_get_by_jwt(long a0);

@@ -4857,6 +4857,17 @@ func urnet_api_get_account_points(self C.uint64_t, callback_result C.urnet_get_a
 	self_.GetAccountPoints(callback_)
 }
 
+//export urnet_api_get_account_sign_in_required_cause
+func urnet_api_get_account_sign_in_required_cause(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_api_get_account_sign_in_required_cause")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_account_sign_in_required_cause")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAccountSignInRequiredCause()
+	return cString(string(r0))
+}
+
 //export urnet_api_get_account_wallets
 func urnet_api_get_account_wallets(self C.uint64_t, callback_result C.urnet_get_account_wallets_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_get_account_wallets")

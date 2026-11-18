@@ -55,6 +55,7 @@ EXPORTS
 	urnet_api_generate_seedphrase
 	urnet_api_get_account_payments
 	urnet_api_get_account_points
+	urnet_api_get_account_sign_in_required_cause
 	urnet_api_get_account_wallets
 	urnet_api_get_auth_logout_cause
 	urnet_api_get_by_jwt

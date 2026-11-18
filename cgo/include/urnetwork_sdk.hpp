@@ -24049,6 +24049,7 @@ public:
 	void generateSeedphrase(const std::optional<GenerateSeedphraseArgs>& args, GenerateSeedphraseCallback callback) const;
 	void getAccountPayments(GetAccountPaymentsCallback callback) const;
 	void getAccountPoints(GetAccountPointsCallback callback) const;
+	std::string getAccountSignInRequiredCause() const;
 	void getAccountWallets(GetAccountWalletsCallback callback) const;
 	std::string getAuthLogoutCause() const;
 	std::string getByJwt() const;
@@ -34000,6 +34001,10 @@ inline void Api::getAccountPayments(GetAccountPaymentsCallback callback) const {
 inline void Api::getAccountPoints(GetAccountPointsCallback callback) const {
 	auto* callback_fn = callback ? new GetAccountPointsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_account_points(handle(), callback_fn ? &detail::oneshot_get_account_points : nullptr, callback_fn);
+}
+inline std::string Api::getAccountSignInRequiredCause() const {
+	char* r_c = urnet_api_get_account_sign_in_required_cause(handle());
+	return detail::takeString(r_c);
 }
 inline void Api::getAccountWallets(GetAccountWalletsCallback callback) const {
 	auto* callback_fn = callback ? new GetAccountWalletsCallback(std::move(callback)) : nullptr;

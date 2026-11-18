@@ -1365,6 +1365,7 @@ void urnet_api_find_providers2(uint64_t self, const char* find_providers2_json, 
 void urnet_api_generate_seedphrase(uint64_t self, const char* args_json, urnet_generate_seedphrase_cb callback_result, void* callback_user_data);
 void urnet_api_get_account_payments(uint64_t self, urnet_get_account_payments_cb callback_result, void* callback_user_data);
 void urnet_api_get_account_points(uint64_t self, urnet_get_account_points_cb callback_result, void* callback_user_data);
+char* urnet_api_get_account_sign_in_required_cause(uint64_t self);
 void urnet_api_get_account_wallets(uint64_t self, urnet_get_account_wallets_cb callback_result, void* callback_user_data);
 char* urnet_api_get_auth_logout_cause(uint64_t self);
 char* urnet_api_get_by_jwt(uint64_t self);

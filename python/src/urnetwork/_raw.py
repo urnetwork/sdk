@@ -418,6 +418,8 @@ def bind(lib):
     lib.urnet_api_get_account_payments.restype = None
     lib.urnet_api_get_account_points.argtypes = [c_uint64, urnet_get_account_points_cb, c_void_p]
     lib.urnet_api_get_account_points.restype = None
+    lib.urnet_api_get_account_sign_in_required_cause.argtypes = [c_uint64]
+    lib.urnet_api_get_account_sign_in_required_cause.restype = c_void_p
     lib.urnet_api_get_account_wallets.argtypes = [c_uint64, urnet_get_account_wallets_cb, c_void_p]
     lib.urnet_api_get_account_wallets.restype = None
     lib.urnet_api_get_auth_logout_cause.argtypes = [c_uint64]

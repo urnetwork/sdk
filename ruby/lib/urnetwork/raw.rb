@@ -332,6 +332,7 @@ module URnetwork
       attach_function :urnet_api_generate_seedphrase, [:uint64, :string, :urnet_generate_seedphrase_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_account_payments, [:uint64, :urnet_get_account_payments_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_account_points, [:uint64, :urnet_get_account_points_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_get_account_sign_in_required_cause, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_account_wallets, [:uint64, :urnet_get_account_wallets_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_auth_logout_cause, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_by_jwt, [:uint64], :pointer, blocking: true

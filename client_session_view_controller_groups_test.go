@@ -492,3 +492,57 @@ func TestClientSessionSelfSignOutSignsTheAppOutWhateverItsClientSession(t *testi
 		api.Close()
 	}
 }
+
+// The account's sign-in revoked from another device while this device's
+// client is of another session: the sdk keeps the device, says the account
+// needs a sign-in (AccountSignInRequired, not AuthLogout), and gives the app
+// the trusted cause for its notice; any other rejection has none, and a new
+// login clears it (server session/REVOKE-FINAL.md R9).
+func TestAccountSignInRequiredCarriesTheTrustedCause(t *testing.T) {
+	for _, c := range []struct {
+		body  string
+		cause string
+	}{
+		{body: testingSessionRevokedBody, cause: AuthLogoutCauseSessionRevoked},
+		{body: `{"error":"Not authorized."}`, cause: ""},
+	} {
+		sessionId := newId(connect.NewId())
+		api := newApi(t.Context(), nil, "https://api.example")
+		network := taggedSessionTestJwt(t, sessionId.String(), "")
+		api.SetByJwt(network)
+		client := taggedSessionTestJwt(t, "another-session", credentialTestClientId)
+		func() {
+			api.authMutationLock.Lock()
+			defer api.authMutationLock.Unlock()
+			api.mutex.Lock()
+			defer api.mutex.Unlock()
+			api.byJwt = client
+		}()
+		api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(c.body)}
+		})
+		var logouts atomic.Int32
+		causes := make(chan string, 2)
+		api.AddAuthLogoutListener(authLogoutListenerFunc(func() { logouts.Add(1) }))
+		api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { causes <- api.GetAccountSignInRequiredCause() }))
+		if _, err := api.networkSessions(t.Context()); err == nil {
+			t.Fatal("the rejected list answered")
+		}
+		select {
+		case cause := <-causes:
+			if cause != c.cause {
+				t.Fatalf("cause %q, want %q", cause, c.cause)
+			}
+		default:
+			t.Fatal("no AccountSignInRequired for the rejected account sign-in")
+		}
+		if logouts.Load() != 0 || api.GetByJwt() != client || api.HasNetworkCredential() {
+			t.Fatal("the unrelated device client was not kept, or the account credential was")
+		}
+		api.SetByJwt(taggedSessionTestJwt(t, newId(connect.NewId()).String(), ""))
+		if api.GetAccountSignInRequiredCause() != "" {
+			t.Fatal("a new login kept the old cause")
+		}
+		api.Close()
+	}
+}

@@ -91,6 +91,24 @@ func (self *Api) GetAuthLogoutCause() string {
 	return self.authLogoutCause
 }
 
+// Why the account's sign-in needs signing in again while this device stays
+// signed in, for the app's notice when AccountSignInRequired fires (server
+// session/REVOKE-FINAL.md R9: the rejected account credential is cleared, the
+// unrelated client or device is kept, and the app says that the account needs
+// a sign-in): AuthLogoutCauseSessionRevoked when the server confirmed the
+// account sign-in's session was revoked from another device, which apps say
+// as "This session was signed out from another device.", else "", for the
+// generic "Sign in again to manage sessions.". Read it inside the listener;
+// a new login clears it.
+func (self *Api) GetAccountSignInRequiredCause() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.signInRejected {
+		return ""
+	}
+	return self.signInRejectionCause
+}
+
 // Records that a request asks the server to revoke the session of the
 // credential it carries, before the request is sent: the server may enforce
 // it even when the answer is lost. The record names only that session, so it
