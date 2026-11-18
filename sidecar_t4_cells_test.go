@@ -9,11 +9,16 @@ package sdk
 // registers its wake token, takes a wake with the app closed and reads in the wake's window, each step held to the
 // class's budget (SDK-M8-15's Tests). The cells run on this host under the profiles' Go memory limits, and build for an
 // Android surrogate as the bind builds the sdk (cmd/t4cell); the surrogate devices' runs of the same cells are external.
+//
+// The role the cells boot and enroll (testT4Role) is also what M10's cells with search on run on (SDK-M10-06): the
+// requester surrogate (sidecar_t4_surrogate_test.go) and the phone that searches, downloads and asks within §18.4's
+// working set (sidecar_search_budget_t4_test.go).
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,19 +111,32 @@ func TestAndroidCellRunsNoBackgroundSidecar(t *testing.T) {
 	}
 }
 
-// A cell's steps past boot, each held to the profile's sidecar budget: the role enrolls as EnrollWithDevice does,
-// against loopback servers standing for the device client's api and the core's; it registers its wake token on its own
-// client, as the app does at launch; with the app closed it may not run until a wake, whose window lets it, and it
-// reads a file of §18.5's largest write there; the window closed, it may not run again, and its steady heap stays
-// within the budget. The read runs on the evs seam over a fake backend, which holds a copy of the file in this
-// process, so each figure from that step on is over the role's own by about a mebibyte; the core's own evs reads run
-// on sidecartest's world, which the sdk's module does not take on.
-func testT4EnrollWakeReadCell(t *testing.T, cell *t4cell.Cell, class string, platform string, token string) {
+// An app host's sidecar role under class, as the app opens and enrolls it, against loopback servers standing for the
+// device client's api and the core's, so it dials nothing else: the evs component attached, its class's search, and a
+// phone's free space ample. The cells, the requester surrogate (sidecar_t4_surrogate_test.go) and the remote search
+// seams' tests (sidecar_search_remote_host_test.go) run on it.
+type testT4Role struct {
+	t     *testing.T
+	class string
+	world *testSidecarWorld
+	// the core's api: bind and push-token
+	coreServer *testSessionServer
+	coreUrl    string
+	// the device client's api, and the context it runs in
+	deviceCtx     context.Context
+	deviceApi     *Api
+	childClientId sidecar.Id
+	// edits the core's settings after the class and the servers' urls, nil for none
+	adjustCoreSettings func(settings *sidecar.SidecarSettings)
+	// the role, once boot opened it
+	local *Sidecar
+}
+
+// A role under class, not yet open, with its servers listening until the test's end.
+func newTestT4Role(t *testing.T, class string) *testT4Role {
 	t.Helper()
-	world := newTestSidecarWorld(t)
-	budget := cell.Profile().SidecarBudgetByteCount
-	childClientId := sidecar.NewId()
-	coreServer := newTestSessionServer(func(request testSessionRequest) (int, any) {
+	self := &testT4Role{t: t, class: class, world: newTestSidecarWorld(t), childClientId: sidecar.NewId()}
+	self.coreServer = newTestSessionServer(func(request testSessionRequest) (int, any) {
 		switch request.path {
 		case "/sidecar/bind":
 			wire := struct {
@@ -132,7 +150,7 @@ func testT4EnrollWakeReadCell(t *testing.T, cell *t4cell.Cell, class string, pla
 				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
 			}
 			// the generation alone, as server's bind answers since QD-1029
-			if binding.ClientId != childClientId {
+			if binding.ClientId != self.childClientId {
 				return http.StatusBadRequest, map[string]string{"error": "binding_invalid"}
 			}
 			return http.StatusOK, map[string]any{"generation": 1}
@@ -141,56 +159,113 @@ func testT4EnrollWakeReadCell(t *testing.T, cell *t4cell.Cell, class string, pla
 		}
 		return http.StatusNotFound, map[string]string{"error": "not found"}
 	})
-	httpServer := httptest.NewServer(coreServer)
+	httpServer := httptest.NewServer(self.coreServer)
 	t.Cleanup(httpServer.Close)
-	child := testSidecarChildToken(t, credentialTestNetworkId, childClientId.String(), 0)
+	self.coreUrl = httpServer.URL
+	child := testSidecarChildToken(t, credentialTestNetworkId, self.childClientId.String(), 0)
 	deviceServer := newTestSessionServer(func(request testSessionRequest) (int, any) {
 		switch request.path {
 		case "/network/auth-client":
-			return http.StatusOK, map[string]any{"by_client_jwt": child, "client_id": childClientId.String(), "admin_refused": true, "strict_exp": true}
+			return http.StatusOK, map[string]any{"by_client_jwt": child, "client_id": self.childClientId.String(), "admin_refused": true, "strict_exp": true}
 		case "/auth/refresh":
 			return http.StatusOK, map[string]string{"by_jwt": child}
 		}
 		return http.StatusNotFound, map[string]string{"error": "not found"}
 	})
-	ctx, deviceApi := newTestApi(t, deviceServer)
-	deviceApi.SetByJwt(dpopTestClientToken(t))
+	self.deviceCtx, self.deviceApi = newTestApi(t, deviceServer)
+	self.deviceApi.SetByJwt(dpopTestClientToken(t))
+	return self
+}
+
+// Opens the role as the app does at launch, closed at the test's end.
+func (self *testT4Role) boot() (*Sidecar, error) {
+	settings := DefaultSidecarSettings()
+	settings.HostClass = self.class
+	settings.StateDir = self.world.stateDir
+	settings.Components.Add(SidecarComponentEvs)
+	local, err := newSidecarLocal(context.Background(), self.world.space, self.world.keyStore, nil, settings, &sidecarLocalOptions{
+		adjustCoreSettings: func(settings *sidecar.SidecarSettings) {
+			settings.ApiUrl = self.coreUrl
+			settings.PlatformUrl = "wss://127.0.0.1:1"
+			if self.adjustCoreSettings != nil {
+				self.adjustCoreSettings(settings)
+			}
+		},
+		hostCredentialStores: func() []sidecar.SidecarHostCredentialStore {
+			return nil
+		},
+		componentFactories:  map[string]sidecarComponentFactory{SidecarComponentEvs: testSearchEvsComponent},
+		searchFreeByteCount: func(dir string) (uint64, error) { return 8 * 1024 * 1024 * 1024, nil },
+	})
+	if err != nil {
+		return nil, err
+	}
+	self.local = local
+	self.t.Cleanup(func() {
+		self.world.close(self.t, local)
+	})
+	return local, nil
+}
+
+// Waits until the open role reads unenrolled, as it does once open with nothing enrolled.
+func (self *testT4Role) awaitUnenrolled() {
+	self.t.Helper()
+	awaitTestSidecarState(self.t, self.local, sidecar.SidecarStateUnenrolled, "")
+}
+
+// Enrolls the open role as EnrollWithDevice does.
+func (self *testT4Role) enroll() error {
+	if _, err := self.local.enrollWithDeviceApi(self.deviceCtx, self.deviceApi); err != nil {
+		return err
+	}
+	if self.local.Core().Identity() == nil {
+		return errors.New("the enrollment left no identity")
+	}
+	return nil
+}
+
+// The role booted and enrolled, outside any cell.
+func newTestEnrolledT4Role(t *testing.T, class string, adjustCoreSettings func(settings *sidecar.SidecarSettings)) *testT4Role {
+	t.Helper()
+	role := newTestT4Role(t, class)
+	role.adjustCoreSettings = adjustCoreSettings
+	if _, err := role.boot(); err != nil {
+		t.Fatal(err)
+	}
+	role.awaitUnenrolled()
+	if err := role.enroll(); err != nil {
+		t.Fatal(err)
+	}
+	return role
+}
+
+// A cell's steps past boot, each held to the profile's sidecar budget: the role enrolls as EnrollWithDevice does,
+// against loopback servers standing for the device client's api and the core's; it registers its wake token on its own
+// client, as the app does at launch; with the app closed it may not run until a wake, whose window lets it, and it
+// reads a file of §18.5's largest write there; the window closed, it may not run again, and its steady heap stays
+// within the budget. The read runs on the evs seam over a fake backend, which holds a copy of the file in this
+// process, so each figure from that step on is over the role's own by about a mebibyte; the core's own evs reads run
+// on sidecartest's world, which the sdk's module does not take on.
+func testT4EnrollWakeReadCell(t *testing.T, cell *t4cell.Cell, class string, platform string, token string) {
+	t.Helper()
+	role := newTestT4Role(t, class)
+	coreServer := role.coreServer
+	budget := cell.Profile().SidecarBudgetByteCount
 
 	var local *Sidecar
 	if _, err := cell.Measure("sidecar role boots ("+class+")", budget, t4cell.HoldsPeak, func() (any, error) {
-		settings := DefaultSidecarSettings()
-		settings.HostClass = class
-		settings.StateDir = world.stateDir
-		settings.Components.Add(SidecarComponentEvs)
-		opened, err := newSidecarLocal(context.Background(), world.space, world.keyStore, nil, settings, &sidecarLocalOptions{
-			adjustCoreSettings: func(settings *sidecar.SidecarSettings) {
-				settings.ApiUrl = httpServer.URL
-				settings.PlatformUrl = "wss://127.0.0.1:1"
-			},
-			hostCredentialStores: func() []sidecar.SidecarHostCredentialStore {
-				return nil
-			},
-			componentFactories:  map[string]sidecarComponentFactory{SidecarComponentEvs: testSearchEvsComponent},
-			searchFreeByteCount: func(dir string) (uint64, error) { return 8 * 1024 * 1024 * 1024, nil },
-		})
+		opened, err := role.boot()
 		local = opened
 		return opened, err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		world.close(t, local)
-	})
-	awaitTestSidecarState(t, local, sidecar.SidecarStateUnenrolled, "")
+	role.awaitUnenrolled()
 
 	if _, err := cell.Measure("sidecar role enrolls ("+class+")", budget, t4cell.HoldsPeak, func() (any, error) {
-		_, err := local.enrollWithDeviceApi(ctx, deviceApi)
-		return nil, err
+		return nil, role.enroll()
 	}); err != nil {
 		t.Fatal(err)
-	}
-	if local.Core().Identity() == nil {
-		t.Fatal("the enrollment left no identity")
 	}
 
 	// the app open, at launch: its wake token goes to the core's client, and only there
