@@ -532,8 +532,8 @@ func TestForwardLegacyDeltasWipeNothing(t *testing.T) {
 }
 
 // A role's Forwarder reads each base's config head through F's head reader, whose keys are the generations that
-// Forwarder keeps (SDK-M8-16; QD-814): on this leg the role holds one, an anchoring reader the Forwarder reads at the
-// state at each base.
+// Forwarder keeps (SDK-M8-16; QD-814; QD-839, QD-973): on every leg, the Apple extensions' among them, the role holds
+// one, an anchoring reader the Forwarder reads at the state at each base.
 func TestForwardRoleReadsHeadsThroughF(t *testing.T) {
 	forward := newTestingForwardDevice(t)
 	device := forward.device(t, nil)

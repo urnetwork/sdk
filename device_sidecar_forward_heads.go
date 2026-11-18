@@ -1,11 +1,11 @@
-//go:build !js && !ios_extension
+//go:build !js
 
 // The forwarding role's config head reader (DESIGN-DETAILS 4.2.5's Compile, step 3; QD-814; SDK-M8-16): the root's
 // reader over F (sidecar.ForwardingClient.ConfigHeads), its keys the generations the role's Forwarder keeps, opened by
 // its forwarding reader key, and its pin in the role's sealed store. Every base names a head, base 1's included, so
-// it is what lets the VPN component compile at all, with no sidecar role running. Android's VPN service and the
-// desktop app services build it; the Apple extensions' leg does not link the reader yet
-// (device_sidecar_forward_heads_extension.go).
+// it is what lets the VPN component compile at all, with no sidecar role running. Every VPN component builds the same
+// one: Android's VPN service, the desktop app services and, since the reader went on the ios_extension leg (QD-839,
+// QD-973; owner decision 491), the iOS and macOS network extensions.
 
 package sdk
 

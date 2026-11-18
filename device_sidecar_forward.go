@@ -17,8 +17,8 @@
 //	           hand-off and the promotion keeps it signing
 //	following  the Forwarder follows the log on F, applies what the posture can check at once and compiles the rest,
 //	           handing states to the network's posture (the sink), all with no sidecar role running; it reads each
-//	           base's config head through F's head reader at the state at that base (device_sidecar_forward_heads.go;
-//	           the Apple extensions' leg builds none yet); team hints come by §6.8's long-poll on F, which reaches every
+//	           base's config head through F's head reader at the state at that base (device_sidecar_forward_heads.go,
+//	           on every VPN component's leg); team hints come by §6.8's long-poll on F, which reaches every
 //	           network (D's pushes on 21842 wait on PROTO's move of the push types, plan-PROTO-device-role-push-types)
 //	refresh    F refreshes itself by its own proofs at 40 to 50% of its lifetime, keeping the new token before it is
 //	           presented; a token past its exp at start holds the posture pending (forward_client_lapsed) until a new
@@ -487,7 +487,7 @@ type deviceLocalForwarding struct {
 	forwarderStore *deviceForwarderStore
 	forwarder      *sidecar.Forwarder
 	client         *sidecar.ForwardingClient
-	// the config head reader the Forwarder reads bases' heads through, nil on a leg that builds none
+	// the config head reader the Forwarder reads bases' heads through, the same on every leg, nil until start builds it
 	heads sidecar.ConfigHeadReader
 	// the hand-off the Forwarder runs on, without its token
 	setup *bridge.ForwardingHandOff
