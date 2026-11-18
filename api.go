@@ -88,6 +88,8 @@ type Api struct {
 	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
 	tokenManager                    *apiTokenManager
 	networkRenewer                  *apiNetworkCredentialRenewer
+	// SignOut's budgets; tests change them before signing out
+	signOutSettings *apiSignOutSettings
 }
 
 // Delivers at most one terminal result. Marking delivery before entering the
@@ -169,6 +171,7 @@ func newApi(
 		networkSessionsListeners:        connect.NewCallbackList[NetworkSessionsChangeListener](),
 		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
+		signOutSettings:                 defaultApiSignOutSettings(),
 	}
 	// both workers read the same immutable schedule
 	refreshSettings := defaultApiTokenRefreshSettings()

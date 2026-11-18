@@ -217,3 +217,69 @@ func TestExplicitSessionSignOutConfirmsServerCutoff(t *testing.T) {
 		t.Fatal("sign-out not completed")
 	}
 }
+
+// A removal of the device's client that takes its whole budget still leaves
+// the cutoff its own (S1 W14). The two shared one 2 s budget, so a removal
+// that did not answer spent the cutoff's time too: the session stayed
+// unrevoked, listed and accepted on the server, after a sign-out that cleared
+// the local login. The removal waits for its own budget to end, not a sleep.
+func TestExplicitSessionSignOutRevokesAfterAnUnansweredClientRemoval(t *testing.T) {
+	api := newApi(t.Context(), nil, "https://api.test")
+	defer api.Close()
+	api.signOutSettings = &apiSignOutSettings{removeClientTimeout: 20 * time.Millisecond, revokeTimeout: time.Minute}
+	api.SetByJwt(taggedSessionTestJwt(t, NewId().String(), ""))
+	func() {
+		api.authMutationLock.Lock()
+		defer api.authMutationLock.Unlock()
+		api.mutex.Lock()
+		defer api.mutex.Unlock()
+		api.byJwt = taggedSessionTestJwt(t, NewId().String(), NewId().String())
+	}()
+	var pathsLock sync.Mutex
+	paths := []string{}
+	api.setHttpPostRaw(func(ctx context.Context, url string, body []byte, _ string) ([]byte, error) {
+		path := strings.TrimPrefix(url, "https://api.test")
+		func() {
+			pathsLock.Lock()
+			defer pathsLock.Unlock()
+			paths = append(paths, path)
+		}()
+		switch path {
+		case "/network/remove-client":
+			// never answers within its budget
+			<-ctx.Done()
+			return nil, ctx.Err()
+		case "/network/revoke-session":
+			if err := ctx.Err(); err != nil {
+				// the cutoff was sent without any time left
+				return nil, err
+			}
+			var args RevokeNetworkSessionArgs
+			if err := json.Unmarshal(body, &args); err != nil {
+				return nil, err
+			}
+			return json.Marshal(&SessionOperationResult{OperationId: args.OperationId, State: "enforced", Status: "revoked"})
+		}
+		return nil, errors.New("unexpected post " + path)
+	})
+	done := make(chan *SessionSignOutResult, 1)
+	api.SignOut(sessionSignOutCallbackFunc(func(result *SessionSignOutResult, err error) {
+		if err != nil {
+			t.Error(err)
+		}
+		done <- result
+	}))
+	select {
+	case result := <-done:
+		pathsLock.Lock()
+		defer pathsLock.Unlock()
+		if strings.Join(paths, " ") != "/network/remove-client /network/revoke-session" {
+			t.Fatal(paths)
+		}
+		if result.ClientRemoved || !result.RevocationConfirmed || !result.CredentialCleared {
+			t.Fatalf("the unanswered removal spent the cutoff's budget: %+v", result)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("sign-out not completed")
+	}
+}
