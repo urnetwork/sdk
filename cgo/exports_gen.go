@@ -22403,6 +22403,20 @@ func urnet_sidecar_mail_set_receiver_enabled(self C.uint64_t, enabled C.bool, ca
 	self_.SetReceiverEnabled(bool(enabled), callback_)
 }
 
+//export urnet_sidecar_search_acknowledge_indexer
+func urnet_sidecar_search_acknowledge_indexer(self C.uint64_t, memberId *C.char, allow C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_search_acknowledge_indexer")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_acknowledge_indexer")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AcknowledgeIndexer(goId(memberId, "urnet_sidecar_search_acknowledge_indexer"), bool(allow), callback_)
+}
+
 //export urnet_sidecar_search_drop_cache
 func urnet_sidecar_search_drop_cache(self C.uint64_t, repoId *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sidecar_search_drop_cache")
@@ -22415,6 +22429,20 @@ func urnet_sidecar_search_drop_cache(self C.uint64_t, repoId *C.char, callback_r
 		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.DropCache(goId(repoId, "urnet_sidecar_search_drop_cache"), callback_)
+}
+
+//export urnet_sidecar_search_get_indexers
+func urnet_sidecar_search_get_indexers(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_search_get_indexers")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_get_indexers")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetIndexers()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_search_get_indexers")
 }
 
 //export urnet_sidecar_search_get_status
@@ -22502,6 +22530,20 @@ func urnet_sidecar_search_set_policy(self C.uint64_t, repoId *C.char, policy *C.
 		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SetPolicy(goId(repoId, "urnet_sidecar_search_set_policy"), goString(policy), callback_)
+}
+
+//export urnet_sidecar_search_set_remote
+func urnet_sidecar_search_set_remote(self C.uint64_t, mode *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_search_set_remote")
+	self_, ok := resolveHandle[*sdk.SidecarSearch](uint64(self), "urnet_sidecar_search_set_remote")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SetRemote(goString(mode), callback_)
 }
 
 //export urnet_sidecar_search_handle_cancel

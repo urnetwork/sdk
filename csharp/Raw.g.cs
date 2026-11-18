@@ -1446,13 +1446,16 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_mail_get_vault_entries(ulong a0, urnet_sidecar_vault_entries_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_mail_send(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sidecar_result_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_mail_set_receiver_enabled(ulong a0, byte a1, urnet_sidecar_result_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_acknowledge_indexer(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, byte a2, urnet_sidecar_result_cb a3, IntPtr a4);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_drop_cache(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sidecar_result_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_sidecar_search_get_indexers(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_sidecar_search_get_status(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_run_background_sync(ulong a0, long a1, urnet_sidecar_result_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_search_search(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sidecar_search_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_set_conditions(ulong a0, byte a1, byte a2, byte a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_set_foreground(ulong a0, byte a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_set_policy(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2, urnet_sidecar_result_cb a3, IntPtr a4);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_set_remote(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sidecar_result_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_handle_cancel(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sidecar_search_handle_more(ulong a0, long a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_socket_listener_accept(ulong a0, long a1, out IntPtr a2);

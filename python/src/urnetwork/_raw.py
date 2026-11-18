@@ -2618,8 +2618,12 @@ def bind(lib):
     lib.urnet_sidecar_mail_send.restype = None
     lib.urnet_sidecar_mail_set_receiver_enabled.argtypes = [c_uint64, c_bool, urnet_sidecar_result_cb, c_void_p]
     lib.urnet_sidecar_mail_set_receiver_enabled.restype = None
+    lib.urnet_sidecar_search_acknowledge_indexer.argtypes = [c_uint64, c_char_p, c_bool, urnet_sidecar_result_cb, c_void_p]
+    lib.urnet_sidecar_search_acknowledge_indexer.restype = None
     lib.urnet_sidecar_search_drop_cache.argtypes = [c_uint64, c_char_p, urnet_sidecar_result_cb, c_void_p]
     lib.urnet_sidecar_search_drop_cache.restype = None
+    lib.urnet_sidecar_search_get_indexers.argtypes = [c_uint64]
+    lib.urnet_sidecar_search_get_indexers.restype = c_void_p
     lib.urnet_sidecar_search_get_status.argtypes = [c_uint64, c_char_p]
     lib.urnet_sidecar_search_get_status.restype = c_void_p
     lib.urnet_sidecar_search_run_background_sync.argtypes = [c_uint64, c_int64, urnet_sidecar_result_cb, c_void_p]
@@ -2632,6 +2636,8 @@ def bind(lib):
     lib.urnet_sidecar_search_set_foreground.restype = None
     lib.urnet_sidecar_search_set_policy.argtypes = [c_uint64, c_char_p, c_char_p, urnet_sidecar_result_cb, c_void_p]
     lib.urnet_sidecar_search_set_policy.restype = None
+    lib.urnet_sidecar_search_set_remote.argtypes = [c_uint64, c_char_p, urnet_sidecar_result_cb, c_void_p]
+    lib.urnet_sidecar_search_set_remote.restype = None
     lib.urnet_sidecar_search_handle_cancel.argtypes = [c_uint64]
     lib.urnet_sidecar_search_handle_cancel.restype = None
     lib.urnet_sidecar_search_handle_more.argtypes = [c_uint64, c_int64]

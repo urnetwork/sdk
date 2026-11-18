@@ -578,6 +578,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_HOST_CLASS_ANDROID "android"
 #define URNET_SIDECAR_HOST_CLASS_DESKTOP "desktop"
 #define URNET_SIDECAR_HOST_CLASS_IOS "ios"
+#define URNET_SIDECAR_INDEXER_BUSY "busy"
+#define URNET_SIDECAR_INDEXER_ONLINE "online"
+#define URNET_SIDECAR_INDEXER_UNKNOWN "unknown"
+#define URNET_SIDECAR_INDEXER_UNREACHABLE "unreachable"
 #define URNET_SIDECAR_KEY_STORE_FAILED 0
 #define URNET_SIDECAR_KEY_STORE_LOCKED 4
 #define URNET_SIDECAR_KEY_STORE_OK 1
@@ -594,6 +598,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_SEARCH_CODE_INVALID "SEARCH_INVALID"
 #define URNET_SIDECAR_SEARCH_CODE_REFUSED "SEARCH_REFUSED"
 #define URNET_SIDECAR_SEARCH_CODE_UNAVAILABLE "SEARCH_UNAVAILABLE"
+#define URNET_SIDECAR_SEARCH_FALLBACK_BUSY "busy"
+#define URNET_SIDECAR_SEARCH_FALLBACK_NONE "none"
+#define URNET_SIDECAR_SEARCH_FALLBACK_NOTICE "notice"
+#define URNET_SIDECAR_SEARCH_FALLBACK_OFF "off"
+#define URNET_SIDECAR_SEARCH_FALLBACK_OFFLINE "offline"
+#define URNET_SIDECAR_SEARCH_FALLBACK_REFUSED "refused"
+#define URNET_SIDECAR_SEARCH_FALLBACK_UNREACHABLE "unreachable"
 #define URNET_SIDECAR_SEARCH_HIT_CONFIRMED "confirmed"
 #define URNET_SIDECAR_SEARCH_HIT_NEAR "near"
 #define URNET_SIDECAR_SEARCH_HIT_POSSIBLE "possible"
@@ -602,6 +613,14 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_SEARCH_PARTITION_ALL "all"
 #define URNET_SIDECAR_SEARCH_PARTITION_LATEST "latest"
 #define URNET_SIDECAR_SEARCH_REMOTE_OFF "off"
+#define URNET_SIDECAR_SEARCH_REMOTE_ON "on"
+#define URNET_SIDECAR_SEARCH_REMOTE_OWN "own"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_ANSWERED "answered"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_ASKING "asking"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_FALLBACK "fallback"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_NOTICE "notice"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_OFF "off"
+#define URNET_SIDECAR_SEARCH_REMOTE_STATE_PARTIAL "partial"
 #define URNET_SIDECAR_SEARCH_SCOPE_ALL "all"
 #define URNET_SIDECAR_SEARCH_SCOPE_CACHED "cached"
 #define URNET_SIDECAR_SEARCH_SCOPE_LATEST "latest"
@@ -2648,13 +2667,16 @@ void urnet_sidecar_mail_set_receiver_enabled(uint64_t self, bool enabled, urnet_
 
 /* ----- SidecarSearch ----- */
 
+void urnet_sidecar_search_acknowledge_indexer(uint64_t self, const char* member_id, bool allow, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_search_drop_cache(uint64_t self, const char* repo_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+char* urnet_sidecar_search_get_indexers(uint64_t self);
 char* urnet_sidecar_search_get_status(uint64_t self, const char* repo_id);
 void urnet_sidecar_search_run_background_sync(uint64_t self, int64_t budget_millis, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 uint64_t urnet_sidecar_search_search(uint64_t self, const char* query_json, urnet_sidecar_search_cb listener_search_page, void* listener_user_data);
 void urnet_sidecar_search_set_conditions(uint64_t self, bool unmetered, bool charging, bool low_power);
 void urnet_sidecar_search_set_foreground(uint64_t self, bool foreground);
 void urnet_sidecar_search_set_policy(uint64_t self, const char* repo_id, const char* policy, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_search_set_remote(uint64_t self, const char* mode, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 
 /* ----- SidecarSearchHandle ----- */
 
@@ -5977,6 +5999,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   state?: string
  *   acknowledged?: boolean
  *   served_repo_ids?: IdList | null
+ */
+
+/* SidecarIndexerList (json):
+ *   = SidecarIndexer | null[]
  */
 
 /* SidecarOneTimeCode (json):

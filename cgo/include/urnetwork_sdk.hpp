@@ -630,6 +630,10 @@ inline constexpr int64_t SidecarForwardSecretPresent = 2;
 inline constexpr const char* SidecarHostClassAndroid = "android";
 inline constexpr const char* SidecarHostClassDesktop = "desktop";
 inline constexpr const char* SidecarHostClassIos = "ios";
+inline constexpr const char* SidecarIndexerBusy = "busy";
+inline constexpr const char* SidecarIndexerOnline = "online";
+inline constexpr const char* SidecarIndexerUnknown = "unknown";
+inline constexpr const char* SidecarIndexerUnreachable = "unreachable";
 inline constexpr int64_t SidecarKeyStoreFailed = 0;
 inline constexpr int64_t SidecarKeyStoreLocked = 4;
 inline constexpr int64_t SidecarKeyStoreOk = 1;
@@ -646,6 +650,13 @@ inline constexpr const char* SidecarSearchCodeFailed = "SEARCH_FAILED";
 inline constexpr const char* SidecarSearchCodeInvalid = "SEARCH_INVALID";
 inline constexpr const char* SidecarSearchCodeRefused = "SEARCH_REFUSED";
 inline constexpr const char* SidecarSearchCodeUnavailable = "SEARCH_UNAVAILABLE";
+inline constexpr const char* SidecarSearchFallbackBusy = "busy";
+inline constexpr const char* SidecarSearchFallbackNone = "none";
+inline constexpr const char* SidecarSearchFallbackNotice = "notice";
+inline constexpr const char* SidecarSearchFallbackOff = "off";
+inline constexpr const char* SidecarSearchFallbackOffline = "offline";
+inline constexpr const char* SidecarSearchFallbackRefused = "refused";
+inline constexpr const char* SidecarSearchFallbackUnreachable = "unreachable";
 inline constexpr const char* SidecarSearchHitConfirmed = "confirmed";
 inline constexpr const char* SidecarSearchHitNear = "near";
 inline constexpr const char* SidecarSearchHitPossible = "possible";
@@ -654,6 +665,14 @@ inline constexpr const char* SidecarSearchHitVerified = "verified";
 inline constexpr const char* SidecarSearchPartitionAll = "all";
 inline constexpr const char* SidecarSearchPartitionLatest = "latest";
 inline constexpr const char* SidecarSearchRemoteOff = "off";
+inline constexpr const char* SidecarSearchRemoteOn = "on";
+inline constexpr const char* SidecarSearchRemoteOwn = "own";
+inline constexpr const char* SidecarSearchRemoteStateAnswered = "answered";
+inline constexpr const char* SidecarSearchRemoteStateAsking = "asking";
+inline constexpr const char* SidecarSearchRemoteStateFallback = "fallback";
+inline constexpr const char* SidecarSearchRemoteStateNotice = "notice";
+inline constexpr const char* SidecarSearchRemoteStateOff = "off";
+inline constexpr const char* SidecarSearchRemoteStatePartial = "partial";
 inline constexpr const char* SidecarSearchScopeAll = "all";
 inline constexpr const char* SidecarSearchScopeCached = "cached";
 inline constexpr const char* SidecarSearchScopeLatest = "latest";
@@ -1454,6 +1473,7 @@ using SidecarDirectoryFieldList = std::vector<SidecarDirectoryField>;
 using SidecarDirectoryServiceList = std::vector<SidecarDirectoryService>;
 using SidecarErasureList = std::vector<SidecarErasure>;
 using SidecarHistoryVersionList = std::vector<SidecarHistoryVersion>;
+using SidecarIndexerList = std::vector<SidecarIndexer>;
 using SidecarOneTimeCodeList = std::vector<SidecarOneTimeCode>;
 using SidecarRevokeItemList = std::vector<SidecarRevokeItem>;
 using SidecarSearchHitList = std::vector<SidecarSearchHit>;
@@ -26953,13 +26973,16 @@ class SidecarSearch final : public detail::Handle {
 public:
 	SidecarSearch() = default;
 	explicit SidecarSearch(uint64_t h) : detail::Handle(h) {}
+	void acknowledgeIndexer(const std::string& member_id, bool allow, SidecarResultCallback callback) const;
 	void dropCache(const std::string& repo_id, SidecarResultCallback callback) const;
+	std::optional<SidecarIndexerList> getIndexers() const;
 	std::optional<SidecarSearchStatus> getStatus(const std::string& repo_id) const;
 	void runBackgroundSync(int64_t budget_millis, SidecarResultCallback callback) const;
 	SidecarSearchHandle search(const std::optional<SidecarSearchQuery>& query, SidecarSearchListener listener) const;
 	void setConditions(bool unmetered, bool charging, bool low_power) const;
 	void setForeground(bool foreground) const;
 	void setPolicy(const std::string& repo_id, const std::string& policy, SidecarResultCallback callback) const;
+	void setRemote(const std::string& mode, SidecarResultCallback callback) const;
 };
 
 class SidecarSearchHandle final : public detail::Handle {
@@ -41845,9 +41868,21 @@ inline void SidecarMail::setReceiverEnabled(bool enabled, SidecarResultCallback 
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_set_receiver_enabled(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
+inline void SidecarSearch::acknowledgeIndexer(const std::string& member_id, bool allow, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_search_acknowledge_indexer(handle(), member_id.c_str(), allow, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
 inline void SidecarSearch::dropCache(const std::string& repo_id, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_search_drop_cache(handle(), repo_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline std::optional<SidecarIndexerList> SidecarSearch::getIndexers() const {
+	char* r_c = urnet_sidecar_search_get_indexers(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarIndexerList>(r_s->c_str());
 }
 inline std::optional<SidecarSearchStatus> SidecarSearch::getStatus(const std::string& repo_id) const {
 	char* r_c = urnet_sidecar_search_get_status(handle(), repo_id.c_str());
@@ -41887,6 +41922,10 @@ inline void SidecarSearch::setForeground(bool foreground) const {
 inline void SidecarSearch::setPolicy(const std::string& repo_id, const std::string& policy, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_search_set_policy(handle(), repo_id.c_str(), policy.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarSearch::setRemote(const std::string& mode, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_search_set_remote(handle(), mode.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
 inline void SidecarSearchHandle::cancel() const {
 	urnet_sidecar_search_handle_cancel(handle());

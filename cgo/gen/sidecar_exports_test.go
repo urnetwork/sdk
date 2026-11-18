@@ -83,8 +83,9 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarCleanupList", "SidecarAccessRequest",
 		// SidecarMail's send capability (SDK-M9-01)
 		"SidecarSendCheck", "SidecarSendResult", "SidecarSendDomain", "SidecarSendDomainList",
-		// SidecarSearch's (SDK-M10-01)
+		// SidecarSearch's (SDK-M10-01), and its indexer list (SDK-M10-03)
 		"SidecarSearchQuery", "SidecarSearchHit", "SidecarSearchHitList", "SidecarSearchProgress", "SidecarSearchStatus", "SidecarIndexer",
+		"SidecarIndexerList",
 	} {
 		if info := g.classify(types.NewPointer(testingPreferenceType(t, g, name).Type())); info.kind != kindJson {
 			t.Errorf("%s crosses as kind %d", name, info.kind)
@@ -96,6 +97,7 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarApprovalList":   sdk.NewSidecarApprovalList(),
 		"SidecarSendDomainList": sdk.NewSidecarSendDomainList(),
 		"SidecarSearchHitList":  sdk.NewSidecarSearchHitList(),
+		"SidecarIndexerList":    sdk.NewSidecarIndexerList(),
 	} {
 		encoded, err := json.Marshal(list)
 		if err != nil || !strings.HasPrefix(string(encoded), "[") {
@@ -156,6 +158,8 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		"Sidecar.GetSearch", "SidecarSearch.Search", "SidecarSearch.GetStatus", "SidecarSearch.DropCache", "SidecarSearch.SetPolicy",
 		"SidecarSearch.SetConditions", "SidecarSearch.SetForeground", "SidecarSearch.RunBackgroundSync", "SidecarSearchHandle.More",
 		"SidecarSearchHandle.Cancel",
+		// remote search's requester seams (SDK-M10-03)
+		"SidecarSearch.GetIndexers", "SidecarSearch.SetRemote", "SidecarSearch.AcknowledgeIndexer",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

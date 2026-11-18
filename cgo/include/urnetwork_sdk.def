@@ -1360,7 +1360,9 @@ EXPORTS
 	urnet_sidecar_mail_get_vault_entries
 	urnet_sidecar_mail_send
 	urnet_sidecar_mail_set_receiver_enabled
+	urnet_sidecar_search_acknowledge_indexer
 	urnet_sidecar_search_drop_cache
+	urnet_sidecar_search_get_indexers
 	urnet_sidecar_search_get_status
 	urnet_sidecar_search_handle_cancel
 	urnet_sidecar_search_handle_more
@@ -1369,6 +1371,7 @@ EXPORTS
 	urnet_sidecar_search_set_conditions
 	urnet_sidecar_search_set_foreground
 	urnet_sidecar_search_set_policy
+	urnet_sidecar_search_set_remote
 	urnet_sidecar_set_push_token
 	urnet_sidecar_sign_edge_login
 	urnet_sidecar_socket_listener_accept
