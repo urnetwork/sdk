@@ -4071,6 +4071,7 @@ struct SidecarApprovalItem {
 	std::optional<std::string> safety_number;
 	std::optional<std::string> action;
 	std::optional<bool> template_;
+	std::optional<int64_t> uses;
 	std::optional<std::string> channel;
 	std::optional<std::string> text;
 	std::optional<std::string> refused;
@@ -18483,6 +18484,9 @@ inline void to_json(nlohmann::json& j, const SidecarApprovalItem& v) {
 	if (v.template_) {
 		j["template"] = *v.template_;
 	}
+	if (v.uses) {
+		j["uses"] = *v.uses;
+	}
 	if (v.channel) {
 		j["channel"] = *v.channel;
 	}
@@ -18553,6 +18557,11 @@ inline void from_json(const nlohmann::json& j, SidecarApprovalItem& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.template_ = std::move(tmp);
+	}
+	if (auto it = j.find("uses"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.uses = std::move(tmp);
 	}
 	if (auto it = j.find("channel"); it != j.end() && !it->is_null()) {
 		std::string tmp{};

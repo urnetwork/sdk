@@ -24,7 +24,10 @@
 //	          the item for another try. Admissions and OwnerConfirms follow the safety number the item carries. A
 //	          request runs MCP-M3-07's path: on the local backend this device's own by presence through the app's
 //	          signer over the decision's bytes, another's by device; on the remote one approvals.app.request, device
-//	          alone. Decide carries no uses, so an app lists a template request with deny alone
+//	          alone. Decide carries no uses: it approves a request as shown, for the uses the request names, which the
+//	          item carries as Uses and its text renders (QD-1010, owner decision 574), a template's count as its
+//	          agent asked it and 1 for any other action; a version-1 template's request names no count, so the core
+//	          lists it with deny alone
 //	devices   GetDevices, PreviewRevokeDevice and RevokeDevice wrap §5.4's calls (D-SDK-30): the plan a person reads,
 //	          then RevokeDevice of that plan id, with the plan's key items the person left selected. Refusals carry
 //	          §5.6's REVOKE_ codes, FAILED_PRECONDITION while locked or unenrolled, and UNAVAILABLE when nothing could
@@ -148,6 +151,11 @@ type SidecarApprovalItem struct {
 	Action string `json:"action,omitempty"`
 	// request: a multi-use template, each use's action matching its fields.
 	Template bool `json:"template,omitempty"`
+	// request: how many distinct actions an approval covers, which Decide approves as shown and Text renders among the
+	// daemon-built fields (QD-1010): a template's count as its agent asked it, 2 or more, and 1 for any other action;
+	// 0 for a version-1 template, whose request names none and which lists with deny alone, and for a request shown
+	// refused.
+	Uses int64 `json:"uses,omitempty"`
 	// request: how this device signs it, device or presence (this sidecar's own request); empty where it signs none.
 	Channel string `json:"channel,omitempty"`
 	// request: the action as the core built it, with the agent's own words under their untrusted heading (§16.6),
@@ -924,8 +932,8 @@ func sidecarAccessItemOf(stub *sidecar.DirectoryRequestStub) *SidecarApprovalIte
 	}
 }
 
-// The item of one of §16.8's requests: an approval id, its render's text, the channel this device signs it on, and the
-// decisions it offers; or, shown refused, why, with none.
+// The item of one of §16.8's requests: an approval id, its render's text and the uses it names, the channel this device
+// signs it on, and the decisions it offers; or, shown refused, why, with none.
 func sidecarRequestItemOf(request *sidecar.SidecarRequestItem) *SidecarApprovalItem {
 	item := &SidecarApprovalItem{
 		Kind:      SidecarApprovalKindRequest,
@@ -938,6 +946,7 @@ func sidecarRequestItemOf(request *sidecar.SidecarRequestItem) *SidecarApprovalI
 		item.ApprovalId = newId([16]byte(request.ApprovalId))
 		item.Action = request.Render.KindName
 		item.Template = request.Render.Template
+		item.Uses = int64(request.Render.Uses)
 		item.Text = request.Render.Text()
 		item.SidecarId = sidecarIdOfValue(request.Render.RequesterSidecarId)
 	}
@@ -1158,9 +1167,11 @@ type sidecarControlRequestItem struct {
 	ApprovalId *Id `json:"approval_id,omitempty"`
 	EntryId    *Id `json:"entry_id"`
 	// The requesting sidecar.
-	SidecarId *Id      `json:"sidecar_id,omitempty"`
-	Kind      string   `json:"kind,omitempty"`
-	Template  bool     `json:"template,omitempty"`
+	SidecarId *Id    `json:"sidecar_id,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Template  bool   `json:"template,omitempty"`
+	// The uses the request names (QD-1010); 0, left out, for none.
+	Uses      uint32   `json:"uses,omitempty"`
 	Text      string   `json:"text,omitempty"`
 	Refused   string   `json:"refused,omitempty"`
 	Channel   string   `json:"channel,omitempty"`
@@ -1326,6 +1337,7 @@ func (self *sidecarApprovalsRemoteBackend) pending(ctx context.Context, preview 
 			SidecarId:  sidecarControlIdOf(request.SidecarId),
 			Action:     request.Kind,
 			Template:   request.Template,
+			Uses:       int64(request.Uses),
 			Channel:    request.Channel,
 			Text:       request.Text,
 			Refused:    request.Refused,

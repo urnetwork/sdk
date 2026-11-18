@@ -8,10 +8,12 @@ package sdk
 // request on channel device and its own on presence, signs the first by its identity key and the second by the app's
 // SignWithPresence over the decision's §6.9 bytes on both of §16.6's profiles (FS-124's app-host decision cases),
 // signs nothing on a refusal, an answer that is no evidence, a panic, no signer or a key the member does not hold,
-// lists a template with deny alone, and lists nothing where it is no approval-capable device. Its approval part's hint
-// raises approval_pending, which a pending listener hears. A desktop in remote mode lists and decides over the
-// daemon's app methods, confirmed, on the pairing's network, its daemon's own request listed with no decision and never
-// sent; a daemon from before those methods lists no request. Every wait is on a channel or a callback's answer.
+// lists a version-1 template, whose request names no count, with deny alone and approves a template whose request
+// names its uses as shown, signing that count (QD-1010), and lists nothing where it is no approval-capable device. Its
+// approval part's hint raises approval_pending, which a pending listener hears. A desktop in remote mode lists and
+// decides over the daemon's app methods, confirmed, on the pairing's network, its daemon's own request listed with no
+// decision and never sent, a template with the uses the daemon names; a daemon from before those methods lists no
+// request. Every wait is on a channel or a callback's answer.
 
 import (
 	"bytes"
@@ -89,9 +91,22 @@ func (self *testRequestLog) decisions(t *testing.T) []*sidecar.StoredApprovalDec
 	return decisions
 }
 
-// A request requester files for a dns_set of value, the authority's member its approver, waiting in the log; scope makes
-// it a multi-use template.
+// A request requester files for a dns_set of value, the authority's member its approver, waiting in the log, at
+// ApprovalRequest's version 1, from before it named uses; scope makes it a multi-use template.
 func (self *testRequestLog) file(t *testing.T, requester sidecar.Id, memberId sidecar.Id, value string, scope bool) *sidecar.StoredApprovalRequest {
+	t.Helper()
+	return self.fileVersion(t, requester, memberId, value, scope, 1, 0)
+}
+
+// file at ApprovalRequest's version 2, naming uses (QD-1010): 1 for an action that is no template, 2 or more for a
+// template.
+func (self *testRequestLog) fileUses(t *testing.T, requester sidecar.Id, memberId sidecar.Id, value string, scope bool, uses uint32) *sidecar.StoredApprovalRequest {
+	t.Helper()
+	return self.fileVersion(t, requester, memberId, value, scope, 2, uses)
+}
+
+// file at version, naming uses.
+func (self *testRequestLog) fileVersion(t *testing.T, requester sidecar.Id, memberId sidecar.Id, value string, scope bool, version uint32, uses uint32) *sidecar.StoredApprovalRequest {
 	t.Helper()
 	action, err := sidecar.NewCanonicalAction(&protocol.CanonicalAction{
 		Kind: uint32(sidecar.SidecarActionDnsSet), DnsName: "app.example", DnsType: "A", DnsValue: value, DnsTtl: 300, Scope: scope,
@@ -106,7 +121,7 @@ func (self *testRequestLog) file(t *testing.T, requester sidecar.Id, memberId si
 		ApprovalId: approvalId.Bytes(), ActionId: actionId[:], RunId: sidecar.NewId().Bytes(), CanonicalAction: action.Bytes,
 		PayloadSha256: payloadSha256[:], Summary: "the agent's words", Risk: uint32(sidecar.SidecarRiskNormal),
 		RequesterSidecarId: requester.Bytes(), Approvers: [][]byte{memberId.Bytes()},
-		NotAfterMillis: time.Now().Add(time.Hour).UnixMilli(), Version: 1,
+		NotAfterMillis: time.Now().Add(time.Hour).UnixMilli(), Version: version, Uses: uses,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -376,14 +391,14 @@ func TestRequestOwnRefusalsSignNothing(t *testing.T) {
 	}
 }
 
-// An app's Decide carries no uses, so a template request lists deny alone: its approval is refused before anything is
-// signed, and its denial is signed.
+// An app's Decide carries no uses, so a template whose request names no count, a version-1 template's, lists deny
+// alone: its approval is refused before anything is signed, and its denial is signed.
 func TestRequestTemplateTakesDenyOnAnApp(t *testing.T) {
 	local, authority, log := newTestRequestPhone(t, nil)
 	template := log.file(t, sidecar.NewId(), authority.memberId, "198.51.100.7", true)
 	approvals := local.GetApprovals()
 	item := testApprovalItem(approvals.GetPending(), newId([16]byte(template.ApprovalId())))
-	if item == nil || !item.Template || item.Decisions.Len() != 1 || !item.Decisions.Contains(SidecarDecisionDeny) {
+	if item == nil || !item.Template || item.Uses != 0 || item.Decisions.Len() != 1 || !item.Decisions.Contains(SidecarDecisionDeny) {
 		t.Fatalf("the template's item: %+v", item)
 	}
 	if result := testRequestDecide(t, approvals, template.ApprovalId(), SidecarDecisionApprove); result.Ok || result.Code != SidecarCodeApprovalNotEligible {
@@ -394,6 +409,99 @@ func TestRequestTemplateTakesDenyOnAnApp(t *testing.T) {
 	}
 	if decisions := log.decisions(t); len(decisions) != 1 || decisions[0].Decision.GetDecision() != uint32(protocol.ApprovalVerdict_APPROVAL_VERDICT_DENY) {
 		t.Errorf("the decisions filed: %+v", decisions)
+	}
+}
+
+// A template whose request names 3 uses (QD-1010, owner decision 574) lists on a phone with its count, approve and
+// deny, its text saying the approval covers up to 3 uses; Decide, which carries no count, approves it as shown,
+// signing 3 uses by device. An action that is no template lists its 1 and signs it.
+func TestRequestTemplateApprovedAsShownOnAnApp(t *testing.T) {
+	local, authority, log := newTestRequestPhone(t, nil)
+	template := log.fileUses(t, sidecar.NewId(), authority.memberId, "198.51.100.7", true, 3)
+	single := log.fileUses(t, sidecar.NewId(), authority.memberId, "198.51.100.8", false, 1)
+	approvals := local.GetApprovals()
+	pending := approvals.GetPending()
+	item := testApprovalItem(pending, newId([16]byte(template.ApprovalId())))
+	if item == nil || !item.Template || item.Uses != 3 || item.Decisions.Len() != 2 || !item.Decisions.Contains(SidecarDecisionApprove) ||
+		!strings.Contains(item.Text, "a template for up to 3 uses") || !strings.Contains(item.Text, "  uses: 3") {
+		t.Fatalf("the template's item: %+v", item)
+	}
+	if singleItem := testApprovalItem(pending, newId([16]byte(single.ApprovalId()))); singleItem == nil || singleItem.Template || singleItem.Uses != 1 {
+		t.Fatalf("one action's item: %+v", singleItem)
+	}
+	for _, request := range []*sidecar.StoredApprovalRequest{template, single} {
+		if result := testRequestDecide(t, approvals, request.ApprovalId(), SidecarDecisionApprove); !result.Ok {
+			t.Fatalf("an approval as shown: %+v", result)
+		}
+	}
+	decisions := log.decisions(t)
+	if len(decisions) != 2 {
+		t.Fatalf("%d decisions filed", len(decisions))
+	}
+	for i, want := range []struct {
+		request *sidecar.StoredApprovalRequest
+		uses    uint32
+	}{{request: template, uses: 3}, {request: single, uses: 1}} {
+		decision := decisions[i]
+		if !decision.Binds(want.request) || decision.Decision.GetUses() != want.uses ||
+			decision.Decision.GetChannel() != uint32(protocol.ApprovalChannel_APPROVAL_CHANNEL_DEVICE) {
+			t.Errorf("decision %d: %+v", i, decision.Decision)
+		}
+	}
+}
+
+// A desktop in remote mode lists a template's request with the uses approvals.app.requests names, and Decide sends
+// approvals.app.request with no count, confirmed, which the daemon signs as the request names it (QD-1010).
+func TestRequestRemoteTemplateListsItsUses(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	templateId, requesterId := sidecar.NewId(), sidecar.NewId()
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		switch request.Method {
+		case sidecarControlMethodApprovalsList:
+			return map[string]any{"items": []map[string]any{}}, nil, true
+		case sidecarControlMethodApprovalsAppRequests:
+			return map[string]any{"items": []map[string]any{
+				{"approval_id": templateId, "entry_id": sidecar.NewId(), "sidecar_id": requesterId, "kind": "dns_set", "template": true, "uses": 3,
+					"text": "request: dns_set, a template for up to 3 uses", "channel": "device", "decisions": []string{"approve", "deny"}},
+			}}, nil, true
+		case sidecarControlMethodApprovalsAppRequest:
+			if !request.UrConfirmed {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcConfirmationRequired, Message: "confirmation required"}, true
+			}
+			return map[string]any{}, nil, true
+		}
+		return nil, nil, false
+	}
+	daemon.start()
+	remote, backend, _ := openTestRemoteSidecar(t, socketPath)
+	if _, err := backend.pair(t.Context(), "a-synthetic-child-token"); err != nil {
+		t.Fatal(err)
+	}
+	approvals := remote.GetApprovals()
+	item := testApprovalItem(approvals.GetPending(), newId([16]byte(templateId)))
+	if item == nil || !item.Template || item.Uses != 3 || !item.Decisions.Contains(SidecarDecisionApprove) {
+		t.Fatalf("the template's item: %+v", item)
+	}
+	if result := testRequestDecide(t, approvals, templateId, SidecarDecisionApprove); !result.Ok {
+		t.Fatalf("its approval: %+v", result)
+	}
+	sent := 0
+	for _, request := range daemon.seen() {
+		if request.Method != sidecarControlMethodApprovalsAppRequest {
+			continue
+		}
+		sent += 1
+		params := map[string]any{}
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			t.Fatal(err)
+		}
+		if _, named := params["uses"]; named || params["decision"] != SidecarDecisionApprove || !request.UrConfirmed {
+			t.Errorf("approvals.app.request: confirmed %t, %s", request.UrConfirmed, request.Params)
+		}
+	}
+	if sent != 1 {
+		t.Errorf("%d decisions sent", sent)
 	}
 }
 

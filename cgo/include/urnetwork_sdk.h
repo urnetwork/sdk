@@ -5764,6 +5764,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   safety_number?: string
  *   action?: string
  *   template?: boolean
+ *   uses?: number
  *   channel?: string
  *   text?: string
  *   refused?: string
