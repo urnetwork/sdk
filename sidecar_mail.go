@@ -6,9 +6,13 @@
 // core's, and every check it makes stands behind each call.
 //
 //	aliases    GetAliases: every address record a reader honors (MailClient.Aliases; the daemon's id.ls)
-//	send       Send: §14's outbox unless this host proves (§15.10). MailClient.Send is MAIL-M7-18's and MAIL-M9-01's,
-//	           not on sidecar yet, so Send answers MAIL_UNAVAILABLE on both backends until it lands. Its send_id's
-//	           outcomes, the check before it and the mail_send event are sidecar_mail_send.go's
+//	send       Send: §14's outbox unless this host proves (§15.10). On the remote backend, ur daemon's mail.send (§5.8,
+//	           owner decision 288), sent unconfirmed: the daemon's gate holds a send naming an outside recipient for an
+//	           I-8 approval as it holds a submission (§15.10 step 1), which answers approval_pending:<id> with nothing
+//	           sent, and the same draft sent again once a person approved goes; mail to the network's own addresses
+//	           goes at once. Internet mail waits there on MAIL-M9-01 and MAIL-M9-02, each outside recipient answered
+//	           internet_waits by the daemon. On the local backend MAIL_UNAVAILABLE until SDK-M8-04 wires the core's
+//	           send. Its send_id's outcomes, the check before it and the mail_send event are sidecar_mail_send.go's
 //	receiver   the receiver hosting API: the "mail" component, MailClient attached to the core's generations, runs this
 //	           device's receiver where policy grants it the listen, only while the sidecar role runs, which on an app
 //	           host is while the app is open (§18.4's Listen row; owner decision 197). SetReceiverEnabled is the
@@ -304,7 +308,8 @@ func sidecarMailCodeOf(err error) string {
 	case errors.Is(err, errSidecarMailUnavailable), errors.Is(err, sidecar.ErrSidecarClosed),
 		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded),
 		errors.Is(err, errSidecarRemoteOffline), errors.Is(err, errSidecarRemoteClosed),
-		errors.Is(err, sidecar.ErrMailUnbound), errors.As(err, &notLanded):
+		errors.Is(err, sidecar.ErrMailUnbound), errors.Is(err, sidecar.ErrMailSendUnavailable),
+		errors.Is(err, sidecar.ErrApprovalNoLookup), errors.As(err, &notLanded):
 		return sidecarMailCodeUnavailable
 	case errors.Is(err, errSidecarMailReceiverLocal):
 		return sidecarMailCodeRefused
@@ -313,10 +318,41 @@ func sidecarMailCodeOf(err error) string {
 	case errors.Is(err, sidecar.ErrMailNoMailbox), errors.Is(err, sidecar.ErrMailNoConfig):
 		return sidecarMailCodeNoMailbox
 	case errors.Is(err, sidecar.ErrMailClientInvalid), errors.Is(err, sidecar.ErrMailVaultEntryInvalid),
-		errors.Is(err, sidecar.ErrMailVaultEntryAbsent), errors.Is(err, sidecar.ErrMailVaultEntryDeleted):
+		errors.Is(err, sidecar.ErrMailVaultEntryAbsent), errors.Is(err, sidecar.ErrMailVaultEntryDeleted),
+		errors.Is(err, sidecar.ErrMailSendInvalid), errors.Is(err, sidecar.ErrMailSendUnknown):
 		return sidecarMailCodeInvalid
 	case errors.As(err, &refusal):
-		return sidecarMailCodeRefused
+		return sidecarMailRemoteCodeOf(refusal)
+	}
+	return sidecarMailCodeRefused
+}
+
+// The code of a daemon's refusal, which carries its handler's text and the daemon's own codes: a method the daemon
+// does not have, a call with no network to act on (FAILED_PRECONDITION) and one past its time are unavailable; a
+// handler's failure reads by the root's mail error its text names, the daemon writing the error's text and the sdk
+// holding the same values; anything else is refused. A refusal's text goes nowhere but its Message.
+func sidecarMailRemoteCodeOf(refusal *sidecarControlError) string {
+	switch refusal.Code {
+	case sidecarControlCodeMethodNotFound, sidecarControlCodeFailedPrecondition, sidecarControlCodeTimeout:
+		return sidecarMailCodeUnavailable
+	}
+	for _, named := range []struct {
+		err  error
+		code string
+	}{
+		{sidecar.ErrMailSendUnavailable, sidecarMailCodeUnavailable},
+		{sidecar.ErrMailUnbound, sidecarMailCodeUnavailable},
+		{sidecar.ErrApprovalNoLookup, sidecarMailCodeUnavailable},
+		{sidecar.ErrMailVaultNotConsented, sidecarMailCodeNotConsented},
+		{sidecar.ErrMailNoMailbox, sidecarMailCodeNoMailbox},
+		{sidecar.ErrMailNoConfig, sidecarMailCodeNoMailbox},
+		{sidecar.ErrMailSendUnknown, sidecarMailCodeInvalid},
+		{sidecar.ErrMailSendInvalid, sidecarMailCodeInvalid},
+		{sidecar.ErrMailClientInvalid, sidecarMailCodeInvalid},
+	} {
+		if strings.Contains(refusal.Message, named.err.Error()) {
+			return named.code
+		}
 	}
 	return sidecarMailCodeRefused
 }
@@ -504,8 +540,9 @@ func (self *sidecarMailCoreBackend) receiverCoverage(ctx context.Context) (strin
 	return "", errSidecarMailNotLanded("tell its receiver coverage (MailClient.ReceiverCoverage)")
 }
 
-// sidecarMailBackend over ur daemon's control methods (sidecar_backend.go). The daemon has methods for addresses and
-// designations alone so far, so the rest answer errSidecarMailNotLanded.
+// sidecarMailBackend over ur daemon's control methods (sidecar_backend.go). The daemon has methods for addresses,
+// designations and sends (sidecar_mail_send.go's check and result among them) so far, so the rest answer
+// errSidecarMailNotLanded.
 type sidecarMailRemoteBackend struct {
 	remote sidecarBackend
 }
@@ -556,9 +593,24 @@ func (self *sidecarMailRemoteBackend) aliases(ctx context.Context) ([]*SidecarAl
 	return aliases, nil
 }
 
-// See sidecarMailBackend: §5.8 has no send method yet.
+// See sidecarMailBackend: ur daemon's mail.send on the pairing's network (the file's comment), sent unconfirmed: I-8's
+// approval is the daemon's gate's, which no word of the app's stands in for. A send the gate holds answers
+// *sidecar.ApprovalPendingError, approval_pending:<id> to the app, and one that went its send_id; a null answer, or one
+// naming neither, is none.
 func (self *sidecarMailRemoteBackend) send(ctx context.Context, draft *SidecarDraft) (string, error) {
-	return "", errSidecarMailNotLanded("send mail through its daemon (no control method yet)")
+	var reply *sidecarControlMailSendReply
+	if err := self.remote.call(ctx, sidecarControlMethodMailSend, sidecarControlMailDraftOf(self.network(), draft), false, &reply); err != nil {
+		return "", sidecarMailRemoteErr(err, "send mail through its daemon")
+	}
+	switch {
+	case reply == nil:
+		return "", errSidecarMailSendEmpty
+	case reply.ApprovalId != nil:
+		return "", &sidecar.ApprovalPendingError{ApprovalId: *reply.ApprovalId}
+	case reply.SendId == nil:
+		return "", errSidecarMailSendEmpty
+	}
+	return reply.SendId.String(), nil
 }
 
 // See sidecarMailBackend: the daemon's IndexerSet for mail at the member scope (the file's comment), confirmed, since

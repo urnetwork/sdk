@@ -23,9 +23,14 @@
 //	         setting, which are inbound (GetReceiverCoverage)
 //
 // Wiring: the root's types are on sidecar, its calls are not. MailClient's check and its send results (MAIL-M9-01 and
-// MAIL-M9-02, over SMTP-M9-08's SmtpSender.Check and SmtpDomainOutcome) have not landed, and §5.8 has no method for
-// either, so both calls answer MAIL_UNAVAILABLE on both backends until they do (CONTRACTS.md C-17), each backend's
-// method below naming what it waits on.
+// MAIL-M9-02, over SMTP-M9-08's SmtpSender.Check and SmtpDomainOutcome) have not landed, so the local backend answers
+// MAIL_UNAVAILABLE for both until they do (CONTRACTS.md C-17), its methods below naming what they wait on. The remote
+// backend calls ur daemon's mail.check_send and mail.send_result (§5.8, owner decision 288), plain reads sent
+// unconfirmed, whose JSON carries the root's SmtpSendCheck and SmtpSendResult with each enum by its number, the delays
+// in milliseconds and the times in unix milliseconds; the daemon answers its own MAIL_UNAVAILABLE refusal
+// (sidecar.ErrMailSendUnavailable) until those calls land there, and one from before the methods answers that it has
+// none, which reads MAIL_UNAVAILABLE too. A reply's numbers map as the core's do, so a mode, prediction or outcome this
+// sdk does not know reads unknown.
 //
 // In the copy, sizes read in bytes, KB and MB of 1,000 and 1,000,000 bytes, the cap rounded down and the size up at
 // the precision shown, so a message over the cap never reads as equal to it or under it; a delay reads in minutes,
@@ -517,13 +522,184 @@ func (self *sidecarMailCoreBackend) sendResult(ctx context.Context, sendId sidec
 	return nil, errSidecarMailNotLanded("read a send's result (MailClient's outcomes from or/)")
 }
 
-// See sidecarMailBackend: §5.8 has no check method yet.
-func (self *sidecarMailRemoteBackend) checkSend(ctx context.Context, draft *SidecarDraft) (*sidecar.SmtpSendCheck, error) {
-	return nil, errSidecarMailNotLanded("check a send through its daemon (no control method yet)")
+// The control methods the remote backend's send calls, as the root names them (sidecar.DaemonMethodMailCheckSend,
+// DaemonMethodMailSendResult and DaemonMethodMailSend), which phones' builds, linking no daemon, cannot read.
+const (
+	sidecarControlMethodMailCheckSend  = "mail.check_send"
+	sidecarControlMethodMailSendResult = "mail.send_result"
+	sidecarControlMethodMailSend       = "mail.send"
+)
+
+// mail.check_send's and mail.send's params, as the daemon reads them strictly (sidecar.DaemonMailDraftParams): the
+// draft's fields, its body as the text, and the pairing's network.
+type sidecarControlMailDraftParams struct {
+	Network string   `json:"network,omitempty"`
+	From    string   `json:"from"`
+	To      []string `json:"to,omitempty"`
+	Cc      []string `json:"cc,omitempty"`
+	Bcc     []string `json:"bcc,omitempty"`
+	Subject string   `json:"subject,omitempty"`
+	Text    string   `json:"text,omitempty"`
 }
 
-// See sidecarMailBackend: §5.8 has no result method yet. The daemon's mail_send events do reach the app
-// (sidecar_backend.go), with their send_id.
+// The params of draft on network.
+func sidecarControlMailDraftOf(network string, draft *SidecarDraft) *sidecarControlMailDraftParams {
+	params := &sidecarControlMailDraftParams{Network: network, From: draft.From, Subject: draft.Subject, Text: draft.Body}
+	if draft.To != nil {
+		params.To = draft.To.getAll()
+	}
+	if draft.Cc != nil {
+		params.Cc = draft.Cc.getAll()
+	}
+	if draft.Bcc != nil {
+		params.Bcc = draft.Bcc.getAll()
+	}
+	return params
+}
+
+// mail.send_result's params (sidecar.DaemonMailSendResultParams).
+type sidecarControlMailSendResultParams struct {
+	Network string      `json:"network,omitempty"`
+	SendId  *sidecar.Id `json:"send_id"`
+}
+
+// mail.check_send's reply (sidecar.DaemonMailSendCheckReply).
+type sidecarControlMailSendCheckReply struct {
+	Domains []*sidecarControlMailDomainCheck `json:"domains"`
+}
+
+// One domain of it (sidecar.DaemonMailDomainCheck): SmtpDomainCheck with its enums by number and its delay in ms.
+type sidecarControlMailDomainCheck struct {
+	Domain              string `json:"domain"`
+	Mode                uint32 `json:"mode"`
+	ByteCount           uint64 `json:"byte_count"`
+	CapByteCount        uint64 `json:"cap_byte_count"`
+	ExpectedDelayMillis int64  `json:"expected_delay_ms"`
+	Prediction          uint32 `json:"prediction"`
+}
+
+// The core's check the reply carries, its domains in order.
+func (self *sidecarControlMailSendCheckReply) smtpSendCheck() *sidecar.SmtpSendCheck {
+	check := &sidecar.SmtpSendCheck{Domains: []*sidecar.SmtpDomainCheck{}}
+	for _, domain := range self.Domains {
+		if domain == nil {
+			continue
+		}
+		check.Domains = append(check.Domains, &sidecar.SmtpDomainCheck{
+			Domain:        domain.Domain,
+			Mode:          sidecar.SmtpMode(domain.Mode),
+			ByteCount:     domain.ByteCount,
+			CapByteCount:  domain.CapByteCount,
+			ExpectedDelay: sidecarControlMillisDuration(domain.ExpectedDelayMillis),
+			Prediction:    sidecar.SmtpCheckPrediction(domain.Prediction),
+		})
+	}
+	return check
+}
+
+// mail.send_result's reply (sidecar.DaemonMailSendResultReply).
+type sidecarControlMailSendResultReply struct {
+	Domains []*sidecarControlMailDomainOutcome `json:"domains"`
+}
+
+// One domain of it (sidecar.DaemonMailDomainOutcome): SmtpDomainOutcome in or/'s MailOutcome names and numbers.
+type sidecarControlMailDomainOutcome struct {
+	Domain           string `json:"domain"`
+	Mode             uint32 `json:"mode"`
+	ByteCount        uint64 `json:"byte_count"`
+	CapByteCount     uint64 `json:"cap_byte_count"`
+	Outcome          uint32 `json:"outcome"`
+	ReplyCode        uint32 `json:"reply_code"`
+	RetryAfterMillis int64  `json:"retry_after_ms"`
+	UpdateTimeMillis int64  `json:"update_time_ms"`
+	TlsLevel         uint32 `json:"tls_level"`
+}
+
+// The core's result the reply carries, its domains in order, an update time of 0 or less unknown.
+func (self *sidecarControlMailSendResultReply) smtpSendResult() *sidecar.SmtpSendResult {
+	result := &sidecar.SmtpSendResult{Domains: []*sidecar.SmtpDomainOutcome{}}
+	for _, domain := range self.Domains {
+		if domain == nil {
+			continue
+		}
+		outcome := &sidecar.SmtpDomainOutcome{
+			Domain:       domain.Domain,
+			Mode:         sidecar.SmtpMode(domain.Mode),
+			ByteCount:    domain.ByteCount,
+			CapByteCount: domain.CapByteCount,
+			Outcome:      sidecar.SmtpOutcomeKind(domain.Outcome),
+			ReplyCode:    domain.ReplyCode,
+			RetryAfter:   sidecarControlMillisDuration(domain.RetryAfterMillis),
+			TlsLevel:     sidecar.SmtpTlsLevel(domain.TlsLevel),
+		}
+		if 0 < domain.UpdateTimeMillis {
+			outcome.UpdateTime = time.UnixMilli(domain.UpdateTimeMillis)
+		}
+		result.Domains = append(result.Domains, outcome)
+	}
+	return result
+}
+
+// mail.send's reply (sidecar.DaemonMailSendReply): the send, or the approval the daemon's gate holds it for, with each
+// recipient's outcome, which SidecarResult has no field for.
+type sidecarControlMailSendReply struct {
+	SendId     *sidecar.Id                        `json:"send_id,omitempty"`
+	ApprovalId *sidecar.Id                        `json:"approval_id,omitempty"`
+	Recipients []*sidecarControlMailSendRecipient `json:"recipients,omitempty"`
+	SentCopy   bool                               `json:"sent_copy,omitempty"`
+}
+
+// One recipient's outcome of a send (sidecar.DaemonMailSendRecipient).
+type sidecarControlMailSendRecipient struct {
+	Address string `json:"address"`
+	Outcome string `json:"outcome"`
+}
+
+// millis as a duration: none below 1 ms, and the longest a duration holds past it.
+func sidecarControlMillisDuration(millis int64) time.Duration {
+	if millis <= 0 {
+		return 0
+	}
+	if math.MaxInt64/int64(time.Millisecond) < millis {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(millis) * time.Millisecond
+}
+
+// err of a remote call that waits on what call names: a daemon from before the method answers that it has none, which
+// is a call that has not landed there (MAIL_UNAVAILABLE); any other refusal stands, its code read from its text.
+func sidecarMailRemoteErr(err error, call string) error {
+	var refusal *sidecarControlError
+	if errors.As(err, &refusal) && refusal.Code == sidecarControlCodeMethodNotFound {
+		return errSidecarMailNotLanded(call + " (its ur daemon predates the method)")
+	}
+	return err
+}
+
+// See sidecarMailBackend: ur daemon's mail.check_send on the pairing's network, a plain read sent unconfirmed
+// (D-CORE-13). A null answer is none, which CheckSend refuses.
+func (self *sidecarMailRemoteBackend) checkSend(ctx context.Context, draft *SidecarDraft) (*sidecar.SmtpSendCheck, error) {
+	var reply *sidecarControlMailSendCheckReply
+	if err := self.remote.call(ctx, sidecarControlMethodMailCheckSend, sidecarControlMailDraftOf(self.network(), draft), false, &reply); err != nil {
+		return nil, sidecarMailRemoteErr(err, "check a send through its daemon")
+	}
+	if reply == nil {
+		return nil, nil
+	}
+	return reply.smtpSendCheck(), nil
+}
+
+// See sidecarMailBackend: ur daemon's mail.send_result on the pairing's network, a plain read sent unconfirmed. The
+// daemon's mail_send events reach the app with their send_id (sidecar_backend.go), each a cue to read again. A null
+// answer is none, which GetSendResult refuses.
 func (self *sidecarMailRemoteBackend) sendResult(ctx context.Context, sendId sidecar.Id) (*sidecar.SmtpSendResult, error) {
-	return nil, errSidecarMailNotLanded("read a send's result through its daemon (no control method yet)")
+	var reply *sidecarControlMailSendResultReply
+	params := &sidecarControlMailSendResultParams{Network: self.network(), SendId: &sendId}
+	if err := self.remote.call(ctx, sidecarControlMethodMailSendResult, params, false, &reply); err != nil {
+		return nil, sidecarMailRemoteErr(err, "read a send's result through its daemon")
+	}
+	if reply == nil {
+		return nil, nil
+	}
+	return reply.smtpSendResult(), nil
 }

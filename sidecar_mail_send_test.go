@@ -5,16 +5,27 @@ package sdk
 // SidecarMail's send capability (SDK-M9-01): FS-123's bound half on a scripted core, §18.5's copy and its never row,
 // the I-11 label, the mappings' fail-closed words, and both backends answering MAIL_UNAVAILABLE while the root's calls
 // have not landed. SMTP's T2 and T3 runs of FS-123 wait on SMTP-M9-08 and MAIL-M9-01/02.
+//
+// The remote backend over ur daemon's mail.check_send, mail.send_result and mail.send (QD-853, owner decision 288):
+// their JSON held to the root's types both ways, the calls sent unconfirmed with the draft's fields, and end to end
+// over the root's own daemon on scripted backends, a check's domains, a known send's outcomes, an unknown id refused,
+// and a send the gate holds answered approval_pending:<id> until it is approved; the daemon's own refusals read as
+// their MAIL_ codes. The root's tests run the real gate's hold over MAIL-M7-18's send world (mail_send_gate_test.go,
+// mail_send_daemon_test.go).
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -665,8 +676,9 @@ func TestSendMappingsClaimNothingUnread(t *testing.T) {
 	}
 }
 
-// While the root's calls have not landed, CheckSend and GetSendResult answer MAIL_UNAVAILABLE on both backends,
-// naming what they wait on; a closed SidecarMail answers the same and reaches no backend.
+// While the root's calls have not landed, CheckSend and GetSendResult answer MAIL_UNAVAILABLE on the local backend,
+// and on the remote one over a daemon from before mail.check_send and mail.send_result, naming what they wait on; a
+// closed SidecarMail answers the same and reaches no backend.
 func TestSendCallsAwaitingTheCoreAnswerUnavailable(t *testing.T) {
 	socketPath := testRemoteSocketPath(t)
 	daemon := newTestRemoteDaemon(t, socketPath)
@@ -798,5 +810,565 @@ func TestSendAnswersCrossAsJson(t *testing.T) {
 	check, err := json.Marshal(&SidecarSendCheck{Code: sidecarMailCodeUnavailable, Message: "m"})
 	if err != nil || string(check) != `{"ok":false,"code":"MAIL_UNAVAILABLE","message":"m"}` {
 		t.Errorf("a refused check is %s, %v", check, err)
+	}
+}
+
+// The method names this sdk sends are the daemon's own, and each params and reply crosses the daemon's type and back
+// strictly, losing nothing; a draft crosses with its body as the daemon's text, and the daemon's replies read back as
+// the core's values, delays and times from milliseconds and each enum by its number.
+func TestMailSendControlWireMatchesTheDaemon(t *testing.T) {
+	for own, daemons := range map[string]string{
+		sidecarControlMethodMailCheckSend:  sidecar.DaemonMethodMailCheckSend,
+		sidecarControlMethodMailSendResult: sidecar.DaemonMethodMailSendResult,
+		sidecarControlMethodMailSend:       sidecar.DaemonMethodMailSend,
+	} {
+		if own != daemons {
+			t.Errorf("%q is the daemon's %q", own, daemons)
+		}
+	}
+	sendId := sidecar.NewId()
+	approvalId := sidecar.NewId()
+	crossings := []struct {
+		name    string
+		own     any
+		daemons any
+		back    any
+	}{
+		{
+			name: "draft params",
+			own: &sidecarControlMailDraftParams{Network: "a-network", From: "ann@acme.root.example", To: []string{"a@x.example"},
+				Cc: []string{"b@y.example"}, Bcc: []string{"c@z.example"}, Subject: "s", Text: "t"},
+			daemons: &sidecar.DaemonMailDraftParams{},
+			back:    &sidecarControlMailDraftParams{},
+		},
+		{
+			name:    "result params",
+			own:     &sidecarControlMailSendResultParams{Network: "a-network", SendId: &sendId},
+			daemons: &sidecar.DaemonMailSendResultParams{},
+			back:    &sidecarControlMailSendResultParams{},
+		},
+		{
+			name: "check reply",
+			own: &sidecarControlMailSendCheckReply{Domains: []*sidecarControlMailDomainCheck{
+				{Domain: "x.example", Mode: 2, ByteCount: 3, CapByteCount: 4, ExpectedDelayMillis: 5, Prediction: 2},
+			}},
+			daemons: &sidecar.DaemonMailSendCheckReply{},
+			back:    &sidecarControlMailSendCheckReply{},
+		},
+		{
+			name: "result reply",
+			own: &sidecarControlMailSendResultReply{Domains: []*sidecarControlMailDomainOutcome{
+				{Domain: "x.example", Mode: 1, ByteCount: 2, CapByteCount: 3, Outcome: 4, ReplyCode: 550, RetryAfterMillis: 6, UpdateTimeMillis: 7, TlsLevel: 4},
+			}},
+			daemons: &sidecar.DaemonMailSendResultReply{},
+			back:    &sidecarControlMailSendResultReply{},
+		},
+		{
+			name: "send reply",
+			own: &sidecarControlMailSendReply{SendId: &sendId, SentCopy: true, Recipients: []*sidecarControlMailSendRecipient{
+				{Address: "a@x.example", Outcome: "internet_waits"},
+			}},
+			daemons: &sidecar.DaemonMailSendReply{},
+			back:    &sidecarControlMailSendReply{},
+		},
+		{
+			name:    "held send reply",
+			own:     &sidecarControlMailSendReply{ApprovalId: &approvalId},
+			daemons: &sidecar.DaemonMailSendReply{},
+			back:    &sidecarControlMailSendReply{},
+		},
+	}
+	for _, crossing := range crossings {
+		first, err := json.Marshal(crossing.own)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(first))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(crossing.daemons); err != nil {
+			t.Errorf("%s: the daemon's type does not take it: %v", crossing.name, err)
+			continue
+		}
+		second, err := json.Marshal(crossing.daemons)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder = json.NewDecoder(bytes.NewReader(second))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(crossing.back); err != nil {
+			t.Errorf("%s: this sdk's type does not take the daemon's: %v", crossing.name, err)
+			continue
+		}
+		third, err := json.Marshal(crossing.back)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(first, third) {
+			t.Errorf("%s changed across the daemon's type: %s to %s", crossing.name, first, third)
+		}
+	}
+
+	draft := &SidecarDraft{From: "ann@acme.root.example", To: NewStringList(), Cc: NewStringList(), Bcc: NewStringList(), Subject: "Plans", Body: "Dinner at eight."}
+	draft.To.Add("a@x.example")
+	draft.Cc.Add("b@y.example")
+	draft.Bcc.Add("c@z.example")
+	encoded, err := json.Marshal(sidecarControlMailDraftOf("a-network", draft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonDraft := &sidecar.DaemonMailDraftParams{}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(daemonDraft); err != nil {
+		t.Fatal(err)
+	}
+	if daemonDraft.Network != "a-network" || daemonDraft.From != draft.From || !slices.Equal(daemonDraft.To, []string{"a@x.example"}) ||
+		!slices.Equal(daemonDraft.Cc, []string{"b@y.example"}) || !slices.Equal(daemonDraft.Bcc, []string{"c@z.example"}) ||
+		daemonDraft.Subject != draft.Subject || daemonDraft.Text != draft.Body {
+		t.Errorf("the draft reached the daemon as %+v", daemonDraft)
+	}
+	if bare, err := json.Marshal(sidecarControlMailDraftOf("", &SidecarDraft{From: "ann@acme.root.example"})); err != nil || string(bare) != `{"from":"ann@acme.root.example"}` {
+		t.Errorf("a bare draft crosses as %s, %v", bare, err)
+	}
+
+	cross := func(daemons any, own any) {
+		t.Helper()
+		encoded, err := json.Marshal(daemons)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, own); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkReply := &sidecarControlMailSendCheckReply{}
+	cross(&sidecar.DaemonMailSendCheckReply{Domains: []*sidecar.DaemonMailDomainCheck{{
+		Domain: "plain.example", Mode: uint32(sidecar.SmtpModeData), ByteCount: 2048, CapByteCount: 1024, ExpectedDelayMillis: 2_400_000,
+		Prediction: uint32(sidecar.SmtpCheckTooLarge),
+	}}}, checkReply)
+	check := checkReply.smtpSendCheck()
+	if len(check.Domains) != 1 || *check.Domains[0] != (sidecar.SmtpDomainCheck{Domain: "plain.example", Mode: sidecar.SmtpModeData, ByteCount: 2048,
+		CapByteCount: 1024, ExpectedDelay: 40 * time.Minute, Prediction: sidecar.SmtpCheckTooLarge}) {
+		t.Errorf("the check read back as %+v", check.Domains)
+	}
+	updateTime := time.UnixMilli(1_700_000_000_000)
+	resultReply := &sidecarControlMailSendResultReply{}
+	cross(&sidecar.DaemonMailSendResultReply{Domains: []*sidecar.DaemonMailDomainOutcome{
+		{Domain: "a.example", Mode: uint32(sidecar.SmtpModeBdat), Outcome: uint32(sidecar.SmtpOutcomeDeferred), RetryAfterMillis: 90_000,
+			UpdateTimeMillis: updateTime.UnixMilli(), TlsLevel: uint32(sidecar.SmtpTlsLevelMtaSts)},
+		{Domain: "b.example", Outcome: uint32(sidecar.SmtpOutcomeRefused), ReplyCode: 550},
+	}}, resultReply)
+	result := resultReply.smtpSendResult()
+	if len(result.Domains) != 2 {
+		t.Fatalf("the result read back with %d domains", len(result.Domains))
+	}
+	deferred, refused := result.Domains[0], result.Domains[1]
+	if deferred.Domain != "a.example" || deferred.Mode != sidecar.SmtpModeBdat || deferred.Outcome != sidecar.SmtpOutcomeDeferred ||
+		deferred.RetryAfter != 90*time.Second || !deferred.UpdateTime.Equal(updateTime) || deferred.TlsLevel != sidecar.SmtpTlsLevelMtaSts {
+		t.Errorf("a deferral read back as %+v", deferred)
+	}
+	if refused.Outcome != sidecar.SmtpOutcomeRefused || refused.ReplyCode != 550 || !refused.UpdateTime.IsZero() {
+		t.Errorf("a refusal read back as %+v", refused)
+	}
+	if sidecarControlMillisDuration(1<<62) != time.Duration(1<<63-1) || sidecarControlMillisDuration(-1) != 0 {
+		t.Error("a delay past a duration, or below none, reads as another")
+	}
+}
+
+// A root daemon on socketPath hosting core as networkId's Sidecar, status answering online for it, and the send
+// methods over backends registered as ur daemon registers them; stopped at the test's end.
+func startTestMailSendDaemon(t *testing.T, socketPath string, core *sidecar.Sidecar, networkId sidecar.Id, backends *sidecar.DaemonMailSendBackends) {
+	t.Helper()
+	stateDirectory, err := os.MkdirTemp("", "ur")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stateDirectory) })
+	daemon, err := sidecar.NewDaemon(context.Background(), &sidecar.DaemonSettings{
+		Instance:       "default",
+		StateDirectory: filepath.Join(stateDirectory, "state"),
+		SocketPath:     socketPath,
+		Local:          sidecar.DefaultSidecarSettings().LocalSettings,
+		Version:        testRemoteDaemonVersion,
+		Log:            sidecar.NewNoopLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidecarId := sidecar.NewId()
+	if err := daemon.RegisterMethod(&sidecar.DaemonMethod{Name: sidecarControlMethodStatus, Handler: func(ctx context.Context, call *sidecar.DaemonCall) (any, error) {
+		return map[string]any{
+			"instance":   "default",
+			"state":      "online",
+			"generation": 1,
+			"key_store":  "keychain",
+			"networks": []map[string]any{{
+				"network_id": networkId,
+				"sidecar_id": sidecarId,
+				"state":      "online",
+				"generation": 1,
+			}},
+		}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range sidecar.DaemonMailSendMethods(backends) {
+		if err := daemon.RegisterMethod(method); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := daemon.AddSidecar(networkId, core); err != nil {
+		t.Fatal(err)
+	}
+	ran := make(chan error, 1)
+	go func() {
+		ran <- daemon.Run()
+	}()
+	t.Cleanup(func() {
+		daemon.Close()
+		<-ran
+	})
+}
+
+// The root's send methods' backends as a test scripts them: a check of every draft's two domains, one known send's
+// outcomes, and a send the gate holds until the test approves it. What each took is kept.
+type testMailSendDaemonBackends struct {
+	sendId     sidecar.Id
+	approvalId sidecar.Id
+	updateTime time.Time
+
+	stateLock sync.Mutex
+	held      bool
+	checked   []*sidecar.MailSendArgs
+	read      []sidecar.Id
+	submitted []*sidecar.MailSendArgs
+	sent      []*sidecar.MailSendArgs
+}
+
+func (self *testMailSendDaemonBackends) backends() *sidecar.DaemonMailSendBackends {
+	return &sidecar.DaemonMailSendBackends{
+		Check: func(ctx context.Context, core *sidecar.Sidecar, args *sidecar.MailSendArgs) (*sidecar.SmtpSendCheck, error) {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.checked = append(self.checked, args)
+			return &sidecar.SmtpSendCheck{Domains: []*sidecar.SmtpDomainCheck{
+				{Domain: "chunking.example", Mode: sidecar.SmtpModeBdat, ByteCount: testSendByteCount, CapByteCount: testSendCapByteCount,
+					ExpectedDelay: 30 * time.Second, Prediction: sidecar.SmtpCheckOk},
+				{Domain: "plain.example", Mode: sidecar.SmtpModeData, ByteCount: testSendByteCount, CapByteCount: testSendCapByteCount,
+					ExpectedDelay: 40 * time.Minute, Prediction: sidecar.SmtpCheckTooLarge},
+			}}, nil
+		},
+		Result: func(ctx context.Context, core *sidecar.Sidecar, sendId sidecar.Id) (*sidecar.SmtpSendResult, error) {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.read = append(self.read, sendId)
+			if sendId != self.sendId {
+				return nil, sidecar.ErrMailSendUnknown
+			}
+			return &sidecar.SmtpSendResult{Domains: []*sidecar.SmtpDomainOutcome{
+				{Domain: "chunking.example", Mode: sidecar.SmtpModeBdat, Outcome: sidecar.SmtpOutcomeSent,
+					TlsLevel: sidecar.SmtpTlsLevelUnauthenticated, UpdateTime: self.updateTime},
+				{Domain: "plain.example", Mode: sidecar.SmtpModeData, Outcome: sidecar.SmtpOutcomeDeferred, RetryAfter: time.Minute,
+					UpdateTime: self.updateTime},
+				{Domain: "refusing.example", Outcome: sidecar.SmtpOutcomeRefused, ReplyCode: 550, UpdateTime: self.updateTime},
+			}}, nil
+		},
+		Send: func(ctx context.Context, core *sidecar.Sidecar, args *sidecar.MailSendArgs) (*sidecar.MailSendResult, error) {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.submitted = append(self.submitted, args)
+			if self.held {
+				return nil, &sidecar.ApprovalPendingError{ApprovalId: self.approvalId}
+			}
+			self.sent = append(self.sent, args)
+			return &sidecar.MailSendResult{SendId: self.sendId, SentCopy: true, Recipients: []*sidecar.MailSendRecipient{
+				{Address: "someone@chunking.example", Outcome: sidecar.MailSendInternetWaits},
+			}}, nil
+		},
+	}
+}
+
+func (self *testMailSendDaemonBackends) approve() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.held = false
+}
+
+// What the backends took: checks, reads, submissions and sends.
+func (self *testMailSendDaemonBackends) counts() (int, int, int, int) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return len(self.checked), len(self.read), len(self.submitted), len(self.sent)
+}
+
+// The drafts the check took and those sent.
+func (self *testMailSendDaemonBackends) drafts() ([]*sidecar.MailSendArgs, []*sidecar.MailSendArgs) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return slices.Clone(self.checked), slices.Clone(self.sent)
+}
+
+// A local Sidecar of a world of its own, for a daemon to host, closed after everything the test started.
+func testMailSendHostedCore(t *testing.T) *sidecar.Sidecar {
+	t.Helper()
+	world := newTestSidecarWorld(t)
+	local := world.open(t)
+	t.Cleanup(func() { world.close(t, local) })
+	return local.Core()
+}
+
+// End to end over the root's daemon on scripted backends: CheckSend reads a draft's domains and GetSendResult a known
+// send's outcomes, each with its copy; an unknown send answers MAIL_INVALID; and a send the daemon's gate holds
+// answers approval_pending:<id> with nothing sent, until it is approved, when the same draft answers its send_id.
+// Each backend took the draft's fields whole.
+func TestMailSendRemoteOverTheRootDaemon(t *testing.T) {
+	core := testMailSendHostedCore(t)
+	scripted := &testMailSendDaemonBackends{
+		sendId:     sidecar.NewId(),
+		approvalId: sidecar.NewId(),
+		updateTime: time.UnixMilli(1_700_000_000_000),
+		held:       true,
+	}
+	socketPath := testRemoteSocketPath(t)
+	startTestMailSendDaemon(t, socketPath, core, sidecar.NewId(), scripted.backends())
+	remote, _, _ := openTestRemoteSidecar(t, socketPath)
+	mail := remote.GetMail()
+	if mail == nil {
+		t.Fatal("a remote-mode Sidecar has no mail")
+	}
+	draft := &SidecarDraft{From: "ann@acme.root.example", To: NewStringList(), Cc: NewStringList(), Bcc: NewStringList(), Subject: "Plans", Body: "Dinner at eight."}
+	draft.To.Add("someone@chunking.example")
+	draft.Cc.Add("other@plain.example")
+	draft.Bcc.Add("hidden@refusing.example")
+
+	check := newTestEvsCallback[*SidecarSendCheck]()
+	mail.CheckSend(draft, check)
+	checked, err := check.await(t)
+	if err != nil || !checked.Ok || checked.Domains.Len() != 2 {
+		t.Fatalf("CheckSend answered %+v, %v", checked, err)
+	}
+	if chunking := testSendDomain(t, checked.Domains, "chunking.example"); chunking.Mode != SidecarSendModeBdat ||
+		chunking.Prediction != SidecarSendPredictionOk || chunking.ExpectedDelayMillis != 30_000 || chunking.Copy != "" {
+		t.Errorf("the CHUNKING domain checked as %+v", chunking)
+	}
+	if plain := testSendDomain(t, checked.Domains, "plain.example"); plain.Mode != SidecarSendModeData ||
+		plain.Prediction != SidecarSendPredictionTooLarge || plain.ByteCount != testSendByteCount || plain.CapByteCount != testSendCapByteCount ||
+		!strings.Contains(plain.Copy, "plain.example") {
+		t.Errorf("the DATA domain checked as %+v", plain)
+	}
+	checkedDrafts, _ := scripted.drafts()
+	if len(checkedDrafts) != 1 {
+		t.Fatalf("the daemon took %d checks", len(checkedDrafts))
+	}
+	took := checkedDrafts[0]
+	if took.From != draft.From || !slices.Equal(took.To, []string{"someone@chunking.example"}) || !slices.Equal(took.Cc, []string{"other@plain.example"}) ||
+		!slices.Equal(took.Bcc, []string{"hidden@refusing.example"}) || took.Subject != draft.Subject || took.Text != draft.Body {
+		t.Errorf("the daemon checked %+v", took)
+	}
+
+	read := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(newId([16]byte(scripted.sendId)), read)
+	outcomes, err := read.await(t)
+	if err != nil || !outcomes.Ok || outcomes.Domains.Len() != 3 || outcomes.SendId.String() != scripted.sendId.String() {
+		t.Fatalf("GetSendResult answered %+v, %v", outcomes, err)
+	}
+	if sent := testSendDomain(t, outcomes.Domains, "chunking.example"); sent.Outcome != SidecarSendOutcomeSent ||
+		sent.TlsLabel != sidecar.SmtpTlsLabelUnauthenticated || sent.UpdateMillis != scripted.updateTime.UnixMilli() {
+		t.Errorf("a send at TL4 read as %+v", sent)
+	}
+	if deferred := testSendDomain(t, outcomes.Domains, "plain.example"); deferred.Outcome != SidecarSendOutcomeDeferred ||
+		deferred.RetryAfterMillis != 60_000 || deferred.RetryAtMillis != scripted.updateTime.Add(time.Minute).UnixMilli() {
+		t.Errorf("a deferral read as %+v", deferred)
+	}
+	if refused := testSendDomain(t, outcomes.Domains, "refusing.example"); refused.Outcome != SidecarSendOutcomeRefused || refused.ReplyCode != 550 {
+		t.Errorf("a refusal read as %+v", refused)
+	}
+	unknown := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(NewId(), unknown)
+	if result, err := unknown.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeInvalid || result.Domains != nil {
+		t.Errorf("an unknown send read %+v, %v", result, err)
+	}
+
+	held := newTestEvsCallback[*SidecarResult]()
+	mail.Send(draft, held)
+	if result, err := held.await(t); err != nil || result.Ok || result.Code != "" || result.Value != sidecarApprovalPendingPrefix+scripted.approvalId.String() {
+		t.Fatalf("a held send answered %+v, %v", result, err)
+	}
+	if _, _, submitted, sent := scripted.counts(); submitted != 1 || sent != 0 {
+		t.Fatalf("%d submitted, %d sent while held", submitted, sent)
+	}
+	scripted.approve()
+	approved := newTestEvsCallback[*SidecarResult]()
+	mail.Send(draft, approved)
+	result, err := approved.await(t)
+	if err != nil || !result.Ok || result.Value != scripted.sendId.String() {
+		t.Fatalf("an approved send answered %+v, %v", result, err)
+	}
+	if parsed, err := ParseId(result.Value); err != nil || parsed.String() != scripted.sendId.String() {
+		t.Errorf("the send_id does not parse back: %v", err)
+	}
+	if checks, reads, submitted, sent := scripted.counts(); checks != 1 || reads != 2 || submitted != 2 || sent != 1 {
+		t.Errorf("the daemon took %d checks, %d reads, %d submissions and %d sends", checks, reads, submitted, sent)
+	}
+	if _, sentDrafts := scripted.drafts(); len(sentDrafts) != 1 {
+		t.Fatalf("%d sent", len(sentDrafts))
+	} else if sent := sentDrafts[0]; sent.From != draft.From || !slices.Equal(sent.Bcc, []string{"hidden@refusing.example"}) || sent.Text != draft.Body {
+		t.Errorf("the daemon sent %+v", sent)
+	}
+}
+
+// On ur daemon's own backends both reads answer the daemon's MAIL_UNAVAILABLE, naming what each waits on, and a send
+// on a core with nothing to send through answers unavailable too.
+func TestMailSendRemoteUnavailableOverTheRootDaemon(t *testing.T) {
+	core := testMailSendHostedCore(t)
+	socketPath := testRemoteSocketPath(t)
+	startTestMailSendDaemon(t, socketPath, core, sidecar.NewId(), nil)
+	remote, _, _ := openTestRemoteSidecar(t, socketPath)
+	mail := remote.GetMail()
+
+	check := newTestEvsCallback[*SidecarSendCheck]()
+	mail.CheckSend(testSendDraft("plain.example"), check)
+	if result, err := check.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable ||
+		!strings.Contains(result.Message, sidecar.ErrMailSendUnavailable.Error()) || !strings.Contains(result.Message, "check a send") {
+		t.Errorf("CheckSend answered %+v, %v", result, err)
+	}
+	read := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(NewId(), read)
+	if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, "result") {
+		t.Errorf("GetSendResult answered %+v, %v", result, err)
+	}
+	send := newTestEvsCallback[*SidecarResult]()
+	mail.Send(testSendDraft("plain.example"), send)
+	if result, err := send.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || strings.HasPrefix(result.Value, sidecarApprovalPendingPrefix) {
+		t.Errorf("Send answered %+v, %v", result, err)
+	}
+}
+
+// The remote backend sends each method unconfirmed with the draft's fields as the daemon reads them strictly, and a
+// null answer, or a send's naming neither a send nor an approval, is no Ok.
+func TestMailSendCallsCrossUnconfirmed(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	approvalId := sidecar.NewId()
+	empty := &atomic.Bool{}
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		switch request.Method {
+		case sidecarControlMethodMailCheckSend:
+			if empty.Load() {
+				return nil, nil, true
+			}
+			return &sidecar.DaemonMailSendCheckReply{Domains: []*sidecar.DaemonMailDomainCheck{
+				{Domain: "plain.example", Mode: uint32(sidecar.SmtpModeBdat), Prediction: uint32(sidecar.SmtpCheckOk)},
+			}}, nil, true
+		case sidecarControlMethodMailSendResult:
+			if empty.Load() {
+				return nil, nil, true
+			}
+			return &sidecar.DaemonMailSendResultReply{Domains: []*sidecar.DaemonMailDomainOutcome{
+				{Domain: "plain.example", Outcome: uint32(sidecar.SmtpOutcomeQueued)},
+			}}, nil, true
+		case sidecarControlMethodMailSend:
+			if empty.Load() {
+				return &sidecar.DaemonMailSendReply{}, nil, true
+			}
+			return &sidecar.DaemonMailSendReply{ApprovalId: &approvalId}, nil, true
+		}
+		return nil, nil, false
+	}
+	daemon.start()
+	remote, _, _ := openTestRemoteSidecar(t, socketPath)
+	mail := remote.GetMail()
+
+	check := newTestEvsCallback[*SidecarSendCheck]()
+	mail.CheckSend(testSendDraft("plain.example"), check)
+	if result, err := check.await(t); err != nil || !result.Ok || result.Domains.Len() != 1 || result.Domains.Get(0).Mode != SidecarSendModeBdat {
+		t.Errorf("CheckSend answered %+v, %v", result, err)
+	}
+	read := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(NewId(), read)
+	if result, err := read.await(t); err != nil || !result.Ok || result.Domains.Len() != 1 || result.Domains.Get(0).Outcome != SidecarSendOutcomeQueued {
+		t.Errorf("GetSendResult answered %+v, %v", result, err)
+	}
+	send := newTestEvsCallback[*SidecarResult]()
+	mail.Send(testSendDraft("plain.example"), send)
+	if result, err := send.await(t); err != nil || result.Value != sidecarApprovalPendingPrefix+approvalId.String() {
+		t.Errorf("Send answered %+v, %v", result, err)
+	}
+
+	mailCalls := 0
+	for _, request := range daemon.seen() {
+		if !strings.HasPrefix(request.Method, "mail.") {
+			continue
+		}
+		mailCalls += 1
+		if request.UrConfirmed {
+			t.Errorf("%s was sent confirmed", request.Method)
+		}
+		var params any = &sidecar.DaemonMailDraftParams{}
+		if request.Method == sidecarControlMethodMailSendResult {
+			params = &sidecar.DaemonMailSendResultParams{}
+		}
+		decoder := json.NewDecoder(bytes.NewReader(request.Params))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(params); err != nil {
+			t.Errorf("%s's params %s: %v", request.Method, request.Params, err)
+		}
+		if draft, ok := params.(*sidecar.DaemonMailDraftParams); ok && (draft.From != "admin@net.example" || !slices.Equal(draft.To, []string{"someone@plain.example"}) || draft.Text != "b") {
+			t.Errorf("%s sent the draft as %+v", request.Method, draft)
+		}
+	}
+	if mailCalls != 3 {
+		t.Errorf("%d mail calls", mailCalls)
+	}
+
+	empty.Store(true)
+	emptyCheck := newTestEvsCallback[*SidecarSendCheck]()
+	mail.CheckSend(testSendDraft("plain.example"), emptyCheck)
+	if result, _ := emptyCheck.await(t); result.Ok || result.Code == "" {
+		t.Errorf("a null check answered %+v", result)
+	}
+	emptyRead := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(NewId(), emptyRead)
+	if result, _ := emptyRead.await(t); result.Ok || result.Code == "" {
+		t.Errorf("a null result answered %+v", result)
+	}
+	emptySend := newTestEvsCallback[*SidecarResult]()
+	mail.Send(testSendDraft("plain.example"), emptySend)
+	if result, _ := emptySend.await(t); result.Ok || result.Code == "" || result.Value != "" {
+		t.Errorf("a send naming nothing answered %+v", result)
+	}
+}
+
+// A daemon's refusal reads as its MAIL_ code: a method it lacks, no network to act on and a call past its time as
+// unavailable; a handler's failure by the root's mail error its text names; anything else, a person's denial and a
+// From the effect refused among them, as refused.
+func TestMailRemoteRefusalCodes(t *testing.T) {
+	failed := func(err error) *sidecarControlError {
+		return &sidecarControlError{Code: sidecar.DaemonRpcFailed, Message: err.Error()}
+	}
+	for _, c := range []struct {
+		refusal *sidecarControlError
+		code    string
+	}{
+		{refusal: &sidecarControlError{Code: sidecarControlCodeMethodNotFound, Message: "method not found"}, code: sidecarMailCodeUnavailable},
+		{refusal: &sidecarControlError{Code: sidecarControlCodeFailedPrecondition, Message: "no network"}, code: sidecarMailCodeUnavailable},
+		{refusal: &sidecarControlError{Code: sidecarControlCodeTimeout, Message: "the call timed out"}, code: sidecarMailCodeUnavailable},
+		{refusal: failed(fmt.Errorf("%w: check a send", sidecar.ErrMailSendUnavailable)), code: sidecarMailCodeUnavailable},
+		{refusal: failed(fmt.Errorf("%w: %w", sidecar.ErrMailUnbound, errors.New("synthetic"))), code: sidecarMailCodeUnavailable},
+		{refusal: failed(fmt.Errorf("%w: kind 14", sidecar.ErrApprovalNoLookup)), code: sidecarMailCodeUnavailable},
+		{refusal: failed(sidecar.ErrMailSendUnknown), code: sidecarMailCodeInvalid},
+		{refusal: failed(fmt.Errorf("%w: a message needs a From and a recipient", sidecar.ErrMailSendInvalid)), code: sidecarMailCodeInvalid},
+		{refusal: failed(sidecar.ErrMailNoMailbox), code: sidecarMailCodeNoMailbox},
+		{refusal: failed(sidecar.ErrMailVaultNotConsented), code: sidecarMailCodeNotConsented},
+		{refusal: failed(fmt.Errorf("%w: %w", sidecar.ErrSidecarEffectNotDone, sidecar.ErrMailSendFromRefused)), code: sidecarMailCodeRefused},
+		{refusal: failed(fmt.Errorf("%w: approval x", sidecar.ErrApprovalDenied)), code: sidecarMailCodeRefused},
+		{refusal: failed(errors.New("synthetic refusal")), code: sidecarMailCodeRefused},
+	} {
+		if code := sidecarMailCodeOf(c.refusal); code != c.code {
+			t.Errorf("%d %q reads %s, not %s", c.refusal.Code, c.refusal.Message, code, c.code)
+		}
+		if result := sidecarMailResultOf("", c.refusal); result.Code != c.code || result.Message != c.refusal.Message {
+			t.Errorf("%q's result %+v", c.refusal.Message, result)
+		}
 	}
 }
