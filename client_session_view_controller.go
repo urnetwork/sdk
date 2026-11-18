@@ -529,11 +529,14 @@ func (self *ClientSessionViewController) publish() {
 	}
 }
 
-// A hint of a newer list reloads it, no sooner than the settings' hint
-// spacing after the last reload (hintRefreshDelay).
+// A hint of a newer list reloads it while the screen is visible, no sooner
+// than the settings' hint spacing after the last reload (hintRefreshDelay). A
+// hint while the screen is hidden is dropped: a controller kept open in the
+// background would otherwise read a long list again at every change, and
+// SetVisible(true) reloads it when the screen shows again.
 func (self *ClientSessionViewController) NetworkSessionsChanged(revision *NetworkSessionsRevision) {
 	self.stateLock.Lock()
-	refresh := !self.closed && (revision == nil || revision.Generation == "" || revision.Generation != self.state.Generation || revision.EventId > self.state.EventId)
+	refresh := !self.closed && self.visible && (revision == nil || revision.Generation == "" || revision.Generation != self.state.Generation || revision.EventId > self.state.EventId)
 	self.stateLock.Unlock()
 	if refresh {
 		select {
@@ -606,6 +609,13 @@ func (self *ClientSessionViewController) run() {
 			self.recoverPending()
 		case <-hintTick:
 			stopHint()
+			self.stateLock.Lock()
+			visible := self.visible
+			self.stateLock.Unlock()
+			if !visible {
+				// hidden while it waited: SetVisible(true) reloads
+				continue
+			}
 			self.refresh()
 			self.recoverPending()
 		case <-recovery.C:

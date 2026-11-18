@@ -382,7 +382,9 @@ func TestClientSessionSignOutOfOthersKeepsTheHostedProxies(t *testing.T) {
 }
 
 // A hint reloads at once after the hint spacing and waits out the rest of it
-// before; the spacing is the settings'.
+// before; the spacing is the settings'. A hint while the screen is hidden
+// reads nothing: a controller kept open in the background (android, since
+// W15) read the whole list again at every change.
 func TestClientSessionHintWaitsOutTheHintSpacing(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.example")
 	defer api.Close()
@@ -412,6 +414,19 @@ func TestClientSessionHintWaitsOutTheHintSpacing(t *testing.T) {
 	case <-vc.hints:
 		t.Fatal("a current hint queued a reload")
 	default:
+	}
+	// hidden: a newer hint is dropped, since showing the screen reloads
+	vc.NetworkSessionsChanged(&NetworkSessionsRevision{Generation: "g", EventId: 6})
+	select {
+	case <-vc.hints:
+		t.Fatal("a hint queued a reload while the screen was hidden")
+	default:
+	}
+	vc.SetVisible(true)
+	select {
+	case <-vc.requests:
+	default:
+		t.Fatal("showing the screen did not reload the list")
 	}
 	vc.NetworkSessionsChanged(&NetworkSessionsRevision{Generation: "g", EventId: 6})
 	select {
