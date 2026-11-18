@@ -893,8 +893,9 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		self.publish()
 		if enforced && !bulk && tracked && currentSession != nil && currentSession.Cmp(sessionId) == 0 {
 			if current, ok := self.api.currentNetworkTarget(target); ok {
-				// this session was signed out here: no cause
-				self.api.rejectNetworkCredential(current, "")
+				// this session was signed out here: no cause, and the
+				// whole app signs out, as the confirmation said
+				self.api.signOutNetworkCredential(current)
 			}
 			return
 		}

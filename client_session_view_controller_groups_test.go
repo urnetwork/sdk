@@ -14,9 +14,11 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
 	"github.com/urnetwork/connect"
 )
 
@@ -433,5 +435,60 @@ func TestClientSessionHintWaitsOutTheHintSpacing(t *testing.T) {
 	case <-vc.hints:
 	default:
 		t.Fatal("a newer hint queued no reload")
+	}
+}
+
+// Signing out this app's own session from the Sessions screen signs the app
+// out, whatever session its client credential carries. A client credential
+// of another session (not yet renewed into the session after sessions turned
+// on, or an older lineage) is not revoked with this one, and the sdk reported
+// the rejection only as AccountSignInRequired: the app stayed signed in on
+// its client after a confirmation that said "This app will be signed out".
+func TestClientSessionSelfSignOutSignsTheAppOutWhateverItsClientSession(t *testing.T) {
+	for _, clientSession := range []string{"another-session", ""} {
+		currentSessionId := newId(connect.NewId())
+		endpoint := newClientSessionIdempotentTestEndpoint(currentSessionId, "revoked", "enforced")
+		api := newApi(t.Context(), nil, "https://api.example")
+		api.SetByJwt(taggedSessionTestJwt(t, currentSessionId.String(), ""))
+		client := credentialTestJwt(t, gojwt.MapClaims{"network_id": credentialTestNetworkId, "user_id": credentialTestUserId, "client_id": credentialTestClientId, "device_id": credentialTestDeviceId})
+		if clientSession != "" {
+			client = taggedSessionTestJwt(t, clientSession, credentialTestClientId)
+		}
+		// a device installs its client token beside the kept network credential
+		func() {
+			api.authMutationLock.Lock()
+			defer api.authMutationLock.Unlock()
+			api.mutex.Lock()
+			defer api.mutex.Unlock()
+			api.byJwt = client
+		}()
+		api.setHttpGetRaw(endpoint.get)
+		api.setHttpPostRaw(func(_ context.Context, requestUrl string, body []byte, _ string) ([]byte, error) {
+			if !strings.HasSuffix(requestUrl, "/network/revoke-session") {
+				return nil, fmt.Errorf("unexpected synthetic endpoint URL: %s", requestUrl)
+			}
+			var args RevokeNetworkSessionArgs
+			if err := json.Unmarshal(body, &args); err != nil {
+				return nil, err
+			}
+			return json.Marshal(&SessionOperationResult{OperationId: args.OperationId, SessionId: args.SessionId, Status: "revoked", State: "enforced"})
+		})
+		var logouts, accountSignIns atomic.Int32
+		api.AddAuthLogoutListener(authLogoutListenerFunc(func() { logouts.Add(1) }))
+		api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { accountSignIns.Add(1) }))
+		vc := NewClientSessionViewControllerWithApi(t.Context(), api)
+		completed := make(chan struct{}, 1)
+		vc.testingAfterAction = func() { completed <- struct{}{} }
+		vc.refresh()
+		vc.RevokeSession(currentSessionId)
+		awaitClientSessionOperationTestSignal(t, completed)
+		if logouts.Load() != 1 || accountSignIns.Load() != 0 {
+			t.Fatalf("client session %q: %d logouts, %d account sign-in notices; want the app signed out once", clientSession, logouts.Load(), accountSignIns.Load())
+		}
+		if api.GetByJwt() != "" || api.HasNetworkCredential() {
+			t.Fatalf("client session %q: the app kept a credential after signing its own session out", clientSession)
+		}
+		vc.Close()
+		api.Close()
 	}
 }
