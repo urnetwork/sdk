@@ -8,7 +8,7 @@ import { startMockExtender, type MockHello } from "./client_mock_extender.ts";
 // DownloadMs, UploadMs, MaxStreams and both byte caps are zero, and they may
 // carry ReportPromptly (15) and NoReport (16). The extender admits no load on
 // such a ticket, and its hello still names the default load, 5 s each way
-// over 4 streams (connect 76acc8a1). The session holds a hello to its ticket
+// over 4 streams (connect 1248c30d). The session holds a hello to its ticket
 // as the extender reads it (PLAN.md S5), where a zero cap is unset and takes
 // that default, so the hello passes and the session pings, while a hello
 // asking for more than the defaults is still refused.
