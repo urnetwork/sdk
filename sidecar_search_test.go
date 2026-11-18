@@ -83,6 +83,16 @@ type testSearchBackend struct {
 	windowErr   error
 	// called inside each background window, nil for nothing
 	windowHook func()
+	// the requester seams (SDK-M10-03): the indexers listed, each mode set and each notice answer, in order
+	listed  []*SidecarIndexer
+	modes   []string
+	answers []testSearchAnswer
+}
+
+// One notice answer a backend took.
+type testSearchAnswer struct {
+	memberId *sidecar.Id
+	allow    bool
 }
 
 func newTestSearchBackend() *testSearchBackend {
@@ -168,6 +178,26 @@ func (self *testSearchBackend) runBackgroundSync(ctx context.Context) error {
 	}
 	self.windows = append(self.windows, deadline)
 	return self.windowErr
+}
+
+func (self *testSearchBackend) indexers(ctx context.Context) ([]*SidecarIndexer, error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return slices.Clone(self.listed), nil
+}
+
+func (self *testSearchBackend) setRemote(ctx context.Context, mode string) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.modes = append(self.modes, mode)
+	return nil
+}
+
+func (self *testSearchBackend) acknowledgeIndexer(ctx context.Context, memberId *sidecar.Id, allow bool) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.answers = append(self.answers, testSearchAnswer{memberId: memberId, allow: allow})
+	return nil
 }
 
 // The next search's source.

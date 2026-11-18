@@ -117,6 +117,11 @@ type sidecarSearchBackend interface {
 	setConditions(unmetered bool, charging bool, lowPower bool)
 	setForeground(foreground bool)
 	runBackgroundSync(ctx context.Context) error
+	// SDK-M10-03's requester seams (sidecar_search_remote_host.go): none listed, and both calls refused, where the host
+	// asks no indexer.
+	indexers(ctx context.Context) ([]*SidecarIndexer, error)
+	setRemote(ctx context.Context, mode string) error
+	acknowledgeIndexer(ctx context.Context, memberId *sidecar.Id, allow bool) error
 }
 
 // One network's search for an app. Safe for concurrent use.
@@ -895,7 +900,8 @@ func sidecarSearchHitOf(hit *sidecar.SearchHit) *SidecarSearchHit {
 	return bound
 }
 
-// The bound progress of the core's, its RemoteBy named by indexerOf.
+// The bound progress of the core's, its RemoteBy named by indexerOf, and its remote state and fallback reason mapped
+// one for one (sidecar_search_remote_host.go).
 func sidecarSearchProgressOf(progress *sidecar.SearchProgress, indexerOf func(sidecarId sidecar.Id) *SidecarIndexer) *SidecarSearchProgress {
 	bound := &SidecarSearchProgress{
 		Searched:         int32(progress.Searched),
@@ -904,8 +910,8 @@ func sidecarSearchProgressOf(progress *sidecar.SearchProgress, indexerOf func(si
 		FetchedByteCount: progress.FetchedBytes,
 		Uncovered:        int32(progress.Uncovered),
 		Waiting:          progress.Waiting,
-		Remote:           progress.Remote,
-		FallbackReason:   progress.FallbackReason,
+		Remote:           sidecarSearchRemoteStateOf(progress.Remote),
+		FallbackReason:   sidecarSearchFallbackReasonOf(progress.FallbackReason),
 	}
 	if !progress.CoveredFrom.IsZero() {
 		bound.CoveredFromMillis = progress.CoveredFrom.UnixMilli()
@@ -936,14 +942,14 @@ func sidecarSearchStatusOf(status *sidecar.SearchStatus) *SidecarSearchStatus {
 	return bound
 }
 
-// The bound indexer of the core's.
+// The bound indexer of the core's, its state mapped one for one (sidecar_search_remote_host.go).
 func sidecarIndexerOf(indexer *sidecar.SearchIndexer) *SidecarIndexer {
 	bound := &SidecarIndexer{
 		SidecarId:     newId([16]byte(indexer.SidecarId)),
 		Name:          indexer.Name,
 		Member:        indexer.Member,
 		Own:           indexer.Own,
-		State:         indexer.State,
+		State:         sidecarIndexerStateOf(indexer.State),
 		Acknowledged:  indexer.Acknowledged,
 		ServedRepoIds: NewIdList(),
 	}
