@@ -24043,6 +24043,7 @@ public:
 	void createStripePaymentIntent(const std::optional<StripeCreatePaymentIntentArgs>& args, StripePaymentIntentCallback callback) const;
 	void deleteApiKey(const std::optional<DeleteApiKeyArgs>& args, DeleteApiKeyCallback callback) const;
 	void deviceSetName(const std::optional<DeviceSetNameArgs>& device_set_name, DeviceSetNameCallback callback) const;
+	void dismissAccountSignInNotice() const;
 	void findLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const;
 	void findProviderLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const;
 	void findProviders(const std::optional<FindProvidersArgs>& find_providers, FindProvidersCallback callback) const;
@@ -33946,6 +33947,9 @@ inline void Api::deviceSetName(const std::optional<DeviceSetNameArgs>& device_se
 	}
 	auto* callback_fn = callback ? new DeviceSetNameCallback(std::move(callback)) : nullptr;
 	urnet_api_device_set_name(handle(), device_set_name_c, callback_fn ? &detail::oneshot_device_set_name : nullptr, callback_fn);
+}
+inline void Api::dismissAccountSignInNotice() const {
+	urnet_api_dismiss_account_sign_in_notice(handle());
 }
 inline void Api::findLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const {
 	std::string find_locations_json;

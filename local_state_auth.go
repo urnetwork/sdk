@@ -33,6 +33,24 @@ type persistedLocalAuthState struct {
 	ByJwt       string `json:"by_jwt"`
 	ByClientJwt string `json:"by_client_jwt"`
 	InstanceId  string `json:"instance_id"`
+	// The notice of an account sign-in the server rejected while this device
+	// stayed signed in on its client (AccountSignInRequired), kept so the
+	// notice shows again after a restart until it is dismissed or the next
+	// sign-in or sign-out (Api.DismissAccountSignInNotice), with its trusted
+	// cause (AuthLogoutCauseSessionRevoked or ""). Plain values, so states
+	// still compare with == (device startup's supersession check). An sdk
+	// before the fields reads the file without them.
+	AccountSignInNotice      bool   `json:"account_sign_in_notice,omitempty"`
+	AccountSignInNoticeCause string `json:"account_sign_in_notice_cause,omitempty"`
+}
+
+// Sets or, with pending false, ends the kept account sign-in notice.
+func (state *persistedLocalAuthState) setAccountSignInNotice(pending bool, cause string) {
+	state.AccountSignInNotice = pending
+	state.AccountSignInNoticeCause = ""
+	if pending {
+		state.AccountSignInNoticeCause = cause
+	}
 }
 
 func emptyPersistedLocalAuthState() persistedLocalAuthState {

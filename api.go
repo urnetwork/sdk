@@ -90,6 +90,11 @@ type Api struct {
 	networkRenewer                  *apiNetworkCredentialRenewer
 	// SignOut's budgets; tests change them before signing out
 	signOutSettings *apiSignOutSettings
+	// an account sign-in notice (AccountSignInRequired) still to be
+	// dismissed, and the LocalState that keeps it across restarts (nil keeps
+	// it in memory only); guarded by mutex
+	accountSignInNoticePending bool
+	accountSignInNoticeStore   *LocalState
 }
 
 // Delivers at most one terminal result. Marking delivery before entering the

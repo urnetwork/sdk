@@ -177,6 +177,10 @@ func (self *Api) noteSignInRejectionWithLock(cause string) {
 func (self *Api) newLoginWithLock(byJwt string) {
 	// Explicit setters also retire queued events when they clear a credential.
 	self.authLogoutGeneration = 0
+	// a sign-in or a sign-out ends the account sign-in notice (a device's
+	// start takes up a kept one again, adoptAccountSignInNoticeWithLock)
+	self.accountSignInNoticePending = false
+	self.accountSignInNoticeStore = nil
 	if byJwt == "" {
 		return
 	}

@@ -326,6 +326,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_stripe_payment_intent(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_stripe_payment_intent_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_delete_api_key(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_delete_api_key_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_device_set_name(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_device_set_name_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_dismiss_account_sign_in_notice(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_find_locations(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_find_locations_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_find_provider_locations(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_find_locations_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_find_providers(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_find_providers_cb a2, IntPtr a3);

@@ -326,6 +326,7 @@ public interface Raw extends Library {
   void urnet_api_create_stripe_payment_intent(long a0, String a1, urnet_stripe_payment_intent_cb a2, Pointer a3);
   void urnet_api_delete_api_key(long a0, String a1, urnet_delete_api_key_cb a2, Pointer a3);
   void urnet_api_device_set_name(long a0, String a1, urnet_device_set_name_cb a2, Pointer a3);
+  void urnet_api_dismiss_account_sign_in_notice(long a0);
   void urnet_api_find_locations(long a0, String a1, urnet_find_locations_cb a2, Pointer a3);
   void urnet_api_find_provider_locations(long a0, String a1, urnet_find_locations_cb a2, Pointer a3);
   void urnet_api_find_providers(long a0, String a1, urnet_find_providers_cb a2, Pointer a3);

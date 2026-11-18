@@ -325,6 +325,7 @@ module URnetwork
       attach_function :urnet_api_create_stripe_payment_intent, [:uint64, :string, :urnet_stripe_payment_intent_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_delete_api_key, [:uint64, :string, :urnet_delete_api_key_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_device_set_name, [:uint64, :string, :urnet_device_set_name_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_dismiss_account_sign_in_notice, [:uint64], :void, blocking: true
       attach_function :urnet_api_find_locations, [:uint64, :string, :urnet_find_locations_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_find_provider_locations, [:uint64, :string, :urnet_find_locations_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_find_providers, [:uint64, :string, :urnet_find_providers_cb, :pointer], :void, blocking: true

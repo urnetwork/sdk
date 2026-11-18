@@ -642,3 +642,105 @@ func TestClientSessionLastUseNamesTheBrowserExtension(t *testing.T) {
 		t.Fatalf("device kinds: %v", kinds)
 	}
 }
+
+// A device whose account sign-in the server rejected while its client stayed
+// signed in, started from the same LocalState after a restart, as a new
+// process would: a new LocalState over the same files and a new Api.
+func restartAccountSignInTestDevice(t *testing.T, dir string, client string) (*Api, *LocalState) {
+	t.Helper()
+	localState := newLocalState(context.Background(), dir)
+	api := newApi(t.Context(), nil, "https://api.example")
+	t.Cleanup(api.Close)
+	installTestDeviceByJwt(t, api, localState, client, localState.GetInstanceId())
+	return api, localState
+}
+
+// The account sign-in notice shows until it is dismissed, or the next sign-in
+// or sign-out (coordinator, session1118). It lived in each app's memory, so a
+// restart cleared it while the account still needed its sign-in. The sdk now
+// keeps it with the device's LocalState: after a restart the device's Api has
+// it pending again, with its cause, and tells every listener, the ones added
+// after the start included; a dismissal ends it for good.
+func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
+	dir := t.TempDir()
+	network := taggedSessionTestJwt(t, newId(connect.NewId()).String(), "")
+	client := taggedSessionTestJwt(t, "another-session", credentialTestClientId)
+	{
+		localState := newLocalState(context.Background(), dir)
+		if err := localState.SetByJwt(network); err != nil {
+			t.Fatal(err)
+		}
+		if err := localState.SetByClientJwt(client); err != nil {
+			t.Fatal(err)
+		}
+		api := newApi(t.Context(), nil, "https://api.example")
+		defer api.Close()
+		installTestDeviceByJwt(t, api, localState, client, localState.GetInstanceId())
+		if !api.HasNetworkCredential() {
+			t.Fatal("the device did not take up the account's sign-in")
+		}
+		api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(testingSessionRevokedBody)}
+		})
+		var notices atomic.Int32
+		api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { notices.Add(1) }))
+		if _, err := api.networkSessions(t.Context()); err == nil {
+			t.Fatal("the revoked sign-in was accepted")
+		}
+		if notices.Load() != 1 || api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
+			t.Fatalf("%d notices, cause %q", notices.Load(), api.GetAccountSignInRequiredCause())
+		}
+	}
+
+	// restart: the notice is still reported, to a listener added after the
+	// start too, with its cause, and the Sessions screen needs a sign-in
+	api, _ := restartAccountSignInTestDevice(t, dir, client)
+	replayed := make(chan struct{}, 1)
+	api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { replayed <- struct{}{} }))
+	select {
+	case <-replayed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the notice was lost with the restart")
+	}
+	if api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
+		t.Fatalf("cause after the restart %q", api.GetAccountSignInRequiredCause())
+	}
+	if rejected, _ := api.sessionSignInRejection(); !rejected {
+		t.Fatal("after the restart the Sessions screen did not need a sign-in")
+	}
+	api.DismissAccountSignInNotice()
+
+	// restart: the dismissed notice is not reported
+	api, localState := restartAccountSignInTestDevice(t, dir, client)
+	api.mutex.Lock()
+	pending := api.accountSignInNoticePending
+	api.mutex.Unlock()
+	if pending || api.GetAccountSignInRequiredCause() != "" {
+		t.Fatal("a dismissed notice came back after a restart")
+	}
+
+	// a sign-in and a sign-out end a notice still to be dismissed
+	for _, end := range []func(*LocalState) error{
+		func(localState *LocalState) error {
+			return localState.SetByJwt(taggedSessionTestJwt(t, newId(connect.NewId()).String(), ""))
+		},
+		func(localState *LocalState) error { return localState.Logout() },
+	} {
+		if err := localState.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+			state.setAccountSignInNotice(true, AuthLogoutCauseSessionRevoked)
+			return true, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := end(localState); err != nil {
+			t.Fatal(err)
+		}
+		state, err := newLocalState(context.Background(), dir).loadAuthState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.AccountSignInNotice || state.AccountSignInNoticeCause != "" {
+			t.Fatal("a sign-in or a sign-out left the notice")
+		}
+	}
+}

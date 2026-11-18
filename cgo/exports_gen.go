@@ -4724,6 +4724,16 @@ func urnet_api_device_set_name(self C.uint64_t, deviceSetName *C.char, callback_
 	self_.DeviceSetName(deviceSetName_, callback_)
 }
 
+//export urnet_api_dismiss_account_sign_in_notice
+func urnet_api_dismiss_account_sign_in_notice(self C.uint64_t) {
+	defer cgoGuard("urnet_api_dismiss_account_sign_in_notice")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_dismiss_account_sign_in_notice")
+	if !ok {
+		return
+	}
+	self_.DismissAccountSignInNotice()
+}
+
 //export urnet_api_find_locations
 func urnet_api_find_locations(self C.uint64_t, findLocations *C.char, callback_result C.urnet_find_locations_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_find_locations")

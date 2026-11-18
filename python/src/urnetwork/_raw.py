@@ -404,6 +404,8 @@ def bind(lib):
     lib.urnet_api_delete_api_key.restype = None
     lib.urnet_api_device_set_name.argtypes = [c_uint64, c_char_p, urnet_device_set_name_cb, c_void_p]
     lib.urnet_api_device_set_name.restype = None
+    lib.urnet_api_dismiss_account_sign_in_notice.argtypes = [c_uint64]
+    lib.urnet_api_dismiss_account_sign_in_notice.restype = None
     lib.urnet_api_find_locations.argtypes = [c_uint64, c_char_p, urnet_find_locations_cb, c_void_p]
     lib.urnet_api_find_locations.restype = None
     lib.urnet_api_find_provider_locations.argtypes = [c_uint64, c_char_p, urnet_find_locations_cb, c_void_p]

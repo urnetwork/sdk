@@ -1359,6 +1359,7 @@ void urnet_api_create_stripe_checkout_session(uint64_t self, const char* args_js
 void urnet_api_create_stripe_payment_intent(uint64_t self, const char* args_json, urnet_stripe_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_delete_api_key(uint64_t self, const char* args_json, urnet_delete_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_device_set_name(uint64_t self, const char* device_set_name_json, urnet_device_set_name_cb callback_result, void* callback_user_data);
+void urnet_api_dismiss_account_sign_in_notice(uint64_t self);
 void urnet_api_find_locations(uint64_t self, const char* find_locations_json, urnet_find_locations_cb callback_result, void* callback_user_data);
 void urnet_api_find_provider_locations(uint64_t self, const char* find_locations_json, urnet_find_locations_cb callback_result, void* callback_user_data);
 void urnet_api_find_providers(uint64_t self, const char* find_providers_json, urnet_find_providers_cb callback_result, void* callback_user_data);
