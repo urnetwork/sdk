@@ -16,8 +16,8 @@ import { countryContains, hasBoundary } from "./polygon";
 import { estimateRoundTrip } from "./roundTrip";
 import { decide, defaultMaxSigmaKm, type DriftVerdict, type DriftVerdictReason } from "./verdict";
 
-/** E5: an extender is usable in a run with this many round trips. */
-export const driftUsableRoundTrips = 12;
+/** E5: an extender is usable in a run with this many round trips, 2 s of pings (12 before 2026-11-17). */
+export const driftUsableRoundTrips = 8;
 /** E5, V7: a run counts with this many usable extenders. */
 export const driftMinRunExtenders = 6;
 /** V7: the verdict pools this many of the last counting runs. */
@@ -41,7 +41,7 @@ export interface DriftRun {
   extenders: readonly DriftRunExtender[];
 }
 
-/** E5: a run's observations, one per extender with 12 round trips or more. */
+/** E5: a run's observations, one per extender with 8 round trips or more. */
 export function driftRunObservations(run: DriftRun): Observation[] {
   const observations: Observation[] = [];
   for (const extender of run.extenders) {

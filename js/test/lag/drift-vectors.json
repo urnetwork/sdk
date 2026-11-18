@@ -29,7 +29,7 @@
   "stopInterruptedMs": 4000,
   "stopCapMs": 12000,
   "stopExtenders": 8,
-  "stopRoundTrips": 12,
+  "stopRoundTrips": 8,
   "browserStopTolerance": {
    "areaRatio": 1.105,
    "kEarly": 0
@@ -17981,6 +17981,282 @@
       5,
       5,
       5
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 4
+   },
+   "stop": false,
+   "reason": "",
+   "holds": {
+    "cap": false,
+    "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "clear: 8 extenders with 8 round trips each",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -10
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        900,
+        0
+       ],
+       [
+        0,
+        900
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 30,
+      "minorKm": 30,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      3,
+      3,
+      3,
+      3
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 4
+   },
+   "stop": true,
+   "reason": "clear",
+   "holds": {
+    "cap": false,
+    "clear": true,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "not clear: 8 extenders with 7 round trips each",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -10
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        900,
+        0
+       ],
+       [
+        0,
+        900
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 30,
+      "minorKm": 30,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      3,
+      3,
+      3,
+      3
+     ]
+    }
+   ],
+   "openedMs": 1000000,
+   "nowMs": 1003000,
+   "lastPongMs": 1003000,
+   "country": {
+    "code": "zz",
+    "polygons": [
+     [
+      [
+       {
+        "lat": 0,
+        "lon": 0
+       },
+       {
+        "lat": 0,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 2
+       },
+       {
+        "lat": 2,
+        "lon": 0
+       }
+      ]
+     ]
+    ]
+   },
+   "tolerance": {
+    "areaRatio": 1.105,
+    "kEarly": 4
+   },
+   "stop": false,
+   "reason": "",
+   "holds": {
+    "cap": false,
+    "clear": false,
+    "converged": false,
+    "interrupted": false
+   }
+  },
+  {
+   "name": "not clear: 7 extenders with 8 round trips each",
+   "history": [
+    {
+     "atMs": 1003000,
+     "fit": {
+      "at": {
+       "lat": 1,
+       "lon": -10
+      },
+      "eastKm": 0,
+      "northKm": 0,
+      "lastMileMs": [
+       5
+      ],
+      "cov": [
+       [
+        900,
+        0
+       ],
+       [
+        0,
+        900
+       ]
+      ],
+      "chi2PerDof": 1,
+      "extenders": 12,
+      "majorKm": 30,
+      "minorKm": 30,
+      "bearingDeg": 90,
+      "runs": [
+       1
+      ],
+      "observations": 0
+     },
+     "roundTrips": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      3,
+      3,
+      3,
+      3,
+      3
      ]
     }
    ],

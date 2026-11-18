@@ -5,11 +5,12 @@
 // (250 ms), and the server evaluates the same rules on the signed reports at
 // the moment the sessions closed, with wider tolerances.
 //
-//   - converged: at least 8 extenders have 12 round trips each, and over the
-//     trailing 2 s the ellipse's area (σ_major · σ_minor) has stayed within
-//     the tolerance's ratio and the position has moved less than a quarter of
+//   - converged: at least 8 extenders are usable, with 8 or more round trips
+//     each (E5's usable_round_trips, 2 s of pings), and over the trailing 2 s
+//     the ellipse's area (σ_major · σ_minor) has stayed within the
+//     tolerance's ratio and the position has moved less than a quarter of
 //     σ_minor;
-//   - clear: the same 12-round-trip minimum, and the whole region at the
+//   - clear: the same usable minimum, and the whole region at the
 //     run's k_early (V11) lies outside the IP country, or the fit is inside it
 //     and the whole region lies inside it. Both are D ≥ k_early (V6). A
 //     tolerance without a k_early allows no clear stop; falling back to earlyK
@@ -32,9 +33,14 @@ export const stopWindowMs = 2000;
 export const stopInterruptedMs = 4000;
 /** cap: this long after the sessions opened, ms. */
 export const stopCapMs = 12000;
-/** converged and clear need this many extenders with `stopRoundTrips` each. */
+/**
+ * converged and clear need this many usable extenders, each with at least
+ * `stopRoundTrips` round trips: E5's usable minimum, 8 since T3 found it
+ * changes no rate and saves about a second when far sessions open late
+ * (2026-11-17; 12 before).
+ */
 export const stopExtenders = 8;
-export const stopRoundTrips = 12;
+export const stopRoundTrips = 8;
 
 /** The run's state after a ping round. */
 export interface Snapshot {
@@ -162,7 +168,7 @@ function latestSnapshot(history: readonly Snapshot[], nowMs: number): Snapshot |
   return null;
 }
 
-/** at least 8 extenders have 12 round trips each */
+/** at least stopExtenders extenders are usable: stopRoundTrips or more round trips each (E5) */
 function enoughRoundTrips(roundTrips: readonly number[] | null): boolean {
   let count = 0;
   for (const n of roundTrips ?? []) {

@@ -293,15 +293,19 @@ const europe = new drift.Borders("test", [
   fx.squareCountry("fr", { lat: 47, lon: 2.5 }, 250),
 ]);
 
-test("W8: a run's observations are its extenders with 12 round trips, and it counts with 6 of them", () => {
+test("W8: a run's observations are its extenders with 8 round trips, and it counts with 6 of them", () => {
   const run = frankfurtRun(1, 3);
   assert.equal(drift.driftRunObservations(run).length, 12);
   assert.equal(drift.driftRunCounts(run), true);
-  const short = { ...run, extenders: run.extenders.map((e, i) => (i < 7 ? { ...e, roundTripsMs: e.roundTripsMs.slice(0, 11) } : e)) };
+  const short = { ...run, extenders: run.extenders.map((e, i) => (i < 7 ? { ...e, roundTripsMs: e.roundTripsMs.slice(0, 7) } : e)) };
   assert.equal(drift.driftRunObservations(short).length, 5);
   assert.equal(drift.driftRunCounts(short), false);
   // lost pings are no round trips
-  const lossy = { ...run, extenders: run.extenders.map((e) => ({ ...e, roundTripsMs: [...e.roundTripsMs.slice(0, 11), Number.NaN] })) };
+  const lossy = { ...run, extenders: run.extenders.map((e) => ({ ...e, roundTripsMs: [...e.roundTripsMs.slice(0, 7), Number.NaN] })) };
+  // exactly 8 is usable (E5)
+  const eight = { ...run, extenders: run.extenders.map((e) => ({ ...e, roundTripsMs: e.roundTripsMs.slice(0, 8) })) };
+  assert.equal(drift.driftRunObservations(eight).length, 12);
+  assert.equal(drift.driftUsableRoundTrips, 8);
   assert.equal(drift.driftRunObservations(lossy).length, 0);
   const o = drift.driftRunObservations(run)[0];
   assert.equal(o.run, 1);

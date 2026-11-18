@@ -725,12 +725,17 @@ test("V10: nothing stops a run in its first 3 s", () => {
   assert.equal(drift.stopEarliestMs, 3000);
 });
 
-test("V10: converged once the ellipse holds for 2 s with 8 extenders at 12 round trips", () => {
+test("V10: converged once the ellipse holds for 2 s with 8 usable extenders, 8 round trips each", () => {
   const history = looks(3000, () => stopFit(2500));
   assert.equal(drift.evaluateStop(history, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "converged");
   assert.equal(drift.stopHolds("converged", history, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), true);
-  // too few round trips: no stop before the cap
-  const sparse = looks(3000, () => stopFit(2500), () => [12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11]);
+  // the usable minimum: 8 extenders with 8 round trips each, not 7 with 8 nor 8 with 7 (E5)
+  const justEnough = looks(3000, () => stopFit(2500), () => [8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7]);
+  assert.equal(drift.evaluateStop(justEnough, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), "converged");
+  const sevenEach = looks(3000, () => stopFit(2500), () => Array.from({ length: 12 }, () => 7));
+  assert.equal(drift.evaluateStop(sevenEach, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
+  // too few usable extenders: no stop before the cap
+  const sparse = looks(3000, () => stopFit(2500), () => [8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7]);
   assert.equal(drift.evaluateStop(sparse, OPENED, OPENED + 3000, OPENED + 2990, small, drift.browserStopTolerance), null);
   // a fit for less than 2 s isn't steady yet
   const late = looks(3000, (t) => (t >= 1250 ? stopFit(2500) : null));
@@ -838,6 +843,6 @@ test("V10: interrupted after 4 s without a pong, and the cap at 12 s", () => {
   assert.equal(drift.stopHolds("interrupted", slow, OPENED, OPENED + 12000, OPENED + 11990, small, drift.browserStopTolerance), false);
   assert.deepEqual(
     [drift.stopCapMs, drift.stopInterruptedMs, drift.stopWindowMs, drift.stopExtenders, drift.stopRoundTrips],
-    [12000, 4000, 2000, 8, 12],
+    [12000, 4000, 2000, 8, 8],
   );
 });
