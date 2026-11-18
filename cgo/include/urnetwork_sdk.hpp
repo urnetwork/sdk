@@ -310,6 +310,11 @@ inline constexpr const char* ClientLimitPromptRemoveClient = "remove_client";
 inline constexpr const char* ClientLimitPromptUpgrade = "upgrade";
 inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
 inline constexpr const char* ClientLimitStatusNone = "";
+inline constexpr const char* ClientSessionGroupApiClients = "api_clients";
+inline constexpr const char* ClientSessionGroupHostedProxies = "hosted_proxies";
+inline constexpr const char* ClientSessionGroupOtherClients = "other_clients";
+inline constexpr const char* ClientSessionGroupPairedDevices = "paired_devices";
+inline constexpr const char* ClientSessionGroupSignIns = "sign_ins";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
@@ -652,6 +657,7 @@ inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* SessionErrorCodeLimitReached = "session_limit_reached";
 inline constexpr const char* ShownPlanFree = "free";
 inline constexpr const char* ShownPlanPro = "pro";
 inline constexpr const char* ShownPlanUnknown = "unknown";
@@ -890,6 +896,8 @@ class ClientRefreshIntegrityNotice;
 class ClientSessionAction;
 class ClientSessionActionList;
 class ClientSessionError;
+class ClientSessionGroup;
+class ClientSessionGroupList;
 class ClientSessionSnapshot;
 class ClientSessionViewController;
 class ConnectGrid;
@@ -1603,6 +1611,7 @@ struct AddAuthResult {
 };
 
 struct ApiError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -1776,6 +1785,7 @@ struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
 	std::optional<bool> upgrade_required;
 	std::optional<bool> no_unique_supply;
+	std::optional<std::string> code;
 	std::string message{};
 	std::optional<std::string> client_limit_prompt;
 };
@@ -6777,11 +6787,19 @@ inline void from_json(const nlohmann::json& j, AddAuthResult& v) {
 
 inline void to_json(nlohmann::json& j, const ApiError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, ApiError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -7690,6 +7708,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	if (v.no_unique_supply) {
 		j["no_unique_supply"] = *v.no_unique_supply;
 	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 	if (v.client_limit_prompt) {
 		j["client_limit_prompt"] = *v.client_limit_prompt;
@@ -7711,6 +7732,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.no_unique_supply = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -24301,6 +24327,28 @@ public:
 	bool getUnsupported() const;
 };
 
+class ClientSessionGroup final : public detail::Handle {
+public:
+	ClientSessionGroup() = default;
+	explicit ClientSessionGroup(uint64_t h) : detail::Handle(h) {}
+	int64_t getCount() const;
+	bool getExpanded() const;
+	bool getHasMore() const;
+	std::string getKind() const;
+	NetworkSessionInfoList getSessions() const;
+};
+
+class ClientSessionGroupList final : public detail::Handle {
+public:
+	ClientSessionGroupList() = default;
+	explicit ClientSessionGroupList(uint64_t h) : detail::Handle(h) {}
+	void add(const ClientSessionGroup& value) const;
+	bool contains(const ClientSessionGroup& v) const;
+	ClientSessionGroup get(int64_t i) const;
+	int64_t len() const;
+	void unmarshalJSON(const uint8_t* b, int32_t b_len) const;
+};
+
 class ClientSessionSnapshot final : public detail::Handle {
 public:
 	ClientSessionSnapshot() = default;
@@ -24311,12 +24359,17 @@ public:
 	ClientSessionError getError() const;
 	int64_t getEventId() const;
 	std::string getGeneration() const;
+	ClientSessionGroupList getGroups() const;
 	std::string getLegacyCoverage() const;
 	bool getLoaded() const;
 	bool getLoading() const;
+	int64_t getOtherSessionCount() const;
 	bool getRefreshing() const;
+	int64_t getSessionCount() const;
 	NetworkSessionInfoList getSessions() const;
+	bool getSessionsHasMore() const;
 	bool getSupported() const;
+	bool getTruncated() const;
 };
 
 class ClientSessionViewController final : public detail::Handle {
@@ -24331,7 +24384,9 @@ public:
 	void revokeOtherSessions() const;
 	void revokeSession(const std::string& session_id) const;
 	void setForeground(bool foreground) const;
+	void setGroupExpanded(const std::string& kind, bool expanded) const;
 	void setVisible(bool visible) const;
+	void showMoreSessions(const std::string& kind) const;
 	void start() const;
 	void stop() const;
 };
@@ -24971,6 +25026,7 @@ public:
 	NetworkSessionInfo() = default;
 	explicit NetworkSessionInfo(uint64_t h) : detail::Handle(h) {}
 	int64_t getAcceptUntil() const;
+	std::string getClientKind() const;
 	int64_t getCreateTime() const;
 	bool getCurrent() const;
 	std::string getKind() const;
@@ -24978,6 +25034,7 @@ public:
 	SessionLastUsed getLastUsed() const;
 	std::string getOriginSessionId() const;
 	std::string getSessionId() const;
+	std::string getSessionKind() const;
 	int64_t getTokenExpireTime() const;
 };
 
@@ -25000,6 +25057,7 @@ public:
 	int64_t getEventId() const;
 	std::string getGeneration() const;
 	std::string getLegacyCoverage() const;
+	std::string getNextCursor() const;
 	NetworkSessionInfoList getSessions() const;
 };
 
@@ -35350,6 +35408,51 @@ inline bool ClientSessionError::getUnsupported() const {
 	bool r = urnet_client_session_error_get_unsupported(handle());
 	return r;
 }
+inline int64_t ClientSessionGroup::getCount() const {
+	int64_t r = urnet_client_session_group_get_count(handle());
+	return r;
+}
+inline bool ClientSessionGroup::getExpanded() const {
+	bool r = urnet_client_session_group_get_expanded(handle());
+	return r;
+}
+inline bool ClientSessionGroup::getHasMore() const {
+	bool r = urnet_client_session_group_get_has_more(handle());
+	return r;
+}
+inline std::string ClientSessionGroup::getKind() const {
+	char* r_c = urnet_client_session_group_get_kind(handle());
+	return detail::takeString(r_c);
+}
+inline NetworkSessionInfoList ClientSessionGroup::getSessions() const {
+	NetworkSessionInfoList r(urnet_client_session_group_get_sessions(handle()));
+	return r;
+}
+inline void ClientSessionGroupList::add(const ClientSessionGroup& value) const {
+	urnet_client_session_group_list_add(handle(), value.handle());
+}
+inline bool ClientSessionGroupList::contains(const ClientSessionGroup& v) const {
+	bool r = urnet_client_session_group_list_contains(handle(), v.handle());
+	return r;
+}
+inline ClientSessionGroup ClientSessionGroupList::get(int64_t i) const {
+	ClientSessionGroup r(urnet_client_session_group_list_get(handle(), i));
+	return r;
+}
+inline int64_t ClientSessionGroupList::len() const {
+	int64_t r = urnet_client_session_group_list_len(handle());
+	return r;
+}
+inline void ClientSessionGroupList::unmarshalJSON(const uint8_t* b, int32_t b_len) const {
+	char* err_c = nullptr;
+	bool ok = urnet_client_session_group_list_unmarshal_json(handle(), b, b_len, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_client_session_group_list_unmarshal_json failed");
+	}
+}
 inline ClientSessionActionList ClientSessionSnapshot::getActions() const {
 	ClientSessionActionList r(urnet_client_session_snapshot_get_actions(handle()));
 	return r;
@@ -35374,6 +35477,10 @@ inline std::string ClientSessionSnapshot::getGeneration() const {
 	char* r_c = urnet_client_session_snapshot_get_generation(handle());
 	return detail::takeString(r_c);
 }
+inline ClientSessionGroupList ClientSessionSnapshot::getGroups() const {
+	ClientSessionGroupList r(urnet_client_session_snapshot_get_groups(handle()));
+	return r;
+}
 inline std::string ClientSessionSnapshot::getLegacyCoverage() const {
 	char* r_c = urnet_client_session_snapshot_get_legacy_coverage(handle());
 	return detail::takeString(r_c);
@@ -35386,16 +35493,32 @@ inline bool ClientSessionSnapshot::getLoading() const {
 	bool r = urnet_client_session_snapshot_get_loading(handle());
 	return r;
 }
+inline int64_t ClientSessionSnapshot::getOtherSessionCount() const {
+	int64_t r = urnet_client_session_snapshot_get_other_session_count(handle());
+	return r;
+}
 inline bool ClientSessionSnapshot::getRefreshing() const {
 	bool r = urnet_client_session_snapshot_get_refreshing(handle());
+	return r;
+}
+inline int64_t ClientSessionSnapshot::getSessionCount() const {
+	int64_t r = urnet_client_session_snapshot_get_session_count(handle());
 	return r;
 }
 inline NetworkSessionInfoList ClientSessionSnapshot::getSessions() const {
 	NetworkSessionInfoList r(urnet_client_session_snapshot_get_sessions(handle()));
 	return r;
 }
+inline bool ClientSessionSnapshot::getSessionsHasMore() const {
+	bool r = urnet_client_session_snapshot_get_sessions_has_more(handle());
+	return r;
+}
 inline bool ClientSessionSnapshot::getSupported() const {
 	bool r = urnet_client_session_snapshot_get_supported(handle());
+	return r;
+}
+inline bool ClientSessionSnapshot::getTruncated() const {
+	bool r = urnet_client_session_snapshot_get_truncated(handle());
 	return r;
 }
 inline Sub ClientSessionViewController::addClientSessionListener(ClientSessionListener listener) const {
@@ -35431,8 +35554,14 @@ inline void ClientSessionViewController::revokeSession(const std::string& sessio
 inline void ClientSessionViewController::setForeground(bool foreground) const {
 	urnet_client_session_view_controller_set_foreground(handle(), foreground);
 }
+inline void ClientSessionViewController::setGroupExpanded(const std::string& kind, bool expanded) const {
+	urnet_client_session_view_controller_set_group_expanded(handle(), kind.c_str(), expanded);
+}
 inline void ClientSessionViewController::setVisible(bool visible) const {
 	urnet_client_session_view_controller_set_visible(handle(), visible);
+}
+inline void ClientSessionViewController::showMoreSessions(const std::string& kind) const {
+	urnet_client_session_view_controller_show_more_sessions(handle(), kind.c_str());
 }
 inline void ClientSessionViewController::start() const {
 	urnet_client_session_view_controller_start(handle());
@@ -38321,6 +38450,10 @@ inline int64_t NetworkSessionInfo::getAcceptUntil() const {
 	int64_t r = urnet_network_session_info_get_accept_until(handle());
 	return r;
 }
+inline std::string NetworkSessionInfo::getClientKind() const {
+	char* r_c = urnet_network_session_info_get_client_kind(handle());
+	return detail::takeString(r_c);
+}
 inline int64_t NetworkSessionInfo::getCreateTime() const {
 	int64_t r = urnet_network_session_info_get_create_time(handle());
 	return r;
@@ -38347,6 +38480,10 @@ inline std::string NetworkSessionInfo::getOriginSessionId() const {
 }
 inline std::string NetworkSessionInfo::getSessionId() const {
 	char* r_c = urnet_network_session_info_get_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionInfo::getSessionKind() const {
+	char* r_c = urnet_network_session_info_get_session_kind(handle());
 	return detail::takeString(r_c);
 }
 inline int64_t NetworkSessionInfo::getTokenExpireTime() const {
@@ -38392,6 +38529,10 @@ inline std::string NetworkSessionsResult::getGeneration() const {
 }
 inline std::string NetworkSessionsResult::getLegacyCoverage() const {
 	char* r_c = urnet_network_sessions_result_get_legacy_coverage(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionsResult::getNextCursor() const {
+	char* r_c = urnet_network_sessions_result_get_next_cursor(handle());
 	return detail::takeString(r_c);
 }
 inline NetworkSessionInfoList NetworkSessionsResult::getSessions() const {

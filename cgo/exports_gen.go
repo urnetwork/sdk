@@ -8321,6 +8321,141 @@ func urnet_client_session_error_get_unsupported(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_client_session_group_get_count
+func urnet_client_session_group_get_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_client_session_group_get_count")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroup](uint64(self), "urnet_client_session_group_get_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetCount()
+	return C.int64_t(r0)
+}
+
+//export urnet_client_session_group_get_expanded
+func urnet_client_session_group_get_expanded(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_group_get_expanded")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroup](uint64(self), "urnet_client_session_group_get_expanded")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetExpanded()
+	return C.bool(r0)
+}
+
+//export urnet_client_session_group_get_has_more
+func urnet_client_session_group_get_has_more(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_group_get_has_more")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroup](uint64(self), "urnet_client_session_group_get_has_more")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetHasMore()
+	return C.bool(r0)
+}
+
+//export urnet_client_session_group_get_kind
+func urnet_client_session_group_get_kind(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_client_session_group_get_kind")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroup](uint64(self), "urnet_client_session_group_get_kind")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetKind()
+	return cString(string(r0))
+}
+
+//export urnet_client_session_group_get_sessions
+func urnet_client_session_group_get_sessions(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_client_session_group_get_sessions")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroup](uint64(self), "urnet_client_session_group_get_sessions")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetSessions()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_client_session_group_list_add
+func urnet_client_session_group_list_add(self C.uint64_t, value C.uint64_t) {
+	defer cgoGuard("urnet_client_session_group_list_add")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroupList](uint64(self), "urnet_client_session_group_list_add")
+	if !ok {
+		return
+	}
+	var value_ *sdk.ClientSessionGroup
+	if value != 0 {
+		var ok bool
+		value_, ok = resolveHandle[*sdk.ClientSessionGroup](uint64(value), "urnet_client_session_group_list_add")
+		if !ok {
+			return
+		}
+	}
+	self_.Add(value_)
+}
+
+//export urnet_client_session_group_list_contains
+func urnet_client_session_group_list_contains(self C.uint64_t, v C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_group_list_contains")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroupList](uint64(self), "urnet_client_session_group_list_contains")
+	if !ok {
+		return C.bool(false)
+	}
+	var v_ *sdk.ClientSessionGroup
+	if v != 0 {
+		var ok bool
+		v_, ok = resolveHandle[*sdk.ClientSessionGroup](uint64(v), "urnet_client_session_group_list_contains")
+		if !ok {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.Contains(v_)
+	return C.bool(r0)
+}
+
+//export urnet_client_session_group_list_get
+func urnet_client_session_group_list_get(self C.uint64_t, i C.int64_t) C.uint64_t {
+	defer cgoGuard("urnet_client_session_group_list_get")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroupList](uint64(self), "urnet_client_session_group_list_get")
+	if !ok {
+		return 0
+	}
+	r0 := self_.Get(int(int64(i)))
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_client_session_group_list_len
+func urnet_client_session_group_list_len(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_client_session_group_list_len")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroupList](uint64(self), "urnet_client_session_group_list_len")
+	if !ok {
+		return 0
+	}
+	r0 := self_.Len()
+	return C.int64_t(r0)
+}
+
+//export urnet_client_session_group_list_unmarshal_json
+func urnet_client_session_group_list_unmarshal_json(self C.uint64_t, b *C.uint8_t, b_len C.int32_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_client_session_group_list_unmarshal_json")
+	self_, ok := resolveHandle[*sdk.ClientSessionGroupList](uint64(self), "urnet_client_session_group_list_unmarshal_json")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.UnmarshalJSON(goBytes(b, b_len))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_client_session_snapshot_get_actions
 func urnet_client_session_snapshot_get_actions(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_client_session_snapshot_get_actions")
@@ -8396,6 +8531,20 @@ func urnet_client_session_snapshot_get_generation(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_client_session_snapshot_get_groups
+func urnet_client_session_snapshot_get_groups(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_client_session_snapshot_get_groups")
+	self_, ok := resolveHandle[*sdk.ClientSessionSnapshot](uint64(self), "urnet_client_session_snapshot_get_groups")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetGroups()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_client_session_snapshot_get_legacy_coverage
 func urnet_client_session_snapshot_get_legacy_coverage(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_client_session_snapshot_get_legacy_coverage")
@@ -8429,6 +8578,17 @@ func urnet_client_session_snapshot_get_loading(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_client_session_snapshot_get_other_session_count
+func urnet_client_session_snapshot_get_other_session_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_client_session_snapshot_get_other_session_count")
+	self_, ok := resolveHandle[*sdk.ClientSessionSnapshot](uint64(self), "urnet_client_session_snapshot_get_other_session_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetOtherSessionCount()
+	return C.int64_t(r0)
+}
+
 //export urnet_client_session_snapshot_get_refreshing
 func urnet_client_session_snapshot_get_refreshing(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_client_session_snapshot_get_refreshing")
@@ -8438,6 +8598,17 @@ func urnet_client_session_snapshot_get_refreshing(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetRefreshing()
 	return C.bool(r0)
+}
+
+//export urnet_client_session_snapshot_get_session_count
+func urnet_client_session_snapshot_get_session_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_client_session_snapshot_get_session_count")
+	self_, ok := resolveHandle[*sdk.ClientSessionSnapshot](uint64(self), "urnet_client_session_snapshot_get_session_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetSessionCount()
+	return C.int64_t(r0)
 }
 
 //export urnet_client_session_snapshot_get_sessions
@@ -8454,6 +8625,17 @@ func urnet_client_session_snapshot_get_sessions(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_client_session_snapshot_get_sessions_has_more
+func urnet_client_session_snapshot_get_sessions_has_more(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_snapshot_get_sessions_has_more")
+	self_, ok := resolveHandle[*sdk.ClientSessionSnapshot](uint64(self), "urnet_client_session_snapshot_get_sessions_has_more")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetSessionsHasMore()
+	return C.bool(r0)
+}
+
 //export urnet_client_session_snapshot_get_supported
 func urnet_client_session_snapshot_get_supported(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_client_session_snapshot_get_supported")
@@ -8462,6 +8644,17 @@ func urnet_client_session_snapshot_get_supported(self C.uint64_t) C.bool {
 		return C.bool(false)
 	}
 	r0 := self_.GetSupported()
+	return C.bool(r0)
+}
+
+//export urnet_client_session_snapshot_get_truncated
+func urnet_client_session_snapshot_get_truncated(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_snapshot_get_truncated")
+	self_, ok := resolveHandle[*sdk.ClientSessionSnapshot](uint64(self), "urnet_client_session_snapshot_get_truncated")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetTruncated()
 	return C.bool(r0)
 }
 
@@ -8562,6 +8755,16 @@ func urnet_client_session_view_controller_set_foreground(self C.uint64_t, foregr
 	self_.SetForeground(bool(foreground))
 }
 
+//export urnet_client_session_view_controller_set_group_expanded
+func urnet_client_session_view_controller_set_group_expanded(self C.uint64_t, kind *C.char, expanded C.bool) {
+	defer cgoGuard("urnet_client_session_view_controller_set_group_expanded")
+	self_, ok := resolveHandle[*sdk.ClientSessionViewController](uint64(self), "urnet_client_session_view_controller_set_group_expanded")
+	if !ok {
+		return
+	}
+	self_.SetGroupExpanded(goString(kind), bool(expanded))
+}
+
 //export urnet_client_session_view_controller_set_visible
 func urnet_client_session_view_controller_set_visible(self C.uint64_t, visible C.bool) {
 	defer cgoGuard("urnet_client_session_view_controller_set_visible")
@@ -8570,6 +8773,16 @@ func urnet_client_session_view_controller_set_visible(self C.uint64_t, visible C
 		return
 	}
 	self_.SetVisible(bool(visible))
+}
+
+//export urnet_client_session_view_controller_show_more_sessions
+func urnet_client_session_view_controller_show_more_sessions(self C.uint64_t, kind *C.char) {
+	defer cgoGuard("urnet_client_session_view_controller_show_more_sessions")
+	self_, ok := resolveHandle[*sdk.ClientSessionViewController](uint64(self), "urnet_client_session_view_controller_show_more_sessions")
+	if !ok {
+		return
+	}
+	self_.ShowMoreSessions(goString(kind))
 }
 
 //export urnet_client_session_view_controller_start
@@ -18234,6 +18447,17 @@ func urnet_network_session_info_get_accept_until(self C.uint64_t) C.int64_t {
 	return cTime(r0)
 }
 
+//export urnet_network_session_info_get_client_kind
+func urnet_network_session_info_get_client_kind(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_session_info_get_client_kind")
+	self_, ok := resolveHandle[*sdk.NetworkSessionInfo](uint64(self), "urnet_network_session_info_get_client_kind")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetClientKind()
+	return cString(string(r0))
+}
+
 //export urnet_network_session_info_get_create_time
 func urnet_network_session_info_get_create_time(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_network_session_info_get_create_time")
@@ -18312,6 +18536,17 @@ func urnet_network_session_info_get_session_id(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetSessionId()
 	return cId(r0)
+}
+
+//export urnet_network_session_info_get_session_kind
+func urnet_network_session_info_get_session_kind(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_session_info_get_session_kind")
+	self_, ok := resolveHandle[*sdk.NetworkSessionInfo](uint64(self), "urnet_network_session_info_get_session_kind")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSessionKind()
+	return cString(string(r0))
 }
 
 //export urnet_network_session_info_get_token_expire_time
@@ -18443,6 +18678,17 @@ func urnet_network_sessions_result_get_legacy_coverage(self C.uint64_t) *C.char 
 		return nil
 	}
 	r0 := self_.GetLegacyCoverage()
+	return cString(string(r0))
+}
+
+//export urnet_network_sessions_result_get_next_cursor
+func urnet_network_sessions_result_get_next_cursor(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_sessions_result_get_next_cursor")
+	self_, ok := resolveHandle[*sdk.NetworkSessionsResult](uint64(self), "urnet_network_sessions_result_get_next_cursor")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetNextCursor()
 	return cString(string(r0))
 }
 

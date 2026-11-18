@@ -259,6 +259,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CLIENT_LIMIT_PROMPT_UPGRADE "upgrade"
 #define URNET_CLIENT_LIMIT_STATUS_EXCEEDED "client_limit_exceeded"
 #define URNET_CLIENT_LIMIT_STATUS_NONE ""
+#define URNET_CLIENT_SESSION_GROUP_API_CLIENTS "api_clients"
+#define URNET_CLIENT_SESSION_GROUP_HOSTED_PROXIES "hosted_proxies"
+#define URNET_CLIENT_SESSION_GROUP_OTHER_CLIENTS "other_clients"
+#define URNET_CLIENT_SESSION_GROUP_PAIRED_DEVICES "paired_devices"
+#define URNET_CLIENT_SESSION_GROUP_SIGN_INS "sign_ins"
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
 #define URNET_CONNECT_FAILED "CONNECT_FAILED"
@@ -600,6 +605,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ROUTING_TIER_FULL 2
 #define URNET_ROUTING_TIER_LIGHT 1
 #define URNET_ROUTING_TIER_OFF 0
+#define URNET_SESSION_ERROR_CODE_LIMIT_REACHED "session_limit_reached"
 #define URNET_SHOWN_PLAN_FREE "free"
 #define URNET_SHOWN_PLAN_PRO "pro"
 #define URNET_SHOWN_PLAN_UNKNOWN "unknown"
@@ -1606,6 +1612,22 @@ bool urnet_client_session_error_get_session_revoked(uint64_t self);
 bool urnet_client_session_error_get_sign_in_required(uint64_t self);
 bool urnet_client_session_error_get_unsupported(uint64_t self);
 
+/* ----- ClientSessionGroup ----- */
+
+int64_t urnet_client_session_group_get_count(uint64_t self);
+bool urnet_client_session_group_get_expanded(uint64_t self);
+bool urnet_client_session_group_get_has_more(uint64_t self);
+char* urnet_client_session_group_get_kind(uint64_t self);
+uint64_t urnet_client_session_group_get_sessions(uint64_t self);
+
+/* ----- ClientSessionGroupList ----- */
+
+void urnet_client_session_group_list_add(uint64_t self, uint64_t value);
+bool urnet_client_session_group_list_contains(uint64_t self, uint64_t v);
+uint64_t urnet_client_session_group_list_get(uint64_t self, int64_t i);
+int64_t urnet_client_session_group_list_len(uint64_t self);
+bool urnet_client_session_group_list_unmarshal_json(uint64_t self, const uint8_t* b, int32_t b_len, char** out_error);
+
 /* ----- ClientSessionSnapshot ----- */
 
 uint64_t urnet_client_session_snapshot_get_actions(uint64_t self);
@@ -1614,12 +1636,17 @@ char* urnet_client_session_snapshot_get_current_session_id(uint64_t self);
 uint64_t urnet_client_session_snapshot_get_error(uint64_t self);
 int64_t urnet_client_session_snapshot_get_event_id(uint64_t self);
 char* urnet_client_session_snapshot_get_generation(uint64_t self);
+uint64_t urnet_client_session_snapshot_get_groups(uint64_t self);
 char* urnet_client_session_snapshot_get_legacy_coverage(uint64_t self);
 bool urnet_client_session_snapshot_get_loaded(uint64_t self);
 bool urnet_client_session_snapshot_get_loading(uint64_t self);
+int64_t urnet_client_session_snapshot_get_other_session_count(uint64_t self);
 bool urnet_client_session_snapshot_get_refreshing(uint64_t self);
+int64_t urnet_client_session_snapshot_get_session_count(uint64_t self);
 uint64_t urnet_client_session_snapshot_get_sessions(uint64_t self);
+bool urnet_client_session_snapshot_get_sessions_has_more(uint64_t self);
 bool urnet_client_session_snapshot_get_supported(uint64_t self);
+bool urnet_client_session_snapshot_get_truncated(uint64_t self);
 
 /* ----- ClientSessionViewController ----- */
 
@@ -1631,7 +1658,9 @@ void urnet_client_session_view_controller_refresh(uint64_t self);
 void urnet_client_session_view_controller_revoke_other_sessions(uint64_t self);
 void urnet_client_session_view_controller_revoke_session(uint64_t self, const char* session_id);
 void urnet_client_session_view_controller_set_foreground(uint64_t self, bool foreground);
+void urnet_client_session_view_controller_set_group_expanded(uint64_t self, const char* kind, bool expanded);
 void urnet_client_session_view_controller_set_visible(uint64_t self, bool visible);
+void urnet_client_session_view_controller_show_more_sessions(uint64_t self, const char* kind);
 void urnet_client_session_view_controller_start(uint64_t self);
 void urnet_client_session_view_controller_stop(uint64_t self);
 
@@ -2337,6 +2366,7 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 /* ----- NetworkSessionInfo ----- */
 
 int64_t urnet_network_session_info_get_accept_until(uint64_t self);
+char* urnet_network_session_info_get_client_kind(uint64_t self);
 int64_t urnet_network_session_info_get_create_time(uint64_t self);
 bool urnet_network_session_info_get_current(uint64_t self);
 char* urnet_network_session_info_get_kind(uint64_t self);
@@ -2344,6 +2374,7 @@ int64_t urnet_network_session_info_get_last_mint_time(uint64_t self);
 uint64_t urnet_network_session_info_get_last_used(uint64_t self);
 char* urnet_network_session_info_get_origin_session_id(uint64_t self);
 char* urnet_network_session_info_get_session_id(uint64_t self);
+char* urnet_network_session_info_get_session_kind(uint64_t self);
 int64_t urnet_network_session_info_get_token_expire_time(uint64_t self);
 
 /* ----- NetworkSessionInfoList ----- */
@@ -2360,6 +2391,7 @@ char* urnet_network_sessions_result_get_current_session_id(uint64_t self);
 int64_t urnet_network_sessions_result_get_event_id(uint64_t self);
 char* urnet_network_sessions_result_get_generation(uint64_t self);
 char* urnet_network_sessions_result_get_legacy_coverage(uint64_t self);
+char* urnet_network_sessions_result_get_next_cursor(uint64_t self);
 uint64_t urnet_network_sessions_result_get_sessions(uint64_t self);
 
 /* ----- NetworkSessionsRevision ----- */
@@ -3145,6 +3177,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* ApiError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -3249,6 +3282,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   client_limit_exceeded: boolean
  *   upgrade_required?: boolean
  *   no_unique_supply?: boolean
+ *   code?: string
  *   message: string
  *   client_limit_prompt?: string
  */

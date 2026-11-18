@@ -120,6 +120,7 @@ export interface WgConfig {
 }
 
 export interface ApiError {
+  code?: string;
   message: string;
 }
 
@@ -137,6 +138,8 @@ export interface NetworkSessionInfo {
   session_id: string | null;
   current: boolean;
   kind: string;
+  session_kind: string;
+  client_kind: string;
   create_time: string | null;
   last_mint_time: string | null;
   token_expire_time: string | null;
@@ -156,6 +159,7 @@ export interface NetworkSessionsResult {
   event_id: number;
   current_session_id: string | null;
   legacy_coverage: string;
+  next_cursor: string;
 }
 
 export interface SessionOperationResult {
@@ -195,8 +199,21 @@ export interface ClientSessionAction {
   error: ClientSessionError | null;
 }
 
+export interface ClientSessionGroup {
+  kind: string;
+  count: number;
+  expanded: boolean;
+  sessions: NetworkSessionInfo[] | null;
+  has_more: boolean;
+}
+
 export interface ClientSessionSnapshot {
   sessions: NetworkSessionInfo[] | null;
+  session_count: number;
+  sessions_has_more: boolean;
+  groups: ClientSessionGroup[] | null;
+  other_session_count: number;
+  truncated: boolean;
   current_session_id: string | null;
   legacy_coverage: string;
   generation: string;
@@ -622,6 +639,7 @@ export interface AuthNetworkClientError {
   client_limit_exceeded: boolean;
   upgrade_required?: boolean;
   no_unique_supply?: boolean;
+  code?: string;
   message: string;
   client_limit_prompt?: string;
 }
