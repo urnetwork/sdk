@@ -65,6 +65,8 @@ test("the lag entry exports S1-S3", async () => {
     "extenderIdFromBytes",
     "extenderMeasurementHost",
     "parseExtenderMeasurementHost",
+    "extenderMeasurementFamilyHost",
+    "parseExtenderMeasurementFamilyHost",
     "decodeExtenderFeedFrame",
     "decodeExtenderRecordBody",
     "decodeLagTicket",

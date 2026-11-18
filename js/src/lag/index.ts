@@ -6,7 +6,8 @@
 //
 // Colors, names, the protobuf reader and the feed client are S1-S3; the guest
 // session, the api calls, the lag client, its keystream and its statistics
-// are S4-S7.
+// are S4-S7. The drift test's model is ./drift (lag.dev/DRIFTTEST.md V, I4);
+// its world map loads only when `loadDriftWorld()` is called (G2).
 
 export { COUNTRY_COLOR_HEXES } from "./country_colors.generated";
 export {
@@ -20,8 +21,10 @@ export {
   DEFAULT_EXTENDER_MEASUREMENT_ZONE,
   canonicalIp,
   extenderIdFromBytes,
+  extenderMeasurementFamilyHost,
   extenderMeasurementHost,
   isExtenderId,
+  parseExtenderMeasurementFamilyHost,
   parseExtenderMeasurementHost,
 } from "./names";
 export {
@@ -77,3 +80,4 @@ export * from "./client";
 export * from "./keystream";
 export * from "./session";
 export * from "./stats";
+export * from "./drift";

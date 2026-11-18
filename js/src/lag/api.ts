@@ -12,6 +12,7 @@ import {
   type URNetworkApiClientConfig,
 } from "../api_client";
 import type { MyIPInfoResult } from "../generated/openapi";
+import type { DriftVerdict, StopReason } from "./drift";
 
 /**
  * A refusal the api answers in the body. The lag routes name it by `code`
@@ -129,6 +130,158 @@ export type LagMyIpInfoResult = MyIPInfoResult & {
   info: { asn?: LagAsn };
 };
 
+// ---- the drift test's widget routes (lag.dev/DRIFTTEST.md P5)
+
+/** W8: the token that runs a real measurement and stores nothing. */
+export const DRIFT_TEST_DEMO_TOKEN = "demo";
+
+/** P4: a drift test's state. */
+export type DriftTestState = "created" | "active" | "closed" | "expired" | "failed";
+
+/** P6: a run's state. */
+export type DriftTestRunState = "started" | "processing" | "complete";
+
+/**
+ * P5: the IP place the radar centers on, as `/my-ip-info` gives it: the
+ * address that started the run.
+ */
+export interface DriftTestPlace {
+  /** ISO 3166-1 alpha-2, lower case */
+  country_code?: string;
+  country_name?: string;
+  region?: string;
+  city?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+/** P5: one of a run's extenders, with its ticket, host and place. */
+export interface DriftTestTicket {
+  extender_id: string;
+  /** what the browser connects to (N1); it may carry a port */
+  host: string;
+  /** E2: 0-11 for the 12 extenders, 12-15 for the spares */
+  position: number;
+  /** the ticket text for the M4 session url */
+  ticket: string;
+  /** A4: the extender's place */
+  location?: LagExtenderLocation;
+  /**
+   * V3: the place's error, km (s_ext), should the api send it; it doesn't
+   * yet, and the model then takes a derived place's 50 km
+   */
+  place_error_km?: number;
+}
+
+/** P5 `POST /lag/drift-test/start` arguments. */
+export interface DriftTestStartArgs {
+  /** the token from `?t=` */
+  token: string;
+  /** W5: the parent's origin, when the frame knows it; sent as `parent_origin` */
+  parentOrigin?: string | null;
+  /**
+   * K6: start the run over the family this request arrives by, after the pin
+   * origin couldn't be reached; sent as `"unpinned": true` only when true
+   */
+  unpinned?: boolean;
+}
+
+/**
+ * P5: why a start was refused: `expired`, the token unknown or its first run
+ * not started in time; `closed`, out of runs, past its retest window or
+ * failed; `busy`, another of its runs still measuring; `origin`, the page may
+ * not run it (W5, P3); `limit`, with `retry_after_ms` (P7, W8); `unavailable`,
+ * too few extenders or no borders now.
+ */
+export type DriftTestStartRefusalCode = "expired" | "closed" | "busy" | "origin" | "limit" | "unavailable";
+
+/**
+ * P5: a run started: its track and tickets, the IP place and how long it may
+ * measure; or why not. The demo token's (W8) carries `demo: true` and no
+ * `drift_test_id`, and its tickets carry `NoReport`.
+ */
+export interface DriftTestStartResult {
+  /**
+   * K6: the request arrived over the other family from `client_ip`'s, and
+   * no run was used: send the same start to this origin
+   * (`https://api4.bringyour.com` or `https://api6.bringyour.com`), and if
+   * it can't be reached within 3 s, once more here with `unpinned`. A pin
+   * comes alone, with no tickets.
+   */
+  pin?: string;
+  /** the drift test; absent for the demo token */
+  drift_test_id?: string;
+  /** W8: the demo token; `finish` and `result` refuse it */
+  demo?: boolean;
+  /** the run started, from 1 */
+  run?: number;
+  /** runs the token has left after this one */
+  runs_left?: number;
+  track_id?: string;
+  tickets: DriftTestTicket[];
+  /** the IP place */
+  ip?: DriftTestPlace;
+  /** V10's cap, 12000 */
+  measure_ms?: number;
+  /** the token's confidence (V8) */
+  confidence?: number;
+  /** V11: the run's k, at which the radar draws the region and the demo judges it */
+  k?: number;
+  /** V11: the run's k_early, for the frame's clear stop (`StopTolerance.kEarly`) */
+  k_early?: number;
+  /** RFC 3339; every session must open before this */
+  expires_at?: string;
+  error?: LagApiRefusal & { code?: DriftTestStartRefusalCode | (string & {}) };
+}
+
+/** P5 `POST /lag/drift-test/finish` arguments. */
+export interface DriftTestFinishArgs {
+  token: string;
+  run: number;
+  /** V10: why the frame ended the run */
+  stop: StopReason;
+}
+
+/** P5: `finish` is idempotent. */
+export interface DriftTestFinishResult {
+  run?: number;
+  run_state?: DriftTestRunState;
+  error?: LagApiRefusal;
+}
+
+/** P5 `POST /lag/drift-test/result` arguments. */
+export interface DriftTestResultArgs {
+  token: string;
+}
+
+/**
+ * P5: only what the widget shows, never the drift country, a distance or
+ * the fit (decision 7).
+ */
+export interface DriftTestResultResult {
+  state?: DriftTestState;
+  /** the token's latest run */
+  run?: number;
+  run_state?: DriftTestRunState;
+  /** null until a run has completed */
+  verdict?: DriftVerdict | null;
+  ip_country_name?: string;
+  /** the runs the verdict pools (V7), which the frame keeps on its radar (V9) */
+  runs_in_verdict: number[];
+  retest_allowed?: boolean;
+  runs_left?: number;
+  error?: LagApiRefusal;
+}
+
+const DRIFT_STOP_REASONS: readonly string[] = ["converged", "clear", "interrupted", "cap"];
+
+const driftToken = (call: string, token: unknown): string => {
+  if (typeof token !== "string" || token === "") {
+    throw new TypeError(`${call}: a token is required`);
+  }
+  return token;
+};
+
 // The api may answer a refusal with a non-2xx status and the refusal in the
 // body; either way the caller gets it as a result, as the routes that answer
 // 200 with `error` already do.
@@ -223,6 +376,69 @@ export class LagApiClient extends URNetworkApiClientBase {
       { method: "GET", path: "/my-ip-info", auth: "none" },
       options,
     );
+  }
+
+  /**
+   * P5: start the token's next run (the first, or a retest), with its
+   * tickets. The token is the only credential, and it travels in the body,
+   * never the url. Never retried.
+   */
+  async driftTestStart(args: DriftTestStartArgs, options?: RequestOptions): Promise<DriftTestStartResult> {
+    const body: { token: string; parent_origin?: string; unpinned?: true } = { token: driftToken("driftTestStart", args.token) };
+    if (typeof args.parentOrigin === "string" && args.parentOrigin !== "") {
+      body.parent_origin = args.parentOrigin;
+    }
+    if (args.unpinned === true) {
+      body.unpinned = true;
+    }
+    const result = await refusalAsResult(
+      this.request<Partial<DriftTestStartResult>>(
+        { method: "POST", path: "/lag/drift-test/start", auth: "none", body },
+        options,
+      ),
+    );
+    return { ...result, tickets: Array.isArray(result.tickets) ? result.tickets : [] };
+  }
+
+  /**
+   * P5: the frame closed a run's sessions, and why (V10). Idempotent. The
+   * api refuses the demo token with a 400, which rejects as a
+   * URNetworkApiError.
+   */
+  driftTestFinish(args: DriftTestFinishArgs, options?: RequestOptions): Promise<DriftTestFinishResult> {
+    const token = driftToken("driftTestFinish", args.token);
+    if (!(Number.isSafeInteger(args.run) && args.run >= 1)) {
+      throw new TypeError(`driftTestFinish: run must be a run number, got ${args.run}`);
+    }
+    if (!DRIFT_STOP_REASONS.includes(args.stop)) {
+      throw new TypeError(`driftTestFinish: stop must be one of ${DRIFT_STOP_REASONS.join(", ")}, got ${args.stop}`);
+    }
+    return refusalAsResult(
+      this.request<DriftTestFinishResult>(
+        {
+          method: "POST",
+          path: "/lag/drift-test/finish",
+          auth: "none",
+          body: { token, run: args.run, stop: args.stop },
+        },
+        options,
+      ),
+    );
+  }
+
+  /**
+   * P5: what the widget shows. The api refuses the demo token with a 400,
+   * which rejects as a URNetworkApiError.
+   */
+  async driftTestResult(args: DriftTestResultArgs, options?: RequestOptions): Promise<DriftTestResultResult> {
+    const token = driftToken("driftTestResult", args.token);
+    const result = await refusalAsResult(
+      this.request<Partial<DriftTestResultResult>>(
+        { method: "POST", path: "/lag/drift-test/result", auth: "none", body: { token } },
+        options,
+      ),
+    );
+    return { ...result, runs_in_verdict: Array.isArray(result.runs_in_verdict) ? result.runs_in_verdict : [] };
   }
 }
 

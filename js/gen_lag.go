@@ -163,22 +163,25 @@ func fixedBytes(label string, n int) []byte {
 }
 
 type Vectors struct {
-	Comment           string                  `json:"comment"`
-	CanonicalIps      []CanonicalIpVector     `json:"canonicalIps"`
-	ExtenderIds       []ExtenderIdVector      `json:"extenderIds"`
-	MeasurementNames  []MeasurementNameVector `json:"measurementNames"`
-	MeasurementHosts  []MeasurementHostVector `json:"measurementHosts"`
-	ExtenderColors    []ExtenderColorVector   `json:"extenderColors"`
-	HueColors         []string                `json:"hueColors"`
-	Keystream         []KeystreamVector       `json:"keystream"`
-	RootPublicKeyHex  string                  `json:"rootPublicKeyHex"`
-	RootKeyIdHex      string                  `json:"rootKeyIdHex"`
-	OtherPublicKeyHex string                  `json:"otherPublicKeyHex"`
-	Records           []RecordVector          `json:"records"`
-	Revocation        RevocationVector        `json:"revocation"`
-	FeedRequests      []FeedRequestVector     `json:"feedRequests"`
-	FeedFrames        []FeedFrameVector       `json:"feedFrames"`
-	Ticket            TicketVector            `json:"ticket"`
+	Comment          string                  `json:"comment"`
+	CanonicalIps     []CanonicalIpVector     `json:"canonicalIps"`
+	ExtenderIds      []ExtenderIdVector      `json:"extenderIds"`
+	MeasurementNames []MeasurementNameVector `json:"measurementNames"`
+	MeasurementHosts []MeasurementHostVector `json:"measurementHosts"`
+	// lag.dev/DRIFTTEST.md K6
+	MeasurementFamilyNames []MeasurementFamilyNameVector `json:"measurementFamilyNames"`
+	MeasurementFamilyHosts []MeasurementFamilyHostVector `json:"measurementFamilyHosts"`
+	ExtenderColors         []ExtenderColorVector         `json:"extenderColors"`
+	HueColors              []string                      `json:"hueColors"`
+	Keystream              []KeystreamVector             `json:"keystream"`
+	RootPublicKeyHex       string                        `json:"rootPublicKeyHex"`
+	RootKeyIdHex           string                        `json:"rootKeyIdHex"`
+	OtherPublicKeyHex      string                        `json:"otherPublicKeyHex"`
+	Records                []RecordVector                `json:"records"`
+	Revocation             RevocationVector              `json:"revocation"`
+	FeedRequests           []FeedRequestVector           `json:"feedRequests"`
+	FeedFrames             []FeedFrameVector             `json:"feedFrames"`
+	Ticket                 TicketVector                  `json:"ticket"`
 }
 
 type CanonicalIpVector struct {
@@ -209,6 +212,27 @@ type MeasurementHostVector struct {
 	Zone string `json:"zone"`
 	// the id as connect.Id.String() writes it, or null when the host is refused
 	Id *string `json:"id"`
+}
+
+// an id, a zone and an ip family, and the name that resolves in that family
+// alone (lag.dev/DRIFTTEST.md K6)
+type MeasurementFamilyNameVector struct {
+	// connect.Id.String()
+	Id       string `json:"id"`
+	Zone     string `json:"zone"`
+	IpFamily int    `json:"ipFamily"`
+	// connect.ExtenderMeasurementFamilyName
+	Name string `json:"name"`
+}
+
+// a host and what connect.ParseExtenderMeasurementFamilyName reads in it
+type MeasurementFamilyHostVector struct {
+	Host string `json:"host"`
+	Zone string `json:"zone"`
+	// the id as connect.Id.String() writes it, or null when the host is refused
+	Id *string `json:"id"`
+	// 0 for a measurement name, 4 or 6 for a family's name; 0 when refused
+	IpFamily int `json:"ipFamily"`
 }
 
 type ExtenderColorVector struct {
@@ -346,6 +370,12 @@ func generateVectors() (*Vectors, error) {
 	}
 	vectors.MeasurementNames = names
 	vectors.MeasurementHosts = measurementHostVectors(names)
+	familyNames, err := measurementFamilyNameVectors(names)
+	if err != nil {
+		return nil, err
+	}
+	vectors.MeasurementFamilyNames = familyNames
+	vectors.MeasurementFamilyHosts = measurementFamilyHostVectors(names, familyNames)
 
 	extenderColors, hueColors, err := extenderColorVectors(ipInputs)
 	if err != nil {
@@ -1150,6 +1180,133 @@ func measurementHostVectors(names []MeasurementNameVector) []MeasurementHostVect
 	// the zone argument is normalized; the host is not
 	for _, zoneArgument := range []string{"", "Extender.BringYour.COM.", " extender.bringyour.com\t", "lab.example", "Lab.Example."} {
 		for _, host := range []string{id + ".extender.bringyour.com", id + ".lab.example", id + ".lab.example.", id + ".Lab.Example"} {
+			add(host, zoneArgument)
+		}
+	}
+	return vectors
+}
+
+// Ids to the names that resolve in one family alone (lag.dev/DRIFTTEST.md
+// K6): every id and zone of the measurement name vectors, the zero id
+// included, in families 4 and 6, and the first few in families that have no
+// name.
+func measurementFamilyNameVectors(names []MeasurementNameVector) ([]MeasurementFamilyNameVector, error) {
+	vectors := []MeasurementFamilyNameVector{}
+	for i, name := range names {
+		id, err := connect.ParseId(name.Id)
+		if err != nil {
+			return nil, err
+		}
+		ipFamilies := []int{4, 6}
+		if i < 12 {
+			ipFamilies = append(ipFamilies, 0, 5, 46, 64, -4)
+		}
+		for _, ipFamily := range ipFamilies {
+			vectors = append(vectors, MeasurementFamilyNameVector{
+				Id:       name.Id,
+				Zone:     name.Zone,
+				IpFamily: ipFamily,
+				Name:     connect.ExtenderMeasurementFamilyName(id, name.Zone, ipFamily),
+			})
+		}
+	}
+	// the N1 example's names as K6 spells them
+	for ipFamily, example := range map[int]string{
+		4: "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv4.extender.bringyour.com",
+		6: "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.ipv6.extender.bringyour.com",
+	} {
+		if got := connect.ExtenderMeasurementFamilyName(exampleExtenderId, "", ipFamily); got != example {
+			return nil, fmt.Errorf("K6: %s is named %s in family %d, not %s", exampleExtenderId, got, ipFamily, example)
+		}
+	}
+	return vectors, nil
+}
+
+// Hosts to parse as any of an extender's measurement names (K6): every
+// family's name generated, and the measurement names, which must round trip
+// with their family, and the spellings connect refuses.
+func measurementFamilyHostVectors(names []MeasurementNameVector, familyNames []MeasurementFamilyNameVector) []MeasurementFamilyHostVector {
+	vectors := []MeasurementFamilyHostVector{}
+	add := func(host string, zone string) {
+		vector := MeasurementFamilyHostVector{Host: host, Zone: zone}
+		if id, ipFamily, ok := connect.ParseExtenderMeasurementFamilyName(host, zone); ok {
+			text := id.String()
+			vector.Id = &text
+			vector.IpFamily = ipFamily
+		}
+		vectors = append(vectors, vector)
+	}
+	for _, name := range familyNames {
+		// the zero id and the other families have no name
+		if name.Name != "" {
+			add(name.Name, name.Zone)
+		}
+	}
+	for _, name := range names {
+		if name.Name != "" {
+			add(name.Name, name.Zone)
+		}
+	}
+	const zone = connect.ExtenderMeasurementZone
+	// every id spelling, canonical or not, as the label of a family's name
+	for _, id := range extenderIdVectors() {
+		add(id.Text+".ipv4."+zone, zone)
+	}
+	const id = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
+	for _, host := range []string{
+		// the family label in another case or spelling
+		id + ".IPV4.extender.bringyour.com",
+		id + ".Ipv6.extender.bringyour.com",
+		id + ".ipv5.extender.bringyour.com",
+		id + ".ip4.extender.bringyour.com",
+		id + ".v6.extender.bringyour.com",
+		id + ".ipv46.extender.bringyour.com",
+		id + ".ipv4.ipv6.extender.bringyour.com",
+		id + ".ipv4.ipv4.extender.bringyour.com",
+		// the label joined to the id or the zone, or moved
+		id + "ipv4.extender.bringyour.com",
+		id + "-ipv4.extender.bringyour.com",
+		id + ".ipv4extender.bringyour.com",
+		id + ".ipv4..extender.bringyour.com",
+		"ipv4." + id + ".extender.bringyour.com",
+		// a trailing dot, extra labels, the dns-01 record of a family's name
+		id + ".ipv4.extender.bringyour.com.",
+		"x." + id + ".ipv6.extender.bringyour.com",
+		"_acme-challenge." + id + ".ipv4.extender.bringyour.com",
+		" " + id + ".ipv6.extender.bringyour.com",
+		id + ".ipv6.extender.bringyour.com ",
+		// the labels between the ids and the zone, the apex, another zone
+		"ipv4.extender.bringyour.com",
+		"ipv6.extender.bringyour.com",
+		".ipv4.extender.bringyour.com",
+		"extender.bringyour.com",
+		id + ".ipv4.bringyour.com",
+		id + ".ipv6.example.com",
+		"",
+	} {
+		add(host, zone)
+	}
+	// the zone argument is normalized once, the host never; a zone whose own
+	// labels look like a family's is read as a zone
+	for _, zoneArgument := range []string{
+		"",
+		"Extender.BringYour.COM.",
+		"extender.bringyour.com..",
+		" extender.bringyour.com\t",
+		"lab.example",
+		"Lab.Example.",
+		"ipv4.example",
+	} {
+		for _, host := range []string{
+			id + ".ipv4.extender.bringyour.com",
+			id + ".ipv6.extender.bringyour.com.",
+			id + ".ipv6.lab.example",
+			id + ".ipv4.lab.example.",
+			id + ".IPV4.lab.example",
+			id + ".ipv4.example",
+			id + ".ipv4.ipv4.example",
+			id + ".ipv6.ipv4.example",
+		} {
 			add(host, zoneArgument)
 		}
 	}
