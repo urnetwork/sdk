@@ -1,6 +1,8 @@
-import typescript from "@rollup/plugin-typescript";
-import resolve from "@rollup/plugin-node-resolve";
 import { readFile } from "node:fs/promises";
+import ts from "typescript";
+import { typescript } from "./rollup-typescript.js";
+
+const compile = () => typescript(ts, "./tsconfig.json");
 
 // The lag SDK starts its download Worker from its own module,
 // `new Worker(new URL("./downloadWorker.ts", import.meta.url))`, which a
@@ -53,11 +55,7 @@ export default [
     ],
     external: ["react"],
     plugins: [
-      resolve(),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false, // handled by build:types script
-      }),
+      compile(),
       {
         name: "wasm-assets",
         async buildStart() {
@@ -87,13 +85,7 @@ export default [
         sourcemap: true,
       },
     ],
-    plugins: [
-      resolve(),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false,
-      }),
-    ],
+    plugins: [compile()],
   },
   // The lag.dev SDK (lag.dev/PLAN.md S): plain TypeScript that never loads
   // the wasm, so a page that imports only it never downloads sdk.wasm
@@ -119,13 +111,7 @@ export default [
     plugins: [
       downloadWorkerUrl,
       jsonModule,
-      resolve(),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false,
-        // the plugin wants its outDir inside the output dir
-        outDir: "dist/lag",
-      }),
+      compile(),
     ],
   },
   // The lag SDK's download Worker (src/lag/downloadWorker.ts), a module of
@@ -137,13 +123,7 @@ export default [
       format: "es",
       sourcemap: true,
     },
-    plugins: [
-      resolve(),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false,
-      }),
-    ],
+    plugins: [compile()],
   },
   // React entry point
   {
@@ -166,12 +146,6 @@ export default [
       "@tanstack/react-query",
       "@urnetwork/sdk",
     ],
-    plugins: [
-      resolve(),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false,
-      }),
-    ],
+    plugins: [compile()],
   },
 ];
