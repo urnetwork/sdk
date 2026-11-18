@@ -23,6 +23,10 @@ func (self *SessionLastUsed) GetDeviceType() string { return self.DeviceType }
 
 func (self *SessionLastUsed) GetAppVersion() string { return self.AppVersion }
 
+func (self *SessionLastUsed) GetDistribution() string { return self.Distribution }
+
+func (self *SessionLastUsed) GetDeviceKind() string { return self.DeviceKind }
+
 func (self *NetworkSessionInfo) GetSessionId() *Id { return self.SessionId }
 
 func (self *NetworkSessionInfo) GetCurrent() bool { return self.Current }

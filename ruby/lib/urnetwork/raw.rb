@@ -1421,7 +1421,9 @@ module URnetwork
       attach_function :urnet_session_last_used_get_city, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_last_used_get_country, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_last_used_get_country_code, [:uint64], :pointer, blocking: true
+      attach_function :urnet_session_last_used_get_device_kind, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_last_used_get_device_type, [:uint64], :pointer, blocking: true
+      attach_function :urnet_session_last_used_get_distribution, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_last_used_get_region, [:uint64], :pointer, blocking: true
       attach_function :urnet_session_last_used_get_unix_time, [:uint64], :int64, blocking: true
       attach_function :urnet_session_operation_result_get_cleanup_pending, [:uint64], :bool, blocking: true

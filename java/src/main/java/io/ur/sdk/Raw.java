@@ -1422,7 +1422,9 @@ public interface Raw extends Library {
   Pointer urnet_session_last_used_get_city(long a0);
   Pointer urnet_session_last_used_get_country(long a0);
   Pointer urnet_session_last_used_get_country_code(long a0);
+  Pointer urnet_session_last_used_get_device_kind(long a0);
   Pointer urnet_session_last_used_get_device_type(long a0);
+  Pointer urnet_session_last_used_get_distribution(long a0);
   Pointer urnet_session_last_used_get_region(long a0);
   long urnet_session_last_used_get_unix_time(long a0);
   byte urnet_session_operation_result_get_cleanup_pending(long a0);

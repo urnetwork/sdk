@@ -2596,8 +2596,12 @@ def bind(lib):
     lib.urnet_session_last_used_get_country.restype = c_void_p
     lib.urnet_session_last_used_get_country_code.argtypes = [c_uint64]
     lib.urnet_session_last_used_get_country_code.restype = c_void_p
+    lib.urnet_session_last_used_get_device_kind.argtypes = [c_uint64]
+    lib.urnet_session_last_used_get_device_kind.restype = c_void_p
     lib.urnet_session_last_used_get_device_type.argtypes = [c_uint64]
     lib.urnet_session_last_used_get_device_type.restype = c_void_p
+    lib.urnet_session_last_used_get_distribution.argtypes = [c_uint64]
+    lib.urnet_session_last_used_get_distribution.restype = c_void_p
     lib.urnet_session_last_used_get_region.argtypes = [c_uint64]
     lib.urnet_session_last_used_get_region.restype = c_void_p
     lib.urnet_session_last_used_get_unix_time.argtypes = [c_uint64]

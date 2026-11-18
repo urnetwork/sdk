@@ -608,3 +608,37 @@ func TestClientSessionSelfSignOutRacingARejectionSignsTheAppOut(t *testing.T) {
 		t.Fatal("the app kept a credential, or a cause, after signing its own session out")
 	}
 }
+
+// The browser extension signs in with a session of its own and reports device
+// type web from an extension build: the Sessions row names it as the
+// extension (DeviceKind extension), not as the web; every other use keeps its
+// device type, and a server that keeps no distribution keeps web.
+func TestClientSessionLastUseNamesTheBrowserExtension(t *testing.T) {
+	currentSessionId := newId(connect.NewId())
+	endpoint := &clientSessionPagedTestEndpoint{currentSessionId: currentSessionId, pageSize: 100}
+	use := func(deviceType, distribution string) *NetworkSessionInfo {
+		return &NetworkSessionInfo{SessionId: newId(connect.NewId()), Kind: "auth_code", LastUsed: &SessionLastUsed{DeviceType: deviceType, Distribution: distribution, AppVersion: "1.2.3"}}
+	}
+	endpoint.sessions = []*NetworkSessionInfo{
+		{SessionId: currentSessionId, Current: true, Kind: "password", LastUsed: &SessionLastUsed{DeviceType: "android", Distribution: "play"}},
+		use("web", "extension_chrome"),
+		use("web", "extension_firefox"),
+		use("web", "web"),
+		use("web", ""),
+		use("android", "extension_chrome"),
+		{SessionId: newId(connect.NewId()), Kind: "verify"},
+	}
+	vc := newClientSessionGroupsTestController(t, endpoint)
+	vc.refresh()
+	kinds := []string{}
+	for _, info := range vc.GetSnapshot().Sessions.values {
+		if info.LastUsed == nil {
+			kinds = append(kinds, "none")
+			continue
+		}
+		kinds = append(kinds, info.LastUsed.DeviceKind)
+	}
+	if strings.Join(kinds, " ") != "android extension extension web web android none" {
+		t.Fatalf("device kinds: %v", kinds)
+	}
+}

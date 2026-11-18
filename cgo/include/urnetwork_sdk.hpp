@@ -657,6 +657,7 @@ inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* SessionDeviceKindExtension = "extension";
 inline constexpr const char* SessionErrorCodeLimitReached = "session_limit_reached";
 inline constexpr const char* ShownPlanFree = "free";
 inline constexpr const char* ShownPlanPro = "pro";
@@ -25346,7 +25347,9 @@ public:
 	std::string getCity() const;
 	std::string getCountry() const;
 	std::string getCountryCode() const;
+	std::string getDeviceKind() const;
 	std::string getDeviceType() const;
+	std::string getDistribution() const;
 	std::string getRegion() const;
 	int64_t getUnixTime() const;
 };
@@ -39547,8 +39550,16 @@ inline std::string SessionLastUsed::getCountryCode() const {
 	char* r_c = urnet_session_last_used_get_country_code(handle());
 	return detail::takeString(r_c);
 }
+inline std::string SessionLastUsed::getDeviceKind() const {
+	char* r_c = urnet_session_last_used_get_device_kind(handle());
+	return detail::takeString(r_c);
+}
 inline std::string SessionLastUsed::getDeviceType() const {
 	char* r_c = urnet_session_last_used_get_device_type(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getDistribution() const {
+	char* r_c = urnet_session_last_used_get_distribution(handle());
 	return detail::takeString(r_c);
 }
 inline std::string SessionLastUsed::getRegion() const {

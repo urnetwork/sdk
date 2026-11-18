@@ -22124,6 +22124,17 @@ func urnet_session_last_used_get_country_code(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_session_last_used_get_device_kind
+func urnet_session_last_used_get_device_kind(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_session_last_used_get_device_kind")
+	self_, ok := resolveHandle[*sdk.SessionLastUsed](uint64(self), "urnet_session_last_used_get_device_kind")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDeviceKind()
+	return cString(string(r0))
+}
+
 //export urnet_session_last_used_get_device_type
 func urnet_session_last_used_get_device_type(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_session_last_used_get_device_type")
@@ -22132,6 +22143,17 @@ func urnet_session_last_used_get_device_type(self C.uint64_t) *C.char {
 		return nil
 	}
 	r0 := self_.GetDeviceType()
+	return cString(string(r0))
+}
+
+//export urnet_session_last_used_get_distribution
+func urnet_session_last_used_get_distribution(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_session_last_used_get_distribution")
+	self_, ok := resolveHandle[*sdk.SessionLastUsed](uint64(self), "urnet_session_last_used_get_distribution")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDistribution()
 	return cString(string(r0))
 }
 

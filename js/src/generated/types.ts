@@ -132,6 +132,8 @@ export interface SessionLastUsed {
   country_code: string;
   device_type: string;
   app_version: string;
+  distribution: string;
+  device_kind: string;
 }
 
 export interface NetworkSessionInfo {

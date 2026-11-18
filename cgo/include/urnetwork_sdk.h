@@ -605,6 +605,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ROUTING_TIER_FULL 2
 #define URNET_ROUTING_TIER_LIGHT 1
 #define URNET_ROUTING_TIER_OFF 0
+#define URNET_SESSION_DEVICE_KIND_EXTENSION "extension"
 #define URNET_SESSION_ERROR_CODE_LIMIT_REACHED "session_limit_reached"
 #define URNET_SHOWN_PLAN_FREE "free"
 #define URNET_SHOWN_PLAN_PRO "pro"
@@ -2630,7 +2631,9 @@ char* urnet_session_last_used_get_app_version(uint64_t self);
 char* urnet_session_last_used_get_city(uint64_t self);
 char* urnet_session_last_used_get_country(uint64_t self);
 char* urnet_session_last_used_get_country_code(uint64_t self);
+char* urnet_session_last_used_get_device_kind(uint64_t self);
 char* urnet_session_last_used_get_device_type(uint64_t self);
+char* urnet_session_last_used_get_distribution(uint64_t self);
 char* urnet_session_last_used_get_region(uint64_t self);
 int64_t urnet_session_last_used_get_unix_time(uint64_t self);
 

@@ -18,7 +18,36 @@ type SessionLastUsed struct {
 	CountryCode string `json:"country_code"`
 	DeviceType  string `json:"device_type"`
 	AppVersion  string `json:"app_version"`
+	// How the build reached the device (ClientDistribution*), as the server
+	// keeps it with the use; empty from a server that keeps none.
+	Distribution string `json:"distribution"`
+	// The kind of device the Sessions row names: DeviceType, or
+	// SessionDeviceKindExtension for the browser extension, whose builds
+	// report device type web with an extension distribution. The sdk sets it
+	// (sessionDeviceKind); apps label rows with it.
+	DeviceKind string `json:"device_kind"`
 }
+
+const (
+	// Keep this untyped so gomobile exports it on every app platform.
+
+	// SessionLastUsed.DeviceKind of the browser extension's sign-in: label
+	// the row "Browser extension" (sessions_device_extension).
+	SessionDeviceKindExtension = "extension"
+)
+
+// The kind of device a session's last use names: the browser extension for
+// device type web from an extension build, else the device type.
+func sessionDeviceKind(lastUsed *SessionLastUsed) string {
+	if lastUsed.DeviceType == "web" {
+		switch lastUsed.Distribution {
+		case ClientDistributionExtensionChrome, ClientDistributionExtensionFirefox:
+			return SessionDeviceKindExtension
+		}
+	}
+	return lastUsed.DeviceType
+}
+
 type NetworkSessionInfo struct {
 	SessionId *Id  `json:"session_id"`
 	Current   bool `json:"current"`
@@ -139,6 +168,11 @@ func (self *Api) networkSessionsPageFor(ctx context.Context, target networkRenew
 	}
 	if result.Sessions == nil {
 		result.Sessions = NewNetworkSessionInfoList()
+	}
+	for _, info := range result.Sessions.values {
+		if info != nil && info.LastUsed != nil {
+			info.LastUsed.DeviceKind = sessionDeviceKind(info.LastUsed)
+		}
 	}
 	if result.Generation == "" || result.EventId < 1 {
 		return nil, errApiRequestFailed
