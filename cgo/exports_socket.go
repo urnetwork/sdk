@@ -16,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 type socketHandle struct {

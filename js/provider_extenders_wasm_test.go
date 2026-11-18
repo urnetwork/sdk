@@ -9,7 +9,7 @@ import (
 	"syscall/js"
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 func TestConnectedProviderLocationCarriesItsExtenders(t *testing.T) {
