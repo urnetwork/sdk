@@ -616,6 +616,8 @@ func (self *ClientSessionViewController) run() {
 			self.Refresh()
 			reset()
 		case <-self.requests:
+			// a waiting hint came before this reload, which reads its change
+			stopHint()
 			self.refresh()
 			self.recoverPending()
 		}
