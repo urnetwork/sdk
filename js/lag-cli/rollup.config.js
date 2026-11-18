@@ -1,5 +1,5 @@
-import typescript from "@rollup/plugin-typescript";
-import resolve from "@rollup/plugin-node-resolve";
+import ts from "typescript";
+import { typescript } from "../rollup-typescript.js";
 
 // One program, dist/cli.js, with the SDK's lag client (../src/lag) compiled in
 // and the package's own dependencies left to node_modules.
@@ -12,8 +12,5 @@ export default {
     banner: "#!/usr/bin/env node",
   },
   external: [/^node:/, "undici", /^@modelcontextprotocol\/sdk/, "zod"],
-  plugins: [
-    resolve({ preferBuiltins: true, exportConditions: ["node"] }),
-    typescript({ tsconfig: "./tsconfig.json" }),
-  ],
+  plugins: [typescript(ts, "./tsconfig.json")],
 };
