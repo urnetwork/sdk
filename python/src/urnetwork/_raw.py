@@ -2572,6 +2572,8 @@ def bind(lib):
     lib.urnet_sidecar_directory_announce_repo.restype = None
     lib.urnet_sidecar_directory_get.argtypes = [c_uint64, c_char_p]
     lib.urnet_sidecar_directory_get.restype = c_void_p
+    lib.urnet_sidecar_directory_get_repo_id.argtypes = [c_uint64]
+    lib.urnet_sidecar_directory_get_repo_id.restype = c_void_p
     lib.urnet_sidecar_directory_get_requests.argtypes = [c_uint64, c_char_p]
     lib.urnet_sidecar_directory_get_requests.restype = c_void_p
     lib.urnet_sidecar_directory_list.argtypes = [c_uint64, c_char_p, urnet_sidecar_directory_cb, c_void_p]

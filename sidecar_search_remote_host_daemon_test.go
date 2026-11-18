@@ -143,3 +143,28 @@ func TestNoControlMethodCarriesTheMode(t *testing.T) {
 		}
 	}
 }
+
+// SidecarDirectory.GetRepoId names the directory's own repo, which a directory view's "search more" puts in its query
+// (QD-1087): the store's id, nil where the network has none and once the directory closed; and nil on a remote-mode
+// Sidecar, whose daemon no control method asks for it yet, its view's "search more" covering every repo.
+func TestDirectoryRepoIdScopesSearchMore(t *testing.T) {
+	directoryId := sidecar.NewId()
+	store := newTestDirectoryStore()
+	store.repoId = &directoryId
+	directory := newTestSidecarDirectory(t, store)
+	if repoId := directory.GetRepoId(); repoId == nil || repoId.Cmp(newId(directoryId)) != 0 {
+		t.Errorf("the directory's repo id: %v", repoId)
+	}
+	directory.close()
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Errorf("a closed directory names %v", repoId)
+	}
+	none := newTestSidecarDirectory(t, newTestDirectoryStore())
+	if repoId := none.GetRepoId(); repoId != nil {
+		t.Errorf("a store naming no directory repo: %v", repoId)
+	}
+	remote := &sidecarDirectoryRemoteBackend{remote: &testRecordingDaemon{}, settings: defaultSidecarDirectorySettings()}
+	if repoId := remote.directoryRepoId(); repoId != nil {
+		t.Errorf("a remote-mode Sidecar names %v", repoId)
+	}
+}

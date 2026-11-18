@@ -394,6 +394,9 @@ type sidecarDirectoryBackend interface {
 	// §16.11's revoke row (RECORD-M6-20's DirectoryClient.RevokeRepo): the private marker over the repo's item and
 	// its erasure_request, the person having confirmed it.
 	revokeRepo(ctx context.Context, repoId sidecar.Id) error
+	// sidecar.DirectoryClient.DirectoryId: the directory's own repo id, nil while the network has none or the backend
+	// cannot name it (SDK-M10-03, QD-1087; sidecar_search_remote_host.go).
+	directoryRepoId() *sidecar.Id
 }
 
 // sidecarDirectoryViewBackend over the core's view.

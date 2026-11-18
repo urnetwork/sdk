@@ -1327,6 +1327,7 @@ EXPORTS
 	urnet_sidecar_confirm_forwarding_setup
 	urnet_sidecar_directory_announce_repo
 	urnet_sidecar_directory_get
+	urnet_sidecar_directory_get_repo_id
 	urnet_sidecar_directory_get_requests
 	urnet_sidecar_directory_list
 	urnet_sidecar_directory_request

@@ -1423,6 +1423,7 @@ public interface Raw extends Library {
   void urnet_sidecar_approvals_revoke_device(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   void urnet_sidecar_directory_announce_repo(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   Pointer urnet_sidecar_directory_get(long a0, String a1);
+  Pointer urnet_sidecar_directory_get_repo_id(long a0);
   Pointer urnet_sidecar_directory_get_requests(long a0, String a1);
   long urnet_sidecar_directory_list(long a0, String a1, urnet_sidecar_directory_cb a2, Pointer a3);
   void urnet_sidecar_directory_request(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);

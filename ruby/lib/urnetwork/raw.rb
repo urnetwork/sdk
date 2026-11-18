@@ -1422,6 +1422,7 @@ module URnetwork
       attach_function :urnet_sidecar_approvals_revoke_device, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_directory_announce_repo, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_directory_get, [:uint64, :string], :pointer, blocking: true
+      attach_function :urnet_sidecar_directory_get_repo_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_sidecar_directory_get_requests, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_sidecar_directory_list, [:uint64, :string, :urnet_sidecar_directory_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_directory_request, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true

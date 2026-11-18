@@ -158,8 +158,8 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		"Sidecar.GetSearch", "SidecarSearch.Search", "SidecarSearch.GetStatus", "SidecarSearch.DropCache", "SidecarSearch.SetPolicy",
 		"SidecarSearch.SetConditions", "SidecarSearch.SetForeground", "SidecarSearch.RunBackgroundSync", "SidecarSearchHandle.More",
 		"SidecarSearchHandle.Cancel",
-		// remote search's requester seams (SDK-M10-03)
-		"SidecarSearch.GetIndexers", "SidecarSearch.SetRemote", "SidecarSearch.AcknowledgeIndexer",
+		// remote search's requester seams and the directory's repo id (SDK-M10-03, QD-1087)
+		"SidecarSearch.GetIndexers", "SidecarSearch.SetRemote", "SidecarSearch.AcknowledgeIndexer", "SidecarDirectory.GetRepoId",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

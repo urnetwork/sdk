@@ -282,7 +282,10 @@ func (self *testT4Requester) Search(ctx context.Context, request *sidecar.Search
 			fallbacks = append(fallbacks, repoId)
 		}
 	}
-	local := self.localHitsOf(request, scope, fallbacks)
+	local, err := self.localHitsOf(ctx, request, scope, fallbacks)
+	if err != nil {
+		return nil, err
+	}
 	asking := 0 < len(byIndexer)
 	first := sidecar.SearchProgress{Searched: 1, Total: 2}
 	if asking {
@@ -307,21 +310,53 @@ func (self *testT4Requester) Search(ctx context.Context, request *sidecar.Search
 	return sidecar.NewSearchStream(pages), nil
 }
 
-// The device's own hits: a keystroke's search of every repo, and the download of the repos that fell back.
-func (self *testT4Requester) localHitsOf(request *sidecar.SearchRequest, scope []sidecar.Id, fallbacks []sidecar.Id) []sidecar.SearchHit {
-	engine, ok := self.local.(*testT4LocalEngine)
-	if !ok {
-		return nil
-	}
+// The device's own hits, from the local engine: its search of its cache over the whole scope, as the real requester
+// merges, and "search more"'s download of the repos that fell back, of which the all partition's hits are added.
+func (self *testT4Requester) localHitsOf(ctx context.Context, request *sidecar.SearchRequest, scope []sidecar.Id, fallbacks []sidecar.Id) ([]sidecar.SearchHit, error) {
 	cached := *request
 	cached.Scope = sidecar.SearchCached
-	hits := engine.hits(&cached, scope)
-	for _, hit := range engine.hits(request, fallbacks) {
+	cached.Remote = sidecar.SearchRemoteOff
+	cached.Repos = slices.Clone(scope)
+	hits, err := testT4Drain(ctx, self.local, &cached)
+	if err != nil || len(fallbacks) == 0 {
+		return hits, err
+	}
+	more := *request
+	more.Remote = sidecar.SearchRemoteOff
+	more.Repos = slices.Clone(fallbacks)
+	moreHits, err := testT4Drain(ctx, self.local, &more)
+	if err != nil {
+		return nil, err
+	}
+	for _, hit := range moreHits {
 		if hit.Partition == sidecar.SearchPartitionAll {
 			hits = append(hits, hit)
 		}
 	}
-	return hits
+	return hits, nil
+}
+
+// The pages engine answers request with, to its last page or one that waits, each page's hits in turn, at most
+// testT4DrainPageCount pages.
+func testT4Drain(ctx context.Context, engine sidecar.SidecarSearchEngine, request *sidecar.SearchRequest) ([]sidecar.SearchHit, error) {
+	const testT4DrainPageCount = 256
+	stream, err := engine.Search(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	hits := []sidecar.SearchHit{}
+	for range testT4DrainPageCount {
+		page, progress, done, err := stream.Next()
+		if err != nil {
+			return nil, err
+		}
+		hits = append(hits, page...)
+		if done || progress.Waiting != "" {
+			return hits, nil
+		}
+	}
+	return nil, errors.New("the local search ran past its pages")
 }
 
 // One repo's plan (DESIGN-DETAILS 7.2.3's assign, for one indexer at a time): off in mode off; else the first own
@@ -736,9 +771,25 @@ func TestT4SurrogateBootsAgainstAFakeIndexer(t *testing.T) {
 	}
 }
 
-// Phones' directory "search more" (§16.11's phones row, §18.4's directory row): the phone keeps no directory buckets,
-// and a "search more" of the directory asks a designated indexer that reads it, own first, the buckets and all fetched
-// only for its fallback: with no indexer answering, the directory's download alone.
+// A directory backend that names its repo and stands, for GetRepoId alone: any other call is no test's here.
+type testT4DirectoryBackend struct {
+	sidecarDirectoryBackend
+	repoId sidecar.Id
+}
+
+func (self *testT4DirectoryBackend) standing() bool {
+	return true
+}
+
+func (self *testT4DirectoryBackend) directoryRepoId() *sidecar.Id {
+	repoId := self.repoId
+	return &repoId
+}
+
+// Phones' directory "search more" (§16.11's phones row, §18.4's directory row; QD-1087): the phone keeps no directory
+// buckets; the directory view names the directory's own repo, SidecarDirectory.GetRepoId, in its query; and that
+// "search more" asks a designated indexer that reads the directory, own first, the buckets and all fetched only for
+// its fallback: with no indexer answering, the directory's download alone.
 func TestT4SurrogateDirectorySearchMoreAsksAnIndexer(t *testing.T) {
 	world := newTestT4RemoteWorld()
 	cell := t4cell.NewCell(t4cell.Ios32Profile())
@@ -746,7 +797,14 @@ func TestT4SurrogateDirectorySearchMoreAsksAnIndexer(t *testing.T) {
 	if surrogate.role.local.hostClass.search.DirectoryBuckets {
 		t.Fatal("a phone keeps the directory's buckets synced")
 	}
-	directory := testSearchIdList(world.directoryId)
+	view := newSidecarDirectory(context.Background(), &testT4DirectoryBackend{repoId: world.directoryId}, defaultSidecarDirectorySettings())
+	t.Cleanup(view.close)
+	repoId := view.GetRepoId()
+	if repoId == nil || repoId.Cmp(newId(world.directoryId)) != 0 {
+		t.Fatalf("the directory's repo id: %v", repoId)
+	}
+	directory := NewIdList()
+	directory.Add(repoId)
 	asked := testT4LastPage(t, surrogate.searchStep("the directory's search more", &SidecarSearchQuery{Text: "harbor", Scope: SidecarSearchScopeAll, RepoIds: directory}))
 	if asked.progress.Remote != SidecarSearchRemoteStateAnswered || !testT4VerifiedBy(asked.hits, "home-nas") ||
 		slices.ContainsFunc(asked.hits, func(hit *SidecarSearchHit) bool { return hit.Partition == SidecarSearchPartitionAll && hit.By == "" }) {

@@ -22054,6 +22054,17 @@ func urnet_sidecar_directory_get(self C.uint64_t, announcementId *C.char) *C.cha
 	return cJson(r0, "urnet_sidecar_directory_get")
 }
 
+//export urnet_sidecar_directory_get_repo_id
+func urnet_sidecar_directory_get_repo_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_directory_get_repo_id")
+	self_, ok := resolveHandle[*sdk.SidecarDirectory](uint64(self), "urnet_sidecar_directory_get_repo_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetRepoId()
+	return cId(r0)
+}
+
 //export urnet_sidecar_directory_get_requests
 func urnet_sidecar_directory_get_requests(self C.uint64_t, view *C.char) *C.char {
 	defer cgoGuard("urnet_sidecar_directory_get_requests")

@@ -37,6 +37,8 @@ type testDirectoryStream struct {
 type testDirectoryStore struct {
 	stateLock sync.Mutex
 	stands    bool
+	// the directory's own repo id, nil for none (SDK-M10-03's GetRepoId)
+	repoId *sidecar.Id
 	// in fetch order: newest first
 	streams             []*testDirectoryStream
 	meteredCapByteCount int64
@@ -156,6 +158,16 @@ func (self *testDirectoryStore) standing() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.stands
+}
+
+func (self *testDirectoryStore) directoryRepoId() *sidecar.Id {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.repoId == nil {
+		return nil
+	}
+	repoId := *self.repoId
+	return &repoId
 }
 
 func (self *testDirectoryStore) openView(args *sidecar.DirectoryViewArgs) (sidecarDirectoryViewBackend, error) {
@@ -1426,8 +1438,9 @@ func TestNoSidecarTypeCrossesTheDirectory(t *testing.T) {
 		}
 	}
 	directoryType := reflect.TypeFor[*SidecarDirectory]()
-	if directoryType.NumMethod() != 8 {
-		t.Errorf("SidecarDirectory exports %d methods, not §18.5's 8", directoryType.NumMethod())
+	// §18.5's 8, and GetRepoId, which QD-1087 adds for the directory view's "search more"
+	if directoryType.NumMethod() != 9 {
+		t.Errorf("SidecarDirectory exports %d methods, not §18.5's 8 and GetRepoId", directoryType.NumMethod())
 	}
 	for i := 0; i < directoryType.NumMethod(); i += 1 {
 		method := directoryType.Method(i)

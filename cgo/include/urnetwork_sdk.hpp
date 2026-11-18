@@ -26932,6 +26932,7 @@ public:
 	explicit SidecarDirectory(uint64_t h) : detail::Handle(h) {}
 	void announceRepo(const std::string& repo_id, const std::optional<SidecarRepoAnnouncement>& announcement, SidecarResultCallback callback) const;
 	std::optional<SidecarAnnouncement> get(const std::string& announcement_id) const;
+	std::string getRepoId() const;
 	std::optional<SidecarAccessRequestList> getRequests(const std::string& view) const;
 	Sub list(const std::optional<SidecarDirectoryFilter>& filter, SidecarDirectoryListener listener) const;
 	void request(const std::optional<SidecarAccessRequest>& request, SidecarResultCallback callback) const;
@@ -41729,6 +41730,10 @@ inline std::optional<SidecarAnnouncement> SidecarDirectory::get(const std::strin
 		return std::nullopt;
 	}
 	return detail::parseJson<SidecarAnnouncement>(r_s->c_str());
+}
+inline std::string SidecarDirectory::getRepoId() const {
+	char* r_c = urnet_sidecar_directory_get_repo_id(handle());
+	return detail::takeString(r_c);
 }
 inline std::optional<SidecarAccessRequestList> SidecarDirectory::getRequests(const std::string& view) const {
 	char* r_c = urnet_sidecar_directory_get_requests(handle(), view.c_str());

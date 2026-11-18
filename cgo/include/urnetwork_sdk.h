@@ -2635,6 +2635,7 @@ void urnet_sidecar_approvals_revoke_device(uint64_t self, const char* plan_id, c
 
 void urnet_sidecar_directory_announce_repo(uint64_t self, const char* repo_id, const char* announcement_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 char* urnet_sidecar_directory_get(uint64_t self, const char* announcement_id);
+char* urnet_sidecar_directory_get_repo_id(uint64_t self);
 char* urnet_sidecar_directory_get_requests(uint64_t self, const char* view);
 uint64_t urnet_sidecar_directory_list(uint64_t self, const char* filter_json, urnet_sidecar_directory_cb listener_directory_changed, void* listener_user_data);
 void urnet_sidecar_directory_request(uint64_t self, const char* request_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
