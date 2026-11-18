@@ -1,0 +1,2029 @@
+//go:build !ios && !android && !js
+
+package sdk
+
+import (
+	"context"
+	"crypto/ed25519"
+	"errors"
+	"fmt"
+	mathrand "math/rand/v2"
+	"net"
+	"net/netip"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	ma "github.com/multiformats/go-multiaddr"
+
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/connect/v2026/extender"
+	"github.com/urnetwork/connect/v2026/gossip"
+	"github.com/urnetwork/connect/v2026/portmap"
+)
+
+// device_local_extender_native.go — the provider extender role (EXTENDER.md G1
+// to G3).
+//
+// A desktop provider is already a host with a public address and spare
+// capacity, which is exactly what an extender is. While it provides, and while
+// the setting of F3 is on, it runs the open extender server of `connect/
+// extender` on the three carriers, joins the mesh as a listening node, and
+// proves itself to the operator on the activation cadence of G3.
+//
+// Only the operator decides what this extender is: the activation posts the
+// carriers that actually bound, the operator probes back on the caller address
+// of that post, and the signed record that comes back names the address this
+// host is published under. Nothing here announces an address of its own.
+//
+// Tcp 443 is the one port an extender requires (G2): the role binds it before
+// anything else, and while that bind fails the role is off -- no udp carrier,
+// no node, no activation, no peer pings -- with the bind error in the status,
+// and it binds again every extenderProvideTcpRetryTimeout, starting the moment
+// it holds the port. So of several provider processes on one host the first
+// to take tcp 443 serves the extender, and the role moves to another when that
+// one exits. Udp 443, udp 4053 and, when the device opts in, udp 53 are
+// optional: each that fails to bind disables that carrier alone.
+//
+// With the peer-to-peer webrtc carrier (connect/EXTENDER.md S, S8; C2a) tcp
+// 443 is no longer required: when the device has a client to signal through
+// and the carrier is on, which it is by default, a role that cannot bind the
+// port runs on the carrier and the udp carriers, reports the tcp bind failure
+// beside any other, offers the carrier to the activation, and is accepted on
+// the webrtc test alone, which is how a host behind nat extends. The port is
+// tried again only by the role's next start, not every
+// extenderProvideTcpRetryTimeout as the off role tries it.
+//
+// The parts are the ones connectctl's standalone extender wires (G4): the
+// in-process gossip listener and the feed server behind the reserved services
+// (A8), the space's node rebuilt in the extender role (D2), the extender
+// server, the peer pinger with the reporter its pings go to (GEOMAP §2.1,
+// §2.5), and the activation loop. The listener is stable for the life of the
+// role, so a changed set of activated addresses rebuilds only the node.
+//
+// The role also serves the lag.dev measurement API (lag.dev/PLAN.md C4, M10)
+// when its space keeps the identity in a file: it makes the measurement key
+// beside that file, hands the server the API's trust and hosts and the
+// lifecycle that keeps the certificate, and has the activation carry the
+// certificate request. The device's measurements setting turns the API off and
+// on while the role runs (decision 18). Off stops the API at once, but the
+// activations tell the operator only once the setting has stayed off for
+// extenderMeasurementOptOutHold, and from then on while it stays off: each
+// opt-out the operator hears of revokes the name's certificate and each opt-in
+// after it orders a new one, so a switch toggled a few times would otherwise
+// spend Let's Encrypt's weekly limit for the name. Without a kept identity
+// there is no API at all. A kept identity whose measurement key can't be used
+// has none either, and its activations ask the operator to withdraw the name
+// at once.
+//
+// The role runs the tcp carrier camouflage only when its settings ask, through
+// connect's ExtenderCamouflageRole, the one connectctl's extender runs
+// (EXTENDER.md P7, phase 14c). The key derives from the identity seed, so there
+// is nothing more to keep, and a seed that cannot serve one is the start error.
+//
+// With the router port mapping setting on (EXTENDER.md S10, DeviceLocal.
+// SetProvideExtenderPortMapping), a role on a host with no public ipv4 address
+// asks the router, through connect/portmap, to forward the carriers it holds:
+// tcp 443 once it holds it, and each udp carrier that bound -- never a port it
+// does not hold, since the router would forward that one to whatever else does,
+// and never udp 53. The mapping is asked once the binds settle and before the
+// first activation, which waits for the router's first answer at most
+// PortMapWaitTimeout: a router that does not answer delays the first post by
+// that and nothing else. The mapping is the router's of the ipv4 default route,
+// so each ipv4 post offers the external port the router gives each carrier and
+// each ipv6 post the bound ports (ExtenderActivatorSettings.FamilyOfferedPorts),
+// which the operator keeps and signs per address; to an operator that predates
+// that, which keeps one port per carrier, every post offers the router's (the
+// family 0 answer), as before. The mesh address of each family follows its
+// post. A mapping that lands or moves after a post is posted at once. The
+// mapper renews the mappings and removes them when the role closes, which is
+// what a setting turned off does (the provider replaces the role).
+//
+// The role is safe for concurrent use. Close joins its loop and releases every
+// part in the reverse order it was built.
+
+// This build carries the role (G1).
+const extenderProvideSupported = true
+
+// When set, adjusts the measurement lifecycle's settings before each role's
+// server is built. Tests shorten the certificate poll through it; production
+// leaves it nil.
+var configureExtenderLagLifecycle func(settings *extender.ExtenderLagLifecycleSettings)
+
+// When set, adjusts each role's server settings before the server is built.
+// Tests shorten a carrier's rebuild through it; production leaves it nil.
+var configureExtenderServer func(settings *extender.ExtenderSettings)
+
+// When set, adjusts each role's port mapper settings before the mapper is built
+// (EXTENDER.md S10). Tests install fake routers and a clock through it;
+// production leaves it nil.
+var configureExtenderPortMapper func(settings *portmap.PortMapperSettings)
+
+// The longest the first activation waits for the router's first answer to the
+// port mapping (EXTENDER.md S10). The mapper bounds its attempt itself, at 10
+// seconds, so this is only the backstop of that bound.
+const extenderPortMapWaitTimeout = 15 * time.Second
+
+// Budget of the wait for the carriers to bind before the role gives up on
+// activating. A bind that has not settled in this long is a bind that is not
+// going to.
+const extenderProvideListenTimeout = 60 * time.Second
+
+// How long the role waits to bind tcp 443 again while another process holds it
+// (G2). A host can run several provider processes, such as the miner's
+// per-operator children; the role moves to another of them within this of
+// the holder exiting.
+const extenderProvideTcpRetryTimeout = 3 * time.Minute
+
+// How long a tcp carrier that was serving may stay lost before the role asks to
+// be replaced (G2). The server binds a lost port again by itself, so a port still
+// gone after this is one another process took or the host refuses, and the new
+// role is what G2 says then: off, saying why, trying the port every
+// extenderProvideTcpRetryTimeout, and holding no udp carrier the process that
+// took the port could use. The same wait as that retry, so the role moves between
+// a host's processes on the one cadence.
+const extenderProvideTcpLostTimeout = extenderProvideTcpRetryTimeout
+
+// When set, adjusts the camouflage role's settings before each role builds it.
+// Tests install a clock and a fake borrowed site through it; production leaves
+// it nil.
+var configureExtenderCamouflageRole func(settings *extender.ExtenderCamouflageRoleSettings)
+
+// How long the measurements setting must stay off before the activation tells
+// the operator of the opt-out (lag.dev/PLAN.md C4, C9). The operator revokes
+// the measurement name's certificate when told, and orders a new one once the
+// setting is back on. Let's Encrypt issues at most five certificates a week
+// for one exact set of names, so a switch turned off and on a few times must
+// not spend them.
+const extenderMeasurementOptOutHold = 5 * time.Minute
+
+// The least time between two log lines of one kind of forward dial failure
+// (extenderForwardDialErrorLog). An extender whose egress cannot reach the
+// operator fails every forward the same way, so one line a minute, with the
+// count of the failures since, says as much as one line a failure. One
+// minute, as the sdk's other error log throttles.
+const extenderForwardDialErrorLogInterval = 1 * time.Minute
+
+type deviceLocalExtender struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+	done      chan struct{}
+	log       connect.Logger
+
+	settings   *deviceLocalExtenderSettings
+	privateKey ed25519.PrivateKey
+	publicKey  ed25519.PublicKey
+
+	// the server's forward dial failures, logged at most once an interval
+	// for each kind (A7)
+	forwardDialErrorLog *extenderForwardDialErrorLog
+
+	// What the role serves with, built by startServing once it holds tcp 443
+	// and nil before: in the constructor when the port is free, else in the
+	// loop that waited for it, before anything that reads them starts. Close
+	// reads them after joining that loop. The server is also read by the
+	// status and the stats, so it is set under the state lock (currentServer).
+	clientStrategy *connect.ClientStrategy
+	listener       *gossip.InProcessListener
+	feedServer     *gossip.FeedServer
+	server         *extender.ExtenderServer
+	// the tcp 443 listener the role bound before its server existed, until the
+	// server takes it
+	heldTcpListener *extenderHeldListener
+	// what this extender measures of its peers, and the reporter those
+	// measurements are posted to the operator through (GEOMAP §2.1, §2.5)
+	pingReporter *connect.ExtenderPingReporter
+	peerPinger   *connect.ExtenderPeerPinger
+	// the tcp carrier camouflage (EXTENDER.md P7), nil unless the role's settings
+	// ask for it; built in the constructor and never replaced
+	camouflage *extender.ExtenderCamouflageRole
+	// the peer-to-peer webrtc carrier the role answers offers on, and the
+	// manager its answerer is installed on (connect/EXTENDER.md S8); nil while
+	// the carrier is unavailable. Built by startServing, read by Close after
+	// joining the loop.
+	webRtcCarrier  *connect.WebRtcExtenderCarrier
+	webRtcManager  *connect.WebRtcManager
+	webRtcAnswerer connect.WebRtcExtenderOfferAnswerer
+	// the role started on the webrtc carrier without tcp 443, so a tcp carrier
+	// that is not serving is no port it lost. Set before the loop starts.
+	startedOnWebRtc bool
+	// the camouflage's standing as last logged, read and written by the loop alone
+	camouflageStanding string
+	// the lag.dev measurement key and certificate (lag.dev/PLAN.md C4), nil
+	// when the role can serve no measurement API; built with the server. Set
+	// under the state lock, for setMeasurementsEnabled (currentMeasurementCert)
+	measurementCert *extender.ExtenderMeasurementCert
+	// the measurement key beside the kept identity could not be used, so there
+	// is no certificate and every activation asks the operator to withdraw
+	// the name (C4, C9). Set with measurementCert.
+	measurementKeyUnusable bool
+
+	// the comparable half of the status; a consumer is woken only on an actual
+	// change, and the connection count is read live beside it
+	statusMonitor *connect.MonitorValue[extenderProvideState]
+	// closed and replaced when something the status reads changed outside the
+	// monitors the loop watches: a bind failure, an activation
+	wakeMonitor *connect.Monitor
+
+	stateLock sync.Mutex
+	// true while the space runs a node for this role, so the gossip service is
+	// served rather than refused (A8)
+	nodeRuns bool
+	// nil until the carriers have bound
+	activator *connect.ExtenderActivator
+	// the mesh addresses the node currently advertises, in text form
+	nodeListenAddrs []string
+	// when this extender's key was first seen revoked in the directory (G3)
+	revokedTime time.Time
+	// The owner's opt-out of measurement as the operator hears of it
+	// (lag.dev/PLAN.md C4): told once the setting has stayed off for the hold,
+	// which the timer waits out, and no longer once it is back on. Each wait
+	// has its serial, so a wait cancelled as its timer fires tells nothing.
+	measurementOptOutTold   bool
+	measurementOptOutTimer  *time.Timer
+	measurementOptOutSerial uint64
+
+	// the space directory's cap on active records before this role replaced
+	// it, restored when the role closes, and whether it was replaced (D26)
+	previousMaxActiveRecordCount int
+	maxActiveRecordCountReplaced bool
+
+	// whether this role has asked for a key of the network's own (C2c), which
+	// it does at most once
+	keyRenewalRequested atomic.Bool
+
+	// The router port mapping of the carriers (S10): nil while the setting is
+	// off or before the binds settle, and on a host that needs none, which
+	// portMappingNotNeeded says. Set by the loop before the activator starts,
+	// under the state lock, since the activator and the status read it.
+	portMapper           *portmap.PortMapper
+	portMappingNotNeeded bool
+}
+
+// The role has started when this returns. When tcp 443 is free the server is
+// binding its other carriers, the node is up, and the loop that activates and
+// publishes the status has started; when it is not, the role is off with the
+// bind error in its status and the loop binds it again every
+// extenderProvideTcpRetryTimeout (G2). When this space cannot run one, the
+// error says why, and the provider reports it as the start error of N3.
+func newDeviceLocalExtender(
+	ctx context.Context,
+	settings *deviceLocalExtenderSettings,
+) (*deviceLocalExtender, error) {
+	if settings == nil || settings.NetworkSpace == nil {
+		return nil, errors.New("the device has no network space")
+	}
+	if settings.NetworkSpace.extenderDirectory == nil {
+		// a space whose api url derives no extender network host (an ip
+		// literal or a single label) keeps no directory to publish this
+		// extender's own record into (F1)
+		return nil, errors.New("the network space has no extender directory")
+	}
+	log := settings.Log
+	if log == nil {
+		log = connect.DefaultLogger()
+	}
+	// the identity key signs this extender's peer pings; the published key is
+	// derived from it (B1, GEOMAP §2.2)
+	privateKey, err := connect.ExtenderPrivateKeyFromSeed(settings.IdentityKeySeed)
+	if err != nil {
+		log.Infof("[extender]provide identity err = %s\n", err)
+		return nil, fmt.Errorf("the extender identity is not usable: %s", err)
+	}
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+
+	now := time.Now
+	if settings.Now != nil {
+		now = settings.Now
+	}
+	forwardDialErrorLogInterval := settings.ForwardDialErrorLogInterval
+	if forwardDialErrorLogInterval == 0 {
+		forwardDialErrorLogInterval = extenderForwardDialErrorLogInterval
+	}
+	camouflage, err := newExtenderProvideCamouflage(settings)
+	if err != nil {
+		log.Infof("[extender]provide camouflage err = %s\n", err)
+		return nil, err
+	}
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	self := &deviceLocalExtender{
+		ctx:                 cancelCtx,
+		cancel:              cancel,
+		done:                make(chan struct{}),
+		log:                 log,
+		settings:            settings,
+		privateKey:          privateKey,
+		publicKey:           publicKey,
+		camouflage:          camouflage,
+		forwardDialErrorLog: newExtenderForwardDialErrorLog(log, now, forwardDialErrorLogInterval),
+		statusMonitor:       connect.NewMonitorValue(extenderProvideState{Enabled: true}),
+		wakeMonitor:         connect.NewMonitor(),
+	}
+
+	// tcp 443 first, the one port an extender requires without the webrtc
+	// carrier (G2). With the carrier the role runs without the port, which is
+	// then one more bind the server reports failing (C2a): an extender behind
+	// nat is accepted on the webrtc test alone
+	if tcpListener, err := self.listenTcp(); err == nil {
+		self.startServing(tcpListener)
+	} else if self.webRtcAvailable() {
+		self.log.Infof(
+			"[extender]provide tcp %d unavailable, the role runs on the webrtc carrier = %s\n",
+			self.settings.TcpPort,
+			err,
+		)
+		self.startedOnWebRtc = true
+		self.startServing(nil)
+	} else {
+		self.publishTcpUnavailable(err)
+	}
+
+	go connect.HandleError(func() {
+		defer close(self.done)
+		self.run()
+	}, func(err error) {
+		self.log.Errorf("[extender]provide the role's loop failed: %s\n", err)
+		cancel()
+		// the status would otherwise stand as it last was through the wait, which
+		// can be an hour. The cause stays in the log: what it names is unknown, and
+		// the status reaches the app
+		self.statusMonitor.Set(extenderProvideState{
+			Enabled: true,
+			ListenError: extenderListenErrorText(map[string]error{
+				connect.ExtenderCarrierTcp: errExtenderRoleLoopFailed,
+			}),
+		})
+		// a role that fails like this may well fail the same way again, so it
+		// waits like any other that asks. The wait is on what the role was built
+		// under, since its own context has just ended
+		restartAfter := self.afterRestartWait(0)
+		go connect.HandleError(func() {
+			select {
+			case <-ctx.Done():
+			case <-restartAfter:
+				self.requestRestart()
+			}
+		})
+	})
+	return self, nil
+}
+
+// The camouflage a role's settings ask for (EXTENDER.md P7), nil when they ask
+// for none. An error is the role's start error.
+func newExtenderProvideCamouflage(settings *deviceLocalExtenderSettings) (*extender.ExtenderCamouflageRole, error) {
+	if !settings.CamouflageEnabled {
+		return nil, nil
+	}
+	camouflageSettings := extender.DefaultExtenderCamouflageRoleSettings()
+	camouflageSettings.Splice = settings.CamouflageSplice
+	if 0 < settings.CamouflageRevalidationInterval {
+		camouflageSettings.RevalidationInterval = settings.CamouflageRevalidationInterval
+	}
+	camouflageSettings.IpVersionSupported = settings.IpVersionSupported
+	camouflageSettings.Now = settings.Now
+	if configureExtenderCamouflageRole != nil {
+		configureExtenderCamouflageRole(camouflageSettings)
+	}
+	return extender.NewExtenderCamouflageRole(settings.IdentityKeySeed, camouflageSettings)
+}
+
+// Builds and starts what the role serves with, on the tcp 443 listener it
+// already holds (G2), or with none when it runs on the webrtc carrier
+// without the port: the direct strategy, the gossip listener and feed server,
+// the space's node in the extender role, the server on the held tcp listener
+// and the optional udp carriers, the webrtc carrier's answerer on the
+// device's client, the ping reporter and the peer pinger, and the directory's
+// cap on active records. Runs once, before anything that reads these parts
+// starts.
+func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
+	settings := self.settings
+
+	// direct only: an activation that crossed an extender would tell the
+	// operator that extender's address, not this host's (C2)
+	strategySettings := settings.ClientStrategySettings
+	if strategySettings == nil {
+		strategySettings = connect.DefaultClientStrategySettings()
+	}
+	self.clientStrategy = connect.NewDirectClientStrategy(self.ctx, strategySettings, 0)
+
+	self.listener = gossip.NewInProcessListener(self.ctx, gossip.DefaultInProcessListenerSettings())
+	self.feedServer = gossip.NewFeedServer(
+		self.ctx,
+		settings.NetworkSpace.extenderDirectory,
+		self.publicKey,
+		gossip.DefaultFeedServerSettings(),
+	)
+	// the node is built before the server, because an extender with no node
+	// must refuse the gossip service rather than queue it (A8)
+	nodeRuns := settings.NetworkSpace.setExtenderNodeRole(self.listener, nil) != nil
+	self.setNodeRuns(nodeRuns)
+
+	// the measurement certificate the server's lifecycle keeps and the
+	// activation asks for (lag.dev/PLAN.md C4)
+	measurementCert, measurementKeyUnusable := self.newMeasurementCert()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.measurementCert = measurementCert
+		self.measurementKeyUnusable = measurementKeyUnusable
+	}()
+	if measurementCert != nil && !measurementCert.Enabled() {
+		// off as the role starts: told once it has held off since it was set,
+		// which a setting that has long been off has
+		self.holdMeasurementOptOut(self.measurementsOffSince())
+	}
+
+	self.heldTcpListener = &extenderHeldListener{listener: tcpListener}
+	server := extender.NewExtenderServer(
+		self.ctx,
+		// an operator activated extender is open: it accepts every header and
+		// forwards only to the whitelist (A4, A5)
+		nil,
+		settings.AllowedHosts,
+		self.ports(),
+		// what dials a forward the settings give no dial for, under the
+		// forward's control all the same
+		&net.Dialer{Control: extenderForwardDialControl(nil)},
+		self.serverSettings(nodeRuns),
+	)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.server = server
+	}()
+	// the webrtc carrier (S8): offers that reach this device's client through
+	// the exchange signaling are answered by the server from here, and the
+	// server lists the carrier for the activation to offer (serverSettings)
+	if manager := self.signalingManager(); manager != nil && self.settings.WebRtcCarrier {
+		webRtcSettings := self.settings.WebRtcSettings
+		if webRtcSettings == nil {
+			webRtcSettings = connect.DefaultWebRtcExtenderSettings()
+		}
+		self.webRtcCarrier = connect.NewWebRtcExtenderCarrier(self.ctx, webRtcSettings, nil)
+		self.webRtcManager = manager
+		self.webRtcAnswerer = self.webRtcCarrier.Answerer(server)
+		manager.SetExtenderCarrierAnswerer(self.webRtcAnswerer)
+	}
+	// what this role's tcp camouflage comes to goes in the space's report, while the
+	// space's cohort control has the report on
+	settings.NetworkSpace.setExtenderCamouflageReportSource(server)
+	// a panic here closes the server on its way out, which the loop reads as a
+	// server gone for good (run)
+	go connect.HandleError(func() {
+		if err := server.ListenAndServe(); err != nil {
+			// every carrier failed to bind; the status carries which and why
+			self.log.Errorf("[extender]provide listen err = %s\n", err)
+		}
+		self.wakeMonitor.NotifyAll()
+	})
+	if self.camouflage != nil {
+		self.camouflage.Start(self.ctx, server)
+	}
+
+	// what this extender measures of its peers goes to the operator in
+	// batches, under the same client credential the activation uses. The
+	// pinger reports; what a provider measures of this extender that provider
+	// reports itself (GEOMAP §2.5)
+	reporterSettings := connect.DefaultExtenderPingReporterSettings()
+	reporterSettings.Log = self.log
+	reporterSettings.ApiUrl = extenderReporterApiUrl(settings)
+	reporterSettings.ByJwt = settings.ByJwt
+	reporterSettings.ClientStrategy = self.clientStrategy
+	if settings.ConfigurePingReporter != nil {
+		settings.ConfigurePingReporter(reporterSettings)
+	}
+	self.pingReporter = connect.NewExtenderPingReporter(self.ctx, reporterSettings)
+
+	// a peer judges this extender's pings by the same records this server
+	// judges the peer's by, so they are signed as this extender, with the
+	// identity key and under the peer probe domain only, and they start once
+	// this extender's own record is active (GEOMAP §2.1, §2.4)
+	pingerSettings := connect.DefaultExtenderPeerPingerSettings()
+	pingerSettings.Log = self.log
+	pingerSettings.OwnPublicKey = self.publicKey
+	pingerSettings.Attestor = connect.NewExtenderProbeExtenderAttestor(
+		self.publicKey,
+		connect.NewExtenderPeerProbeSigner(self.privateKey),
+	)
+	pingerSettings.Reporter = self.pingReporter
+	if settings.Now != nil {
+		pingerSettings.Now = settings.Now
+	}
+	pingerSettings.IpVersionSupported = settings.IpVersionSupported
+	// the bounded peer sample (GEOMAP §2.1, D26): zero keeps the connect
+	// default and a negative value pings every peer
+	switch {
+	case settings.PeerSampleSize < 0:
+		pingerSettings.PeerSampleSize = 0
+	case 0 < settings.PeerSampleSize:
+		pingerSettings.PeerSampleSize = settings.PeerSampleSize
+	}
+	if settings.ConfigurePeerPinger != nil {
+		settings.ConfigurePeerPinger(pingerSettings)
+	}
+	self.peerPinger = connect.NewExtenderPeerPinger(
+		self.ctx,
+		self.clientStrategy,
+		self.directory(),
+		pingerSettings,
+	)
+
+	// the space directory's cap on active records while the role runs (D26):
+	// zero leaves it as the space has it, a negative value keeps every record,
+	// and the space's own comes back when the role closes
+	if settings.MaxActiveRecordCount != 0 {
+		directory := self.directory()
+		self.previousMaxActiveRecordCount = directory.MaxActiveRecordCount()
+		self.maxActiveRecordCountReplaced = true
+		directory.SetMaxActiveRecordCount(max(0, settings.MaxActiveRecordCount))
+	}
+}
+
+// Binds tcp 443, the one port an extender requires (G2), through the same seam
+// and on the same address the server binds its tcp carrier on, so the server
+// can take the listener as its own (serverSettings).
+func (self *deviceLocalExtender) listenTcp() (net.Listener, error) {
+	listen := net.Listen
+	if self.settings.Listen != nil {
+		listen = self.settings.Listen
+	}
+	listener, err := listen("tcp", extenderTcpListenAddress(self.settings.TcpPort))
+	if err != nil {
+		// ownership transfers for every non-nil result, even with an error
+		if listener != nil {
+			listener.Close()
+		}
+		return nil, err
+	}
+	if listener == nil {
+		return nil, errors.New("the tcp listener factory returned nil")
+	}
+	return listener, nil
+}
+
+// Waits for tcp 443 while another process holds it (G2): binds it again every
+// extenderProvideTcpRetryTimeout, publishing each failure, until it holds the
+// port. Nil when the role closed first.
+func (self *deviceLocalExtender) waitForTcp() net.Listener {
+	tcpRetryAfter := time.After
+	if self.settings.TcpRetryAfter != nil {
+		tcpRetryAfter = self.settings.TcpRetryAfter
+	}
+	for {
+		select {
+		case <-self.ctx.Done():
+			return nil
+		case <-tcpRetryAfter(extenderProvideTcpRetryTimeout):
+		}
+		listener, err := self.listenTcp()
+		if err == nil {
+			return listener
+		}
+		self.publishTcpUnavailable(err)
+	}
+}
+
+// Publishes the role off for want of tcp 443 (G2, N3): nothing else is bound
+// or running, the tcp carrier is the one bind failure, and the bind error is
+// the reason. Logged when the error changes, not at every retry.
+func (self *deviceLocalExtender) publishTcpUnavailable(err error) {
+	state := extenderProvideState{
+		ListenError:         extenderListenErrorText(map[string]error{connect.ExtenderCarrierTcp: err}),
+		TcpUnavailableError: err.Error(),
+	}
+	if self.statusMonitor.Value().TcpUnavailableError != state.TcpUnavailableError {
+		self.log.Infof(
+			"[extender]provide tcp %d unavailable, the role is off and binds again every %s = %s\n",
+			self.settings.TcpPort,
+			extenderProvideTcpRetryTimeout,
+			err,
+		)
+	}
+	self.statusMonitor.Set(state)
+}
+
+// Whether the role serves the webrtc carrier (S8): the setting is on and the
+// device has a manager to signal through.
+func (self *deviceLocalExtender) webRtcAvailable() bool {
+	return self.settings.WebRtcCarrier && self.signalingManager() != nil
+}
+
+// The manager the carrier's offers arrive on, nil on a device with none.
+func (self *deviceLocalExtender) signalingManager() *connect.WebRtcManager {
+	if self.settings.SignalingManager == nil {
+		return nil
+	}
+	return self.settings.SignalingManager()
+}
+
+// The server, nil while the role waits for tcp 443.
+func (self *deviceLocalExtender) currentServer() *extender.ExtenderServer {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.server
+}
+
+// The address a tcp carrier on `port` is bound on, the one connect/extender
+// binds its carriers on.
+func extenderTcpListenAddress(port int) string {
+	return fmt.Sprintf(":%d", port)
+}
+
+// The tcp 443 listener the role bound before its server existed (G2). The
+// server takes it the first time it binds its tcp carrier, and the role closes
+// it when the server never did. Safe for concurrent use.
+type extenderHeldListener struct {
+	stateLock sync.Mutex
+	listener  net.Listener
+}
+
+// Hands the listener over once; nil after the first call.
+func (self *extenderHeldListener) take() net.Listener {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	listener := self.listener
+	self.listener = nil
+	return listener
+}
+
+// Closes the listener unless it was handed over. Nil-safe, for a role that
+// never held the port.
+func (self *extenderHeldListener) release() {
+	if self == nil {
+		return
+	}
+	if listener := self.take(); listener != nil {
+		listener.Close()
+	}
+}
+
+// The carrier ports (A1). tcp and udp share port 443 in production, which is
+// one entry with both connect modes.
+func (self *deviceLocalExtender) ports() map[int][]connect.ExtenderConnectMode {
+	ports := map[int][]connect.ExtenderConnectMode{}
+	for _, carrier := range []struct {
+		port        int
+		connectMode connect.ExtenderConnectMode
+	}{
+		{port: self.settings.TcpPort, connectMode: connect.ExtenderConnectModeTcpTls},
+		{port: self.settings.UdpPort, connectMode: connect.ExtenderConnectModeQuic},
+		{port: self.settings.DnsPort, connectMode: connect.ExtenderConnectModeDns},
+	} {
+		ports[carrier.port] = append(ports[carrier.port], carrier.connectMode)
+	}
+	return ports
+}
+
+// Whether the space still runs a node for this role. A rebuild that fails
+// leaves the gossip service without a consumer, and a stream handed to a
+// listener nothing accepts from would hold its connection until the role
+// closes.
+func (self *deviceLocalExtender) gossipNodeRuns() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.nodeRuns
+}
+
+func (self *deviceLocalExtender) setNodeRuns(nodeRuns bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.nodeRuns = nodeRuns
+}
+
+func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.ExtenderSettings {
+	settings := extender.DefaultExtenderSettings()
+	settings.IdentityKeySeed = self.settings.IdentityKeySeed
+	settings.SpoofDomains = self.settings.SpoofDomains
+	// 53 beside the configured unprivileged port when the device opts in
+	// (L2); a failure of that bind disables the one port, not the carrier
+	settings.DnsPrivilegedPort = self.settings.DnsPrivilegedPort
+	settings.DialContext = self.settings.DialContext
+	settings.DialPacketContext = self.settings.DialPacketContext
+	// the webrtc carrier is served through the signaling, nothing bound, and
+	// keeps the server up when no socket carrier binds (S8, G2)
+	settings.WebRtcCarrier = self.webRtcAvailable()
+	// the tcp carrier is the listener the role already holds (G2); every
+	// other bind goes through the configured seam, the tcp one included when
+	// the role runs on the webrtc carrier without it
+	listen := self.settings.Listen
+	tcpListenAddress := extenderTcpListenAddress(self.settings.TcpPort)
+	settings.Listen = func(network string, address string) (net.Listener, error) {
+		if network == "tcp" && address == tcpListenAddress {
+			if listener := self.heldTcpListener.take(); listener != nil {
+				return listener, nil
+			}
+		}
+		if listen != nil {
+			return listen(network, address)
+		}
+		return net.Listen(network, address)
+	}
+	settings.ListenPacket = self.settings.ListenPacket
+	// the admission limits of this instance (A12): zero keeps the connect
+	// default and a negative value disables the limit
+	for _, limit := range []struct {
+		value int
+		field *int
+	}{
+		{value: self.settings.AdmissionSubnetsPerMinute, field: &settings.AdmissionSubnetsPerMinute},
+		{value: self.settings.AdmissionActionsPerSubnetPerMinute, field: &settings.AdmissionActionsPerSubnetPerMinute},
+	} {
+		switch {
+		case limit.value < 0:
+			*limit.field = 0
+		case 0 < limit.value:
+			*limit.field = limit.value
+		}
+	}
+	settings.AdmissionUnlimitedSources = slices.Clone(self.settings.AdmissionUnlimitedSources)
+	if self.settings.DnsTld != "" {
+		settings.DnsTlds = []string{self.settings.DnsTld}
+	}
+	if nodeRuns {
+		settings.GossipConnHandler = func(conn net.Conn) {
+			if !self.gossipNodeRuns() {
+				// the node went away; the extender closes the stream when this
+				// returns, which is what a client retries elsewhere on
+				return
+			}
+			self.listener.Handle(conn)
+		}
+	}
+	settings.FeedConnHandler = self.feedServer.Serve
+	// a peer that pings this extender is judged against the records the
+	// operator vouched for, the same directory the feed serves (GEOMAP §2.4)
+	settings.ProbePeerVerifier = self.directory().IsActiveKey
+	// a bind failure is not a user-visible error: it disables that carrier,
+	// is logged once by the server, and appears in the status (G2, F3)
+	settings.ListenErrorHandler = func(carrier string, err error) {
+		self.wakeMonitor.NotifyAll()
+	}
+	// a carrier that was lost, or came back, is in the status, and the activation
+	// hears of it (run hears of the tcp carrier's return for it), since a record that
+	// left off a carrier is posted when it returns (G3)
+	settings.CarriersChangeHandler = func() {
+		self.wakeMonitor.NotifyAll()
+		if activator := self.currentActivator(); activator != nil {
+			activator.CarriersChanged()
+		}
+	}
+	// a forward dial that fails is logged, at most once a minute for each
+	// kind, so an extender whose egress cannot reach the operator says so;
+	// with no handler every forward failed silently, and so did the forward
+	// of every activation probe (A7, connect#230)
+	settings.ErrorHandler = self.forwardDialErrorLog.report
+	// the lag.dev measurement API and the lifecycle behind it, or no API at
+	// all (lag.dev/PLAN.md C4, M3, M10)
+	self.measurementSettings(settings)
+	// the tcp carrier camouflage, when the role's settings ask (EXTENDER.md P7)
+	if self.camouflage != nil {
+		self.camouflage.ConfigureServer(settings)
+	}
+	if configureExtenderServer != nil {
+		configureExtenderServer(settings)
+	}
+	return settings
+}
+
+// The measurement key and certificate (lag.dev/PLAN.md C4), on or off as the
+// device's measurements setting is, or nil when the role can serve no
+// measurement API: the role has no plain api url, which the certificate and
+// report routes are read from and posted to, or the space keeps no local
+// state. Then the identity is not kept in a file: the operator names the
+// certificate by the extender's id, one per identity key, so an identity that
+// is new at every start would ask for a new certificate each time, and the
+// measurement key is kept beside the identity's file. A key that cannot be
+// read leaves measurement off rather than the role down, and `keyUnusable`
+// says so: the activation then asks the operator to withdraw the name, as for
+// an opt-out (C9).
+func (self *deviceLocalExtender) newMeasurementCert() (measurementCert *extender.ExtenderMeasurementCert, keyUnusable bool) {
+	if strings.TrimSpace(self.settings.ApiUrl) == "" {
+		self.log.Infof("[extender]provide measurement off: the role has no api url\n")
+		return nil, false
+	}
+	// beside `.extender_key` for a space with local state, else the file the
+	// embedder kept it in, which it supplied through the device's key material
+	measurementKeyFile := ""
+	if asyncLocalState := self.settings.NetworkSpace.asyncLocalState; asyncLocalState != nil {
+		keyFile := filepath.Join(asyncLocalState.GetLocalState().localStorageDir, extenderKeyFileName)
+		measurementKeyFile = extender.ExtenderMeasurementKeyPath(keyFile)
+	} else {
+		measurementKeyFile = self.settings.NetworkSpace.suppliedExtenderMeasurementKeyFile()
+	}
+	if measurementKeyFile == "" {
+		self.log.Infof("[extender]provide measurement off: the space keeps no extender key file and the embedder named no measurement key file\n")
+		return nil, false
+	}
+	measurementCert, err := extender.NewExtenderMeasurementCert(measurementKeyFile, "")
+	if err != nil {
+		self.log.Infof(
+			"[extender]provide measurement off: the measurement key %s is not usable, so every activation asks the operator to withdraw this extender's measurement name = %s\n",
+			measurementKeyFile,
+			err,
+		)
+		return nil, true
+	}
+	if self.settings.MeasurementsEnabled != nil && !self.settings.MeasurementsEnabled() {
+		measurementCert.SetEnabled(false)
+	}
+	return measurementCert, false
+}
+
+// Whether the measurement key beside the kept identity could not be used, so
+// the role serves no measurement name and asks for it to be withdrawn.
+func (self *deviceLocalExtender) currentMeasurementKeyUnusable() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementKeyUnusable
+}
+
+// The measurement certificate, nil when the role can serve no measurement API.
+func (self *deviceLocalExtender) currentMeasurementCert() *extender.ExtenderMeasurementCert {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementCert
+}
+
+// Applies the device's measurements setting (lag.dev/PLAN.md C4). Off takes
+// the certificate down at once, which closes the API's open sessions, and the
+// operator is told once the setting has stayed off for the hold. On serves the
+// certificate again. If the operator was told, it has withdrawn the name, so
+// an activation pass runs now and asks for the certificate anew; if it wasn't,
+// the telling is called off, the operator still holds the certificate, and the
+// lifecycle installs it again. A role that can serve no measurement API has
+// nothing to change.
+func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
+	measurementCert := self.currentMeasurementCert()
+	if measurementCert == nil || measurementCert.Enabled() == measurementsEnabled {
+		return
+	}
+	if !measurementsEnabled {
+		measurementCert.SetEnabled(false)
+		self.holdMeasurementOptOut(time.Now())
+		return
+	}
+	// called off before the certificate is asked for, so no pass says both
+	told := self.cancelMeasurementOptOut()
+	measurementCert.SetEnabled(true)
+	if told {
+		if activator := self.currentActivator(); activator != nil {
+			activator.Reactivate()
+		}
+	}
+}
+
+// The opt-out hold of this role.
+func (self *deviceLocalExtender) measurementOptOutHold() time.Duration {
+	if 0 < self.settings.MeasurementOptOutHold {
+		return self.settings.MeasurementOptOutHold
+	}
+	return extenderMeasurementOptOutHold
+}
+
+// When the owner opted out, as near as this device can tell: when the
+// measurements setting was last set. The zero time when it can't tell, which
+// counts as an opt-out that has held.
+func (self *deviceLocalExtender) measurementsOffSince() time.Time {
+	asyncLocalState := self.settings.NetworkSpace.asyncLocalState
+	if asyncLocalState == nil {
+		return time.Time{}
+	}
+	changeTime, ok := asyncLocalState.GetLocalState().measurementsEnabledChangeTime()
+	if !ok {
+		return time.Time{}
+	}
+	return changeTime
+}
+
+// Tells the operator of the opt-out once the setting has stayed off for the
+// hold since `since` (lag.dev/PLAN.md C4): at once when it has already, else
+// with a pass when the hold is up. A `since` ahead of now is a clock that
+// moved, and waits the whole hold.
+func (self *deviceLocalExtender) holdMeasurementOptOut(since time.Time) {
+	hold := self.measurementOptOutHold()
+	wait := min(hold, time.Until(since.Add(hold)))
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.measurementOptOutTold || self.measurementOptOutTimer != nil {
+		return
+	}
+	if wait <= 0 {
+		// the passes from now on say so
+		self.measurementOptOutTold = true
+		return
+	}
+	self.measurementOptOutSerial += 1
+	serial := self.measurementOptOutSerial
+	self.measurementOptOutTimer = time.AfterFunc(wait, func() {
+		self.tellMeasurementOptOut(serial)
+	})
+}
+
+// The hold of wait `serial` is up: the passes from now on tell the operator,
+// and one runs now rather than at the next tick.
+func (self *deviceLocalExtender) tellMeasurementOptOut(serial uint64) {
+	told := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.measurementOptOutSerial != serial || self.measurementOptOutTimer == nil {
+			// called off, or the role closed, as the timer fired
+			return false
+		}
+		self.measurementOptOutTimer = nil
+		self.measurementOptOutTold = true
+		return true
+	}()
+	if told && self.ctx.Err() == nil {
+		if activator := self.currentActivator(); activator != nil {
+			activator.Reactivate()
+		}
+	}
+}
+
+// Calls off the opt-out: the wait for the hold, or the telling, and returns
+// whether the operator had been told.
+func (self *deviceLocalExtender) cancelMeasurementOptOut() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.measurementOptOutTimer != nil {
+		self.measurementOptOutTimer.Stop()
+		self.measurementOptOutTimer = nil
+	}
+	self.measurementOptOutSerial += 1
+	told := self.measurementOptOutTold
+	self.measurementOptOutTold = false
+	return told
+}
+
+// Whether the activations tell the operator of the opt-out (C4): once the
+// setting has stayed off for the hold, until it is back on.
+func (self *deviceLocalExtender) measurementOptOutIsTold() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementOptOutTold
+}
+
+// The measurement settings of the server (lag.dev/PLAN.md C4, M3, M10). With a
+// measurement certificate: the API's admission trusts the root keys the space's
+// directory trusts for records, read at each ticket so a rotation applies at
+// once, and the network hosts its records are for; and the lifecycle polls the
+// certificate and posts reports on the plain api url under the provider's
+// credential. Without one, no API at all, so a hello for a measurement name
+// takes the existing path.
+func (self *deviceLocalExtender) measurementSettings(settings *extender.ExtenderSettings) {
+	if self.measurementCert == nil {
+		settings.Measurement.Enabled = false
+		settings.LagLifecycle = nil
+		return
+	}
+	directory := self.directory()
+	settings.Measurement.RootPublicKeys = func() []ed25519.PublicKey {
+		return directory.RootKeys().PublicKeys()
+	}
+	networkSpace := self.settings.NetworkSpace
+	values := networkSpace.valuesCopy()
+	settings.Measurement.NetworkHosts = extenderNetworkHosts(&networkSpace.key, &values)
+
+	lagSettings := extender.DefaultExtenderLagLifecycleSettings()
+	lagSettings.Certificate = self.measurementCert
+	lagSettings.ApiUrl = self.settings.ApiUrl
+	lagSettings.ByJwt = self.settings.ByJwt
+	lagSettings.ClientStrategy = self.clientStrategy
+	if configureExtenderLagLifecycle != nil {
+		configureExtenderLagLifecycle(lagSettings)
+	}
+	settings.LagLifecycle = lagSettings
+}
+
+// The loop that activates and publishes the status. Everything it waits on is
+// a monitor, and every pass reads the whole state, so a change that lands
+// while a pass runs is carried into the next wait rather than lost. A role
+// that could not take tcp 443 waits for it here first (G2).
+func (self *deviceLocalExtender) run() {
+	if self.currentServer() == nil {
+		tcpListener := self.waitForTcp()
+		if tcpListener == nil {
+			return
+		}
+		self.startServing(tcpListener)
+		// the role runs from here, with no outcome yet (N3)
+		self.statusMonitor.Set(extenderProvideState{Enabled: true})
+	}
+
+	// the activation offers the carriers that bound, so it waits for the binds
+	// to settle rather than announcing a list still being assembled (G2, G3)
+	select {
+	case <-self.server.Listening():
+	case <-self.ctx.Done():
+		return
+	case <-time.After(extenderProvideListenTimeout):
+		self.log.Infof("[extender]provide carriers did not bind\n")
+	}
+	self.publish()
+	if len(self.server.Carriers()) == 0 {
+		// nothing bound: there is nothing to activate and nothing to
+		// advertise. The failure stands in the status until the role is
+		// restarted by a provide or setting change.
+		<-self.ctx.Done()
+		return
+	}
+	// the router is asked for the carriers that bound, beside the camouflage's
+	// first verification, and the first post offers what it answered (S10)
+	self.startPortMapping()
+	if self.camouflage != nil {
+		// the first post carries the key when the names verify in good time (P5)
+		self.camouflage.WaitFirstVerification(self.ctx)
+	}
+	if !self.waitPortMapping() {
+		return
+	}
+	self.startActivator()
+	// what the posts offered, so a mapping that lands or moves after them is
+	// posted at once (S10)
+	offeredPorts := self.offeredPortsArray()
+	portMapped := self.portMapped()
+
+	// The server keeps its own carriers up (extender/extender_carrier.go). This
+	// reads what it serves: the tcp carrier's return is for the activation to
+	// hear, and a port that stays lost, or a server that ended, which nothing
+	// here can bring back, means asking the provider for a new role. The role
+	// bound tcp before its server started, so a first read that finds it gone is
+	// a port already lost, which arms the wait like any other. A role that
+	// started on the webrtc carrier never held the port, so it has none to lose
+	// (S8): only its next start tries the port again.
+	tcpServing := !self.startedOnWebRtc
+	serverDone := self.server.Done()
+	var restartAfter <-chan time.Time
+	for {
+		// subscribe before the reads below, so a change in between is carried
+		// by the channel rather than lost
+		wake := self.wakeMonitor.NotifyChannel()
+		_, activatorUpdate := self.activatorChangeMonitor().Get()
+		var directoryUpdate chan struct{}
+		if directory := self.directory(); directory != nil {
+			_, directoryUpdate = directory.ChangeMonitor().Get()
+		}
+		// the ping counts the status carries (GEOMAP §2.1)
+		_, pingerUpdate := self.peerPinger.StatusMonitor().Get()
+		// the router's answers (S10)
+		var portMapperUpdate chan struct{}
+		if portMapper := self.currentPortMapper(); portMapper != nil {
+			_, portMapperUpdate = portMapper.ChangeMonitor().Get()
+		}
+
+		if currentOfferedPorts, currentPortMapped := self.offeredPortsArray(), self.portMapped(); currentOfferedPorts != offeredPorts || currentPortMapped != portMapped {
+			// a mapping that landed or moved is posted now rather than at the
+			// tick, so the record names the ports the router forwards. One that
+			// was lost posts nothing: the bound ports reach nothing behind the
+			// router either
+			if currentPortMapped {
+				self.log.Infof(
+					"[extender]provide the router forwards tcp %d, udp %d and udp %d, posting them\n",
+					currentOfferedPorts[0],
+					currentOfferedPorts[1],
+					currentOfferedPorts[2],
+				)
+				self.currentActivator().Reactivate()
+			}
+			offeredPorts, portMapped = currentOfferedPorts, currentPortMapped
+		}
+
+		if serving := self.tcpCarrierServing(); serving != tcpServing {
+			tcpServing = serving
+			if serving {
+				restartAfter = nil
+				self.currentActivator().TcpCarrierReturned()
+			} else {
+				restartAfter = self.afterRestartWait(extenderProvideTcpLostTimeout)
+			}
+		}
+
+		self.updateNode()
+		self.publish()
+		self.logCamouflageStatus()
+
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-wake:
+		case <-activatorUpdate:
+		case <-directoryUpdate:
+		case <-pingerUpdate:
+		case <-portMapperUpdate:
+		case <-serverDone:
+			if self.ctx.Err() != nil {
+				return
+			}
+			// nothing ends a server but its context or Close, and this role did
+			// neither, so this is not expected and nothing here can undo it
+			serverDone = nil
+			tcpServing = false
+			self.log.Errorf("[extender]provide the server ended under a running role\n")
+			restartAfter = self.afterRestartWait(0)
+		case <-restartAfter:
+			restartAfter = nil
+			self.log.Errorf(
+				"[extender]provide the server is not serving tcp %d, replacing the role = %s\n",
+				self.settings.TcpPort,
+				extenderListenErrorText(self.server.ListenErrors()),
+			)
+			self.requestRestart()
+		}
+	}
+}
+
+// Whether the tcp carrier is serving, the one port an extender requires (G2)
+// without the webrtc carrier.
+func (self *deviceLocalExtender) tcpCarrierServing() bool {
+	return slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp)
+}
+
+// Whether a required carrier is serving (C2a): tcp, or the webrtc carrier.
+func (self *deviceLocalExtender) requiredCarrierServing() bool {
+	carriers := self.server.Carriers()
+	return slices.Contains(carriers, connect.ExtenderCarrierTcp) ||
+		slices.Contains(carriers, connect.ExtenderCarrierWebRtc)
+}
+
+// Whether this role asks the router to forward its carriers (S10): the device's
+// setting as the role started. The provider replaces a role whose setting
+// changed.
+func (self *deviceLocalExtender) portMappingEnabled() bool {
+	return self.settings.PortMapping
+}
+
+// Asks the router to forward the carriers that bound (S10), unless the setting
+// is off or this host has a public ipv4 address, which needs no mapping. The
+// tcp carrier first, the one an extender requires, which decides whether a
+// method is used at all; then the udp carriers that bound. A carrier that did
+// not bind is not asked for: its port is not this role's, and the router would
+// forward it to whatever holds it.
+func (self *deviceLocalExtender) startPortMapping() {
+	if !self.settings.PortMapping {
+		return
+	}
+	public := self.settings.PortMappingPublicAddress
+	if public == nil {
+		public = func() bool {
+			return connect.FamilyPublic(4)
+		}
+	}
+	if public() {
+		self.log.Infof("[extender]provide port mapping not needed: this device has a public ipv4 address\n")
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.portMappingNotNeeded = true
+		}()
+		return
+	}
+
+	requests := []portmap.PortMapRequest{}
+	addRequest := func(protocol string, port int) {
+		request := portmap.PortMapRequest{Protocol: protocol, InternalPort: port}
+		if 0 < port && !slices.Contains(requests, request) {
+			requests = append(requests, request)
+		}
+	}
+	carriers := self.server.Carriers()
+	if !slices.Contains(carriers, connect.ExtenderCarrierTcp) {
+		// the role holds tcp 443 before anything else (G2), so this is a port
+		// lost as the binds settled; a role without it asks for nothing
+		return
+	}
+	addRequest(portmap.ProtocolTcp, self.settings.TcpPort)
+	if slices.Contains(carriers, connect.ExtenderCarrierQuic) {
+		addRequest(portmap.ProtocolUdp, self.settings.UdpPort)
+	}
+	if slices.Contains(carriers, connect.ExtenderCarrierDns) && slices.Contains(self.server.DnsPorts(), self.settings.DnsPort) {
+		addRequest(portmap.ProtocolUdp, self.settings.DnsPort)
+	}
+
+	mapperSettings := portmap.DefaultPortMapperSettings()
+	mapperSettings.Log = self.log
+	if configureExtenderPortMapper != nil {
+		configureExtenderPortMapper(mapperSettings)
+	}
+	portMapper := portmap.NewPortMapper(self.ctx, requests, mapperSettings)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.portMapper = portMapper
+	}()
+	self.log.Infof("[extender]provide port mapping asks the router for %v\n", requests)
+}
+
+// Waits for the router's first answer, at most PortMapWaitTimeout (S10). False
+// when the role closed first.
+func (self *deviceLocalExtender) waitPortMapping() bool {
+	portMapper := self.currentPortMapper()
+	if portMapper == nil {
+		return self.ctx.Err() == nil
+	}
+	timeout := self.settings.PortMapWaitTimeout
+	if timeout <= 0 {
+		timeout = extenderPortMapWaitTimeout
+	}
+	select {
+	case <-portMapper.Ready():
+	case <-self.ctx.Done():
+		return false
+	case <-time.After(timeout):
+		self.log.Infof("[extender]provide the router did not answer the port mapping within %s, activating without it\n", timeout)
+	}
+	status := portMapper.Status()
+	switch status.State {
+	case portmap.StateMapped:
+		self.log.Infof(
+			"[extender]provide port mapping by %s: %s\n",
+			status.Method,
+			extenderPortMappingsText(status.Mappings),
+		)
+	case portmap.StateFailed:
+		self.log.Infof("[extender]provide port mapping failed = %s\n", status.Error)
+	}
+	return self.ctx.Err() == nil
+}
+
+func (self *deviceLocalExtender) currentPortMapper() *portmap.PortMapper {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.portMapper
+}
+
+// The mapper's status, nil while the role maps nothing.
+func (self *deviceLocalExtender) portMapperStatus() *portmap.PortMapperStatus {
+	if portMapper := self.currentPortMapper(); portMapper != nil {
+		return portMapper.Status()
+	}
+	return nil
+}
+
+// Whether the router forwards the tcp carrier (S10).
+func (self *deviceLocalExtender) portMapped() bool {
+	status := self.portMapperStatus()
+	return status != nil &&
+		status.State == portmap.StateMapped &&
+		status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort) != nil
+}
+
+// The carrier ports the router forwards (S10): the external port of each
+// carrier it maps, else the bound port. What an ipv4 post offers
+// (familyOfferedPorts).
+func (self *deviceLocalExtender) offeredPorts() (tcpPort int, udpPort int, dnsPort int) {
+	tcpPort, udpPort, dnsPort = self.settings.TcpPort, self.settings.UdpPort, self.settings.DnsPort
+	status := self.portMapperStatus()
+	if status == nil || status.State != portmap.StateMapped {
+		return
+	}
+	if mapping := status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort); mapping != nil {
+		tcpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.UdpPort); mapping != nil {
+		udpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
+		dnsPort = mapping.ExternalPort
+	}
+	return
+}
+
+func (self *deviceLocalExtender) offeredPortsArray() [3]int {
+	tcpPort, udpPort, dnsPort := self.offeredPorts()
+	return [3]int{tcpPort, udpPort, dnsPort}
+}
+
+// The carrier ports a post of the family offers (S10), read at each post
+// (ExtenderActivatorSettings.FamilyOfferedPorts): the router's for ipv4, the
+// family its mapping forwards; the bound ports for ipv6, which no mapping
+// forwards, so the operator probes and publishes the v6 address where it
+// answers. A post to the plain api url, family 0, offers the router's: the
+// operator derives the family from the caller address, and the mapping is
+// what an ipv4 caller needs.
+func (self *deviceLocalExtender) familyOfferedPorts(ipVersion int) (tcpPort int, udpPort int, dnsPort int) {
+	if ipVersion == 6 {
+		return self.settings.TcpPort, self.settings.UdpPort, self.settings.DnsPort
+	}
+	return self.offeredPorts()
+}
+
+// The dns ports a post of the family offers (L2, S10), beside
+// familyOfferedPorts: the bound ports, with the dns carrier's own port as the
+// router forwards it in an ipv4 post.
+func (self *deviceLocalExtender) familyOfferedDnsPorts(ipVersion int) []int {
+	if ipVersion == 6 {
+		return self.server.DnsPorts()
+	}
+	return self.offeredDnsPorts()
+}
+
+// The dns ports the router forwards (L2, S10): the bound ports, with the dns
+// carrier's own port as the router forwards it.
+func (self *deviceLocalExtender) offeredDnsPorts() []int {
+	dnsPorts := self.server.DnsPorts()
+	_, _, offeredDnsPort := self.offeredPorts()
+	if offeredDnsPort == self.settings.DnsPort {
+		return dnsPorts
+	}
+	offeredDnsPorts := []int{}
+	for _, dnsPort := range dnsPorts {
+		if dnsPort == self.settings.DnsPort {
+			dnsPort = offeredDnsPort
+		}
+		if !slices.Contains(offeredDnsPorts, dnsPort) {
+			offeredDnsPorts = append(offeredDnsPorts, dnsPort)
+		}
+	}
+	return offeredDnsPorts
+}
+
+// The port mapping of the status (S10, F3).
+func (self *deviceLocalExtender) portMappingState(state *extenderProvideState) {
+	if !self.settings.PortMapping {
+		state.PortMapping = ExtenderPortMappingOff
+		return
+	}
+	notNeeded := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.portMappingNotNeeded
+	}()
+	if notNeeded {
+		state.PortMapping = ExtenderPortMappingNotNeeded
+		return
+	}
+	status := self.portMapperStatus()
+	if status == nil {
+		// the binds are settling
+		state.PortMapping = ExtenderPortMappingMapping
+		return
+	}
+	switch status.State {
+	case portmap.StateMapped:
+		state.PortMapping = ExtenderPortMappingMapped
+	case portmap.StateFailed:
+		state.PortMapping = ExtenderPortMappingFailed
+	default:
+		state.PortMapping = ExtenderPortMappingMapping
+	}
+	state.PortMappingMethod = status.Method
+	if status.ExternalIp.IsValid() && !status.ExternalIp.IsUnspecified() {
+		state.PortMappingExternalIp = status.ExternalIp.String()
+	}
+	state.PortMappingError = status.Error
+	if mapping := status.Mapping(portmap.ProtocolTcp, self.settings.TcpPort); mapping != nil {
+		state.PortMappingTcpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.UdpPort); mapping != nil {
+		state.PortMappingUdpPort = mapping.ExternalPort
+	}
+	if mapping := status.Mapping(portmap.ProtocolUdp, self.settings.DnsPort); mapping != nil {
+		state.PortMappingDnsPort = mapping.ExternalPort
+	}
+	if state.PortMapping == ExtenderPortMappingMapped {
+		// what an app shows, the same in every language (F3)
+		state.PortMappingMethodName = extenderPortMappingMethodName(status.Method)
+		state.PortMappingPorts = extenderPortMappingPortsText([]extenderPortMappingCarrier{
+			{label: "TCP", boundPort: self.settings.TcpPort, externalPort: state.PortMappingTcpPort},
+			{label: "UDP", boundPort: self.settings.UdpPort, externalPort: state.PortMappingUdpPort},
+			{label: "UDP", boundPort: self.settings.DnsPort, externalPort: state.PortMappingDnsPort},
+		})
+	}
+}
+
+// The name an app shows for a port mapping method, the same in every language.
+func extenderPortMappingMethodName(method string) string {
+	switch method {
+	case portmap.MethodPcp:
+		return "PCP"
+	case portmap.MethodNatPmp:
+		return "NAT-PMP"
+	case portmap.MethodUpnp:
+		return "UPnP"
+	default:
+		return method
+	}
+}
+
+// One carrier of the ports text: its protocol as an app shows it, the port it
+// is bound on, and the port the router forwards to it, 0 for none.
+type extenderPortMappingCarrier struct {
+	label        string
+	boundPort    int
+	externalPort int
+}
+
+// What the router forwards as an app shows it, the same in every language:
+// "TCP 443, UDP 443, UDP 4053", each carrier the router forwards in order, an
+// external port other than the bound one as "TCP 40443→443".
+func extenderPortMappingPortsText(carriers []extenderPortMappingCarrier) string {
+	parts := []string{}
+	for _, carrier := range carriers {
+		switch {
+		case carrier.externalPort <= 0:
+		case carrier.externalPort == carrier.boundPort:
+			parts = append(parts, fmt.Sprintf("%s %d", carrier.label, carrier.boundPort))
+		default:
+			parts = append(parts, fmt.Sprintf("%s %d→%d", carrier.label, carrier.externalPort, carrier.boundPort))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// The mappings as one line for the log: "tcp 443 -> 443, udp 4053 -> 40053".
+func extenderPortMappingsText(mappings []portmap.PortMapping) string {
+	parts := []string{}
+	for _, mapping := range mappings {
+		parts = append(parts, fmt.Sprintf("%s %d -> %d", mapping.Protocol, mapping.InternalPort, mapping.ExternalPort))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// What the status says of a role whose loop failed, until its replacement.
+var errExtenderRoleLoopFailed = errors.New("the extender role failed and will be replaced")
+
+// The channel that fires when it is time to ask for a new role: `wait`, the floor
+// that keeps a role that fails as it starts from being rebuilt as fast as it can
+// fail, and a draw of the spread, which keeps a fleet from starting over together.
+func (self *deviceLocalExtender) afterRestartWait(wait time.Duration) <-chan time.Time {
+	jitter := self.settings.RestartJitter
+	if jitter <= 0 {
+		jitter = extenderProvideRestartMinJitter
+	}
+	wait += extenderProvideRestartFloor + time.Duration(mathrand.Int64N(int64(jitter)))
+	if self.settings.RestartAfter != nil {
+		return self.settings.RestartAfter(wait)
+	}
+	return time.After(wait)
+}
+
+// What the activation of this role hands to the role that replaces it, nil when it
+// never started. Call it after Close.
+func (self *deviceLocalExtender) activatorState() *connect.ExtenderActivatorState {
+	activator := self.currentActivator()
+	if activator == nil {
+		return nil
+	}
+	return activator.State()
+}
+
+// Asks the provider for a new role. Not joined, and not on the caller's
+// goroutine, because replacing this role closes it, which joins its loop.
+func (self *deviceLocalExtender) requestRestart() {
+	if self.settings.Restart == nil {
+		return
+	}
+	go connect.HandleError(func() {
+		self.settings.Restart(self)
+	})
+}
+
+// Asks the provider, once for the life of this role, for a role on a key of the
+// network's own: the operator refused this one as another network's (C2c).
+// Not joined, and not on the activation loop's goroutine, which this runs on,
+// because replacing the role closes it, which joins that loop.
+func (self *deviceLocalExtender) requestKeyRenewal() {
+	if self.settings.RenewKey == nil || !self.keyRenewalRequested.CompareAndSwap(false, true) {
+		return
+	}
+	go connect.HandleError(func() {
+		self.settings.RenewKey(self)
+	})
+}
+
+// The public key this role is activated under (B1).
+func (self *deviceLocalExtender) identityPublicKey() []byte {
+	return slices.Clone(self.publicKey)
+}
+
+// The clock of this role, which tests replace.
+func (self *deviceLocalExtender) now() time.Time {
+	if self.settings.Now != nil {
+		return self.settings.Now()
+	}
+	return time.Now()
+}
+
+// Builds the activation loop over the carriers that bound (G3).
+func (self *deviceLocalExtender) startActivator() {
+	settings := connect.DefaultExtenderActivatorSettings()
+	settings.Log = self.log
+	settings.ApiUrlV4 = self.settings.ApiUrlV4
+	settings.ApiUrlV6 = self.settings.ApiUrlV6
+	settings.ApiUrl = self.settings.ApiUrl
+	settings.HelloUrl = self.settings.HelloUrl
+	settings.ByJwt = self.settings.ByJwt
+	settings.ClientStrategy = self.clientStrategy
+	settings.PublicKey = self.publicKey
+	settings.TcpPort = self.settings.TcpPort
+	settings.UdpPort = self.settings.UdpPort
+	settings.DnsPort = self.settings.DnsPort
+	if self.settings.DnsTld != "" {
+		settings.DnsTld = self.settings.DnsTld
+	}
+	settings.Carriers = self.server.Carriers
+	// the operator probes each port that actually bound and the record lists
+	// them, so a privileged bind that failed is never advertised (L2); a port
+	// the router forwards is offered as the router forwards it in the posts of
+	// the family it forwards, and each address keeps its own (S10)
+	settings.FamilyDnsPorts = self.familyOfferedDnsPorts
+	settings.FamilyOfferedPorts = self.familyOfferedPorts
+	settings.Directory = self.directory()
+	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
+		// the activation carries the measurement certificate request, named by
+		// the id its answers report, and says the owner has opted out once the
+		// opt-out has held (lag.dev/PLAN.md C4, N4)
+		settings.MeasurementCsr = measurementCert.ActivationCsr
+		settings.MeasurementDisabled = self.measurementOptOutIsTold
+	} else if self.currentMeasurementKeyUnusable() {
+		// a kept identity whose measurement key can't be used answers no
+		// measurement name, so every activation says so and a name it had is
+		// withdrawn (C4, C9) rather than renewed and offered to lag.dev with
+		// nothing answering it. At once: this is no switch of the owner's,
+		// whose opt-out waits out the hold.
+		settings.MeasurementDisabled = func() bool {
+			return true
+		}
+	}
+	if self.camouflage != nil {
+		settings.PublishedRealityPublicKey = self.camouflage.PublishedRealityPublicKey
+	}
+	// the safe-flip gate reads the record (EXTENDER-UPDATE2 §3.2); the mesh
+	// addresses follow the activated families, which the loop reads from the
+	// activator's own status, so this only wakes it (D2, G2)
+	settings.OnActivated = func(ipVersion int, result *connect.ExtenderActivateResult) {
+		if self.camouflage != nil {
+			self.camouflage.ObserveActivation(result, self.directory().RootKeys())
+		}
+		self.wakeMonitor.NotifyAll()
+	}
+	// a key another network holds is refused at every post of this network
+	// (C2c), so the role asks for a key of the network's own
+	settings.OnRefused = func(ipVersion int, result *connect.ExtenderActivateResult) {
+		if result.KeyHeldByAnotherNetwork() {
+			self.requestKeyRenewal()
+		}
+	}
+	if 0 < self.settings.ActivateTimeout {
+		settings.ActivateTimeout = self.settings.ActivateTimeout
+	}
+	if 0 < self.settings.AddressCheckTimeout {
+		settings.AddressCheckTimeout = self.settings.AddressCheckTimeout
+	}
+	if 0 < self.settings.MinBackoff {
+		settings.MinBackoff = self.settings.MinBackoff
+	}
+	if 0 < self.settings.MaxBackoff {
+		settings.MaxBackoff = self.settings.MaxBackoff
+	}
+	if 0 < self.settings.RequestTimeout {
+		settings.RequestTimeout = self.settings.RequestTimeout
+	}
+	if self.settings.Now != nil {
+		settings.Now = self.settings.Now
+	}
+	settings.IpVersionSupported = self.settings.IpVersionSupported
+	settings.PreviousState = self.settings.ActivatorState
+	if self.settings.ConfigureActivator != nil {
+		self.settings.ConfigureActivator(settings)
+	}
+
+	activator := connect.NewExtenderActivator(self.ctx, settings)
+	self.stateLock.Lock()
+	self.activator = activator
+	self.stateLock.Unlock()
+	if self.camouflage != nil {
+		// a name that verifies after a post went out with no key is posted at once
+		self.camouflage.SetReactivate(activator.Reactivate)
+	}
+	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
+		// the operator holding another key's request or certificate asks for a
+		// pass at once, which carries this key's request (lag.dev/PLAN.md C4)
+		measurementCert.SetReactivate(activator.Reactivate)
+	}
+	self.wakeMonitor.NotifyAll()
+}
+
+func (self *deviceLocalExtender) directory() *connect.ExtenderDirectory {
+	return self.settings.NetworkSpace.extenderDirectory
+}
+
+func (self *deviceLocalExtender) currentActivator() *connect.ExtenderActivator {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.activator
+}
+
+// Logs the camouflage's standing when it changed (EXTENDER-UPDATE2 §3.3). Its counts
+// follow what clients and probers do, so they do not trigger a line themselves: the
+// phase, the reason and the verified names change only at a pass or a gate.
+func (self *deviceLocalExtender) logCamouflageStatus() {
+	if self.camouflage == nil {
+		return
+	}
+	status := self.server.CamouflageStatus()
+	standing := fmt.Sprintf("%s %s %d", status.Phase, status.DegradedReason, status.VerifiedTargetCount)
+	if standing == self.camouflageStanding {
+		return
+	}
+	self.camouflageStanding = standing
+	self.log.Infof(
+		"[extender]provide camouflage: %s\n",
+		extender.ExtenderCamouflageStatusLine(status, self.server.CamouflageStats()),
+	)
+}
+
+// The activator's change counter, or a monitor that never fires before the
+// activator exists, so the loop's subscribe is unconditional.
+func (self *deviceLocalExtender) activatorChangeMonitor() *connect.MonitorValue[uint64] {
+	if activator := self.currentActivator(); activator != nil {
+		return activator.ChangeMonitor()
+	}
+	return connect.NewMonitorValue[uint64](0)
+}
+
+func (self *deviceLocalExtender) activatorStatus() *connect.ExtenderActivatorStatus {
+	if activator := self.currentActivator(); activator != nil {
+		return activator.Status()
+	}
+	return &connect.ExtenderActivatorStatus{}
+}
+
+// Rebuilds the node whenever the set of activated addresses changes (G2, D2).
+// A libp2p host can add a listen address but not drop one, so a deactivated or
+// moved family is a rebuild: otherwise this node would keep advertising a mesh
+// address the operator no longer publishes for it.
+func (self *deviceLocalExtender) updateNode() {
+	if !self.gossipNodeRuns() {
+		return
+	}
+	// A lost tcp carrier takes the mesh address with it for now, and usually comes
+	// back within seconds. Rebuilding the node each way would cost its peers for an
+	// address that is only away, so it waits to see: the carrier's return finds the
+	// addresses as they were, and a port that stays lost gets a new role, which
+	// builds its node as any does. A family that really moved or went meanwhile is
+	// read when the carrier returns.
+	if !self.tcpCarrierServing() {
+		return
+	}
+	listenAddrs, err := self.meshListenAddrs()
+	if err != nil {
+		self.log.Infof("[extender]provide mesh address err = %s\n", err)
+		return
+	}
+	listenAddrTexts := []string{}
+	for _, listenAddr := range listenAddrs {
+		listenAddrTexts = append(listenAddrTexts, listenAddr.String())
+	}
+
+	changed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if slices.Equal(self.nodeListenAddrs, listenAddrTexts) {
+			return false
+		}
+		self.nodeListenAddrs = listenAddrTexts
+		return true
+	}()
+	if !changed {
+		return
+	}
+	self.setNodeRuns(
+		self.settings.NetworkSpace.setExtenderNodeRole(self.listener, listenAddrs) != nil)
+}
+
+// One mesh address per activated family (D2). Only the tcp carrier carries the
+// mesh, so a host whose tcp bind failed advertises nothing.
+func (self *deviceLocalExtender) meshListenAddrs() ([]ma.Multiaddr, error) {
+	if !slices.Contains(self.server.Carriers(), connect.ExtenderCarrierTcp) {
+		return nil, nil
+	}
+	listenAddrs := []ma.Multiaddr{}
+	for _, family := range self.activatorStatus().Families {
+		if !family.Activated || !family.Ip.IsValid() {
+			continue
+		}
+		// the port peers dial, the one the family's post offered: the router's
+		// when it forwards the carrier (S10)
+		tcpPort, _, _ := self.familyOfferedPorts(family.IpVersion)
+		familyListenAddrs, err := gossip.ExtenderListenAddrs([]netip.Addr{family.Ip}, tcpPort)
+		if err != nil {
+			return nil, err
+		}
+		listenAddrs = append(listenAddrs, familyListenAddrs...)
+	}
+	if len(listenAddrs) == 0 {
+		return nil, nil
+	}
+	return listenAddrs, nil
+}
+
+// Publishes the comparable half of the status, which notifies a watcher only
+// when something actually changed.
+func (self *deviceLocalExtender) publish() {
+	self.statusMonitor.Set(self.state())
+}
+
+func (self *deviceLocalExtender) state() extenderProvideState {
+	listenErrors := self.server.ListenErrors()
+	state := extenderProvideState{
+		Enabled:       true,
+		Listening:     self.requiredCarrierServing(),
+		ListenError:   extenderListenErrorText(listenErrors),
+		WebRtcCarrier: slices.Contains(self.server.Carriers(), connect.ExtenderCarrierWebRtc),
+		DnsPorts:      extenderDnsPortsText(self.server.DnsPorts()),
+	}
+	// a server gone for good has lost its carriers to no error of theirs
+	if !state.Listening && state.ListenError == "" {
+		select {
+		case <-self.server.Done():
+			state.ListenError = extenderListenErrorText(map[string]error{
+				connect.ExtenderCarrierTcp: errors.New("the extender server ended"),
+			})
+		default:
+		}
+	}
+
+	var lastActivationTime time.Time
+	var lastErrorTime time.Time
+	for _, family := range self.activatorStatus().Families {
+		switch family.IpVersion {
+		case 4:
+			state.ActivatedV4 = family.Activated
+			if family.Activated && family.Ip.IsValid() {
+				state.Ipv4 = family.Ip.String()
+			}
+		case 6:
+			state.ActivatedV6 = family.Activated
+			if family.Activated && family.Ip.IsValid() {
+				state.Ipv6 = family.Ip.String()
+			}
+		}
+		if family.LastActivationTime.After(lastActivationTime) {
+			lastActivationTime = family.LastActivationTime
+		}
+		// the newest error any family is still standing on, so a v6 refusal
+		// stays visible while v4 is activated. A family that succeeds clears
+		// its own error, so nothing stale survives here.
+		if family.LastError != "" && !family.LastActivationTime.Before(lastErrorTime) {
+			lastErrorTime = family.LastActivationTime
+			state.LastActivationError = family.LastError
+			// whether that error is the operator's refusal, from the same
+			// family, so the case the rule picks matches the text (N2, N3)
+			state.LastActivationRefused = family.LastRefused
+		}
+	}
+	// A tcp carrier that was lost is what the status says, with why: no record
+	// the operator published is any use to a client while it is gone, so no
+	// family reads as active (N3).
+	if !state.Listening && state.ListenError != "" {
+		state.ActivatedV4 = false
+		state.ActivatedV6 = false
+		state.Ipv4 = ""
+		state.Ipv6 = ""
+	}
+	state.LastActivationTime = extenderStatusTimeMs(lastActivationTime)
+	state.RevokedTime = extenderStatusTimeMs(self.updateRevoked())
+
+	// what this extender measured of its peers and what they answered
+	// (GEOMAP §2.1, §2.3)
+	pingerStatus := self.peerPinger.Status()
+	state.PeerPingCount = pingerStatus.PingCount
+	state.PeerPingCosignedCount = pingerStatus.CosignedCount
+	state.PeerPingRejectedCount = pingerStatus.RejectedCount
+	state.PeerPingUnknownCount = pingerStatus.UnknownCount
+	state.LastPeerPingTime = extenderStatusTimeMs(pingerStatus.LastPingTime)
+
+	// what the admission limits turned away (A12), read at each publish; a
+	// refusal alone wakes nothing, since a flood would be a publish per
+	// refused connection
+	admissionStats := self.server.AdmissionStats()
+	state.LimitedBySubnetsCount = int(admissionStats.LimitedBySubnetsCount)
+	state.LimitedBySourceCount = int(admissionStats.LimitedBySourceCount)
+
+	// the router port mapping (S10)
+	self.portMappingState(&state)
+	return state
+}
+
+// When this extender's key was first seen revoked in the directory, zero while
+// it is not revoked (G3, B5). The directory is the source: the operator's
+// revocation reaches this host through the mesh or the feed, not through an
+// answer to something this host asked.
+func (self *deviceLocalExtender) updateRevoked() time.Time {
+	revoked := false
+	if directory := self.directory(); directory != nil && 0 < len(self.publicKey) {
+		for _, entry := range directory.Snapshot().Entries {
+			if entry.State == connect.ExtenderStateRevoked &&
+				slices.Equal(entry.PublicKey, self.publicKey) {
+				revoked = true
+				break
+			}
+		}
+	}
+
+	now := time.Now
+	if self.settings.Now != nil {
+		now = self.settings.Now
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	switch {
+	case !revoked:
+		self.revokedTime = time.Time{}
+	case self.revokedTime.IsZero():
+		self.revokedTime = now()
+	}
+	return self.revokedTime
+}
+
+// The status as the device renders it (F3). The connection count is read live,
+// beside the state the loop publishes.
+func (self *deviceLocalExtender) status() *ExtenderProvideStatus {
+	if self == nil {
+		return disabledExtenderProvideStatus()
+	}
+	connectionCount := 0
+	if server := self.currentServer(); server != nil {
+		connectionCount = server.ConnectionCount()
+	}
+	return self.statusMonitor.Value().status(connectionCount)
+}
+
+// The relayed traffic of this role's server (O2): read off the server's
+// atomics, so a server that has closed still answers. Nil while the role is
+// off for want of tcp 443, since it runs no server to relay through.
+func (self *deviceLocalExtender) stats() *ExtenderStats {
+	if self == nil {
+		return nil
+	}
+	server := self.currentServer()
+	if server == nil {
+		return nil
+	}
+	stats := server.Stats()
+	return &ExtenderStats{
+		IngressByteCount: stats.IngressByteCount,
+		IngressReadCount: stats.IngressReadCount,
+		EgressByteCount:  stats.EgressByteCount,
+		EgressReadCount:  stats.EgressReadCount,
+	}
+}
+
+// A channel armed at the instant of the read, so a consumer is woken when the
+// status changes. A device with no role waits on nil, which never fires.
+func (self *deviceLocalExtender) statusUpdate() chan struct{} {
+	if self == nil {
+		return nil
+	}
+	_, update := self.statusMonitor.Get()
+	return update
+}
+
+// Releases every part in the reverse order it was built, and restores the
+// member node the role replaced (G2). A role that never held tcp 443 built
+// none of them.
+func (self *deviceLocalExtender) Close() {
+	if self == nil {
+		return
+	}
+	self.closeOnce.Do(func() {
+		self.cancel()
+		<-self.done
+		// a wait for the opt-out's hold ends with the role
+		self.cancelMeasurementOptOut()
+		if activator := self.currentActivator(); activator != nil {
+			activator.Close()
+		}
+		// what the router forwards to this role goes with it, within the
+		// mapper's removal timeout (S10)
+		if portMapper := self.currentPortMapper(); portMapper != nil {
+			portMapper.Close()
+		}
+		// a verification in flight dials through the server's splice
+		if self.camouflage != nil {
+			self.camouflage.Close()
+		}
+		if self.listener == nil {
+			// off for want of tcp 443 to the end: nothing else was built
+			return
+		}
+		// a ping in flight reports into the reporter, and both post and dial
+		// through the strategy, so the pinger is joined first and the strategy
+		// last
+		self.peerPinger.Close()
+		self.pingReporter.Close()
+		self.settings.NetworkSpace.clearExtenderCamouflageReportSource(self.currentServer())
+		// the carrier stops answering before the server it answered with goes,
+		// and leaves alone an answerer a successor installed
+		if self.webRtcManager != nil {
+			self.webRtcManager.RemoveExtenderCarrierAnswerer(self.webRtcAnswerer)
+		}
+		if self.webRtcCarrier != nil {
+			self.webRtcCarrier.Close()
+		}
+		self.currentServer().CloseAndWait()
+		// a server closed before it bound never took the tcp listener
+		self.heldTcpListener.release()
+		// the node holds the listener, so it goes before the listener does
+		self.settings.NetworkSpace.restoreExtenderNodeRole()
+		self.feedServer.Close()
+		self.listener.Close()
+		self.clientStrategy.Close()
+		if self.maxActiveRecordCountReplaced {
+			self.directory().SetMaxActiveRecordCount(self.previousMaxActiveRecordCount)
+		}
+	})
+}
+
+// The api url the ping report is posted to: the first this role has. A report
+// may arrive on either family, so a family url serves when there is no other.
+func extenderReporterApiUrl(settings *deviceLocalExtenderSettings) string {
+	for _, apiUrl := range []string{settings.ApiUrl, settings.HelloUrl, settings.ApiUrlV4, settings.ApiUrlV6} {
+		if apiUrl != "" {
+			return apiUrl
+		}
+	}
+	return ""
+}
+
+// The forward dial failures of the role's extender server (A7), logged at
+// most once an interval for each kind: the stream forward's dial, and the
+// datagram relay's. The server dials the operator host a client asked for
+// only after it has answered the request, so a dial that fails leaves the
+// client a stream that closes and nothing else. An extender whose egress
+// cannot reach the operator fails every forward that way, the forward of
+// every activation probe included, and until the role logged it the
+// extender kept no trace of why (connect#230). The first failure of a kind
+// is logged at once, and the rest of the interval only counted, the count
+// riding on the next line. Every other stage the server reports is a
+// client's own failure and is not logged.
+//
+// The whitelist confines a forward to the operator's hosts (A5), so a line
+// names an operator host and never a client or its destination.
+//
+// Safe for concurrent use: report is the server's ErrorHandler and runs on
+// each connection's goroutine.
+type extenderForwardDialErrorLog struct {
+	log connect.Logger
+	now func() time.Time
+	// the least time between two lines of one kind; non-positive logs every
+	// failure
+	interval time.Duration
+
+	stateLock sync.Mutex
+	// by stage, when its last line was logged and how many of its failures
+	// were not logged since
+	stageLogTimes       map[string]time.Time
+	stageUnloggedCounts map[string]int
+}
+
+func newExtenderForwardDialErrorLog(
+	log connect.Logger,
+	now func() time.Time,
+	interval time.Duration,
+) *extenderForwardDialErrorLog {
+	return &extenderForwardDialErrorLog{
+		log:                 log,
+		now:                 now,
+		interval:            interval,
+		stageLogTimes:       map[string]time.Time{},
+		stageUnloggedCounts: map[string]int{},
+	}
+}
+
+// The ErrorHandler of the role's extender server (extender.ExtenderSettings).
+// It runs synchronously in the server, so it only logs, outside the lock.
+func (self *extenderForwardDialErrorLog) report(stage string, err error) {
+	switch stage {
+	case extender.ExtenderErrorStageForwardDial, extender.ExtenderErrorStageDatagramForwardDial:
+	default:
+		return
+	}
+	now := self.now()
+	logged, unloggedCount := func() (bool, int) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if logTime, ok := self.stageLogTimes[stage]; ok && 0 < self.interval && now.Sub(logTime) < self.interval {
+			self.stageUnloggedCounts[stage] += 1
+			return false, 0
+		}
+		unloggedCount := self.stageUnloggedCounts[stage]
+		self.stageLogTimes[stage] = now
+		delete(self.stageUnloggedCounts, stage)
+		return true, unloggedCount
+	}()
+	if !logged {
+		return
+	}
+	if 0 < unloggedCount {
+		self.log.Infof("[extender]provide %s err = %s (%d more since the last)\n", stage, err, unloggedCount)
+	} else {
+		self.log.Infof("[extender]provide %s err = %s\n", stage, err)
+	}
+}
