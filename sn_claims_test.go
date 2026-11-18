@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"testing"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/merkle"
 	"github.com/urnetwork/sdk/sn/ss58"
@@ -173,6 +175,21 @@ type fakeChain struct {
 	// TAO when nil
 	estimate uint64
 	balance  *big.Int
+	// vault2's pools by id: pools(noId) answers an unregistered pool for an id
+	// it lacks, and while vault2Pools is nil the empty return of an address
+	// without code
+	vault2      [20]byte
+	vault2Pools map[uint64]*fakeVault2Pool
+	// the epochs entitlement(epoch, noId) was read for, in order
+	entitlementEpochs []int64
+}
+
+// vault2's ISTSettlementVault2.Pool, which pools(noId) returns as the static
+// (hotkey, firstEpoch, registered) tuple.
+type fakeVault2Pool struct {
+	hotkey     [32]byte
+	firstEpoch uint64
+	registered bool
 }
 
 func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *evm.RpcError) {
@@ -229,7 +246,27 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 		leafClaimedSel := evm.Selector("leafClaimed(uint256,bytes32)")
 		epochStartBlockSel := evm.Selector("epochStartBlock(uint256)")
 		policyAtSel := evm.Selector("policyAt(uint256)")
+		poolsSel := evm.Selector("pools(uint256)")
 		switch {
+		case to == self.vault2 && self.vault2 != ([20]byte{}) && sel == hex.EncodeToString(poolsSel[:]):
+			if self.vault2Pools == nil {
+				return "0x", nil
+			}
+			pool := self.vault2Pools[new(big.Int).SetBytes(data[4:36]).Uint64()]
+			if pool == nil {
+				pool = &fakeVault2Pool{}
+			}
+			registered := big.NewInt(0)
+			if pool.registered {
+				registered = big.NewInt(1)
+			}
+			var out []byte
+			out = append(out, pool.hotkey[:]...)
+			for _, v := range []*big.Int{new(big.Int).SetUint64(pool.firstEpoch), registered} {
+				w, _ := evm.UintWord(v)
+				out = append(out, w[:]...)
+			}
+			return "0x" + hex.EncodeToString(out), nil
 		case to == self.coordinator && sel == hex.EncodeToString(evm.PackCurrentEpoch()):
 			w, _ := evm.UintWord(big.NewInt(self.currentEpoch))
 			return "0x" + hex.EncodeToString(w[:]), nil
@@ -254,6 +291,7 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 			return "0x" + hex.EncodeToString(out), nil
 		case to == self.vault && sel == hex.EncodeToString(entitlementSel[:]):
 			epoch := new(big.Int).SetBytes(data[4:36]).Int64()
+			self.entitlementEpochs = append(self.entitlementEpochs, epoch)
 			ent := self.entitlements[epoch]
 			if ent == nil {
 				ent = &evm.Entitlement{Funded: big.NewInt(0), Total: big.NewInt(0), Claimed: big.NewInt(0)}
@@ -780,6 +818,339 @@ func TestClaimsScheduleIsBestEffort(t *testing.T) {
 	}
 	if result.CurrentEpoch != 9 || result.BlockNumber != 1000 {
 		t.Fatalf("head %+v", result)
+	}
+}
+
+// A v1 carry sweep record (sn VERSION2-FINAL.md §16) shaped like the server's
+// StV1SweepRecord, with synthetic values. It is a ledger object, served by
+// /sn/ledger/object, not a payout artifact; the sweep's single-leaf v1 root
+// commits its sha256 as the artifact hash.
+func buildTestSweepRecord(t *testing.T, noId uint64, firstV2Epoch uint64, vault2Coldkey [32]byte) (raw []byte, hash [32]byte) {
+	t.Helper()
+	type sweepLeaf struct {
+		Coldkey  string `json:"coldkey"`
+		ShareBps uint64 `json:"share_bps"`
+	}
+	root := merkle.PayoutLeaf(vault2Coldkey, big.NewInt(10000))
+	record := struct {
+		Schema       string    `json:"schema"`
+		ChainId      uint64    `json:"chain_id"`
+		NoId         uint64    `json:"no_id"`
+		FirstV2Epoch uint64    `json:"first_v2_epoch"`
+		SweepEpoch   uint64    `json:"sweep_epoch"`
+		Leaf         sweepLeaf `json:"leaf"`
+		PayoutRoot   string    `json:"payout_root"`
+	}{
+		Schema:       "urnetwork/st-v1-sweep-record/v1",
+		ChainId:      945,
+		NoId:         noId,
+		FirstV2Epoch: firstV2Epoch,
+		SweepEpoch:   firstV2Epoch,
+		Leaf:         sweepLeaf{Coldkey: "0x" + hex.EncodeToString(vault2Coldkey[:]), ShareBps: 10000},
+		PayoutRoot:   "0x" + hex.EncodeToString(root[:]),
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw, sha256.Sum256(raw)
+}
+
+// The v1 carry sweep as mainnet ran it, with synthetic values: the pool's
+// first v2 epoch is 4 and the coordinator is at epoch 6. vault1 finalized
+// epoch 4 with the sweep's single leaf, which pays vault2's own coldkey, under
+// the artifact hash of the sweep record, a ledger object the artifact host
+// answers 404 for. The engine used to read epoch 4 as a payout epoch: it asked
+// /sn/artifact for the record's hash on every read and listed epoch 4 as an
+// open artifact_unavailable epoch, and epochs 5 and 6, which only v2 settles,
+// as open v1 epochs. From the first v2 epoch on it now reads nothing: no
+// entitlement, no artifact and no row, and a claim of epoch 4 is refused
+// without asking. Epoch 3, before the switch, is still a v1 claim.
+func TestClaimsReadV1EpochsOnlyBeforeTheFirstV2Epoch(t *testing.T) {
+	alice, bob := testColdkey(1), testColdkey(0x40)
+	aliceSs58, err := ss58.Encode(alice, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault2Coldkey := testColdkey(0x70)
+	raw3, hash3, root3 := buildTestArtifact(t, 3, 3, [][32]byte{alice, bob}, []uint64{2500, 7500})
+	sweepRaw, sweepHash := buildTestSweepRecord(t, 3, 4, vault2Coldkey)
+	sweepRoot := merkle.PayoutLeaf(vault2Coldkey, big.NewInt(10000))
+
+	artifactRequests := map[string]int{}
+	ledgerObjectRequests := 0
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hash := strings.TrimPrefix(r.URL.Query().Get("hash"), "sha256:")
+		switch r.URL.Path {
+		case "/sn/artifact":
+			artifactRequests[hash] += 1
+			if hash == hex.EncodeToString(hash3[:]) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(raw3)
+				return
+			}
+			// the server's answer for a hash it holds no payout artifact under
+			http.Error(w, "No payout artifact has this hash.", http.StatusNotFound)
+		case "/sn/ledger/object":
+			ledgerObjectRequests += 1
+			if hash == hex.EncodeToString(sweepHash[:]) {
+				w.Write(sweepRaw)
+				return
+			}
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer artifactServer.Close()
+
+	vault, _ := evm.ParseAddress("0x2222222222222222222222222222222222222222")
+	coordinator, _ := evm.ParseAddress("0x1111111111111111111111111111111111111111")
+	vault2, _ := evm.ParseAddress("0x3333333333333333333333333333333333333333")
+	chain := &fakeChain{
+		t: t, block: 1000, currentEpoch: 6, vault: vault, coordinator: coordinator,
+		entitlements: map[int64]*evm.Entitlement{
+			2: {Funded: big.NewInt(1), Total: big.NewInt(1), Claimed: big.NewInt(0), Status: evm.StatusRootMissed},
+			3: {PayoutRoot: root3, ArtifactHash: hash3, Funded: big.NewInt(4_000_000_000), Total: big.NewInt(4_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+			// the sweep folded the carry into its total, and vault2's claim of
+			// the leaf took all of it
+			4: {PayoutRoot: [32]byte(sweepRoot), ArtifactHash: sweepHash, Funded: big.NewInt(500_000_000), Total: big.NewInt(8_000_000_000), Claimed: big.NewInt(8_000_000_000), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+		},
+		claimed:     map[string]bool{},
+		receipts:    map[string]bool{},
+		vault2:      vault2,
+		vault2Pools: map[uint64]*fakeVault2Pool{3: {hotkey: testColdkey(0x90), firstEpoch: 4, registered: true}},
+	}
+	chainServer := httptest.NewServer(chain)
+	defer chainServer.Close()
+
+	settings := SnTestnetChainSettings()
+	settings.SetRpcUrls(nil)
+	settings.AddRpcUrl(chainServer.URL)
+	settings.VaultAddress = "0x2222222222222222222222222222222222222222"
+	settings.Vault2Address = "0x3333333333333333333333333333333333333333"
+	settings.CoordinatorAddress = "0x1111111111111111111111111111111111111111"
+	settings.NoId = "3"
+	settings.ArtifactBaseUrl = artifactServer.URL
+	// as SnClaimsFor builds it for the web
+	engine, snErr := newSnClaimEngine(settings, aliceSs58, "", nil, nil, nil)
+	if snErr != nil {
+		t.Fatal(snErr.Message)
+	}
+	result := engine.claims(context.Background(), 0)
+	if result.Error != nil {
+		t.Fatalf("claims error: %+v", result.Error)
+	}
+	if result.CurrentEpoch != 6 || result.BlockNumber != 1000 {
+		t.Fatalf("head %+v", result)
+	}
+	byEpoch := map[int64]*SnEpochClaim{}
+	for _, claim := range result.Claims.values {
+		byEpoch[claim.Epoch] = claim
+	}
+	for epoch := int64(4); epoch <= 6; epoch++ {
+		if c := byEpoch[epoch]; c != nil {
+			t.Errorf("epoch %d, which v2 settles, is listed as a v1 claim: %+v", epoch, c)
+		}
+	}
+	if n := artifactRequests[hex.EncodeToString(sweepHash[:])]; n != 0 {
+		t.Errorf("asked /sn/artifact for the sweep record's hash %d times", n)
+	}
+	if ledgerObjectRequests != 0 {
+		t.Errorf("asked /sn/ledger/object %d times", ledgerObjectRequests)
+	}
+	for _, epoch := range chain.entitlementEpochs {
+		if 4 <= epoch {
+			t.Errorf("read the v1 entitlement of epoch %d, which v2 settles", epoch)
+		}
+	}
+	// before the switch, v1 still pays: a quarter of epoch 3's 4 alpha
+	if c := byEpoch[3]; c == nil || c.Status != SnClaimStatusClaimable || c.ShareBps != 2500 || c.AmountRao != 1_000_000_000 {
+		t.Fatalf("epoch 3: %+v", c)
+	}
+	if result.Claims.Len() != 1 || result.TotalClaimableRao != 1_000_000_000 {
+		t.Fatalf("claims %+v, total claimable %d", result.Claims.values, result.TotalClaimableRao)
+	}
+
+	// a claim of the sweep epoch, for an external signer and with the gas key,
+	// is refused without reading it
+	if _, err := engine.unsignedTxs(context.Background(), []int64{4}); err == nil || !strings.HasPrefix(err.Error(), "epoch 4: "+SnErrorCodeNotClaimable+": settlement v2 settles epoch 4, from epoch 4") {
+		t.Fatalf("unsigned claim of epoch 4: %v", err)
+	}
+	key, err := evm.PrivateKeyFromHex("0x4646464646464646464646464646464646464646464646464646464646464646")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgetGasKeySends()
+	callback := &recordingClaimCallback{}
+	engine.send(context.Background(), key, 4, callback)
+	if len(callback.failed) != 1 || callback.failed[0].epoch != 4 || !strings.HasPrefix(callback.failed[0].message, SnErrorCodeNotClaimable+": settlement v2 settles epoch 4") || len(callback.sent) != 0 || len(chain.sent) != 0 {
+		t.Fatalf("claim of epoch 4: %+v", callback)
+	}
+	if n := artifactRequests[hex.EncodeToString(sweepHash[:])]; n != 0 {
+		t.Fatalf("the claims of epoch 4 asked /sn/artifact for the sweep record's hash %d times", n)
+	}
+	for _, epoch := range chain.entitlementEpochs {
+		if 4 <= epoch {
+			t.Fatalf("a claim read the v1 entitlement of epoch %d, which v2 settles", epoch)
+		}
+	}
+}
+
+// A 404 from the artifact host is final for the hash: the server's answer for
+// a hash it holds no payout artifact under, which connect's GET does not retry
+// (it retries 502 and 503 once). Here the switch to v2 is unknown, a v2 vault
+// is configured but no code answers at its address, so epoch 4 is read as v1.
+// Its 404, from the api transport as the apps read it, used to list it as an
+// open artifact_unavailable epoch that every read asked for again. It now
+// lists as an epoch without a share, and the device's artifact store, which
+// outlives each read, never asks for the hash again. A 502 stays transient:
+// epoch 5 is open and asked for on each read. With a claim of epoch 4 sent
+// from this device, its row says that no payout list is published.
+func TestClaimsArtifactNotFoundIsFinal(t *testing.T) {
+	alice := testColdkey(1)
+	aliceSs58, err := ss58.Encode(alice, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostHash := sha256.Sum256([]byte("a hash the artifact host holds nothing under"))
+	busyHash := sha256.Sum256([]byte("a hash the artifact host fails to read"))
+	lostHex, busyHex := hex.EncodeToString(lostHash[:]), hex.EncodeToString(busyHash[:])
+	requests := map[string]int{}
+	fetch := func(ctx context.Context, requestUrl string) ([]byte, error) {
+		hash := requestUrl[strings.LastIndex(requestUrl, "sha256:")+len("sha256:"):]
+		requests[hash] += 1
+		switch hash {
+		case lostHex:
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusNotFound, Status: "404 Not Found", Body: []byte("No payout artifact has this hash.")}
+		case busyHex:
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway", Body: []byte("Artifact unavailable or failed integrity.")}
+		}
+		return nil, fmt.Errorf("unexpected fetch of %s", requestUrl)
+	}
+
+	vault, _ := evm.ParseAddress("0x2222222222222222222222222222222222222222")
+	coordinator, _ := evm.ParseAddress("0x1111111111111111111111111111111111111111")
+	vault2, _ := evm.ParseAddress("0x3333333333333333333333333333333333333333")
+	chain := &fakeChain{
+		t: t, block: 1000, currentEpoch: 6, vault: vault, coordinator: coordinator,
+		entitlements: map[int64]*evm.Entitlement{
+			4: {PayoutRoot: testColdkey(0xa0), ArtifactHash: lostHash, Funded: big.NewInt(1_000_000_000), Total: big.NewInt(1_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+			5: {PayoutRoot: testColdkey(0xb0), ArtifactHash: busyHash, Funded: big.NewInt(1_000_000_000), Total: big.NewInt(1_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+		},
+		claimed:  map[string]bool{},
+		receipts: map[string]bool{},
+		// vault2Pools is nil: no code at the v2 vault's address
+		vault2: vault2,
+	}
+	chainServer := httptest.NewServer(chain)
+	defer chainServer.Close()
+
+	settings := SnTestnetChainSettings()
+	settings.SetRpcUrls(nil)
+	settings.AddRpcUrl(chainServer.URL)
+	settings.VaultAddress = "0x2222222222222222222222222222222222222222"
+	settings.Vault2Address = "0x3333333333333333333333333333333333333333"
+	settings.CoordinatorAddress = "0x1111111111111111111111111111111111111111"
+	settings.NoId = "3"
+	settings.ArtifactBaseUrl = "https://artifacts.example"
+	// the device's artifact store, which every read of the device shares
+	store := newSnMemoryArtifactStore()
+	read := func(txHashes map[int64]string) map[int64]*SnEpochClaim {
+		t.Helper()
+		engine, snErr := newSnClaimEngine(settings, aliceSs58, "", fetch, store, txHashes)
+		if snErr != nil {
+			t.Fatal(snErr.Message)
+		}
+		result := engine.claims(context.Background(), 0)
+		if result.Error != nil {
+			t.Fatalf("claims error: %+v", result.Error)
+		}
+		byEpoch := map[int64]*SnEpochClaim{}
+		for _, claim := range result.Claims.values {
+			byEpoch[claim.Epoch] = claim
+		}
+		return byEpoch
+	}
+
+	for i := 0; i < 2; i += 1 {
+		byEpoch := read(nil)
+		if c := byEpoch[4]; c != nil {
+			t.Fatalf("read %d: epoch 4, whose artifact hash answers 404, is listed: %+v", i, c)
+		}
+		if c := byEpoch[5]; c == nil || c.Status != SnClaimStatusOpen || !strings.HasPrefix(c.Message, SnErrorCodeArtifactUnavailable+": ") {
+			t.Fatalf("read %d: epoch 5, whose artifact read fails, is not open: %+v", i, c)
+		}
+		// the switch is unknown, so the current epoch still lists as v1
+		if c := byEpoch[6]; c == nil || c.Status != SnClaimStatusOpen {
+			t.Fatalf("read %d: epoch 6: %+v", i, c)
+		}
+	}
+	if n := requests[lostHex]; n != 1 {
+		t.Fatalf("asked for the hash that answered 404 %d times in two reads, want once", n)
+	}
+	if n := requests[busyHex]; n != 2 {
+		t.Fatalf("asked for the hash that answered 502 %d times in two reads, want each read", n)
+	}
+
+	byEpoch := read(map[int64]string{4: "0x" + strings.Repeat("ab", 32)})
+	if c := byEpoch[4]; c == nil || c.Status != SnClaimStatusNotFinalized || c.Message != "no payout list is published for this epoch" {
+		t.Fatalf("epoch 4 with a claim sent from this device: %+v", c)
+	}
+	if n := requests[lostHex]; n != 1 {
+		t.Fatalf("asked for the hash that answered 404 %d times in three reads, want once", n)
+	}
+}
+
+// The 404 the claim engine takes as final, from each transport that reads an
+// artifact: snHttpGet's own answer (hosts without a DeviceLocal, the web),
+// the api transport's connect.HttpStatusError, and that error carried from
+// the extension to the app over the device rpc. Other statuses, and an
+// untyped message, as a device process that predates the rpc's status fields
+// sends, are not final.
+func TestSnHttpNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/missing":
+			http.Error(w, "No payout artifact has this hash.", http.StatusNotFound)
+		case "/busy":
+			http.Error(w, "Artifact unavailable or failed integrity.", http.StatusBadGateway)
+		default:
+			w.Write([]byte("{}"))
+		}
+	}))
+	defer server.Close()
+	ctx := context.Background()
+	if _, err := snHttpGet(ctx, server.URL+"/missing", "the payout artifact"); !snHttpNotFound(err) || err.Error() != "http 404 fetching the payout artifact" {
+		t.Fatalf("404: %v", err)
+	}
+	if _, err := snHttpGet(ctx, server.URL+"/busy", "the payout artifact"); err == nil || snHttpNotFound(err) || err.Error() != "http 502 fetching the payout artifact" {
+		t.Fatalf("502: %v", err)
+	}
+	if raw, err := snHttpGet(ctx, server.URL+"/", "the payout artifact"); err != nil || string(raw) != "{}" {
+		t.Fatalf("200: %q, %v", raw, err)
+	}
+
+	notFound := &connect.HttpStatusError{StatusCode: http.StatusNotFound, Status: "404 Not Found", Body: []byte("No payout artifact has this hash.")}
+	for _, err := range []error{
+		notFound,
+		fmt.Errorf("fetch: %w", notFound),
+		errors.Join(notFound, errors.New("a credential write failed")),
+		newDeviceRemoteHttpResponse(connect.NewId(), nil, notFound).toError(),
+	} {
+		if !snHttpNotFound(err) {
+			t.Errorf("%v is not a final 404", err)
+		}
+	}
+	for _, err := range []error{
+		nil,
+		errors.New("404 Not Found: No payout artifact has this hash."),
+		&connect.HttpStatusError{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway"},
+		newDeviceRemoteHttpResponse(connect.NewId(), nil, errors.New("rpc service is down")).toError(),
+	} {
+		if snHttpNotFound(err) {
+			t.Errorf("%v is taken as a final 404", err)
+		}
 	}
 }
 

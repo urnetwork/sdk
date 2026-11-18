@@ -10,14 +10,16 @@ import (
 
 // The STSettlementVault2 calls a settlement v2 claim makes (the sn
 // repository's evm/src/interfaces/ISTSettlementVault2.sol), its Claimed
-// event, and the staking precompile transfer the vault pays with. Pinned by
-// test to the selectors of the vault's ABI.
+// event, the staking precompile transfer the vault pays with, and the pool
+// read that dates a pool's switch from v1. Pinned by test to the selectors of
+// the vault's ABI.
 var (
 	ledgerClaimSelector   = selector("claim(uint256,uint256,(uint256,bytes32,uint256),(bytes32,uint256)[])")
 	ledgerRootsSelector   = selector("roots(uint256,uint256)")
 	ledgerClaimedSelector = selector("claimed(uint256,uint256)")
 	escrowHotkeySelector  = selector("escrowHotkey()")
 	transferStakeSelector = selector("transferStake(bytes32,bytes32,uint256,uint256,uint256)")
+	vault2PoolsSelector   = selector("pools(uint256)")
 )
 
 // LedgerClaimedTopic is topic 0 of STSettlementVault2's Claimed(noId,
@@ -82,6 +84,41 @@ func packTwoUint64s(sel [4]byte, a, b uint64) []byte {
 // PackEscrowHotkey encodes STSettlementVault2.escrowHotkey().
 func PackEscrowHotkey() []byte {
 	return append([]byte(nil), escrowHotkeySelector[:]...)
+}
+
+// Encodes STSettlementVault2.pools(noId).
+func PackVault2Pools(noId uint64) []byte {
+	n := uint64Word(noId)
+	out := make([]byte, 0, 4+32)
+	out = append(out, vault2PoolsSelector[:]...)
+	return append(out, n[:]...)
+}
+
+// Mirrors ISTSettlementVault2.Pool. The pool settles in vault2 from its first
+// epoch, which its registration sets once; an unregistered pool has a zero
+// first epoch.
+type Vault2Pool struct {
+	Hotkey     [32]byte
+	FirstEpoch uint64
+	Registered bool
+}
+
+// Decodes the static Pool tuple pools() returns.
+func DecodeVault2Pool(ret []byte) (*Vault2Pool, error) {
+	if len(ret) < 3*32 {
+		return nil, fmt.Errorf("pools return too short: %d bytes", len(ret))
+	}
+	firstEpoch := new(big.Int).SetBytes(ret[32:64])
+	if !firstEpoch.IsUint64() {
+		return nil, errors.New("pool first epoch overflows uint64")
+	}
+	registered := new(big.Int).SetBytes(ret[64:96])
+	if 1 < registered.BitLen() {
+		return nil, errors.New("pool registered is not a bool")
+	}
+	pool := &Vault2Pool{FirstEpoch: firstEpoch.Uint64(), Registered: registered.Sign() != 0}
+	copy(pool.Hotkey[:], ret[0:32])
+	return pool, nil
 }
 
 // PackTransferStake encodes the staking precompile's
