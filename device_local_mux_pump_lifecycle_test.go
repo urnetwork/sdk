@@ -1,6 +1,6 @@
 // Actual SDK destination ownership includes the shared internal TUN pump.
-// The stalled work is a borrowed real TCP/53 SYNACK callback. Explicit gates
-// retain scalar receipts; the pump completion primitive has an SDK owner.
+// A gate holds a real TCP/53 SYNACK callback while the owner joins. The test
+// also follows the exact packet roots through local claim and DNS reply.
 package sdk
 
 import (
@@ -20,8 +20,8 @@ import (
 
 const muxPumpLifecycleWatchdog = 5 * time.Second
 
-// Gates retain scalar receipts only. Packet bytes stay borrowed on the actual
-// pump callback stack until release; every pump saved here has a real owner.
+// Packet bytes stay borrowed on the pump callback stack until release.
+// Every pump saved here has a real owner.
 type muxPumpLifecycleFixture struct {
 	device                *DeviceLocal
 	muxes                 []*connect.UpgradeMux
@@ -35,31 +35,40 @@ type muxPumpLifecycleFixture struct {
 	callbackActive        atomic.Bool
 	callbackCount         atomic.Int64
 	ownerDone             []<-chan struct{}
-	baselineRoots         uint64
-	baselineBytes         connect.ByteCount
 }
 
 // Only candidate enumeration is empty. The actual DeviceLocal constructor,
 // selected mux, internal gVisor TCP server and downstream callback all run.
 func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLifecycleFixture {
 	t.Helper()
-	for _, size := range []int{60, 256, 2048} {
-		connect.MessagePoolReturn(connect.MessagePoolGet(size))
-	}
 	f := &muxPumpLifecycleFixture{
 		entered:               make(chan bool, 1),
 		replacementReply:      make(chan bool, 1),
 		callbackCloseReturned: make(chan struct{}),
 		release:               make(chan struct{}),
 		callbackExited:        make(chan struct{}),
-		baselineRoots:         connect.MessagePoolOutstandingCount(),
-		baselineBytes:         connect.MessagePoolOutstandingByteCount(),
 	}
 	previousViolation := connect.SetMessagePoolViolationHandler(func(err error, _ []byte) {
 		t.Errorf("mux pump lifecycle pool custody: %v", err)
 	})
 	t.Cleanup(func() { connect.SetMessagePoolViolationHandler(previousViolation) })
 	var unsubscribe func()
+	var witnessLock sync.Mutex
+	var replyWitnesses [][]byte
+	witnessesClosed := false
+	witnessReply := func(packet []byte) bool {
+		pooled, shared := connect.MessagePoolCheck(packet)
+		if !pooled || shared || connect.MessagePoolRootByteCount(packet) == 0 {
+			return false
+		}
+		witnessLock.Lock()
+		defer witnessLock.Unlock()
+		if witnessesClosed {
+			return false
+		}
+		replyWitnesses = append(replyWitnesses, connect.MessagePoolShareReadOnly(packet))
+		return true
+	}
 	f.device = testingDnsOwnerDevice(t)
 	t.Cleanup(func() {
 		f.unpark()
@@ -88,8 +97,16 @@ func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLi
 		}
 		// This fixture also owns its independent API/local-state lifetime.
 		f.device.networkSpace.close()
-		if roots, bytes := connect.MessagePoolOutstandingCount(), connect.MessagePoolOutstandingByteCount(); roots != f.baselineRoots || bytes != f.baselineBytes {
-			t.Errorf("mux pump lifecycle pool imbalance after explicit pump and SDK joins: roots=%d/%d bytes=%d/%d", roots, f.baselineRoots, bytes, f.baselineBytes)
+		witnesses := func() [][]byte {
+			witnessLock.Lock()
+			defer witnessLock.Unlock()
+			witnessesClosed = true
+			return replyWitnesses
+		}()
+		for _, witness := range witnesses {
+			if !connect.MessagePoolReturn(witness) {
+				t.Error("mux pump retained the observed DNS reply after explicit pump and SDK joins")
+			}
 		}
 	})
 	settings := testingDnsOwnerSettings()
@@ -105,6 +122,7 @@ func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLi
 	if selected == nil || !f.device.GetTunnelDnsInterceptorActive() {
 		t.Fatal("mux pump lifecycle premise: no actual selected DNS mux")
 	}
+	var replacementEntered atomic.Bool
 	unsubscribe = f.device.AddReceivePacketCallback(func(_ connect.TransferPath, _ protocol.ProvideMode, _ *connect.IpPath, packet []byte) {
 		path, _, err := connect.ParseIpPathWithPayload(packet)
 		if err != nil || path.Protocol != connect.IpProtocolTcp || !path.DestinationIp.Equal(net.IPv4(192, 0, 2, 20)) {
@@ -112,9 +130,8 @@ func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLi
 		}
 		valid := path.SourceIp.Equal(net.IPv4(198, 51, 100, 53)) && path.SourcePort == 53 && path.Syn && path.Ack && !path.Rst && path.AckSequenceNumber == 7001
 		if path.DestinationPort == 47054 {
-			select {
-			case f.replacementReply <- valid:
-			default:
+			if replacementEntered.CompareAndSwap(false, true) {
+				f.replacementReply <- valid && witnessReply(packet)
 			}
 			return
 		}
@@ -125,9 +142,8 @@ func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLi
 		if !f.enteredOnce.CompareAndSwap(false, true) {
 			return
 		}
-		pooled, shared := connect.MessagePoolCheck(packet)
 		f.callbackActive.Store(true)
-		f.entered <- valid && pooled && !shared && 0 < connect.MessagePoolRootByteCount(packet)
+		f.entered <- valid && witnessReply(packet)
 		if closeFromCallback {
 			f.device.Close()
 			close(f.callbackCloseReturned)
@@ -145,7 +161,7 @@ func (self *muxPumpLifecycleFixture) unpark() {
 }
 
 // A checksum-valid SYN reaches the actual selected mux through the public SDK
-// packet entry. No host TCP connection or DNS server is substituted.
+// packet entry. A read-only share checks the input root's local claim.
 func (self *muxPumpLifecycleFixture) sendSyn(t *testing.T, port uint16) {
 	t.Helper()
 	ip := &layers.IPv4{Version: 4, TTL: 64, SrcIP: net.IPv4(192, 0, 2, 20), DstIP: net.IPv4(198, 51, 100, 53), Protocol: layers.IPProtocolTCP}
@@ -157,9 +173,15 @@ func (self *muxPumpLifecycleFixture) sendSyn(t *testing.T, port uint16) {
 	if err := gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, ip, tcp); err != nil {
 		t.Fatal("mux pump lifecycle premise: could not construct SYN")
 	}
-	packet := buffer.Bytes()
-	if !self.device.SendPacket(packet, int32(len(packet))) {
+	packet := connect.MessagePoolCopy(buffer.Bytes())
+	witness := connect.MessagePoolShareReadOnly(packet)
+	if !self.device.SendPacketNoCopy(packet, int32(len(packet))) {
+		connect.MessagePoolReturn(packet)
+		connect.MessagePoolReturn(witness)
 		t.Fatal("mux pump lifecycle premise: actual selected mux refused DNS SYN")
+	}
+	if !connect.MessagePoolReturn(witness) {
+		t.Fatal("mux pump retained the locally claimed DNS SYN")
 	}
 }
 
@@ -255,7 +277,20 @@ func (self *muxPumpLifecycleFixture) requireJoined(t *testing.T) {
 
 // Current selection must be admitted before Close's lifecycle Wait starts.
 func TestDeviceLocalCloseAndWaitJoinsCurrentMuxPump(t *testing.T) {
+	// A separate owner can return pooled roots during this device's lifetime.
+	// Keep that ordering explicit so the check cannot depend on another test.
+	otherPackets := [][]byte{connect.MessagePoolGet(2048), connect.MessagePoolGet(256), connect.MessagePoolGet(256)}
+	returnOtherPackets := func() {
+		for i, packet := range otherPackets {
+			if packet != nil {
+				connect.MessagePoolReturn(packet)
+				otherPackets[i] = nil
+			}
+		}
+	}
+	t.Cleanup(returnOtherPackets)
 	f := newMuxPumpLifecycleFixture(t, false)
+	returnOtherPackets()
 	f.holdReply(t)
 	f.closeWithoutJoining(t)
 	f.requireSdkOwnsHeldPump(t, f.muxes[0], "DEVICE_CLOSE_JOIN_OMITTED_CURRENT_MUX_PUMP")
