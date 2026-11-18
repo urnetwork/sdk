@@ -142,9 +142,11 @@ func TestDeviceLocalHostedSetLogVerbosityIsIgnored(t *testing.T) {
 // level in the DEVICE's file, so finding one there means the rpc carried it.
 //
 // The remote is returned already synced. Both are closed via t.Cleanup.
+// A beforeSyncWait callback can observe the automatic startup.
 func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 	t *testing.T,
 	ctx context.Context,
+	beforeSyncWait ...func(*DeviceRemote),
 ) (deviceLocal *DeviceLocal, deviceRemote *DeviceRemote, localSpaceState *LocalState, remoteSpaceState *LocalState) {
 	t.Helper()
 
@@ -201,7 +203,10 @@ func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 		deviceLocal.Close()
 	})
 
-	deviceRemote.Sync()
+	for _, observe := range beforeSyncWait {
+		observe(deviceRemote)
+	}
+	// The already-listening device is reached by the remote's startup dial.
 	if !deviceRemote.waitForSync(15 * time.Second) {
 		t.Fatal("device remote did not sync")
 	}
@@ -245,7 +250,20 @@ func TestDeviceRemoteSetLogVerbosityCrossesToTheDeviceProcess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	deviceLocal, deviceRemote, localSpaceState, _ := testing_newSyncedDeviceLocalRemoteSeparateSpaces(t, ctx)
+	var startupReconnect <-chan struct{}
+	deviceLocal, deviceRemote, localSpaceState, _ := testing_newSyncedDeviceLocalRemoteSeparateSpaces(t, ctx, func(remote *DeviceRemote) {
+		if !remote.waitForSync(15*time.Second) || remote.getService() == nil {
+			t.Fatal("automatic startup did not publish a forward RPC service")
+		}
+		startupReconnect = remote.reconnectMonitor.NotifyChannel()
+	})
+	// Sync closes the first generation's notification synchronously. Check
+	// it before testing the live write and the device's independent storage.
+	select {
+	case <-startupReconnect:
+		t.Fatal("separate-spaces fixture requested another sync after publishing its first RPC service")
+	default:
+	}
 
 	if err := setLogVerbosityFlag(LogVerbosityDefault); err != nil {
 		t.Fatalf("setLogVerbosityFlag: %v", err)
