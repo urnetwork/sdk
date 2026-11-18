@@ -163,6 +163,17 @@ var apiAdminRoutePatterns = func() []apiAdminRoutePattern {
 	return patterns
 }()
 
+// apiSessionRenewingRoutes carry the network credential when the API holds
+// one, and no credential otherwise: never the device's client token. The
+// server signs a session in for each, and reads an optional bearer to renew
+// that sign-in's session instead (2026-11-18): an add-sign-in's verify sent
+// with the sign-in renews it, where one sent with none minted a session that
+// nothing used, counted against the account's cap. A sign-in's own verify
+// (signed out) sends none, and gets a session of its own.
+var apiSessionRenewingRoutes = map[string]bool{
+	"POST /auth/verify": true,
+}
+
 func apiRouteAccessFor(method string, path string) apiRouteAccess {
 	if access, ok := apiAdminRouteAccess[method+" "+path]; ok {
 		return access
@@ -331,9 +342,17 @@ func (self *Api) apiRequestPath(requestUrl string) (string, bool) {
 
 // requestByJwt is the credential a request carries. A route that administers
 // the network carries the network credential, even when the caller read the
-// device's client token; every other request carries byJwt unchanged.
+// device's client token; a session-renewing route (apiSessionRenewingRoutes)
+// carries the network credential or none; every other request carries byJwt
+// unchanged.
 func (self *Api) requestByJwt(method string, requestUrl string, byJwt string) (string, error) {
 	path, ok := self.apiRequestPath(requestUrl)
+	if ok && apiSessionRenewingRoutes[method+" "+path] {
+		if isNetworkCredential(byJwt) {
+			return byJwt, nil
+		}
+		return self.networkCredential(), nil
+	}
 	if !ok || apiRouteAccessFor(method, path) == apiRouteAccessClient {
 		return byJwt, nil
 	}

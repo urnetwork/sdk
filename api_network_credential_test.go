@@ -31,6 +31,9 @@ const (
 	sendsNone
 	// the credential the caller passed (credentialTestExplicitByJwt)
 	sendsExplicit
+	// the network credential when the API holds one, else none: never the
+	// client token (apiSessionRenewingRoutes)
+	sendsNetworkIfHeld
 )
 
 const (
@@ -104,7 +107,7 @@ func apiCredentialCases() []apiCredentialCase {
 			_, err := api.AuthLoginWithPasswordSyncWithContext(ctx, &AuthLoginWithPasswordArgs{})
 			return err
 		}},
-		{"AuthVerify", "POST /auth/verify", "/auth/verify", sendsCurrent, func(ctx context.Context, api *Api) error {
+		{"AuthVerify", "POST /auth/verify", "/auth/verify", sendsNetworkIfHeld, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*AuthVerifyResult]) { api.AuthVerify(&AuthVerifyArgs{}, cb) })
 		}},
 		{"AuthPasswordReset", "POST /auth/password-reset", "/auth/password-reset", sendsCurrent, func(ctx context.Context, api *Api) error {
@@ -739,7 +742,7 @@ func installTestDeviceByJwt(t *testing.T, api *Api, localState *LocalState, clie
 
 func (self sentCredential) byJwt(networkJwt string, currentJwt string) string {
 	switch self {
-	case sendsNetwork:
+	case sendsNetwork, sendsNetworkIfHeld:
 		return networkJwt
 	case sendsCurrent:
 		return currentJwt
@@ -785,8 +788,11 @@ func TestEveryApiCallSendsTheCredentialItsRouteNeeds(t *testing.T) {
 			if admin && request.byJwt == clientJwt {
 				t.Fatal("an admin route carried the client token")
 			}
-			if !admin && request.byJwt == networkJwt {
+			if !admin && c.sends != sendsNetworkIfHeld && request.byJwt == networkJwt {
 				t.Fatal("a client route carried the network credential")
+			}
+			if c.sends == sendsNetworkIfHeld && request.byJwt == clientJwt {
+				t.Fatal("a session-renewing route carried the client token")
 			}
 			if extra, ok := takeRecordedRequest(t, requests); ok {
 				t.Fatalf("unexpected extra request %+v", extra)
@@ -886,4 +892,51 @@ func TestApiKeyIsKeptAsTheNetworkCredential(t *testing.T) {
 		t.Fatal("no request was sent")
 	}
 	connect.AssertEqual(t, request.byJwt, apiKey)
+}
+
+// An add-sign-in's verify (POST /auth/verify) renews the sign-in's session
+// when it carries the sign-in: the server reads the optional bearer
+// (2026-11-18), where one sent with the device's client token, or none, had a
+// session signed in that nothing used, counted against the account's cap. So
+// the verify carries the network credential the API holds, and otherwise
+// none: never a client token, which is not the account's sign-in. A sign-in's
+// own verify, signed out, carries nothing.
+func TestAuthVerifyCarriesTheSignInItRenewsNeverAClientToken(t *testing.T) {
+	verify := func(api *Api) error {
+		return awaitApiCall(func(cb connect.ApiCallback[*AuthVerifyResult]) {
+			api.AuthVerify(&AuthVerifyArgs{UserAuth: "person@example.com", VerifyCode: "123456"}, cb)
+		})
+	}
+	networkJwt := credentialTestNetworkJwt(t, credentialTestNetworkId)
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+
+	for _, c := range []struct {
+		name  string
+		setup func(api *Api)
+		want  string
+	}{
+		{"a device with the account's sign-in", func(api *Api) {
+			api.SetByJwt(networkJwt)
+			installTestDeviceByJwt(t, api, nil, clientJwt, nil)
+		}, networkJwt},
+		{"the account's sign-in alone", func(api *Api) { api.SetByJwt(networkJwt) }, networkJwt},
+		{"a device without the account's sign-in", func(api *Api) {
+			installTestDeviceByJwt(t, api, nil, clientJwt, nil)
+		}, ""},
+		{"signed out", func(api *Api) {}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, api, requests := newCredentialRecordingApi(t)
+			c.setup(api)
+			if err := verify(api); err != nil {
+				t.Fatal(err)
+			}
+			request, ok := takeRecordedRequest(t, requests)
+			if !ok {
+				t.Fatal("no request was sent")
+			}
+			connect.AssertEqual(t, request.path, "/auth/verify")
+			connect.AssertEqual(t, request.byJwt, c.want)
+		})
+	}
 }
