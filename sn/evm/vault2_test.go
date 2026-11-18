@@ -162,6 +162,52 @@ func TestDecodeLedgerRoot(t *testing.T) {
 	}
 }
 
+// The pool read that dates a pool's switch from v1: pools(noId) as cast
+// encodes it (cast sig "pools(uint256)" is 0xac4afa38), the static
+// (hotkey, firstEpoch, registered) tuple it returns, and the returns it
+// refuses.
+func TestVault2Pools(t *testing.T) {
+	if got := hex.EncodeToString(vault2PoolsSelector[:]); got != "ac4afa38" {
+		t.Fatalf("pools selector %s", got)
+	}
+	if got := hex.EncodeToString(PackVault2Pools(1)); got != "ac4afa38"+hex.EncodeToString(word(1)) {
+		t.Fatalf("pools calldata %s", got)
+	}
+	hotkey := mustHexBytes(t, strings.Repeat("cd", 32))
+	var ret []byte
+	ret = append(ret, hotkey...)
+	ret = append(ret, word(4)...)
+	ret = append(ret, word(1)...)
+	pool, err := DecodeVault2Pool(ret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.Hotkey != [32]byte(hotkey) || pool.FirstEpoch != 4 || !pool.Registered {
+		t.Fatalf("pool %+v", pool)
+	}
+	unregistered := append(append(make([]byte, 0, 3*32), make([]byte, 32)...), append(word(0), word(0)...)...)
+	pool, err = DecodeVault2Pool(unregistered)
+	if err != nil || pool.Registered || pool.FirstEpoch != 0 {
+		t.Fatalf("unregistered pool %+v, %v", pool, err)
+	}
+	if _, err := DecodeVault2Pool(ret[:2*32]); err == nil || !strings.Contains(err.Error(), "too short") {
+		t.Fatalf("short return: %v", err)
+	}
+	if _, err := DecodeVault2Pool(nil); err == nil {
+		t.Fatal("the empty return of an address without code decoded")
+	}
+	wide := append([]byte(nil), ret...)
+	wide[32] = 1
+	if _, err := DecodeVault2Pool(wide); err == nil || !strings.Contains(err.Error(), "overflows uint64") {
+		t.Fatalf("wide first epoch: %v", err)
+	}
+	notBool := append([]byte(nil), ret...)
+	notBool[95] = 2
+	if _, err := DecodeVault2Pool(notBool); err == nil || !strings.Contains(err.Error(), "not a bool") {
+		t.Fatalf("registered 2: %v", err)
+	}
+}
+
 func testClaimedLog(t *testing.T) *Log {
 	t.Helper()
 	caller := [20]byte(mustHexBytes(t, strings.Repeat("44", 20)))
