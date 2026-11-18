@@ -466,32 +466,15 @@ func TestSidecarSearchMapsTheCoresTypes(t *testing.T) {
 	}
 }
 
-// The index files the ios_extension leg compiles on sidecar at 85eac4d7, through the subprotocol's search RPC and the
-// search cache's file class (question sdk-m10-01-ios-leg-links-index-code). §22.5's §18 row allows none; until the
-// question's split lands, the check below fails on any index file beyond these, and logs these as pending.
-var iosExtensionIndexFilesPending = map[string]bool{
-	"evs_index_dictionary.go":   true,
-	"evs_index_entry.go":        true,
-	"evs_index_keyset.go":       true,
-	"evs_index_lone.go":         true,
-	"evs_index_normalize.go":    true,
-	"evs_index_pad.go":          true,
-	"evs_index_postings.go":     true,
-	"evs_index_row.go":          true,
-	"evs_index_settings.go":     true,
-	"evs_index_shard.go":        true,
-	"evs_index_shard_reader.go": true,
-	"evs_index_slot.go":         true,
-	"evs_index_tombstones.go":   true,
-	"evs_index_trigram.go":      true,
-	"evs_index_vbyte.go":        true,
-	"protocol/evsindex.pb.go":   true,
-	"protocol/search.pb.go":     true,
-}
+// The index files the ios_extension leg may compile: none (§22.5's §18 row; QD-988, question
+// sdk-m10-01-ios-leg-links-index-code). sidecar took the subprotocol's search RPC behind a leg file
+// (rpc_search_leg.go) and the search cache's file class out of the cache, so the seventeen files that stood here
+// while the leg still compiled them are gone. It stays a set so that a file allowed again is a line a diff shows.
+var iosExtensionIndexFilesAllowed = map[string]bool{}
 
 // The extension's leg links no index code (§22.5's §18 row): of the sidecar module, no root evs_index_ or search_ file
 // and neither of protocol's evsindex and search descriptors, while the app's leg links them. The sdk's own search files
-// carry !ios_extension; the root's files the leg compiles today are held to the pending set above.
+// carry !ios_extension.
 func TestIosExtensionLinksNoIndexCode(t *testing.T) {
 	moduleDirectory, err := os.Getwd()
 	if err != nil {
@@ -513,20 +496,20 @@ func TestIosExtensionLinksNoIndexCode(t *testing.T) {
 		}
 		return found
 	}
-	pending := []string{}
 	for _, name := range compiledIndexFiles("sdk_mobile_bind,ios_extension") {
-		if iosExtensionIndexFilesPending[name] {
-			pending = append(pending, name)
-			continue
+		if !iosExtensionIndexFilesAllowed[name] {
+			t.Errorf("the ios_extension leg compiles index code: %s", name)
 		}
-		t.Errorf("the ios_extension leg compiles index code beyond the pending set: %s", name)
-	}
-	if 0 < len(pending) {
-		t.Logf("the ios_extension leg still compiles %d index files, pending question sdk-m10-01-ios-leg-links-index-code: %v", len(pending), pending)
 	}
 	appFiles := compiledIndexFiles("sdk_mobile_bind")
 	if !slices.ContainsFunc(appFiles, func(name string) bool { return strings.HasPrefix(filepath.Base(name), "search_") }) {
 		t.Fatalf("CONTROL FAILED: the app's leg compiles no search_ file, so the scan saw nothing: %v", appFiles)
+	}
+	// the scan reads the names the leg once compiled, so a leg compiling one again is seen
+	for _, name := range []string{"evs_index_row.go", "protocol/evsindex.pb.go", "protocol/search.pb.go"} {
+		if !slices.Contains(appFiles, name) {
+			t.Fatalf("CONTROL FAILED: the app's leg compiles no %s, so the scan would not see it on the extension's: %v", name, appFiles)
+		}
 	}
 	// the sdk's own search files never build on the leg
 	for _, file := range []string{"sidecar_search.go", "sidecar_search_types.go", "sidecar_search_remote.go", "sidecar_search_host.go", "sidecar_search_conditions.go"} {
