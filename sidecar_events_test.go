@@ -4,7 +4,8 @@ package sdk
 
 // §18.5's events: every kind the core declares maps to a bound event carrying each field the core's carries, an
 // older generation's event is dropped, a listener's panic costs only its own call, a full queue drops and counts
-// without waiting, and a core event reaches an app listener through a real local Sidecar.
+// without waiting, a core event reaches an app listener through a real local Sidecar, and the push's rollback
+// head_alarm reaches one with its kind and both TopicVersions.
 
 import (
 	"bytes"
@@ -22,7 +23,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/urnetwork/sidecar"
+	"github.com/urnetwork/sidecar/protocol"
 )
 
 // Every SidecarEventKind constant the sidecar module's root declares, by its value, read from the source, so a kind
@@ -360,4 +364,55 @@ func TestCoreEventsReachListeners(t *testing.T) {
 	if nilSub := local.AddEventListener(nil); nilSub == nil {
 		t.Error("a nil listener's Sub is nil")
 	}
+}
+
+// The core's rollback head_alarm as the push raises it (QD-928, owner decision 300): no peer, and as Evidence team's
+// TopicVersion held at 10, then the one offered at 6, as protobuf bytes.
+func testRollbackCoreEvent(t *testing.T) sidecar.SidecarEvent {
+	t.Helper()
+	held, err := proto.Marshal(&protocol.TopicVersion{Topic: sidecar.PushTopicTeam, Version: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered, err := proto.Marshal(&protocol.TopicVersion{Topic: sidecar.PushTopicTeam, Version: 6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sidecar.SidecarEvent{
+		Kind:       sidecar.SidecarEventHeadAlarm,
+		Generation: 1,
+		HeadAlarm:  sidecar.SidecarHeadAlarmRollback,
+		Evidence:   [2][]byte{held, offered},
+	}
+}
+
+// Fails unless event is testRollbackCoreEvent's as an app sees it: head_alarm rollback, not fork, with no peer, and
+// the held and offered TopicVersions in that order.
+func testCheckRollbackEvent(t *testing.T, event *SidecarEvent) {
+	t.Helper()
+	if event.Kind != "head_alarm" || event.HeadAlarm != "rollback" || event.SidecarId != nil {
+		t.Fatalf("the rollback as an app sees it: %+v", event)
+	}
+	held := &protocol.TopicVersion{}
+	offered := &protocol.TopicVersion{}
+	if err := proto.Unmarshal(event.FirstEvidence, held); err != nil {
+		t.Fatal(err)
+	}
+	if err := proto.Unmarshal(event.SecondEvidence, offered); err != nil {
+		t.Fatal(err)
+	}
+	if held.Topic != sidecar.PushTopicTeam || held.Version != 10 || offered.Topic != sidecar.PushTopicTeam || offered.Version != 6 {
+		t.Errorf("the rollback's evidence: held %v, offered %v", held, offered)
+	}
+}
+
+// The local backend's relay passes the push's rollback head_alarm to an app listener as the core raised it: its kind
+// and both TopicVersions, the held one first.
+func TestRollbackHeadAlarmReachesTheListener(t *testing.T) {
+	dispatch := newSidecarEventDispatch(t.Context(), defaultSidecarEventSettings())
+	defer dispatch.close()
+	listener := newTestRecordingListener()
+	dispatch.addListener(listener)
+	dispatch.offer(testRollbackCoreEvent(t))
+	testCheckRollbackEvent(t, listener.awaitKind(t, string(sidecar.SidecarEventHeadAlarm)))
 }
