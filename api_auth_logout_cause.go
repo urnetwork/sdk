@@ -132,12 +132,23 @@ func (self *Api) trustedRejectionCauseWithLock(rejectedByJwt string, cause strin
 	if cause != AuthLogoutCauseSessionRevoked {
 		return ""
 	}
-	if self.selfRevokedSessionId != nil {
-		if sessionId := credentialSessionId(rejectedByJwt); sessionId != nil && *sessionId == *self.selfRevokedSessionId {
-			return ""
-		}
+	if self.selfRevokedWithLock(rejectedByJwt) {
+		return ""
 	}
 	return cause
+}
+
+// Whether rejectedByJwt carries the session this API asked the server to
+// revoke itself (noteSelfRevocation). Its rejection is that sign-out,
+// whichever answer comes first: a rejection of another request can land after
+// the server enforced the revoke and before the revoke's own answer. Callers
+// hold mutex.
+func (self *Api) selfRevokedWithLock(rejectedByJwt string) bool {
+	if self.selfRevokedSessionId == nil {
+		return false
+	}
+	sessionId := credentialSessionId(rejectedByJwt)
+	return sessionId != nil && *sessionId == *self.selfRevokedSessionId
 }
 
 // The cause a confirmed rejection of the sent credential carries, for a caller

@@ -111,6 +111,9 @@ func (self *Api) endNetworkCredential(target networkRenewalTarget, cause string,
 		self.authMutationLock.Unlock()
 		return false
 	}
+	// this app's own sign-out ends the whole sign-in, also when the rejection
+	// of another request comes before the revoke's answer
+	signOut = signOut || self.selfRevokedWithLock(target.byJwt)
 	logout := signOut || self.byJwt == target.byJwt || self.byJwt == "" || sameTaggedSession(self.byJwt, target.byJwt)
 	deviceOwned := self.deviceAuthOwner != nil
 	self.mutex.Unlock()

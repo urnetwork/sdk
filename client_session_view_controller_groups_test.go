@@ -546,3 +546,65 @@ func TestAccountSignInRequiredCarriesTheTrustedCause(t *testing.T) {
 		api.Close()
 	}
 }
+
+// This app's own sign-out from the Sessions screen, when the rejection of
+// another request lands after the server enforced the revoke and before the
+// revoke's answer (session1118 Windows report): the sdk took that rejection
+// for another device's (AccountSignInRequired, no cause), the app showed its
+// notice instead of signing out, and the revoke's answer then found no
+// credential to end. The rejection of the session this API asked to revoke is
+// now that sign-out, whichever comes first.
+func TestClientSessionSelfSignOutRacingARejectionSignsTheAppOut(t *testing.T) {
+	currentSessionId := newId(connect.NewId())
+	endpoint := newClientSessionIdempotentTestEndpoint(currentSessionId, "revoked", "enforced")
+	api := newApi(t.Context(), nil, "https://api.example")
+	defer api.Close()
+	api.SetByJwt(taggedSessionTestJwt(t, currentSessionId.String(), ""))
+	client := taggedSessionTestJwt(t, "another-session", credentialTestClientId)
+	func() {
+		api.authMutationLock.Lock()
+		defer api.authMutationLock.Unlock()
+		api.mutex.Lock()
+		defer api.mutex.Unlock()
+		api.byJwt = client
+	}()
+	var enforced atomic.Bool
+	api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		if enforced.Load() {
+			return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(`{"error":"Not authorized."}`)}
+		}
+		return endpoint.get(ctx, requestUrl, byJwt)
+	})
+	api.setHttpPostRaw(func(ctx context.Context, requestUrl string, body []byte, _ string) ([]byte, error) {
+		if !strings.HasSuffix(requestUrl, "/network/revoke-session") {
+			return nil, fmt.Errorf("unexpected synthetic endpoint URL: %s", requestUrl)
+		}
+		var args RevokeNetworkSessionArgs
+		if err := json.Unmarshal(body, &args); err != nil {
+			return nil, err
+		}
+		// the server enforced the revoke; another request's rejection lands
+		// before this answer does
+		enforced.Store(true)
+		if _, err := api.networkSessions(ctx); err == nil {
+			return nil, errors.New("the revoked credential was accepted")
+		}
+		return json.Marshal(&SessionOperationResult{OperationId: args.OperationId, SessionId: args.SessionId, Status: "revoked", State: "enforced"})
+	})
+	var logouts, accountSignIns atomic.Int32
+	api.AddAuthLogoutListener(authLogoutListenerFunc(func() { logouts.Add(1) }))
+	api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { accountSignIns.Add(1) }))
+	vc := NewClientSessionViewControllerWithApi(t.Context(), api)
+	defer vc.Close()
+	completed := make(chan struct{}, 1)
+	vc.testingAfterAction = func() { completed <- struct{}{} }
+	vc.refresh()
+	vc.RevokeSession(currentSessionId)
+	awaitClientSessionOperationTestSignal(t, completed)
+	if logouts.Load() != 1 || accountSignIns.Load() != 0 {
+		t.Fatalf("%d logouts, %d account sign-in notices; want the app signed out once", logouts.Load(), accountSignIns.Load())
+	}
+	if api.GetByJwt() != "" || api.HasNetworkCredential() || api.GetAuthLogoutCause() != "" {
+		t.Fatal("the app kept a credential, or a cause, after signing its own session out")
+	}
+}
