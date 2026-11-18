@@ -87,11 +87,13 @@ type messagingBoundaryLeg struct {
 // Android rows carry the bind's tags alone.
 //
 // gomobile runs each macOS slice in two configurations, and the bind fails if either does (QD-997):
-// its binding step type-checks the package with GOOS=ios and the bind's tags plus macos, and its
-// archive compiles with GOOS=darwin and the bind's tags alone, a command-line -tags replacing the
-// -tags=macos gomobile sets in GOFLAGS. A row's name says which it models. The macOS rows here are the
-// compile's; the binding step's take rows of their own beside them, and until then sdk's
-// TestSdkCompilesForEveryBoundTarget compiles that configuration, cgo off.
+// its binding step, gobind's type-check of the package and its dependencies, runs with GOOS=ios and
+// the bind's tags plus macos, and its archive compiles with GOOS=darwin and the bind's tags alone, a
+// command-line -tags replacing the -tags=macos gomobile sets in GOFLAGS. So each macOS slice has a
+// row for each, named for the step it models, " binding step" or " compile", in the order gomobile
+// runs them. Desktop files select on macos as well as on GOOS (QD-991), so both steps select the
+// desktop's remote dial and the root's daemon client (TestEveryGomobileSliceSelectsTheRemoteDialItsPlatformRuns),
+// and both compile (TestEveryMacosRowCompilesTheSdk).
 //
 // TestTheMessagingBoundaryLegsListEveryBoundTarget holds the rows to the binds both ways.
 var messagingBoundaryLegs = []messagingBoundaryLeg{
@@ -108,11 +110,15 @@ var messagingBoundaryLegs = []messagingBoundaryLeg{
 	{name: "gomobile android/amd64", moduleDirectory: ".", environment: []string{"GOOS=android", "GOARCH=amd64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile ios/arm64", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile iossimulator/arm64", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: "gomobile macos/arm64 binding step", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,macos", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile macos/arm64 compile", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: "gomobile macos/amd64 binding step", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=amd64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,macos", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile macos/amd64 compile", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=amd64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile ios/arm64 extension", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension,ios", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile iossimulator/arm64 extension", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension,ios", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: "gomobile macos/arm64 extension binding step", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension,macos", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile macos/arm64 extension compile", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: "gomobile macos/amd64 extension binding step", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=amd64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension,macos", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile macos/amd64 extension compile", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=amd64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "build tools linux/amd64", moduleDirectory: "build", environment: []string{"GOOS=linux", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 }
@@ -129,12 +135,15 @@ type messagingBoundaryBindPlatform struct {
 }
 
 // Each platform the binds name, with the rows a slice of it gets, as the table builds them (see
-// messagingBoundaryLegs).
+// messagingBoundaryLegs): a macOS slice's binding step and its compile, in that order.
 var messagingBoundaryBindPlatforms = map[string][]messagingBoundaryBindPlatform{
 	"android":      {{goos: "android"}},
 	"ios":          {{goos: "ios", tags: []string{"ios"}}},
 	"iossimulator": {{goos: "ios", tags: []string{"ios"}}},
-	"macos":        {{nameSuffix: " compile", goos: "darwin"}},
+	"macos": {
+		{nameSuffix: " binding step", goos: "ios", tags: []string{"macos"}},
+		{nameSuffix: " compile", goos: "darwin"},
+	},
 }
 
 // The rows the Makefile's gomobile binds call for, each named for its target as the table names it,
@@ -753,9 +762,10 @@ func TestTheMessagingBoundaryLegsListEveryBoundTarget(t *testing.T) {
 }
 
 // The rule finds what a fixture plants: a bound target with no row, a row lacking its platform's tag, a
-// macOS compile row carrying the macos its archive compiles without, and gomobile rows no bind names, one
-// of them a macOS row whose name says no step; a table built as the binds are passes, and a bind the rows
-// cannot build is refused rather than skipped.
+// macOS binding-step row on the compile's GOOS, a macOS compile row carrying the macos its archive compiles
+// without, and gomobile rows no bind names, one of them a macOS row whose name says no step; a table built
+// as the binds are, both of the macOS slice's steps included, passes, and a bind the rows cannot build is
+// refused rather than skipped.
 func TestTheBoundTargetRuleFindsWhatAFixturePlants(t *testing.T) {
 	makefile := "build_mobile:\n" +
 		"\t\"$(RETRY)\" gomobile bind \\\n\t\t-target android/arm,ios/arm64,macos/amd64 -iosversion 16.0 \\\n" +
@@ -775,6 +785,7 @@ func TestTheBoundTargetRuleFindsWhatAFixturePlants(t *testing.T) {
 	matching := []messagingBoundaryLeg{
 		row("gomobile android/arm", "android", "arm", "sdk_mobile_bind"),
 		row("gomobile ios/arm64", "ios", "arm64", "ios,sdk_mobile_bind"),
+		row("gomobile macos/amd64 binding step", "ios", "amd64", "sdk_mobile_bind,macos"),
 		row("gomobile macos/amd64 compile", "darwin", "amd64", "sdk_mobile_bind"),
 		row("gomobile iossimulator/arm64 extension", "ios", "arm64", "sdk_mobile_bind,ios_extension,ios"),
 		{name: "root linux/amd64", moduleDirectory: ".", environment: []string{"GOOS=linux", "GOARCH=amd64"}, patterns: []string{"./..."}},
@@ -785,6 +796,7 @@ func TestTheBoundTargetRuleFindsWhatAFixturePlants(t *testing.T) {
 
 	planted := []messagingBoundaryLeg{
 		row("gomobile ios/arm64", "ios", "arm64", "sdk_mobile_bind"),
+		row("gomobile macos/amd64 binding step", "darwin", "amd64", "sdk_mobile_bind,macos"),
 		row("gomobile macos/amd64 compile", "darwin", "amd64", "sdk_mobile_bind,macos"),
 		row("gomobile macos/amd64", "darwin", "amd64", "sdk_mobile_bind"),
 		row("gomobile iossimulator/arm64 extension", "ios", "arm64", "sdk_mobile_bind,ios_extension,ios"),
@@ -794,6 +806,7 @@ func TestTheBoundTargetRuleFindsWhatAFixturePlants(t *testing.T) {
 		"build/Makefile binds a target no row is named for: \"gomobile android/arm\"",
 		"gomobile android/386 is a gomobile row for a target build/Makefile binds nowhere",
 		"gomobile ios/arm64 builds [.] in . with [CGO_ENABLED=1 GOARCH=arm64 GOOS=ios] and tags \"sdk_mobile_bind\", and its bind [.] in . with [CGO_ENABLED=1 GOARCH=arm64 GOOS=ios] and tags \"ios,sdk_mobile_bind\"",
+		"gomobile macos/amd64 binding step builds [.] in . with [CGO_ENABLED=1 GOARCH=amd64 GOOS=darwin] and tags \"macos,sdk_mobile_bind\", and its bind [.] in . with [CGO_ENABLED=1 GOARCH=amd64 GOOS=ios] and tags \"macos,sdk_mobile_bind\"",
 		"gomobile macos/amd64 compile builds [.] in . with [CGO_ENABLED=1 GOARCH=amd64 GOOS=darwin] and tags \"macos,sdk_mobile_bind\", and its bind [.] in . with [CGO_ENABLED=1 GOARCH=amd64 GOOS=darwin] and tags \"sdk_mobile_bind\"",
 		"gomobile macos/amd64 is a gomobile row for a target build/Makefile binds nowhere",
 	}
