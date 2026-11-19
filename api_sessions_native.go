@@ -23,11 +23,19 @@ func (self *SessionLastUsed) GetDeviceType() string { return self.DeviceType }
 
 func (self *SessionLastUsed) GetAppVersion() string { return self.AppVersion }
 
+func (self *SessionLastUsed) GetDistribution() string { return self.Distribution }
+
+func (self *SessionLastUsed) GetDeviceKind() string { return self.DeviceKind }
+
 func (self *NetworkSessionInfo) GetSessionId() *Id { return self.SessionId }
 
 func (self *NetworkSessionInfo) GetCurrent() bool { return self.Current }
 
 func (self *NetworkSessionInfo) GetKind() string { return self.Kind }
+
+func (self *NetworkSessionInfo) GetSessionKind() string { return self.SessionKind }
+
+func (self *NetworkSessionInfo) GetClientKind() string { return self.ClientKind }
 
 func (self *NetworkSessionInfo) GetCreateTime() *Time { return self.CreateTime }
 
@@ -54,6 +62,8 @@ func (self *NetworkSessionsResult) GetEventId() int64 { return self.EventId }
 func (self *NetworkSessionsResult) GetCurrentSessionId() *Id { return self.CurrentSessionId }
 
 func (self *NetworkSessionsResult) GetLegacyCoverage() string { return self.LegacyCoverage }
+
+func (self *NetworkSessionsResult) GetNextCursor() string { return self.NextCursor }
 
 func (self *SessionOperationResult) GetOperationId() *Id { return self.OperationId }
 

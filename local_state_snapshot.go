@@ -53,6 +53,15 @@ func (self *LocalAuthStateSnapshot) GetByClientJwt() string {
 	return self.state.ByClientJwt
 }
 
+// Whether the captured state is a device signed in on its client while its
+// account's sign-in is required: the server rejected the account's sign-in
+// and kept the device (REVOKE-FINAL §10). The device starts on its client
+// token, with no account sign-in token (GetByJwt is empty), until the next
+// sign-in or sign-out.
+func (self *LocalAuthStateSnapshot) GetAccountSignInRequired() bool {
+	return self.state.accountSignInRequired()
+}
+
 // Parses the captured admin claims without another storage read or signature
 // validation. The server remains the authority for authentication.
 func (self *LocalAuthStateSnapshot) ParseByJwt() (*ByJwt, error) {

@@ -851,6 +851,11 @@ func newNetworkSpaceWithConnectSettingsAndApiAlt(
 	networkSpace.startExtenderRelease()
 	networkSpace.startExtenderCamouflageReport()
 	networkSpace.startExtenderSeed()
+	// the account's sign-in requirement this storage kept from before a
+	// restart, reported from the space's start, device or not
+	if asyncLocalState != nil {
+		api.adoptStoredAccountSignInRequired(asyncLocalState.localState)
+	}
 	return networkSpace
 }
 

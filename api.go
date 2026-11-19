@@ -88,6 +88,13 @@ type Api struct {
 	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
 	tokenManager                    *apiTokenManager
 	networkRenewer                  *apiNetworkCredentialRenewer
+	// SignOut's budgets; tests change them before signing out
+	signOutSettings *apiSignOutSettings
+	// an account sign-in notice (AccountSignInRequired) still to be
+	// dismissed, and the LocalState that keeps it across restarts (nil keeps
+	// it in memory only); guarded by mutex
+	accountSignInNoticePending bool
+	accountSignInNoticeStore   *LocalState
 }
 
 // Delivers at most one terminal result. Marking delivery before entering the
@@ -169,6 +176,7 @@ func newApi(
 		networkSessionsListeners:        connect.NewCallbackList[NetworkSessionsChangeListener](),
 		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
+		signOutSettings:                 defaultApiSignOutSettings(),
 	}
 	// both workers read the same immutable schedule
 	refreshSettings := defaultApiTokenRefreshSettings()
@@ -489,6 +497,10 @@ func (self *Api) CloseAndWait(ctx context.Context) error {
 // ApiError represents a generic error response from the API
 // with a message field. This is used across multiple API result types.
 type ApiError struct {
+	// SessionErrorCodeLimitReached on a route that creates a session
+	// (api_session_limit.go); a route's own codes where it documents them;
+	// else empty
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -544,7 +556,8 @@ type AuthLoginResult struct {
 // `model.AuthLoginResultError`
 type AuthLoginResultError struct {
 	SuggestedUserAuth string `json:"suggested_user_auth,omitempty"`
-	// WalletAuthErrorCodeSignatureMismatch (with `ResultErrors`), else ""
+	// WalletAuthErrorCodeSignatureMismatch (with `ResultErrors`),
+	// SessionErrorCodeLimitReached (api_session_limit.go), else ""
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
@@ -570,7 +583,7 @@ func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback)
 	runAsyncApiRequest[*AuthLoginResult](callback, func(callback connect.ApiCallback[*AuthLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 			fmt.Sprintf("%s/auth/login", self.apiUrl),
 			authLogin,
 			self.GetByJwt(),
@@ -678,7 +691,7 @@ func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPassw
 	runAsyncApiRequest[*AuthLoginWithPasswordResult](callback, func(callback connect.ApiCallback[*AuthLoginWithPasswordResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 			fmt.Sprintf("%s/auth/login-with-password", self.apiUrl),
 			authLoginWithPassword,
 			self.GetByJwt(),
@@ -693,7 +706,7 @@ func (self *Api) AuthLoginWithPasswordSyncWithContext(ctx context.Context, args 
 	args = self.authLoginWithPasswordArgsWithMailLocale(args)
 	return connect.HttpPostWithRawFunction(
 		ctx,
-		self.getHttpPostRaw(),
+		sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 		fmt.Sprintf("%s/auth/login-with-password", self.apiUrl),
 		args,
 		self.GetByJwt(),
@@ -729,7 +742,7 @@ func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallb
 	runAsyncApiRequest[*AuthVerifyResult](callback, func(callback connect.ApiCallback[*AuthVerifyResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 			fmt.Sprintf("%s/auth/verify", self.apiUrl),
 			authVerify,
 			self.GetByJwt(),
@@ -908,7 +921,8 @@ type NetworkCreateResultVerification struct {
 
 type NetworkCreateResultError struct {
 	// WalletAuthErrorCodeSignatureMismatch (with `ResultErrors`, from the body
-	// of the refusal's 401), else ""
+	// of the refusal's 401), SessionErrorCodeLimitReached
+	// (api_session_limit.go), else ""
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
@@ -916,7 +930,7 @@ type NetworkCreateResultError struct {
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
 	networkCreate = self.networkCreateArgsWithMailLocale(networkCreate)
 	runAsyncApiRequest[*NetworkCreateResult](callback, func(callback connect.ApiCallback[*NetworkCreateResult]) {
-		httpPostRaw := self.getHttpPostRaw()
+		httpPostRaw := sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw())
 		if networkCreate != nil && networkCreate.ResultErrors {
 			// a coded refusal keeps its 401, with the result as the body
 			httpPostRaw = codedRefusalResult(httpPostRaw)
@@ -1047,8 +1061,12 @@ type AuthNetworkClientError struct {
 	// a unique-exit proxy (ProxyConfig.UniqueExit) has no exit IP the network
 	// does not already hold in the location; nothing was created and neither
 	// the cap nor the creation rate was spent
-	NoUniqueSupply bool   `json:"no_unique_supply,omitempty"`
-	Message        string `json:"message"`
+	NoUniqueSupply bool `json:"no_unique_supply,omitempty"`
+	// SessionErrorCodeLimitReached: the network holds its cap of active
+	// sessions and the new client's session would go over it
+	// (api_session_limit.go); else empty
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message"`
 	// What an app offers for this refusal, set by the sdk from the fields
 	// above and never sent by the server (client_limit_status.go):
 	// ClientLimitPromptUpgrade with UpgradeRequired,
@@ -1112,7 +1130,7 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 	request := func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw(networkGeneration)),
+			authNetworkClientRefusalHttpPostRaw(sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw(networkGeneration))),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
 			byJwt,
@@ -1138,7 +1156,7 @@ func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetwo
 	authNetworkClient = self.authNetworkClientArgsWithMailLocale(authNetworkClient)
 	result, err := connect.HttpPostWithRawFunction(
 		ctx,
-		authNetworkClientRefusalHttpPostRaw(self.getHttpPostRaw()),
+		authNetworkClientRefusalHttpPostRaw(sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw())),
 		fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 		authNetworkClient,
 		self.GetByJwt(),
@@ -2562,7 +2580,7 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 	runAsyncApiRequest[*AuthCodeLoginResult](callback, func(callback connect.ApiCallback[*AuthCodeLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 			fmt.Sprintf("%s/auth/code-login", self.apiUrl),
 			args,
 			self.GetByJwt(),
@@ -2581,7 +2599,7 @@ func (self *Api) AuthCodeLoginSyncWithContext(ctx context.Context, args *AuthCod
 	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
-		self.getHttpPostRaw(),
+		sessionLimitRefusalHttpPostRaw(self.getHttpPostRaw()),
 		fmt.Sprintf("%s/auth/code-login", self.apiUrl),
 		args,
 		self.GetByJwt(),

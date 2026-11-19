@@ -27,6 +27,7 @@ import type {
 import { URNetworkApiClient } from "./generated/client";
 import type * as OpenAPI from "./generated/openapi";
 import { isURNetworkApiError, type URNetworkApiClientConfig } from "./api_client";
+import { isSessionLimitReachedError, SESSION_LIMIT_REACHED_CODE } from "./session_limit";
 
 export type URNetworkAPIConfig = URNetworkApiClientConfig;
 
@@ -79,6 +80,16 @@ const authNetworkClientLimitRefusal = (
   return { message, client_limit_exceeded: true, upgrade_required: true };
 };
 
+// The session cap refusal (session_limit.ts) as a legacy result's error, the
+// code and words the Go sdk gives it, so a screen can word it from the code.
+const sessionLimitResultError = (error: unknown): { code: string; message: string } | null =>
+  isSessionLimitReachedError(error)
+    ? {
+        code: SESSION_LIMIT_REACHED_CODE,
+        message: "Too many active sessions. Sign out sessions you no longer use in Account > Sessions, then try again.",
+      }
+    : null;
+
 const logFailure = (label: string, error: unknown) => {
   if (isURNetworkApiError(error) && error.kind === "http") {
     console.error(`${label} failed:`, error.status, error.statusText);
@@ -129,7 +140,7 @@ export class URNetworkAPI {
     } catch (error) {
       logFailure("Login", error);
       return {
-        error: { message: legacyMessage(error, "Authentication failed") },
+        error: sessionLimitResultError(error) ?? { message: legacyMessage(error, "Authentication failed") },
       };
     }
   }
@@ -149,7 +160,7 @@ export class URNetworkAPI {
     } catch (error) {
       logFailure("Password login", error);
       return {
-        error: {
+        error: sessionLimitResultError(error) ?? {
           message: legacyMessage(error, "Password authentication failed"),
         },
       };
@@ -219,7 +230,7 @@ export class URNetworkAPI {
     } catch (error) {
       logFailure("Network creation", error);
       return {
-        error: { message: legacyMessage(error, "Network creation failed") },
+        error: sessionLimitResultError(error) ?? { message: legacyMessage(error, "Network creation failed") },
       };
     }
   }
@@ -232,7 +243,7 @@ export class URNetworkAPI {
       logFailure("Auth code login", error);
       return {
         by_jwt: "",
-        error: {
+        error: sessionLimitResultError(error) ?? {
           // this endpoint has always surfaced the raw error body
           message:
             isURNetworkApiError(error) && error.kind === "http"
@@ -302,7 +313,7 @@ export class URNetworkAPI {
     } catch (error) {
       logFailure("User auth verification", error);
       return {
-        error: { message: legacyMessage(error, "Verification failed") },
+        error: sessionLimitResultError(error) ?? { message: legacyMessage(error, "Verification failed") },
       };
     }
   }
@@ -330,6 +341,10 @@ export class URNetworkAPI {
       const limitRefusal = authNetworkClientLimitRefusal(error);
       if (limitRefusal) {
         return { proxy_config_result: null, error: limitRefusal };
+      }
+      const sessionLimit = sessionLimitResultError(error);
+      if (sessionLimit) {
+        return { proxy_config_result: null, error: { ...sessionLimit, client_limit_exceeded: false } };
       }
       logFailure("Auth network client", error);
       return {

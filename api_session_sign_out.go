@@ -25,12 +25,37 @@ type SessionSignOutCallback interface {
 	Result(*SessionSignOutResult, error)
 }
 
+// The budgets of an explicit sign-out. Each step has its own, so a removal
+// that takes its whole budget still leaves the cutoff its own: with one
+// budget for both, a slow removal left the session unrevoked, still listed
+// and still accepted on the server, after a sign-out that looked complete.
+type apiSignOutSettings struct {
+	// The removal of the device's own client. 1 s: an unanswered removal only
+	// delays the cutoff; the idle reap removes the client in the end.
+	// Non-positive skips the removal.
+	removeClientTimeout time.Duration
+	// The revocation of the session, the server cutoff. 2 s, after which the
+	// local login is cleared without a confirmed cutoff. Non-positive skips
+	// the revocation.
+	revokeTimeout time.Duration
+}
+
+func defaultApiSignOutSettings() *apiSignOutSettings {
+	return &apiSignOutSettings{
+		removeClientTimeout: time.Second,
+		revokeTimeout:       2 * time.Second,
+	}
+}
+
 func (self *Api) SignOut(callback SessionSignOutCallback) {
 	target := self.captureNetworkTarget()
-	ctx, cancel := context.WithTimeout(self.ctx, 2*time.Second)
-	go connect.HandleError(func() { defer cancel(); self.signOutCaptured(ctx, target, callback) })
+	go connect.HandleError(func() { self.signOutCaptured(self.ctx, target, callback) })
 }
+
+// ctx bounds the whole sign-out (the API's lifetime); each step adds its own
+// budget from the API's settings.
 func (self *Api) signOutCaptured(ctx context.Context, target networkRenewalTarget, callback SessionSignOutCallback) {
+	settings := self.signOutSettings
 	operationId := NewId()
 	result := &SessionSignOutResult{OperationId: operationId}
 	// The device's client: the client token this API serves, else the one the
@@ -63,7 +88,9 @@ func (self *Api) signOutCaptured(ctx context.Context, target networkRenewalTarge
 		}
 		return nil
 	}
-	if clientId := deviceClientId(); clientId != nil {
+	if clientId := deviceClientId(); clientId != nil && 0 < settings.removeClientTimeout {
+		ctx, cancel := context.WithTimeout(ctx, settings.removeClientTimeout)
+		defer cancel()
 		removed := make(chan bool, 1)
 		go connect.HandleError(func() {
 			current, ok := self.currentNetworkTarget(target)
@@ -84,14 +111,16 @@ func (self *Api) signOutCaptured(ctx context.Context, target networkRenewalTarge
 			var removeResult RemoveNetworkClientResult
 			removed <- json.Unmarshal(raw, &removeResult) == nil && removeResult.Error == nil
 		})
-		// bounded like the cutoff below: an unanswered removal only shortens
-		// the cutoff's wait, never extends the sign-out
+		// bounded by its own budget: an unanswered removal leaves the cutoff
+		// below its whole budget
 		select {
 		case result.ClientRemoved = <-removed:
 		case <-ctx.Done():
 		}
 	}
-	if claims, err := connect.ParseByJwtUnverified(target.byJwt); err == nil && claims.SessionId != nil {
+	if claims, err := connect.ParseByJwtUnverified(target.byJwt); err == nil && claims.SessionId != nil && 0 < settings.revokeTimeout {
+		ctx, cancel := context.WithTimeout(ctx, settings.revokeTimeout)
+		defer cancel()
 		sid := newId(*claims.SessionId)
 		replies := make(chan *SessionOperationResult, 1)
 		go connect.HandleError(func() {

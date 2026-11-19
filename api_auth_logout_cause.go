@@ -91,6 +91,24 @@ func (self *Api) GetAuthLogoutCause() string {
 	return self.authLogoutCause
 }
 
+// Why the account's sign-in needs signing in again while this device stays
+// signed in, for the app's notice when AccountSignInRequired fires (server
+// session/REVOKE-FINAL.md R9: the rejected account credential is cleared, the
+// unrelated client or device is kept, and the app says that the account needs
+// a sign-in): AuthLogoutCauseSessionRevoked when the server confirmed the
+// account sign-in's session was revoked from another device, which apps say
+// as "This session was signed out from another device.", else "", for the
+// generic "Sign in again to manage sessions.". Read it inside the listener;
+// a new login clears it.
+func (self *Api) GetAccountSignInRequiredCause() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.signInRejected {
+		return ""
+	}
+	return self.signInRejectionCause
+}
+
 // Records that a request asks the server to revoke the session of the
 // credential it carries, before the request is sent: the server may enforce
 // it even when the answer is lost. The record names only that session, so it
@@ -114,12 +132,23 @@ func (self *Api) trustedRejectionCauseWithLock(rejectedByJwt string, cause strin
 	if cause != AuthLogoutCauseSessionRevoked {
 		return ""
 	}
-	if self.selfRevokedSessionId != nil {
-		if sessionId := credentialSessionId(rejectedByJwt); sessionId != nil && *sessionId == *self.selfRevokedSessionId {
-			return ""
-		}
+	if self.selfRevokedWithLock(rejectedByJwt) {
+		return ""
 	}
 	return cause
+}
+
+// Whether rejectedByJwt carries the session this API asked the server to
+// revoke itself (noteSelfRevocation). Its rejection is that sign-out,
+// whichever answer comes first: a rejection of another request can land after
+// the server enforced the revoke and before the revoke's own answer. Callers
+// hold mutex.
+func (self *Api) selfRevokedWithLock(rejectedByJwt string) bool {
+	if self.selfRevokedSessionId == nil {
+		return false
+	}
+	sessionId := credentialSessionId(rejectedByJwt)
+	return sessionId != nil && *sessionId == *self.selfRevokedSessionId
 }
 
 // The cause a confirmed rejection of the sent credential carries, for a caller
@@ -148,6 +177,10 @@ func (self *Api) noteSignInRejectionWithLock(cause string) {
 func (self *Api) newLoginWithLock(byJwt string) {
 	// Explicit setters also retire queued events when they clear a credential.
 	self.authLogoutGeneration = 0
+	// a sign-in or a sign-out ends the account sign-in notice (a device's
+	// start takes up a kept one again, adoptAccountSignInNoticeWithLock)
+	self.accountSignInNoticePending = false
+	self.accountSignInNoticeStore = nil
 	if byJwt == "" {
 		return
 	}
