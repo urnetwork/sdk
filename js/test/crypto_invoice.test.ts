@@ -499,6 +499,8 @@ test("start shows the quote and saves it", async () => {
     quoted_at: "2026-10-20T18:00:00Z",
     expires_at: "2026-10-20T18:30:00Z",
     received_at: "2026-10-20T18:00:00.300Z",
+    // Monero has no confirmation grace
+    confirmation_grace_seconds: 0,
     status: "",
     balance_code: "",
     hidden: false,
@@ -1883,4 +1885,174 @@ test("resume order", async () => {
   assert.equal(harness.savedOwned(OTHER_INTENT_ID), null, "a dismissed network invoice with nothing received stayed saved");
   assert.equal(reloaded.resume(), true);
   assert.equal(reloaded.getState().intentId, INTENT_ID);
+});
+
+// ---- Bitcoin's confirmation grace --------------------------------------------
+
+// The server sees a Bitcoin payment only once it is mined, so it credits one
+// sent within the quote at its price while it is mined within 3 hours of the
+// expiry, keeps the invoice pending through that grace, and refuses a requote
+// in it (mmm/BTCPAY.md §16.8). The same cases as
+// sdk/crypto_invoice_confirmation_grace_test.go.
+
+const BTC_ADDRESS = "bc1q0wd209cv5k9pd9mhk7nspacywcj038xxdhnt5u";
+const BTC_GRACE = 3 * 60 * MINUTE;
+
+// The server's Bitcoin yearly invoice, quoted at now: $40 at $73,596.90.
+function testBtcIntent(now: number): CryptoPaymentIntentResult {
+  const expiresAt = now + QUOTE_TTL;
+  return {
+    ...testIntent(now),
+    asset: "btc",
+    rate_usd: 73596.9,
+    address: BTC_ADDRESS,
+    amount: "0.00054622",
+    amount_atomic: "54622",
+    uri: `bitcoin:${BTC_ADDRESS}?amount=0.00054622&label=URnetwork&message=URnetwork%20Pro%20yearly`,
+    confirmation_grace_seconds: 10800,
+    status: testBtcStatus("pending", expiresAt),
+  };
+}
+
+// The status of the Bitcoin invoice above.
+function testBtcStatus(status: CryptoPaymentStatusResult["status"], expiresAt: number): CryptoPaymentStatusResult {
+  const result = testStatus(status, expiresAt);
+  if (status === "unknown") return result;
+  Object.assign(result, { asset: "btc", amount: "0.00054622", amount_atomic: "54622" });
+  if (status === "confirming" || status === "paid") {
+    Object.assign(result, { received: "0.00054622", received_atomic: "54622", remaining: "0", remaining_atomic: "0" });
+  } else {
+    Object.assign(result, { received: "0", received_atomic: "0", remaining: "0.00054622", remaining_atomic: "54622" });
+  }
+  result.confirmation_grace_seconds = 10800;
+  return result;
+}
+
+// active, with the Bitcoin yearly invoice quoted now and its pending status
+// answering every poll; returns the quote's end
+async function startBtcInvoice(harness: Harness): Promise<number> {
+  const expiresAt = harness.clock.now() + QUOTE_TTL;
+  harness.client.intent = { result: testBtcIntent(harness.clock.now()) };
+  harness.client.status = { result: testBtcStatus("pending", expiresAt) };
+  harness.invoice.setActive(true);
+  await harness.invoice.startInvoice({ asset: "btc", plan: "yearly", storefrontCountry: "US" });
+  assert.equal(harness.invoice.getState().phase, CRYPTO_INVOICE_PHASE_OPEN);
+  return expiresAt;
+}
+
+// The countdown ends at the quote's expiry, as for every coin; then, while the
+// server keeps the invoice pending through the grace, it awaits confirmation:
+// no requote is asked. Once the grace is over, or the server says expired, it
+// is an expired quote again, and Refresh quote works.
+test("bitcoin awaits confirmation through the grace", async () => {
+  const harness = new Harness();
+  const { invoice, client, clock } = harness;
+  await startBtcInvoice(harness);
+  let state = invoice.getState();
+  assert.equal(state.confirmationGraceSeconds, 10800);
+  assert.equal(state.secondsLeft, 1800);
+  assert.equal(state.awaitingConfirmation, false);
+  assert.equal(harness.saved()!.confirmation_grace_seconds, 10800);
+
+  // the window's last second: payable
+  await clock.advance(QUOTE_TTL - SECOND);
+  state = invoice.getState();
+  assert.equal(state.secondsLeft, 1);
+  assert.equal(state.awaitingConfirmation, false);
+
+  // the quote ended, the server still says pending: awaiting confirmation
+  await clock.advance(SECOND);
+  state = invoice.getState();
+  assert.equal(state.secondsLeft, 0);
+  assert.equal(state.status, "pending");
+  assert.equal(state.awaitingConfirmation, true);
+  // no requote: the server refuses one in the grace
+  await invoice.requote();
+  assert.equal(client.requoteCalls.length, 0);
+  assert.equal(invoice.getState().refreshing, false);
+
+  // through the grace, on the quote's own clock
+  await clock.advance(BTC_GRACE - SECOND);
+  assert.equal(invoice.getState().awaitingConfirmation, true);
+  await clock.advance(SECOND);
+  assert.equal(invoice.getState().awaitingConfirmation, false);
+
+  // the server's expired: an expired quote, refreshed as before
+  client.status = { result: testBtcStatus("expired", clock.now() - BTC_GRACE) };
+  await clock.advance(MINUTE);
+  state = invoice.getState();
+  assert.equal(state.status, "expired");
+  assert.equal(state.awaitingConfirmation, false);
+  client.holdRequote = true;
+  void invoice.requote();
+  assert.equal(client.requoteCalls.length, 1);
+  assert.equal(invoice.getState().refreshing, true);
+});
+
+// A payment mined in the grace ends the wait: confirming, then paid.
+test("a bitcoin payment mined in the grace ends the wait", async () => {
+  const harness = new Harness();
+  const { invoice, client, clock } = harness;
+  const expiresAt = await startBtcInvoice(harness);
+  await clock.advance(QUOTE_TTL + 60 * MINUTE);
+  assert.equal(invoice.getState().awaitingConfirmation, true);
+  client.status = { result: testBtcStatus("confirming", expiresAt) };
+  await clock.advance(5 * SECOND);
+  const state = invoice.getState();
+  assert.equal(state.status, "confirming");
+  assert.equal(state.awaitingConfirmation, false);
+  client.status = { result: testBtcStatus("paid", expiresAt) };
+  await clock.advance(5 * SECOND);
+  assert.equal(invoice.getState().phase, CRYPTO_INVOICE_PHASE_PAID);
+});
+
+// Pay another way in the grace only puts the invoice away, as once money
+// arrived: a payment may be on its way unseen, and the next resume() shows it
+// again. Past the grace, with nothing received, it is dropped as before.
+test("bitcoin dismiss in the grace puts it away", async () => {
+  const harness = new Harness();
+  const { invoice, client, clock } = harness;
+  await startBtcInvoice(harness);
+  await clock.advance(QUOTE_TTL + MINUTE);
+  assert.equal(invoice.getState().awaitingConfirmation, true);
+  invoice.dismiss();
+  assert.equal(invoice.getState().phase, CRYPTO_INVOICE_PHASE_NONE);
+  assert.notEqual(harness.saved(), null, "an invoice whose payment may still confirm was dropped");
+  assert.equal(harness.saved()!.confirmation_grace_seconds, 10800);
+
+  // after a reload it comes back knowing its grace, before its first poll
+  const reloaded = harness.newInvoice();
+  assert.equal(reloaded.resume(), true);
+  const state = reloaded.getState();
+  assert.equal(state.phase, CRYPTO_INVOICE_PHASE_OPEN);
+  assert.equal(state.confirmationGraceSeconds, 10800);
+  // not polled yet: no status, so nothing to wait for yet
+  assert.equal(state.status, "");
+  assert.equal(state.awaitingConfirmation, false);
+  reloaded.setActive(true);
+  await flush();
+  assert.equal(reloaded.getState().awaitingConfirmation, true);
+
+  // past the grace, expired with nothing received: dropped
+  client.status = { result: testBtcStatus("expired", clock.now()) };
+  await clock.advance(BTC_GRACE);
+  assert.equal(reloaded.getState().status, "expired");
+  reloaded.dismiss();
+  assert.equal(harness.saved(), null, "an expired unpaid invoice stayed saved");
+});
+
+// A coin without a grace never awaits: Monero's quote ends at its expiry
+// whatever the server's next poll says, and Refresh quote works at once.
+test("a coin without a grace never awaits", async () => {
+  const harness = new Harness();
+  await harness.startOpenInvoice();
+  await harness.clock.advance(QUOTE_TTL + MINUTE);
+  const state = harness.invoice.getState();
+  assert.equal(state.secondsLeft, 0);
+  assert.equal(state.status, "pending");
+  assert.equal(state.confirmationGraceSeconds, 0);
+  assert.equal(state.awaitingConfirmation, false);
+  harness.client.holdRequote = true;
+  void harness.invoice.requote();
+  assert.equal(harness.client.requoteCalls.length, 1);
 });

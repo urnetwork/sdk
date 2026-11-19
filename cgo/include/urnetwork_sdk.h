@@ -3836,6 +3836,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   network_warning_key: string
  *   no_payment_link_note: string
  *   no_payment_link_note_key: string
+ *   confirmation_note: string
+ *   confirmation_note_key: string
+ *   awaiting_confirmation_note: string
+ *   awaiting_confirmation_note_key: string
  */
 
 /* CryptoInvoiceState (json):
@@ -3857,6 +3861,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rate_usd: number
  *   expires_at: string
  *   seconds_left: number
+ *   confirmation_grace_seconds: number
+ *   awaiting_confirmation: boolean
  *   status: string
  *   review_reason: string
  *   received: string
@@ -3876,6 +3882,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   items?: StringList | null
  *   confirmations_required: number
  *   quote_ttl_seconds: number
+ *   confirmation_grace_seconds?: number
  */
 
 /* CryptoPaymentAssetList (json):
@@ -3924,6 +3931,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   uri?: string
  *   quoted_at?: string
  *   expires_at?: string
+ *   confirmation_grace_seconds?: number
  *   confirmations_required?: number
  *   status?: CryptoPaymentStatusResult | null
  *   error?: CryptoPaymentError | null
@@ -3952,6 +3960,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   confirmations: number
  *   confirmations_required: number
  *   expires_at?: string
+ *   confirmation_grace_seconds?: number
  *   credited_at?: string
  *   balance_code?: string
  *   error?: CryptoPaymentError | null

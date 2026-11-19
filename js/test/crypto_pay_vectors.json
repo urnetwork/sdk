@@ -1606,6 +1606,10 @@
       "network_warning_key": "usdc_solana_network_only",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_usdc"
     },
     {
@@ -1625,6 +1629,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_zec"
     },
     {
@@ -1644,6 +1652,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_xmr"
     },
     {
@@ -1663,6 +1675,10 @@
       "network_warning_key": "crypto_invoice_tao_network_only",
       "no_payment_link_note": "TAO has no payment link, so this QR code holds only the address. Enter the exact amount in your wallet.",
       "no_payment_link_note_key": "crypto_invoice_tao_no_payment_link",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_tao"
     },
     {
@@ -1682,6 +1698,10 @@
       "network_warning_key": "crypto_invoice_bitcoin_network_only",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "Bitcoin payments can take up to 3 hours to confirm. A payment sent before the quote expires is credited at this price.",
+      "confirmation_note_key": "crypto_invoice_bitcoin_confirmation_time",
+      "awaiting_confirmation_note": "This quote expired. A payment you sent before it expired is credited at this price once it confirms, which can take up to 3 hours. If you didn't send one, pay another way.",
+      "awaiting_confirmation_note_key": "crypto_invoice_bitcoin_awaiting_confirmation",
       "event_product": "pro_yearly_btc"
     },
     {
@@ -1701,6 +1721,10 @@
       "network_warning_key": "crypto_invoice_eth_network_only",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_eth"
     },
     {
@@ -1720,6 +1744,10 @@
       "network_warning_key": "crypto_invoice_sol_network_only",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": "pro_yearly_sol"
     },
     {
@@ -1739,6 +1767,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": ""
     },
     {
@@ -1758,6 +1790,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": ""
     },
     {
@@ -1777,6 +1813,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": ""
     },
     {
@@ -1796,6 +1836,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": ""
     },
     {
@@ -1815,6 +1859,10 @@
       "network_warning_key": "",
       "no_payment_link_note": "",
       "no_payment_link_note_key": "",
+      "confirmation_note": "",
+      "confirmation_note_key": "",
+      "awaiting_confirmation_note": "",
+      "awaiting_confirmation_note_key": "",
       "event_product": ""
     }
   ],
