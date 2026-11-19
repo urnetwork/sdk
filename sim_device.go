@@ -397,6 +397,20 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 		protocol.ProvideMode_Public,
 		multiClientSettings,
 	)
+	// The committed-flow fast path hands over each client receive dispatch as
+	// one batch through the multi client's batch callback, which
+	// `RemoteUserNatMultiClient.SetReceivePacketsCallback` documents for
+	// amortizing an app's per-packet inject cost with `Tun.WriteBatch` and
+	// which `DeviceLocal` registers for its own receive path. The batch enters
+	// the tun with one `Tun.WriteBatch`, as the device sockets (`socketTun`)
+	// and the hosted proxy inject theirs: gVisor merges a flow's in-sequence
+	// segments before TCP processes them. Before this the simulated client
+	// wrote every packet to its tun separately. The handoff stays synchronous
+	// and the batch is borrowed, as with a single packet. The rare paths still
+	// arrive through `receivePacket`.
+	multiClient.SetReceivePacketsCallback(func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packets [][]byte) {
+		tun.WriteBatch(packets)
+	})
 
 	simClient := &SimClient{
 		ctx:            cancelCtx,

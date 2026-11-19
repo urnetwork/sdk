@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -115,16 +116,17 @@ func (d *DeviceLocal) socketTun() (*connect.Tun, error) {
 	}
 	s.tun, s.conns = tun, make(map[*deviceSocketConn]struct{})
 	local := tun.LocalAddresses()
-	unsub := d.AddReceivePacketCallback(func(_ connect.TransferPath, _ protocol.ProvideMode, path *connect.IpPath, packet []byte) {
+	unsub := d.AddReceivePacketsCallback(func(_ connect.TransferPath, _ protocol.ProvideMode, _ *connect.IpPath, packets [][]byte) {
 		// Fragments have no transport ports and ParseIpPath can reject them.
 		// Demultiplex on the IP header so gVisor can reassemble large datagrams.
-		destination := socketPacketDestination(packet)
-		for _, address := range local {
-			if destination == address {
-				_, _ = tun.Write(packet)
-				break
-			}
-		}
+		//
+		// A burst's packets for this tun go in as they arrived, each run of
+		// them as one batch: `Tun.WriteBatch` merges a flow's in-sequence
+		// segments before the stack sees them, and a single packet is the
+		// plain write it was. The handoff stays synchronous and borrowed.
+		socketTunRuns(packets, local, func(run [][]byte) {
+			_, _ = tun.WriteBatch(run)
+		})
 	})
 	context.AfterFunc(d.ctx, s.close)
 	s.done = make(chan struct{})
@@ -175,6 +177,25 @@ func (s *deviceSockets) closeAndWait() {
 	s.mu.Unlock()
 	if done != nil {
 		<-done
+	}
+}
+
+// socketTunRuns calls write once for each maximal run of consecutive packets
+// addressed to one of local, in order. A run aliases packets.
+func socketTunRuns(packets [][]byte, local []netip.Addr, write func(run [][]byte)) {
+	start := -1
+	for i, packet := range packets {
+		if slices.Contains(local, socketPacketDestination(packet)) {
+			if start < 0 {
+				start = i
+			}
+		} else if 0 <= start {
+			write(packets[start:i])
+			start = -1
+		}
+	}
+	if 0 <= start {
+		write(packets[start:])
 	}
 }
 
