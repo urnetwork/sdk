@@ -889,16 +889,22 @@ func (self *DeviceLocal) GetExtenderStats() *ExtenderStats {
 }
 
 // Whether this device would run the role if the setting allowed it (G1, G2):
-// it is providing, the embedder's switch is on, and it is not hosted -- a
-// hosted device's space is shared across unrelated customers and it cannot
-// provide at all. The setting is the other half of the same condition, and
-// N3's first two states are exactly these two halves.
+// it is providing, the embedder's switch is on, it is not hosted -- a hosted
+// device's space is shared across unrelated customers and it cannot provide at
+// all -- and its space's egress is not a proxy. The role binds its carriers and
+// forwards from this host, so in a space whose every other egress leaves
+// through a proxy it would show this host's address beside the proxy's: a
+// proxied space never takes the role (owner 2026-11-18, connect#227). The
+// setting is the other half of the same condition, and N3's first two states
+// are exactly these two halves.
 func (self *DeviceLocal) extenderProvideProviding() bool {
 	self.stateLock.Lock()
 	closed := self.closed
 	self.stateLock.Unlock()
+	proxySettings, _ := self.networkSpace.egressProxy()
 	return !closed &&
 		!self.settings.HostedIncompatible &&
+		proxySettings == nil &&
 		self.settings.ProvideExtenderEnabled &&
 		self.GetProvideEnabled()
 }
