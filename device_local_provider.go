@@ -31,13 +31,16 @@ type migratablePlatformTransport interface {
 // group and the extender role that runs beside it.
 //
 // A provider whose provide mode includes public never dials the platform
-// through an extender or a proxy on any transport, the standby included, so
-// the platform observes the provider's own address and location
-// (EXTENDER.md J4). The pinned transports of the group are direct by
-// construction (IPV6.md A4); the standby takes the provider's own direct-only
-// strategy while the mode includes public and the device's shared strategy
-// otherwise, since a network or friends-and-family provider carries no
-// location metadata and may keep using extenders. A mode change that flips
+// through an extender on any transport, the standby included, and dials it on
+// its egress: its space's proxy when it has one, else this host's own address.
+// So the platform observes the address the provider's exit leaves from and
+// places the provider there (EXTENDER.md J4; owner 2026-11-18, "route through
+// the proxy", for the sn miner's proxy slots). The pinned transports of the
+// group are egress-only by construction (IPV6.md A4,
+// connect.NewEgressClientStrategy); the standby takes the provider's own
+// egress strategy while the mode includes public and the device's shared
+// strategy otherwise, since a network or friends-and-family provider carries
+// no location metadata and may keep using extenders. A mode change that flips
 // that rebuilds the transports through the migration path.
 //
 // The same flip decides the provide intent every transport declares on its
@@ -96,11 +99,11 @@ type deviceLocalProvider struct {
 	extenderPortMapping func() bool
 
 	clientStrategy *connect.ClientStrategy
-	// clientStrategySettings seeds the direct-only strategies of the
-	// family-pinned transports; nil falls back to the connect defaults. They
-	// carry the space's DoH settings in force when the provider was built, so
-	// a bootstrap DoH change reaches these strategies when the device is next
-	// built.
+	// clientStrategySettings seeds the egress strategies of the family-pinned
+	// transports and of a public standby, proxy included; nil falls back to the
+	// connect defaults. They carry the space's DoH settings in force when the
+	// provider was built, so a bootstrap DoH change reaches these strategies
+	// when the device is next built.
 	clientStrategySettings *connect.ClientStrategySettings
 	platformUrl            string
 	// platformUrlV4 and platformUrlV6 are the family-pinned urls (IPV6.md
@@ -184,14 +187,15 @@ type deviceLocalProvider struct {
 	probeAttestorLog      connect.Logger
 	pingReporterConfigure func(settings *connect.ExtenderPingReporterSettings)
 	// the device's effective provide mode, which decides whether the standby
-	// dials direct (J4). The device hands it over on every change.
+	// dials on the provider's egress alone (J4). The device hands it over on
+	// every change.
 	provideMode ProvideMode
-	// the direct-only standby strategy of a public provider (J4), built on
-	// the first public transport generation, reused by every later one, and
-	// closed with the provider. It outlives a flip back to a non-public mode
-	// so a flip forward keeps its connect pacing and costs no rebuild of the
-	// strategy itself.
-	directStandbyStrategy *connect.ClientStrategy
+	// the egress standby strategy of a public provider (J4): no extender, and
+	// the space's proxy when it has one. Built on the first public transport
+	// generation, reused by every later one, and closed with the provider. It
+	// outlives a flip back to a non-public mode so a flip forward keeps its
+	// connect pacing and costs no rebuild of the strategy itself.
+	egressStandbyStrategy *connect.ClientStrategy
 	closed                bool
 	auth                  *connect.ClientAuth
 	authVersion           uint64
@@ -426,30 +430,31 @@ func provideModeIncludesPublic(provideMode ProvideMode) bool {
 }
 
 // The strategy the standby transport of a new generation dials with (J4).
-// While the provide mode includes public it is the provider's own direct-only
-// strategy -- no extender dialers, no proxy -- so the platform observes the
-// provider's own address and location on every transport; every other mode
-// keeps the device's shared strategy and its extender dialers.
+// While the provide mode includes public it is the provider's own egress
+// strategy -- no extender dialers, and the space's proxy when it has one -- so
+// the platform observes the address the provider's exit leaves from on every
+// transport; every other mode keeps the device's shared strategy and its
+// extender dialers.
 //
-// The direct strategy is built once and reused by every later generation, and
+// The egress strategy is built once and reused by every later generation, and
 // is closed with the provider. It is built with no lock held, because the
 // strategy constructor subscribes to network changes; a loser of the race
 // closes its own build.
 func (self *deviceLocalProvider) standbyClientStrategy(
 	clientStrategySettings *connect.ClientStrategySettings,
 ) *connect.ClientStrategy {
-	directStandbyStrategy, public := func() (*connect.ClientStrategy, bool) {
+	egressStandbyStrategy, public := func() (*connect.ClientStrategy, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		return self.directStandbyStrategy, provideModeIncludesPublic(self.provideMode)
+		return self.egressStandbyStrategy, provideModeIncludesPublic(self.provideMode)
 	}()
 	if !public {
 		return self.clientStrategy
 	}
-	if directStandbyStrategy != nil {
-		return directStandbyStrategy
+	if egressStandbyStrategy != nil {
+		return egressStandbyStrategy
 	}
-	directStandbyStrategy = connect.NewDirectClientStrategy(
+	egressStandbyStrategy = connect.NewEgressClientStrategy(
 		self.client.Ctx(),
 		clientStrategySettings,
 		0,
@@ -457,13 +462,13 @@ func (self *deviceLocalProvider) standbyClientStrategy(
 	installed := func() *connect.ClientStrategy {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.directStandbyStrategy == nil {
-			self.directStandbyStrategy = directStandbyStrategy
+		if self.egressStandbyStrategy == nil {
+			self.egressStandbyStrategy = egressStandbyStrategy
 		}
-		return self.directStandbyStrategy
+		return self.egressStandbyStrategy
 	}()
-	if installed != directStandbyStrategy {
-		directStandbyStrategy.Close()
+	if installed != egressStandbyStrategy {
+		egressStandbyStrategy.Close()
 	}
 	return installed
 }
@@ -1407,12 +1412,12 @@ func (self *deviceLocalProvider) Close() {
 			platformTransport := self.platformTransport
 			// read after the migration workers have drained, so a generation
 			// built by the last migration is covered too
-			directStandbyStrategy := self.directStandbyStrategy
+			egressStandbyStrategy := self.egressStandbyStrategy
 			self.stateLock.Unlock()
 			closeMigratablePlatformTransportAndWait(platformTransport)
-			if directStandbyStrategy != nil {
+			if egressStandbyStrategy != nil {
 				// after the transports that dial with it are joined (J4)
-				directStandbyStrategy.Close()
+				egressStandbyStrategy.Close()
 			}
 			if self.client != nil {
 				_ = self.client.CloseAndWait(context.Background())
@@ -1515,6 +1520,18 @@ func newDeviceClientSettings(
 	if clientSettings.WebRtcSettings == nil {
 		webRtcSettings := *defaults.WebRtcSettings
 		clientSettings.WebRtcSettings = &webRtcSettings
+	}
+	// a client whose egress is a proxy opens no p2p stream: ice would gather
+	// this host's candidates, hand them to the peer and carry the stream over
+	// this host's udp, outside the proxy (connect#227, owner 2026-11-18). Its
+	// peers stay on the platform transport, which goes through the proxy. And
+	// the platform sees its transports at the proxy's address, which is not
+	// this host's, so it keeps them out of the process's provider-local guard,
+	// where they would replace this host's own public address. The settings
+	// are this client's own copy.
+	if clientStrategy != nil && clientStrategy.ConnectSettings().ProxySettings != nil {
+		clientSettings.WebRtcSettings.DisablePeerConnections = true
+		clientSettings.SkipObservedAddresses = true
 	}
 	// Install the default out-of-band peer-key cross-check when none
 	// is configured. Callers who want to disable the check can set a
@@ -1689,6 +1706,12 @@ func (self *deviceLocalProvider) setExtenderEnabledWithLock(enabled bool) {
 		// ios, android and js carry no role at all (G1)
 		enabled = false
 	}
+	if proxySettings, _ := self.networkSpace.egressProxy(); proxySettings != nil {
+		// the role binds and forwards on this host, outside the proxy every
+		// other egress of the space takes: a proxied space never runs it, as
+		// the device already decides (extenderProvideProviding)
+		enabled = false
+	}
 	if !enabled {
 		// nothing is asked for, so nothing failed to start
 		func() {
@@ -1763,9 +1786,11 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	}
 
 	// the relay's forward dial is the device's own egress: the extender
-	// narrows it by the client's family itself (A7, G2). A proxy the strategy
-	// names is left out, as it is from the role's activations (C2): the operator
-	// proved this host's address, and a proxy can't keep the client's family
+	// narrows it by the client's family itself (A7, G2). A space whose egress
+	// is a proxy never runs the role (setExtenderEnabledWithLock); a proxy is
+	// still left out here, as it is from the role's activations (C2): the
+	// operator proved this host's address, and a proxy can't keep the client's
+	// family
 	connectSettings := *connect.DefaultConnectSettings()
 	if self.clientStrategySettings != nil {
 		connectSettings = self.clientStrategySettings.ConnectSettings
