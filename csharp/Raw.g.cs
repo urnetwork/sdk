@@ -359,6 +359,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_get_provider_status(ulong a0, urnet_get_provider_status_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_get_referral_network(ulong a0, urnet_get_referral_network_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_get_transfer_stats(ulong a0, urnet_get_transfer_stats_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_api_has_account_sign_in_notice(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_api_has_network_credential(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_api_is_auth_logout_current(ulong a0, long a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_list_api_keys(ulong a0, urnet_list_api_keys_cb a1, IntPtr a2);
@@ -1101,6 +1102,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_feedback_view_controller_send_feedback(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_feedback_view_controller_start(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_feedback_view_controller_stop(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_local_auth_state_snapshot_get_account_sign_in_required(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_local_auth_state_snapshot_get_by_client_jwt(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_local_auth_state_snapshot_get_by_jwt(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_local_auth_state_snapshot_get_empty(ulong a0);

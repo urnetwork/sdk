@@ -359,6 +359,7 @@ public interface Raw extends Library {
   void urnet_api_get_provider_status(long a0, urnet_get_provider_status_cb a1, Pointer a2);
   void urnet_api_get_referral_network(long a0, urnet_get_referral_network_cb a1, Pointer a2);
   void urnet_api_get_transfer_stats(long a0, urnet_get_transfer_stats_cb a1, Pointer a2);
+  byte urnet_api_has_account_sign_in_notice(long a0);
   byte urnet_api_has_network_credential(long a0);
   byte urnet_api_is_auth_logout_current(long a0, long a1);
   void urnet_api_list_api_keys(long a0, urnet_list_api_keys_cb a1, Pointer a2);
@@ -1101,6 +1102,7 @@ public interface Raw extends Library {
   void urnet_feedback_view_controller_send_feedback(long a0, String a1, long a2);
   void urnet_feedback_view_controller_start(long a0);
   void urnet_feedback_view_controller_stop(long a0);
+  byte urnet_local_auth_state_snapshot_get_account_sign_in_required(long a0);
   Pointer urnet_local_auth_state_snapshot_get_by_client_jwt(long a0);
   Pointer urnet_local_auth_state_snapshot_get_by_jwt(long a0);
   byte urnet_local_auth_state_snapshot_get_empty(long a0);

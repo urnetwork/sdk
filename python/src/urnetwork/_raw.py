@@ -470,6 +470,8 @@ def bind(lib):
     lib.urnet_api_get_referral_network.restype = None
     lib.urnet_api_get_transfer_stats.argtypes = [c_uint64, urnet_get_transfer_stats_cb, c_void_p]
     lib.urnet_api_get_transfer_stats.restype = None
+    lib.urnet_api_has_account_sign_in_notice.argtypes = [c_uint64]
+    lib.urnet_api_has_account_sign_in_notice.restype = c_bool
     lib.urnet_api_has_network_credential.argtypes = [c_uint64]
     lib.urnet_api_has_network_credential.restype = c_bool
     lib.urnet_api_is_auth_logout_current.argtypes = [c_uint64, c_int64]
@@ -1954,6 +1956,8 @@ def bind(lib):
     lib.urnet_feedback_view_controller_start.restype = None
     lib.urnet_feedback_view_controller_stop.argtypes = [c_uint64]
     lib.urnet_feedback_view_controller_stop.restype = None
+    lib.urnet_local_auth_state_snapshot_get_account_sign_in_required.argtypes = [c_uint64]
+    lib.urnet_local_auth_state_snapshot_get_account_sign_in_required.restype = c_bool
     lib.urnet_local_auth_state_snapshot_get_by_client_jwt.argtypes = [c_uint64]
     lib.urnet_local_auth_state_snapshot_get_by_client_jwt.restype = c_void_p
     lib.urnet_local_auth_state_snapshot_get_by_jwt.argtypes = [c_uint64]

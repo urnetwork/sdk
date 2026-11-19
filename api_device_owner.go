@@ -108,7 +108,7 @@ func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPu
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.newLoginWithLock(byJwt)
-		noticeAdopted = self.adoptAccountSignInNoticeWithLock(prepared)
+		noticeAdopted = self.adoptAccountSignInRequiredWithLock(prepared.localState, prepared.state)
 		self.log = log
 	})
 	if err == nil && changed && self.tokenManager != nil {
@@ -145,7 +145,7 @@ func (self *Api) installDeviceRemote(
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.newLoginWithLock(byJwt)
-		noticeAdopted = self.adoptAccountSignInNoticeWithLock(prepared)
+		noticeAdopted = self.adoptAccountSignInRequiredWithLock(prepared.localState, prepared.state)
 		self.log = log
 		self.httpPostRaw = httpPostRaw
 		self.httpPostRawOwner = owner

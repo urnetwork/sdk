@@ -24076,6 +24076,7 @@ public:
 	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
+	bool hasAccountSignInNotice() const;
 	bool hasNetworkCredential() const;
 	bool isAuthLogoutCurrent(int64_t generation) const;
 	void listApiKeys(ListApiKeysCallback callback) const;
@@ -24860,6 +24861,7 @@ class LocalAuthStateSnapshot final : public detail::Handle {
 public:
 	LocalAuthStateSnapshot() = default;
 	explicit LocalAuthStateSnapshot(uint64_t h) : detail::Handle(h) {}
+	bool getAccountSignInRequired() const;
 	std::string getByClientJwt() const;
 	std::string getByJwt() const;
 	bool getEmpty() const;
@@ -34141,6 +34143,10 @@ inline void Api::getTransferStats(GetTransferStatsCallback callback) const {
 	auto* callback_fn = callback ? new GetTransferStatsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_transfer_stats(handle(), callback_fn ? &detail::oneshot_get_transfer_stats : nullptr, callback_fn);
 }
+inline bool Api::hasAccountSignInNotice() const {
+	bool r = urnet_api_has_account_sign_in_notice(handle());
+	return r;
+}
 inline bool Api::hasNetworkCredential() const {
 	bool r = urnet_api_has_network_credential(handle());
 	return r;
@@ -37576,6 +37582,10 @@ inline void IoLoop::close() const {
 	urnet_io_loop_close(handle());
 }
 #endif
+inline bool LocalAuthStateSnapshot::getAccountSignInRequired() const {
+	bool r = urnet_local_auth_state_snapshot_get_account_sign_in_required(handle());
+	return r;
+}
 inline std::string LocalAuthStateSnapshot::getByClientJwt() const {
 	char* r_c = urnet_local_auth_state_snapshot_get_by_client_jwt(handle());
 	return detail::takeString(r_c);

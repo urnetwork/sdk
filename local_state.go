@@ -259,7 +259,7 @@ func (self *LocalState) ParseByJwt() (*ByJwt, error) {
 
 // Installs the admin/login credential and clears paired client auth when the
 // admin changes. Even an equality no-op retires the former device owner. A
-// sign-in or a sign-out ends the account sign-in notice.
+// sign-in or a sign-out ends the account's sign-in requirement and its notice.
 func (self *LocalState) SetByJwt(byJwt string) error {
 	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
 		if state.ByJwt == byJwt {
@@ -268,20 +268,28 @@ func (self *LocalState) SetByJwt(byJwt string) error {
 		state.ByJwt = byJwt
 		state.ByClientJwt = ""
 		state.InstanceId = ""
-		state.setAccountSignInNotice(false, "")
+		state.setAccountSignInRequired(false, "")
 		return true, nil
 	}, func() { self.deviceAuthOwner = nil })
 }
 
-// Ends the persisted account sign-in notice the user dismissed.
+// Records that the user dismissed the account sign-in notice, so that it does
+// not show again after a restart. The account's sign-in is still required.
+// Not a change of sign-in: the credentials and both generations stay, so a
+// device start or a reset that read the state before is not superseded
+// (sameAuthState).
 func (self *LocalState) dismissAccountSignInNotice() error {
-	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
-		if !state.AccountSignInNotice {
-			return false, nil
-		}
-		state.setAccountSignInNotice(false, "")
-		return true, nil
-	})
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	state, err := self.loadAuthStateLocked()
+	if err != nil {
+		return err
+	}
+	if !state.AccountSignInRequired || state.AccountSignInNoticeDismissed {
+		return nil
+	}
+	state.AccountSignInNoticeDismissed = true
+	return self.writeAuthStateLocked(state)
 }
 
 // Replaces the stored admin/login credential with its renewal, the

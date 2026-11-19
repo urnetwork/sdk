@@ -1392,6 +1392,7 @@ void urnet_api_get_provider_locations(uint64_t self, urnet_find_locations_cb cal
 void urnet_api_get_provider_status(uint64_t self, urnet_get_provider_status_cb callback_result, void* callback_user_data);
 void urnet_api_get_referral_network(uint64_t self, urnet_get_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb callback_result, void* callback_user_data);
+bool urnet_api_has_account_sign_in_notice(uint64_t self);
 bool urnet_api_has_network_credential(uint64_t self);
 bool urnet_api_is_auth_logout_current(uint64_t self, int64_t generation);
 void urnet_api_list_api_keys(uint64_t self, urnet_list_api_keys_cb callback_result, void* callback_user_data);
@@ -2227,6 +2228,7 @@ void urnet_feedback_view_controller_stop(uint64_t self);
 
 /* ----- LocalAuthStateSnapshot ----- */
 
+bool urnet_local_auth_state_snapshot_get_account_sign_in_required(uint64_t self);
 char* urnet_local_auth_state_snapshot_get_by_client_jwt(uint64_t self);
 char* urnet_local_auth_state_snapshot_get_by_jwt(uint64_t self);
 bool urnet_local_auth_state_snapshot_get_empty(uint64_t self);

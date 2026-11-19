@@ -655,51 +655,105 @@ func restartAccountSignInTestDevice(t *testing.T, dir string, client string) (*A
 	return api, localState
 }
 
-// The account sign-in notice shows until it is dismissed, or the next sign-in
-// or sign-out (coordinator, session1118). It lived in each app's memory, so a
-// restart cleared it while the account still needed its sign-in. The sdk now
-// keeps it with the device's LocalState: after a restart the device's Api has
-// it pending again, with its cause, and tells every listener, the ones added
-// after the start included; a dismissal ends it for good.
-func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
-	dir := t.TempDir()
+// Signs a device in on dir, with the account's sign-in and a client of
+// another session, and has the server reject the account's sign-in as one
+// another device signed out: the device stays signed in on its client, and the
+// account sign-in notice is raised. Returns the client token.
+func raiseAccountSignInNotice(t *testing.T, dir string) string {
+	t.Helper()
 	network := taggedSessionTestJwt(t, newId(connect.NewId()).String(), "")
 	client := taggedSessionTestJwt(t, "another-session", credentialTestClientId)
+	localState := newLocalState(context.Background(), dir)
+	if err := localState.SetByJwt(network); err != nil {
+		t.Fatal(err)
+	}
+	if err := localState.SetByClientJwt(client); err != nil {
+		t.Fatal(err)
+	}
+	api := newApi(t.Context(), nil, "https://api.example")
+	defer api.Close()
+	installTestDeviceByJwt(t, api, localState, client, localState.GetInstanceId())
+	if !api.HasNetworkCredential() {
+		t.Fatal("the device did not take up the account's sign-in")
+	}
+	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
+		return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(testingSessionRevokedBody)}
+	})
+	var notices atomic.Int32
+	api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { notices.Add(1) }))
+	if _, err := api.networkSessions(t.Context()); err == nil {
+		t.Fatal("the revoked sign-in was accepted")
+	}
+	if notices.Load() != 1 || !api.HasAccountSignInNotice() || api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
+		t.Fatalf("%d notices, pending %t, cause %q", notices.Load(), api.HasAccountSignInNotice(), api.GetAccountSignInRequiredCause())
+	}
+	if api.GetByJwt() != client {
+		t.Fatal("the device did not stay signed in on its client")
+	}
+	return client
+}
+
+// Whether a listener added to api hears the account sign-in notice.
+func hearsAccountSignInNotice(api *Api, wait time.Duration) bool {
+	heard := make(chan struct{}, 1)
+	sub := api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() {
+		select {
+		case heard <- struct{}{}:
+		default:
+		}
+	}))
+	defer sub.Close()
+	select {
+	case <-heard:
+		return true
+	case <-time.After(wait):
+		return false
+	}
+}
+
+// The account sign-in notice shows until it is dismissed, or the next sign-in
+// or sign-out (coordinator, session1118). It lived in each app's memory, so a
+// restart cleared it while the account still needed its sign-in, and the
+// Sessions screen then failed to load instead of asking for a sign-in. The
+// sdk now keeps the account's sign-in requirement with the LocalState, and the
+// notice's dismissal beside it: after a restart the API reports the notice
+// again, from the network space's start (before a device) and from the
+// device's, to listeners added later too, and the Sessions screen needs a
+// sign-in; once dismissed, a restart reports no notice, but the account
+// still needs its sign-in.
+func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
+	dir := t.TempDir()
+	client := raiseAccountSignInNotice(t, dir)
+
+	// restart, before any device (a desktop app's start): the network space's
+	// API reports it from its start
 	{
 		localState := newLocalState(context.Background(), dir)
-		if err := localState.SetByJwt(network); err != nil {
-			t.Fatal(err)
-		}
-		if err := localState.SetByClientJwt(client); err != nil {
-			t.Fatal(err)
-		}
 		api := newApi(t.Context(), nil, "https://api.example")
 		defer api.Close()
-		installTestDeviceByJwt(t, api, localState, client, localState.GetInstanceId())
-		if !api.HasNetworkCredential() {
-			t.Fatal("the device did not take up the account's sign-in")
+		api.adoptStoredAccountSignInRequired(localState)
+		if !api.HasAccountSignInNotice() || api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
+			t.Fatalf("at the space's start: pending %t, cause %q", api.HasAccountSignInNotice(), api.GetAccountSignInRequiredCause())
 		}
-		api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) {
-			return nil, &connect.HttpStatusError{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: []byte(testingSessionRevokedBody)}
-		})
-		var notices atomic.Int32
-		api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { notices.Add(1) }))
-		if _, err := api.networkSessions(t.Context()); err == nil {
-			t.Fatal("the revoked sign-in was accepted")
+		if rejected, _ := api.sessionSignInRejection(); !rejected {
+			t.Fatal("at the space's start the Sessions screen did not need a sign-in")
 		}
-		if notices.Load() != 1 || api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
-			t.Fatalf("%d notices, cause %q", notices.Load(), api.GetAccountSignInRequiredCause())
+		if !hearsAccountSignInNotice(api, 5*time.Second) {
+			t.Fatal("a listener added at the space's start did not hear the notice")
+		}
+		snapshot, err := localState.GetAuthStateSnapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snapshot.GetAccountSignInRequired() || snapshot.GetByJwt() != "" || snapshot.GetByClientJwt() != client {
+			t.Fatal("the stored state is not a device signed in on its client that needs the account's sign-in")
 		}
 	}
 
-	// restart: the notice is still reported, to a listener added after the
-	// start too, with its cause, and the Sessions screen needs a sign-in
+	// restart with the device: reported, to a listener added after the start
+	// too, with its cause, and the Sessions screen needs a sign-in
 	api, _ := restartAccountSignInTestDevice(t, dir, client)
-	replayed := make(chan struct{}, 1)
-	api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { replayed <- struct{}{} }))
-	select {
-	case <-replayed:
-	case <-time.After(5 * time.Second):
+	if !hearsAccountSignInNotice(api, 5*time.Second) {
 		t.Fatal("the notice was lost with the restart")
 	}
 	if api.GetAccountSignInRequiredCause() != AuthLogoutCauseSessionRevoked {
@@ -709,17 +763,27 @@ func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
 		t.Fatal("after the restart the Sessions screen did not need a sign-in")
 	}
 	api.DismissAccountSignInNotice()
-
-	// restart: the dismissed notice is not reported
-	api, localState := restartAccountSignInTestDevice(t, dir, client)
-	api.mutex.Lock()
-	pending := api.accountSignInNoticePending
-	api.mutex.Unlock()
-	if pending || api.GetAccountSignInRequiredCause() != "" {
-		t.Fatal("a dismissed notice came back after a restart")
+	if api.HasAccountSignInNotice() {
+		t.Fatal("the dismissed notice is still pending")
+	}
+	if rejected, _ := api.sessionSignInRejection(); !rejected {
+		t.Fatal("the dismissal ended the account's sign-in requirement")
 	}
 
-	// a sign-in and a sign-out end a notice still to be dismissed
+	// restart: the dismissed notice is not reported; the account still needs
+	// its sign-in, and the device still starts on its client
+	api, localState := restartAccountSignInTestDevice(t, dir, client)
+	if api.HasAccountSignInNotice() || hearsAccountSignInNotice(api, 200*time.Millisecond) {
+		t.Fatal("a dismissed notice came back after a restart")
+	}
+	if rejected, cause := api.sessionSignInRejection(); !rejected || cause != AuthLogoutCauseSessionRevoked {
+		t.Fatal("after a dismissal and a restart the Sessions screen did not need a sign-in")
+	}
+	if snapshot, err := localState.GetAuthStateSnapshot(); err != nil || !snapshot.GetAccountSignInRequired() {
+		t.Fatal("the dismissal ended the stored requirement")
+	}
+
+	// a sign-in and a sign-out end the requirement and its notice
 	for _, end := range []func(*LocalState) error{
 		func(localState *LocalState) error {
 			return localState.SetByJwt(taggedSessionTestJwt(t, newId(connect.NewId()).String(), ""))
@@ -727,7 +791,9 @@ func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
 		func(localState *LocalState) error { return localState.Logout() },
 	} {
 		if err := localState.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
-			state.setAccountSignInNotice(true, AuthLogoutCauseSessionRevoked)
+			state.ByJwt = ""
+			state.ByClientJwt = client
+			state.setAccountSignInRequired(true, AuthLogoutCauseSessionRevoked)
 			return true, nil
 		}); err != nil {
 			t.Fatal(err)
@@ -739,8 +805,33 @@ func TestAccountSignInNoticeOutlivesARestartUntilDismissed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if state.AccountSignInNotice || state.AccountSignInNoticeCause != "" {
-			t.Fatal("a sign-in or a sign-out left the notice")
+		if state.AccountSignInRequired || state.AccountSignInRequiredCause != "" || state.AccountSignInNoticeDismissed {
+			t.Fatal("a sign-in or a sign-out left the requirement or its notice")
 		}
+	}
+}
+
+// A dismissal changes no sign-in: a device that starts while the user
+// dismisses the notice is not superseded, and takes up the dismissal.
+func TestDismissingTheAccountSignInNoticeSupersedesNoDeviceStart(t *testing.T) {
+	dir := t.TempDir()
+	client := raiseAccountSignInNotice(t, dir)
+	localState := newLocalState(context.Background(), dir)
+	localState.testingAfterDeviceAuthPrepare = func(*deviceAuthPublicationGate) {
+		if err := localState.dismissAccountSignInNotice(); err != nil {
+			t.Error(err)
+		}
+	}
+	api := newApi(t.Context(), nil, "https://api.example")
+	defer api.Close()
+	installTestDeviceByJwt(t, api, localState, client, localState.GetInstanceId())
+	if api.GetByJwt() != client {
+		t.Fatal("the device did not start on its client")
+	}
+	if api.HasAccountSignInNotice() {
+		t.Fatal("the device took up a notice dismissed while it started")
+	}
+	if rejected, _ := api.sessionSignInRejection(); !rejected {
+		t.Fatal("the device did not take up the account's sign-in requirement")
 	}
 }

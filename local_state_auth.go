@@ -33,24 +33,46 @@ type persistedLocalAuthState struct {
 	ByJwt       string `json:"by_jwt"`
 	ByClientJwt string `json:"by_client_jwt"`
 	InstanceId  string `json:"instance_id"`
-	// The notice of an account sign-in the server rejected while this device
-	// stayed signed in on its client (AccountSignInRequired), kept so the
-	// notice shows again after a restart until it is dismissed or the next
-	// sign-in or sign-out (Api.DismissAccountSignInNotice), with its trusted
-	// cause (AuthLogoutCauseSessionRevoked or ""). Plain values, so states
-	// still compare with == (device startup's supersession check). An sdk
-	// before the fields reads the file without them.
-	AccountSignInNotice      bool   `json:"account_sign_in_notice,omitempty"`
-	AccountSignInNoticeCause string `json:"account_sign_in_notice_cause,omitempty"`
+	// The account's sign-in the server rejected while this device stayed
+	// signed in on its client (REVOKE-FINAL §10, AccountSignInRequired), with
+	// its trusted cause (AuthLogoutCauseSessionRevoked or ""), until the next
+	// sign-in or sign-out. After a restart the device starts on its client
+	// (LocalAuthStateSnapshot.GetAccountSignInRequired), the Sessions screen
+	// needs a sign-in, and the apps show the account sign-in notice again
+	// unless it was dismissed (AccountSignInNoticeDismissed,
+	// Api.DismissAccountSignInNotice). Plain values, so states still compare
+	// with ==. An sdk before the fields reads the file without them.
+	AccountSignInRequired        bool   `json:"account_sign_in_required,omitempty"`
+	AccountSignInRequiredCause   string `json:"account_sign_in_required_cause,omitempty"`
+	AccountSignInNoticeDismissed bool   `json:"account_sign_in_notice_dismissed,omitempty"`
 }
 
-// Sets or, with pending false, ends the kept account sign-in notice.
-func (state *persistedLocalAuthState) setAccountSignInNotice(pending bool, cause string) {
-	state.AccountSignInNotice = pending
-	state.AccountSignInNoticeCause = ""
-	if pending {
-		state.AccountSignInNoticeCause = cause
+// Sets, or with required false ends, the account's sign-in requirement; its
+// notice is to be shown anew.
+func (state *persistedLocalAuthState) setAccountSignInRequired(required bool, cause string) {
+	state.AccountSignInRequired = required
+	state.AccountSignInRequiredCause = ""
+	state.AccountSignInNoticeDismissed = false
+	if required {
+		state.AccountSignInRequiredCause = cause
 	}
+}
+
+// Whether the state is a device signed in on its client while its account's
+// sign-in is required: the requirement, a client credential and no account
+// credential.
+func (state persistedLocalAuthState) accountSignInRequired() bool {
+	return state.AccountSignInRequired && state.ByClientJwt != "" && state.ByJwt == ""
+}
+
+// Whether two states are the same sign-in: equal but for the dismissal of the
+// account sign-in notice, which changes no credential and no generation
+// (LocalState.dismissAccountSignInNotice). A device start, or a reset, that
+// read one is not superseded by a dismissal.
+func sameAuthState(a persistedLocalAuthState, b persistedLocalAuthState) bool {
+	a.AccountSignInNoticeDismissed = false
+	b.AccountSignInNoticeDismissed = false
+	return a == b
 }
 
 func emptyPersistedLocalAuthState() persistedLocalAuthState {

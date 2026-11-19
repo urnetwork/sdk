@@ -358,6 +358,7 @@ module URnetwork
       attach_function :urnet_api_get_provider_status, [:uint64, :urnet_get_provider_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_referral_network, [:uint64, :urnet_get_referral_network_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_transfer_stats, [:uint64, :urnet_get_transfer_stats_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_has_account_sign_in_notice, [:uint64], :bool, blocking: true
       attach_function :urnet_api_has_network_credential, [:uint64], :bool, blocking: true
       attach_function :urnet_api_is_auth_logout_current, [:uint64, :int64], :bool, blocking: true
       attach_function :urnet_api_list_api_keys, [:uint64, :urnet_list_api_keys_cb, :pointer], :void, blocking: true
@@ -1100,6 +1101,7 @@ module URnetwork
       attach_function :urnet_feedback_view_controller_send_feedback, [:uint64, :string, :int64], :void, blocking: true
       attach_function :urnet_feedback_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_feedback_view_controller_stop, [:uint64], :void, blocking: true
+      attach_function :urnet_local_auth_state_snapshot_get_account_sign_in_required, [:uint64], :bool, blocking: true
       attach_function :urnet_local_auth_state_snapshot_get_by_client_jwt, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_auth_state_snapshot_get_by_jwt, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_auth_state_snapshot_get_empty, [:uint64], :bool, blocking: true

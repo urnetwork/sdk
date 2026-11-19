@@ -9,8 +9,8 @@ import (
 type AccountSignInRequiredListener interface{ AccountSignInRequired() }
 
 // A notice that is still to be dismissed, also one kept from before a restart
-// (adoptAccountSignInNoticeWithLock), reaches a listener when it is added, so
-// every app shows it again with no startup step of its own.
+// (adoptAccountSignInRequiredWithLock), reaches a listener when it is added,
+// so every app shows it again with no startup step of its own.
 func (self *Api) AddAccountSignInRequiredListener(listener AccountSignInRequiredListener) Sub {
 	id := self.accountSignInRequiredListeners.Add(listener)
 	self.mutex.Lock()
@@ -20,6 +20,17 @@ func (self *Api) AddAccountSignInRequiredListener(listener AccountSignInRequired
 		go connect.HandleError(listener.AccountSignInRequired)
 	}
 	return newSub(func() { self.accountSignInRequiredListeners.Remove(id) })
+}
+
+// Whether the account sign-in notice (AccountSignInRequired) is to be shown:
+// the account's sign-in was rejected while this device stayed signed in, also
+// before a restart, and the notice was not dismissed since. For an app that
+// shows the notice after its listener was added (AddAccountSignInRequiredListener
+// also reports it then); GetAccountSignInRequiredCause gives its cause.
+func (self *Api) HasAccountSignInNotice() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.accountSignInNoticePending
 }
 
 // Ends the account sign-in notice (AccountSignInRequired) the user dismissed,
@@ -41,19 +52,40 @@ func (self *Api) DismissAccountSignInNotice() {
 	}
 }
 
-// Takes up the account sign-in notice a device's LocalState kept from before a
-// restart, while the device starts on its client without the account's
-// sign-in: the notice is pending again, with its cause, and the Sessions
-// screen's state is sign-in required. Callers hold mutex, after
-// newLoginWithLock; the caller notifies the listeners once it holds no lock.
-func (self *Api) adoptAccountSignInNoticeWithLock(prepared *deviceAuthStartup) bool {
-	if prepared.localState == nil || !prepared.state.AccountSignInNotice || self.networkByJwt != "" || self.byJwt == "" {
+// Takes up the account's sign-in requirement a LocalState kept from before a
+// restart (the state the device starts from, or a network space's at its
+// start, before any device): the Sessions screen's state is sign-in required
+// again, with the cause, and the notice is pending unless it was dismissed.
+// Nothing while the API holds the account's sign-in. Reports whether a notice
+// is pending. Callers hold mutex (after newLoginWithLock, for a device); the
+// caller notifies the listeners once it holds no lock.
+func (self *Api) adoptAccountSignInRequiredWithLock(localState *LocalState, state persistedLocalAuthState) bool {
+	if localState == nil || !state.accountSignInRequired() || self.networkByJwt != "" || isNetworkCredential(self.byJwt) {
 		return false
 	}
-	self.accountSignInNoticePending = true
-	self.accountSignInNoticeStore = prepared.localState
-	self.noteSignInRejectionWithLock(prepared.state.AccountSignInNoticeCause)
-	return true
+	self.noteSignInRejectionWithLock(state.AccountSignInRequiredCause)
+	self.accountSignInNoticeStore = localState
+	self.accountSignInNoticePending = !state.AccountSignInNoticeDismissed
+	return self.accountSignInNoticePending
+}
+
+// A network space's start: its API takes up the requirement its LocalState
+// kept (adoptAccountSignInRequiredWithLock), so it reports it from the start,
+// before a device starts, or with none (a desktop app connects later). No
+// listener is added yet; one added later hears a pending notice.
+func (self *Api) adoptStoredAccountSignInRequired(localState *LocalState) {
+	if localState == nil {
+		return
+	}
+	self.authMutationLock.Lock()
+	defer self.authMutationLock.Unlock()
+	state, err := localState.loadAuthState()
+	if err != nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.adoptAccountSignInRequiredWithLock(localState, state)
 }
 
 // Tells the listeners of a notice adopted at a device's start.
@@ -91,16 +123,16 @@ func (self *Api) networkRequestTarget(sent string) (networkRenewalTarget, bool) 
 // anyClient (a sign-out of this app's own session). A device that owns the
 // API removes its own client credential, with the rest of its sign-in, when
 // its logout listener runs (logoutRejectedClient checks that credential is
-// still the stored one), so its API leaves it here. notice keeps the account
-// sign-in notice, with its cause, across restarts when the device stays signed
-// in; false is a sign-out, which ends any.
-func (self *LocalState) rejectNetworkCredential(expected string, removeRelatedClient bool, anyClient bool, notice bool, noticeCause string) error {
+// still the stored one), so its API leaves it here. required keeps the
+// account's sign-in requirement, with its cause, across restarts when the
+// device stays signed in; false is a sign-out, which ends any.
+func (self *LocalState) rejectNetworkCredential(expected string, removeRelatedClient bool, anyClient bool, required bool, cause string) error {
 	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
 		if state.ByJwt != expected {
 			return false, nil
 		}
 		state.ByJwt = ""
-		state.setAccountSignInNotice(notice, noticeCause)
+		state.setAccountSignInRequired(required, cause)
 		if removeRelatedClient && (anyClient || sameTaggedSession(expected, state.ByClientJwt)) {
 			state.ByClientJwt = ""
 			state.InstanceId = ""
@@ -169,16 +201,17 @@ func (self *Api) endNetworkCredential(target networkRenewalTarget, cause string,
 	signOut = signOut || self.selfRevokedWithLock(target.byJwt)
 	logout := signOut || self.byJwt == target.byJwt || self.byJwt == "" || sameTaggedSession(self.byJwt, target.byJwt)
 	deviceOwned := self.deviceAuthOwner != nil
-	// the notice of a rejection that keeps this device signed in, kept with
-	// the store so it outlives a restart; a sign-out ends any
-	noticeCause := ""
+	// a rejection that keeps this device signed in is kept with the store, so
+	// the account's sign-in requirement and its notice outlive a restart; a
+	// sign-out ends any
+	requiredCause := ""
 	if !logout {
-		noticeCause = self.trustedRejectionCauseWithLock(target.byJwt, cause)
+		requiredCause = self.trustedRejectionCauseWithLock(target.byJwt, cause)
 	}
 	self.mutex.Unlock()
 	var persistenceErr error
 	if target.store != nil {
-		persistenceErr = target.store.rejectNetworkCredential(target.byJwt, !deviceOwned, signOut, !logout, noticeCause)
+		persistenceErr = target.store.rejectNetworkCredential(target.byJwt, !deviceOwned, signOut, !logout, requiredCause)
 	}
 	self.mutex.Lock()
 	self.credentialPersistenceError = nil

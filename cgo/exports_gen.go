@@ -5227,6 +5227,17 @@ func urnet_api_get_transfer_stats(self C.uint64_t, callback_result C.urnet_get_t
 	self_.GetTransferStats(callback_)
 }
 
+//export urnet_api_has_account_sign_in_notice
+func urnet_api_has_account_sign_in_notice(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_api_has_account_sign_in_notice")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_has_account_sign_in_notice")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.HasAccountSignInNotice()
+	return C.bool(r0)
+}
+
 //export urnet_api_has_network_credential
 func urnet_api_has_network_credential(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_api_has_network_credential")
@@ -16769,6 +16780,17 @@ func urnet_is_sandbox_purchase_refusal(result *C.char) C.bool {
 func urnet_is_valid_payment_reference(s *C.char) C.bool {
 	defer cgoGuard("urnet_is_valid_payment_reference")
 	r0 := sdk.IsValidPaymentReference(goString(s))
+	return C.bool(r0)
+}
+
+//export urnet_local_auth_state_snapshot_get_account_sign_in_required
+func urnet_local_auth_state_snapshot_get_account_sign_in_required(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_local_auth_state_snapshot_get_account_sign_in_required")
+	self_, ok := resolveHandle[*sdk.LocalAuthStateSnapshot](uint64(self), "urnet_local_auth_state_snapshot_get_account_sign_in_required")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetAccountSignInRequired()
 	return C.bool(r0)
 }
 

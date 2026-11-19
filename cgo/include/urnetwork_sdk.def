@@ -81,6 +81,7 @@ EXPORTS
 	urnet_api_get_provider_status
 	urnet_api_get_referral_network
 	urnet_api_get_transfer_stats
+	urnet_api_has_account_sign_in_notice
 	urnet_api_has_network_credential
 	urnet_api_is_auth_logout_current
 	urnet_api_list_api_keys
@@ -971,6 +972,7 @@ EXPORTS
 	urnet_is_sandbox_purchase_refusal
 	urnet_is_valid_payment_reference
 	urnet_live_handle_count
+	urnet_local_auth_state_snapshot_get_account_sign_in_required
 	urnet_local_auth_state_snapshot_get_by_client_jwt
 	urnet_local_auth_state_snapshot_get_by_jwt
 	urnet_local_auth_state_snapshot_get_empty
