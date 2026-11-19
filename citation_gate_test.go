@@ -19,12 +19,12 @@ import (
 	"testing"
 )
 
-// Names the language reserves, cited as a mechanism rather than as a case. A package may declare
-// at most one TestMain, so "exactly one declaration in this repository" is the wrong question to
-// ask of it. Held both ways: an entry no production comment cites is excusing nothing.
+// Names that match the citation pattern but do not identify a Go test case.
+// Each entry must still be named in a production comment.
 var citationIsNotACase = map[string]string{
 	"TestMain": "go's own per-package entry point, named as a mechanism rather than as a case; " +
 		"a repository has one per package and the count is meaningless",
+	"TestFlight": "Apple’s beta distribution service, named in App Store sandbox purchase prose",
 }
 
 // Directory names the walk does not enter, with why. None of them may hold this repository's

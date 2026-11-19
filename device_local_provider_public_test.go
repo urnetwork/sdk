@@ -1,9 +1,10 @@
 package sdk
 
 // The provider's platform dials follow its provide mode (connect/EXTENDER.md
-// J4). A provider whose mode includes public reaches the platform directly on
-// every transport, the standby included, so the platform observes the
-// provider's own address and location; a network or friends-and-family
+// J4). A provider whose mode includes public reaches the platform on its own
+// egress on every transport, the standby included -- through no extender, and
+// through its space's proxy when it has one -- so the platform observes the
+// address the provider's exit leaves from; a network or friends-and-family
 // provider keeps the device's shared strategy and its extender dialers. A
 // mode change that flips that rebuilds the provider transports.
 //
@@ -54,7 +55,7 @@ func (self *providerDialRecorder) nextDial(timeout time.Duration) string {
 }
 
 // A standby-only provider (no family urls) in a provide mode, whose shared
-// strategy and whose own direct-only strategy dial through distinguishable
+// strategy and whose own egress strategy dial through distinguishable
 // recorders. A plain ws url keeps the dial on the injected dial context, which
 // is where gorilla hands an untunneled websocket dial.
 func newTestProvideModeProvider(
@@ -70,9 +71,9 @@ func newTestProvideModeProvider(
 	sharedStrategySettings.ConnectSettings.DialContextSettings = recorder.dialContextSettings("shared")
 	sharedStrategy := connect.NewClientStrategy(client.Ctx(), sharedStrategySettings)
 	t.Cleanup(sharedStrategy.Close)
-	// the settings a public provider's direct-only strategy is built from
+	// the settings a public provider's egress strategy is built from
 	clientStrategySettings := connect.DefaultClientStrategySettings()
-	clientStrategySettings.ConnectSettings.DialContextSettings = recorder.dialContextSettings("direct")
+	clientStrategySettings.ConnectSettings.DialContextSettings = recorder.dialContextSettings("egress")
 
 	provider := &deviceLocalProvider{
 		ctx:                       client.Ctx(),
@@ -95,10 +96,10 @@ func newTestProvideModeProvider(
 	}
 	t.Cleanup(func() {
 		provider.stateLock.Lock()
-		directStandbyStrategy := provider.directStandbyStrategy
+		egressStandbyStrategy := provider.egressStandbyStrategy
 		provider.stateLock.Unlock()
-		if directStandbyStrategy != nil {
-			directStandbyStrategy.Close()
+		if egressStandbyStrategy != nil {
+			egressStandbyStrategy.Close()
 		}
 	})
 	return provider, recorder
@@ -127,11 +128,12 @@ func receiveStandbyStrategy(t *testing.T, strategies chan *connect.ClientStrateg
 	}
 }
 
-// A public provider's standby dials with the provider's own direct-only
-// strategy, which carries no extender dialer and no proxy (J4). connect's
-// TestNewDirectClientStrategyDropsExtendersAndProxy pins that a strategy from
-// NewDirectClientStrategy drops both.
-func TestDeviceLocalProviderPublicStandbyDialsDirect(t *testing.T) {
+// A public provider's standby dials with the provider's own egress strategy,
+// which carries no extender dialer and keeps the space's dial (J4). connect's
+// TestNewEgressClientStrategyKeepsTheSpaceProxy pins what a strategy from
+// NewEgressClientStrategy keeps and drops, and
+// TestDeviceLocalProviderPublicStandbyDialsThroughTheSpaceProxy the proxy.
+func TestDeviceLocalProviderPublicStandbyDialsOnItsEgress(t *testing.T) {
 	provider, recorder := newTestProvideModeProvider(t, ProvideModePublic)
 	transport := provider.newProviderPlatformTransport(
 		provider.auth,
@@ -148,8 +150,8 @@ func TestDeviceLocalProviderPublicStandbyDialsDirect(t *testing.T) {
 	if label == "" {
 		t.Fatal("the standby never dialed")
 	}
-	if label != "direct" {
-		t.Fatalf("the standby dialed with the %s strategy, want the direct-only strategy", label)
+	if label != "egress" {
+		t.Fatalf("the standby dialed with the %s strategy, want the egress strategy", label)
 	}
 }
 
@@ -168,10 +170,10 @@ func TestDeviceLocalProviderNetworkStandbyKeepsSharedStrategy(t *testing.T) {
 		t.Fatal("a network provider's standby did not keep the device's shared strategy")
 	}
 	provider.stateLock.Lock()
-	directStandbyStrategy := provider.directStandbyStrategy
+	egressStandbyStrategy := provider.egressStandbyStrategy
 	provider.stateLock.Unlock()
-	if directStandbyStrategy != nil {
-		t.Fatal("a network provider built a direct-only strategy it does not use")
+	if egressStandbyStrategy != nil {
+		t.Fatal("a network provider built an egress strategy it does not use")
 	}
 	label := recorder.nextDial(30 * time.Second)
 	if label == "" {
@@ -204,8 +206,8 @@ func TestDeviceLocalProviderProvideModeFlipRebuildsTransports(t *testing.T) {
 	}
 
 	provider.setProvideMode(ProvideModePublic)
-	directStandbyStrategy := receiveStandbyStrategy(t, standbyStrategies)
-	if directStandbyStrategy == nil || directStandbyStrategy == provider.clientStrategy {
+	egressStandbyStrategy := receiveStandbyStrategy(t, standbyStrategies)
+	if egressStandbyStrategy == nil || egressStandbyStrategy == provider.clientStrategy {
 		t.Fatal("the rebuilt standby kept the shared strategy after the flip to public")
 	}
 	if !waitProviderCondition(15*time.Second, func() bool {

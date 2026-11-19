@@ -64,11 +64,13 @@ func testExtenderStatusSyncedDeviceLocalRemote(
 }
 
 // The same pair with the local device's settings adjusted first, which is how
-// a test runs a provider behind the rpc.
+// a test runs a provider behind the rpc. A beforeSyncWait callback can
+// observe startup before the fixture waits for the first connection.
 func testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
 	t *testing.T,
 	networkSpace *NetworkSpace,
 	configureLocal func(settings *DeviceLocalSettings),
+	beforeSyncWait ...func(*DeviceRemote),
 ) (*DeviceLocal, *DeviceRemote) {
 	t.Helper()
 
@@ -98,7 +100,10 @@ func testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
 		deviceRemote.Close()
 		deviceLocal.Close()
 	})
-	deviceRemote.Sync()
+	for _, observe := range beforeSyncWait {
+		observe(deviceRemote)
+	}
+	// The local device is already listening and the remote dials on startup.
 	if !deviceRemote.waitForSync(30 * time.Second) {
 		t.Fatal("device remote did not sync")
 	}

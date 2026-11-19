@@ -43,8 +43,13 @@ type CryptoPaymentAsset struct {
 	Items *StringList `json:"items,omitempty"`
 	// the confirmations a payment needs before it is credited
 	ConfirmationsRequired int `json:"confirmations_required"`
-	// how long a quote holds
+	// how long a quote holds: the window to send the payment in
 	QuoteTtlSeconds int `json:"quote_ttl_seconds"`
+	// how long past a quote's expiry a payment sent within it may confirm and
+	// still be credited at the quoted price: 10800 (3 hours) for Bitcoin,
+	// whose payments the server sees only once mined; 0 (left out) for every
+	// other coin
+	ConfirmationGraceSeconds int `json:"confirmation_grace_seconds,omitempty"`
 }
 
 type CryptoPaymentAssetList struct {
@@ -153,7 +158,11 @@ type CryptoPaymentStatusResult struct {
 	Confirmations         int    `json:"confirmations"`
 	ConfirmationsRequired int    `json:"confirmations_required"`
 	ExpiresAt             string `json:"expires_at,omitempty"`
-	CreditedAt            string `json:"credited_at,omitempty"`
+	// as CryptoPaymentAsset.ConfirmationGraceSeconds: through this long past
+	// ExpiresAt a Bitcoin invoice stays pending, since a payment sent in time
+	// may not be mined yet
+	ConfirmationGraceSeconds int    `json:"confirmation_grace_seconds,omitempty"`
+	CreditedAt               string `json:"credited_at,omitempty"`
 	// the code a paid invoice bought, for delivery "code"
 	BalanceCode string `json:"balance_code,omitempty"`
 	// PurchaseErrorCodeQuoteExpired while expired, PurchaseErrorCodeUnderpaid
@@ -196,12 +205,15 @@ type CryptoPaymentIntentResult struct {
 	// the payment uri the server built. Show it as a QR code and open it in a
 	// wallet only when CheckCryptoPaymentUri passes; never build one. A TAO
 	// invoice has none: its QR code is the address alone (CryptoPaymentQrText).
-	Uri                   string                     `json:"uri,omitempty"`
-	QuotedAt              string                     `json:"quoted_at,omitempty"`
-	ExpiresAt             string                     `json:"expires_at,omitempty"`
-	ConfirmationsRequired int                        `json:"confirmations_required,omitempty"`
-	Status                *CryptoPaymentStatusResult `json:"status,omitempty"`
-	Error                 *CryptoPaymentError        `json:"error,omitempty"`
+	Uri      string `json:"uri,omitempty"`
+	QuotedAt string `json:"quoted_at,omitempty"`
+	// the end of the window to send the payment in
+	ExpiresAt string `json:"expires_at,omitempty"`
+	// as CryptoPaymentAsset.ConfirmationGraceSeconds (Bitcoin's 10800, else 0)
+	ConfirmationGraceSeconds int                        `json:"confirmation_grace_seconds,omitempty"`
+	ConfirmationsRequired    int                        `json:"confirmations_required,omitempty"`
+	Status                   *CryptoPaymentStatusResult `json:"status,omitempty"`
+	Error                    *CryptoPaymentError        `json:"error,omitempty"`
 }
 
 type CryptoPaymentAssetsCallback connect.ApiCallback[*CryptoPaymentAssetsResult]

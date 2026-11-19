@@ -298,7 +298,22 @@ func TestDeviceRemoteQueuesTheProvideExtenderSettingWhileUnreachable(t *testing.
 // ui while the daemon restarts (N2).
 func TestDeviceRemoteProvideExtenderLastKnownWhileUnreachable(t *testing.T) {
 	_, networkSpace := testExtenderStatusSpace(t)
-	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+	var startupReconnect <-chan struct{}
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t, networkSpace, nil, func(remote *DeviceRemote) {
+			if !remote.waitForSync(30*time.Second) || remote.getService() == nil {
+				t.Fatal("automatic startup did not publish a forward RPC service")
+			}
+			startupReconnect = remote.reconnectMonitor.NotifyChannel()
+		},
+	)
+	// A redundant Sync closes this exact channel synchronously, even if the
+	// RPC owner has yet to retire the already-published service.
+	select {
+	case <-startupReconnect:
+		t.Fatal("local-first fixture requested another sync after publishing its first RPC service")
+	default:
+	}
 
 	deviceRemote.SetProvideExtender(false)
 	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), false)

@@ -55,6 +55,8 @@ const (
 // takes any credential. TestApiAdminRoutesMatchTheServer compares the two
 // tables when the server checkout is beside the sdk.
 var apiAdminRouteAccess = map[string]apiRouteAccess{
+	"GET /lag/drift-test":                     apiRouteAccessNetwork,
+	"POST /lag/drift-test":                    apiRouteAccessNetwork,
 	"GET /network/sessions":                   apiRouteAccessNetwork,
 	"POST /network/revoke-session":            apiRouteAccessNetwork,
 	"POST /network/revoke-other-sessions":     apiRouteAccessNetwork,

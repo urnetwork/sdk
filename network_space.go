@@ -257,12 +257,12 @@ type NetworkSpace struct {
 
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings is what clientStrategy was built from. The
-	// provider's family-pinned transports seed their direct-only strategies
-	// from it (connect.NewDirectClientStrategy), so a pinned dial carries the
-	// same tls, resolver and logging configuration as the shared strategy
-	// minus the extenders and proxy. A strategy derived from it takes the DoH
-	// settings in force instead of the ones here, which a bootstrap DoH
-	// change replaces (see derivedClientStrategySettings).
+	// provider's family-pinned transports seed their egress strategies from
+	// it (connect.NewEgressClientStrategy), so a pinned dial carries the same
+	// tls, resolver, logging and proxy configuration as the shared strategy
+	// minus the extenders and VLESS servers. A strategy derived from it takes
+	// the DoH settings in force instead of the ones here, which a bootstrap
+	// DoH change replaces (see derivedClientStrategySettings).
 	clientStrategySettings *connect.ClientStrategySettings
 	asyncLocalState        *AsyncLocalState
 	api                    *Api
@@ -1381,13 +1381,28 @@ func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.Memor
 }
 
 // The settings a strategy derived from the space's is built from: a hosted
-// device's private strategy and a provider's direct ones. They are what the
+// device's private strategy and a provider's egress ones. They are what the
 // space's strategy was built from, with the DoH settings that strategy has in
 // force now, which a bootstrap DoH change replaces in place.
 func (self *NetworkSpace) derivedClientStrategySettings() *connect.ClientStrategySettings {
 	settings := *self.clientStrategySettings
 	settings.DohSettings = self.clientStrategy.DohSettings()
 	return &settings
+}
+
+// The space's egress when it is a proxy, such as a proxy slot of the sn miner
+// (connect#227): the proxy, and the dial seam the space was built with beside
+// it, nil when it has none. Nil, nil for a space whose egress is this host,
+// which is every app's. Everything a device in a proxied space sends leaves
+// through the proxy (owner 2026-11-18, "route through the proxy"): its
+// platform transports, its exit's tcp, and udp only through the seam's packet
+// endpoint; it opens no p2p stream and never runs the provider extender role.
+// A nil space has no proxy.
+func (self *NetworkSpace) egressProxy() (*connect.ProxySettings, *connect.DialContextSettings) {
+	if self == nil || self.clientStrategySettings == nil || self.clientStrategySettings.ProxySettings == nil {
+		return nil, nil
+	}
+	return self.clientStrategySettings.ProxySettings, self.clientStrategySettings.DialContextSettings
 }
 
 func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
