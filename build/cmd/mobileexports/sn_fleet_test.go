@@ -23,7 +23,7 @@ func snFleetGenerateBindings(t *testing.T, language string) string {
 	if language == "java" {
 		args = append(args, "-javapkg=com.bringyour")
 	}
-	args = append(args, "github.com/urnetwork/sdk")
+	args = append(args, "github.com/urnetwork/sdk/v2026")
 	command := exec.Command("go", args...)
 	command.Dir = "../.."
 	command.Env = append(
