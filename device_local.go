@@ -2931,22 +2931,32 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 	return nil
 }
 
-// hostedSafePerformanceProfile forces direct mode (`AllowDirect`) off on the
-// way into a hosted device's stored state, so `GetPerformanceProfile` is
-// truthful and the input profile is not mutated in place. Direct mode on a
-// hosted device would leak that the device is hosted, and where it is hosted,
-// via the host addresses in the direct connection setup. Defense in depth
-// alongside the equivalent hard limit on the live multi client
+// Limits a profile on the way into a hosted device's stored state, so
+// `GetPerformanceProfile` is truthful and the input profile is not mutated in
+// place. Every profile write passes through here (the preference catalog's
+// normalize and apply).
+//
+// Direct mode (`AllowDirect`) is forced off. Direct mode on a hosted device
+// would leak that the device is hosted, and where it is hosted, via the host
+// addresses in the direct connection setup. Defense in depth alongside the
+// equivalent hard limit on the live multi client
 // (`connect.MultiClientSettings.OverrideAllowDirect` = false).
+//
+// Post-quantum encryption (`PostQuantumEncryption`) is forced off, so a hosted
+// device's window clients run no per-peer session, as a hosted window without
+// it always has: no required sessions, no wait for a processed key
+// registration, and no post-quantum-only provider pool. A device that is not
+// hosted, every app's, keeps the setting.
 func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
 	if !self.settings.HostedIncompatible {
 		return performanceProfile
 	}
-	if performanceProfile == nil || !performanceProfile.AllowDirect {
+	if performanceProfile == nil || !performanceProfile.AllowDirect && !performanceProfile.PostQuantumEncryption {
 		return performanceProfile
 	}
 	limited := *performanceProfile
 	limited.AllowDirect = false
+	limited.PostQuantumEncryption = false
 	return &limited
 }
 
@@ -2957,7 +2967,11 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 // Applies without saving; its owning operation publishes notifications after unlock.
 func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *PerformanceProfile) (func(), error) {
 	if limited := self.hostedSafePerformanceProfile(performanceProfile); limited != performanceProfile {
-		self.log.Infof("[device]hosted incompatible: AllowDirect forced off\n")
+		self.log.Infof(
+			"[device]hosted incompatible: forced off AllowDirect=%t PostQuantumEncryption=%t\n",
+			performanceProfile.AllowDirect,
+			performanceProfile.PostQuantumEncryption,
+		)
 		performanceProfile = limited
 	}
 	// Own the stored value. App presentation layers commonly retain and mutate
