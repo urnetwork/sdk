@@ -581,8 +581,11 @@ func (self *SidecarSearchHandle) run(request *sidecarSearchRequest) {
 	emptyPullCount := 0
 	// whether the page changed since it was last given
 	changed := true
+	// whether the state last given said done
+	givenDone := false
 	give := func() {
-		self.pages.offer(self.currentPage(), page, progress, sourceDone && len(held) == 0)
+		givenDone = sourceDone && len(held) == 0
+		self.pages.offer(self.currentPage(), page, progress, givenDone)
 		changed = false
 	}
 	nextPage := func(size int) {
@@ -599,7 +602,9 @@ func (self *SidecarSearchHandle) run(request *sidecarSearchRequest) {
 			changed = true
 		}
 		if sourceDone && len(held) == 0 {
-			if changed {
+			// done is part of what the listener sees: a last pull that brings no hit and changes no progress still
+			// ends the stream with a page that says so
+			if changed || !givenDone {
 				give()
 			}
 			self.finish()

@@ -325,6 +325,35 @@ func TestPagesReplace(t *testing.T) {
 	}
 }
 
+// A last pull that brings no hit and leaves the progress as it was still gives a page with done set, holding the hits
+// before it: done is part of what the listener sees. The stream once finished there without giving it, so a source
+// that answered its last hits and then done alone, as the core's search more can, left the listener waiting on a page
+// that never came (found by SDK-M10-06's phone cells, about one download in six).
+func TestALastPullOfDoneAloneEndsTheStream(t *testing.T) {
+	backend := newTestSearchBackend()
+	search := newTestSidecarSearch(t, backend, nil)
+	listener := newTestSearchListener()
+	handle := search.Search(&SidecarSearchQuery{Text: "harbor"}, listener)
+	defer handle.Cancel()
+	source := backend.nextSource(t)
+	source.step(t, &testSearchStep{hits: []*SidecarSearchHit{testSearchHit(1), testSearchHit(2)}, progress: &SidecarSearchProgress{Searched: 2, Total: 2}})
+	if first := listener.next(t); first.done || len(first.hits) != 2 {
+		t.Fatalf("the first page: %d hits, done %v", len(first.hits), first.done)
+	}
+	source.step(t, &testSearchStep{progress: &SidecarSearchProgress{Searched: 2, Total: 2}, done: true})
+	last := listener.next(t)
+	if !last.done || !slices.Equal(testSearchPaths(last.hits), []string{"notes/1.md", "notes/2.md"}) || last.progress.Code != "" || last.progress.Searched != 2 {
+		t.Fatalf("the last page: %v done %v progress %+v", testSearchPaths(last.hits), last.done, last.progress)
+	}
+	select {
+	case <-source.closed:
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("the stream did not end its source after its last page")
+	}
+	// and nothing follows the page that said done
+	listener.requireNone(t, func() {})
+}
+
 // More starts the next page from hits already ranked, and past the last page answers an empty one with done set.
 func TestMoreNextPage(t *testing.T) {
 	backend := newTestSearchBackend()

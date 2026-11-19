@@ -28,11 +28,13 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 	"github.com/urnetwork/sidecar/sidecartest/t4cell"
@@ -162,7 +164,16 @@ func (self *testT4SearchCell) searchStep(step string, budgetByteCount int64, que
 		handle := search.Search(query, listener)
 		defer handle.Cancel()
 		for {
-			page := listener.next(self.t)
+			var page *testSearchPage
+			select {
+			case page = <-listener.pages:
+			case <-time.After(testSidecarTimeout):
+				last := &SidecarSearchProgress{}
+				if 0 < len(pages) {
+					last = pages[len(pages)-1].progress
+				}
+				return fmt.Errorf("%s: no page after %d, the last %+v", step, len(pages), last)
+			}
 			sample()
 			pages = append(pages, page)
 			if page.done {
