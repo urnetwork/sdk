@@ -3,7 +3,7 @@
 // EnrollWithDevice (§18.5, §5.6's sdk host row, §7.4; CORE-M8-01): an app's sidecar enrolls as a child of its device
 // client, admin_refused and strict_exp, so the sidecar role never holds the device's token or a network credential
 // (I-6). The core runs Enroll's order, failing closed: its keys in memory, then the mint, which this file makes on the
-// device's own Api with the device's token, naming nothing but the marks, then the binding, and only once the mint's
+// device's own Api with the device's token, naming the parent client and the marks, then the binding, and only once the mint's
 // answer confirmed admin_refused and strict_exp the keychain and sidecar.json; without both marks it keeps nothing and
 // removes the child. A re-pair, a later EnrollWithDevice on an enrolled sidecar, keeps the sidecar_id and identity key
 // and binds generation n+1 on a new client (identity_enroll_child.go).
@@ -36,11 +36,12 @@ const (
 // POST /network/auth-client's body for an app's sidecar: a child of the bearer's client, with §7.4's marks and §20.8's
 // declaration.
 type sidecarChildMintArgs struct {
-	Description      string `json:"description"`
-	DeviceSpec       string `json:"device_spec"`
-	AdminRefused     bool   `json:"admin_refused"`
-	StrictExp        bool   `json:"strict_exp"`
-	DeclaresNoEgress bool   `json:"declares_no_egress"`
+	SourceClientId   connect.Id `json:"source_client_id"`
+	Description      string     `json:"description"`
+	DeviceSpec       string     `json:"device_spec"`
+	AdminRefused     bool       `json:"admin_refused"`
+	StrictExp        bool       `json:"strict_exp"`
+	DeclaresNoEgress bool       `json:"declares_no_egress"`
 }
 
 // Its answer.
@@ -147,18 +148,24 @@ func awaitSidecarIdentity(ctx context.Context, local *sidecar.Sidecar) (*sidecar
 // POST /network/auth-client on the device's token: a new child of the device's client, admin_refused, strict_exp and
 // declaring no egress. Only the child's answer comes back; the device's token stays its Api's.
 func mintSidecarChild(ctx context.Context, deviceApi *Api) (*sidecar.SidecarAuthClientResult, error) {
+	deviceJwt := deviceApi.GetByJwt()
+	sourceClientId, err := parseByJwtClientId(deviceJwt)
+	if err != nil || sourceClientId == (connect.Id{}) {
+		return nil, errors.New("the device's token names no parent client")
+	}
 	reply, err := connect.HttpPostWithRawFunction(
 		ctx,
 		deviceApi.getHttpPostRaw(),
 		fmt.Sprintf("%s/network/auth-client", deviceApi.apiUrl),
 		&sidecarChildMintArgs{
+			SourceClientId:   sourceClientId,
 			Description:      sidecarChildDescription,
 			DeviceSpec:       sidecarChildDeviceSpec,
 			AdminRefused:     true,
 			StrictExp:        true,
 			DeclaresNoEgress: true,
 		},
-		deviceApi.GetByJwt(),
+		deviceJwt,
 		&sidecarChildMintResult{},
 		connect.NewNoopApiCallback[*sidecarChildMintResult](),
 	)

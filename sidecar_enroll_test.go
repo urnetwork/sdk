@@ -9,6 +9,7 @@ package sdk
 // and the core's; the platform is a closed loopback port, so nothing leaves the machine.
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,6 +64,14 @@ func testSidecarResultCallback() (SidecarResultCallback, chan *SidecarResult) {
 	}), results
 }
 
+// The auth-client route requires a client bearer to name itself as the new client's parent.
+func testSidecarMintHasDeviceParent(request testSessionRequest) bool {
+	var args struct {
+		SourceClientId string `json:"source_client_id"`
+	}
+	return json.Unmarshal(request.body, &args) == nil && args.SourceClientId == credentialTestClientId
+}
+
 func TestEnrollWithDeviceHandsTheSessionTheCoreSigner(t *testing.T) {
 	world := newTestSidecarWorld(t)
 	coreServer, coreUrl := newTestCoreServer(t)
@@ -72,6 +81,9 @@ func TestEnrollWithDeviceHandsTheSessionTheCoreSigner(t *testing.T) {
 	deviceServer := newTestSessionServer(func(request testSessionRequest) (int, any) {
 		switch request.path {
 		case "/network/auth-client":
+			if !testSidecarMintHasDeviceParent(request) {
+				return http.StatusOK, map[string]any{"error": map[string]string{"message": "a client bearer must name its parent"}}
+			}
 			return http.StatusOK, map[string]any{"by_client_jwt": child, "client_id": childClientId.String(), "admin_refused": true, "strict_exp": true}
 		case "/auth/refresh":
 			return http.StatusOK, map[string]string{"by_jwt": refreshed}

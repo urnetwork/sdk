@@ -312,6 +312,9 @@ func newTestRemoteDeviceApi(t *testing.T, marks map[string]bool) *testRemoteDevi
 	self.server = newTestSessionServer(func(request testSessionRequest) (int, any) {
 		switch request.path {
 		case "/network/auth-client":
+			if !testSidecarMintHasDeviceParent(request) {
+				return http.StatusOK, map[string]any{"error": map[string]string{"message": "a client bearer must name its parent"}}
+			}
 			childClientId := sidecar.NewId()
 			child := testSidecarChildToken(t, credentialTestNetworkId, childClientId.String(), 0)
 			self.stateLock.Lock()
