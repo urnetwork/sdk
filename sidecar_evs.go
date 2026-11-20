@@ -1,10 +1,11 @@
 //go:build !ios_extension && !js
 
-// SidecarEvs (§18.5, D-SDK-2; SDK-M8-03): an app's calls on its network's evs repos, in format 1's forms, each a thin
-// mapping onto the core's EvsClient: CreateRepo with its private flag (owner decision 181), ReadHead, History, Write of
-// at most 1 MiB on a file-mode ref, AddRepoChangeListener and Erasures. Tokens are derived and decrypted in the core,
-// so nothing here touches a key, and every check the core makes stands behind each call: nothing here adds one the
-// core lacks or skips one it makes.
+// SidecarEvs (§18.5, D-SDK-2; SDK-M8-03, SDK-M10-05): an app's calls on its network's evs repos, each a thin mapping
+// onto the core's EvsClient: CreateRepo with its private flag (owner decision 181), ReadHead, ReadVersion, History with
+// format 2's states, Write of at most 1 MiB on a file-mode ref with its versioning setting, AddRepoChangeListener and
+// Erasures, and the drop calls (sidecar_evs_drop.go). Tokens are derived and decrypted in the core, so nothing here
+// touches a key, and every check the core makes stands behind each call: nothing here skips one, and beside its own
+// bounds this layer adds one, D-SDK-29's, before the drop calls reach the core.
 //
 // Every call answers once, on a Go thread, through its callback: Ok when it did what it asked, else a refusal with
 // §18.5's code where one exists and a message for a person, whether the core refused, the Sidecar closed under it,
@@ -13,10 +14,17 @@
 //
 //	EVS_GIT_REF             a write to a git-mode ref, which takes writes only through the local tier (§11.7)
 //	EVS_TOO_LARGE           a write past WriteMaxByteCount (§18.5's 1 MiB), or a read past ReadMaxByteCount
-//	EVS_VERSIONING          a write's versioning argument, which takes "" until format 2 (SDK-M10-05)
+//	EVS_VERSIONING          a write's versioning argument other than "", "on" or "off", refused before the core; or
+//	                        evs's 409 VERSIONING, a caller's error, never retried
 //	EVS_NOT_FOUND           a path the head does not hold
-//	EVS_FORMAT_UNSUPPORTED  a format 2 construct the core refuses
-//	EVS_INVALID             a call the core cannot run: a path that splits into no names, a kind apps do not create
+//	EVS_DROPPED             ReadVersion of a version a drop took: from its drop's not_before by this device's clock,
+//	                        unless the drop is cancelled or refused, nothing fetched (§11.7's states row)
+//	EVS_COLLECTED           ReadVersion of a replaced versionless version, whose content evs no longer keeps (§11.9)
+//	EVS_FORMAT_UNSUPPORTED  a format 2 construct the core refuses, versioning "off" outside the network's format 2 gate
+//	                        among them
+//	EVS_INVALID             a call the core cannot run: a path that splits into no names, a kind apps do not create,
+//	                        a version that is no number
+//	EVS_DROP_*              the drop calls' own refusals (sidecar_evs_drop.go)
 //	EVS_<refusal>           evs's own answer, its refusal code's name less EVS_REFUSAL_: EVS_PATH_CONFLICT, a
 //	                        versionless path's 409, surfaced and never retried by rebasing (§11.7); EVS_SCOPE; ...
 //	EVS_UNAVAILABLE         the Sidecar closed, or the call's context ended, before an answer
@@ -83,6 +91,8 @@ const (
 	sidecarEvsCodeTooLarge          = "EVS_TOO_LARGE"
 	sidecarEvsCodeVersioning        = "EVS_VERSIONING"
 	sidecarEvsCodeNotFound          = "EVS_NOT_FOUND"
+	sidecarEvsCodeDropped           = "EVS_DROPPED"
+	sidecarEvsCodeCollected         = "EVS_COLLECTED"
 	sidecarEvsCodeFormatUnsupported = "EVS_FORMAT_UNSUPPORTED"
 	sidecarEvsCodeInvalid           = "EVS_INVALID"
 	sidecarEvsCodeUnavailable       = "EVS_UNAVAILABLE"
@@ -115,6 +125,8 @@ type sidecarEvsBackend interface {
 	CreateRepo(ctx context.Context, args *sidecar.EvsCreateRepoArgs) (sidecar.Id, error)
 	// sidecar.EvsRepo.ReadHead of repoId.
 	ReadHead(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs, out io.Writer) (*sidecar.EvsFileInfo, error)
+	// sidecar.EvsRepo.ReadVersion of repoId.
+	ReadVersion(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs, out io.Writer) (*sidecar.EvsFileInfo, error)
 	// sidecar.EvsRepo.History of repoId.
 	History(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs) (*sidecar.EvsHistory, error)
 	// sidecar.EvsRepo.Write of repoId.
@@ -125,11 +137,26 @@ type sidecarEvsBackend interface {
 	Subscribe(ctx context.Context, repoId sidecar.Id) (func(), error)
 	// sidecar.EvsClient.AddRepoChangeListener for repoId.
 	AddRepoChangeListener(repoId sidecar.Id, listener sidecar.EvsRepoChangeFunction) func()
+	// D-SDK-29's check on this device's newest verified state (sidecar_evs_drop.go): nil when this device may take act
+	// on repoId now, else why not, an error that is sidecar.ErrEvsDropRefused.
+	MayDrop(repoId sidecar.Id, act sidecarEvsDropAct) error
+	// sidecar.EvsRepo.DropHistoryPreview of repoId.
+	DropHistoryPreview(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsDropPreviewArgs) (*sidecar.EvsDropPreview, error)
+	// sidecar.EvsRepo.DropHistory of repoId.
+	DropHistory(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsDropHistoryArgs) (*sidecar.EvsDropHistoryResult, error)
+	// sidecar.EvsRepo.CancelDrop of repoId.
+	CancelDrop(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsCancelDropArgs) (*sidecar.EvsCancelDropResult, error)
+	// repoId's drops on every ref, each named against the paths this device names on main: sidecar.EvsRepo.KnownPaths,
+	// then sidecar.EvsRepo.Drops.
+	Drops(ctx context.Context, repoId sidecar.Id) ([]*sidecar.EvsDrop, error)
 }
 
 // sidecarEvsBackend over the core's client.
 type sidecarEvsClientBackend struct {
 	client *sidecar.EvsClient
+	// D-SDK-29's check (sidecar_evs_drop.go), on the verified state the composition that built client gives it: nil
+	// until a host composes one, and every preview, drop and cancel is refused meanwhile.
+	dropGate *sidecarEvsDropGate
 }
 
 // See sidecarEvsBackend.
@@ -144,6 +171,11 @@ func (self *sidecarEvsClientBackend) CreateRepo(ctx context.Context, args *sidec
 // See sidecarEvsBackend.
 func (self *sidecarEvsClientBackend) ReadHead(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs, out io.Writer) (*sidecar.EvsFileInfo, error) {
 	return self.client.Repo(repoId).ReadHead(ctx, args, out)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) ReadVersion(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs, out io.Writer) (*sidecar.EvsFileInfo, error) {
+	return self.client.Repo(repoId).ReadVersion(ctx, args, out)
 }
 
 // See sidecarEvsBackend.
@@ -173,6 +205,36 @@ func (self *sidecarEvsClientBackend) Subscribe(ctx context.Context, repoId sidec
 // See sidecarEvsBackend.
 func (self *sidecarEvsClientBackend) AddRepoChangeListener(repoId sidecar.Id, listener sidecar.EvsRepoChangeFunction) func() {
 	return self.client.AddRepoChangeListener(&repoId, listener)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) MayDrop(repoId sidecar.Id, act sidecarEvsDropAct) error {
+	return self.dropGate.check(repoId, act)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) DropHistoryPreview(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsDropPreviewArgs) (*sidecar.EvsDropPreview, error) {
+	return self.client.Repo(repoId).DropHistoryPreview(ctx, args)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) DropHistory(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsDropHistoryArgs) (*sidecar.EvsDropHistoryResult, error) {
+	return self.client.Repo(repoId).DropHistory(ctx, args)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) CancelDrop(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsCancelDropArgs) (*sidecar.EvsCancelDropResult, error) {
+	return self.client.Repo(repoId).CancelDrop(ctx, args)
+}
+
+// See sidecarEvsBackend.
+func (self *sidecarEvsClientBackend) Drops(ctx context.Context, repoId sidecar.Id) ([]*sidecar.EvsDrop, error) {
+	repo := self.client.Repo(repoId)
+	known, err := repo.KnownPaths(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return repo.Drops(ctx, &sidecar.EvsDropsArgs{KnownPaths: known})
 }
 
 // The evs component's factory: the core's EvsComponent over an EvsClient the host composes. None does yet, so a
@@ -211,10 +273,16 @@ type SidecarHistoryVersion struct {
 	SignerSidecarId *Id   `json:"signer_sidecar_id,omitempty"`
 	// The removal that ended the path at this version.
 	Removed bool `json:"removed,omitempty"`
-	// on or off; format 1's are all on.
+	// on (every version kept), off (versionless) or index (the search index's own, §11.14); format 1's are all on.
 	Versioning string `json:"versioning"`
-	// kept; format 2 adds collected, drop_pending and dropped (§11.9).
+	// kept; collected, a replaced versionless version evs no longer keeps; drop_pending, a version a drop lists,
+	// readable until DropNotBeforeMillis; dropped, from then on, nothing of it fetched (§11.7's states row, §11.9). A
+	// drop never takes the head, and a drop a hold defers reads dropped like any other (owner decision 184).
 	State string `json:"state"`
+	// For drop_pending and dropped: the drop that lists the version, and its window's end in unix milliseconds, which
+	// an app shows as "drop pending until <time>" and CancelDrop names.
+	DropId              *Id   `json:"drop_id,omitempty"`
+	DropNotBeforeMillis int64 `json:"drop_not_before_millis,omitempty"`
 }
 
 // A path's versions, newest first.
@@ -350,7 +418,9 @@ func (self *SidecarEvs) close() {
 }
 
 // This Sidecar's evs (§18.5): nil unless the settings named evs and the core's evs component is attached. The remote
-// backend's evs is its daemon's (SDK-M8-02), and nil here until that lands.
+// backend's evs is its daemon's (SDK-M8-02), and nil here until that lands. The component carries no verified
+// authorization state the drop calls' D-SDK-29 check could read, so until a host composes one with its EvsClient
+// (errSidecarEvsNotComposed) the preview, the drop and the cancel are refused here, failing closed.
 func (self *Sidecar) GetEvs() *SidecarEvs {
 	evs, err := traceWithReturn(func() *SidecarEvs {
 		component, ok := self.component(SidecarComponentEvs).(*sidecar.EvsComponent)
@@ -394,7 +464,8 @@ func (self *SidecarEvs) callCtx() (context.Context, error) {
 	return self.ctx, nil
 }
 
-// §18.5's code and the message for err (the file's comment): "" for an error with no code.
+// §18.5's code and the message for err (the file's comment): "" for an error with no code. The core's own refusals
+// come before evs's answer they may wrap: a drop that went stale on a 409 is EVS_DROP_STALE, not the 409.
 func sidecarEvsCodeOf(err error) string {
 	var conflict *sidecar.EvsPathConflictError
 	switch {
@@ -403,6 +474,11 @@ func sidecarEvsCodeOf(err error) string {
 	case errors.Is(err, errSidecarEvsUnavailable), errors.Is(err, sidecar.ErrSidecarClosed),
 		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return sidecarEvsCodeUnavailable
+	}
+	if code := sidecarEvsFormat2CodeOf(err); code != "" {
+		return code
+	}
+	switch {
 	case errors.Is(err, sidecar.ErrEvsGitRef):
 		return sidecarEvsCodeGitRef
 	case errors.Is(err, sidecar.ErrEvsPathAbsent):
@@ -511,38 +587,65 @@ func (self *sidecarEvsBoundedBuffer) Write(p []byte) (int, error) {
 func (self *SidecarEvs) ReadHead(repoId *Id, path string, callback SidecarBytesCallback) {
 	trace(func() {
 		sidecarEvsAnswer(func() *SidecarBytes {
-			refuse := func(err error) *SidecarBytes {
-				return &SidecarBytes{Code: sidecarEvsCodeOf(err), Message: sidecarEvsMessageOf(err)}
-			}
-			ctx, err := self.callCtx()
-			if err != nil {
-				return refuse(err)
-			}
-			coreRepoId, err := sidecarEvsRepoIdOf(repoId)
-			if err != nil {
-				return refuse(err)
-			}
-			out := &sidecarEvsBoundedBuffer{maxByteCount: self.settings.ReadMaxByteCount}
-			info, err := self.backend.ReadHead(ctx, coreRepoId, &sidecar.EvsReadArgs{Path: path}, out)
-			if out.over {
-				return &SidecarBytes{Code: sidecarEvsCodeTooLarge, Message: fmt.Sprintf("the file is larger than the %d bytes an app reads at once", self.settings.ReadMaxByteCount)}
-			}
-			if err != nil {
-				return refuse(err)
-			}
-			return &SidecarBytes{
-				Ok:              true,
-				Data:            out.buffer.Bytes(),
-				Version:         int64(info.Version),
-				CommitVersion:   int64(info.CommitVersion),
-				TimeMillis:      sidecarMillisOf(info.Time),
-				SignerSidecarId: newId([16]byte(info.SignerSidecarId)),
-			}
+			return self.read(repoId, &sidecar.EvsReadArgs{Path: path}, self.backend.ReadHead)
 		}, connect.ApiCallback[*SidecarBytes](callback))
 	})
 }
 
-// Each version of path on repoId's main ref, newest first (§11.7, §11.9): its time, signer, versioning and state.
+// Reads an older version of path on repoId's main ref by its number (§18.5, §11.9), verified and reconstructed in the
+// core as ReadHead's is. A version a drop lists reads as any other until its drop's not_before by this device's
+// clock, History naming that time, and from then on answers EVS_DROPPED with nothing fetched, unless the drop is
+// cancelled or evs reports it refused; the head is never one (§11.7's states row). A replaced versionless version
+// answers EVS_COLLECTED, after the core's fresh read shows its replacement. A version below 1 answers EVS_INVALID.
+func (self *SidecarEvs) ReadVersion(repoId *Id, path string, version int64, callback SidecarBytesCallback) {
+	trace(func() {
+		sidecarEvsAnswer(func() *SidecarBytes {
+			if version < 1 {
+				return &SidecarBytes{Code: sidecarEvsCodeInvalid, Message: fmt.Sprintf("version %d names no version: the first is 1", version)}
+			}
+			return self.read(repoId, &sidecar.EvsReadArgs{Path: path, Version: uint64(version)}, self.backend.ReadVersion)
+		}, connect.ApiCallback[*SidecarBytes](callback))
+	})
+}
+
+// One read's answer through read, its bytes held to ReadMaxByteCount.
+func (self *SidecarEvs) read(
+	repoId *Id,
+	args *sidecar.EvsReadArgs,
+	read func(ctx context.Context, repoId sidecar.Id, args *sidecar.EvsReadArgs, out io.Writer) (*sidecar.EvsFileInfo, error),
+) *SidecarBytes {
+	refuse := func(err error) *SidecarBytes {
+		return &SidecarBytes{Code: sidecarEvsCodeOf(err), Message: sidecarEvsMessageOf(err)}
+	}
+	ctx, err := self.callCtx()
+	if err != nil {
+		return refuse(err)
+	}
+	coreRepoId, err := sidecarEvsRepoIdOf(repoId)
+	if err != nil {
+		return refuse(err)
+	}
+	out := &sidecarEvsBoundedBuffer{maxByteCount: self.settings.ReadMaxByteCount}
+	info, err := read(ctx, coreRepoId, args, out)
+	if out.over {
+		return &SidecarBytes{Code: sidecarEvsCodeTooLarge, Message: fmt.Sprintf("the file is larger than the %d bytes an app reads at once", self.settings.ReadMaxByteCount)}
+	}
+	if err != nil {
+		return refuse(err)
+	}
+	return &SidecarBytes{
+		Ok:              true,
+		Data:            out.buffer.Bytes(),
+		Version:         int64(info.Version),
+		CommitVersion:   int64(info.CommitVersion),
+		TimeMillis:      sidecarMillisOf(info.Time),
+		SignerSidecarId: newId([16]byte(info.SignerSidecarId)),
+	}
+}
+
+// Each version of path on repoId's main ref, newest first (§11.7, §11.9): its time, signer, versioning and state,
+// kept, collected, drop_pending or dropped, the core judging a listed version against its drop's not_before on this
+// device's clock; a dropped version keeps its row, its content gone.
 func (self *SidecarEvs) History(repoId *Id, path string, callback SidecarHistoryCallback) {
 	trace(func() {
 		sidecarEvsAnswer(func() *SidecarHistory {
@@ -563,33 +666,60 @@ func (self *SidecarEvs) History(repoId *Id, path string, callback SidecarHistory
 			}
 			versions := NewSidecarHistoryVersionList()
 			for _, version := range history.Versions {
-				versions.Add(&SidecarHistoryVersion{
-					Version:         int64(version.Version),
-					CommitVersion:   int64(version.CommitVersion),
-					TimeMillis:      sidecarMillisOf(version.Time),
-					SignerSidecarId: newId([16]byte(version.SignerSidecarId)),
-					Removed:         version.Removed,
-					Versioning:      sidecarEvsVersioningOf(version.Versioning),
-					State:           version.State,
-				})
+				versions.Add(sidecarHistoryVersionOf(version))
 			}
 			return &SidecarHistory{Ok: true, Versions: versions, HeadVersion: int64(history.HeadVersion)}
 		}, connect.ApiCallback[*SidecarHistory](callback))
 	})
 }
 
-// A version's versioning as §18.5 names it: the core's 0 is on, format 1's only setting.
-func sidecarEvsVersioningOf(versioning uint32) string {
-	if versioning == 0 {
-		return "on"
+// The bound row of one of the core's history versions: its state as the core judged it on this device's clock, and
+// for a version a drop lists, that drop and its window's end.
+func sidecarHistoryVersionOf(version *sidecar.EvsHistoryVersion) *SidecarHistoryVersion {
+	row := &SidecarHistoryVersion{
+		Version:         int64(version.Version),
+		CommitVersion:   int64(version.CommitVersion),
+		TimeMillis:      sidecarMillisOf(version.Time),
+		SignerSidecarId: newId([16]byte(version.SignerSidecarId)),
+		Removed:         version.Removed,
+		Versioning:      sidecarEvsVersioningOf(version.Versioning),
+		State:           version.State,
 	}
-	return "off"
+	if version.State == sidecar.EvsVersionStateDropPending || version.State == sidecar.EvsVersionStateDropped {
+		if version.DropId != (sidecar.Id{}) {
+			row.DropId = newId([16]byte(version.DropId))
+		}
+		row.DropNotBeforeMillis = sidecarMillisOf(version.DropNotBefore)
+	}
+	return row
+}
+
+// The versioning settings a version carries (§11.7), as §18.5 names them.
+const (
+	sidecarEvsVersioningOn    = "on"
+	sidecarEvsVersioningOff   = "off"
+	sidecarEvsVersioningIndex = "index"
+)
+
+// A version's versioning as §18.5 names it: the core's 0 is on, 1 off and 2 the search index's own; a value no format
+// gives reads as off, which claims no version is kept.
+func sidecarEvsVersioningOf(versioning uint32) string {
+	switch versioning {
+	case 0:
+		return sidecarEvsVersioningOn
+	case 2:
+		return sidecarEvsVersioningIndex
+	}
+	return sidecarEvsVersioningOff
 }
 
 // Writes data to path on repoId's main ref, a file-mode ref (§11.7, §18.5): at most WriteMaxByteCount bytes, in one
-// push, the result naming the path's new version in Value. versioning takes "" alone until format 2 (SDK-M10-05),
-// where "" keeps the path's. A git-mode ref answers EVS_GIT_REF, and a versionless path's 409 comes back as
-// EVS_PATH_CONFLICT, never retried by rebasing.
+// push, the result naming the path's new version in Value. versioning is "", "on" or "off": "" keeps the path's and
+// gives a new path its rules' setting, "on" keeps every version and "off" makes the path versionless (owner decision
+// 167), which the core refuses EVS_FORMAT_UNSUPPORTED outside the network's format 2 gate; any other value answers
+// EVS_VERSIONING before the core sees it. A git-mode ref answers EVS_GIT_REF, and a versionless path's 409 comes back
+// as EVS_PATH_CONFLICT, never retried by rebasing: the loser's content would replace the winner's with no history to
+// recover it (§11.7's writers row).
 func (self *SidecarEvs) Write(repoId *Id, path string, data []byte, versioning string, callback SidecarResultCallback) {
 	trace(func() {
 		// the bytes are the caller's to reuse once Write returns
@@ -599,8 +729,10 @@ func (self *SidecarEvs) Write(repoId *Id, path string, data []byte, versioning s
 			if err != nil {
 				return sidecarEvsResultOf("", err)
 			}
-			if versioning != "" {
-				return &SidecarResult{Code: sidecarEvsCodeVersioning, Message: "a write's versioning is format 2's, and this sidecar writes format 1"}
+			switch versioning {
+			case sidecar.EvsVersioningKeepSetting, sidecar.EvsVersioningOn, sidecar.EvsVersioningOff:
+			default:
+				return &SidecarResult{Code: sidecarEvsCodeVersioning, Message: fmt.Sprintf("a write's versioning is \"\", \"on\" or \"off\", not %q", versioning)}
 			}
 			if self.settings.WriteMaxByteCount < len(dataCopy) {
 				return &SidecarResult{Code: sidecarEvsCodeTooLarge, Message: fmt.Sprintf("an app writes at most %d bytes at once", self.settings.WriteMaxByteCount)}
@@ -610,9 +742,10 @@ func (self *SidecarEvs) Write(repoId *Id, path string, data []byte, versioning s
 				return sidecarEvsResultOf("", err)
 			}
 			result, err := self.backend.Write(ctx, coreRepoId, &sidecar.EvsWriteArgs{
-				Path:    path,
-				Content: bytes.NewReader(dataCopy),
-				Size:    int64(len(dataCopy)),
+				Path:       path,
+				Content:    bytes.NewReader(dataCopy),
+				Size:       int64(len(dataCopy)),
+				Versioning: versioning,
 			})
 			if err != nil {
 				return sidecarEvsResultOf("", err)

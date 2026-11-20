@@ -50,6 +50,8 @@ type testSidecarEvsBackend struct {
 	listeners   map[int]*testEvsListener
 	// answers a call by name before the fake does, or nil to let it
 	hook func(ctx context.Context, call string) error
+	// format 2's half (sidecar_evs_drop_test.go): versioning asked, dry runs, drops and D-SDK-29's answer
+	drop testEvsDropFake
 }
 
 type testEvsListener struct {
@@ -136,10 +138,16 @@ func (self *testSidecarEvsBackend) History(ctx context.Context, repoId sidecar.I
 	}
 	history := &sidecar.EvsHistory{Path: args.Path, HeadVersion: self.repoIdHeads[repoId]}
 	for i := len(versions) - 1; 0 <= i; i -= 1 {
-		history.Versions = append(history.Versions, &sidecar.EvsHistoryVersion{
+		version := &sidecar.EvsHistoryVersion{
 			Version: versions[i].version, CommitVersion: versions[i].commit, SignerSidecarId: testEvsSigner,
 			Time: time.UnixMilli(1_800_000_000_000 + int64(versions[i].commit)), State: "kept",
-		})
+		}
+		// a version a live drop lists, judged as the core judges it (EvsDropState.Name)
+		if drop := self.drop.listing(repoId, args.Path, versions[i].version); drop != nil {
+			state := &sidecar.EvsDropState{DropId: drop.dropId, NotBefore: drop.notBefore}
+			version.State, version.DropId, version.DropNotBefore = state.Name(self.drop.clock()), drop.dropId, drop.notBefore
+		}
+		history.Versions = append(history.Versions, version)
 	}
 	return history, nil
 }
@@ -156,6 +164,7 @@ func (self *testSidecarEvsBackend) Write(ctx context.Context, repoId sidecar.Id,
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.writeCount += 1
+		self.drop.versionings = append(self.drop.versionings, args.Versioning)
 		paths := self.repoIdPaths[repoId]
 		if paths == nil {
 			paths = map[string][]*testEvsFile{}
@@ -391,7 +400,7 @@ func TestSidecarEvsReadPastItsBoundRefused(t *testing.T) {
 }
 
 // The core's EVS_GIT_REF reaches the app with its code, and so does each of evs's refusals by its name; a versioning
-// argument is refused until format 2, before the core sees it.
+// argument that is no setting is refused before the core sees it.
 func TestSidecarEvsGitRefAndRefusalsSurfaced(t *testing.T) {
 	backend := newTestSidecarEvsBackend()
 	evs := newTestSidecarEvs(t, backend, nil)
@@ -420,7 +429,8 @@ func TestSidecarEvsGitRefAndRefusalsSurfaced(t *testing.T) {
 		}
 	}
 	backend.setHook(nil)
-	for _, versioning := range []string{"on", "off", "sometimes"} {
+	// format 2 takes "", "on" and "off" (SDK-M10-05's TestSidecarEvsWriteVersioning); anything else never reaches it
+	for _, versioning := range []string{"sometimes", "ON", "versionless"} {
 		if result := testEvsWrite(t, evs, repoId, "file.txt", []byte("x"), versioning); result.Ok || result.Code != sidecarEvsCodeVersioning {
 			t.Errorf("versioning %q: %+v", versioning, result)
 		}
