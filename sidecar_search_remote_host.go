@@ -25,8 +25,9 @@
 //	directory phones' directory "search more" (§16.11's phones row, §18.4's directory row; QD-1087): a phone keeps no
 //	          directory buckets (the host class's), and SidecarDirectory.GetRepoId names the directory's own repo, which
 //	          the app's directory view puts in SidecarSearchQuery.RepoIds with Scope all, so a designated indexer that
-//	          reads the directory answers it and buckets and all are fetched only for the fallback; nil on a remote-mode
-//	          Sidecar until a control method names it, when the view's "search more" covers every repo
+//	          reads the directory answers it and buckets and all are fetched only for the fallback; on a remote-mode
+//	          Sidecar it is what the daemon's directory listing names, nil until one does (sidecar_directory.go's repo
+//	          id row), and the view's "search more" covers every repo meanwhile
 //
 // Nothing here logs, and a refusal answers its code's fixed text (I-13, I-19). Safe for concurrent use.
 
@@ -222,8 +223,9 @@ func (self *sidecarSearchRemoteBackend) acknowledgeIndexer(ctx context.Context, 
 // The team directory's own repo id (§16.11's phones row, §18.4's directory row; QD-1087): what an app's directory view
 // names in SidecarSearchQuery.RepoIds, with Scope all, to scope its "search more" to the directory alone, which a
 // designated search indexer that reads it answers, buckets and all fetched only for the fallback. Nil while the
-// network has none, once the directory closed, and on a remote-mode Sidecar until a control method names it, when the
-// view's "search more" covers every repo, asking designated indexers first all the same.
+// network has none, once the directory closed, and on a remote-mode Sidecar until the daemon's directory listing names
+// it (sidecar_directory.go's repo id row), when the view's "search more" covers every repo, asking designated indexers
+// first all the same.
 func (self *SidecarDirectory) GetRepoId() *Id {
 	repoId, err := traceWithReturn(func() *Id {
 		if self.ctx.Err() != nil {
@@ -252,9 +254,4 @@ func (self *sidecarDirectoryCoreBackend) directoryRepoId() *sidecar.Id {
 		return nil
 	}
 	return &directoryId
-}
-
-// See sidecarDirectoryBackend: no control method names the daemon's directory yet (QD-1087), so none.
-func (self *sidecarDirectoryRemoteBackend) directoryRepoId() *sidecar.Id {
-	return nil
 }

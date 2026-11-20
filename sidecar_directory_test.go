@@ -1427,6 +1427,179 @@ func TestRemoteDirectoryForwardsToTheDaemon(t *testing.T) {
 	}
 }
 
+// A remote-mode Sidecar's GetRepoId is the directory status the daemon's listings give (QD-1087, owner decision 628;
+// the file header's repo id row): nil while the daemon names no directory, as one from before directory.list's
+// directory_id, when the directory view's "search more" asks the daemon over every repo; the id once a listing for the
+// paired network names it, which a "search more" with RepoIds [GetRepoId()] and Scope all hands the daemon as the
+// directory alone; nil after a pairing with another network until a listing of that network names its directory; and
+// nil for a zero id and once the daemon refuses a listing.
+func TestRemoteDirectoryRepoIdUntilTheDaemonNamesIt(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	var stateLock sync.Mutex
+	// the directory a listing names, by the network the call names; a network absent names none
+	networkDirectoryIds := map[string]sidecar.Id{}
+	refused := false
+	set := func(change func()) {
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		change()
+	}
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		switch request.Method {
+		case sidecar.DaemonMethodDirectoryList:
+			if refused {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailed, Message: sidecar.ErrDirectoryNone.Error()}, true
+			}
+			params := &sidecar.DaemonDirectoryListParams{}
+			if err := json.Unmarshal(request.Params, params); err != nil {
+				return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailed, Message: "params"}, true
+			}
+			// the daemon's own reply, so the id crosses under the daemon's name for it
+			reply := &sidecar.DaemonDirectoryListReply{Items: []*sidecar.DaemonDirectoryListItem{}}
+			if directoryId, ok := networkDirectoryIds[params.Network]; ok {
+				reply.DirectoryId = &directoryId
+			}
+			return reply, nil, true
+		case sidecarControlMethodSearch:
+			return map[string]any{"hits": []map[string]any{}, "status": map[string]any{"complete": true}}, nil, true
+		}
+		return nil, nil, false
+	}
+	daemon.start()
+	remote, backend, _ := openTestRemoteSidecar(t, socketPath)
+	settings := defaultSidecarDirectorySettings()
+	settings.ViewRefreshInterval = 0
+	settings.CallTimeout = testSidecarTimeout
+	settings.ReadTimeout = testSidecarTimeout
+	settings.StandingTimeout = testSidecarTimeout
+	func() {
+		remote.stateLock.Lock()
+		defer remote.stateLock.Unlock()
+		remote.directorySettings = settings
+	}()
+	// the daemon's sidecar of networkId, which the pairing binds
+	pair := func(networkId sidecar.Id) {
+		func() {
+			daemon.stateLock.Lock()
+			defer daemon.stateLock.Unlock()
+			daemon.networkId = networkId
+		}()
+		if _, err := backend.pair(context.Background(), "a-synthetic-child-token"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstNetwork, secondNetwork := sidecar.NewId(), sidecar.NewId()
+	pair(firstNetwork)
+
+	// a daemon that names no directory: the directory stands, and its repo id reads nil
+	directory := remote.GetDirectory()
+	if directory == nil {
+		t.Fatal("a daemon with a directory answered none")
+	}
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Fatalf("a daemon naming no directory: %v", repoId)
+	}
+	// one listing through a view of its own, closed once its page arrived
+	list := func(what string) *SidecarDirectoryPage {
+		t.Helper()
+		listener := newTestDirectoryListener()
+		sub := directory.List(nil, listener)
+		defer sub.Close()
+		return listener.await(t, what, func(page *SidecarDirectoryPage) bool { return true })
+	}
+	// one "search more" to its last page, and the one search call it made of the daemon
+	search := remote.GetSearch()
+	if search == nil {
+		t.Fatal("a remote Sidecar answers no search")
+	}
+	searchMore := func(repoIds *IdList) *sidecar.SearchToolArgs {
+		t.Helper()
+		before := len(daemon.seen())
+		listener := newTestSearchListener()
+		handle := search.Search(&SidecarSearchQuery{Text: "harbor", Scope: SidecarSearchScopeAll, RepoIds: repoIds}, listener)
+		defer handle.Cancel()
+		for page := listener.next(t); !page.done; page = listener.next(t) {
+		}
+		asked := []*sidecar.SearchToolArgs{}
+		for _, request := range daemon.seen()[before:] {
+			if request.Method != sidecarControlMethodSearch {
+				continue
+			}
+			args := &sidecar.SearchToolArgs{}
+			if err := json.Unmarshal(request.Params, args); err != nil {
+				t.Fatal(err)
+			}
+			asked = append(asked, args)
+		}
+		if len(asked) != 1 {
+			t.Fatalf("the daemon was asked %d searches", len(asked))
+		}
+		return asked[0]
+	}
+	// meanwhile the view's "search more" covers every repo
+	if every := searchMore(nil); every.Scope != sidecarControlSearchScopeNetwork || len(every.Repos) != 0 || !every.More {
+		t.Errorf("the view's search more with no repo id: %+v", every)
+	}
+
+	// the daemon names the first network's directory: read at the next listing, not before
+	firstDirectoryId := sidecar.NewId()
+	set(func() { networkDirectoryIds[firstNetwork.String()] = firstDirectoryId })
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Fatalf("named before a listing answered: %v", repoId)
+	}
+	if page := list("the first network's listing"); page.Message != "" {
+		t.Fatalf("the first network's listing: %q", page.Message)
+	}
+	repoId := directory.GetRepoId()
+	if repoId == nil || repoId.Cmp(newId(firstDirectoryId)) != 0 {
+		t.Fatalf("the first network's directory: %v", repoId)
+	}
+	// the view's "search more" names it, and the daemon is asked for the directory alone
+	directoryRepoIds := NewIdList()
+	directoryRepoIds.Add(repoId)
+	scoped := searchMore(directoryRepoIds)
+	if scoped.Scope != sidecarControlSearchScopeRepo || !slices.Equal(scoped.Repos, []string{sidecarControlSearchRepoIdPrefix + firstDirectoryId.String()}) ||
+		!scoped.More || scoped.Latest {
+		t.Errorf("the directory's search more: %+v", scoped)
+	}
+
+	// another network paired: none until a listing of that network names its own
+	pair(secondNetwork)
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Errorf("the second network reads the first's directory: %v", repoId)
+	}
+	secondDirectoryId := sidecar.NewId()
+	set(func() { networkDirectoryIds[secondNetwork.String()] = secondDirectoryId })
+	list("the second network's listing")
+	if repoId := directory.GetRepoId(); repoId == nil || repoId.Cmp(newId(secondDirectoryId)) != 0 {
+		t.Errorf("the second network's directory: %v", repoId)
+	}
+
+	// a zero id names none
+	set(func() { networkDirectoryIds[secondNetwork.String()] = sidecar.Id{} })
+	list("a zero id's listing")
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Errorf("a zero id named %v", repoId)
+	}
+
+	// a refused listing names none, where the last one named the directory
+	set(func() { networkDirectoryIds[secondNetwork.String()] = secondDirectoryId })
+	list("the second network's listing again")
+	if repoId := directory.GetRepoId(); repoId == nil {
+		t.Fatal("the second network's directory, named again, reads nil")
+	}
+	set(func() { refused = true })
+	if page := list("a refused listing"); page.Message == "" {
+		t.Errorf("a refused listing's page says nothing")
+	}
+	if repoId := directory.GetRepoId(); repoId != nil {
+		t.Errorf("a refused listing kept %v", repoId)
+	}
+}
+
 // No exported signature or field of the directory's surface names a sidecar-package type, none takes a name an
 // Objective-C binding refuses, and SignEdgeLogin's does neither (§18.5's rules).
 func TestNoSidecarTypeCrossesTheDirectory(t *testing.T) {

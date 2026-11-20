@@ -31,6 +31,11 @@
 //	           directory.announce and directory.revoke for the repo acts. §5.8 has no method yet for a member's runs
 //	           value by project, the worker setting, filing a request or listing requests (RECORD-M6-23's), so those
 //	           answer unavailable there and sign nothing
+//	repo id    GetRepoId (sidecar_search_remote_host.go) answers the directory's own repo id, the core's on the local
+//	           backend. On the remote backend it is the directory status the daemon's last answer to a listing gave
+//	           for the network the listing named (directory.list's directory_id; owner decision 628): nil before a
+//	           listing has answered, from a daemon that sends none, once the daemon refuses a listing and while
+//	           another network is paired; a listing that reached no daemon leaves it as it was
 //
 // GetDirectory answers nil outside a team network. Every callback answers once, on a Go thread; a listener hears its
 // pages in order on a Go thread of its own, the newest replacing one it has not taken yet, since each page is the
@@ -578,6 +583,8 @@ type sidecarControlDirectoryListReply struct {
 	Items     []*sidecarControlDirectoryListItem `json:"items"`
 	Untrusted bool                               `json:"untrusted"`
 	Withheld  int                                `json:"withheld"`
+	// the directory's own repo id, which a daemon from before owner decision 628 does not send
+	DirectoryId *sidecar.Id `json:"directory_id,omitempty"`
 }
 
 // directory.announce's params.
@@ -603,12 +610,19 @@ type sidecarControlDirectoryRevokeParams struct {
 }
 
 // sidecarDirectoryBackend over a daemon's control mode. It holds nothing of the directory: every listing is the
-// daemon's own copy, read through directory.list.
+// daemon's own copy, read through directory.list, and of the daemon's answers it keeps only whether one stood and
+// the directory's repo id the last one named.
 type sidecarDirectoryRemoteBackend struct {
 	remote   sidecarBackend
 	settings *sidecarDirectorySettings
 	// set once the daemon has answered a listing: its network has a directory
 	stands atomic.Bool
+
+	stateLock sync.Mutex
+	// the network the daemon's last answer to a listing was for, and the directory's own repo id that answer named,
+	// nil for none (the file header's repo id row)
+	directoryNetwork string
+	directoryId      *sidecar.Id
 }
 
 // The network the pairing bound, as a control call's network argument.
@@ -621,9 +635,22 @@ func (self *sidecarDirectoryRemoteBackend) network() string {
 
 // The daemon's listing for filter, with its untrusted text where the daemon returns it: a daemon that cannot read the
 // caller's process returns none (§5.8), and the listing is then asked for as stubs, their withheld fields counted.
+// What the answer names of the directory's repo id is kept for the network asked, a refusal naming none.
 func (self *sidecarDirectoryRemoteBackend) listItems(ctx context.Context, filter *sidecar.DirectoryFilter) (*sidecarControlDirectoryListReply, error) {
+	network := self.network()
+	keep := func(directoryId *sidecar.Id) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.directoryNetwork = network
+		self.directoryId = nil
+		// a zero id names no repo
+		if directoryId != nil && *directoryId != (sidecar.Id{}) {
+			named := *directoryId
+			self.directoryId = &named
+		}
+	}
 	params := &sidecarControlDirectoryListParams{
-		Network:   self.network(),
+		Network:   network,
 		MemberId:  filter.MemberId,
 		RepoId:    filter.RepoId,
 		Active:    filter.ActiveOnly,
@@ -642,10 +669,27 @@ func (self *sidecarDirectoryRemoteBackend) listItems(ctx context.Context, filter
 		err = self.remote.call(ctx, sidecarControlMethodDirectoryList, params, false, reply)
 	}
 	if err != nil {
+		if errors.As(err, &refusal) {
+			keep(nil)
+		}
 		return nil, err
 	}
 	self.stands.Store(true)
+	keep(reply.DirectoryId)
 	return reply, nil
+}
+
+// See sidecarDirectoryBackend: the repo id the daemon's last answer to a listing named, while the paired network is
+// the one that listing named (the file header's repo id row).
+func (self *sidecarDirectoryRemoteBackend) directoryRepoId() *sidecar.Id {
+	network := self.network()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.directoryId == nil || self.directoryNetwork != network {
+		return nil
+	}
+	directoryId := *self.directoryId
+	return &directoryId
 }
 
 // See sidecarDirectoryBackend. Asked on the caller's thread, within StandingTimeout, until the daemon has answered a
