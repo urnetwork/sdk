@@ -3,15 +3,19 @@
 package sdk
 
 // SidecarMail's send capability (SDK-M9-01): FS-123's bound half on a scripted core, §18.5's copy and its never row,
-// the I-11 label, the mappings' fail-closed words, and both backends answering MAIL_UNAVAILABLE while the root's calls
-// have not landed. SMTP's T2 and T3 runs of FS-123 wait on SMTP-M9-08 and MAIL-M9-01/02.
+// the I-11 label, the mappings' fail-closed words, the local backend reaching the core's MailClient.CheckSend and
+// SendResult (QD-1122) with the draft whole, and both backends answering MAIL_UNAVAILABLE where there is nothing to
+// call.
 //
 // The remote backend over ur daemon's mail.check_send, mail.send_result and mail.send (QD-853, owner decision 288):
 // their JSON held to the root's types both ways, the calls sent unconfirmed with the draft's fields, and end to end
 // over the root's own daemon on scripted backends, a check's domains, a known send's outcomes, an unknown id refused,
 // and a send the gate holds answered approval_pending:<id> until it is approved; the daemon's own refusals read as
-// their MAIL_ codes. The root's tests run the real gate's hold over MAIL-M7-18's send world (mail_send_gate_test.go,
-// mail_send_daemon_test.go).
+// their MAIL_ codes, its own backends taking the hosted core's MailClient. The root's tests run the real gate's hold
+// over MAIL-M7-18's send world (mail_send_gate_test.go, mail_send_daemon_test.go), and the daemon's own backends end
+// to end over a bound MailClient, a check by its sender and a send's result from or/ (mail_send_daemon_test.go); this
+// module's tests import no sidecartest world that binds one (dependency_boundary_test.go), so the local backend is
+// held here to the call it makes.
 
 import (
 	"bytes"
@@ -676,26 +680,31 @@ func TestSendMappingsClaimNothingUnread(t *testing.T) {
 	}
 }
 
-// While the root's calls have not landed, CheckSend and GetSendResult answer MAIL_UNAVAILABLE on the local backend,
-// and on the remote one over a daemon from before mail.check_send and mail.send_result, naming what they wait on; a
-// closed SidecarMail answers the same and reaches no backend.
-func TestSendCallsAwaitingTheCoreAnswerUnavailable(t *testing.T) {
+// CheckSend and GetSendResult answer MAIL_UNAVAILABLE on a local backend with no core mail to work on, and on the
+// remote one over a daemon from before mail.check_send and mail.send_result, naming the call it has none of; a closed
+// SidecarMail answers the same and reaches no backend.
+func TestSendCallsWithNothingToCallAnswerUnavailable(t *testing.T) {
 	socketPath := testRemoteSocketPath(t)
 	daemon := newTestRemoteDaemon(t, socketPath)
 	daemon.start()
 	remote, _, _ := openTestRemoteSidecar(t, socketPath)
-	for name, mail := range map[string]*SidecarMail{
-		"local":  newTestSidecarMail(t, &sidecarMailCoreBackend{client: nil}),
-		"remote": remote.GetMail(),
+	for name, test := range map[string]struct {
+		mail *SidecarMail
+		// what each refusal names
+		check  string
+		result string
+	}{
+		"local":  {mail: newTestSidecarMail(t, &sidecarMailCoreBackend{client: nil}), check: sidecar.ErrMailUnbound.Error(), result: sidecar.ErrMailUnbound.Error()},
+		"remote": {mail: remote.GetMail(), check: "check a send", result: "result"},
 	} {
 		check := newTestEvsCallback[*SidecarSendCheck]()
-		mail.CheckSend(testSendDraft("plain.example"), check)
-		if result, err := check.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, "check a send") {
+		test.mail.CheckSend(testSendDraft("plain.example"), check)
+		if result, err := check.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, test.check) {
 			t.Errorf("%s CheckSend answered %+v, %v", name, result, err)
 		}
 		read := newTestEvsCallback[*SidecarSendResult]()
-		mail.GetSendResult(NewId(), read)
-		if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, "result") {
+		test.mail.GetSendResult(NewId(), read)
+		if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, test.result) {
 			t.Errorf("%s GetSendResult answered %+v, %v", name, result, err)
 		}
 	}
@@ -715,6 +724,44 @@ func TestSendCallsAwaitingTheCoreAnswerUnavailable(t *testing.T) {
 	}
 	if len(core.checkedDrafts) != 0 || len(core.readSendIds) != 0 {
 		t.Error("a closed mail reached its backend")
+	}
+}
+
+// The local backend calls the core's MailClient (QD-1122): a core's mail that binds nothing yet answers its own refusal
+// for both calls, MAIL_UNAVAILABLE naming nothing to work on, so the calls reach MailClient.CheckSend and SendResult
+// and stop at nothing of this module's own.
+func TestSendCoreBackendCallsTheCoresMail(t *testing.T) {
+	client, err := sidecar.NewMailClient(&sidecar.MailClientArgs{NetworkId: sidecar.NewId(), SidecarId: sidecar.NewId(), Store: testEmptySidecarStore{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(client.Close)
+	mail := newTestSidecarMail(t, &sidecarMailCoreBackend{client: client})
+	check := newTestEvsCallback[*SidecarSendCheck]()
+	mail.CheckSend(testSendDraft("plain.example"), check)
+	if result, err := check.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable ||
+		!strings.Contains(result.Message, sidecar.ErrMailUnbound.Error()) || strings.Contains(result.Message, "no core mail") {
+		t.Errorf("CheckSend answered %+v, %v", result, err)
+	}
+	read := newTestEvsCallback[*SidecarSendResult]()
+	mail.GetSendResult(NewId(), read)
+	if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable ||
+		!strings.Contains(result.Message, sidecar.ErrMailUnbound.Error()) || strings.Contains(result.Message, "no core mail") {
+		t.Errorf("GetSendResult answered %+v, %v", result, err)
+	}
+}
+
+// A draft reaches the core as the draft Send takes: its From, its three lists in order, its subject, and its body as
+// the text; a list the app left nil is none.
+func TestSendCoreBackendTakesTheDraftWhole(t *testing.T) {
+	draft := &SidecarDraft{From: "ann@acme.root.example", To: NewStringList(), Bcc: NewStringList(), Subject: "Plans", Body: "Dinner at eight."}
+	draft.To.Add("a@chunking.example")
+	draft.To.Add("b@plain.example")
+	draft.Bcc.Add("c@hidden.example")
+	args := sidecarMailSendArgsOf(draft)
+	if args.From != draft.From || !slices.Equal(args.To, []string{"a@chunking.example", "b@plain.example"}) || args.Cc != nil ||
+		!slices.Equal(args.Bcc, []string{"c@hidden.example"}) || args.Subject != "Plans" || args.Text != "Dinner at eight." || args.Action.RunId != nil {
+		t.Errorf("the core takes %+v", args)
 	}
 }
 
@@ -1217,8 +1264,8 @@ func TestMailSendRemoteOverTheRootDaemon(t *testing.T) {
 	}
 }
 
-// On ur daemon's own backends both reads answer the daemon's MAIL_UNAVAILABLE, naming what each waits on, and a send
-// on a core with nothing to send through answers unavailable too.
+// On ur daemon's own backends, which take the hosted core's MailClient, a core whose mail binds nothing yet answers the
+// daemon's unbound refusal for both reads and a send, each MAIL_UNAVAILABLE.
 func TestMailSendRemoteUnavailableOverTheRootDaemon(t *testing.T) {
 	core := testMailSendHostedCore(t)
 	socketPath := testRemoteSocketPath(t)
@@ -1229,12 +1276,13 @@ func TestMailSendRemoteUnavailableOverTheRootDaemon(t *testing.T) {
 	check := newTestEvsCallback[*SidecarSendCheck]()
 	mail.CheckSend(testSendDraft("plain.example"), check)
 	if result, err := check.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable ||
-		!strings.Contains(result.Message, sidecar.ErrMailSendUnavailable.Error()) || !strings.Contains(result.Message, "check a send") {
+		!strings.Contains(result.Message, sidecar.ErrMailUnbound.Error()) {
 		t.Errorf("CheckSend answered %+v, %v", result, err)
 	}
 	read := newTestEvsCallback[*SidecarSendResult]()
 	mail.GetSendResult(NewId(), read)
-	if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable || !strings.Contains(result.Message, "result") {
+	if result, err := read.await(t); err != nil || result.Ok || result.Code != sidecarMailCodeUnavailable ||
+		!strings.Contains(result.Message, sidecar.ErrMailUnbound.Error()) {
 		t.Errorf("GetSendResult answered %+v, %v", result, err)
 	}
 	send := newTestEvsCallback[*SidecarResult]()

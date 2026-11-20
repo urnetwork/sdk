@@ -22,15 +22,15 @@
 //	         naming that domain, the size and the cap, and no line names an indexer, a receiver or a coverage
 //	         setting, which are inbound (GetReceiverCoverage)
 //
-// Wiring: the root's types are on sidecar, its calls are not. MailClient's check and its send results (MAIL-M9-01 and
-// MAIL-M9-02, over SMTP-M9-08's SmtpSender.Check and SmtpDomainOutcome) have not landed, so the local backend answers
-// MAIL_UNAVAILABLE for both until they do (CONTRACTS.md C-17), its methods below naming what they wait on. The remote
-// backend calls ur daemon's mail.check_send and mail.send_result (§5.8, owner decision 288), plain reads sent
-// unconfirmed, whose JSON carries the root's SmtpSendCheck and SmtpSendResult with each enum by its number, the delays
-// in milliseconds and the times in unix milliseconds; the daemon answers its own MAIL_UNAVAILABLE refusal
-// (sidecar.ErrMailSendUnavailable) until those calls land there, and one from before the methods answers that it has
-// none, which reads MAIL_UNAVAILABLE too. A reply's numbers map as the core's do, so a mode, prediction or outcome this
-// sdk does not know reads unknown.
+// Wiring: the local backend calls the core's MailClient.CheckSend and SendResult (QD-1122): the check of the message
+// Send would make of the draft, by the core's bound sender or through the member's p/ records, and a send's outcomes
+// from or/ by the send_id its record names, so a phone's app follows a send its desktop sent, and the other way
+// round. The core raises mail_send as each outcome changes in or/ (its send watch), which sidecar_events.go carries
+// with its send_id. The remote backend calls ur daemon's mail.check_send and mail.send_result (§5.8, owner decision
+// 288), plain reads sent unconfirmed, whose JSON carries the root's SmtpSendCheck and SmtpSendResult with each enum by
+// its number, the delays in milliseconds and the times in unix milliseconds, which the daemon answers by the same
+// MailClient calls; a daemon from before the methods answers that it has none, which reads MAIL_UNAVAILABLE. A reply's
+// numbers map as the core's do, so a mode, prediction or outcome this sdk does not know reads unknown.
 //
 // In the copy, sizes read in bytes, KB and MB of 1,000 and 1,000,000 bytes, the cap rounded down and the size up at
 // the precision shown, so a message over the cap never reads as equal to it or under it; a delay reads in minutes,
@@ -510,16 +510,39 @@ func sidecarSendTimeCopy(at time.Time, now time.Time) string {
 	return local.Format("Jan 2 2006 15:04 MST")
 }
 
-// See sidecarMailBackend: the core's check of the message Send would make of draft, which MAIL-M9-01 puts on
-// MailClient over SMTP-M9-08's SmtpSender.Check (and, for a phone, MAIL-M9-02's p/ caps). Not on sidecar yet.
+// See sidecarMailBackend: the core's check of the message Send would make of draft (MailClient.CheckSend), the core's
+// bound sender's at this host's cap or, on a phone, priced on the member's prover hosts' p/ records. A backend with no
+// core mail has nothing to check with.
 func (self *sidecarMailCoreBackend) checkSend(ctx context.Context, draft *SidecarDraft) (*sidecar.SmtpSendCheck, error) {
-	return nil, errSidecarMailNotLanded("check a send (MailClient's check over SmtpSender.Check)")
+	if self.client == nil {
+		return nil, fmt.Errorf("%w: no core mail", sidecar.ErrMailUnbound)
+	}
+	return self.client.CheckSend(ctx, sidecarMailSendArgsOf(draft))
 }
 
-// See sidecarMailBackend: a send's outcomes by its send_id, which MAIL-M9-02 puts on MailClient from or/ (its
-// MailOutbox), each SMTP-M9-08's SmtpDomainOutcome. Not on sidecar yet.
+// See sidecarMailBackend: a send's outcomes by its send_id (MailClient.SendResult), from the member's or/, each the
+// core's SmtpDomainOutcome. A backend with no core mail has nothing to read.
 func (self *sidecarMailCoreBackend) sendResult(ctx context.Context, sendId sidecar.Id) (*sidecar.SmtpSendResult, error) {
-	return nil, errSidecarMailNotLanded("read a send's result (MailClient's outcomes from or/)")
+	if self.client == nil {
+		return nil, fmt.Errorf("%w: no core mail", sidecar.ErrMailUnbound)
+	}
+	return self.client.SendResult(ctx, sendId)
+}
+
+// draft as the core's MailSendArgs: its body as the text, its lists the draft's own copies. A person's own act in the
+// app, so no run and no agent (§16.6's spend step 1).
+func sidecarMailSendArgsOf(draft *SidecarDraft) *sidecar.MailSendArgs {
+	args := &sidecar.MailSendArgs{From: draft.From, Subject: draft.Subject, Text: draft.Body}
+	if draft.To != nil {
+		args.To = draft.To.getAll()
+	}
+	if draft.Cc != nil {
+		args.Cc = draft.Cc.getAll()
+	}
+	if draft.Bcc != nil {
+		args.Bcc = draft.Bcc.getAll()
+	}
+	return args
 }
 
 // The control methods the remote backend's send calls, as the root names them (sidecar.DaemonMethodMailCheckSend,
