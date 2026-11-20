@@ -4285,6 +4285,7 @@ struct SidecarEvent {
 	std::optional<std::string> bridge_alarm;
 	std::optional<std::string> dns_alarm;
 	std::optional<std::string> ct_alarm;
+	std::optional<std::string> mail_receiver_alarm;
 };
 
 struct SidecarForwardSecret {
@@ -19610,6 +19611,9 @@ inline void to_json(nlohmann::json& j, const SidecarEvent& v) {
 	if (v.ct_alarm) {
 		j["ct_alarm"] = *v.ct_alarm;
 	}
+	if (v.mail_receiver_alarm) {
+		j["mail_receiver_alarm"] = *v.mail_receiver_alarm;
+	}
 }
 inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
 	if (!j.is_object()) {
@@ -19765,6 +19769,11 @@ inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.ct_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("mail_receiver_alarm"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.mail_receiver_alarm = std::move(tmp);
 	}
 }
 

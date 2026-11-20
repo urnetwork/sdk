@@ -26,8 +26,8 @@ type SidecarEvent struct {
 	// The core's kind: state, approval_pending, member_added, member_removed, key_changed, refused, admission_alarm,
 	// recovery_rebind, recovery_window, recovery_unseen, admissions_near_cap, head_alarm, index_mismatch,
 	// index_malformed, search_alarm, history_drop, access_request, access_decided, directory_erasure, erasure,
-	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, and any a later
-	// component adds.
+	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, dns_alarm, ct_alarm,
+	// mail_receiver_alarm, and any a later component adds.
 	Kind string `json:"kind"`
 	// The client generation it comes from (§18.5's State block).
 	Generation int64 `json:"generation"`
@@ -37,10 +37,13 @@ type SidecarEvent struct {
 	Reason string `json:"reason,omitempty"`
 	// member_added, member_removed: the group.
 	GroupId *Id `json:"group_id,omitempty"`
-	// The sidecar its kind names: a group's member, an admitted, recovered or rebinding device, a head alarm's peer,
-	// an index alarm's or drop's signer, a search alarm's indexer, a ct_alarm's attesting identity.
+	// The sidecar its kind names: a group's member, an admitted, recovered or rebinding device, key_changed's sidecar,
+	// a head alarm's peer, an index alarm's or drop's signer, a search alarm's indexer, an evs_alarm's or
+	// record_alarm's signer where one is known, a ct_alarm's attesting identity, a mail_receiver_alarm's receiver or
+	// record signer.
 	SidecarId *Id `json:"sidecar_id,omitempty"`
-	// Index alarms, search_alarm, history_drop, directory_erasure, erasure and the evs kinds.
+	// Index alarms, search_alarm, history_drop, directory_erasure, erasure, the evs kinds, record_alarm's log and
+	// mail_receiver_alarm.
 	RepoId *Id `json:"repo_id,omitempty"`
 	// Index alarms, history_drop and the evs kinds.
 	RefId *Id `json:"ref_id,omitempty"`
@@ -67,7 +70,7 @@ type SidecarEvent struct {
 	// topic below the version this device holds (§6.8; owner decision 300).
 	HeadAlarm string `json:"head_alarm,omitempty"`
 	// head_alarm: this device's pin, or for rollback the TopicVersion held; recovery_rebind at a void: the AuthPin
-	// keychain.wrap was sealed at.
+	// keychain.wrap was sealed at; key_changed: the SHA-256 of the foreign key gkm served, where it names one.
 	FirstEvidence []byte `json:"first_evidence,omitempty"`
 	// head_alarm: the peer's or api's pin, or for rollback the TopicVersion offered; recovery_rebind at a void: the
 	// AuthPin it was re-sealed at.
@@ -94,6 +97,11 @@ type SidecarEvent struct {
 	DnsAlarm string `json:"dns_alarm,omitempty"`
 	// ct_alarm: what the CT watch found (unattested, recent_identity).
 	CtAlarm string `json:"ct_alarm,omitempty"`
+	// mail_receiver_alarm: why a reader alarmed (D-MAIL-15): undesignated, internet mail taken by a receiver that is
+	// none of the network's mail indexers; scope, a member scope's deposit from a receiver that is no consented
+	// device of the scope's member; deposit, a deposit ingest passed over or wrote as evidence unavailable; record, a
+	// mailcfg version a reader passed over.
+	MailReceiverAlarm string `json:"mail_receiver_alarm,omitempty"`
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI
@@ -150,6 +158,7 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		BridgeAlarm:         string(event.BridgeAlarm),
 		DnsAlarm:            string(event.DnsAlarm),
 		CtAlarm:             string(event.CtAlarm),
+		MailReceiverAlarm:   string(event.MailReceiverAlarm),
 	}
 	if erasure := event.Erasure; erasure != nil {
 		bound.Erasure = sidecarErasureOf(erasure)

@@ -6023,6 +6023,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   bridge_alarm?: string
  *   dns_alarm?: string
  *   ct_alarm?: string
+ *   mail_receiver_alarm?: string
  */
 
 /* SidecarForwardSecret (json):

@@ -1076,6 +1076,7 @@ export interface SidecarEvent {
   bridge_alarm?: string;
   dns_alarm?: string;
   ct_alarm?: string;
+  mail_receiver_alarm?: string;
 }
 
 export interface SidecarErasure {

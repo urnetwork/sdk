@@ -162,39 +162,40 @@ type sidecarControlEventsReply struct {
 // One event of the daemon's ring: the root's DaemonEvent, its kind, generation and what §5.4's SidecarEvent carries
 // for its kind, with the network and sidecar that raised it. Times are unix milliseconds, zero for none.
 type sidecarControlEvent struct {
-	NetworkId       *Id                         `json:"network_id,omitempty"`
-	OriginSidecarId *Id                         `json:"origin_sidecar_id,omitempty"`
-	Kind            string                      `json:"kind"`
-	Generation      int64                       `json:"generation"`
-	State           string                      `json:"state,omitempty"`
-	Reason          string                      `json:"reason,omitempty"`
-	GroupId         *Id                         `json:"group_id,omitempty"`
-	SidecarId       *Id                         `json:"sidecar_id,omitempty"`
-	RepoId          *Id                         `json:"repo_id,omitempty"`
-	RefId           *Id                         `json:"ref_id,omitempty"`
-	Path            string                      `json:"path,omitempty"`
-	DropId          *Id                         `json:"drop_id,omitempty"`
-	DropState       string                      `json:"drop_state,omitempty"`
-	NotBeforeMs     int64                       `json:"not_before_ms,omitempty"`
-	SearchAlarm     string                      `json:"search_alarm,omitempty"`
-	RequestId       *Id                         `json:"request_id,omitempty"`
-	Outcome         string                      `json:"outcome,omitempty"`
-	SendId          *Id                         `json:"send_id,omitempty"`
-	ApprovalId      *Id                         `json:"approval_id,omitempty"`
-	HeadAlarm       string                      `json:"head_alarm,omitempty"`
-	FirstEvidence   []byte                      `json:"first_evidence,omitempty"`
-	SecondEvidence  []byte                      `json:"second_evidence,omitempty"`
-	Erasure         *sidecarControlEventErasure `json:"erasure,omitempty"`
-	EvsAlarm        string                      `json:"evs_alarm,omitempty"`
-	EvsAlarmDetail  string                      `json:"evs_alarm_detail,omitempty"`
-	Version         uint64                      `json:"version,omitempty"`
-	PushId          *Id                         `json:"push_id,omitempty"`
-	Count           int                         `json:"count,omitempty"`
-	VerifiedSinceMs int64                       `json:"verified_since_ms,omitempty"`
-	RecordAlarm     string                      `json:"record_alarm,omitempty"`
-	BridgeAlarm     string                      `json:"bridge_alarm,omitempty"`
-	DnsAlarm        string                      `json:"dns_alarm,omitempty"`
-	CtAlarm         string                      `json:"ct_alarm,omitempty"`
+	NetworkId         *Id                         `json:"network_id,omitempty"`
+	OriginSidecarId   *Id                         `json:"origin_sidecar_id,omitempty"`
+	Kind              string                      `json:"kind"`
+	Generation        int64                       `json:"generation"`
+	State             string                      `json:"state,omitempty"`
+	Reason            string                      `json:"reason,omitempty"`
+	GroupId           *Id                         `json:"group_id,omitempty"`
+	SidecarId         *Id                         `json:"sidecar_id,omitempty"`
+	RepoId            *Id                         `json:"repo_id,omitempty"`
+	RefId             *Id                         `json:"ref_id,omitempty"`
+	Path              string                      `json:"path,omitempty"`
+	DropId            *Id                         `json:"drop_id,omitempty"`
+	DropState         string                      `json:"drop_state,omitempty"`
+	NotBeforeMs       int64                       `json:"not_before_ms,omitempty"`
+	SearchAlarm       string                      `json:"search_alarm,omitempty"`
+	RequestId         *Id                         `json:"request_id,omitempty"`
+	Outcome           string                      `json:"outcome,omitempty"`
+	SendId            *Id                         `json:"send_id,omitempty"`
+	ApprovalId        *Id                         `json:"approval_id,omitempty"`
+	HeadAlarm         string                      `json:"head_alarm,omitempty"`
+	FirstEvidence     []byte                      `json:"first_evidence,omitempty"`
+	SecondEvidence    []byte                      `json:"second_evidence,omitempty"`
+	Erasure           *sidecarControlEventErasure `json:"erasure,omitempty"`
+	EvsAlarm          string                      `json:"evs_alarm,omitempty"`
+	EvsAlarmDetail    string                      `json:"evs_alarm_detail,omitempty"`
+	Version           uint64                      `json:"version,omitempty"`
+	PushId            *Id                         `json:"push_id,omitempty"`
+	Count             int                         `json:"count,omitempty"`
+	VerifiedSinceMs   int64                       `json:"verified_since_ms,omitempty"`
+	RecordAlarm       string                      `json:"record_alarm,omitempty"`
+	BridgeAlarm       string                      `json:"bridge_alarm,omitempty"`
+	DnsAlarm          string                      `json:"dns_alarm,omitempty"`
+	CtAlarm           string                      `json:"ct_alarm,omitempty"`
+	MailReceiverAlarm string                      `json:"mail_receiver_alarm,omitempty"`
 }
 
 // An event's erasure: the root's DaemonEventErasure.
@@ -241,6 +242,7 @@ func (self *sidecarControlEvent) boundEvent() *SidecarEvent {
 		BridgeAlarm:         self.BridgeAlarm,
 		DnsAlarm:            self.DnsAlarm,
 		CtAlarm:             self.CtAlarm,
+		MailReceiverAlarm:   self.MailReceiverAlarm,
 	}
 	if erasure := self.Erasure; erasure != nil {
 		bound.Erasure = &SidecarErasure{

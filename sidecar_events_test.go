@@ -83,6 +83,9 @@ func testSidecarEventKinds(t *testing.T) []string {
 	return kinds
 }
 
+// A kind no core declares, as a later component's would be: the binding passes it along as it is.
+const testUndeclaredEventKind = "synthetic_later_alarm"
+
 // A core event of kind with every field set to something other than its zero.
 func testFullSidecarEvent(kind string) *sidecar.SidecarEvent {
 	at := time.UnixMilli(1_700_000_000_123)
@@ -125,6 +128,8 @@ func testFullSidecarEvent(kind string) *sidecar.SidecarEvent {
 		PushId:         id(0xa0),
 		Count:          3,
 		CtAlarm:        sidecar.SidecarCtAlarmRecentIdentity,
+		// mail_receiver_alarm's reason (D-MAIL-15, MAIL-M7-25)
+		MailReceiverAlarm: sidecar.SidecarMailReceiverAlarmScope,
 	}
 }
 
@@ -137,6 +142,7 @@ func TestEveryEventKindMaps(t *testing.T) {
 		"SearchAlarm": true, "RequestId": true, "Outcome": true, "SendId": true, "ApprovalId": true, "HeadAlarm": true,
 		"Evidence": true, "Erasure": true, "EvsAlarm": true, "VerifiedSince": true, "RecordAlarm": true, "BridgeAlarm": true,
 		"DnsAlarm": true, "EvsAlarmDetail": true, "Version": true, "PushId": true, "Count": true, "CtAlarm": true,
+		"MailReceiverAlarm": true,
 	}
 	eventType := reflect.TypeFor[sidecar.SidecarEvent]()
 	for i := 0; i < eventType.NumField(); i += 1 {
@@ -157,7 +163,11 @@ func TestEveryEventKindMaps(t *testing.T) {
 	if len(kinds) < 25 || !slices.Contains(kinds, "state") || !slices.Contains(kinds, "head_alarm") {
 		t.Fatalf("CONTROL FAILED: the core declares %d kinds: %v", len(kinds), kinds)
 	}
-	kinds = append(kinds, "dns_alarm")
+	// and one no core declares: dns_alarm stood here until the core declared it
+	if slices.Contains(kinds, testUndeclaredEventKind) {
+		t.Fatalf("CONTROL FAILED: the core declares %s", testUndeclaredEventKind)
+	}
+	kinds = append(kinds, testUndeclaredEventKind)
 	sameId := func(bound *Id, core *sidecar.Id) bool {
 		return bound != nil && core != nil && bytes.Equal(bound.Bytes(), core.Bytes())
 	}
@@ -171,7 +181,7 @@ func TestEveryEventKindMaps(t *testing.T) {
 			bound.RecordAlarm != string(core.RecordAlarm) || bound.BridgeAlarm != string(core.BridgeAlarm) ||
 			bound.DnsAlarm != string(core.DnsAlarm) || bound.EvsAlarmDetail != string(core.EvsAlarmDetail) ||
 			bound.CtAlarm != string(core.CtAlarm) || bound.Version != int64(core.Version) || bound.Count != int64(core.Count) ||
-			!sameId(bound.PushId, core.PushId) {
+			!sameId(bound.PushId, core.PushId) || bound.MailReceiverAlarm != string(core.MailReceiverAlarm) {
 			t.Errorf("%s: the strings mapped as %+v", kind, bound)
 		}
 		if !sameId(bound.GroupId, core.GroupId) || !sameId(bound.SidecarId, core.SidecarId) || !sameId(bound.RepoId, core.RepoId) ||
@@ -201,7 +211,7 @@ func TestEveryEventKindMaps(t *testing.T) {
 	// unset fields stay unset: no time reads as 1970 and no id appears from nothing
 	empty := newSidecarEventOf(&sidecar.SidecarEvent{Kind: sidecar.SidecarEventState, Generation: 1})
 	if empty.NotBeforeMillis != 0 || empty.VerifiedSinceMillis != 0 || empty.RepoId != nil || empty.Erasure != nil ||
-		empty.FirstEvidence != nil {
+		empty.FirstEvidence != nil || empty.MailReceiverAlarm != "" {
 		t.Errorf("an empty event mapped as %+v", empty)
 	}
 }

@@ -281,20 +281,6 @@ func awaitTestEventsChannel(t *testing.T, done chan struct{}, what string) {
 	}
 }
 
-// Every kind §5.4 names and a later component added, as the core raises them.
-var testEveryEventKind = []sidecar.SidecarEventKind{
-	sidecar.SidecarEventState, sidecar.SidecarEventApprovalPending, sidecar.SidecarEventMemberAdded,
-	sidecar.SidecarEventMemberRemoved, sidecar.SidecarEventKeyChanged, sidecar.SidecarEventRefused,
-	sidecar.SidecarEventAdmissionAlarm, sidecar.SidecarEventRecoveryRebind, sidecar.SidecarEventRecoveryWindow,
-	sidecar.SidecarEventRecoveryUnseen, sidecar.SidecarEventAdmissionsNearCap, sidecar.SidecarEventHeadAlarm,
-	sidecar.SidecarEventIndexMismatch, sidecar.SidecarEventIndexMalformed, sidecar.SidecarEventSearchAlarm,
-	sidecar.SidecarEventHistoryDrop, sidecar.SidecarEventAccessRequest, sidecar.SidecarEventAccessDecided,
-	sidecar.SidecarEventDirectoryErasure, sidecar.SidecarEventErasure, sidecar.SidecarEventMailSend,
-	sidecar.SidecarEventEvsConflict, sidecar.SidecarEventEvsAlarm, sidecar.SidecarEventEvsGap,
-	sidecar.SidecarEventCredentialStore, sidecar.SidecarEventRecordAlarm, sidecar.SidecarEventBridgeAlarm,
-	sidecar.SidecarEventDnsAlarm, sidecar.SidecarEventCtAlarm,
-}
-
 // A core event of kind at generation with every field set to something of its own, its times whole milliseconds; a
 // state event names online.
 func testFullCoreEvent(t *testing.T, kind sidecar.SidecarEventKind, generation int64) sidecar.SidecarEvent {
@@ -409,9 +395,11 @@ func TestRemoteEventsReachTheListenerInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// every kind the core declares, read from its source, so a kind another track adds is raised here the day it
+	// lands (a hand list here once lacked mail_receiver_alarm)
 	raised := []sidecar.SidecarEvent{}
-	for _, kind := range testEveryEventKind {
-		event := testFullCoreEvent(t, kind, 1)
+	for _, kind := range testSidecarEventKinds(t) {
+		event := testFullCoreEvent(t, sidecar.SidecarEventKind(kind), 1)
 		raised = append(raised, event)
 		source.raise(event)
 	}
