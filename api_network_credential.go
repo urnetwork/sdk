@@ -50,10 +50,12 @@ const (
 	apiRouteAccessNetwork
 )
 
-// apiAdminRouteAccess is the App admin and Network only classes of server
-// api/route_authz.go, keyed the same way ("METHOD pattern"). Every other route
-// takes any credential. TestApiAdminRoutesMatchTheServer compares the two
-// tables when the server checkout is beside the sdk.
+// The App admin and Network only classes of server api/route_authz.go, keyed
+// the same way ("METHOD pattern"). Every other route takes any credential.
+// TestApiAdminRoutesMatchTheServer compares the two tables when the server
+// checkout is beside the sdk, so a route the server adds to either class fails
+// there until it is listed here. A route no sdk call sends yet is listed too,
+// so a later call to it carries the network credential from its first request.
 var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"GET /network/sessions":                   apiRouteAccessNetwork,
 	"POST /network/revoke-session":            apiRouteAccessNetwork,
@@ -138,6 +140,62 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /network/auth-key-revoke":         apiRouteAccessNetwork,
 	"POST /oauth/authorize":                 apiRouteAccessNetwork,
 	"POST /oauth/consent":                   apiRouteAccessNetwork,
+	// ur.io's consent page reads and answers ur-cli's device grant with the
+	// person's sign-in, as it does the two routes above (§7.8)
+	"POST /oauth/device_consent": apiRouteAccessNetwork,
+	"POST /oauth/device_approve": apiRouteAccessNetwork,
+
+	// §7.5-§7.11's team routes (§7.17), sent by a person signed in to the
+	// team. The server's role gate (TEAM-M6-03) checks that person's role and
+	// answers a role that does not permit the route RolePermissionRefused, a
+	// 403 that leaves the person signed in. The sdk holds one network
+	// credential, the person's own, and never picks another member's
+	"POST /network/team-create":         apiRouteAccessNetwork,
+	"GET /network/members":              apiRouteAccessNetwork,
+	"POST /network/member-invite":       apiRouteAccessNetwork,
+	"POST /network/member-remove":       apiRouteAccessNetwork,
+	"POST /network/idp":                 apiRouteAccessNetwork,
+	"POST /network/domain-add":          apiRouteAccessNetwork,
+	"POST /network/domain-verify":       apiRouteAccessNetwork,
+	"POST /network/domain-remove":       apiRouteAccessNetwork,
+	"POST /network/scim-token":          apiRouteAccessNetwork,
+	"GET /network/scim-changes":         apiRouteAccessNetwork,
+	"GET /network/oauth-clients":        apiRouteAccessNetwork,
+	"POST /network/oauth-clients":       apiRouteAccessNetwork,
+	"POST /network/oauth-client-revoke": apiRouteAccessNetwork,
+	"GET /network/admin-events":         apiRouteAccessNetwork,
+	"POST /network/audit-webhook":       apiRouteAccessNetwork,
+	// a person's own sign-in, which every role may send (§7.5): the invitee's,
+	// which joins it to a team from an invite, and the caller's, which buys it
+	// a credential of another network it signs in to. The server takes no
+	// client token, API key or admin token on either
+	"POST /network/member-invite-accept": apiRouteAccessNetwork,
+	"POST /auth/network-switch":          apiRouteAccessNetwork,
+
+	// §12.8's record API stays the console's and network credentials'. A
+	// sidecar reads and writes its zone with a service token at /dns/ instead
+	"GET /network/dns":                     apiRouteAccessNetwork,
+	"POST /network/dns/records":            apiRouteAccessNetwork,
+	"POST /network/dns/label-reclaim":      apiRouteAccessNetwork,
+	"POST /network/dns/alias-claim":        apiRouteAccessNetwork,
+	"POST /network/dns/alias-release":      apiRouteAccessNetwork,
+	"POST /network/dns/custom-host-add":    apiRouteAccessNetwork,
+	"POST /network/dns/custom-host-remove": apiRouteAccessNetwork,
+
+	// a Team admin's direct MX (§15.4, §15.15), an outward action, while
+	// POST /mail/enable and GET /mail/status take a device's client token
+	"POST /mail/direct-mx":   apiRouteAccessNetwork,
+	"DELETE /mail/direct-mx": apiRouteAccessNetwork,
+	// an Owner's or Admin's appeals and the network's abuse cases, never a
+	// client token (§14.8, §21.8, §21.16), while GET /smtp/status and
+	// GET /abuse/status take one
+	"POST /smtp/appeal":  apiRouteAccessNetwork,
+	"GET /abuse/cases":   apiRouteAccessNetwork,
+	"POST /abuse/appeal": apiRouteAccessNetwork,
+	// the network's usage and a team's checkout (§20.14). A device reads its
+	// network's limits at GET /sidecar/limits with its client token
+	"GET /network/usage":          apiRouteAccessNetwork,
+	"POST /network/team-checkout": apiRouteAccessNetwork,
 }
 
 type apiAdminRoutePattern struct {

@@ -925,3 +925,155 @@ func TestStage2RoutesCarryTheNetworkCredential(t *testing.T) {
 		connect.AssertEqual(t, request.byJwt, networkJwt)
 	}
 }
+
+// Sends a request through the seam an sdk call of its method uses, with the
+// credential such a call reads, the API's current one. DELETE has no seam, so
+// its request only selects its credential (requestByJwt).
+func sendCredentialTestRequest(ctx context.Context, api *Api, method string, requestUrl string) (string, error) {
+	switch method {
+	case http.MethodGet:
+		_, err := api.getHttpGetRaw()(ctx, requestUrl, api.GetByJwt())
+		return "", err
+	case http.MethodPost:
+		_, err := api.getHttpPostRaw()(ctx, requestUrl, []byte("{}"), api.GetByJwt())
+		return "", err
+	default:
+		return api.requestByJwt(method, requestUrl, api.GetByJwt())
+	}
+}
+
+// The server's Network only routes that no sdk call sends yet: §7.17's team
+// routes, the consent page's answers to §7.8's device grant, §12.8's record
+// API, §15.15's direct MX, §14.14's and §21.16's appeals and cases, and
+// §20.14's usage and checkout. TestApiAdminRoutesMatchTheServer holds their
+// class to the server's, and this holds what the class does. While a device
+// holds its client token beside the network credential, a request to one
+// carries the network credential, a query or not; where the API holds only
+// the client token it is refused before it is sent and never carried by the
+// client token. The device routes beside them, its mail, smtp and abuse
+// status, its limits and its label, keep carrying the client token.
+func TestServerNetworkRoutesWithoutAnSdkCallCarryTheNetworkCredential(t *testing.T) {
+	networkRoutes := []string{
+		"POST /oauth/device_consent",
+		"POST /oauth/device_approve",
+		"POST /network/team-create",
+		"GET /network/members",
+		"POST /network/member-invite",
+		"POST /network/member-remove",
+		"POST /network/idp",
+		"POST /network/domain-add",
+		"POST /network/domain-verify",
+		"POST /network/domain-remove",
+		"POST /network/scim-token",
+		"GET /network/scim-changes",
+		"GET /network/oauth-clients",
+		"POST /network/oauth-clients",
+		"POST /network/oauth-client-revoke",
+		"GET /network/admin-events",
+		"POST /network/audit-webhook",
+		"POST /network/member-invite-accept",
+		"POST /auth/network-switch",
+		"GET /network/dns",
+		"POST /network/dns/records",
+		"POST /network/dns/label-reclaim",
+		"POST /network/dns/alias-claim",
+		"POST /network/dns/alias-release",
+		"POST /network/dns/custom-host-add",
+		"POST /network/dns/custom-host-remove",
+		"POST /mail/direct-mx",
+		"DELETE /mail/direct-mx",
+		"POST /smtp/appeal",
+		"GET /abuse/cases",
+		"POST /abuse/appeal",
+		"GET /network/usage",
+		"POST /network/team-checkout",
+	}
+	deviceRoutes := []string{
+		"POST /mail/enable",
+		"GET /mail/status",
+		"GET /smtp/status",
+		"GET /abuse/status",
+		"GET /sidecar/limits",
+		"GET /sidecar/label",
+	}
+
+	ctx, api, requests := newCredentialRecordingApi(t)
+	networkJwt := credentialTestNetworkJwt(t, credentialTestNetworkId)
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "device")
+	api.SetByJwt(networkJwt)
+	installTestDeviceByJwt(t, api, nil, clientJwt, nil)
+	connect.AssertEqual(t, api.GetByJwt(), clientJwt)
+
+	for _, route := range networkRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		if access := apiRouteAccessFor(method, path); access != apiRouteAccessNetwork {
+			t.Errorf("%s is class %d, not network", route, access)
+		}
+		for _, requestUrl := range []string{api.apiUrl + path, api.apiUrl + path + "?after=1"} {
+			selected, err := api.requestByJwt(method, requestUrl, clientJwt)
+			if err != nil {
+				t.Errorf("%s %s: %v", method, requestUrl, err)
+			} else if selected != networkJwt {
+				t.Errorf("%s %s selected a credential other than the network credential", method, requestUrl)
+			}
+		}
+		selected, err := sendCredentialTestRequest(ctx, api, method, api.apiUrl+path)
+		if err != nil {
+			t.Errorf("%s: %v", route, err)
+			continue
+		}
+		if method == http.MethodGet || method == http.MethodPost {
+			request, ok := takeRecordedRequest(t, requests)
+			if !ok {
+				t.Errorf("%s sent nothing", route)
+				continue
+			}
+			connect.AssertEqual(t, request.method, method)
+			connect.AssertEqual(t, request.path, path)
+			selected = request.byJwt
+		}
+		if selected != networkJwt {
+			t.Errorf("%s carried a credential other than the network credential", route)
+		}
+	}
+
+	for _, route := range deviceRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		if access := apiRouteAccessFor(method, path); access != apiRouteAccessClient {
+			t.Errorf("%s is class %d, not client", route, access)
+		}
+		if _, err := sendCredentialTestRequest(ctx, api, method, api.apiUrl+path); err != nil {
+			t.Errorf("%s: %v", route, err)
+			continue
+		}
+		request, ok := takeRecordedRequest(t, requests)
+		if !ok {
+			t.Errorf("%s sent nothing", route)
+			continue
+		}
+		connect.AssertEqual(t, request.path, path)
+		if request.byJwt != clientJwt {
+			t.Errorf("%s carried a credential other than the device's client token", route)
+		}
+	}
+	if extra, ok := takeRecordedRequest(t, requests); ok {
+		t.Fatalf("unexpected extra request %+v", extra)
+	}
+
+	// a device that an embed backend provisioned: only its client token
+	deviceCtx, deviceApi, deviceRequests := newCredentialRecordingApi(t)
+	installTestDeviceByJwt(t, deviceApi, nil, credentialTestClientJwt(t, credentialTestNetworkId, "embed"), nil)
+	connect.AssertEqual(t, deviceApi.HasNetworkCredential(), false)
+	for _, route := range networkRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		_, err := sendCredentialTestRequest(deviceCtx, deviceApi, method, deviceApi.apiUrl+path+"?after=1")
+		if !errors.Is(err, ErrNetworkCredentialRequired) {
+			t.Errorf("%s: err = %v, want ErrNetworkCredentialRequired", route, err)
+		} else if !strings.Contains(err.Error(), route) {
+			t.Errorf("the refusal does not name %s: %v", route, err)
+		}
+		if request, sent := takeRecordedRequest(t, deviceRequests); sent {
+			t.Errorf("%s was sent without the network credential: %+v", route, request)
+		}
+	}
+}
