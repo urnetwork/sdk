@@ -12,8 +12,8 @@
 // row; I-2, I-7). Ids cross as strings and versions as decimal strings, since a JS number holds an integer exactly
 // only up to 2^53 (§6.8).
 //
-// What a Worker does: it reads (list, read_view, record_view, and for RS2's team console directory_view and
-// config_view) and it signs itself out (sign_out). A page Worker is admitted read_only (§7.9) and its client
+// What a Worker does: it reads (list, read_view, record_view, and for RS2's team console directory_view, config_view
+// and drop_states) and it signs itself out (sign_out). A page Worker is admitted read_only (§7.9) and its client
 // admin_refused (§18.8's Identity bullet), so beyond its sign-out SidecarRevoke, its own key upkeep and read receipts,
 // which the root signs where they belong, it signs nothing: the seams it holds have no signing call (WorkerSidecar,
 // WorkerDirectory), and it files no approval, request or decision and offers no revocation (§18.5's js row, §16.11's
@@ -93,6 +93,10 @@ type WorkerSettings struct {
 	SearchPageHitMaxCount     int
 	SearchFieldMaxByteCount   int
 	SearchSnippetMaxByteCount int
+	// The most drops one drop_states returns (ops_drops.go, SDK-M10-05); past it the view is marked truncated. 256:
+	// each names at most the core's DropNamesCount paths, 1,024, so the view stays well inside §18.4's 64 MiB above
+	// wasm data.
+	DropStatesMaxDropCount int
 }
 
 // The defaults.
@@ -120,6 +124,7 @@ func DefaultWorkerSettings() *WorkerSettings {
 		SearchPageHitMaxCount:          100,
 		SearchFieldMaxByteCount:        256,
 		SearchSnippetMaxByteCount:      200,
+		DropStatesMaxDropCount:         256,
 	}
 }
 
@@ -191,6 +196,9 @@ type WorkerArgs struct {
 	// The search (ops_search.go): on the page Worker, the Sidecar's §5.4 search calls, which answer unavailable until
 	// a host installs its engine. An error is what the reply reports; nil answers unavailable.
 	Search func() (WorkerSearch, error)
+	// The drops of repoId, for the console's drop_states (ops_drops.go): on the page Worker, its EvsClient's repo, read
+	// through WorkerDrops' reads alone. An error is what the reply reports; nil answers unavailable.
+	Drops func(repoId sidecar.Id) (WorkerDrops, error)
 	// A quick burner's Worker: memory only, its search reads the buckets alone and never fetches all (§18.8's Quick
 	// burner).
 	Ephemeral bool
@@ -244,7 +252,7 @@ func NewWorker(args *WorkerArgs) (*Worker, error) {
 		int64(settings.ConfigMaxRowCount), int64(settings.ConfigPolicySourceMaxByteCount),
 		int64(settings.SearchSessionMaxCount), int64(settings.SearchIdleTimeout), int64(settings.SearchReplyTimeout),
 		int64(settings.SearchEmptyPullCount), int64(settings.SearchPageHitCount), int64(settings.SearchPageHitMaxCount),
-		int64(settings.SearchFieldMaxByteCount), int64(settings.SearchSnippetMaxByteCount),
+		int64(settings.SearchFieldMaxByteCount), int64(settings.SearchSnippetMaxByteCount), int64(settings.DropStatesMaxDropCount),
 	} {
 		if bound <= 0 {
 			return nil, fmt.Errorf("a page Worker's bounds must be positive")

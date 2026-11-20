@@ -14,6 +14,9 @@
 //	                  [writer_sidecar_id]
 //	config_view       nothing                                       the verified config's members, sidecars, names,
 //	                                                                tags, groups, labels and policy (ops_config.go)
+//	drop_states       repo_id, [ref]                                a repo's drops with their states, the paths each
+//	                                                                covers and a pending one's device command
+//	                                                                (ops_drops.go)
 //	sign_out          nothing                                       SidecarRevoke{removed}, the client removed, the
 //	                                                                network's state wiped (Sidecar.Logout)
 //	search            [query], [repo_id], [scope], [since_ms],       one search's first page as hit views (ops_search.go,
@@ -26,9 +29,9 @@
 //	enroll            [code]                                        unavailable until plan-SDK-key-origin-credential's
 //	admission_status  nothing                                       answer is built; neither reaches a seam
 //
-// directory_view and config_view are RS2's team console (§18.8's pages row, §23.4's M6): views only. There is no
-// operation that files a request, decides one, announces, withdraws or revokes, or dry-runs, signs or cancels a drop,
-// since a page Worker is read_only and admin_refused (§16.11's console row).
+// directory_view, config_view and drop_states are RS2's team console (§18.8's pages row, §23.4's M6): views only. There
+// is no operation that files a request, decides one, announces, withdraws or revokes, or dry-runs, signs or cancels a
+// drop, since a page Worker is read_only and admin_refused (§16.11's console row, D-SDK-29).
 //
 // A field an operation does not take must be empty. ids are uuid strings, versions decimal strings, names UTF-8 text
 // or, for bytes that are not UTF-8, base64 (plan-EVS1-ref-name-bytes). Each field's bound is WorkerSettings'.
@@ -419,6 +422,10 @@ var workerOperations = map[string]*workerOperation{
 	OperationSearchPolicy: {
 		shape: requestShape{repoIdFilter: true, searchPolicy: true},
 		run:   runSearchPolicy,
+	},
+	OperationDropStates: {
+		shape: requestShape{repoId: true, ref: true},
+		run:   runDropStates,
 	},
 }
 

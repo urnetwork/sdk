@@ -5,8 +5,9 @@
 // interleaves with it; and each network's Worker opens that network's own database, urnetwork-sidecar-v1-<network_id>,
 // named from the id's canonical text, sharing nothing with another network's and finding its own state on reopen. A
 // vault record opening against a fake stack, a refresh with DPoP and a real poll interleaved with an operation wait
-// for enrollment (plan-SDK-key-origin-credential) and are not run here. The team console's directory_view and
-// config_view (SDK-M6-02) answer before open and unenrolled as every read does, and their views build on this leg.
+// for enrollment (plan-SDK-key-origin-credential) and are not run here. The team console's directory_view, config_view
+// and drop_states (SDK-M6-02, SDK-M10-05) answer before open and unenrolled as every read does, and their views build
+// on this leg.
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {runSidecarWasmGoTests} from "./sidecarwasm_go_tests.ts";

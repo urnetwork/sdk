@@ -838,8 +838,9 @@ func TestMalformedConsoleRequestsReachNoSeam(t *testing.T) {
 func TestConsoleFilesNothing(t *testing.T) {
 	for name := range workerOperations {
 		// search_cancel ends one of this Worker's own searches (§18.8's messages row, SDK-M10-04): it files nothing,
-		// and no drop is ever cancelled here
-		if name == OperationSearchCancel {
+		// and no drop is ever cancelled here; drop_states only lists a repo's drops (SDK-M10-05), whose dry run, drop
+		// and cancel no operation has (TestConsoleCannotDrop)
+		if name == OperationSearchCancel || name == OperationDropStates {
 			continue
 		}
 		for _, filing := range []string{"request", "decide", "approve", "deny", "announce", "withdraw", "revoke", "erase", "drop", "cancel", "set", "grant", "admit"} {

@@ -201,6 +201,7 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 		Directory: network.directory,
 		Config:    network.config,
 		Search:    network.search,
+		Drops:     network.drops,
 		Yield:     yieldToEventLoop,
 		Settings:  workerSettings,
 	})
@@ -311,6 +312,16 @@ func (self *pageNetwork) status() *pageStatusView {
 
 // repoId's verified reader, on the network's EvsClient.
 func (self *pageNetwork) repo(repoId sidecar.Id) (sidecarworker.WorkerRepo, error) {
+	client, err := self.evsClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.Repo(repoId), nil
+}
+
+// repoId's drops, for the console's drop_states (SDK-M10-05): its reads on the network's EvsClient, which fail closed
+// as every read here does until this leg's config verification fills the client.
+func (self *pageNetwork) drops(repoId sidecar.Id) (sidecarworker.WorkerDrops, error) {
 	client, err := self.evsClient()
 	if err != nil {
 		return nil, err

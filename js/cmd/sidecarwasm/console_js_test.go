@@ -1,9 +1,10 @@
 //go:build js && wasm && sidecar_http
 
-// The team console's operations on the page Worker's own leg (SDK-M6-02), in Node under test/sidecarwasm_harness.mjs
-// with the fake IndexedDB: before open and on an unenrolled network directory_view and config_view answer as every
-// read does, a malformed console request answers invalid, and the views themselves, the root's stubs among them, build
-// and answer through JSON on js/wasm, prose crossing only as untrusted text. test/sidecarwasm_ops.test.ts runs them.
+// The team console's operations on the page Worker's own leg (SDK-M6-02, SDK-M10-05), in Node under
+// test/sidecarwasm_harness.mjs with the fake IndexedDB: before open and on an unenrolled network directory_view,
+// config_view and drop_states answer as every read does, a malformed console request answers invalid, and the views
+// themselves, the root's stubs among them, build and answer through JSON on js/wasm, prose crossing only as untrusted
+// text. test/sidecarwasm_ops.test.ts runs them.
 
 package main
 
@@ -23,12 +24,15 @@ import (
 // answer not_enrolled; and a malformed console request answers invalid either way, reaching nothing.
 func TestConsoleOperationsBeforeOpenAndUnenrolled(t *testing.T) {
 	worker := testPageWorker(t)
+	repoId := sidecar.NewId().String()
 	malformed := []string{
 		`{"id":"m1","op":"directory_view","kind":"team"}`,
 		`{"id":"m2","op":"directory_view","writer_sidecar_id":"` + sidecar.NewId().String() + `"}`,
 		`{"id":"m3","op":"config_view","query":"members"}`,
+		`{"id":"m4","op":"drop_states"}`,
+		`{"id":"m5","op":"drop_states","repo_id":"` + repoId + `","confirm_path":"notes/a.txt"}`,
 	}
-	for _, request := range []string{`{"id":"d","op":"directory_view"}`, `{"id":"c","op":"config_view"}`} {
+	for _, request := range []string{`{"id":"d","op":"directory_view"}`, `{"id":"c","op":"config_view"}`, `{"id":"s","op":"drop_states","repo_id":"` + repoId + `"}`} {
 		if reply := testPageReply(t, worker, request); reply.Ok || reply.Code != sidecarworker.CodeUnavailable {
 			t.Errorf("before open, %s: %+v", request, reply)
 		}
@@ -43,6 +47,7 @@ func TestConsoleOperationsBeforeOpenAndUnenrolled(t *testing.T) {
 		`{"id":"d","op":"directory_view","kind":"run","active_only":true,"query":"settings"}`,
 		`{"id":"g","op":"directory_view","announcement_id":"` + sidecar.NewId().String() + `"}`,
 		`{"id":"c","op":"config_view"}`,
+		`{"id":"s","op":"drop_states","repo_id":"` + repoId + `","ref":"release"}`,
 	} {
 		if reply := testPageReply(t, worker, request); reply.Ok || reply.Code != sidecarworker.CodeNotEnrolled {
 			t.Errorf("unenrolled, %s: %+v", request, reply)

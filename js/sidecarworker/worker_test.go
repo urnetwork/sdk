@@ -314,9 +314,9 @@ func TestReadOnlyOperationsOnly(t *testing.T) {
 	}
 	slices.Sort(operations)
 	want := []string{
-		OperationAdmissionStatus, OperationConfigView, OperationDirectoryView, OperationEnroll, OperationList, OperationReadView,
-		OperationRecordView, OperationSearch, OperationSearchCancel, OperationSearchMore, OperationSearchPolicy, OperationSearchStatus,
-		OperationSignOut,
+		OperationAdmissionStatus, OperationConfigView, OperationDirectoryView, OperationDropStates, OperationEnroll, OperationList,
+		OperationReadView, OperationRecordView, OperationSearch, OperationSearchCancel, OperationSearchMore, OperationSearchPolicy,
+		OperationSearchStatus, OperationSignOut,
 	}
 	if !slices.Equal(operations, want) {
 		t.Fatalf("the operations %v, want %v", operations, want)
@@ -337,6 +337,8 @@ func TestReadOnlyOperationsOnly(t *testing.T) {
 		{seam: (*WorkerRepo)(nil), methods: []string{"History", "List", "ReadHead"}},
 		{seam: (*WorkerRecords)(nil), methods: []string{"Entries", "Sync"}},
 		{seam: (*WorkerDirectory)(nil), methods: []string{"DirectoryId", "Get", "List", "Sync"}},
+		// drop_states' reads (SDK-M10-05): never the dry run, the drop or the cancel
+		{seam: (*WorkerDrops)(nil), methods: []string{"Drops", "KnownPaths", "List"}},
 	} {
 		if methods := methodsOf(c.seam); !slices.Equal(methods, c.methods) {
 			t.Errorf("a seam offers %v, want %v", methods, c.methods)

@@ -106,6 +106,8 @@ type Reply struct {
 	// A search's page, or a repo's search status (ops_search.go).
 	Search       *SearchView       `json:"search,omitempty"`
 	SearchStatus *SearchStatusView `json:"search_status,omitempty"`
+	// A repo's drops (ops_drops.go).
+	DropStates *DropStatesView `json:"drop_states,omitempty"`
 }
 
 // The reply's JSON. A view marshals by construction, so this never fails; if it did, the page gets a refusal.
