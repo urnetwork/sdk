@@ -86,6 +86,9 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		// SidecarSearch's (SDK-M10-01), and its indexer list (SDK-M10-03)
 		"SidecarSearchQuery", "SidecarSearchHit", "SidecarSearchHitList", "SidecarSearchProgress", "SidecarSearchStatus", "SidecarIndexer",
 		"SidecarIndexerList",
+		// SidecarEvs's format 2 answers (SDK-M10-05): a version's row, the dry run and its lineages, and the drops
+		"SidecarBytes", "SidecarHistory", "SidecarHistoryVersion", "SidecarHistoryVersionList",
+		"SidecarDropPreview", "SidecarDropLineage", "SidecarDropLineageList", "SidecarDrop", "SidecarDropList", "SidecarDrops",
 	} {
 		if info := g.classify(types.NewPointer(testingPreferenceType(t, g, name).Type())); info.kind != kindJson {
 			t.Errorf("%s crosses as kind %d", name, info.kind)
@@ -98,6 +101,10 @@ func TestSidecarDataCrossesAsJson(t *testing.T) {
 		"SidecarSendDomainList": sdk.NewSidecarSendDomainList(),
 		"SidecarSearchHitList":  sdk.NewSidecarSearchHitList(),
 		"SidecarIndexerList":    sdk.NewSidecarIndexerList(),
+		// SDK-M10-05's
+		"SidecarDropLineageList":    sdk.NewSidecarDropLineageList(),
+		"SidecarDropList":           sdk.NewSidecarDropList(),
+		"SidecarHistoryVersionList": sdk.NewSidecarHistoryVersionList(),
 	} {
 		encoded, err := json.Marshal(list)
 		if err != nil || !strings.HasPrefix(string(encoded), "[") {
@@ -131,6 +138,8 @@ func TestSidecarInterfacesCrossAsFunctionPointers(t *testing.T) {
 		"SidecarKeyStore", "SidecarPresenceSigner", "SidecarEventListener", "SidecarApprovalListener",
 		"SidecarResultCallback", "SidecarRevokePlanCallback", "SidecarForwardKeyStore", "SidecarDirectoryListener",
 		"SidecarSendCheckCallback", "SidecarSendResultCallback", "SidecarSearchListener",
+		// SidecarEvs's reads and drops (SDK-M10-05)
+		"SidecarBytesCallback", "SidecarHistoryCallback", "SidecarDropPreviewCallback", "SidecarDropsCallback",
 	} {
 		object := testingPreferenceType(t, g, name)
 		if info := g.classify(object.Type()); info.kind != kindCallback {
@@ -160,6 +169,9 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		"SidecarSearchHandle.Cancel",
 		// remote search's requester seams and the directory's repo id (SDK-M10-03, QD-1087)
 		"SidecarSearch.GetIndexers", "SidecarSearch.SetRemote", "SidecarSearch.AcknowledgeIndexer", "SidecarDirectory.GetRepoId",
+		// format 2's reads and the drop calls (SDK-M10-05)
+		"SidecarEvs.ReadVersion", "SidecarEvs.Write", "SidecarEvs.History", "SidecarEvs.DropHistoryPreview", "SidecarEvs.DropHistory",
+		"SidecarEvs.CancelDrop", "SidecarEvs.Drops",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

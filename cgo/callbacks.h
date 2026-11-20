@@ -365,6 +365,10 @@ typedef void (*urnet_sidecar_bytes_cb)(void* user_data, const char* result_json,
 void urnet_invoke_sidecar_bytes(urnet_sidecar_bytes_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_json);
 void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_data, const char* page_json);
+typedef void (*urnet_sidecar_drop_preview_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sidecar_drop_preview(urnet_sidecar_drop_preview_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sidecar_drops_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sidecar_drops(urnet_sidecar_drops_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_erasures_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_erasures(urnet_sidecar_erasures_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_event_cb)(void* user_data, const char* event_json);

@@ -1336,10 +1336,15 @@ EXPORTS
 	urnet_sidecar_directory_set_worker
 	urnet_sidecar_enroll_with_device
 	urnet_sidecar_evs_add_repo_change_listener
+	urnet_sidecar_evs_cancel_drop
 	urnet_sidecar_evs_create_repo
+	urnet_sidecar_evs_drop_history
+	urnet_sidecar_evs_drop_history_preview
+	urnet_sidecar_evs_drops
 	urnet_sidecar_evs_erasures
 	urnet_sidecar_evs_history
 	urnet_sidecar_evs_read_head
+	urnet_sidecar_evs_read_version
 	urnet_sidecar_evs_write
 	urnet_sidecar_get_approvals
 	urnet_sidecar_get_directory

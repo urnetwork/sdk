@@ -1261,6 +1261,20 @@ void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_da
 	cb(user_data, page_json);
 }
 
+void urnet_invoke_sidecar_drop_preview(urnet_sidecar_drop_preview_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sidecar_drops(urnet_sidecar_drops_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sidecar_erasures(urnet_sidecar_erasures_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	if (cb == 0) {
 		return;

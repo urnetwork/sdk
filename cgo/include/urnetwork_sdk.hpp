@@ -1264,6 +1264,10 @@ struct SidecarDirectoryFilter;
 struct SidecarDirectoryPage;
 struct SidecarDirectoryService;
 struct SidecarDraft;
+struct SidecarDrop;
+struct SidecarDropLineage;
+struct SidecarDropPreview;
+struct SidecarDrops;
 struct SidecarErasure;
 struct SidecarErasures;
 struct SidecarEvent;
@@ -1471,6 +1475,8 @@ using SidecarCleanupWorkerList = std::vector<SidecarCleanupWorker>;
 using SidecarDeviceList = std::vector<SidecarDevice>;
 using SidecarDirectoryFieldList = std::vector<SidecarDirectoryField>;
 using SidecarDirectoryServiceList = std::vector<SidecarDirectoryService>;
+using SidecarDropLineageList = std::vector<SidecarDropLineage>;
+using SidecarDropList = std::vector<SidecarDrop>;
 using SidecarErasureList = std::vector<SidecarErasure>;
 using SidecarHistoryVersionList = std::vector<SidecarHistoryVersion>;
 using SidecarIndexerList = std::vector<SidecarIndexer>;
@@ -4187,6 +4193,50 @@ struct SidecarDraft {
 	std::optional<std::string> body;
 };
 
+struct SidecarDrop {
+	std::optional<std::string> drop_id;
+	std::optional<std::string> ref_id;
+	int64_t version{};
+	std::string state{};
+	int64_t not_before_millis{};
+	std::optional<int64_t> freed_bytes;
+	std::optional<StringList> paths;
+};
+
+struct SidecarDropLineage {
+	std::string path{};
+	int64_t version_count{};
+	std::string boundary{};
+	std::optional<int64_t> oldest_millis;
+	std::optional<int64_t> newest_millis;
+};
+
+struct SidecarDropPreview {
+	bool ok{};
+	std::optional<std::string> preview_id;
+	std::optional<std::string> confirm_path;
+	bool list_match{};
+	std::optional<int64_t> version_count;
+	std::optional<int64_t> freed_bytes;
+	std::optional<int64_t> shared_bytes;
+	std::optional<int64_t> inline_bytes;
+	std::optional<int64_t> packed_bytes;
+	std::optional<int64_t> young_bytes;
+	std::optional<int64_t> oldest_millis;
+	std::optional<int64_t> newest_millis;
+	std::optional<SidecarDropLineageList> lineages;
+	std::optional<int32_t> push_count;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
+struct SidecarDrops {
+	bool ok{};
+	std::optional<SidecarDropList> drops;
+	std::optional<std::string> code;
+	std::optional<std::string> message;
+};
+
 struct SidecarErasure {
 	std::optional<std::string> erasure_id;
 	std::string state{};
@@ -4258,6 +4308,8 @@ struct SidecarHistoryVersion {
 	std::optional<bool> removed;
 	std::string versioning{};
 	std::string state{};
+	std::optional<std::string> drop_id;
+	std::optional<int64_t> drop_not_before_millis;
 };
 
 struct SidecarIndexer {
@@ -6032,6 +6084,14 @@ inline void to_json(nlohmann::json& j, const SidecarDirectoryService& v);
 inline void from_json(const nlohmann::json& j, SidecarDirectoryService& v);
 inline void to_json(nlohmann::json& j, const SidecarDraft& v);
 inline void from_json(const nlohmann::json& j, SidecarDraft& v);
+inline void to_json(nlohmann::json& j, const SidecarDrop& v);
+inline void from_json(const nlohmann::json& j, SidecarDrop& v);
+inline void to_json(nlohmann::json& j, const SidecarDropLineage& v);
+inline void from_json(const nlohmann::json& j, SidecarDropLineage& v);
+inline void to_json(nlohmann::json& j, const SidecarDropPreview& v);
+inline void from_json(const nlohmann::json& j, SidecarDropPreview& v);
+inline void to_json(nlohmann::json& j, const SidecarDrops& v);
+inline void from_json(const nlohmann::json& j, SidecarDrops& v);
 inline void to_json(nlohmann::json& j, const SidecarErasure& v);
 inline void from_json(const nlohmann::json& j, SidecarErasure& v);
 inline void to_json(nlohmann::json& j, const SidecarErasures& v);
@@ -19113,6 +19173,262 @@ inline void from_json(const nlohmann::json& j, SidecarDraft& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarDrop& v) {
+	j = nlohmann::json::object();
+	if (v.drop_id) {
+		j["drop_id"] = *v.drop_id;
+	}
+	if (v.ref_id) {
+		j["ref_id"] = *v.ref_id;
+	}
+	j["version"] = v.version;
+	j["state"] = v.state;
+	j["not_before_millis"] = v.not_before_millis;
+	if (v.freed_bytes) {
+		j["freed_bytes"] = *v.freed_bytes;
+	}
+	if (v.paths) {
+		j["paths"] = *v.paths;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDrop& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("drop_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.drop_id = std::move(tmp);
+	}
+	if (auto it = j.find("ref_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ref_id = std::move(tmp);
+	}
+	if (auto it = j.find("version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.version);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("not_before_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.not_before_millis);
+	}
+	if (auto it = j.find("freed_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.freed_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("paths"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.paths = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDropLineage& v) {
+	j = nlohmann::json::object();
+	j["path"] = v.path;
+	j["version_count"] = v.version_count;
+	j["boundary"] = v.boundary;
+	if (v.oldest_millis) {
+		j["oldest_millis"] = *v.oldest_millis;
+	}
+	if (v.newest_millis) {
+		j["newest_millis"] = *v.newest_millis;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDropLineage& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("path"); it != j.end() && !it->is_null()) {
+		it->get_to(v.path);
+	}
+	if (auto it = j.find("version_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.version_count);
+	}
+	if (auto it = j.find("boundary"); it != j.end() && !it->is_null()) {
+		it->get_to(v.boundary);
+	}
+	if (auto it = j.find("oldest_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.oldest_millis = std::move(tmp);
+	}
+	if (auto it = j.find("newest_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.newest_millis = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDropPreview& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.preview_id) {
+		j["preview_id"] = *v.preview_id;
+	}
+	if (v.confirm_path) {
+		j["confirm_path"] = *v.confirm_path;
+	}
+	j["list_match"] = v.list_match;
+	if (v.version_count) {
+		j["version_count"] = *v.version_count;
+	}
+	if (v.freed_bytes) {
+		j["freed_bytes"] = *v.freed_bytes;
+	}
+	if (v.shared_bytes) {
+		j["shared_bytes"] = *v.shared_bytes;
+	}
+	if (v.inline_bytes) {
+		j["inline_bytes"] = *v.inline_bytes;
+	}
+	if (v.packed_bytes) {
+		j["packed_bytes"] = *v.packed_bytes;
+	}
+	if (v.young_bytes) {
+		j["young_bytes"] = *v.young_bytes;
+	}
+	if (v.oldest_millis) {
+		j["oldest_millis"] = *v.oldest_millis;
+	}
+	if (v.newest_millis) {
+		j["newest_millis"] = *v.newest_millis;
+	}
+	if (v.lineages) {
+		j["lineages"] = *v.lineages;
+	}
+	if (v.push_count) {
+		j["push_count"] = *v.push_count;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDropPreview& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("preview_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.preview_id = std::move(tmp);
+	}
+	if (auto it = j.find("confirm_path"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.confirm_path = std::move(tmp);
+	}
+	if (auto it = j.find("list_match"); it != j.end() && !it->is_null()) {
+		it->get_to(v.list_match);
+	}
+	if (auto it = j.find("version_count"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.version_count = std::move(tmp);
+	}
+	if (auto it = j.find("freed_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.freed_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("shared_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.shared_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("inline_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.inline_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("packed_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.packed_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("young_bytes"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.young_bytes = std::move(tmp);
+	}
+	if (auto it = j.find("oldest_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.oldest_millis = std::move(tmp);
+	}
+	if (auto it = j.find("newest_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.newest_millis = std::move(tmp);
+	}
+	if (auto it = j.find("lineages"); it != j.end() && !it->is_null()) {
+		SidecarDropLineageList tmp{};
+		it->get_to(tmp);
+		v.lineages = std::move(tmp);
+	}
+	if (auto it = j.find("push_count"); it != j.end() && !it->is_null()) {
+		int32_t tmp{};
+		it->get_to(tmp);
+		v.push_count = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SidecarDrops& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.drops) {
+		j["drops"] = *v.drops;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
+	if (v.message) {
+		j["message"] = *v.message;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarDrops& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("drops"); it != j.end() && !it->is_null()) {
+		SidecarDropList tmp{};
+		it->get_to(tmp);
+		v.drops = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarErasure& v) {
 	j = nlohmann::json::object();
 	if (v.erasure_id) {
@@ -19533,6 +19849,12 @@ inline void to_json(nlohmann::json& j, const SidecarHistoryVersion& v) {
 	}
 	j["versioning"] = v.versioning;
 	j["state"] = v.state;
+	if (v.drop_id) {
+		j["drop_id"] = *v.drop_id;
+	}
+	if (v.drop_not_before_millis) {
+		j["drop_not_before_millis"] = *v.drop_not_before_millis;
+	}
 }
 inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v) {
 	if (!j.is_object()) {
@@ -19564,6 +19886,16 @@ inline void from_json(const nlohmann::json& j, SidecarHistoryVersion& v) {
 	}
 	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
 		it->get_to(v.state);
+	}
+	if (auto it = j.find("drop_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.drop_id = std::move(tmp);
+	}
+	if (auto it = j.find("drop_not_before_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.drop_not_before_millis = std::move(tmp);
 	}
 }
 
@@ -25299,6 +25631,8 @@ using SidecarApprovalListener = std::function<void(std::optional<SidecarApproval
 using SidecarBurnerCallback = std::function<void(std::optional<SidecarBurner> result, std::optional<std::string> err_param)>;
 using SidecarBytesCallback = std::function<void(std::optional<SidecarBytes> result, std::optional<std::string> err_param)>;
 using SidecarDirectoryListener = std::function<void(std::optional<SidecarDirectoryPage> page)>;
+using SidecarDropPreviewCallback = std::function<void(std::optional<SidecarDropPreview> result, std::optional<std::string> err_param)>;
+using SidecarDropsCallback = std::function<void(std::optional<SidecarDrops> result, std::optional<std::string> err_param)>;
 using SidecarErasuresCallback = std::function<void(std::optional<SidecarErasures> result, std::optional<std::string> err_param)>;
 using SidecarEventListener = std::function<void(std::optional<SidecarEvent> event)>;
 struct SidecarForwardKeyStore {
@@ -26946,10 +27280,15 @@ public:
 	SidecarEvs() = default;
 	explicit SidecarEvs(uint64_t h) : detail::Handle(h) {}
 	Sub addRepoChangeListener(const std::string& repo_id, SidecarRepoChangeListener listener) const;
+	void cancelDrop(const std::string& repo_id, const std::string& drop_id, SidecarResultCallback callback) const;
 	void createRepo(const std::string& kind, const std::string& display_name, bool private_param, SidecarResultCallback callback) const;
+	void dropHistory(const std::string& repo_id, const std::string& preview_id, const std::string& confirm_path, bool now, SidecarResultCallback callback) const;
+	void dropHistoryPreview(const std::string& repo_id, const std::string& path, bool follow, SidecarDropPreviewCallback callback) const;
+	void drops(const std::string& repo_id, SidecarDropsCallback callback) const;
 	void erasures(const std::string& repo_id, SidecarErasuresCallback callback) const;
 	void history(const std::string& repo_id, const std::string& path, SidecarHistoryCallback callback) const;
 	void readHead(const std::string& repo_id, const std::string& path, SidecarBytesCallback callback) const;
+	void readVersion(const std::string& repo_id, const std::string& path, int64_t version, SidecarBytesCallback callback) const;
 	void write(const std::string& repo_id, const std::string& path, const uint8_t* data, int32_t data_len, const std::string& versioning, SidecarResultCallback callback) const;
 };
 
@@ -32116,6 +32455,78 @@ inline void oneshot_sidecar_directory(void* user_data, const char* page_json) {
 			page_v = parseJson<SidecarDirectoryPage>(page_json);
 		}
 		(*f)(std::move(page_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_drop_preview(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarDropPreviewCallback*>(user_data);
+	try {
+		std::optional<SidecarDropPreview> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarDropPreview>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_drop_preview(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarDropPreviewCallback*>(user_data);
+	try {
+		std::optional<SidecarDropPreview> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarDropPreview>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_drops(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarDropsCallback*>(user_data);
+	try {
+		std::optional<SidecarDrops> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarDrops>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_drops(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SidecarDropsCallback*>(user_data);
+	try {
+		std::optional<SidecarDrops> result_v;
+		if (result_json) {
+			result_v = parseJson<SidecarDrops>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -41793,9 +42204,25 @@ inline Sub SidecarEvs::addRepoChangeListener(const std::string& repo_id, Sidecar
 	}
 	return r;
 }
+inline void SidecarEvs::cancelDrop(const std::string& repo_id, const std::string& drop_id, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_cancel_drop(handle(), repo_id.c_str(), drop_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
 inline void SidecarEvs::createRepo(const std::string& kind, const std::string& display_name, bool private_param, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_evs_create_repo(handle(), kind.c_str(), display_name.c_str(), private_param, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarEvs::dropHistory(const std::string& repo_id, const std::string& preview_id, const std::string& confirm_path, bool now, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_drop_history(handle(), repo_id.c_str(), preview_id.c_str(), confirm_path.c_str(), now, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarEvs::dropHistoryPreview(const std::string& repo_id, const std::string& path, bool follow, SidecarDropPreviewCallback callback) const {
+	auto* callback_fn = callback ? new SidecarDropPreviewCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_drop_history_preview(handle(), repo_id.c_str(), path.c_str(), follow, callback_fn ? &detail::oneshot_sidecar_drop_preview : nullptr, callback_fn);
+}
+inline void SidecarEvs::drops(const std::string& repo_id, SidecarDropsCallback callback) const {
+	auto* callback_fn = callback ? new SidecarDropsCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_drops(handle(), repo_id.c_str(), callback_fn ? &detail::oneshot_sidecar_drops : nullptr, callback_fn);
 }
 inline void SidecarEvs::erasures(const std::string& repo_id, SidecarErasuresCallback callback) const {
 	auto* callback_fn = callback ? new SidecarErasuresCallback(std::move(callback)) : nullptr;
@@ -41808,6 +42235,10 @@ inline void SidecarEvs::history(const std::string& repo_id, const std::string& p
 inline void SidecarEvs::readHead(const std::string& repo_id, const std::string& path, SidecarBytesCallback callback) const {
 	auto* callback_fn = callback ? new SidecarBytesCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_evs_read_head(handle(), repo_id.c_str(), path.c_str(), callback_fn ? &detail::oneshot_sidecar_bytes : nullptr, callback_fn);
+}
+inline void SidecarEvs::readVersion(const std::string& repo_id, const std::string& path, int64_t version, SidecarBytesCallback callback) const {
+	auto* callback_fn = callback ? new SidecarBytesCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_evs_read_version(handle(), repo_id.c_str(), path.c_str(), version, callback_fn ? &detail::oneshot_sidecar_bytes : nullptr, callback_fn);
 }
 inline void SidecarEvs::write(const std::string& repo_id, const std::string& path, const uint8_t* data, int32_t data_len, const std::string& versioning, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;

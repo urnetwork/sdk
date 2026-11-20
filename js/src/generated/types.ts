@@ -1217,3 +1217,59 @@ export interface SidecarIndexer {
   served_repo_ids?: string[] | null;
 }
 
+export interface SidecarHistoryVersion {
+  version: number;
+  commit_version: number;
+  time_millis?: number;
+  signer_sidecar_id?: string | null;
+  removed?: boolean;
+  versioning: string;
+  state: string;
+  drop_id?: string | null;
+  drop_not_before_millis?: number;
+}
+
+export interface SidecarDropPreview {
+  ok: boolean;
+  preview_id?: string | null;
+  confirm_path?: string;
+  list_match: boolean;
+  version_count?: number;
+  freed_bytes?: number;
+  shared_bytes?: number;
+  inline_bytes?: number;
+  packed_bytes?: number;
+  young_bytes?: number;
+  oldest_millis?: number;
+  newest_millis?: number;
+  lineages?: SidecarDropLineage[] | null;
+  push_count?: number;
+  code?: string;
+  message?: string;
+}
+
+export interface SidecarDropLineage {
+  path: string;
+  version_count: number;
+  boundary: string;
+  oldest_millis?: number;
+  newest_millis?: number;
+}
+
+export interface SidecarDrop {
+  drop_id?: string | null;
+  ref_id?: string | null;
+  version: number;
+  state: string;
+  not_before_millis: number;
+  freed_bytes?: number;
+  paths?: string[] | null;
+}
+
+export interface SidecarDrops {
+  ok: boolean;
+  drops?: SidecarDrop[] | null;
+  code?: string;
+  message?: string;
+}
+

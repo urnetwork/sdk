@@ -182,6 +182,8 @@ public interface Raw extends Library {
   interface urnet_sidecar_burner_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_bytes_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_directory_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_drop_preview_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sidecar_drops_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_erasures_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_event_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_forward_key_store_delete_secret_cb extends Callback { long invoke(Pointer a0, String a1); }
@@ -1431,10 +1433,15 @@ public interface Raw extends Library {
   void urnet_sidecar_directory_set_runs(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   void urnet_sidecar_directory_set_worker(long a0, byte a1, urnet_sidecar_result_cb a2, Pointer a3);
   long urnet_sidecar_evs_add_repo_change_listener(long a0, String a1, urnet_sidecar_repo_change_cb a2, Pointer a3);
+  void urnet_sidecar_evs_cancel_drop(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   void urnet_sidecar_evs_create_repo(long a0, String a1, String a2, byte a3, urnet_sidecar_result_cb a4, Pointer a5);
+  void urnet_sidecar_evs_drop_history(long a0, String a1, String a2, String a3, byte a4, urnet_sidecar_result_cb a5, Pointer a6);
+  void urnet_sidecar_evs_drop_history_preview(long a0, String a1, String a2, byte a3, urnet_sidecar_drop_preview_cb a4, Pointer a5);
+  void urnet_sidecar_evs_drops(long a0, String a1, urnet_sidecar_drops_cb a2, Pointer a3);
   void urnet_sidecar_evs_erasures(long a0, String a1, urnet_sidecar_erasures_cb a2, Pointer a3);
   void urnet_sidecar_evs_history(long a0, String a1, String a2, urnet_sidecar_history_cb a3, Pointer a4);
   void urnet_sidecar_evs_read_head(long a0, String a1, String a2, urnet_sidecar_bytes_cb a3, Pointer a4);
+  void urnet_sidecar_evs_read_version(long a0, String a1, String a2, long a3, urnet_sidecar_bytes_cb a4, Pointer a5);
   void urnet_sidecar_evs_write(long a0, String a1, String a2, Pointer a3, int a4, String a5, urnet_sidecar_result_cb a6, Pointer a7);
   void urnet_sidecar_mail_burn(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
   void urnet_sidecar_mail_check_send(long a0, String a1, urnet_sidecar_send_check_cb a2, Pointer a3);

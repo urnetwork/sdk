@@ -205,6 +205,13 @@ func generateTypes() ([]byte, error) {
 		sdk.SidecarSearchProgress{},
 		sdk.SidecarSearchStatus{},
 		sdk.SidecarIndexer{},
+		// SidecarEvs's format 2 answers (sidecar §18.5's drop calls, SDK-M10-05): a path's version row with its state and
+		// drop, the dry run with its lineages, and a repo's drops
+		sdk.SidecarHistoryVersion{},
+		sdk.SidecarDropPreview{},
+		sdk.SidecarDropLineage{},
+		sdk.SidecarDrop{},
+		sdk.SidecarDrops{},
 	}
 
 	for _, t := range types {
@@ -369,6 +376,10 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SidecarSendDomain[]"
 		case "sdk.SidecarSearchHitList":
 			return "SidecarSearchHit[]"
+		case "sdk.SidecarDropLineageList":
+			return "SidecarDropLineage[]"
+		case "sdk.SidecarDropList":
+			return "SidecarDrop[]"
 		case "sdk.IdList":
 			return "string[]"
 		case "sdk.ExperimentAssignmentList":

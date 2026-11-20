@@ -181,6 +181,8 @@ module URnetwork
       callback :urnet_sidecar_burner_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_bytes_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_directory_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_drop_preview_cb, [:pointer, :string, :string], :void
+      callback :urnet_sidecar_drops_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_erasures_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_event_cb, [:pointer, :string], :void
       callback :urnet_sidecar_forward_key_store_delete_secret_cb, [:pointer, :string], :int64
@@ -1430,10 +1432,15 @@ module URnetwork
       attach_function :urnet_sidecar_directory_set_runs, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_directory_set_worker, [:uint64, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_add_repo_change_listener, [:uint64, :string, :urnet_sidecar_repo_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_evs_cancel_drop, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_create_repo, [:uint64, :string, :string, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_drop_history, [:uint64, :string, :string, :string, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_drop_history_preview, [:uint64, :string, :string, :bool, :urnet_sidecar_drop_preview_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_drops, [:uint64, :string, :urnet_sidecar_drops_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_erasures, [:uint64, :string, :urnet_sidecar_erasures_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_history, [:uint64, :string, :string, :urnet_sidecar_history_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_read_head, [:uint64, :string, :string, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_evs_read_version, [:uint64, :string, :string, :int64, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_write, [:uint64, :string, :string, :pointer, :int32, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_burn, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_check_send, [:uint64, :string, :urnet_sidecar_send_check_cb, :pointer], :void, blocking: true

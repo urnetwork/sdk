@@ -180,6 +180,8 @@ pub type urnet_sidecar_approval_cb = Option<unsafe extern "C" fn(*mut c_void, *c
 pub type urnet_sidecar_burner_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_bytes_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_directory_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_sidecar_drop_preview_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sidecar_drops_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_erasures_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_event_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_forward_key_store_delete_secret_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> i64>;
@@ -1431,10 +1433,15 @@ pub struct Raw {
     pub urnet_sidecar_directory_set_runs: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_directory_set_worker: unsafe extern "C" fn(u64, bool, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_add_repo_change_listener: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_repo_change_cb, *mut c_void) -> u64,
+    pub urnet_sidecar_evs_cancel_drop: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_create_repo: unsafe extern "C" fn(u64, *const c_char, *const c_char, bool, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_evs_drop_history: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, bool, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_evs_drop_history_preview: unsafe extern "C" fn(u64, *const c_char, *const c_char, bool, urnet_sidecar_drop_preview_cb, *mut c_void) -> (),
+    pub urnet_sidecar_evs_drops: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_drops_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_erasures: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_erasures_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_history: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_history_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_read_head: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_bytes_cb, *mut c_void) -> (),
+    pub urnet_sidecar_evs_read_version: unsafe extern "C" fn(u64, *const c_char, *const c_char, i64, urnet_sidecar_bytes_cb, *mut c_void) -> (),
     pub urnet_sidecar_evs_write: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const u8, i32, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_burn: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_mail_check_send: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_send_check_cb, *mut c_void) -> (),
@@ -2936,10 +2943,15 @@ impl Raw {
             urnet_sidecar_directory_set_runs: unsafe { *library.get(b"urnet_sidecar_directory_set_runs\0")? },
             urnet_sidecar_directory_set_worker: unsafe { *library.get(b"urnet_sidecar_directory_set_worker\0")? },
             urnet_sidecar_evs_add_repo_change_listener: unsafe { *library.get(b"urnet_sidecar_evs_add_repo_change_listener\0")? },
+            urnet_sidecar_evs_cancel_drop: unsafe { *library.get(b"urnet_sidecar_evs_cancel_drop\0")? },
             urnet_sidecar_evs_create_repo: unsafe { *library.get(b"urnet_sidecar_evs_create_repo\0")? },
+            urnet_sidecar_evs_drop_history: unsafe { *library.get(b"urnet_sidecar_evs_drop_history\0")? },
+            urnet_sidecar_evs_drop_history_preview: unsafe { *library.get(b"urnet_sidecar_evs_drop_history_preview\0")? },
+            urnet_sidecar_evs_drops: unsafe { *library.get(b"urnet_sidecar_evs_drops\0")? },
             urnet_sidecar_evs_erasures: unsafe { *library.get(b"urnet_sidecar_evs_erasures\0")? },
             urnet_sidecar_evs_history: unsafe { *library.get(b"urnet_sidecar_evs_history\0")? },
             urnet_sidecar_evs_read_head: unsafe { *library.get(b"urnet_sidecar_evs_read_head\0")? },
+            urnet_sidecar_evs_read_version: unsafe { *library.get(b"urnet_sidecar_evs_read_version\0")? },
             urnet_sidecar_evs_write: unsafe { *library.get(b"urnet_sidecar_evs_write\0")? },
             urnet_sidecar_mail_burn: unsafe { *library.get(b"urnet_sidecar_mail_burn\0")? },
             urnet_sidecar_mail_check_send: unsafe { *library.get(b"urnet_sidecar_mail_check_send\0")? },

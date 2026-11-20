@@ -1169,6 +1169,10 @@ typedef void (*urnet_sidecar_burner_cb)(void* user_data, const char* result_json
 typedef void (*urnet_sidecar_bytes_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarDirectoryListener */
 typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_json);
+/* SidecarDropPreviewCallback */
+typedef void (*urnet_sidecar_drop_preview_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SidecarDropsCallback */
+typedef void (*urnet_sidecar_drops_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarErasuresCallback */
 typedef void (*urnet_sidecar_erasures_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarEventListener */
@@ -2646,10 +2650,15 @@ void urnet_sidecar_directory_set_worker(uint64_t self, bool enabled, urnet_sidec
 /* ----- SidecarEvs ----- */
 
 uint64_t urnet_sidecar_evs_add_repo_change_listener(uint64_t self, const char* repo_id, urnet_sidecar_repo_change_cb listener_repo_changed, void* listener_user_data);
+void urnet_sidecar_evs_cancel_drop(uint64_t self, const char* repo_id, const char* drop_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_create_repo(uint64_t self, const char* kind, const char* display_name, bool private_param, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_drop_history(uint64_t self, const char* repo_id, const char* preview_id, const char* confirm_path, bool now, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_drop_history_preview(uint64_t self, const char* repo_id, const char* path, bool follow, urnet_sidecar_drop_preview_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_drops(uint64_t self, const char* repo_id, urnet_sidecar_drops_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_erasures(uint64_t self, const char* repo_id, urnet_sidecar_erasures_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_history(uint64_t self, const char* repo_id, const char* path, urnet_sidecar_history_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_read_head(uint64_t self, const char* repo_id, const char* path, urnet_sidecar_bytes_cb callback_result, void* callback_user_data);
+void urnet_sidecar_evs_read_version(uint64_t self, const char* repo_id, const char* path, int64_t version, urnet_sidecar_bytes_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_write(uint64_t self, const char* repo_id, const char* path, const uint8_t* data, int32_t data_len, const char* versioning, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 
 /* ----- SidecarMail ----- */
@@ -5910,6 +5919,58 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   body?: string
  */
 
+/* SidecarDrop (json):
+ *   drop_id?: string (uuid) | null
+ *   ref_id?: string (uuid) | null
+ *   version: number
+ *   state: string
+ *   not_before_millis: number
+ *   freed_bytes?: number
+ *   paths?: StringList | null
+ */
+
+/* SidecarDropLineage (json):
+ *   path: string
+ *   version_count: number
+ *   boundary: string
+ *   oldest_millis?: number
+ *   newest_millis?: number
+ */
+
+/* SidecarDropLineageList (json):
+ *   = SidecarDropLineage | null[]
+ */
+
+/* SidecarDropList (json):
+ *   = SidecarDrop | null[]
+ */
+
+/* SidecarDropPreview (json):
+ *   ok: boolean
+ *   preview_id?: string (uuid) | null
+ *   confirm_path?: string
+ *   list_match: boolean
+ *   version_count?: number
+ *   freed_bytes?: number
+ *   shared_bytes?: number
+ *   inline_bytes?: number
+ *   packed_bytes?: number
+ *   young_bytes?: number
+ *   oldest_millis?: number
+ *   newest_millis?: number
+ *   lineages?: SidecarDropLineageList | null
+ *   push_count?: number
+ *   code?: string
+ *   message?: string
+ */
+
+/* SidecarDrops (json):
+ *   ok: boolean
+ *   drops?: SidecarDropList | null
+ *   code?: string
+ *   message?: string
+ */
+
 /* SidecarErasure (json):
  *   erasure_id?: string (uuid) | null
  *   state: string
@@ -5985,6 +6046,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   removed?: boolean
  *   versioning: string
  *   state: string
+ *   drop_id?: string (uuid) | null
+ *   drop_not_before_millis?: number
  */
 
 /* SidecarHistoryVersionList (json):

@@ -2830,6 +2830,48 @@ func (self *cAdapterSidecarDirectoryListener) DirectoryChanged(page *sdk.Sidecar
 	}
 }
 
+type cAdapterSidecarDropPreviewCallback struct {
+	cbResult C.urnet_sidecar_drop_preview_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarDropPreviewCallback) Result(result *sdk.SidecarDropPreview, errParam error) {
+	defer cgoGuard("urnet_sidecar_drop_preview_cb")
+	result_ := cJson(result, "urnet_sidecar_drop_preview_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_drop_preview(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSidecarDropsCallback struct {
+	cbResult C.urnet_sidecar_drops_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarDropsCallback) Result(result *sdk.SidecarDrops, errParam error) {
+	defer cgoGuard("urnet_sidecar_drops_cb")
+	result_ := cJson(result, "urnet_sidecar_drops_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sidecar_drops(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSidecarErasuresCallback struct {
 	cbResult C.urnet_sidecar_erasures_cb
 	userData unsafe.Pointer
@@ -22179,6 +22221,20 @@ func urnet_sidecar_evs_add_repo_change_listener(self C.uint64_t, repoId *C.char,
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_sidecar_evs_cancel_drop
+func urnet_sidecar_evs_cancel_drop(self C.uint64_t, repoId *C.char, dropId *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_cancel_drop")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_cancel_drop")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CancelDrop(goId(repoId, "urnet_sidecar_evs_cancel_drop"), goId(dropId, "urnet_sidecar_evs_cancel_drop"), callback_)
+}
+
 //export urnet_sidecar_evs_create_repo
 func urnet_sidecar_evs_create_repo(self C.uint64_t, kind *C.char, displayName *C.char, privateParam C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sidecar_evs_create_repo")
@@ -22191,6 +22247,48 @@ func urnet_sidecar_evs_create_repo(self C.uint64_t, kind *C.char, displayName *C
 		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.CreateRepo(goString(kind), goString(displayName), bool(privateParam), callback_)
+}
+
+//export urnet_sidecar_evs_drop_history
+func urnet_sidecar_evs_drop_history(self C.uint64_t, repoId *C.char, previewId *C.char, confirmPath *C.char, now C.bool, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_drop_history")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_drop_history")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.DropHistory(goId(repoId, "urnet_sidecar_evs_drop_history"), goId(previewId, "urnet_sidecar_evs_drop_history"), goString(confirmPath), bool(now), callback_)
+}
+
+//export urnet_sidecar_evs_drop_history_preview
+func urnet_sidecar_evs_drop_history_preview(self C.uint64_t, repoId *C.char, path *C.char, follow C.bool, callback_result C.urnet_sidecar_drop_preview_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_drop_history_preview")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_drop_history_preview")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarDropPreviewCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarDropPreviewCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.DropHistoryPreview(goId(repoId, "urnet_sidecar_evs_drop_history_preview"), goString(path), bool(follow), callback_)
+}
+
+//export urnet_sidecar_evs_drops
+func urnet_sidecar_evs_drops(self C.uint64_t, repoId *C.char, callback_result C.urnet_sidecar_drops_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_drops")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_drops")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarDropsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarDropsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Drops(goId(repoId, "urnet_sidecar_evs_drops"), callback_)
 }
 
 //export urnet_sidecar_evs_erasures
@@ -22233,6 +22331,20 @@ func urnet_sidecar_evs_read_head(self C.uint64_t, repoId *C.char, path *C.char, 
 		callback_ = &cAdapterSidecarBytesCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.ReadHead(goId(repoId, "urnet_sidecar_evs_read_head"), goString(path), callback_)
+}
+
+//export urnet_sidecar_evs_read_version
+func urnet_sidecar_evs_read_version(self C.uint64_t, repoId *C.char, path *C.char, version C.int64_t, callback_result C.urnet_sidecar_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_evs_read_version")
+	self_, ok := resolveHandle[*sdk.SidecarEvs](uint64(self), "urnet_sidecar_evs_read_version")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ReadVersion(goId(repoId, "urnet_sidecar_evs_read_version"), goString(path), int64(version), callback_)
 }
 
 //export urnet_sidecar_evs_write
