@@ -409,11 +409,14 @@ test("W8: inconclusive without a counting run, or without the IP country's borde
   assert.equal(unknown.distanceKm, null);
 });
 
-test("W8: a geometry that can't place the visitor is inconclusive", () => {
+test("W8: a geometry too wide to place the visitor never rejects", () => {
   // every extender on one far line: σ_major beyond 1,500 km
   const line = Array.from({ length: 8 }, (_, i) => ({ lat: 10 + i * 0.01, lon: 100 + i * 0.01 }));
   const run = fx.syntheticRun(1, { truth: fx.FRANKFURT, extenders: line, lastMileMs: 10, queueMs: 2, count: 16, seed: 9 });
   const result = drift.localDriftVerdict({ k: K99, borders: europe, ipCountryCode: "de", expected: fx.FRANKFURT, runs: [run] });
-  assert.equal(result.verdict, "inconclusive");
-  assert.equal(result.reason, "low_precision");
+  // max_sigma_km bounds rejection only (2026-11-20): a wide region that reaches Germany agrees; one that doesn't is
+  // inconclusive, never a reject
+  assert.ok(result.fit!.majorKm > drift.defaultMaxSigmaKm);
+  assert.notEqual(result.verdict, "disagree");
+  assert.equal(result.reason, result.verdict === "agree" ? (result.distanceKm === 0 ? "inside_ip_country" : "region_overlaps") : "low_precision");
 });
