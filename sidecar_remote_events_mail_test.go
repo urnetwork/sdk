@@ -4,12 +4,16 @@ package sdk
 
 // mail_receiver_alarm (D-MAIL-15; MAIL-M7-25) through the daemon: a daemon's sidecar raises it for each of its
 // reasons, the daemon's events ring keeps it, and a remote-mode app's listener gets it with its kind, receiver, repo
-// and reason and nothing another kind fills, as the js leg's conversion of the daemon's answer does.
+// and reason and nothing another kind fills, as the js leg's conversion of the daemon's answer does. And the remote
+// backend's ring event reads every field the daemon's DaemonEvent answers, so a field the core adds to it does not
+// stop at the daemon on its way to an app.
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/urnetwork/sidecar"
@@ -103,5 +107,74 @@ func TestRemoteMailReceiverAlarmReachesTheListener(t *testing.T) {
 	}
 	for i, reason := range reasons {
 		testCheckMailReceiverAlarmEvent(t, answered.Events[i].boundEvent(), reason, receiverIds[i], repoIds[i])
+	}
+}
+
+// Sets every field of value, a struct of the daemon's wire, to a value other than its zero, and every field of each
+// struct it points to. A field of a type with no value here fails the test, so a field of a new type is named here
+// before anything passes over it.
+func testSetEveryDaemonField(t *testing.T, value reflect.Value) {
+	t.Helper()
+	for i := 0; i < value.NumField(); i += 1 {
+		field := value.Field(i)
+		name := value.Type().Field(i).Name
+		switch {
+		case field.Kind() == reflect.String:
+			field.SetString("synthetic-" + strings.ToLower(name))
+		case field.Kind() == reflect.Bool:
+			field.SetBool(true)
+		case field.CanInt():
+			field.SetInt(int64(100 + i))
+		case field.CanUint():
+			field.SetUint(uint64(200 + i))
+		case field.Type() == reflect.TypeFor[[]byte]():
+			field.SetBytes([]byte{byte(i), 1})
+		case field.Type() == reflect.TypeFor[sidecar.Id]():
+			field.Set(reflect.ValueOf(sidecar.NewId()))
+		case field.Type() == reflect.TypeFor[*sidecar.Id]():
+			id := sidecar.NewId()
+			field.Set(reflect.ValueOf(&id))
+		case field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Struct:
+			field.Set(reflect.New(field.Type().Elem()))
+			testSetEveryDaemonField(t, field.Elem())
+		default:
+			t.Fatalf("%s.%s's type %s has no synthetic value", value.Type().Name(), name, field.Type())
+		}
+	}
+}
+
+// The remote backend's ring event reads every field of the daemon's DaemonEvent under the daemon's own name: a daemon
+// event with every field set, its erasure's too, crosses into it with unknown fields refused and comes back as the
+// same json. A field the core adds to the daemon's event fails here until the remote backend reads it, as
+// mail_receiver_alarm would have.
+func TestRemoteControlEventReadsEveryDaemonField(t *testing.T) {
+	daemon := &sidecar.DaemonEvent{}
+	testSetEveryDaemonField(t, reflect.ValueOf(daemon).Elem())
+	if daemon.MailReceiverAlarm == "" || daemon.Erasure == nil || daemon.Erasure.FinishMs == 0 {
+		t.Fatalf("CONTROL FAILED: the daemon's event %+v", daemon)
+	}
+	first, err := json.Marshal(daemon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(first))
+	decoder.DisallowUnknownFields()
+	own := &sidecarControlEvent{}
+	if err := decoder.Decode(own); err != nil {
+		t.Fatalf("the remote backend's event does not read the daemon's: %v", err)
+	}
+	second, err := json.Marshal(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := func(encoded []byte) map[string]any {
+		decoded := map[string]any{}
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+	if !reflect.DeepEqual(fields(first), fields(second)) {
+		t.Errorf("the daemon's event changed across the remote backend's:\n%s\n%s", first, second)
 	}
 }

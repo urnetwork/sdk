@@ -2,10 +2,10 @@
 
 package sdk
 
-// §18.5's events: every kind the core declares maps to a bound event carrying each field the core's carries, an
-// older generation's event is dropped, a listener's panic costs only its own call, a full queue drops and counts
-// without waiting, a core event reaches an app listener through a real local Sidecar, and the push's rollback
-// head_alarm reaches one with its kind and both TopicVersions.
+// §18.5's events: every kind the core declares maps to a bound event carrying each field the core's carries, and each
+// field of the core's event, set alone, reaches the bound event; an older generation's event is dropped, a listener's
+// panic costs only its own call, a full queue drops and counts without waiting, a core event reaches an app listener
+// through a real local Sidecar, and the push's rollback head_alarm reaches one with its kind and both TopicVersions.
 
 import (
 	"bytes"
@@ -213,6 +213,94 @@ func TestEveryEventKindMaps(t *testing.T) {
 	if empty.NotBeforeMillis != 0 || empty.VerifiedSinceMillis != 0 || empty.RepoId != nil || empty.Erasure != nil ||
 		empty.FirstEvidence != nil || empty.MailReceiverAlarm != "" {
 		t.Errorf("an empty event mapped as %+v", empty)
+	}
+}
+
+// Sets field, of the core's event or a struct it points to, to a value other than its zero, as the core's own types
+// hold one; false for a type with none here.
+func testSetSyntheticEventField(field reflect.Value, name string) bool {
+	switch {
+	case field.Kind() == reflect.String:
+		field.SetString("synthetic-" + strings.ToLower(name))
+	case field.CanInt():
+		field.SetInt(7)
+	case field.CanUint():
+		field.SetUint(7)
+	case field.Type() == reflect.TypeFor[time.Time]():
+		field.Set(reflect.ValueOf(time.UnixMilli(1_700_000_000_123)))
+	case field.Type() == reflect.TypeFor[sidecar.Id]():
+		field.Set(reflect.ValueOf(sidecar.NewId()))
+	case field.Type() == reflect.TypeFor[*sidecar.Id]():
+		id := sidecar.NewId()
+		field.Set(reflect.ValueOf(&id))
+	case field.Type() == reflect.TypeFor[[]byte]():
+		field.SetBytes([]byte{1, 2, 3})
+	default:
+		return false
+	}
+	return true
+}
+
+// Calls check once for each leaf of the core's event with an event whose only value is at that leaf, and the event
+// that leaf was set on: each field; each element of an array, such as Evidence; and for a pointer to a struct, such
+// as Erasure, the struct left zero and then each of its fields set on it. A field of a type with no synthetic value
+// fails the test, so a field of a new type is named here before anything passes over it.
+func testEachCoreEventLeaf(t *testing.T, check func(leaf string, event *sidecar.SidecarEvent, base *sidecar.SidecarEvent)) {
+	t.Helper()
+	eventType := reflect.TypeFor[sidecar.SidecarEvent]()
+	for i := 0; i < eventType.NumField(); i += 1 {
+		name := eventType.Field(i).Name
+		fieldType := eventType.Field(i).Type
+		switch {
+		case fieldType.Kind() == reflect.Array && fieldType.Elem().Kind() == reflect.Slice:
+			for k := 0; k < fieldType.Len(); k += 1 {
+				event := &sidecar.SidecarEvent{}
+				if !testSetSyntheticEventField(reflect.ValueOf(event).Elem().Field(i).Index(k), name) {
+					t.Fatalf("SidecarEvent.%s's element type %s has no synthetic value", name, fieldType.Elem())
+				}
+				check(name+"["+strconv.Itoa(k)+"]", event, &sidecar.SidecarEvent{})
+			}
+		case fieldType.Kind() == reflect.Pointer && fieldType.Elem().Kind() == reflect.Struct:
+			structType := fieldType.Elem()
+			withZeroStruct := func() *sidecar.SidecarEvent {
+				event := &sidecar.SidecarEvent{}
+				reflect.ValueOf(event).Elem().Field(i).Set(reflect.New(structType))
+				return event
+			}
+			check(name, withZeroStruct(), &sidecar.SidecarEvent{})
+			for j := 0; j < structType.NumField(); j += 1 {
+				event := withZeroStruct()
+				inner := reflect.ValueOf(event).Elem().Field(i).Elem().Field(j)
+				if !testSetSyntheticEventField(inner, structType.Field(j).Name) {
+					t.Fatalf("SidecarEvent.%s.%s's type %s has no synthetic value", name, structType.Field(j).Name, inner.Type())
+				}
+				check(name+"."+structType.Field(j).Name, event, withZeroStruct())
+			}
+		default:
+			event := &sidecar.SidecarEvent{}
+			if !testSetSyntheticEventField(reflect.ValueOf(event).Elem().Field(i), name) {
+				t.Fatalf("SidecarEvent.%s's type %s has no synthetic value", name, fieldType)
+			}
+			check(name, event, &sidecar.SidecarEvent{})
+		}
+	}
+}
+
+// Each leaf of the core's event, set alone, changes the bound event an app gets: no field the core fills is dropped
+// on the way, whatever TestEveryEventKindMaps's list of names says, and a field the core adds fails here the day it
+// lands until the binding carries it.
+func TestEveryCoreEventFieldReachesTheBoundEvent(t *testing.T) {
+	leaves := []string{}
+	testEachCoreEventLeaf(t, func(leaf string, event *sidecar.SidecarEvent, base *sidecar.SidecarEvent) {
+		leaves = append(leaves, leaf)
+		if reflect.DeepEqual(newSidecarEventOf(event), newSidecarEventOf(base)) {
+			t.Errorf("the core's event's %s reaches nothing of the bound event", leaf)
+		}
+	})
+	for _, leaf := range []string{"MailReceiverAlarm", "CtAlarm", "Evidence[1]", "Erasure.Finish"} {
+		if !slices.Contains(leaves, leaf) {
+			t.Errorf("CONTROL FAILED: no leaf %s among %v", leaf, leaves)
+		}
 	}
 }
 
