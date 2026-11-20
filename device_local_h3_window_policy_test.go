@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -72,6 +73,23 @@ func requireH3PolicyTarget(t *testing.T, device *DeviceLocal, want int) *connect
 	}
 }
 
+// The window target of a device with no provider and held discovery under
+// its h3 limit. Since R20 the limit is the claims its carrier budget fits,
+// four at 32 MiB and five at 64 (one before, for a target of two). The
+// quality window starts at its minimum, which leaves the speed window its
+// own: four of the limit, while the speed window keeps its fixed one at
+// 32 MiB and two at 64.
+func h3PolicyWindowTarget(target ByteCount) int {
+	switch target {
+	case 32 * 1024 * 1024:
+		return 4 + 1
+	case 64 * 1024 * 1024:
+		return 4 + 2
+	default:
+		panic(fmt.Sprintf("no h3 window target pinned for %d", target))
+	}
+}
+
 func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
 	for _, target := range []ByteCount{32 * 1024 * 1024, 64 * 1024 * 1024} {
 		device := newH3PolicyDevice(t, target)
@@ -80,7 +98,7 @@ func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
 		if err := device.SetConnectLocationChecked(location); err != nil {
 			t.Fatal(err)
 		}
-		multi := requireH3PolicyTarget(t, device, 2)
+		multi := requireH3PolicyTarget(t, device, h3PolicyWindowTarget(target))
 		generation := device.GetWindowStatus().ConnectionGeneration
 		device.stateLock.Lock()
 		generator, owner := device.apiMultiClientGenerator, device.platformTransportBudget
@@ -94,7 +112,7 @@ func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
 			device.SetTransportSettings(&TransportSettings{Mode: mode})
 			want := baseline
 			if mode == TransportModeH3 {
-				want = 2
+				want = h3PolicyWindowTarget(target)
 			}
 			if requireH3PolicyTarget(t, device, want) != multi ||
 				device.GetWindowStatus().ConnectionGeneration != generation ||
@@ -117,7 +135,7 @@ func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
 		if err := device.SetConnectLocationChecked(location); err != nil {
 			t.Fatal(err)
 		}
-		if requireH3PolicyTarget(t, device, 2) == multi ||
+		if requireH3PolicyTarget(t, device, h3PolicyWindowTarget(target)) == multi ||
 			device.GetWindowStatus().ConnectionGeneration <= generation {
 			t.Fatal("cold reconnect reused a retired window generation")
 		}
@@ -133,7 +151,7 @@ func TestDeviceH3WindowPolicyPreservesExplicitProfileAndOtherOwner(t *testing.T)
 		if err := device.SetConnectLocationChecked(location); err != nil {
 			t.Fatal(err)
 		}
-		requireH3PolicyTarget(t, device, 2)
+		requireH3PolicyTarget(t, device, h3PolicyWindowTarget(device.settings.MemoryTargetByteCount))
 	}
 	secondGeneration := second.GetWindowStatus().ConnectionGeneration
 	for _, kind := range []WindowType{WindowTypeQuality, WindowTypeSpeed} {
@@ -149,20 +167,20 @@ func TestDeviceH3WindowPolicyPreservesExplicitProfileAndOtherOwner(t *testing.T)
 		requireH3PolicyTarget(t, first, 3)
 		first.SetTransportSettings(&TransportSettings{Mode: TransportModeH3})
 		requireH3PolicyTarget(t, first, 3)
-		if requireH3PolicyTarget(t, second, 2) == nil ||
+		if requireH3PolicyTarget(t, second, h3PolicyWindowTarget(64*1024*1024)) == nil ||
 			second.GetWindowStatus().ConnectionGeneration != secondGeneration {
 			t.Fatal("one owner's profile/mode change affected another")
 		}
 	}
 	first.SetPerformanceProfile(nil)
-	requireH3PolicyTarget(t, first, 2)
+	requireH3PolicyTarget(t, first, h3PolicyWindowTarget(32*1024*1024))
 	if err := first.CloseAndWait(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if second.ctx.Err() != nil {
 		t.Fatal("closing one owner canceled another")
 	}
-	requireH3PolicyTarget(t, second, 2)
+	requireH3PolicyTarget(t, second, h3PolicyWindowTarget(64*1024*1024))
 }
 
 // The persistent control reserve is derived from configured family topology,
@@ -240,6 +258,94 @@ func TestDeviceH3WindowPolicyReservesConfiguredControlGraphs(t *testing.T) {
 	}
 }
 
+// R20: the window limit at phone targets, from the phone policy's own claims
+// and each target's real carrier budget, with no provider, a provider on Auto
+// (h1 control paths) and a provider on h3, each with its v4, v6 and standby
+// paths. Before R20 every 20- to 64-MiB target composed a 3- to 9.6-MiB claim
+// that only one transport fit beside no control path (two at 24 MiB), and
+// none beside a provider on h3. The provider's three h3 paths and two
+// consumer transports fit from a 40-MiB target up (both 48 and 64 here);
+// below that every claim still charges the fixed rows, so a provider on h3
+// leaves room for none, and the one transport the window keeps then carries
+// the device on its h1 fallback.
+func TestDeviceH3WindowLimitAtPhoneTargets(t *testing.T) {
+	fixture := testingAuthClientShapeSpace(t)
+	for _, c := range []struct {
+		target ByteCount
+		// limits with no provider, the provider on Auto and the provider on h3
+		none, auto, h3 int
+	}{
+		{20 * 1024 * 1024, 2, 1, 1},
+		{24 * 1024 * 1024, 3, 2, 1},
+		{32 * 1024 * 1024, 4, 3, 1},
+		{48 * 1024 * 1024, 5, 3, 2},
+		{64 * 1024 * 1024, 5, 4, 2},
+	} {
+		settings := DefaultLowMemoryDeviceLocalSettings()
+		settings.MemoryTargetByteCount = c.target
+		settings.DisableLogging = true
+		settings.ProviderDiscovery = &heldH3PolicyDiscovery{}
+		settings.ProviderDialContextSettings = &connect.DialContextSettings{
+			DialContext:       func(context.Context, string, string) (net.Conn, error) { return nil, context.Canceled },
+			PacketConnFactory: func(context.Context) (net.PacketConn, error) { return nil, context.Canceled },
+		}
+		device := newSettingsOwnershipDevice(t, fixture, settings, true)
+		device.SetProvideMode(ProvideModeNone)
+		device.SetTransportSettings(&TransportSettings{Mode: TransportModeH3})
+		provider := device.provider
+		if provider == nil {
+			t.Fatal("real constructor omitted the provider control owner")
+		}
+		// join the provider's producers before giving it the three-path shape
+		// this pure accounting boundary reads
+		if err := provider.CloseAndWait(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		provider.platformUrlV4 = "wss://control-v4.example"
+		provider.platformUrlV6 = "wss://control-v6.example"
+
+		base := newDeviceLocalPlatformTransportSettingsForProfile(c.target, nil, nil, "", "", true, nil)
+		claim := base.H3MemoryReservationByteCount(connect.TransportModeH3, device.clientStrategy)
+		h1 := base.H1MemoryReservationByteCount()
+		total := device.platformTransportBudget.Stats().TotalByteCount
+		if total != c.target/4 || claim != max(2048*1024, total/5) {
+			t.Fatalf("target %d: budget %d and claim %d, want a quarter of the target and a fifth of that, at least 2 MiB",
+				c.target, total, claim)
+		}
+		// the arithmetic the limit must agree with: what fits beside the
+		// configured control paths, and one where nothing fits
+		want := func(controlBytes connect.ByteCount) int {
+			return max(1, int(max(0, total-controlBytes)/claim))
+		}
+		if want(0) != c.none || want(3*h1) != c.auto || want(3*claim) != c.h3 {
+			t.Fatalf("target %d: claims fit %d/%d/%d, want %d/%d/%d", c.target,
+				want(0), want(3*h1), want(3*claim), c.none, c.auto, c.h3)
+		}
+		limit := func(providerMode TransportMode, withProvider bool) int {
+			device.preferenceMutationLock.Lock()
+			defer device.preferenceMutationLock.Unlock()
+			func() {
+				device.stateLock.Lock()
+				defer device.stateLock.Unlock()
+				device.providerTransportSettings = normalizeTransportSettings(&TransportSettings{Mode: providerMode}, true)
+				device.provider = nil
+				if withProvider {
+					device.provider = provider
+				}
+			}()
+			return device.publicH3WindowSizeLimitWithLock()
+		}
+		none := limit(TransportModeAuto, false)
+		auto := limit(TransportModeAuto, true)
+		h3 := limit(TransportModeH3, true)
+		if none != c.none || auto != c.auto || h3 != c.h3 {
+			t.Fatalf("target %d: window limits %d/%d/%d, want %d/%d/%d", c.target, none, auto, h3, c.none, c.auto, c.h3)
+		}
+		t.Logf("target %d: budget %d, h3 claim %d, h1 claim %d, limits none %d, auto %d, h3 %d",
+			c.target, total, claim, h1, none, auto, h3)
+	}
+}
+
 // A public getter must finish before composition resumes. Unlike TryLock,
 // completion tolerates unrelated state owners and still detects a publisher
 // retaining stateLock across the real external-query boundary.
@@ -293,7 +399,7 @@ func TestDeviceH3WindowCompositionReleasesDeviceStateLock(t *testing.T) {
 	if observations != 3 {
 		t.Fatalf("client/destination/provider composition observations=%d want=3", observations)
 	}
-	requireH3PolicyTarget(t, device, 2)
+	requireH3PolicyTarget(t, device, h3PolicyWindowTarget(32*1024*1024))
 }
 
 // Public setters and initial destination construction share the existing
@@ -315,7 +421,7 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 		var priorMulti *connect.RemoteUserNatMultiClient
 		var priorGeneration int64
 		if kind != "destination" {
-			want := 2
+			want := h3PolicyWindowTarget(32 * 1024 * 1024)
 			if kind == "client" {
 				want = mobileTargetScaledCount(mobileQualityWindowSize, 32*1024*1024) +
 					mobileTargetScaledCount(mobileSpeedWindowSize, 32*1024*1024)

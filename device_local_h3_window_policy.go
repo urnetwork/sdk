@@ -76,8 +76,10 @@ func (self *DeviceLocal) publicH3WindowSizeLimitWithLock() int {
 	if budget.MaxTransportCount > 0 {
 		limit = min(limit, max(0, budget.MaxTransportCount-controlSlots))
 	}
-	// No complete graph fitting is an admission failure, never permission to
-	// publish a zero-provider minimum. The smallest positive target stays
-	// unready until a real charged carrier and provider can be established.
+	// No complete graph fitting is never permission to publish a
+	// zero-provider minimum. The window keeps one transport, which the budget
+	// may still admit on h3 when the provider's held standby or an unused
+	// family path leaves room, and which otherwise carries the device on its
+	// h1 fallback (connect transport_h3_budget_fallback.go).
 	return max(1, limit)
 }
