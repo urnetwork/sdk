@@ -27,14 +27,17 @@ export type DriftVerdictReason =
   | "reports_missing"
   | "stopped_early";
 
-/** The default of lag.yml's max_sigma_km: a fit whose σ_major is larger can't place the visitor (V6), km. */
+/**
+ * The default of lag.yml's max_sigma_km: a fit whose σ_major is larger is too imprecise to reject the visitor (V6),
+ * km. It never stops an agree: a wide region that touches the IP country agrees however wide it is (2026-11-20).
+ */
 export const defaultMaxSigmaKm = 1500;
 
 /** `decide`'s answer. */
 export interface Decision {
   verdict: DriftVerdict;
   reason: DriftVerdictReason;
-  /** null for an unknown country or a low precision */
+  /** null for an unknown country or no fit */
   judgement: Judgement | null;
 }
 
@@ -44,12 +47,14 @@ export interface Decision {
  *
  *  1. the country unknown (null, or without a ring with a point) →
  *     inconclusive, ip_country_unknown;
- *  2. no fit, or σ_major above maxSigmaKm → inconclusive, low_precision;
+ *  2. no fit → inconclusive, low_precision;
  *  3. the region touches the country but it is physically impossible →
  *     inconclusive, inconsistent. The check never rejects on its own (V5);
  *  4. p̂ in the country → agree, inside_ip_country;
  *  5. the region touches it → agree, region_overlaps;
- *  6. otherwise → disagree, region_outside.
+ *  6. the region is outside it but σ_major is above maxSigmaKm →
+ *     inconclusive, low_precision: bounds rejection only, never acceptance;
+ *  7. otherwise → disagree, region_outside.
  */
 export function decide(
   fit: Fit | null,
@@ -61,7 +66,7 @@ export function decide(
   if (country === null || !hasBoundary(country)) {
     return { verdict: "inconclusive", reason: "ip_country_unknown", judgement: null };
   }
-  if (fit === null || !(fit.majorKm <= maxSigmaKm)) {
+  if (fit === null) {
     return { verdict: "inconclusive", reason: "low_precision", judgement: null };
   }
   const j = judge(fit, country, k);
@@ -73,6 +78,9 @@ export function decide(
   }
   if (j.overlaps) {
     return { verdict: "agree", reason: "region_overlaps", judgement: j };
+  }
+  if (!(fit.majorKm <= maxSigmaKm)) {
+    return { verdict: "inconclusive", reason: "low_precision", judgement: j };
   }
   return { verdict: "disagree", reason: "region_outside", judgement: j };
 }
