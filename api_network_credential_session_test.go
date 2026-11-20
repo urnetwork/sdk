@@ -327,7 +327,9 @@ func TestApiRouteAccessMatchesTheServersRouting(t *testing.T) {
 		path   string
 		access apiRouteAccess
 	}{
-		{"POST", "/auth/network-delete", apiRouteAccessAppAdmin},
+		// Network since §7.4's stage 2 classes (TEAM-M3-01), as the server's table holds it
+		{"POST", "/auth/network-delete", apiRouteAccessNetwork},
+		{"GET", "/network/clients", apiRouteAccessAppAdmin},
 		{"GET", "/auth/network-delete", apiRouteAccessClient},
 		{"POST", "/auth/network-delete/more", apiRouteAccessClient},
 		{"POST", "/network/client-data-cap", apiRouteAccessNetwork},
