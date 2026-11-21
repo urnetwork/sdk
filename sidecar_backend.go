@@ -394,6 +394,8 @@ type sidecarRemoteBackend struct {
 	generationFloor int64
 	// A status read that crosses a pairing or state event must not clear the resulting identity.
 	identityRevision uint64
+	// Events still queued at a reconnect can predate the logout already observed in status.
+	loggedOutSidecarId *Id
 	// the network the pairing bound, nil before one
 	networkId *Id
 	// the networks the last status named, and its first, which an unpaired backend follows; nil while it names none
@@ -618,11 +620,18 @@ func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) (bool, b
 	if !sidecarControlSameId(event.NetworkId, self.followedWithLock()) {
 		return false, false
 	}
+	if event.OriginSidecarId != nil && sidecarControlSameId(event.OriginSidecarId, self.loggedOutSidecarId) {
+		return false, false
+	}
 	current := self.status
 	sameSidecar := current.sidecarId == nil || event.OriginSidecarId == nil || current.sidecarId.Cmp(event.OriginSidecarId) == 0
 	if event.LoggedOut && event.Kind == sidecarControlEventKindState && event.State == sidecarRemoteStateUnenrolled {
 		if !sameSidecar || event.Generation < self.generationFloor {
 			return false, false
+		}
+		self.loggedOutSidecarId = sidecarControlIdOf(event.OriginSidecarId)
+		if self.loggedOutSidecarId == nil {
+			self.loggedOutSidecarId = current.sidecarId
 		}
 		self.status = sidecarRemoteStatus{state: sidecarRemoteStateUnenrolled}
 		self.generationFloor = 0
@@ -919,6 +928,9 @@ func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fro
 		next.state, next.reason = sidecarRemoteStateOf(next.state, next.reason)
 		current := self.status
 		if !hosted {
+			if current.sidecarId != nil {
+				self.loggedOutSidecarId = current.sidecarId
+			}
 			self.generationFloor = 0
 			self.status = next
 			changed := current.sidecarId != nil || current.state != next.state || current.generation != 0 || current.reason != ""

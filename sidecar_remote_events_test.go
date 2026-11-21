@@ -753,8 +753,16 @@ func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
 			}
 			backend.applyStatusAt(&sidecarControlStatus{Networks: []sidecarControlNetworkStatus{{NetworkId: networkId,
 				SidecarId: origin, State: "online", Generation: 4}}}, false, false, oldRead)
+			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
+				Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
 			if remote.GetState() != "unenrolled" || remote.GetSidecarId() != nil || backend.generation() != 0 {
 				t.Fatal("the remote sidecar still exposes the removed enrollment")
+			}
+			freshId := NewId()
+			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
+				Generation: 1, NetworkId: networkId, OriginSidecarId: freshId}})
+			if next := events.next(t); next.Generation != 1 || next.State != "online" || !sidecarControlSameId(remote.GetSidecarId(), freshId) {
+				t.Fatalf("the new enrollment: %+v", next)
 			}
 		})
 	}
