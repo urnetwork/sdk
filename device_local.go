@@ -1993,6 +1993,13 @@ func newDeviceLocalWithOverridesForPlatform(
 	platformTransportBudget := connect.NewPlatformTransportBudgetForMemoryTarget(
 		settings.MemoryTargetByteCount,
 	)
+	if mobileMemoryPolicyEnabledForPlatform(settings.MemoryTargetByteCount, settings.LowMemoryProfile) {
+		// a phone's carriers are small enough that its carrier slots must
+		// not bind before its bytes do (server LBALTOPT2 R20)
+		platformTransportBudget = connect.NewMobilePlatformTransportBudgetForMemoryTarget(
+			settings.MemoryTargetByteCount,
+		)
+	}
 	transferMemory := newDeviceLocalTransferMemoryForPlatform(settings, settings.LowMemoryProfile)
 	configureDeviceLocalClientMemoryForPlatform(settings, transferMemory, settings.LowMemoryProfile)
 	if settings.testingBeforePeerPinStoreAdmission != nil {

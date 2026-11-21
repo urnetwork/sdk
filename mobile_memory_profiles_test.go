@@ -70,6 +70,10 @@ func TestMobileProfilesSpendTargetInSharedOwners(t *testing.T) {
 func TestMobileProfilesKeepComposedCarrierAccountingAtLargerTargets(t *testing.T) {
 	previous := connect.MemoryBudget()
 	t.Cleanup(func() { connect.SetMemoryBudget(previous) })
+	// R20: the mobile claim is the phone sizes' at every target, 256 KiB of
+	// receive window plus what the carrier's configured queues and buffers
+	// bound, so a larger budget holds more carriers rather than larger ones.
+	// The window sits below the target-scaled one, which it never exceeds.
 	for _, mib := range []ByteCount{32, 64, 128} {
 		t.Run(fmt.Sprint(mib), func(t *testing.T) {
 			target := mib << 20
@@ -77,14 +81,15 @@ func TestMobileProfilesKeepComposedCarrierAccountingAtLargerTargets(t *testing.T
 			settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(target)
 			window := settings.H3MaxConnectionReceiveWindowByteCount
 			applyMobileLowMemoryPlatformTransportSettingsForPlatform(settings, target, true)
-			if settings.H3BudgetByteCount < settings.H3MaxConnectionReceiveWindowByteCount+1600<<10 {
+			if settings.H3MaxConnectionReceiveWindowByteCount != 256<<10 || settings.H3BudgetByteCount != 923532 {
 				t.Fatalf("mobile target %d lost composed H3 accounting: claim=%d window=%d", target,
 					settings.H3BudgetByteCount, settings.H3MaxConnectionReceiveWindowByteCount)
 			}
-			if settings.H3MaxConnectionReceiveWindowByteCount != window {
-				t.Fatal("mobile retained accounting shrank the target-scaled receive window")
+			if window < settings.H3MaxConnectionReceiveWindowByteCount {
+				t.Fatalf("mobile window %d above the target-scaled %d",
+					settings.H3MaxConnectionReceiveWindowByteCount, window)
 			}
-			if settings.H3SocketReadBufferByteCount != 64<<10 || settings.H3SocketWriteBufferByteCount != 64<<10 ||
+			if settings.H3SocketReadBufferByteCount != 32<<10 || settings.H3SocketWriteBufferByteCount != 16<<10 ||
 				settings.H3InitialStreamReceiveWindowByteCount != 128<<10 || settings.H3InitialConnectionReceiveWindowByteCount != 256<<10 {
 				t.Fatal("mobile speculative-dial ownership escaped its accounting")
 			}
