@@ -735,8 +735,13 @@ func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
 			if paired.State != "online" || paired.Generation != 4 || remote.GetSidecarId() == nil {
 				t.Fatalf("paired: %+v", paired)
 			}
-			oldRead := backend.revision()
 			networkId, origin := newId([16]byte(daemon.networkId)), newId([16]byte(daemon.sidecarId))
+			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "unenrolled",
+				Reason: "refused", Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
+			if refused := events.next(t); refused.Reason != "refused" || !sidecarControlSameId(remote.GetSidecarId(), origin) {
+				t.Fatal("a refused generation lost its enrolled identity before logout")
+			}
+			oldRead := backend.revision()
 			if path == "live event" {
 				backend.applyEvents([]*sidecarControlEvent{{LoggedOut: true, Kind: sidecarControlEventKindState,
 					State: "unenrolled", Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
@@ -753,6 +758,12 @@ func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
 			}
 			backend.applyStatusAt(&sidecarControlStatus{Networks: []sidecarControlNetworkStatus{{NetworkId: networkId,
 				SidecarId: origin, State: "online", Generation: 4}}}, false, false, oldRead)
+			daemon.stateLock.Lock()
+			daemon.statusExtra = nil
+			daemon.stateLock.Unlock()
+			if err := backend.refreshFromEvents(t.Context(), true); err != nil {
+				t.Fatal(err)
+			}
 			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
 				Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
 			if remote.GetState() != "unenrolled" || remote.GetSidecarId() != nil || backend.generation() != 0 {

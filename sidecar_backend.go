@@ -913,6 +913,11 @@ func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fro
 		if self.closed || revision != self.identityRevision {
 			return false, self.status
 		}
+		next, hosted := self.statusOf(reply, self.networkId)
+		// A status row can still name the removed identity while the daemon finishes detaching its sidecar.
+		if next.sidecarId != nil && sidecarControlSameId(next.sidecarId, self.loggedOutSidecarId) {
+			return false, self.status
+		}
 		followedBefore := self.followedWithLock()
 		self.statusNetworkIds = nil
 		self.statusFirstNetwork = nil
@@ -924,7 +929,6 @@ func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fro
 		if 0 < len(reply.Networks) {
 			self.statusFirstNetwork = reply.Networks[0].NetworkId
 		}
-		next, hosted := self.statusOf(reply, self.networkId)
 		next.state, next.reason = sidecarRemoteStateOf(next.state, next.reason)
 		current := self.status
 		if !hosted {
