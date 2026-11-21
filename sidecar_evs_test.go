@@ -399,6 +399,27 @@ func TestSidecarEvsReadPastItsBoundRefused(t *testing.T) {
 	}
 }
 
+// Both read entry points discard data and return a terminal, path-independent result after verified erasure.
+func TestSidecarEvsErasedReadResults(t *testing.T) {
+	backend := newTestSidecarEvsBackend()
+	evs := newTestSidecarEvs(t, backend, nil)
+	repoId := testEvsRepoId(1)
+	const path = "private-note"
+	backend.setHook(func(context.Context, string) error { return fmt.Errorf("%s: %w", path, sidecar.ErrEvsErased) })
+	for _, version := range []int64{0, 1} {
+		callback := newTestEvsCallback[*SidecarBytes]()
+		if version == 0 {
+			evs.ReadHead(repoId, path, callback)
+		} else {
+			evs.ReadVersion(repoId, path, version, callback)
+		}
+		result, err := callback.await(t)
+		if err != nil || result.Ok || len(result.Data) != 0 || result.Code != "EVS_ERASED" || result.Message != "this version was erased" {
+			t.Fatalf("version %d: %+v, %v", version, result, err)
+		}
+	}
+}
+
 // The core's EVS_GIT_REF reaches the app with its code, and so does each of evs's refusals by its name; a versioning
 // argument that is no setting is refused before the core sees it.
 func TestSidecarEvsGitRefAndRefusalsSurfaced(t *testing.T) {

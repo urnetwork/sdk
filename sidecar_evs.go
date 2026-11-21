@@ -527,6 +527,9 @@ func sidecarEvsCodeOf(err error) string {
 
 // A refusal's message, for a person.
 func sidecarEvsMessageOf(err error) string {
+	if errors.Is(err, sidecar.ErrEvsErased) {
+		return "this version was erased"
+	}
 	return err.Error()
 }
 
@@ -571,6 +574,9 @@ func sidecarEvsResultOf(value string, err error) *SidecarResult {
 	result := sidecarResultOf(value, err)
 	if err != nil && result.Code == "" {
 		result.Code = sidecarEvsCodeOf(err)
+	}
+	if result.Code == sidecarEvsCodeErased {
+		result.Message = sidecarEvsMessageOf(err)
 	}
 	if err != nil && result.Code == sidecarEvsCodePrefixRule {
 		result.Value = sidecarEvsPrefixRulePath(err)
