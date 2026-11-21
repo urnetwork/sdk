@@ -4,12 +4,15 @@
 // daemon's on the remote one, and Unlock opens the keychain on the local backend alone.
 //
 //	state       locked | unenrolled | offline | online | revoked
-//	reason      unenrolled: expired | refused | parent_lost | session_ended | keystore_lost; revoked: signed
+//	reason      unenrolled: expired | refused | parent_lost | session_ended | keystore_lost;
+//	            offline: subprotocol_store_failed, valid on offline alone; revoked: signed
 //
 // The core decides each: a confirmed 401 reads unenrolled only when the host found it current, a revocation hint or
 // a bind refused sidecar_revoked reads revoked only once a SidecarRevoke verifies, else unenrolled(refused) with an
-// alarm, and an older generation's event is dropped (sidecar_state.go, identity_revoke_self.go in the core). The sdk
-// only names what the core decided; it never writes a state of its own.
+// alarm, a generation whose start failed on a damaged sealed file in the network's subprotocol store reads
+// offline(subprotocol_store_failed) and raises one refused event as it enters it (§5.9's Failed; owner decision
+// 616), and an older generation's event is dropped (sidecar_state.go, sidecar_generation.go and
+// identity_revoke_self.go in the core). The sdk only names what the core decided; it never writes a state of its own.
 
 package sdk
 
