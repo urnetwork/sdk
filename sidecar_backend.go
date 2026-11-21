@@ -918,6 +918,10 @@ func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fro
 		if next.sidecarId != nil && sidecarControlSameId(next.sidecarId, self.loggedOutSidecarId) {
 			return false, self.status
 		}
+		// After a paired logout, the daemon may still list the old generation without its sidecar_id.
+		if self.networkId != nil && self.generationFloor == 0 && next.sidecarId == nil && next.generation > 0 {
+			return false, self.status
+		}
 		followedBefore := self.followedWithLock()
 		self.statusNetworkIds = nil
 		self.statusFirstNetwork = nil

@@ -764,10 +764,28 @@ func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
 			if err := backend.refreshFromEvents(t.Context(), true); err != nil {
 				t.Fatal(err)
 			}
+			// The stock daemon can still list the network after clearing its identity and before detaching it.
+			replayAnonymousStatus := func(generation int64, reason string) {
+				t.Helper()
+				daemon.stateLock.Lock()
+				daemon.statusExtra = map[string]any{"networks": []map[string]any{{
+					"network_id": daemon.networkId, "state": "unenrolled", "reason": reason, "generation": generation,
+				}}}
+				daemon.stateLock.Unlock()
+				if err := backend.refreshFromEvents(t.Context(), true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			replayAnonymousStatus(4, "refused")
 			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
 				Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
-			if remote.GetState() != "unenrolled" || remote.GetSidecarId() != nil || backend.generation() != 0 {
-				t.Fatal("the remote sidecar still exposes the removed enrollment")
+			state, reason := remote.GetState(), remote.GetStateReason()
+			if state != "unenrolled" || reason != "" || remote.GetSidecarId() != nil || backend.generation() != 0 {
+				t.Fatalf("state after the removed enrollment's status: %s(%s) at %d", state, reason, backend.generation())
+			}
+			replayAnonymousStatus(0, "")
+			if empty := events.next(t); empty.State != "unenrolled" || empty.Reason != "" || empty.Generation != 0 {
+				t.Fatalf("the unenrolled status past the gap: %+v", empty)
 			}
 			freshId := NewId()
 			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
