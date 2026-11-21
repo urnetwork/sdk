@@ -6,8 +6,8 @@ package sdk
 // and refusal is shown without a network: a read and write round trip, a 1 MiB + 1 write refused before the core sees
 // it, EVS_GIT_REF and evs's own refusals surfaced with their codes, a change listener hearing each commit once, a gap
 // for what a full queue missed, Erasures' fields, and one terminal answer for a success, a refusal, a cancelled call
-// and a panic. GetEvs is shown over the core's real EvsClient, through a test's factory, and the registered factory's
-// refusal while no host composes one. Every repo and path is synthetic.
+// and a panic. GetEvs is shown over the core's real EvsClient through a test's factory. The TLS enrollment and
+// restart test also runs the stock EVS factory. Every repo and path is synthetic.
 
 import (
 	"bytes"
@@ -767,8 +767,7 @@ func (self *testCountingTransport) RoundTrip(request *http.Request) (*http.Respo
 }
 
 // GetEvs is nil unless the settings name evs; with evs named, it wraps the core's EvsComponent a factory attached, the
-// core's real EvsClient answering, here with no verified config, by refusing a read before any request. The
-// registered factory refuses a Sidecar named with evs while no host composes an EvsClient, naming why.
+// core's real EvsClient answering, here with no verified config, by refusing a read before any request.
 func TestGetEvsWrapsTheCoresEvsComponent(t *testing.T) {
 	world := newTestSidecarWorld(t)
 	if bare := world.open(t); bare.GetEvs() != nil {
@@ -826,16 +825,6 @@ func TestGetEvsWrapsTheCoresEvsComponent(t *testing.T) {
 		t.Errorf("a read after Close %+v", result)
 	}
 
-	// the registered factory: no host composes an EvsClient yet
-	refused := DefaultSidecarSettings()
-	refused.StateDir = t.TempDir()
-	refused.Components.Add(SidecarComponentEvs)
-	if local, err := NewSidecarLocal(world.space, newTestSidecarKeyStore(), nil, refused); err == nil || !strings.Contains(err.Error(), "composes no evs client") {
-		if local != nil {
-			local.Close()
-		}
-		t.Errorf("evs with no composition: %v", err)
-	}
 }
 
 // EVS_PREFIX_RULE through the SDK (EVS1-M6-05; DESIGN-DETAILS 16.2.7, 8.2.8; QD-801): the planner's and a reader's

@@ -267,9 +267,7 @@ func newSidecarLocal(
 	// the key store's wrap of U, as ur daemon opens it at start. A store that is locked, failed or lost creates
 	// nothing and leaves the core Locked or Unenrolled(keystore_lost); the app calls Unlock("") once it can answer
 	local.Unlock(nil)
-	if 0 < len(self.deferredComponents) {
-		go self.addDeferredComponentsOnceIdentified(local, options.deferredComponentsBuilt)
-	}
+	go self.addDeferredComponentsOnceIdentified(local, options.deferredComponentsBuilt)
 	return self, nil
 }
 
@@ -319,6 +317,11 @@ func (self *Sidecar) addComponent(local *sidecar.Sidecar, name string) error {
 func (self *Sidecar) addDeferredComponents(local *sidecar.Sidecar) []string {
 	self.deferredBuildLock.Lock()
 	defer self.deferredBuildLock.Unlock()
+	// Every local member host follows its verified configuration, including one whose
+	// exported components use only sockets, mail or forwarding.
+	if replica, err := local.OpenMemberReplica(self.ctx); err == nil {
+		replica.SetPresenceCheck(sidecarPresenceCheckOf(self.presenceSigner))
+	}
 	names := func() []string {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
