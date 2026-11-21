@@ -962,6 +962,7 @@ func TestSidecarEvsFormat2Codes(t *testing.T) {
 		{err: sidecar.ErrEvsDropList, code: "EVS_DROP_LIST"},
 		{err: fmt.Errorf("read: %w", sidecar.ErrEvsDropped), code: "EVS_DROPPED"},
 		{err: sidecar.ErrEvsCollected, code: "EVS_COLLECTED"},
+		{err: fmt.Errorf("read: %w", sidecar.ErrEvsErased), code: "EVS_ERASED"},
 		{err: sidecar.ErrEvsVersioningSetting, code: "EVS_VERSIONING"},
 		{err: &sidecar.EvsError{Status: http.StatusConflict, Code: protocol.EvsRefusalCode_EVS_REFUSAL_DROP_CONSENT}, code: "EVS_DROP_CONSENT"},
 		{err: &sidecar.EvsError{Status: http.StatusConflict, Code: protocol.EvsRefusalCode_EVS_REFUSAL_DROP_KIND}, code: "EVS_DROP_KIND"},

@@ -207,6 +207,7 @@ func TestErrorsAnswerTheirCodeAlone(t *testing.T) {
 		{err: sidecar.ErrSidecarNoIdentity, code: CodeNotEnrolled},
 		{err: fmt.Errorf("open: %w", sidecar.ErrSidecarStoreLocked), code: CodeLocked},
 		{err: sidecar.ErrEvsPathAbsent, code: CodeNotFound},
+		{err: fmt.Errorf("private path: %w", sidecar.ErrEvsErased), code: CodeErased},
 		{err: sidecar.ErrEvsUnauthorized, code: CodeRefused},
 		{err: sidecar.ErrRecordNotReader, code: CodeRefused},
 		{err: sidecar.ErrEvsPinFork, code: CodeUnverified},

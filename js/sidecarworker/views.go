@@ -40,6 +40,8 @@ const (
 	CodeLocked = "locked"
 	// No such repo, path or entry.
 	CodeNotFound = "not_found"
+	// A committed erasure destroyed this version’s key.
+	CodeErased = "erased"
 	// The server or the log refused this sidecar the read.
 	CodeRefused = "refused"
 	// What came back did not verify: a head below its pin or forking from it, a broken chain, a bad seal or
@@ -72,6 +74,7 @@ var codeMessages = map[string]string{
 	CodeNotEnrolled:      "this browser is not enrolled in the network",
 	CodeLocked:           "this browser's keychain is not open",
 	CodeNotFound:         "not found",
+	CodeErased:           "version erased",
 	CodeRefused:          "the network refused this read",
 	CodeUnverified:       "what the server answered did not verify, so nothing of it is shown",
 	CodeUnsupported:      "this is stored in a format this browser does not read yet",
@@ -153,6 +156,8 @@ func codeOf(err error) string {
 		return CodeNoDirectory
 	case errors.Is(err, sidecar.ErrDirectoryItemAmbiguous):
 		return CodeAmbiguous
+	case errors.Is(err, sidecar.ErrEvsErased):
+		return CodeErased
 	case errors.Is(err, sidecar.ErrEvsPathAbsent), errors.Is(err, sidecar.ErrSidecarStoreAbsent), errors.Is(err, sidecar.ErrDirectoryItemNone):
 		return CodeNotFound
 	case errors.Is(err, sidecar.ErrEvsUnauthorized), errors.Is(err, sidecar.ErrRecordNotReader), errors.Is(err, sidecar.ErrDirectoryReadLost):

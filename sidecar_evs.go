@@ -17,6 +17,7 @@
 //	EVS_VERSIONING          a write's versioning argument other than "", "on" or "off", refused before the core; or
 //	                        evs's 409 VERSIONING, a caller's error, never retried
 //	EVS_NOT_FOUND           a path the head does not hold
+//	EVS_ERASED              a committed erasure destroyed a key needed to open the version
 //	EVS_DROPPED             ReadVersion of a version a drop took: from its drop's not_before by this device's clock,
 //	                        unless the drop is cancelled or refused, nothing fetched (§11.7's states row)
 //	EVS_COLLECTED           ReadVersion of a replaced versionless version, whose content evs no longer keeps (§11.9)
@@ -94,6 +95,7 @@ const (
 	sidecarEvsCodeNotFound          = "EVS_NOT_FOUND"
 	sidecarEvsCodeDropped           = "EVS_DROPPED"
 	sidecarEvsCodeCollected         = "EVS_COLLECTED"
+	sidecarEvsCodeErased            = "EVS_ERASED"
 	sidecarEvsCodeFormatUnsupported = "EVS_FORMAT_UNSUPPORTED"
 	sidecarEvsCodeInvalid           = "EVS_INVALID"
 	sidecarEvsCodeUnavailable       = "EVS_UNAVAILABLE"
@@ -502,6 +504,8 @@ func sidecarEvsCodeOf(err error) string {
 	switch {
 	case errors.Is(err, sidecar.ErrEvsGitRef):
 		return sidecarEvsCodeGitRef
+	case errors.Is(err, sidecar.ErrEvsErased):
+		return sidecarEvsCodeErased
 	case errors.Is(err, sidecar.ErrEvsPathAbsent):
 		return sidecarEvsCodeNotFound
 	case errors.Is(err, sidecar.ErrEvsFormatUnsupported):
