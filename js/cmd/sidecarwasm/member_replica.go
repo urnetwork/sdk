@@ -27,7 +27,7 @@ func (self *pageNetwork) standingReplica() (*sidecar.ConfigClient, *sidecar.EvsC
 		if self.local.Identity() == nil {
 			return nil, nil, sidecar.ErrEvsNoConfig
 		}
-		replica, err := self.local.OpenMemberReplica(self.ctx)
+		replica, err := self.local.OpenPageMemberReplica(self.ctx)
 		if err != nil {
 			return nil, nil, err
 		}
