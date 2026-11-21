@@ -183,10 +183,16 @@ type WorkerConfigState struct {
 // What a Worker runs on.
 type WorkerArgs struct {
 	Sidecar WorkerSidecar
+	// The key-origin document redeems the one-time code and hands its Worker only a marked client.
+	Enroll func(context.Context, string) error
+	// The local binding and verified admission of this browser.
+	Admission func() *AdmissionView
 	// The repo of repoId: on the page Worker, its EvsClient's. An error is what the reply reports.
 	Repo func(repoId sidecar.Id) (WorkerRepo, error)
 	// The record reader: on the page Worker, the Sidecar's record's. An error is what the reply reports.
 	Records func() (WorkerRecords, error)
+	// Rechecks the published authorization after a sync and any yields while assembling a page.
+	RecordReadable func(logId sidecar.Id) bool
 	// The team directory: on the page Worker, the Sidecar's read_only DirectoryClient once its evs and authorization
 	// state are bound. An error is what the reply reports; nil answers unavailable.
 	Directory func() (WorkerDirectory, error)

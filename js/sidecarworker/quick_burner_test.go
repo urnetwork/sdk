@@ -135,6 +135,41 @@ func TestWaitsWithNoConsentedDevice(t *testing.T) {
 	}
 }
 
+func TestBurnerReadsOnlySharedMailbox(t *testing.T) {
+	world := newTestBurner(t, "fixture-close", true)
+	world.ask(t, "synthetic-one-time-code")
+	mailbox, other := sidecar.NewId(), sidecar.NewId()
+	calls := 0
+	world.burner.worker.args.Repo = func(id sidecar.Id) (WorkerRepo, error) {
+		calls++
+		if id != mailbox {
+			t.Fatal("opened a repo outside the shared mailbox")
+		}
+		return nil, sidecar.ErrEvsNoConfig
+	}
+	ask := func(op string, repoId sidecar.Id) *Reply {
+		return world.burner.Handle(t.Context(), &Request{Id: "mailbox", Operation: op, RepoId: repoId.String()})
+	}
+	if reply := ask(OperationList, mailbox); reply.Code != CodeRefused {
+		t.Fatal("a mailbox read before its share was published was accepted")
+	}
+	world.shared = &mailbox
+	if reply := ask(OperationList, other); reply.Code != CodeRefused {
+		t.Fatal("a different repo was accepted")
+	}
+	if reply := ask(OperationRecordView, other); reply.Code != CodeUnavailable {
+		t.Fatal("a record request reached the ordinary Worker")
+	}
+	ask(OperationList, mailbox)
+	if calls != 1 {
+		t.Fatalf("the shared mailbox was opened %d times", calls)
+	}
+	world.shared = nil
+	if reply := ask(OperationList, mailbox); reply.Code != CodeRefused || calls != 1 {
+		t.Fatal("a read after revocation reached the repo")
+	}
+}
+
 // A tab resumed past the reap finds its client gone: the core reads unenrolled, and the burner answers reaped and
 // offers re-enrollment, since a memory-only keychain cannot rejoin.
 func TestResumeAfterReapOffersReenrollment(t *testing.T) {

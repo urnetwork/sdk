@@ -18,9 +18,7 @@
 //	reads      list and read_view on the shared mailbox, as the page Worker's; it never fetches all, and at M10 searches
 //	           the mailbox's two buckets in memory only (SDK-M10-04)
 //
-// The root has no top-level mint from the one-time code yet (the page Worker's enroll waits on it too), so Enroll is
-// nil on every host today and quick_burner answers unavailable before an enrollment, failing closed. Every other
-// operation is the page Worker's, which a burner holds. Safe for concurrent use.
+// A host without a mint returns unavailable. Safe for concurrent use.
 
 package sidecarworker
 
@@ -56,13 +54,15 @@ type QuickBurnerView struct {
 	Reenroll bool `json:"reenroll,omitempty"`
 	// The mailbox the share opens, once admitted.
 	MailboxRepoId string `json:"mailbox_repo_id,omitempty"`
+	// The public values the approver compares before signing.
+	SidecarId    string `json:"sidecar_id,omitempty"`
+	SafetyNumber string `json:"safety_number,omitempty"`
 }
 
 // What a quick burner runs on beside its page Worker's args.
 type QuickBurnerArgs struct {
 	// Mints the ephemeral client from the ur.io session's one-time code and enrolls the memory-only keychain on it,
-	// answering the mint's close capability. Nil answers unavailable: the root has no such mint yet (the file's
-	// comment).
+	// answering its close capability. A browser supplies WorkerArgs.Enroll because its document keeps the capability.
 	Enroll func(ctx context.Context, code string) (closeCapability string, err error)
 	// Hands the close capability to the key-origin document, never to the page. Required.
 	HandClose func(closeCapability string)
@@ -81,11 +81,12 @@ type QuickBurner struct {
 	stateLock sync.Mutex
 	// set once this burner enrolled, so a later unenrolled state reads reaped
 	enrolled bool
+	active   bool // the core has installed a client generation
 }
 
-// A quick burner over workerArgs and args. HandClose is required.
+// A quick burner over workerArgs and args. A host mint hands its close capability to the document.
 func NewQuickBurner(workerArgs *WorkerArgs, args *QuickBurnerArgs) (*QuickBurner, error) {
-	if args == nil || args.HandClose == nil {
+	if args == nil || (args.Enroll != nil && args.HandClose == nil) {
 		return nil, errors.New("a quick burner hands its close capability to the document")
 	}
 	if workerArgs == nil {
@@ -108,8 +109,11 @@ func (self *QuickBurner) SetConditions(conditions *WorkerConditions) {
 
 // Answers request: quick_burner here, every other operation its Worker's.
 func (self *QuickBurner) Handle(ctx context.Context, request *Request) *Reply {
-	if request == nil || request.Operation != OperationQuickBurner {
+	if request == nil {
 		return self.worker.Handle(ctx, request)
+	}
+	if request.Operation != OperationQuickBurner {
+		return self.readMailbox(ctx, request)
 	}
 	if err := checkRequest(request, self.worker.settings); err != nil {
 		return refusalReply("", CodeInvalid)
@@ -120,6 +124,51 @@ func (self *QuickBurner) Handle(ctx context.Context, request *Request) *Reply {
 	}
 	reply := self.quickBurner(ctx, request.Code)
 	reply.Id = request.Id
+	return reply
+}
+
+// Only the live share may supply a read or search. A search without a repo means the same
+// mailbox, including its continuations. Revocation takes effect before cached results cross.
+func (self *QuickBurner) readMailbox(ctx context.Context, request *Request) *Reply {
+	if err := checkRequest(request, self.worker.settings); err != nil {
+		return refusalReply("", CodeInvalid)
+	}
+	switch request.Operation {
+	case OperationSignOut, OperationSearchCancel:
+		return self.worker.Handle(ctx, request)
+	case OperationSearch:
+		if request.Scope == "all" {
+			return refusalReply(request.Id, CodeUnsupported)
+		}
+	case OperationList, OperationReadView, OperationSearchStatus, OperationSearchMore:
+	default:
+		return refusalReply(request.Id, CodeUnavailable)
+	}
+	if self.args.SharedMailbox == nil {
+		return refusalReply(request.Id, CodeUnavailable)
+	}
+	mailbox, ok := self.args.SharedMailbox()
+	if !ok || (request.RepoId != "" && request.RepoId != mailbox.String()) {
+		return refusalReply(request.Id, CodeRefused)
+	}
+	if request.Operation == OperationSearch || request.Operation == OperationSearchStatus {
+		scoped := *request
+		scoped.RepoId = mailbox.String()
+		request = &scoped
+	}
+	reply := self.worker.Handle(ctx, request)
+	if reply.Ok {
+		if current, ok := self.args.SharedMailbox(); !ok || current != mailbox {
+			return refusalReply(request.Id, CodeRefused)
+		}
+		if reply.Search != nil {
+			for _, hit := range reply.Search.Hits {
+				if hit.RepoId != mailbox.String() {
+					return refusalReply(request.Id, CodeRefused)
+				}
+			}
+		}
+	}
 	return reply
 }
 
@@ -158,15 +207,22 @@ func (self *QuickBurner) enroll(ctx context.Context, code string) error {
 	if self.wasEnrolled() {
 		return nil
 	}
-	if self.args.Enroll == nil {
+	switch {
+	case self.worker.args.Enroll != nil:
+		// The document keeps the capability from its own mint.
+		if err := self.worker.args.Enroll(ctx, code); err != nil {
+			return err
+		}
+	case self.args.Enroll != nil:
+		closeCapability, err := self.args.Enroll(ctx, code)
+		if err != nil {
+			return err
+		}
+		if closeCapability != "" {
+			self.args.HandClose(closeCapability)
+		}
+	default:
 		return errQuickBurnerNoMint
-	}
-	closeCapability, err := self.args.Enroll(ctx, code)
-	if err != nil {
-		return err
-	}
-	if closeCapability != "" {
-		self.args.HandClose(closeCapability)
 	}
 	self.stateLock.Lock()
 	self.enrolled = true
@@ -185,8 +241,17 @@ func (self *QuickBurner) wasEnrolled() bool {
 func (self *QuickBurner) view() *QuickBurnerView {
 	view := &QuickBurnerView{Ephemeral: true, State: QuickBurnerStateWaiting}
 	status := self.worker.args.Sidecar.Status()
+	active := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if status.State == sidecar.SidecarStateOnline || status.State == sidecar.SidecarStateOffline {
+			self.active = true
+		}
+		return self.active
+	}()
 	switch {
-	case status.State == sidecar.SidecarStateUnenrolled || status.State == sidecar.SidecarStateRevoked:
+	case status.State == sidecar.SidecarStateRevoked || (status.State == sidecar.SidecarStateUnenrolled &&
+		(status.Reason != "" || active)):
 		// a reaped or revoked ephemeral client: its memory-only keychain cannot rejoin
 		view.State = QuickBurnerStateReaped
 		view.Reenroll = true
@@ -197,6 +262,11 @@ func (self *QuickBurner) view() *QuickBurnerView {
 	if mailboxId, ok := self.args.SharedMailbox(); ok {
 		view.State = QuickBurnerStateAdmitted
 		view.MailboxRepoId = mailboxId.String()
+	} else if self.worker.args.Admission != nil {
+		if admission := self.worker.args.Admission(); admission != nil {
+			view.SidecarId = admission.SidecarId
+			view.SafetyNumber = admission.SafetyNumber
+		}
 	}
 	return view
 }

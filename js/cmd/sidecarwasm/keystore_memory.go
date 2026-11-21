@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"syscall/js"
 
 	"github.com/urnetwork/sidecar"
 
@@ -31,10 +30,8 @@ func newBurnerInstance(ctx context.Context) (*sidecar.SidecarInstance, error) {
 	})
 }
 
-// Opens a quick burner for networkId (§18.8, SDK-M8-14; the caller holds stateLock): a memory instance, this leg's
-// Sidecar on it, and a QuickBurner whose close capability goes to the frame's document as a close_capability message,
-// never to the page. Its enrollment from the session's one-time code waits on the root's ephemeral top-level mint, so
-// Enroll is nil and quick_burner answers unavailable until it lands (sidecarworker/quick_burner.go).
+// Opens a fresh memory instance for an ephemeral client. Its key-origin document keeps
+// the close capability and sends it on pagehide.
 func (self *pageWorker) openBurner(networkId sidecar.Id, settings *sidecar.SidecarSettings) (*pageNetwork, error) {
 	instance, err := newBurnerInstance(self.ctx)
 	if err != nil {
@@ -45,23 +42,22 @@ func (self *pageWorker) openBurner(networkId sidecar.Id, settings *sidecar.Sidec
 		instance.Close()
 		return nil, err
 	}
-	network := &pageNetwork{networkId: networkId, settings: settings, instance: instance, local: local}
+	network := &pageNetwork{ctx: self.ctx, networkId: networkId, settings: settings, instance: instance, local: local, ephemeral: true}
 	burner, err := sidecarworker.NewQuickBurner(&sidecarworker.WorkerArgs{
-		Sidecar: local,
-		Repo:    network.repo,
-		Records: network.records,
-		Search:  network.search,
-		Yield:   yieldToEventLoop,
-	}, &sidecarworker.QuickBurnerArgs{
-		HandClose: func(closeCapability string) {
-			js.Global().Call("postMessage", map[string]any{"type": "close_capability", "capability": closeCapability})
-		},
-	})
+		Sidecar:   local,
+		Enroll:    network.enroll,
+		Admission: network.admission,
+		Repo:      network.repo,
+		Records:   network.records,
+		Search:    network.search,
+		Yield:     yieldToEventLoop,
+	}, &sidecarworker.QuickBurnerArgs{SharedMailbox: network.sharedMailbox})
 	if err != nil {
 		local.Close()
 		instance.Close()
 		return nil, err
 	}
+	network.unlock()
 	network.burner = burner
 	return network, nil
 }

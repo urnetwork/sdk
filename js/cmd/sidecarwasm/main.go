@@ -20,12 +20,8 @@
 // (plan-SDK-small-readings #8). Everything a page asks goes to sidecarworker, whose seams this file fills: the
 // Sidecar, an EvsClient of this leg built at the first read, and the Sidecar's record reader. It never listens.
 //
-// What this leg cannot read yet fails closed: no GkmClient exists on any leg (KEYS-M4-01 layers mls_ and gkm_ on this
-// Worker), so evs reads answer unavailable, and with no config state verified here no statement judges as verified;
-// the record reader has no streams until RECORD-M3-12 binds them, so record_view answers unavailable too. The team
-// console's two operations (SDK-M6-02) answer unavailable for the same reason: config_view shows a verified config
-// state, and directory_view a DirectoryClient whose cards and authorization state that config binds, and until this
-// leg verifies one the Worker cannot tell a network without a directory from one it cannot read.
+// The same member replica as the native SDK checks config bases, group keys and EVS pushes. Views
+// become available once this browser's own read-only admission and authorization are published.
 //
 // worker.js opens the network only while it holds the network's Web Lock, urnetwork-sidecar-<network_id> (SDK-M4-05),
 // so one Worker a network ever loads its keychain, token and MLS state, and, each network being its own database and
@@ -38,8 +34,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
 	"sync"
 
 	"github.com/urnetwork/sidecar"
@@ -51,9 +45,6 @@ import (
 // The global the loader reads once the program has started: the release version, empty in a development build, and
 // the Worker's calls (bridge_js.go). Set before main first blocks, so it is there when the loader's go.run returns.
 const sidecarWasmGlobalName = "urnetworkSidecar"
-
-// The evs component's sealed directory, as every leg names it (§5.9).
-const pageEvsDirectoryName = "evs"
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -109,6 +100,8 @@ func newPageWorker(ctx context.Context) *pageWorker {
 
 // One opened network: its instance, its Sidecar and the Worker over them.
 type pageNetwork struct {
+	ctx       context.Context
+	ephemeral bool
 	networkId sidecar.Id
 	settings  *sidecar.SidecarSettings
 	instance  *sidecar.SidecarInstance
@@ -117,9 +110,11 @@ type pageNetwork struct {
 	// a quick burner's, which answers in place of worker; nil for a page Worker
 	burner *sidecarworker.QuickBurner
 
-	// built at the first read, once a network is enrolled
-	evsLock sync.Mutex
-	evs     *sidecar.EvsClient
+	replicaLock sync.Mutex
+	replica     *sidecar.MemberReplica
+	closed      bool
+	cardsConfig *sidecar.ConfigClient
+	cardsEvs    *sidecar.EvsClient
 }
 
 // The opened network, or nil.
@@ -187,6 +182,7 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 		return nil, err
 	}
 	network := &pageNetwork{
+		ctx:       self.ctx,
 		networkId: networkId,
 		settings:  settings,
 		instance:  instance,
@@ -195,15 +191,18 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	workerSettings := sidecarworker.DefaultWorkerSettings()
 	workerSettings.DirectoryViewCoalesce = settings.Directory.ViewCoalesce
 	worker, err := sidecarworker.NewWorker(&sidecarworker.WorkerArgs{
-		Sidecar:   local,
-		Repo:      network.repo,
-		Records:   network.records,
-		Directory: network.directory,
-		Config:    network.config,
-		Search:    network.search,
-		Drops:     network.drops,
-		Yield:     yieldToEventLoop,
-		Settings:  workerSettings,
+		Sidecar:        local,
+		Enroll:         network.enroll,
+		Admission:      network.admission,
+		Repo:           network.repo,
+		Records:        network.records,
+		RecordReadable: network.recordReadable,
+		Directory:      network.directory,
+		Config:         network.config,
+		Search:         network.search,
+		Drops:          network.drops,
+		Yield:          yieldToEventLoop,
+		Settings:       workerSettings,
 	})
 	if err != nil {
 		local.Close()
@@ -212,7 +211,7 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	}
 	network.worker = worker
 	// the key store's wrap of U: a store that is locked or failed creates nothing and leaves the Sidecar Locked
-	local.Unlock(nil)
+	network.unlock()
 	self.opened = network
 	return network.status(), nil
 }
@@ -254,6 +253,7 @@ func (self *pageWorker) close(ctx context.Context) error {
 	if network == nil {
 		return nil
 	}
+	network.closeReplica()
 	err := network.local.CloseAndWait(ctx)
 	network.instance.Close()
 	return err
@@ -329,77 +329,10 @@ func (self *pageNetwork) drops(repoId sidecar.Id) (sidecarworker.WorkerDrops, er
 	return client.Repo(repoId), nil
 }
 
-// The network's EvsClient, built once the network is enrolled: this leg's fetch, the Sidecar's tokens, signer and
-// identity, and the evs directory of its sealed store. Its GkmClient refuses every key and it has no config state, so
-// every read fails closed until KEYS-M4-01 and this leg's config verification fill them.
-func (self *pageNetwork) evsClient() (*sidecar.EvsClient, error) {
-	self.evsLock.Lock()
-	defer self.evsLock.Unlock()
-	if self.evs != nil {
-		return self.evs, nil
-	}
-	networkId := self.local.NetworkId()
-	if networkId == nil {
-		return nil, sidecar.ErrSidecarNoIdentity
-	}
-	store, err := self.instance.Store(networkId).Directory(pageEvsDirectoryName, pageEvsDirectoryName)
-	if err != nil {
-		return nil, err
-	}
-	client, err := sidecar.NewEvsClient(&sidecar.EvsClientArgs{
-		NetworkId:    *networkId,
-		EvsUrl:       self.settings.EvsUrl,
-		Transport:    http.DefaultTransport,
-		ServiceToken: self.local.ServiceToken,
-		Sign:         self.local.Sign,
-		Identity:     self.local.Identity,
-		Gkm:          pageGkmUnavailable{},
-		Store:        store,
-		Settings:     self.settings.Evs,
-	})
-	if err != nil {
-		return nil, err
-	}
-	self.evs = client
-	return client, nil
-}
-
 // The Sidecar's search (§5.4), whose calls answer unavailable until a host installs its engine: on this leg nothing does
 // yet, since its sync, scope and key sources are the core's composition (SEARCH-M10-26's deferral).
 func (self *pageNetwork) search() (sidecarworker.WorkerSearch, error) {
 	return self.local, nil
-}
-
-// The Sidecar's record reader (RECORD.md section 5.5), once the network is enrolled.
-func (self *pageNetwork) records() (sidecarworker.WorkerRecords, error) {
-	if self.local.NetworkId() == nil {
-		return nil, sidecar.ErrSidecarNoIdentity
-	}
-	record, err := self.local.Record()
-	if err != nil {
-		return nil, err
-	}
-	return record.Reader(), nil
-}
-
-// The network's team directory, for the console's directory_view: not enrolled before the network is, and otherwise
-// unavailable, since nothing on this leg verifies the config state that binds the Sidecar's read_only DirectoryClient
-// to its cards and its authorization state (DirectoryClient.Bind) yet. Until one is bound the client answers every
-// network as having no directory, which the Worker would show as no_directory, so the client is not handed over.
-func (self *pageNetwork) directory() (sidecarworker.WorkerDirectory, error) {
-	if self.local.NetworkId() == nil {
-		return nil, sidecar.ErrSidecarNoIdentity
-	}
-	return nil, fmt.Errorf("%w: no config state verified on this leg binds the directory", sidecar.ErrEvsNoConfig)
-}
-
-// The network's verified config, for the console's config_view: not enrolled before the network is, and otherwise
-// unavailable, since nothing on this leg verifies a config state yet.
-func (self *pageNetwork) config() (*sidecarworker.WorkerConfigState, error) {
-	if self.local.NetworkId() == nil {
-		return nil, sidecar.ErrSidecarNoIdentity
-	}
-	return nil, fmt.Errorf("%w: no config state verified on this leg", sidecar.ErrEvsNoConfig)
 }
 
 // settings' service urls: urls where given, whole, else §18.9's table's.
@@ -424,47 +357,4 @@ func applyPageServiceUrls(settings *sidecar.SidecarSettings, urls *pageServiceUr
 	settings.DnsUrl = urls.Dns
 	settings.PlatformUrl = urls.Platform
 	return nil
-}
-
-// The GkmClient this leg holds until KEYS-M4-01 builds the page Worker's: every call refuses with ErrGkmUnavailable
-// and a new state changes nothing, so no read is ever taken as keyed, as the root's own refusing client.
-type pageGkmUnavailable struct{}
-
-// Refuses.
-func (self pageGkmUnavailable) CurrentRepoKey(ctx context.Context, repoId sidecar.Id) (*sidecar.EvsRepoKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Refuses.
-func (self pageGkmUnavailable) RepoKey(ctx context.Context, repoId sidecar.Id, generation uint64) (*sidecar.EvsRepoKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Refuses.
-func (self pageGkmUnavailable) EnsureWritable(ctx context.Context, repoId sidecar.Id) (*sidecar.EvsRepoKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Refuses.
-func (self pageGkmUnavailable) DropKey(ctx context.Context, repoId sidecar.Id) (*sidecar.GkmDropKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Refuses: a read_only Worker creates no group.
-func (self pageGkmUnavailable) CreateGroup(ctx context.Context, args *sidecar.GkmCreateGroupArgs) (*sidecar.EvsRepoKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Refuses: a read_only Worker rotates nothing.
-func (self pageGkmUnavailable) RotateRepo(ctx context.Context, repoId sidecar.Id) (*sidecar.EvsRepoKey, error) {
-	return nil, sidecar.ErrGkmUnavailable
-}
-
-// Changes nothing.
-func (self pageGkmUnavailable) AuthAdvanced(state sidecar.GkmAuthView) {
-}
-
-// Refuses.
-func (self pageGkmUnavailable) ForgetRepo(ctx context.Context, repoId sidecar.Id) error {
-	return sidecar.ErrGkmUnavailable
 }

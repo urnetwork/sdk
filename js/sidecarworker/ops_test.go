@@ -186,6 +186,15 @@ func TestRecordViewPages(t *testing.T) {
 	if unknown := reply.Record.Entries[0]; unknown.Kind != "kind 9999" || unknown.State != "erased" || unknown.BodyBase64 != "" {
 		t.Fatalf("an erased entry of a kind the registry does not hold: %+v", unknown)
 	}
+	world.worker.args.RecordReadable = func(logId sidecar.Id) bool {
+		if logId != world.logId || world.records.syncs != 3 {
+			t.Fatal("the final check did not follow this log's sync")
+		}
+		return false
+	}
+	if denied := world.worker.Handle(t.Context(), next); denied.Ok || denied.Code != CodeRefused || denied.Record != nil {
+		t.Fatal("returned a cached page after read authorization was withdrawn")
+	}
 }
 
 // Each refusal answers its code and that code's fixed message, whatever the error's text: a page learns what kind of

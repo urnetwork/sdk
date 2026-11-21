@@ -375,14 +375,15 @@ func TestQuickBurnerBucketsInMemoryOnly(t *testing.T) {
 		settings.Search.RemoteAsk || settings.Search.RemoteServe {
 		t.Errorf("the burner's search settings: %+v", settings.Search)
 	}
-	search := &testWorkerSearch{scripts: [][]testSearchPull{{{hits: []sidecar.SearchHit{testWorkerSearchHit(sidecar.NewId(), 0)}, done: true}}}}
+	mailboxId := sidecar.NewId()
+	search := &testWorkerSearch{scripts: [][]testSearchPull{{{hits: []sidecar.SearchHit{testWorkerSearchHit(mailboxId, 0)}, done: true}}}}
 	world := newTestSearchWorld(t, search, nil)
 	burner, err := NewQuickBurner(&WorkerArgs{
 		Sidecar: world.sidecar,
 		Repo:    func(repoId sidecar.Id) (WorkerRepo, error) { return world.repo, nil },
 		Records: func() (WorkerRecords, error) { return world.records, nil },
 		Search:  func() (WorkerSearch, error) { return search, nil },
-	}, &QuickBurnerArgs{HandClose: func(string) {}})
+	}, &QuickBurnerArgs{SharedMailbox: func() (sidecar.Id, bool) { return mailboxId, true }})
 	if err != nil {
 		t.Fatal(err)
 	}
