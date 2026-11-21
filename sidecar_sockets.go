@@ -20,9 +20,8 @@
 // that a phone's sidecar runs only while its app is open, and refuses nothing more by it.
 //
 // The sockets component is the core's (socket_component.go). Its factory builds it once the core is enrolled, and
-// before then waits for EnrollWithDevice, Dial and Listen answering unavailable meanwhile. Its key ring, network
-// labels and policy come from the verified config head, which no host installs yet, so until one does the core
-// answers unavailable or denied: closed.
+// before then waits for EnrollWithDevice. Its core follows the standing network config for the socket key ring
+// and ACL, and obtains the network label from the authenticated API.
 //
 // Addresses are the person's own and go only between the app and its core on this device: nothing here logs one
 // (I-13). Safe for concurrent use.
@@ -128,12 +127,10 @@ func (self *sidecarSocketListenerCore) AcceptContext(ctx context.Context) (net.C
 // The sockets component's factory: the core's SocketComponent for the network the core is enrolled in, its registrar
 // running until the Sidecar closes, or errSidecarComponentNotEnrolled before the core has a network.
 func newSidecarSocketsComponent(ctx context.Context, local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
-	args, err := local.SocketComponentArgs()
-	if err != nil {
-		// its one refusal: no enrolled network
-		return nil, fmt.Errorf("%w: %w", errSidecarComponentNotEnrolled, err)
+	if local.NetworkId() == nil {
+		return nil, errSidecarComponentNotEnrolled
 	}
-	return sidecar.NewSocketComponent(ctx, args)
+	return local.NewSocketComponent(ctx)
 }
 
 // One network's sockets for an app. Safe for concurrent use.
