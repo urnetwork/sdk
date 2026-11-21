@@ -10,9 +10,8 @@
 //	           owner decision 288), sent unconfirmed: the daemon's gate holds a send naming an outside recipient for an
 //	           I-8 approval as it holds a submission (§15.10 step 1), which answers approval_pending:<id> with nothing
 //	           sent, and the same draft sent again once a person approved goes; mail to the network's own addresses
-//	           goes at once. Internet mail waits there on MAIL-M9-01 and MAIL-M9-02, each outside recipient answered
-//	           internet_waits by the daemon. On the local backend MAIL_UNAVAILABLE until SDK-M8-04 wires the core's
-//	           send. Its send_id's outcomes, the check before it and the mail_send event are sidecar_mail_send.go's
+//	           goes at once. Both backends return the id of a send accepted for at least one recipient or
+//	           recovered from the approval ledger. Its outcomes, check and mail_send event are sidecar_mail_send.go's
 //	receiver   the receiver hosting API: the "mail" component, MailClient attached to the core's generations, runs this
 //	           device's receiver where policy grants it the listen, only while the sidecar role runs, which on an app
 //	           host is while the app is open (§18.4's Listen row; owner decision 197). SetReceiverEnabled is the
@@ -408,8 +407,7 @@ func (self *SidecarMail) GetAliases() *SidecarAliasList {
 // Sends draft (§15.10): same-network recipients by deposit, internet ones through §14's outbox unless this host
 // proves, the result naming its send_id, whose outcomes per recipient domain GetSendResult reads and mail_send
 // announces as each changes, from the outbox too (sidecar_mail_send.go). An outward action, so a recipient no grant
-// covers comes back approval_pending:<id>. MAIL_UNAVAILABLE until the core's MailClient.Send lands (the file's
-// comment).
+// covers comes back approval_pending:<id>.
 func (self *SidecarMail) Send(draft *SidecarDraft, callback SidecarResultCallback) {
 	trace(func() {
 		// the draft's lists are the caller's to reuse once Send returns
@@ -525,9 +523,35 @@ func (self *sidecarMailCoreBackend) aliases(ctx context.Context) ([]*SidecarAlia
 	return aliases, nil
 }
 
-// See sidecarMailBackend: MailClient.Send is MAIL-M7-18's and MAIL-M9-01's.
+// Submits through the same core gate as the daemon's mail.send.
 func (self *sidecarMailCoreBackend) send(ctx context.Context, draft *SidecarDraft) (string, error) {
-	return "", errSidecarMailNotLanded("send mail (MailClient.Send)")
+	if self.client == nil {
+		return "", sidecar.ErrMailUnbound
+	}
+	result, err := self.client.SubmitSend(ctx, sidecarMailSendArgsOf(draft))
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return "", errSidecarMailSendEmpty
+	}
+	return sidecarMailSubmitted(result)
+}
+
+// The public send id. A recorded approval replay names the committed effect alone. A fresh
+// send also names recipients, of whom at least one must have been delivered or queued.
+func sidecarMailSubmitted(result *sidecar.MailSendResult) (string, error) {
+	if result.SendId != (sidecar.Id{}) {
+		if len(result.Recipients) == 0 {
+			return result.SendId.String(), nil
+		}
+		for _, recipient := range result.Recipients {
+			if recipient != nil && (recipient.Outcome == sidecar.MailSendDelivered || recipient.Outcome == sidecar.MailSendQueued) {
+				return result.SendId.String(), nil
+			}
+		}
+	}
+	return "", errors.New("no recipient accepted the message")
 }
 
 // See sidecarMailBackend: an app host is never a mail indexer (owner decision 197).
@@ -610,7 +634,15 @@ func (self *sidecarMailRemoteBackend) send(ctx context.Context, draft *SidecarDr
 	case reply.SendId == nil:
 		return "", errSidecarMailSendEmpty
 	}
-	return reply.SendId.String(), nil
+	result := &sidecar.MailSendResult{SendId: *reply.SendId}
+	for _, recipient := range reply.Recipients {
+		if recipient == nil {
+			result.Recipients = append(result.Recipients, nil)
+			continue
+		}
+		result.Recipients = append(result.Recipients, &sidecar.MailSendRecipient{Outcome: sidecar.MailSendOutcome(recipient.Outcome)})
+	}
+	return sidecarMailSubmitted(result)
 }
 
 // See sidecarMailBackend: the daemon's IndexerSet for mail at the member scope (the file's comment), confirmed, since
