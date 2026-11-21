@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -319,10 +320,12 @@ func TestModeNeverThroughMcp(t *testing.T) {
 	if result := testT4Result(t, func(callback SidecarResultCallback) { search.AcknowledgeIndexer(newId(world.otherId), true, callback) }); !result.Ok {
 		t.Fatalf("an answer: %+v", result)
 	}
-	// the core's own rounds (a version sync) may reach its api meanwhile; no statement does, which is how anything
-	// reaches the config repo (§7.9's POST /network/config/delta)
+	// the core's own rounds may reach its api meanwhile: a version sync, and the member replica's follower reading
+	// §7.9's log (GET /network/config/projection), as every enrolled member host follows its verified configuration
+	// (§3.7's F1). No write does, a statement or a base, which is how anything reaches the config repo (§7.9's POST
+	// /network/config/delta and POST /network/config/projection)
 	for _, request := range role.coreServer.seen()[before:] {
-		if strings.HasPrefix(request.path, "/network/config") {
+		if strings.HasPrefix(request.path, "/network/config") && request.method != http.MethodGet {
 			t.Errorf("setting the mode reached the config: %s %s", request.method, request.path)
 		}
 	}
