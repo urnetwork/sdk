@@ -796,3 +796,61 @@ func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
 		})
 	}
 }
+
+// A daemon that could not start its sidecars answers status with no_sidecar and omits its network list.
+func TestPairedRemoteRecoversTheSameIdentityAfterACoreOutage(t *testing.T) {
+	socketPath := testRemoteSocketPath(t)
+	daemon := newTestRemoteDaemon(t, socketPath)
+	daemon.set("online", "", 3)
+	daemon.start()
+	remote, backend, events := openTestRemoteSidecar(t, socketPath)
+	if _, err := backend.pair(t.Context(), "synthetic-child-token"); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	origin := remote.GetSidecarId()
+	if paired := events.next(t); paired.State != "online" || paired.Generation != 4 || origin == nil {
+		t.Fatalf("the original pairing: %+v, sidecar_id %v", paired, origin)
+	}
+
+	daemon.stateLock.Lock()
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		switch request.Method {
+		case sidecarControlMethodStatus:
+			return map[string]any{"instance": "default", "key_store": "pass", "no_sidecar": "synthetic proxy configuration unavailable"}, nil, true
+		case sidecarControlMethodSearchStatus:
+			return nil, &sidecar.DaemonRpcError{Code: sidecar.DaemonRpcFailedPrecondition, Message: "no hosted network"}, true
+		}
+		return nil, nil, false
+	}
+	daemon.stateLock.Unlock()
+	backend.setEventsCarry(true)
+	if err := backend.refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if offline := events.next(t); offline.State != "offline" || offline.Reason != "" || offline.Generation != 4 ||
+		remote.GetState() != "offline" || !sidecarControlSameId(remote.GetSidecarId(), origin) {
+		t.Fatalf("the unavailable core: %+v, sidecar_id %v", offline, remote.GetSidecarId())
+	}
+	if search := remote.GetSearch(); search == nil || search.GetStatus(nil) != nil {
+		t.Fatal("the daemon's refused search status did not reach the paired reader")
+	}
+
+	daemon.stop()
+	if err := backend.refresh(t.Context()); !errors.Is(err, errSidecarRemoteOffline) {
+		t.Fatalf("the ended control session: %v", err)
+	}
+	restarted := newTestRemoteDaemon(t, socketPath)
+	restarted.networkId, restarted.sidecarId = daemon.networkId, daemon.sidecarId
+	restarted.set("online", "", 4)
+	restarted.start()
+	if err := backend.refreshFromEvents(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	if online := events.next(t); online.State != "online" || online.Generation != 4 || remote.GetState() != "online" ||
+		!sidecarControlSameId(remote.GetSidecarId(), origin) {
+		t.Fatalf("the recovered core: %+v, sidecar_id %v", online, remote.GetSidecarId())
+	}
+}

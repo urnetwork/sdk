@@ -93,6 +93,7 @@ type sidecarControlStatus struct {
 	Reason     string                        `json:"reason"`
 	Generation int64                         `json:"generation"`
 	Networks   []sidecarControlNetworkStatus `json:"networks"`
+	NoSidecar  string                        `json:"no_sidecar,omitempty"`
 }
 
 // One hosted network in status.
@@ -912,6 +913,17 @@ func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fro
 		defer self.stateLock.Unlock()
 		if self.closed || revision != self.identityRevision {
 			return false, self.status
+		}
+		// A daemon with no running core cannot report which enrollments still exist.
+		if reply.NoSidecar != "" {
+			if self.status.state != sidecarRemoteStateOffline || self.status.reason != "" {
+				self.status.state, self.status.reason = sidecarRemoteStateOffline, ""
+				self.identityRevision++
+			} else if !always {
+				return false, self.status
+			}
+			fresh = self.takeFreshWithLock(false)
+			return true, self.status
 		}
 		next, hosted := self.statusOf(reply, self.networkId)
 		// A status row can still name the removed identity while the daemon finishes detaching its sidecar.
