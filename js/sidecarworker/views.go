@@ -163,7 +163,7 @@ func codeOf(err error) string {
 		return CodeUnverified
 	case errors.Is(err, sidecar.ErrEvsFormatUnsupported):
 		return CodeUnsupported
-	case errors.Is(err, sidecar.ErrGkmUnavailable), errors.Is(err, sidecar.ErrEvsNoConfig), errors.Is(err, sidecar.ErrRecordStreamsUnavailable),
+	case errors.Is(err, sidecar.ErrGkmUnavailable), errors.Is(err, sidecar.ErrConfigHeadUnavailable), errors.Is(err, sidecar.ErrEvsNoConfig), errors.Is(err, sidecar.ErrRecordStreamsUnavailable),
 		errors.Is(err, sidecar.ErrEvsReceiptGate), errors.Is(err, sidecar.ErrSidecarClosed), errors.Is(err, sidecar.ErrDirectoryCardsUnavailable):
 		return CodeUnavailable
 	}

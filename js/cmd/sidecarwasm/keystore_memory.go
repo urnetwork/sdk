@@ -42,21 +42,22 @@ func (self *pageWorker) openBurner(networkId sidecar.Id, settings *sidecar.Sidec
 		instance.Close()
 		return nil, err
 	}
-	network := &pageNetwork{networkId: networkId, settings: settings, instance: instance, local: local, ephemeral: true}
+	network := &pageNetwork{ctx: self.ctx, networkId: networkId, settings: settings, instance: instance, local: local, ephemeral: true}
 	burner, err := sidecarworker.NewQuickBurner(&sidecarworker.WorkerArgs{
-		Sidecar: local,
-		Enroll:  network.enroll,
-		Repo:    network.repo,
-		Records: network.records,
-		Search:  network.search,
-		Yield:   yieldToEventLoop,
-	}, &sidecarworker.QuickBurnerArgs{})
+		Sidecar:   local,
+		Enroll:    network.enroll,
+		Admission: network.admission,
+		Repo:      network.repo,
+		Records:   network.records,
+		Search:    network.search,
+		Yield:     yieldToEventLoop,
+	}, &sidecarworker.QuickBurnerArgs{SharedMailbox: network.sharedMailbox})
 	if err != nil {
 		local.Close()
 		instance.Close()
 		return nil, err
 	}
-	local.Unlock(nil)
+	network.unlock()
 	network.burner = burner
 	return network, nil
 }

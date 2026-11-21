@@ -54,6 +54,9 @@ type QuickBurnerView struct {
 	Reenroll bool `json:"reenroll,omitempty"`
 	// The mailbox the share opens, once admitted.
 	MailboxRepoId string `json:"mailbox_repo_id,omitempty"`
+	// The public values the approver compares before signing.
+	SidecarId    string `json:"sidecar_id,omitempty"`
+	SafetyNumber string `json:"safety_number,omitempty"`
 }
 
 // What a quick burner runs on beside its page Worker's args.
@@ -81,7 +84,7 @@ type QuickBurner struct {
 	active   bool // the core has installed a client generation
 }
 
-// A quick burner over workerArgs and args. HandClose is required.
+// A quick burner over workerArgs and args. A host mint hands its close capability to the document.
 func NewQuickBurner(workerArgs *WorkerArgs, args *QuickBurnerArgs) (*QuickBurner, error) {
 	if args == nil || (args.Enroll != nil && args.HandClose == nil) {
 		return nil, errors.New("a quick burner hands its close capability to the document")
@@ -106,8 +109,11 @@ func (self *QuickBurner) SetConditions(conditions *WorkerConditions) {
 
 // Answers request: quick_burner here, every other operation its Worker's.
 func (self *QuickBurner) Handle(ctx context.Context, request *Request) *Reply {
-	if request == nil || request.Operation != OperationQuickBurner {
+	if request == nil {
 		return self.worker.Handle(ctx, request)
+	}
+	if request.Operation != OperationQuickBurner {
+		return self.readMailbox(ctx, request)
 	}
 	if err := checkRequest(request, self.worker.settings); err != nil {
 		return refusalReply("", CodeInvalid)
@@ -118,6 +124,51 @@ func (self *QuickBurner) Handle(ctx context.Context, request *Request) *Reply {
 	}
 	reply := self.quickBurner(ctx, request.Code)
 	reply.Id = request.Id
+	return reply
+}
+
+// Only the live share may supply a read or search. A search without a repo means the same
+// mailbox, including its continuations. Revocation takes effect before cached results cross.
+func (self *QuickBurner) readMailbox(ctx context.Context, request *Request) *Reply {
+	if err := checkRequest(request, self.worker.settings); err != nil {
+		return refusalReply("", CodeInvalid)
+	}
+	switch request.Operation {
+	case OperationSignOut, OperationSearchCancel:
+		return self.worker.Handle(ctx, request)
+	case OperationSearch:
+		if request.Scope == "all" {
+			return refusalReply(request.Id, CodeUnsupported)
+		}
+	case OperationList, OperationReadView, OperationSearchStatus, OperationSearchMore:
+	default:
+		return refusalReply(request.Id, CodeUnavailable)
+	}
+	if self.args.SharedMailbox == nil {
+		return refusalReply(request.Id, CodeUnavailable)
+	}
+	mailbox, ok := self.args.SharedMailbox()
+	if !ok || (request.RepoId != "" && request.RepoId != mailbox.String()) {
+		return refusalReply(request.Id, CodeRefused)
+	}
+	if request.Operation == OperationSearch || request.Operation == OperationSearchStatus {
+		scoped := *request
+		scoped.RepoId = mailbox.String()
+		request = &scoped
+	}
+	reply := self.worker.Handle(ctx, request)
+	if reply.Ok {
+		if current, ok := self.args.SharedMailbox(); !ok || current != mailbox {
+			return refusalReply(request.Id, CodeRefused)
+		}
+		if reply.Search != nil {
+			for _, hit := range reply.Search.Hits {
+				if hit.RepoId != mailbox.String() {
+					return refusalReply(request.Id, CodeRefused)
+				}
+			}
+		}
+	}
 	return reply
 }
 
@@ -211,6 +262,11 @@ func (self *QuickBurner) view() *QuickBurnerView {
 	if mailboxId, ok := self.args.SharedMailbox(); ok {
 		view.State = QuickBurnerStateAdmitted
 		view.MailboxRepoId = mailboxId.String()
+	} else if self.worker.args.Admission != nil {
+		if admission := self.worker.args.Admission(); admission != nil {
+			view.SidecarId = admission.SidecarId
+			view.SafetyNumber = admission.SafetyNumber
+		}
 	}
 	return view
 }

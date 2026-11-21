@@ -544,6 +544,9 @@ func runRecordView(worker *Worker, ctx context.Context, request *Request, fields
 		}
 		view.Entries = append(view.Entries, recordEntryViewOf(entries[i]))
 	}
+	if worker.args.RecordReadable != nil && !worker.args.RecordReadable(fields.logId) {
+		return refusalReply("", CodeRefused)
+	}
 	return &Reply{Ok: true, Record: view}
 }
 

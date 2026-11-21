@@ -10,6 +10,33 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
+// Unlocking a fresh instance wakes the core's asynchronous lifecycle. Wait for that
+// transition before accepting an enrollment on the independently scheduled Worker bridge.
+func (self *pageNetwork) unlock() {
+	if self.local.NetworkId() != nil {
+		self.local.Unlock(nil)
+		return
+	}
+	changed := make(chan struct{}, 1)
+	unsubscribe := self.local.AddEventCallback(func(sidecar.SidecarEvent) {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	})
+	defer unsubscribe()
+	if err := self.local.Unlock(nil); err != nil {
+		return
+	}
+	for self.local.Status().State == sidecar.SidecarStateLocked {
+		select {
+		case <-changed:
+		case <-self.ctx.Done():
+			return
+		}
+	}
+}
+
 // The callback is private to the Worker and its creating frame. Neither the transient
 // network bearer nor a burner's close capability crosses it.
 func (self *pageNetwork) enroll(ctx context.Context, code string) error {
@@ -57,12 +84,14 @@ func (self *pageNetwork) admission() *sidecarworker.AdmissionView {
 		if number, err := self.local.SafetyNumber(); err == nil {
 			view.SafetyNumber = sidecar.FormatSafetyNumber(number)
 		}
-		if self.local.Admitted() {
-			devices, _ := self.local.Devices()
-			for _, device := range devices {
-				if device.This && device.ReadOnly && !device.Ephemeral && device.State == sidecar.MemberDeviceLive {
-					view.State = "admitted"
-					break
+		client, _, err := self.standingReplica()
+		if err == nil {
+			state := client.State()
+			if own := self.admittedMember(state); own != nil && !self.ephemeral {
+				view.State = "admitted"
+				auth := sidecar.NewRecordAuthView(state)
+				if vault, found := auth.Vault(own.MemberId); found && auth.Consented(vault, identity.SidecarId) && auth.Reads(vault, identity.SidecarId) {
+					view.VaultId = vault.String()
 				}
 			}
 		}

@@ -191,6 +191,8 @@ type WorkerArgs struct {
 	Repo func(repoId sidecar.Id) (WorkerRepo, error)
 	// The record reader: on the page Worker, the Sidecar's record's. An error is what the reply reports.
 	Records func() (WorkerRecords, error)
+	// Rechecks the published authorization after a sync and any yields while assembling a page.
+	RecordReadable func(logId sidecar.Id) bool
 	// The team directory: on the page Worker, the Sidecar's read_only DirectoryClient once its evs and authorization
 	// state are bound. An error is what the reply reports; nil answers unavailable.
 	Directory func() (WorkerDirectory, error)
