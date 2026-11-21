@@ -7,6 +7,7 @@ require (
 	github.com/urnetwork/sdk v0.0.0
 	github.com/urnetwork/sidecar v0.0.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -112,7 +113,6 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
