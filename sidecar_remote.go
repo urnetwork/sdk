@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -237,7 +238,8 @@ func (self *Sidecar) pairWithDeviceApi(ctx context.Context, remote sidecarBacken
 	if err != nil {
 		// a session that died mid-call leaves the outcome unknown: the daemon may have bound the child, so it is
 		// removed only on the daemon's own refusal, and one nobody bound ends at its exp
-		if !errors.Is(err, errSidecarRemoteOffline) && !errors.Is(err, errSidecarRemoteClosed) {
+		if !errors.Is(err, errSidecarRemoteOffline) && !errors.Is(err, errSidecarRemoteClosed) &&
+			!strings.Contains(err.Error(), sidecar.ErrSidecarBindingPending.Error()) {
 			removeChild()
 		}
 		return "", err

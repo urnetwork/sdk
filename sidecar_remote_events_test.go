@@ -715,3 +715,55 @@ func TestRemotePairingToAnotherNetworkPassesTheFloor(t *testing.T) {
 		t.Fatalf("the sidecar_id followed: %v", got)
 	}
 }
+
+// Pair on the control socket, then observe logout either in the event stream or by rereading status after a ring gap.
+func TestPairedRemoteLogoutClearsTheIdentity(t *testing.T) {
+	for _, path := range []string{"live event", "reconnect with gap"} {
+		t.Run(path, func(t *testing.T) {
+			socketPath := testRemoteSocketPath(t)
+			daemon := newTestRemoteDaemon(t, socketPath)
+			daemon.set("online", "", 3)
+			daemon.start()
+			remote, backend, events := openTestRemoteSidecar(t, socketPath)
+			if _, err := backend.pair(t.Context(), "synthetic-child-token"); err != nil {
+				t.Fatal(err)
+			}
+			if err := backend.refresh(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			paired := events.next(t)
+			if paired.State != "online" || paired.Generation != 4 || remote.GetSidecarId() == nil {
+				t.Fatalf("paired: %+v", paired)
+			}
+			oldRead := backend.revision()
+			networkId, origin := newId([16]byte(daemon.networkId)), newId([16]byte(daemon.sidecarId))
+			if path == "live event" {
+				backend.applyEvents([]*sidecarControlEvent{{LoggedOut: true, Kind: sidecarControlEventKindState,
+					State: "unenrolled", Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
+			} else {
+				daemon.stateLock.Lock()
+				daemon.statusExtra = map[string]any{"networks": []any{}}
+				daemon.stateLock.Unlock()
+				if err := backend.refreshFromEvents(t.Context(), true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if loggedOut := events.next(t); loggedOut.State != "unenrolled" || loggedOut.Generation != 0 {
+				t.Fatalf("logout: %+v", loggedOut)
+			}
+			backend.applyStatusAt(&sidecarControlStatus{Networks: []sidecarControlNetworkStatus{{NetworkId: networkId,
+				SidecarId: origin, State: "online", Generation: 4}}}, false, false, oldRead)
+			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
+				Generation: 4, NetworkId: networkId, OriginSidecarId: origin}})
+			if remote.GetState() != "unenrolled" || remote.GetSidecarId() != nil || backend.generation() != 0 {
+				t.Fatal("the remote sidecar still exposes the removed enrollment")
+			}
+			freshId := NewId()
+			backend.applyEvents([]*sidecarControlEvent{{Kind: sidecarControlEventKindState, State: "online",
+				Generation: 1, NetworkId: networkId, OriginSidecarId: freshId}})
+			if next := events.next(t); next.Generation != 1 || next.State != "online" || !sidecarControlSameId(remote.GetSidecarId(), freshId) {
+				t.Fatalf("the new enrollment: %+v", next)
+			}
+		})
+	}
+}
