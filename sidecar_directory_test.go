@@ -24,6 +24,7 @@ import (
 
 	"github.com/urnetwork/sidecar"
 	"github.com/urnetwork/sidecar/protocol"
+	"github.com/urnetwork/sidecar/protocol/bridge"
 )
 
 // One announcing sidecar's stream in the fake store: its one current item and what fetching it costs.
@@ -522,6 +523,142 @@ func TestDirectoryNilOutsideTeam(t *testing.T) {
 	}
 }
 
+// One admitted device and its one cards ref. The enrolled core signs and
+// verifies both revisions through its ordinary directory writer and phone view.
+type testNativeDirectoryAuth struct {
+	sidecar.DirectoryAuthUnavailable
+	writerId, memberId, repoId sidecar.Id
+	pin                        *bridge.AuthPin
+}
+
+func (self *testNativeDirectoryAuth) Pin() *bridge.AuthPin          { return self.pin }
+func (self *testNativeDirectoryAuth) Directory() (sidecar.Id, bool) { return self.repoId, true }
+func (self *testNativeDirectoryAuth) At(*bridge.AuthPin) (sidecar.DirectoryAuthView, error) {
+	return self, nil
+}
+func (self *testNativeDirectoryAuth) MemberOf(id sidecar.Id) (sidecar.Id, bool) {
+	return self.memberId, id == self.writerId
+}
+func (self *testNativeDirectoryAuth) SignerStanding(id sidecar.Id, _ *bridge.AuthPin) (sidecar.DirectoryStanding, error) {
+	if id == self.writerId {
+		return sidecar.DirectoryStandingStanding, nil
+	}
+	return sidecar.DirectoryStandingUnadmitted, nil
+}
+
+type testNativeRecordAuth struct {
+	sidecar.RecordAuthUnavailable
+	auth *testNativeDirectoryAuth
+	key  []byte
+}
+
+func (self *testNativeRecordAuth) Reads(repo, id sidecar.Id) bool {
+	return repo == self.auth.repoId && id == self.auth.writerId
+}
+func (self *testNativeRecordAuth) IdentityKey(id sidecar.Id) []byte {
+	if id == self.auth.writerId {
+		return self.key
+	}
+	return nil
+}
+
+type testNativeDirectoryCards struct {
+	sidecar.DirectoryCardsUnavailable
+	auth      *testNativeDirectoryAuth
+	stateLock sync.Mutex
+	file      sidecar.DirectoryCardFile
+	body      []byte
+}
+
+func (self *testNativeDirectoryCards) PutCard(_ context.Context, _ sidecar.Id, write *sidecar.DirectoryCardWrite) (uint64, error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	version := self.file.PushVersion + 1
+	self.body = slices.Clone(write.Content)
+	self.file = sidecar.DirectoryCardFile{Path: write.Path, Version: version, PushVersion: version, SignerSidecarId: self.auth.writerId, AuthPin: write.AuthPin, TimeMillis: time.Now().UnixMilli(), StoredByteCount: sidecar.DirectoryFileStepByteCount}
+	return version, nil
+}
+func (self *testNativeDirectoryCards) Refs(_ context.Context, _ sidecar.Id, after uint64) (*sidecar.DirectoryRefListing, error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	page := &sidecar.DirectoryRefListing{Sequence: self.file.PushVersion, Format: 2}
+	if after < self.file.PushVersion {
+		page.Refs = []*sidecar.DirectoryRef{{Kind: sidecar.DirectoryRefCards, Version: self.file.PushVersion, Sequence: self.file.PushVersion}}
+	}
+	return page, nil
+}
+func (self *testNativeDirectoryCards) PlanCards(_ context.Context, _ sidecar.Id, after uint64) (*sidecar.DirectoryCardsChanges, error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	file := self.file
+	page := &sidecar.DirectoryCardsChanges{HeadVersion: file.PushVersion, ThroughVersion: file.PushVersion}
+	if after < file.PushVersion {
+		page.Files = []*sidecar.DirectoryCardFile{&file}
+	}
+	return page, nil
+}
+func (self *testNativeDirectoryCards) ReadPlannedCard(_ context.Context, _ sidecar.Id, file *sidecar.DirectoryCardFile) ([]byte, error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if file.PushVersion != self.file.PushVersion {
+		return nil, sidecar.ErrEvsCollected
+	}
+	return slices.Clone(self.body), nil
+}
+
+// An enrolled native app opens its production core view, reads a signed format 2
+// card and refreshes that same view after the writer withdraws its last item.
+func TestDirectoryNativeFormat2Card(t *testing.T) {
+	local := newTestEnrolledSidecar(t)
+	core := local.Core()
+	id := core.Identity()
+	member := sidecar.NewId()
+	auth := &testNativeDirectoryAuth{repoId: sidecar.NewId(), writerId: id.SidecarId, memberId: member, pin: &bridge.AuthPin{Version: 1, Chain: make([]byte, 32)}}
+	files := &testNativeDirectoryCards{auth: auth}
+	records := &testNativeRecordAuth{auth: auth, key: id.IdentityPublicKey}
+	record, err := core.Record()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Bind(nil, func() sidecar.RecordAuthView { return records })
+	client, err := core.DirectoryClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Bind(files, func() sidecar.DirectoryAuthView { return auth })
+	run := newTestDirectoryStore().addRun("weekly build", "main", 0).item.Announcement
+	run.Who.SidecarId = id.SidecarId.Bytes()
+	run.Who.MemberId = member.Bytes()
+	run.Who.AgentId = sidecar.NewId().Bytes()
+	run.RenewedMillis = time.Now().UnixMilli()
+	run.StartedMillis = run.RenewedMillis
+	run.ExpiresMillis, _ = sidecar.DirectoryAnnouncementExpiresMillis(sidecar.DirectoryAnnouncementKindRun, run.RenewedMillis)
+	if _, err := client.WriteCard(t.Context(), &sidecar.DirectoryCardWriteArgs{Items: []*protocol.Announcement{run}}); err != nil {
+		t.Fatal(err)
+	}
+	directory := local.GetDirectory()
+	if directory == nil {
+		t.Fatal("no native directory after enrollment")
+	}
+	listener := newTestDirectoryListener()
+	sub := directory.List(nil, listener)
+	defer sub.Close()
+	page := listener.await(t, "the native format 2 page", func(page *SidecarDirectoryPage) bool { return true })
+	if !page.Coverage.Complete || page.Message != "" || page.Announcements.Len() != 1 || page.Coverage.FetchedByteCount != sidecar.DirectoryFileStepByteCount {
+		t.Fatalf("native listing: %+v, %q, %d items", page.Coverage, page.Message, page.Announcements.Len())
+	}
+	if _, err := client.WriteCard(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	refresh := newTestDirectoryListener()
+	refreshSub := directory.List(nil, refresh)
+	defer refreshSub.Close()
+	updated := refresh.await(t, "the refreshed native page", func(page *SidecarDirectoryPage) bool { return true })
+	if !updated.Coverage.Complete || updated.Message != "" || updated.Announcements.Len() != 0 || updated.Coverage.FetchedByteCount != 2*sidecar.DirectoryFileStepByteCount {
+		t.Fatalf("native withdrawal: %+v, %q, %d items", updated.Coverage, updated.Message, updated.Announcements.Len())
+	}
+}
+
 // Past the metered cap a listener hears partial coverage, the sidecars fetched and left, the bytes left and
 // waiting=metered, never a complete or an empty view; a List with AllowMetered continues the same view from where it
 // stopped, reading nothing twice, and so does an unmetered link; a fetch that fails says so on a page that is not
@@ -636,6 +773,21 @@ func TestListPartialCoverageContinues(t *testing.T) {
 	if whole.Message != "" || whole.Announcements.Len() != 1 {
 		t.Errorf("after the failure: %q, %d announcements", whole.Message, whole.Announcements.Len())
 	}
+
+	store.stateLock.Lock()
+	store.fetchErr = errors.New("directory refresh interrupted")
+	store.stateLock.Unlock()
+	refresh := newTestDirectoryListener()
+	refreshSub := directory.List(nil, refresh)
+	defer refreshSub.Close()
+	cached := refresh.await(t, "a failed refresh after a complete view", func(page *SidecarDirectoryPage) bool { return page.Message != "" })
+	if cached.Coverage.Complete || cached.Announcements.Len() != 1 {
+		t.Fatalf("failed refresh: complete %v, %d cached items", cached.Coverage.Complete, cached.Announcements.Len())
+	}
+	retry := newTestDirectoryListener()
+	retrySub := directory.List(nil, retry)
+	defer retrySub.Close()
+	retry.await(t, "the verified refresh", func(page *SidecarDirectoryPage) bool { return page.Coverage.Complete && page.Message == "" })
 
 	// a filter this sdk cannot read opens nothing and answers one page that is not complete
 	refusedStore := newTestDirectoryStore()

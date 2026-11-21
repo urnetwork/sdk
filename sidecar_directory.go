@@ -1411,6 +1411,10 @@ func (self *SidecarDirectory) page(view *sidecarDirectoryOpenView, filter *sidec
 		return page, nil
 	}
 	page.Coverage = sidecarDirectoryCoverageOf(viewPage.coverage)
+	if fetchErr != nil {
+		// This page can still show cached items while the latest directory heads are unknown.
+		page.Coverage.Complete = false
+	}
 	page.UntrustedWithheld = int32(viewPage.untrustedWithheld)
 	for _, item := range viewPage.items {
 		announcement, err := sidecarAnnouncementOf(item)
