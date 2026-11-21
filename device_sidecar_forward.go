@@ -948,7 +948,7 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 			status.KeySet = deviceForwardKeySetDelegated
 		}
 	}
-	if current, currentStatus := self.keys.loadSet(deviceForwardSlotCurrent); currentStatus == deviceForwardSecretPresent && current.delegationId != nil && status.KeySet != deviceForwardKeySetDelegated {
+	if current, currentStatus := self.keys.loadSet(deviceForwardSlotCurrent); currentStatus == deviceForwardSecretPresent && current.delegationId != nil && status.KeySet == deviceForwardKeySetNone {
 		status.KeySet = deviceForwardKeySetActive
 	}
 	if forwarder != nil {

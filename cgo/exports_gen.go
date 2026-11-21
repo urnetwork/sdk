@@ -21927,6 +21927,24 @@ func urnet_sidecar_get_state_reason(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_sidecar_set_forwarding_device
+func urnet_sidecar_set_forwarding_device(self C.uint64_t, device C.uint64_t) {
+	defer cgoGuard("urnet_sidecar_set_forwarding_device")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_set_forwarding_device")
+	if !ok {
+		return
+	}
+	var device_ sdk.Device
+	if device != 0 {
+		var ok bool
+		device_, ok = resolveHandle[sdk.Device](uint64(device), "urnet_sidecar_set_forwarding_device")
+		if !ok {
+			return
+		}
+	}
+	self_.SetForwardingDevice(device_)
+}
+
 //export urnet_sidecar_set_push_token
 func urnet_sidecar_set_push_token(self C.uint64_t, platform *C.char, token *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sidecar_set_push_token")

@@ -59,7 +59,8 @@ func (self *testingSetupCore) SetUpForwarding(ctx context.Context, networkId sid
 	}
 	self.setUpKeys = append(self.setUpKeys, keys)
 	self.due = sidecar.ForwardingSetupNotDue
-	return &bridge.ForwardingHandOff{KeySetId: keys.GetKeySetId(), ForwardClientJwt: "synthetic-forward-jwt"}, nil
+	return &bridge.ForwardingHandOff{KeySetId: keys.GetKeySetId(), ForwardClientJwt: "synthetic-forward-jwt",
+		StrictExpMs: time.Now().Add(time.Hour).UnixMilli()}, nil
 }
 
 func (self *testingSetupCore) ForwardingWitness(networkId sidecar.Id) (*sidecar.ForwardingWitness, error) {
@@ -78,6 +79,66 @@ type testingForwardingChannel struct {
 	unreachable bool
 	// signaled at each witness, when set
 	witnessed chan struct{}
+}
+
+// A VPN device that survives reopening the app; the status and key set belong to the component.
+type testingAttachedForwardingDevice struct {
+	Device
+	*testingForwardingChannel
+	status *BridgeStatus
+	handed chan struct{}
+}
+
+func (self *testingAttachedForwardingDevice) GetBridgeStatus() *BridgeStatus {
+	return self.status
+}
+
+func (self *testingAttachedForwardingDevice) forwardingHandOff(handOff *bridge.ForwardingHandOff) error {
+	if err := self.testingForwardingChannel.forwardingHandOff(handOff); err != nil {
+		return err
+	}
+	self.handed <- struct{}{}
+	return nil
+}
+
+// A reopened app reattaches without enrollment. If the previous app exited after minting and before the
+// component received its hand-off, the generated set is resumed even though rotation is not due.
+func TestSetForwardingDeviceResumesAnUndeliveredSetAfterReopen(t *testing.T) {
+	testingForwardingReattach(t, &BridgeNetworkStatus{KeySet: deviceForwardKeySetGenerated})
+}
+
+func TestSetForwardingDeviceRenewsALapsedClientAfterReopen(t *testing.T) {
+	testingForwardingReattach(t, &BridgeNetworkStatus{KeySet: deviceForwardKeySetActive, Lapsed: true})
+}
+
+func testingForwardingReattach(t *testing.T, networkStatus *BridgeNetworkStatus) {
+	t.Helper()
+	world := newTestSidecarWorld(t)
+	first := world.open(t)
+	world.close(t, first)
+	reopened := world.open(t)
+	t.Cleanup(func() { world.close(t, reopened) })
+	core := &testingSetupCore{networkId: sidecar.NewId(), witnessPin: &bridge.AuthPin{Version: 4}}
+	reopened.forwardingState().core = core
+	status := &BridgeStatus{Networks: NewBridgeNetworkStatusList()}
+	networkStatus.NetworkId = newId([16]byte(core.networkId))
+	status.Networks.Add(networkStatus)
+	channel := &testingAttachedForwardingDevice{
+		testingForwardingChannel: &testingForwardingChannel{
+			keys: &bridge.ForwardingKeys{KeySetId: connect.NewId().Bytes()}, witnessed: make(chan struct{}, 1),
+		},
+		status: status,
+		handed: make(chan struct{}, 1),
+	}
+	reopened.SetForwardingDevice(channel)
+	select {
+	case <-channel.handed:
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("reopening the app left the VPN component without its hand-off")
+	}
+	if len(core.setUpKeys) != 1 || !proto.Equal(core.setUpKeys[0], channel.keys) || core.confirmed != 0 {
+		t.Fatal("reattachment changed the component's keys or confirmed a withdrawal")
+	}
 }
 
 func (self *testingForwardingChannel) forwardingKeys(networkId connect.Id) (*bridge.ForwardingKeys, error) {

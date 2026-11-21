@@ -2622,6 +2622,7 @@ char* urnet_sidecar_get_sidecar_id(uint64_t self);
 uint64_t urnet_sidecar_get_sockets(uint64_t self);
 char* urnet_sidecar_get_state(uint64_t self);
 char* urnet_sidecar_get_state_reason(uint64_t self);
+void urnet_sidecar_set_forwarding_device(uint64_t self, uint64_t device);
 void urnet_sidecar_set_push_token(uint64_t self, const char* platform, const char* token, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_sign_edge_login(uint64_t self, const char* origin, const char* nonce_base64, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_unlock(uint64_t self, const char* passphrase, urnet_sidecar_result_cb callback_result, void* callback_user_data);

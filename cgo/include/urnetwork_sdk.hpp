@@ -27252,6 +27252,7 @@ public:
 	SidecarSockets getSockets() const;
 	std::string getState() const;
 	std::string getStateReason() const;
+	void setForwardingDevice(const Device& device) const;
 	void setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const;
 	void signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const;
 	void unlock(const std::string& passphrase, SidecarResultCallback callback) const;
@@ -42075,6 +42076,9 @@ inline std::string Sidecar::getState() const {
 inline std::string Sidecar::getStateReason() const {
 	char* r_c = urnet_sidecar_get_state_reason(handle());
 	return detail::takeString(r_c);
+}
+inline void Sidecar::setForwardingDevice(const Device& device) const {
+	urnet_sidecar_set_forwarding_device(handle(), device.handle());
 }
 inline void Sidecar::setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;

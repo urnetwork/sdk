@@ -1414,6 +1414,7 @@ public interface Raw extends Library {
   long urnet_sidecar_get_sockets(long a0);
   Pointer urnet_sidecar_get_state(long a0);
   Pointer urnet_sidecar_get_state_reason(long a0);
+  void urnet_sidecar_set_forwarding_device(long a0, long a1);
   void urnet_sidecar_set_push_token(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   void urnet_sidecar_sign_edge_login(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   void urnet_sidecar_unlock(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);

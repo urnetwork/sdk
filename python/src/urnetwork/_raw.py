@@ -2552,6 +2552,8 @@ def bind(lib):
     lib.urnet_sidecar_get_state.restype = c_void_p
     lib.urnet_sidecar_get_state_reason.argtypes = [c_uint64]
     lib.urnet_sidecar_get_state_reason.restype = c_void_p
+    lib.urnet_sidecar_set_forwarding_device.argtypes = [c_uint64, c_uint64]
+    lib.urnet_sidecar_set_forwarding_device.restype = None
     lib.urnet_sidecar_set_push_token.argtypes = [c_uint64, c_char_p, c_char_p, urnet_sidecar_result_cb, c_void_p]
     lib.urnet_sidecar_set_push_token.restype = None
     lib.urnet_sidecar_sign_edge_login.argtypes = [c_uint64, c_char_p, c_char_p, urnet_sidecar_result_cb, c_void_p]

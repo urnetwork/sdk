@@ -66,7 +66,7 @@ func (self *Sidecar) EnrollWithDevice(device Device, callback SidecarResultCallb
 				if err == nil {
 					// a new client generation makes forwarding's setup due for the device's VPN component
 					// (sidecar_forward_setup.go)
-					self.attachForwardingDevice(device)
+					self.SetForwardingDevice(device)
 				}
 				return sidecarResultOf(sidecarId, err), nil
 			})
