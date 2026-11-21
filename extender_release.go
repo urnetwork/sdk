@@ -767,6 +767,14 @@ func (self *extenderReleaseFetcher) credentialChanged() {
 		previous := self.identity
 		self.identity = identity
 		self.identityGeneration += 1
+		// announced in the same scope as the change, so nothing that reads the
+		// binding (boundCredential, boundByJwt) sees an identity the account
+		// monitor has not announced: a sender that reads the monitor and then
+		// the token, and finds the monitor where it was, knows the token is the
+		// identity it looked under (connect's camouflage report sender)
+		self.accountMonitor.Update(func(generation uint64) uint64 {
+			return generation + 1
+		})
 		if self.requestCancel != nil {
 			self.requestCancel()
 		}
@@ -798,9 +806,6 @@ func (self *extenderReleaseFetcher) credentialChanged() {
 			self.log.Infof("[extender]release account changed; %d gated records forgotten\n", count)
 		}
 	}
-	self.accountMonitor.Update(func(generation uint64) uint64 {
-		return generation + 1
-	})
 	self.saveState()
 	self.wake.NotifyAll()
 }
