@@ -75,16 +75,15 @@ func requireH3PolicyTarget(t *testing.T, device *DeviceLocal, want int) *connect
 
 // The window target of a device with no provider and held discovery under
 // its h3 limit. Since R20 the limit is the claims its carrier budget fits,
-// four at 32 MiB and five at 64 (one before, for a target of two). The
-// quality window starts at its minimum, which leaves the speed window its
-// own: four of the limit, while the speed window keeps its fixed one at
-// 32 MiB and two at 64.
+// nine at 32 MiB and eighteen at 64 (one before, for a target of two), which
+// no longer narrows the windows: the quality window keeps its 5 at 32 MiB and
+// 10 at 64, the speed window its 1 and 2.
 func h3PolicyWindowTarget(target ByteCount) int {
 	switch target {
 	case 32 * 1024 * 1024:
-		return 4 + 1
+		return 5 + 1
 	case 64 * 1024 * 1024:
-		return 4 + 2
+		return 10 + 2
 	default:
 		panic(fmt.Sprintf("no h3 window target pinned for %d", target))
 	}
@@ -238,9 +237,10 @@ func TestDeviceH3WindowPolicyReservesConfiguredControlGraphs(t *testing.T) {
 		// persistent control graphs remain reserved before public windows.
 		{bytes: 6*claim - 1, slots: 16, want: 2, providerMode: TransportModeH3},
 		{bytes: 6 * claim, slots: 16, want: 3, providerMode: TransportModeH3},
-		// No public graph fits here. One remains a positive unready target,
+		// No public graph fits here. One remains a positive target, which
+		// the budget may still admit beside a held standby or carries on h1,
 		// never a claim that an empty class can satisfy readiness.
-		{bytes: 8 * 1024 * 1024, slots: 16, want: 1, providerMode: TransportModeH3},
+		{bytes: 4*claim - 1, slots: 16, want: 1, providerMode: TransportModeH3},
 	} {
 		device.preferenceMutationLock.Lock()
 		device.stateLock.Lock()
@@ -263,11 +263,10 @@ func TestDeviceH3WindowPolicyReservesConfiguredControlGraphs(t *testing.T) {
 // (h1 control paths) and a provider on h3, each with its v4, v6 and standby
 // paths. Before R20 every 20- to 64-MiB target composed a 3- to 9.6-MiB claim
 // that only one transport fit beside no control path (two at 24 MiB), and
-// none beside a provider on h3. The provider's three h3 paths and two
-// consumer transports fit from a 40-MiB target up (both 48 and 64 here);
-// below that every claim still charges the fixed rows, so a provider on h3
-// leaves room for none, and the one transport the window keeps then carries
-// the device on its h1 fallback.
+// none beside a provider on h3. Every claim is now the phone sizes', 923,532
+// bytes, so the budget holds a carrier for each of six to ten peers beside
+// the provider's three h3 paths from 32 MiB, and a phone's budget has the
+// slots for them: 32 at 64 MiB.
 func TestDeviceH3WindowLimitAtPhoneTargets(t *testing.T) {
 	fixture := testingAuthClientShapeSpace(t)
 	for _, c := range []struct {
@@ -275,11 +274,11 @@ func TestDeviceH3WindowLimitAtPhoneTargets(t *testing.T) {
 		// limits with no provider, the provider on Auto and the provider on h3
 		none, auto, h3 int
 	}{
-		{20 * 1024 * 1024, 2, 1, 1},
-		{24 * 1024 * 1024, 3, 2, 1},
-		{32 * 1024 * 1024, 4, 3, 1},
-		{48 * 1024 * 1024, 5, 3, 2},
-		{64 * 1024 * 1024, 5, 4, 2},
+		{20 * 1024 * 1024, 5, 3, 2},
+		{24 * 1024 * 1024, 6, 4, 3},
+		{32 * 1024 * 1024, 9, 6, 6},
+		{48 * 1024 * 1024, 13, 10, 10},
+		{64 * 1024 * 1024, 18, 14, 15},
 	} {
 		settings := DefaultLowMemoryDeviceLocalSettings()
 		settings.MemoryTargetByteCount = c.target
@@ -308,9 +307,10 @@ func TestDeviceH3WindowLimitAtPhoneTargets(t *testing.T) {
 		claim := base.H3MemoryReservationByteCount(connect.TransportModeH3, device.clientStrategy)
 		h1 := base.H1MemoryReservationByteCount()
 		total := device.platformTransportBudget.Stats().TotalByteCount
-		if total != c.target/4 || claim != max(2048*1024, total/5) {
-			t.Fatalf("target %d: budget %d and claim %d, want a quarter of the target and a fifth of that, at least 2 MiB",
-				c.target, total, claim)
+		slots := device.platformTransportBudget.Stats().MaxTransportCount
+		if total != c.target/4 || claim != 923532 || slots != max(16, int(total/(512*1024))) {
+			t.Fatalf("target %d: budget %d with %d slots and claim %d, want a quarter of the target, a slot a 512 KiB and the phone sizes' claim",
+				c.target, total, slots, claim)
 		}
 		// the arithmetic the limit must agree with: what fits beside the
 		// configured control paths, and one where nothing fits
@@ -603,5 +603,22 @@ func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
 		if observation.stateAvailable || !observation.preferenceHeld || observations != 2 {
 			t.Fatalf("H3_COMPOSITION_STATE_WITNESS: %s boundary=%+v observations=%d want=2 with a competing state owner", kind, observation, observations)
 		}
+	}
+}
+
+// Only a phone's carrier budget takes a slot a 512 KiB (R20): a desktop
+// device at the same target keeps its 16 slots, with H3 claims too large for
+// them to bind.
+func TestDeviceDesktopCarrierBudgetKeepsSixteenSlots(t *testing.T) {
+	fixture := testingAuthClientShapeSpace(t)
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = 64 * 1024 * 1024
+	settings.LowMemoryProfile = false
+	settings.AllowProvider = false
+	settings.DisableLogging = true
+	settings.ProviderDiscovery = &heldH3PolicyDiscovery{}
+	device := newSettingsOwnershipDevice(t, fixture, settings, false)
+	if stats := device.platformTransportBudget.Stats(); stats.TotalByteCount != 16*1024*1024 || stats.MaxTransportCount != 16 {
+		t.Fatalf("desktop carrier budget %+v, want 16 MiB and 16 slots", stats)
 	}
 }
