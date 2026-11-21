@@ -18,9 +18,7 @@
 //	reads      list and read_view on the shared mailbox, as the page Worker's; it never fetches all, and at M10 searches
 //	           the mailbox's two buckets in memory only (SDK-M10-04)
 //
-// The root has no top-level mint from the one-time code yet (the page Worker's enroll waits on it too), so Enroll is
-// nil on every host today and quick_burner answers unavailable before an enrollment, failing closed. Every other
-// operation is the page Worker's, which a burner holds. Safe for concurrent use.
+// A host without a mint returns unavailable. Safe for concurrent use.
 
 package sidecarworker
 
@@ -61,8 +59,7 @@ type QuickBurnerView struct {
 // What a quick burner runs on beside its page Worker's args.
 type QuickBurnerArgs struct {
 	// Mints the ephemeral client from the ur.io session's one-time code and enrolls the memory-only keychain on it,
-	// answering the mint's close capability. Nil answers unavailable: the root has no such mint yet (the file's
-	// comment).
+	// answering its close capability. A browser supplies WorkerArgs.Enroll because its document keeps the capability.
 	Enroll func(ctx context.Context, code string) (closeCapability string, err error)
 	// Hands the close capability to the key-origin document, never to the page. Required.
 	HandClose func(closeCapability string)
@@ -81,11 +78,12 @@ type QuickBurner struct {
 	stateLock sync.Mutex
 	// set once this burner enrolled, so a later unenrolled state reads reaped
 	enrolled bool
+	active   bool // the core has installed a client generation
 }
 
 // A quick burner over workerArgs and args. HandClose is required.
 func NewQuickBurner(workerArgs *WorkerArgs, args *QuickBurnerArgs) (*QuickBurner, error) {
-	if args == nil || args.HandClose == nil {
+	if args == nil || (args.Enroll != nil && args.HandClose == nil) {
 		return nil, errors.New("a quick burner hands its close capability to the document")
 	}
 	if workerArgs == nil {
@@ -158,15 +156,22 @@ func (self *QuickBurner) enroll(ctx context.Context, code string) error {
 	if self.wasEnrolled() {
 		return nil
 	}
-	if self.args.Enroll == nil {
+	switch {
+	case self.worker.args.Enroll != nil:
+		// The document keeps the capability from its own mint.
+		if err := self.worker.args.Enroll(ctx, code); err != nil {
+			return err
+		}
+	case self.args.Enroll != nil:
+		closeCapability, err := self.args.Enroll(ctx, code)
+		if err != nil {
+			return err
+		}
+		if closeCapability != "" {
+			self.args.HandClose(closeCapability)
+		}
+	default:
 		return errQuickBurnerNoMint
-	}
-	closeCapability, err := self.args.Enroll(ctx, code)
-	if err != nil {
-		return err
-	}
-	if closeCapability != "" {
-		self.args.HandClose(closeCapability)
 	}
 	self.stateLock.Lock()
 	self.enrolled = true
@@ -185,8 +190,17 @@ func (self *QuickBurner) wasEnrolled() bool {
 func (self *QuickBurner) view() *QuickBurnerView {
 	view := &QuickBurnerView{Ephemeral: true, State: QuickBurnerStateWaiting}
 	status := self.worker.args.Sidecar.Status()
+	active := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if status.State == sidecar.SidecarStateOnline || status.State == sidecar.SidecarStateOffline {
+			self.active = true
+		}
+		return self.active
+	}()
 	switch {
-	case status.State == sidecar.SidecarStateUnenrolled || status.State == sidecar.SidecarStateRevoked:
+	case status.State == sidecar.SidecarStateRevoked || (status.State == sidecar.SidecarStateUnenrolled &&
+		(status.Reason != "" || active)):
 		// a reaped or revoked ephemeral client: its memory-only keychain cannot rejoin
 		view.State = QuickBurnerStateReaped
 		view.Reenroll = true

@@ -183,6 +183,10 @@ type WorkerConfigState struct {
 // What a Worker runs on.
 type WorkerArgs struct {
 	Sidecar WorkerSidecar
+	// The key-origin document redeems the one-time code and hands its Worker only a marked client.
+	Enroll func(context.Context, string) error
+	// The local binding and verified admission of this browser.
+	Admission func() *AdmissionView
 	// The repo of repoId: on the page Worker, its EvsClient's. An error is what the reply reports.
 	Repo func(repoId sidecar.Id) (WorkerRepo, error)
 	// The record reader: on the page Worker, the Sidecar's record's. An error is what the reply reports.

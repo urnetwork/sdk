@@ -109,6 +109,7 @@ func newPageWorker(ctx context.Context) *pageWorker {
 
 // One opened network: its instance, its Sidecar and the Worker over them.
 type pageNetwork struct {
+	ephemeral bool
 	networkId sidecar.Id
 	settings  *sidecar.SidecarSettings
 	instance  *sidecar.SidecarInstance
@@ -196,6 +197,8 @@ func (self *pageWorker) open(config *pageOpenConfig) (*pageStatusView, error) {
 	workerSettings.DirectoryViewCoalesce = settings.Directory.ViewCoalesce
 	worker, err := sidecarworker.NewWorker(&sidecarworker.WorkerArgs{
 		Sidecar:   local,
+		Enroll:    network.enroll,
+		Admission: network.admission,
 		Repo:      network.repo,
 		Records:   network.records,
 		Directory: network.directory,

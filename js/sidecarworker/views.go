@@ -87,6 +87,14 @@ var codeMessages = map[string]string{
 // Content too large for a view, which ends a read.
 var errWorkerTooLarge = errors.New("content over the view's bound")
 
+// Browser enrollment shows only public identity and verified admission information.
+type AdmissionView struct {
+	State        string `json:"state"`
+	SidecarId    string `json:"sidecar_id,omitempty"`
+	SafetyNumber string `json:"safety_number,omitempty"`
+	VaultId      string `json:"vault_id,omitempty"`
+}
+
 // One request's answer.
 type Reply struct {
 	// The request's correlation id; empty only for a request whose id could not be read.
@@ -100,6 +108,7 @@ type Reply struct {
 	Record    *RecordView    `json:"record,omitempty"`
 	Directory *DirectoryView `json:"directory,omitempty"`
 	Config    *ConfigView    `json:"config,omitempty"`
+	Admission *AdmissionView `json:"admission,omitempty"`
 	SignOut   *SignOutView   `json:"sign_out,omitempty"`
 	// A quick burner's state (quick_burner.go).
 	QuickBurner *QuickBurnerView `json:"quick_burner,omitempty"`

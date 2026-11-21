@@ -15,6 +15,7 @@ import {runSidecarWasmGoTests} from "./sidecarwasm_go_tests.ts";
 const names = [
   "TestPageWorkerBeforeOpen",
   "TestPageWorkerOpensUnenrolled",
+  "TestBrowserBindsMarkedClientAndWaitsForAdmission",
   "TestPageWorkerOpensItsNetworksOwnDatabase",
   "TestTwoNetworksWorkersShareNothing",
   "TestReopenedWorkerFindsItsOwnNetwork",

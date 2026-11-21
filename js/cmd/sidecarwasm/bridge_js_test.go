@@ -2,7 +2,7 @@
 
 // The page Worker's shell on its own leg (SDK-M4-04), in Node under test/sidecarwasm_harness.mjs with the fake
 // IndexedDB: the published calls answer through promises with JSON whose ids are strings, a Worker before open and an
-// unenrolled one answer each operation's refusal, enroll answers unavailable, an operation over 50 ms hands the
+// unenrolled one answer each operation's refusal, an operation over 50 ms hands the
 // thread to the event loop between its steps, and each network's Worker opens that network's own database
 // (SDK-M4-10, owner decision 217). test/sidecarwasm_ops.test.ts builds and runs them.
 
@@ -132,7 +132,7 @@ func TestPageWorkerOpensUnenrolled(t *testing.T) {
 			t.Errorf("%s: %+v", request, reply)
 		}
 	}
-	if reply := testPageReply(t, worker, `{"id":"out","op":"enroll"}`); reply.Code != sidecarworker.CodeUnavailable {
+	if reply := testPageReply(t, worker, `{"id":"out","op":"enroll"}`); reply.Code != sidecarworker.CodeInvalid {
 		t.Errorf("enroll: %+v", reply)
 	}
 	if reply := testPageReply(t, worker, `{"id":"out","op":"sign_out"}`); !reply.Ok || reply.SignOut == nil || reply.SignOut.SidecarId != "" {

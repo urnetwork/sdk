@@ -26,8 +26,8 @@
 //	search_cancel     search_id                                     policy for all (§18.8's messages row)
 //	search_status     [repo_id]
 //	search_policy     [repo_id], [policy]
-//	enroll            [code]                                        unavailable until plan-SDK-key-origin-credential's
-//	admission_status  nothing                                       answer is built; neither reaches a seam
+//	enroll            code                                          bind the marked top-level client and report its admission
+//	admission_status  nothing                                       this browser's verified admission
 //
 // directory_view, config_view and drop_states are RS2's team console (§18.8's pages row, §23.4's M6): views only. There
 // is no operation that files a request, decides one, announces, withdraws or revokes, or dry-runs, signs or cancels a
@@ -396,10 +396,10 @@ var workerOperations = map[string]*workerOperation{
 	},
 	OperationEnroll: {
 		shape: requestShape{code: true},
-		run:   runUnavailable,
+		run:   runEnroll,
 	},
 	OperationAdmissionStatus: {
-		run: runUnavailable,
+		run: runAdmissionStatus,
 	},
 	OperationSearch: {
 		shape: requestShape{repoIdFilter: true, query: true, searchQuery: true, searchPageSize: true},
@@ -576,7 +576,22 @@ func runSignOut(worker *Worker, ctx context.Context, request *Request, fields *r
 	return &Reply{Ok: true, SignOut: view}
 }
 
-// enroll and admission_status: unavailable until the key origin's credential is built (plan-SDK-key-origin-credential).
-func runUnavailable(worker *Worker, ctx context.Context, request *Request, fields *requestFields, step *workerStep) *Reply {
-	return refusalReply("", CodeUnavailable)
+func runEnroll(worker *Worker, ctx context.Context, request *Request, fields *requestFields, step *workerStep) *Reply {
+	if worker.args.Ephemeral || worker.args.Enroll == nil || worker.args.Admission == nil {
+		return refusalReply("", CodeUnavailable)
+	}
+	if request.Code == "" {
+		return refusalReply("", CodeInvalid)
+	}
+	if err := worker.args.Enroll(ctx, request.Code); err != nil && !errors.Is(err, sidecar.ErrSidecarEnrolled) {
+		return errorReply(err)
+	}
+	return runAdmissionStatus(worker, ctx, request, fields, step)
+}
+
+func runAdmissionStatus(worker *Worker, ctx context.Context, request *Request, fields *requestFields, step *workerStep) *Reply {
+	if worker.args.Admission == nil {
+		return refusalReply("", CodeUnavailable)
+	}
+	return &Reply{Ok: true, Admission: worker.args.Admission()}
 }
