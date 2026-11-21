@@ -52,7 +52,8 @@ import (
 //   - final: quiesced heap after the peers disconnect
 //
 // Set URNETWORK_PROVIDER_MEM_PROFILE_DIR to also write pprof heap profiles at
-// the loaded and final points for allocation-site attribution. Set
+// the idle, loaded and final points for allocation-site attribution; the idle
+// one shows what the process holds before any load, package init included. Set
 // URNETWORK_PROVIDER_GOROUTINE_PROFILE=1 to print the loaded goroutine profile
 // grouped by stack, for per-flow goroutine attribution.
 func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
@@ -95,9 +96,21 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// the 32-MiB synthetic process budget. This host-side provider test no
 		// longer proves the mobile 28-MiB active goal; physical mobile-policy
 		// runs own that release gate.
+		//
+		// The ceiling held, and the code moved back under it. On the
+		// 2026-11-21 macOS / go1.27.4 host, 18 fresh processes at sdk 9a151fd6
+		// measured peakTotal=31.1-32.0 MiB, one of six cohorts over the
+		// ceiling, with an 8.4-MiB idle heap, 12.6-13.2-MiB loaded heap and
+		// 134 idle goroutines. Of that idle heap 4.5 MiB was package init, and
+		// 2.0 MiB of it mox's public suffix list, which the sdk links with
+		// sidecar's mail checks and which its package parsed at init though
+		// nothing here looks a domain up. Parsed at its first lookup instead
+		// (sidecar/third_party/mox/URNETWORK.md), 18 fresh processes measured
+		// peakTotal=29.3-30.8 MiB, with a 6.3-MiB idle heap and
+		// 11.0-11.7-MiB loaded heap.
 		peakTotalCeilingDarwin = 32 << 20
 
-		// linux/amd64 CARRIES ~4 MiB MORE FOR THE SAME WORK, and it is the
+		// linux/amd64 carries ~4 MiB more for the same work, and it is the
 		// platform CI runs on, so the darwin figure failed every run on main.
 		// Measured 2026-08-19, go1.26.6, 5 fresh linux/amd64 processes at the
 		// merge of #142: peakTotal=30.8, 30.9, 31.2, 31.3, 31.4 MiB — spread
@@ -107,8 +120,8 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// goroutine stack granularity and GC pacing all differ. It is a
 		// platform delta, not a leak.
 		//
-		// THE HONEST CONSEQUENCE, and it is worth stating rather than hiding
-		// in a number: on linux/amd64 the provider peak sits AT the 32 MiB
+		// The honest consequence, and it is worth stating rather than hiding
+		// in a number: on linux/amd64 the provider peak sits at the 32 MiB
 		// budget, not under the 28 MiB target. There is no room left for a
 		// ceiling that is both below budget and far enough above 31.4 MiB to
 		// avoid flaking, so on linux the guard becomes "do not exceed the
@@ -203,6 +216,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 
 	idleGoroutines, idleHeap := sampleStable()
 	idleStats := GetMemoryStats()
+	writeProviderMemProfile(t, "provider_mem_idle")
 	t.Logf("idle (device + %d peers connected): goroutines=%d heap=%s",
 		peerCount, idleGoroutines, humanBytes(idleHeap))
 
