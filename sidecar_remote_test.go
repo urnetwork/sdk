@@ -569,6 +569,20 @@ func TestPairRefusesAChildWithoutMarks(t *testing.T) {
 		t.Fatalf("the unkept child was not removed: %v", paths)
 	}
 
+	// The daemon can also know its API reply was lost. Its sealed recovery owns the child.
+	pending := newTestRemoteDeviceApi(t, testRemoteBothMarks)
+	daemon.stateLock.Lock()
+	daemon.answer = func(request testRemoteDaemonRequest) (any, *sidecar.DaemonRpcError, bool) {
+		if request.Method != sidecar.DaemonMethodPair {
+			return nil, nil, false
+		}
+		return nil, &sidecar.DaemonRpcError{Code: -32000, Message: sidecar.ErrSidecarBindingPending.Error()}, true
+	}
+	daemon.stateLock.Unlock()
+	if _, err := remote.enrollWithDeviceApi(pending.ctx, pending.api); err == nil || len(pending.seenPaths()) != 1 {
+		t.Fatal("the SDK discarded the daemon's outstanding pairing")
+	}
+
 	// a pairing whose session dies before its answer may have bound the child, so the child is left
 	lost := newTestRemoteDeviceApi(t, testRemoteBothMarks)
 	daemon.stateLock.Lock()
