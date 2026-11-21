@@ -161,7 +161,7 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		t.Error("the coverage report still names a symbol pending SDK-M8-06")
 	}
 	for _, identifier := range []string{
-		"NewSidecarLocal", "NewSidecarRemote", "Sidecar.GetApprovals", "Sidecar.ConfirmForwardingSetup",
+		"NewSidecarLocal", "NewSidecarRemote", "Sidecar.GetApprovals", "Sidecar.ConfirmForwardingSetup", "Sidecar.SetForwardingDevice",
 		"SidecarApprovals.RevokeDevice", "SidecarApprovals.PreviewRevokeDevice", "SidecarApprovals.Decide",
 		"SidecarMail.CheckSend", "SidecarMail.GetSendResult",
 		"Sidecar.GetSearch", "SidecarSearch.Search", "SidecarSearch.GetStatus", "SidecarSearch.DropCache", "SidecarSearch.SetPolicy",

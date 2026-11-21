@@ -1378,6 +1378,7 @@ EXPORTS
 	urnet_sidecar_search_set_foreground
 	urnet_sidecar_search_set_policy
 	urnet_sidecar_search_set_remote
+	urnet_sidecar_set_forwarding_device
 	urnet_sidecar_set_push_token
 	urnet_sidecar_sign_edge_login
 	urnet_sidecar_socket_listener_accept

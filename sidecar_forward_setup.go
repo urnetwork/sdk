@@ -80,6 +80,7 @@ type sidecarForwarding struct {
 	stateLock sync.Mutex
 	device    deviceForwardingChannel
 	cancel    context.CancelFunc
+	stopped   bool
 	// the pin and fork last sent, so a witness goes only when either moved
 	sentPinVersion uint64
 	sentFork       bool
@@ -113,6 +114,9 @@ func (self *sidecarForwarding) deliver(device deviceForwardingChannel, handOff *
 	err := device.forwardingHandOff(handOff)
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	if self.stopped || self.device != device {
+		return err
+	}
 	switch {
 	case err == nil:
 		self.pendingHandOff = nil
@@ -128,6 +132,10 @@ func (self *sidecarForwarding) deliver(device deviceForwardingChannel, handOff *
 func (self *sidecarForwarding) deliverPending(device deviceForwardingChannel) bool {
 	self.stateLock.Lock()
 	handOff := self.pendingHandOff
+	if handOff != nil && handOff.GetStrictExpMs() <= time.Now().UnixMilli() {
+		self.pendingHandOff = nil
+		handOff = nil
+	}
 	self.stateLock.Unlock()
 	if handOff == nil {
 		return false
@@ -145,28 +153,39 @@ func (self *Sidecar) forwardingState() *sidecarForwarding {
 	return self.forwarding
 }
 
-// Keeps device as the one the VPN component runs in and starts the witness loop, once, then runs a setup: after an
-// enrollment or a pairing a new client generation makes one due. A device with no forwarding channel is ignored.
-func (self *Sidecar) attachForwardingDevice(device Device) {
+// Attaches the app's VPN component at startup or after enrollment. A new attachment receives the current witness
+// even when its pin has not changed. The verified network state decides whether setup or rotation is due.
+func (self *Sidecar) SetForwardingDevice(device Device) {
 	channel, ok := device.(deviceForwardingChannel)
 	if !ok || channel == nil {
 		return
 	}
 	forwarding := self.forwardingState()
-	started := func() bool {
-		forwarding.stateLock.Lock()
-		defer forwarding.stateLock.Unlock()
+	self.stateLock.Lock()
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed {
+		return
+	}
+	forwarding.stateLock.Lock()
+	defer forwarding.stateLock.Unlock()
+	if forwarding.stopped || self.ctx.Err() != nil {
+		return
+	}
+	if channel != forwarding.device {
+		forwarding.pendingHandOff = nil
+		forwarding.sentOnce = false
 		forwarding.device = channel
-		if forwarding.cancel != nil {
-			return false
-		}
+	}
+	if forwarding.cancel == nil {
 		ctx, cancel := context.WithCancel(self.ctx)
 		forwarding.cancel = cancel
 		go self.runForwardingWitness(ctx)
-		return true
-	}()
-	if !started {
-		go self.runForwardingSetup(false)
+		return
+	}
+	select {
+	case forwarding.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -226,7 +245,7 @@ func (self *Sidecar) runForwardingSetup(confirmed bool) error {
 	case reason == sidecar.ForwardingSetupForeignRevocation && !confirmed:
 		self.raiseForwardingRevoked(networkId)
 		return sidecar.ErrForwardingSetupNeedsConfirm
-	case reason == sidecar.ForwardingSetupNotDue && !confirmed:
+	case reason == sidecar.ForwardingSetupNotDue && !confirmed && !forwardingDeviceNeedsHandOff(device, networkId):
 		return nil
 	}
 	keys, err := device.forwardingKeys(connect.Id(networkId))
@@ -250,11 +269,14 @@ func (self *Sidecar) runRemoteForwardingSetup(ctx context.Context, device device
 	if err != nil {
 		return err
 	}
+	if witness.Fork || witness.Pin == nil {
+		return sidecar.ErrForwardingSetupRefused
+	}
 	switch {
 	case witness.SetupDue == string(sidecar.ForwardingSetupForeignRevocation) && !confirmed:
 		self.raiseForwardingRevoked(networkId)
 		return sidecar.ErrForwardingSetupNeedsConfirm
-	case witness.SetupDue == "" && !confirmed:
+	case witness.SetupDue == "" && !confirmed && !forwardingDeviceNeedsHandOff(device, networkId):
 		return nil
 	}
 	keys, err := device.forwardingKeys(connect.Id(networkId))
@@ -266,6 +288,26 @@ func (self *Sidecar) runRemoteForwardingSetup(ctx context.Context, device device
 		return err
 	}
 	return self.forwardingState().deliver(device, handOff)
+}
+
+// The component's sealed state survives the app. A generated set still needs its hand-off after an app crash,
+// and a client that lapsed while the app was closed needs a fresh one. Neither state confirms a revocation.
+func forwardingDeviceNeedsHandOff(device deviceForwardingChannel, networkId sidecar.Id) bool {
+	reporter, ok := device.(interface{ GetBridgeStatus() *BridgeStatus })
+	if !ok {
+		return false
+	}
+	status := reporter.GetBridgeStatus()
+	if status == nil || status.Networks == nil {
+		return false
+	}
+	for i := 0; i < status.Networks.Len(); i++ {
+		row := status.Networks.Get(i)
+		if row != nil && row.NetworkId != nil && row.NetworkId.id == [16]byte(networkId) {
+			return row.Lapsed || row.KeySet == deviceForwardKeySetGenerated
+		}
+	}
+	return false
 }
 
 // Offers ConfirmForwardingSetup: bridge_alarm forwarding_revoked for networkId.
@@ -305,7 +347,6 @@ func (self *Sidecar) sendForwardingWitness(ctx context.Context) bool {
 	if device == nil {
 		return false
 	}
-	forwarding.deliverPending(device)
 	networkId, core, err := self.forwardingNetwork()
 	if err != nil {
 		return false
@@ -326,8 +367,18 @@ func (self *Sidecar) sendForwardingWitness(ctx context.Context) bool {
 		}
 		pin, fork, due = witness.Pin, witness.Fork, witness.SetupDue
 	}
-	if due != "" {
-		go self.runForwardingSetup(false)
+	if !fork && pin != nil {
+		if due == "" {
+			if !forwarding.deliverPending(device) && forwardingDeviceNeedsHandOff(device, networkId) {
+				go self.runForwardingSetup(false)
+			}
+		} else {
+			// An obsolete token must not survive a signed withdrawal, rotation or change of client generation.
+			forwarding.stateLock.Lock()
+			forwarding.pendingHandOff = nil
+			forwarding.stateLock.Unlock()
+			go self.runForwardingSetup(false)
+		}
 	}
 	moved := func() bool {
 		forwarding.stateLock.Lock()
@@ -344,7 +395,9 @@ func (self *Sidecar) sendForwardingWitness(ctx context.Context) bool {
 		return false
 	}
 	forwarding.stateLock.Lock()
-	forwarding.sentOnce, forwarding.sentPinVersion, forwarding.sentFork = true, pin.GetVersion(), fork
+	if forwarding.device == device {
+		forwarding.sentOnce, forwarding.sentPinVersion, forwarding.sentFork = true, pin.GetVersion(), fork
+	}
 	forwarding.stateLock.Unlock()
 	return true
 }
@@ -395,6 +448,7 @@ func (self *Sidecar) stopForwarding() {
 	}
 	forwarding.stateLock.Lock()
 	defer forwarding.stateLock.Unlock()
+	forwarding.stopped = true
 	if forwarding.cancel != nil {
 		forwarding.cancel()
 	}

@@ -1413,6 +1413,7 @@ module URnetwork
       attach_function :urnet_sidecar_get_sockets, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_state, [:uint64], :pointer, blocking: true
       attach_function :urnet_sidecar_get_state_reason, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_set_forwarding_device, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_sidecar_set_push_token, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_sign_edge_login, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_unlock, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
