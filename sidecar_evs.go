@@ -111,13 +111,8 @@ var sidecarEvsCreateKinds = map[string]protocol.RepoKind{
 	"record":  protocol.RepoKind_REPO_KIND_RECORD,
 }
 
-var (
-	// The Sidecar closed, or the call's context ended, before an answer.
-	errSidecarEvsUnavailable = errors.New("evs is unavailable: the sidecar closed or the call was cancelled")
-	// No host composes an EvsClient yet: the key client, the verified config view and the statement poster it runs on
-	// are the core's composition, which ur daemon lacks too (EVS1-M2-22's wiring, CORE's).
-	errSidecarEvsNotComposed = errors.New("this host composes no evs client yet: its key client, config view and statement poster are the core's composition")
-)
+// The Sidecar closed, or the call's context ended, before an answer.
+var errSidecarEvsUnavailable = errors.New("evs is unavailable: the sidecar closed or the call was cancelled")
 
 // What SidecarEvs asks of the core's evs client: *sidecar.EvsClient through sidecarEvsClientBackend, or a test's.
 type sidecarEvsBackend interface {
@@ -237,10 +232,16 @@ func (self *sidecarEvsClientBackend) Drops(ctx context.Context, repoId sidecar.I
 	return repo.Drops(ctx, &sidecar.EvsDropsArgs{KnownPaths: known})
 }
 
-// The evs component's factory: the core's EvsComponent over an EvsClient the host composes. None does yet, so a
-// Sidecar named with evs is refused, naming why, rather than run one that answers nothing (errSidecarEvsNotComposed).
+// Uses the enrolled network's authenticated replica, deferring until the core has adopted its identity.
 func newSidecarEvsComponent(ctx context.Context, local *sidecar.Sidecar, settings *SidecarSettings) (sidecar.SidecarComponent, error) {
-	return nil, errSidecarEvsNotComposed
+	replica, err := local.OpenMemberReplica(ctx)
+	if errors.Is(err, sidecar.ErrSidecarNoIdentity) {
+		return nil, fmt.Errorf("%w: %w", errSidecarComponentNotEnrolled, err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return replica.EvsComponent(), nil
 }
 
 // One read's terminal answer: the file's bytes and the version they are, or why not. json in the C ABI and js.
@@ -359,6 +360,8 @@ type SidecarEvs struct {
 	cancel   context.CancelFunc
 	backend  sidecarEvsBackend
 	settings *sidecarEvsSettings
+	// The stock component only serves the enrolled member after its anchor has verified.
+	core *sidecar.Sidecar
 
 	stateLock sync.Mutex
 	// each repo's lease, taken at its first listener and ended at close
@@ -417,10 +420,7 @@ func (self *SidecarEvs) close() {
 	}
 }
 
-// This Sidecar's evs (§18.5): nil unless the settings named evs and the core's evs component is attached. The remote
-// backend's evs is its daemon's (SDK-M8-02), and nil here until that lands. The component carries no verified
-// authorization state the drop calls' D-SDK-29 check could read, so until a host composes one with its EvsClient
-// (errSidecarEvsNotComposed) the preview, the drop and the cancel are refused here, failing closed.
+// The attached EVS client, with drop operations judged against the live verified config and identity.
 func (self *Sidecar) GetEvs() *SidecarEvs {
 	evs, err := traceWithReturn(func() *SidecarEvs {
 		component, ok := self.component(SidecarComponentEvs).(*sidecar.EvsComponent)
@@ -433,7 +433,21 @@ func (self *Sidecar) GetEvs() *SidecarEvs {
 			return nil
 		}
 		if self.evs == nil {
-			self.evs = newSidecarEvs(self.ctx, &sidecarEvsClientBackend{client: component.Client()}, self.evsSettings)
+			backend := &sidecarEvsClientBackend{client: component.Client()}
+			if local := self.local; local != nil {
+				backend.dropGate = newSidecarEvsDropGate(func() sidecar.GkmAuthView {
+					if follower := local.ConfigFollower(); follower != nil {
+						if config := follower.Client(); config != nil {
+							if state := config.State(); state != nil {
+								return state
+							}
+						}
+					}
+					return nil
+				}, local.Identity, time.Now)
+			}
+			self.evs = newSidecarEvs(self.ctx, backend, self.evsSettings)
+			self.evs.core = self.local
 		}
 		return self.evs
 	})
@@ -460,6 +474,12 @@ func sidecarEvsAnswer[T any](call func() T, callback connect.ApiCallback[T]) {
 func (self *SidecarEvs) callCtx() (context.Context, error) {
 	if err := self.ctx.Err(); err != nil {
 		return nil, errSidecarEvsUnavailable
+	}
+	if self.core != nil {
+		replica := self.core.MemberReplica()
+		if replica == nil || replica.Evs() == nil {
+			return nil, sidecar.ErrEvsNoConfig
+		}
 	}
 	return self.ctx, nil
 }
@@ -817,7 +837,11 @@ func (self *SidecarEvs) AddRepoChangeListener(repoId *Id, listener SidecarRepoCh
 			dispatch.close()
 			return newSub(func() {})
 		}
-		removeListener := self.backend.AddRepoChangeListener(coreRepoId, dispatch.offer)
+		removeListener := self.backend.AddRepoChangeListener(coreRepoId, func(change *sidecar.EvsRepoChange) {
+			if _, err := self.callCtx(); err == nil {
+				dispatch.offer(change)
+			}
+		})
 		self.lease(coreRepoId)
 		var once sync.Once
 		return newSub(func() {
@@ -853,7 +877,20 @@ func (self *SidecarEvs) lease(repoId sidecar.Id) {
 	}
 	go func() {
 		endLease, err := traceWithReturnError(func() (func(), error) {
-			return self.backend.Subscribe(self.ctx, repoId)
+			if self.core != nil {
+				follower := self.core.ConfigFollower()
+				if follower == nil {
+					return nil, sidecar.ErrEvsNoConfig
+				}
+				if _, err := follower.WaitStanding(self.ctx); err != nil {
+					return nil, err
+				}
+			}
+			ctx, err := self.callCtx()
+			if err != nil {
+				return nil, err
+			}
+			return self.backend.Subscribe(ctx, repoId)
 		})
 		kept, settled := func() (bool, func(sidecar.Id, bool)) {
 			self.stateLock.Lock()

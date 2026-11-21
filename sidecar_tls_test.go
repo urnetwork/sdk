@@ -167,10 +167,13 @@ func TestTlsComponentBuildsAtEnrollmentAndAgainOnceARestartUnlocks(t *testing.T)
 	settings := DefaultSidecarSettings()
 	settings.HostClass = SidecarHostClassIos
 	settings.Components.Add(SidecarComponentTls)
+	settings.Components.Add(SidecarComponentEvs)
 	options := func(built chan struct{}) *sidecarLocalOptions {
 		return &sidecarLocalOptions{
 			adjustCoreSettings: func(settings *sidecar.SidecarSettings) {
 				settings.ApiUrl = coreUrl
+				settings.EvsUrl = coreUrl
+				settings.GkmUrl = coreUrl
 				settings.PlatformUrl = "wss://127.0.0.1:1"
 			},
 			hostCredentialStores: func() []sidecar.SidecarHostCredentialStore {
@@ -186,12 +189,30 @@ func TestTlsComponentBuildsAtEnrollmentAndAgainOnceARestartUnlocks(t *testing.T)
 
 	local := world.openWith(t, settings, options(nil))
 	awaitTestSidecarState(t, local, sidecar.SidecarStateUnenrolled, "")
-	if local.component(SidecarComponentTls) != nil {
+	if local.component(SidecarComponentTls) != nil || local.GetEvs() != nil {
 		t.Fatal("the tls component was built before the enrollment")
 	}
 	if _, err := local.enrollWithDeviceApi(ctx, deviceApi); err != nil {
 		t.Fatal(err)
 	}
+	// This signed-in child has no genesis at the local API. The stock file component
+	// and follower exist, but a public read cannot proceed on an unverified view.
+	checkEvs := func(host *Sidecar) {
+		t.Helper()
+		evs, replica := host.GetEvs(), host.Core().MemberReplica()
+		if evs == nil || replica == nil || host.Core().ConfigFollower() == nil {
+			t.Fatal("the enrolled host did not compose its EVS client and config follower")
+		}
+		if replica.Config() != nil || replica.Evs() != nil {
+			t.Fatal("the incomplete configuration exposed application reads")
+		}
+		read := newTestEvsCallback[*SidecarBytes]()
+		evs.ReadHead(testEvsRepoId(10), "readme", read)
+		if result, err := read.await(t); err != nil || result.Ok || result.Message != sidecar.ErrEvsNoConfig.Error() {
+			t.Fatalf("read before verification: %+v, %v", result, err)
+		}
+	}
+	checkEvs(local)
 	component, ok := local.component(SidecarComponentTls).(*sidecar.TlsComponent)
 	if !ok {
 		t.Fatalf("the enrollment built %v", local.component(SidecarComponentTls))
@@ -219,6 +240,7 @@ func TestTlsComponentBuildsAtEnrollmentAndAgainOnceARestartUnlocks(t *testing.T)
 	if _, ok := reopened.component(SidecarComponentTls).(*sidecar.TlsComponent); !ok {
 		t.Fatalf("the restart built %v", reopened.component(SidecarComponentTls))
 	}
+	checkEvs(reopened)
 	// the same key, read back through the key store's wrap
 	key, err = reopened.Core().TlsDeviceKey()
 	if err != nil || key.SpkiSha256() != spkiSha256 {
@@ -229,7 +251,7 @@ func TestTlsComponentBuildsAtEnrollmentAndAgainOnceARestartUnlocks(t *testing.T)
 	// another app's key store opens nothing: no identity, so the component waits and no key is there to read
 	stranger := &testSidecarWorld{stateDir: world.stateDir, keyStore: newTestSidecarKeyStore(), space: world.space}
 	locked := stranger.openWith(t, settings, options(nil))
-	if locked.Core().Identity() != nil || locked.component(SidecarComponentTls) != nil {
+	if locked.Core().Identity() != nil || locked.component(SidecarComponentTls) != nil || locked.GetEvs() != nil {
 		t.Error("another key store opened the instance")
 	}
 	if _, err := locked.Core().TlsDeviceKey(); err == nil {
