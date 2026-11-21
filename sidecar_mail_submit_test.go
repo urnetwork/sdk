@@ -10,7 +10,11 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
-// A real, presently unbound core returns its own state for a valid message, and its own syntax refusal first.
+// A real, presently unbound core answers its own refusal of a draft out of shape, which it holds the draft's subject,
+// text and reply id to before it looks at its binding, and its own state for every other message. It judges the
+// recipients only once bound, under the network's zone, since a recipient's delivery form folds a local part of the
+// network's own to the zone's form (§15.8's local parts) and keeps an outside one as typed: so a recipient with no
+// domain reads unbound here too, as a valid one does.
 func TestSidecarMailSubmitsToTheLocalCore(t *testing.T) {
 	client, err := sidecar.NewMailClient(&sidecar.MailClientArgs{NetworkId: sidecar.NewId(), SidecarId: sidecar.NewId(), Store: testEmptySidecarStore{}})
 	if err != nil {
@@ -18,17 +22,18 @@ func TestSidecarMailSubmitsToTheLocalCore(t *testing.T) {
 	}
 	t.Cleanup(client.Close)
 	mail := newTestSidecarMail(t, &sidecarMailCoreBackend{client: client})
-	for _, test := range []struct{ to, code, why string }{
-		{"member@net.example", sidecarMailCodeUnavailable, sidecar.ErrMailUnbound.Error()},
-		{"no-domain", sidecarMailCodeInvalid, sidecar.ErrMailSendInvalid.Error()},
+	for _, test := range []struct{ to, subject, code, why string }{
+		{to: "member@net.example", subject: "Plans", code: sidecarMailCodeUnavailable, why: sidecar.ErrMailUnbound.Error()},
+		{to: "no-domain", subject: "Plans", code: sidecarMailCodeUnavailable, why: sidecar.ErrMailUnbound.Error()},
+		{to: "member@net.example", subject: "Plans\r\nBcc: other@outside.example", code: sidecarMailCodeInvalid, why: sidecar.ErrMailSendInvalid.Error()},
 	} {
-		draft := &SidecarDraft{From: "admin@net.example", To: NewStringList(), Body: "body"}
+		draft := &SidecarDraft{From: "admin@net.example", To: NewStringList(), Subject: test.subject, Body: "body"}
 		draft.To.Add(test.to)
 		callback := newTestEvsCallback[*SidecarResult]()
 		mail.Send(draft, callback)
 		result, err := callback.await(t)
 		if err != nil || result.Ok || result.Value != "" || result.Code != test.code || !strings.Contains(result.Message, test.why) {
-			t.Errorf("%s: %+v, %v", test.to, result, err)
+			t.Errorf("%s, %q: %+v, %v", test.to, test.subject, result, err)
 		}
 	}
 }
