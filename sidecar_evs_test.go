@@ -767,8 +767,7 @@ func (self *testCountingTransport) RoundTrip(request *http.Request) (*http.Respo
 }
 
 // GetEvs is nil unless the settings name evs; with evs named, it wraps the core's EvsComponent a factory attached, the
-// core's real EvsClient answering, here with no verified config, by refusing a read before any request. The
-// registered factory refuses a Sidecar named with evs while no host composes an EvsClient, naming why.
+// core's real EvsClient answering, here with no verified config, by refusing a read before any request.
 func TestGetEvsWrapsTheCoresEvsComponent(t *testing.T) {
 	world := newTestSidecarWorld(t)
 	if bare := world.open(t); bare.GetEvs() != nil {
