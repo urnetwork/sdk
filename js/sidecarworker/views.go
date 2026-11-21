@@ -32,7 +32,8 @@ const (
 	CodeInvalid = "invalid"
 	// No such operation.
 	CodeUnknownOperation = "unknown_operation"
-	// Not on this Worker, or not reachable now: enroll and admission_status, and a service that refused for now.
+	// Not on this Worker, or not reachable now: enroll and admission_status, a service that refused for now, and a read
+	// whose head another of the Worker's reads raised the pin past each time it was read (ErrEvsReadStale).
 	CodeUnavailable = "unavailable"
 	// This Worker holds no enrolled identity.
 	CodeNotEnrolled = "not_enrolled"
@@ -169,7 +170,8 @@ func codeOf(err error) string {
 	case errors.Is(err, sidecar.ErrEvsFormatUnsupported):
 		return CodeUnsupported
 	case errors.Is(err, sidecar.ErrGkmUnavailable), errors.Is(err, sidecar.ErrConfigHeadUnavailable), errors.Is(err, sidecar.ErrEvsNoConfig), errors.Is(err, sidecar.ErrRecordStreamsUnavailable),
-		errors.Is(err, sidecar.ErrEvsReceiptGate), errors.Is(err, sidecar.ErrSidecarClosed), errors.Is(err, sidecar.ErrDirectoryCardsUnavailable):
+		errors.Is(err, sidecar.ErrEvsReceiptGate), errors.Is(err, sidecar.ErrSidecarClosed), errors.Is(err, sidecar.ErrDirectoryCardsUnavailable),
+		errors.Is(err, sidecar.ErrEvsReadStale):
 		return CodeUnavailable
 	}
 	// evs's answer by its status: its code and paths stay behind

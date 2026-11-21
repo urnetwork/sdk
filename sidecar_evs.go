@@ -25,6 +25,9 @@
 //	                        among them
 //	EVS_INVALID             a call the core cannot run: a path that splits into no names, a kind apps do not create,
 //	                        a version that is no number
+//	EVS_READ_STALE          a read whose head another call of the core raised the device's pin past on each of the
+//	                        core's tries, which nothing placed on the pinned history (the core's ErrEvsReadStale): no
+//	                        alarm was raised, and the call may go again
 //	EVS_DROP_*              the drop calls' own refusals (sidecar_evs_drop.go)
 //	EVS_<refusal>           evs's own answer, its refusal code's name less EVS_REFUSAL_: EVS_PATH_CONFLICT, a
 //	                        versionless path's 409, surfaced and never retried by rebasing (§11.7); EVS_SCOPE; ...
@@ -100,6 +103,7 @@ const (
 	sidecarEvsCodeInvalid           = "EVS_INVALID"
 	sidecarEvsCodeUnavailable       = "EVS_UNAVAILABLE"
 	sidecarEvsCodePathConflict      = "EVS_PATH_CONFLICT"
+	sidecarEvsCodeReadStale         = "EVS_READ_STALE"
 	// The repo's prefix write rules hold the path (DESIGN-DETAILS 16.2.7, 16.2.5, 8.2.8; §18.5's {path, detail}): the
 	// message carries the detail, one of refused, pending, update, depth, unavailable, base and tag, and the result's
 	// Value the path the rules hold, the first file outside the device's prefixes for base and tag, empty where there
@@ -510,6 +514,8 @@ func sidecarEvsCodeOf(err error) string {
 		return sidecarEvsCodeNotFound
 	case errors.Is(err, sidecar.ErrEvsFormatUnsupported):
 		return sidecarEvsCodeFormatUnsupported
+	case errors.Is(err, sidecar.ErrEvsReadStale):
+		return sidecarEvsCodeReadStale
 	case errors.As(err, &conflict):
 		return sidecarEvsCodePathConflict
 	case errors.Is(err, sidecar.ErrEvsPrefixRule), errors.Is(err, sidecar.ErrAclPrefixRule):

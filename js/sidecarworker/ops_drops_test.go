@@ -242,6 +242,7 @@ func TestDropStatesRefusals(t *testing.T) {
 		code string
 	}{
 		{call: "List", err: sidecar.ErrEvsNoConfig, code: CodeUnavailable},
+		{call: "List", err: sidecar.ErrEvsReadStale, code: CodeUnavailable},
 		{call: "KnownPaths", err: sidecar.ErrEvsPinFork, code: CodeUnverified},
 		{call: "Drops", err: &sidecar.EvsError{Status: 403}, code: CodeRefused},
 		{call: "Drops", err: errors.New("a failure whose text names notes/secret.txt"), code: CodeFailed},

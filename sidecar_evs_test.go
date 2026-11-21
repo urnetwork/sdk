@@ -438,6 +438,7 @@ func TestSidecarEvsGitRefAndRefusalsSurfaced(t *testing.T) {
 		{err: sidecar.ErrEvsFormatUnsupported, code: "EVS_FORMAT_UNSUPPORTED"},
 		{err: fmt.Errorf("%w: a path of no names", sidecar.ErrEvsWriteInvalid), code: "EVS_INVALID"},
 		{err: context.Canceled, code: "EVS_UNAVAILABLE"},
+		{err: fmt.Errorf("a read: %w", sidecar.ErrEvsReadStale), code: "EVS_READ_STALE"},
 		{err: errors.New("a failure with no code"), code: ""},
 	}
 	for _, c := range cases {
