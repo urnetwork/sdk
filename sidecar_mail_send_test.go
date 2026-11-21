@@ -1078,7 +1078,8 @@ func startTestMailSendDaemon(t *testing.T, socketPath string, core *sidecar.Side
 }
 
 // The root's send methods' backends as a test scripts them: a check of every draft's two domains, one known send's
-// outcomes, and a send the gate holds until the test approves it. What each took is kept.
+// outcomes, and a send the gate holds until the test approves it, which then queues its internet recipient at o/
+// (§15.10's step 4). What each took is kept.
 type testMailSendDaemonBackends struct {
 	sendId     sidecar.Id
 	approvalId sidecar.Id
@@ -1128,8 +1129,10 @@ func (self *testMailSendDaemonBackends) backends() *sidecar.DaemonMailSendBacken
 				return nil, &sidecar.ApprovalPendingError{ApprovalId: self.approvalId}
 			}
 			self.sent = append(self.sent, args)
+			// queued, as a send that went names it: one whose every recipient waits sent nothing, and Send answers
+			// it no send_id (sidecar_mail_submit_test.go)
 			return &sidecar.MailSendResult{SendId: self.sendId, SentCopy: true, Recipients: []*sidecar.MailSendRecipient{
-				{Address: "someone@chunking.example", Outcome: sidecar.MailSendInternetWaits},
+				{Address: "someone@chunking.example", Outcome: sidecar.MailSendQueued},
 			}}, nil
 		},
 	}
@@ -1166,8 +1169,8 @@ func testMailSendHostedCore(t *testing.T) *sidecar.Sidecar {
 
 // End to end over the root's daemon on scripted backends: CheckSend reads a draft's domains and GetSendResult a known
 // send's outcomes, each with its copy; an unknown send answers MAIL_INVALID; and a send the daemon's gate holds
-// answers approval_pending:<id> with nothing sent, until it is approved, when the same draft answers its send_id.
-// Each backend took the draft's fields whole.
+// answers approval_pending:<id> with nothing sent, until it is approved, when the same draft, its internet recipient
+// queued, answers its send_id. Each backend took the draft's fields whole.
 func TestMailSendRemoteOverTheRootDaemon(t *testing.T) {
 	core := testMailSendHostedCore(t)
 	scripted := &testMailSendDaemonBackends{

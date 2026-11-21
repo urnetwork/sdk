@@ -33,7 +33,9 @@ func TestSidecarMailSubmitsToTheLocalCore(t *testing.T) {
 	}
 }
 
-// The daemon may return individual failures, partial success, or just the id of a previously committed approval.
+// The daemon may return individual failures, partial success, or just the id of a previously committed approval. A
+// send whose every recipient waits, internet mail on a daemon with no outbox for it, queued nothing (§15.10's step 4
+// queues at o/) and so names no send to follow.
 func TestSidecarMailRemoteSubmissionRequiresAnAcceptedRecipient(t *testing.T) {
 	path := testRemoteSocketPath(t)
 	daemon := newTestRemoteDaemon(t, path)
@@ -49,15 +51,18 @@ func TestSidecarMailRemoteSubmissionRequiresAnAcceptedRecipient(t *testing.T) {
 	id, zero := sidecar.NewId(), sidecar.Id{}
 	accepted := &sidecar.DaemonMailSendRecipient{Outcome: string(sidecar.MailSendQueued)}
 	refused := &sidecar.DaemonMailSendRecipient{Outcome: string(sidecar.MailSendInternetRefused)}
+	waits := &sidecar.DaemonMailSendRecipient{Outcome: string(sidecar.MailSendInternetWaits)}
 	for _, test := range []struct {
 		id         *sidecar.Id
 		recipients []*sidecar.DaemonMailSendRecipient
 		want       bool
 	}{
-		{&zero, nil, false},
-		{&id, []*sidecar.DaemonMailSendRecipient{refused}, false},
-		{&id, []*sidecar.DaemonMailSendRecipient{refused, accepted}, true},
-		{&id, nil, true},
+		{id: &zero, recipients: nil, want: false},
+		{id: &id, recipients: []*sidecar.DaemonMailSendRecipient{refused}, want: false},
+		{id: &id, recipients: []*sidecar.DaemonMailSendRecipient{waits}, want: false},
+		{id: &id, recipients: []*sidecar.DaemonMailSendRecipient{waits, accepted}, want: true},
+		{id: &id, recipients: []*sidecar.DaemonMailSendRecipient{refused, accepted}, want: true},
+		{id: &id, recipients: nil, want: true},
 	} {
 		replies <- &sidecar.DaemonMailSendReply{SendId: test.id, Recipients: test.recipients}
 		callback := newTestEvsCallback[*SidecarResult]()
