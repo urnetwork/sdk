@@ -162,6 +162,7 @@ type sidecarControlEventsReply struct {
 // One event of the daemon's ring: the root's DaemonEvent, its kind, generation and what §5.4's SidecarEvent carries
 // for its kind, with the network and sidecar that raised it. Times are unix milliseconds, zero for none.
 type sidecarControlEvent struct {
+	LoggedOut         bool                        `json:"logged_out,omitempty"`
 	NetworkId         *Id                         `json:"network_id,omitempty"`
 	OriginSidecarId   *Id                         `json:"origin_sidecar_id,omitempty"`
 	Kind              string                      `json:"kind"`
@@ -391,6 +392,8 @@ type sidecarRemoteBackend struct {
 	status    sidecarRemoteStatus
 	// the newest generation taken for status's sidecar_id, from a status or a pairing: nothing older is taken
 	generationFloor int64
+	// A status read that crosses a pairing or state event must not clear the resulting identity.
+	identityRevision uint64
 	// the network the pairing bound, nil before one
 	networkId *Id
 	// the networks the last status named, and its first, which an unpaired backend follows; nil while it names none
@@ -617,6 +620,16 @@ func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) (bool, b
 	}
 	current := self.status
 	sameSidecar := current.sidecarId == nil || event.OriginSidecarId == nil || current.sidecarId.Cmp(event.OriginSidecarId) == 0
+	if event.LoggedOut && event.Kind == sidecarControlEventKindState && event.State == sidecarRemoteStateUnenrolled {
+		if !sameSidecar || event.Generation < self.generationFloor {
+			return false, false
+		}
+		self.status = sidecarRemoteStatus{state: sidecarRemoteStateUnenrolled}
+		self.generationFloor = 0
+		self.identityRevision++
+		event.Generation = 0
+		return true, self.takeFreshWithLock(true)
+	}
 	if sameSidecar && event.Generation < self.generationFloor {
 		return false, false
 	}
@@ -627,6 +640,7 @@ func (self *sidecarRemoteBackend) takeEvent(event *sidecarControlEvent) (bool, b
 		self.generationFloor = event.Generation
 	}
 	if event.Kind == sidecarControlEventKindState {
+		self.identityRevision++
 		event.State, event.Reason = sidecarRemoteStateOf(event.State, event.Reason)
 		self.status.state, self.status.reason, self.status.generation = event.State, event.Reason, event.Generation
 	}
@@ -701,11 +715,12 @@ func (self *sidecarRemoteBackend) network() string {
 // See sidecarBackend. While the events long-poll carries the state, a read from here moves the sidecar_id and the
 // networks and leaves the state to the events, so an answer that crossed an event cannot undo it.
 func (self *sidecarRemoteBackend) refresh(ctx context.Context) error {
+	revision := self.revision()
 	reply := &sidecarControlStatus{}
 	if err := self.callBounded(ctx, self.settings.CallTimeout, sidecarControlMethodStatus, nil, false, reply); err != nil {
 		return err
 	}
-	self.applyStatus(reply, false, false)
+	self.applyStatusAt(reply, false, false, revision)
 	return nil
 }
 
@@ -713,11 +728,12 @@ func (self *sidecarRemoteBackend) refresh(ctx context.Context) error {
 // a read with no long-poll does, and with always it emits the state even unchanged, as after a gap, whose lost events
 // may have moved it and back.
 func (self *sidecarRemoteBackend) refreshFromEvents(ctx context.Context, always bool) error {
+	revision := self.revision()
 	reply := &sidecarControlStatus{}
 	if err := self.callBounded(ctx, self.settings.CallTimeout, sidecarControlMethodStatus, nil, false, reply); err != nil {
 		return err
 	}
-	self.applyStatus(reply, true, always)
+	self.applyStatusAt(reply, true, always, revision)
 	return nil
 }
 
@@ -786,6 +802,7 @@ func (self *sidecarRemoteBackend) pair(ctx context.Context, childJwt string) (*s
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.networkId == nil || self.networkId.Cmp(reply.NetworkId) != 0 {
+			self.identityRevision++
 			// the daemon's sidecar of this network, which the next status names: its own id and generations, which its
 			// first event delivers past whatever another network's left
 			self.networkId = reply.NetworkId
@@ -796,6 +813,7 @@ func (self *sidecarRemoteBackend) pair(ctx context.Context, childJwt string) (*s
 		}
 		// the same sidecar's next generation: nothing older ends it from here on
 		if self.generationFloor < reply.Generation {
+			self.identityRevision++
 			self.generationFloor = reply.Generation
 		}
 	}()
@@ -852,35 +870,38 @@ func (self *sidecarRemoteBackend) close() {
 
 // The row of reply this backend follows: the paired network's, unenrolled when the daemon hosts it no longer; before
 // a pairing the daemon's only network, else its first, which the reply's own fields name.
-func (self *sidecarRemoteBackend) statusOf(reply *sidecarControlStatus, networkId *Id) sidecarRemoteStatus {
+func (self *sidecarRemoteBackend) statusOf(reply *sidecarControlStatus, networkId *Id) (sidecarRemoteStatus, bool) {
 	rowStatus := func(row *sidecarControlNetworkStatus) sidecarRemoteStatus {
 		return sidecarRemoteStatus{state: row.State, reason: row.Reason, generation: row.Generation, sidecarId: row.SidecarId}
 	}
 	if networkId != nil {
 		for i := range reply.Networks {
 			if row := &reply.Networks[i]; row.NetworkId != nil && row.NetworkId.Cmp(networkId) == 0 {
-				return rowStatus(row)
+				return rowStatus(row), true
 			}
 		}
-		return sidecarRemoteStatus{state: sidecarRemoteStateUnenrolled}
+		return sidecarRemoteStatus{state: sidecarRemoteStateUnenrolled}, false
 	}
 	if len(reply.Networks) == 1 {
-		return rowStatus(&reply.Networks[0])
+		return rowStatus(&reply.Networks[0]), true
 	}
-	return sidecarRemoteStatus{state: reply.State, reason: reply.Reason, generation: reply.Generation}
+	return sidecarRemoteStatus{state: reply.State, reason: reply.Reason, generation: reply.Generation}, true
 }
 
-// Takes a status the daemon answered: its networks always, and its state unless the events long-poll carries the
-// state, fromEvents is false and the network followed stays the one it was (an unpaired backend follows the first a
-// status names, which an enrollment or a logout can change). One of an older generation of the same sidecar_id is
-// dropped (D-SDK-14), and the state reads as sidecarRemoteStateOf has it. A change is emitted, or with always the
-// state as it stands.
-func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromEvents bool, always bool) {
+// Which pairing or state event was current when a status request started.
+func (self *sidecarRemoteBackend) revision() uint64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.identityRevision
+}
+
+// Applies an authoritative response for the same selection that issued the request.
+func (self *sidecarRemoteBackend) applyStatusAt(reply *sidecarControlStatus, fromEvents bool, always bool, revision uint64) {
 	fresh := false
 	emitted, next := func() (bool, sidecarRemoteStatus) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.closed {
+		if self.closed || revision != self.identityRevision {
 			return false, self.status
 		}
 		followedBefore := self.followedWithLock()
@@ -894,9 +915,19 @@ func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromE
 		if 0 < len(reply.Networks) {
 			self.statusFirstNetwork = reply.Networks[0].NetworkId
 		}
-		next := self.statusOf(reply, self.networkId)
+		next, hosted := self.statusOf(reply, self.networkId)
 		next.state, next.reason = sidecarRemoteStateOf(next.state, next.reason)
 		current := self.status
+		if !hosted {
+			self.generationFloor = 0
+			self.status = next
+			changed := current.sidecarId != nil || current.state != next.state || current.generation != 0 || current.reason != ""
+			if changed {
+				self.identityRevision++
+			}
+			fresh = self.takeFreshWithLock(changed)
+			return changed || always, next
+		}
 		sameSidecar := current.sidecarId == nil || next.sidecarId == nil || current.sidecarId.Cmp(next.sidecarId) == 0
 		if sameSidecar && next.generation < self.generationFloor {
 			// an answer from before a re-pair
@@ -907,12 +938,19 @@ func (self *sidecarRemoteBackend) applyStatus(reply *sidecarControlStatus, fromE
 		}
 		if self.eventsCarryState && !fromEvents && sidecarControlSameId(followedBefore, self.followedWithLock()) {
 			// the events move the state; this read names the sidecar alone
+			if !sidecarControlSameId(current.sidecarId, next.sidecarId) {
+				self.identityRevision++
+			}
 			self.status.sidecarId = next.sidecarId
 			return false, self.status
 		}
 		self.generationFloor = next.generation
 		self.status = next
-		emitted := always || next.state != current.state || next.reason != current.reason || next.generation != current.generation
+		changed := next.state != current.state || next.reason != current.reason || next.generation != current.generation || !sidecarControlSameId(current.sidecarId, next.sidecarId)
+		if changed {
+			self.identityRevision++
+		}
+		emitted := always || changed
 		if emitted {
 			fresh = self.takeFreshWithLock(!sameSidecar)
 		}

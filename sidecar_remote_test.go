@@ -708,13 +708,14 @@ func TestStaleEventDroppedAcrossRepair(t *testing.T) {
 		Reason:     "parent_lost",
 		Generation: 1,
 	}}}
+	beforePair := backend.revision()
 	if _, err := remote.enrollWithDeviceApi(device.ctx, device.api); err != nil {
 		t.Fatal(err)
 	}
 	if paired := events.next(t); paired.State != "online" || paired.Generation != 2 {
 		t.Fatalf("the re-pair's event: %+v", paired)
 	}
-	backend.applyStatus(stale, false, false)
+	backend.applyStatusAt(stale, false, false, beforePair)
 	if state, reason := remote.GetState(), remote.GetStateReason(); state != "online" || reason != "" || backend.generation() != 2 {
 		t.Fatalf("a stale status ended the new pairing: %s %s at %d", state, reason, backend.generation())
 	}
