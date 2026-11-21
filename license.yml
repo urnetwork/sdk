@@ -3485,15 +3485,6 @@ entries:
     spdx: MIT
     copyright: Copyright 2019 Marten Seemann
     text: 1b6a897efd39
-  - name: github.com/quic-go/quic-go
-    version: v0.61.0
-    kind: software
-    origin: go
-    apps: [android, apple, windows, linux, web, extension]
-    url: https://github.com/quic-go/quic-go
-    spdx: MIT
-    copyright: Copyright (c) 2016 the quic-go authors & Google, Inc.
-    text: 77d0b7b53e8a
   - name: github.com/refraction-networking/utls
     version: v1.8.2
     kind: software
@@ -3553,6 +3544,14 @@ entries:
     spdx: MPL-2.0
     copyright: Copyright (c) 2026 BringYour, Inc.
     text: 344678387be8
+  - name: github.com/urnetwork/quic-go
+    kind: software
+    origin: go
+    apps: [android, apple, windows, linux, web, extension]
+    url: https://github.com/urnetwork/quic-go
+    spdx: MIT
+    copyright: Copyright (c) 2016 the quic-go authors & Google, Inc.
+    text: 77d0b7b53e8a
   - name: github.com/urnetwork/sdk
     kind: software
     origin: go
