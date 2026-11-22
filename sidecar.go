@@ -11,7 +11,9 @@
 // sidecar_state.go and sidecar_push.go, over the host services of sidecar_host_services.go and the host class of
 // sidecar_host_class.go; the wrappers' GetEvs and its siblings). NewSidecarLocal opens the instance under StateDir with the app's key store and runs the core on it,
 // opening U by the key store's wrap as `ur daemon` does at start: a store that answers Locked or Failed creates
-// nothing and leaves the core Locked until it can answer (D-SDK-15, §5.9's table).
+// nothing and leaves the core Locked until it can answer (D-SDK-15, §5.9's table). Whatever components the app names,
+// the core runs its dns component, as each of ur daemon's networks does, so its DnsClient feeds the network's label
+// table and follows the zone's hints from the core's first client generation on (§12.5's label row).
 //
 // Outward calls pass the core's gate, Sidecar.Authorize, on both backends, and come back approval_pending:<id>
 // (sidecarResultOf), so no wrapper adds a second check. Nothing here imports mcp/ or cli/ (R-SDK-4).
