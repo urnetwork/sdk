@@ -324,7 +324,7 @@ func newLoopbackBridgeForDevice(t *testing.T, device *DeviceLocal) (tun *connect
 			if err != nil {
 				return
 			}
-			for _, packet := range packets[:n] {
+			for index, packet := range packets[:n] {
 				// The send path assumes a lossless, in-order source, but the
 				// non-blocking send returns false when the downstream channel is
 				// momentarily full (we keep ownership of the packet on false).
@@ -334,7 +334,11 @@ func newLoopbackBridgeForDevice(t *testing.T, device *DeviceLocal) (tun *connect
 				for !device.SendPacketNoCopy(packet, int32(len(packet))) {
 					select {
 					case <-device.Ctx().Done():
-						MessagePoolReturn(packet)
+						// this packet and the rest of the batch are still
+						// ours: returning only this one leaked the rest
+						for _, unsent := range packets[index:n] {
+							MessagePoolReturn(unsent)
+						}
 						return
 					default:
 					}

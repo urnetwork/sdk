@@ -131,11 +131,15 @@ func runRouteLocalDeviceCycle(t *testing.T, ctx context.Context, networkSpace *N
 			if err != nil {
 				return
 			}
-			for _, packet := range packets[:n] {
+			for index, packet := range packets[:n] {
 				for !device.SendPacketNoCopy(packet, int32(len(packet))) {
 					select {
 					case <-device.Ctx().Done():
-						MessagePoolReturn(packet)
+						// this packet and the rest of the batch are still
+						// ours: returning only this one leaked the rest
+						for _, unsent := range packets[index:n] {
+							MessagePoolReturn(unsent)
+						}
 						return
 					default:
 					}
