@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	quic "github.com/quic-go/quic-go"
+	quic "github.com/urnetwork/quic-go"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/urnetwork/connect"
