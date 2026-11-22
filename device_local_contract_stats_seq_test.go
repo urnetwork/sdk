@@ -35,7 +35,7 @@ func TestDeviceLocalContractStatsSequenceDiscard(t *testing.T) {
 		Open:              true,
 		Sequence:          1,
 	}
-	egressStats, _, _, _ := tracker.update([]*connect.ContractStatsEvent{open}, epoch)
+	egressStats, _, _, _ := tracker.update([]*connect.ContractStatsEvent{open}, epoch, testing_everyContractReport())
 	if egressStats == nil {
 		t.Fatalf("expected the first batch to emit")
 	}
@@ -50,7 +50,7 @@ func TestDeviceLocalContractStatsSequenceDiscard(t *testing.T) {
 	closeEvent.UsedByteCount = 200
 	closeEvent.Open = false
 	closeEvent.Sequence = 2
-	egressStats, _, egressDetails, _ := tracker.update([]*connect.ContractStatsEvent{&closeEvent}, epoch)
+	egressStats, _, egressDetails, _ := tracker.update([]*connect.ContractStatsEvent{&closeEvent}, epoch, testing_everyContractReport())
 	if egressStats == nil {
 		t.Fatalf("expected the close to emit")
 	}
@@ -68,7 +68,7 @@ func TestDeviceLocalContractStatsSequenceDiscard(t *testing.T) {
 	// closed, and the replayed close must not force a listener dispatch
 	staleOpen := *open
 	staleClose := closeEvent
-	egressStats, _, _, _ = tracker.update([]*connect.ContractStatsEvent{&staleOpen, &staleClose}, epoch)
+	egressStats, _, _, _ = tracker.update([]*connect.ContractStatsEvent{&staleOpen, &staleClose}, epoch, testing_everyContractReport())
 	if egressStats != nil {
 		t.Fatalf("expected the stale batch fully discarded (gated), got %+v", egressStats)
 	}
@@ -81,7 +81,7 @@ func TestDeviceLocalContractStatsSequenceDiscard(t *testing.T) {
 
 	// the settle pass evicts the reported tombstone and drops the sequence
 	// entry with it — the map is bounded by the tracked contracts
-	tracker.flushPending(0)
+	tracker.flushPending(0, testing_everyContractReport())
 	if _, ok := tracker.egressContracts[contractId]; ok {
 		t.Fatalf("expected the tombstone evicted")
 	}
@@ -165,7 +165,7 @@ func TestDeviceLocalContractStatsSequenceDiscardDevice(t *testing.T) {
 	func() {
 		device.stateLock.Lock()
 		defer device.stateLock.Unlock()
-		device.contracts.flushPending(0)
+		device.contracts.flushPending(0, testing_everyContractReport())
 		if _, ok := device.contracts.lastSeenSequences[contractId]; ok {
 			t.Fatalf("expected the sequence entry dropped after the close")
 		}

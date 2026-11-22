@@ -544,7 +544,7 @@ func TestDeviceLocalContractStats(t *testing.T) {
 	func() {
 		device.stateLock.Lock()
 		defer device.stateLock.Unlock()
-		device.contracts.emit(time.Now())
+		device.contracts.emit(time.Now(), testing_everyContractReport())
 	}()
 	if count := device.GetEgressContractDetails().Len(); count != 0 {
 		t.Fatalf("expected closed contract evicted, got %d", count)
@@ -925,7 +925,7 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 	func() {
 		providerDevice.stateLock.Lock()
 		defer providerDevice.stateLock.Unlock()
-		providerDevice.providerContracts.emit(time.Now())
+		providerDevice.providerContracts.emit(time.Now(), testing_everyContractReport())
 	}()
 	if count := providerDevice.GetProviderIngressContractDetails().Len(); count != 0 {
 		t.Fatalf("expected closed provider contracts evicted, got %d", count)

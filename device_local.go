@@ -7936,6 +7936,13 @@ type deviceContractState struct {
 // the open contracts of one connect client (the multi client or the provider
 // client) and the listener dispatch gate.
 // all methods must be called with the device `stateLock`
+//
+// Every update folds its events into the contract state, and every emit
+// advances the contract lifecycle, whatever is listening: the getters build
+// their reports from this state on demand. An emit builds only the reports
+// that have a listener (deviceContractReports), so a device nobody watches,
+// such as a hosted proxy device, builds none, and a listener gets exactly the
+// reports it always did.
 type deviceContractTracker struct {
 	// egress (send) and ingress (receive) contracts, keyed by contract id
 	egressContracts  map[connect.Id]*deviceContractState
@@ -7962,6 +7969,15 @@ type deviceContractTracker struct {
 	// signaled without blocking when an update or clear leaves something for
 	// the flush loop to carry out. nil for a bare tracker
 	flushWake chan struct{}
+}
+
+// The reports of a tracker that have a listener, which an emit builds. A
+// report without one is nil.
+type deviceContractReports struct {
+	egressStats    bool
+	ingressStats   bool
+	egressDetails  bool
+	ingressDetails bool
 }
 
 func newDeviceContractTracker() *deviceContractTracker {
@@ -8018,12 +8034,22 @@ func (self *deviceContractTracker) settled() bool {
 // to at most once per `epoch` across all of them.
 // a batch with a close event always dispatches, so the final report of a
 // contract is never swallowed by the gate.
-// returns nil stats when gated
+// returns nil reports when gated, and nil for each report not in `reports`
 func (self *deviceContractTracker) update(
 	events []*connect.ContractStatsEvent,
 	epoch time.Duration,
+	reports deviceContractReports,
 ) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
-	now := time.Now()
+	return self.updateAt(time.Now(), events, epoch, reports)
+}
+
+// update at `now`
+func (self *deviceContractTracker) updateAt(
+	now time.Time,
+	events []*connect.ContractStatsEvent,
+	epoch time.Duration,
+	reports deviceContractReports,
+) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	// whatever this folds in, the flush loop has a trailing edge or a decay to
 	// carry out
 	defer self.wakeFlush()
@@ -8076,14 +8102,16 @@ func (self *deviceContractTracker) update(
 		self.pendingEmit = true
 		return
 	}
-	return self.emit(now)
+	return self.emit(now, reports)
 }
 
-// emit builds the reports and advances the contract lifecycle: a contract that
-// closed is reported once as a Closed tombstone carrying its final byte counts,
-// kept one more cycle so a coalesced getter read still sees it, then evicted on
-// the next emit.
-func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+// emit builds the reports in `reports` and advances the contract lifecycle: a
+// contract that closed is reported once as a Closed tombstone carrying its
+// final byte counts, kept one more cycle so a coalesced getter read still sees
+// it, then evicted on the next emit. The lifecycle advances the same whichever
+// reports are built, so a listener added later, and every getter, sees what it
+// would have had every report been built.
+func (self *deviceContractTracker) emit(now time.Time, reports deviceContractReports) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	self.pendingEmit = false
 	self.lastEmitTime = now
 
@@ -8091,10 +8119,19 @@ func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractSta
 	self.evictReportedClosed(self.egressContracts, self.ingressContracts)
 	self.evictReportedClosed(self.ingressContracts, self.egressContracts)
 
-	egressStats = self.stats(false)
-	ingressStats = self.stats(true)
-	egressDetails = self.details(false)
-	ingressDetails = self.details(true)
+	// the reports read the state and change nothing
+	if reports.egressStats {
+		egressStats = self.stats(false)
+	}
+	if reports.ingressStats {
+		ingressStats = self.stats(true)
+	}
+	if reports.egressDetails {
+		egressDetails = self.details(false)
+	}
+	if reports.ingressDetails {
+		ingressDetails = self.details(true)
+	}
 
 	// flag the Closed tombstones just reported; keep the settle loop alive while
 	// any tombstone remains so the next emit evicts it. Both directions must be
@@ -8155,11 +8192,16 @@ func (self *deviceContractTracker) decayBitRates(now time.Time, epoch time.Durat
 }
 
 // flushPending carries out a gated update once the epoch has passed, and decays
-// the bit rate of idle contracts. returns nil stats when there is nothing to
-// report. it settles: after the last real batch is emitted, one further emit
-// zeroes the idle bit rates and then nothing more fires.
-func (self *deviceContractTracker) flushPending(epoch time.Duration) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
-	now := time.Now()
+// the bit rate of idle contracts. returns nil reports when there is nothing to
+// report, and nil for each report not in `reports`. it settles: after the last
+// real batch is emitted, one further emit zeroes the idle bit rates and then
+// nothing more fires.
+func (self *deviceContractTracker) flushPending(epoch time.Duration, reports deviceContractReports) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	return self.flushPendingAt(time.Now(), epoch, reports)
+}
+
+// flushPending at `now`
+func (self *deviceContractTracker) flushPendingAt(now time.Time, epoch time.Duration, reports deviceContractReports) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	if now.Sub(self.lastEmitTime) < epoch {
 		return
 	}
@@ -8167,7 +8209,62 @@ func (self *deviceContractTracker) flushPending(epoch time.Duration) (egressStat
 	if !self.pendingEmit && !decayed {
 		return
 	}
-	return self.emit(now)
+	return self.emit(now, reports)
+}
+
+// The client contract reports that have a listener now. A listener added
+// after this read gets the next emit, as one added just after the dispatch
+// always has.
+func (self *DeviceLocal) contractReports() deviceContractReports {
+	return deviceContractReports{
+		egressStats:    0 < len(self.egressContractStatsChangeListeners.Get()),
+		ingressStats:   0 < len(self.ingressContractStatsChangeListeners.Get()),
+		egressDetails:  0 < len(self.egressContractDetailsChangeListeners.Get()),
+		ingressDetails: 0 < len(self.ingressContractDetailsChangeListeners.Get()),
+	}
+}
+
+// contractReports of the provider contracts
+func (self *DeviceLocal) providerContractReports() deviceContractReports {
+	return deviceContractReports{
+		egressStats:    0 < len(self.providerEgressContractStatsChangeListeners.Get()),
+		ingressStats:   0 < len(self.providerIngressContractStatsChangeListeners.Get()),
+		egressDetails:  0 < len(self.providerEgressContractDetailsChangeListeners.Get()),
+		ingressDetails: 0 < len(self.providerIngressContractDetailsChangeListeners.Get()),
+	}
+}
+
+// Dispatches each client contract report an emit built, in the device's
+// order: the stats, then the details, egress before ingress.
+func (self *DeviceLocal) contractReportsChanged(egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	if egressStats != nil {
+		self.egressContractStatsChanged(egressStats)
+	}
+	if ingressStats != nil {
+		self.ingressContractStatsChanged(ingressStats)
+	}
+	if egressDetails != nil {
+		self.egressContractDetailsChanged(egressDetails)
+	}
+	if ingressDetails != nil {
+		self.ingressContractDetailsChanged(ingressDetails)
+	}
+}
+
+// contractReportsChanged of the provider contracts
+func (self *DeviceLocal) providerContractReportsChanged(egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	if egressStats != nil {
+		self.providerEgressContractStatsChanged(egressStats)
+	}
+	if ingressStats != nil {
+		self.providerIngressContractStatsChanged(ingressStats)
+	}
+	if egressDetails != nil {
+		self.providerEgressContractDetailsChanged(egressDetails)
+	}
+	if ingressDetails != nil {
+		self.providerIngressContractDetailsChanged(ingressDetails)
+	}
 }
 
 // the contract stats epoch callback from the multi client
@@ -8176,18 +8273,13 @@ func (self *DeviceLocal) updateContractStatsEvents(events []*connect.ContractSta
 	var ingressStats *ContractStats
 	var egressDetails *ContractDetailsList
 	var ingressDetails *ContractDetailsList
+	reports := self.contractReports()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		egressStats, ingressStats, egressDetails, ingressDetails = self.contracts.update(events, self.settings.ContractStatsEpoch)
+		egressStats, ingressStats, egressDetails, ingressDetails = self.contracts.update(events, self.settings.ContractStatsEpoch, reports)
 	}()
-	if egressStats == nil {
-		return
-	}
-	self.egressContractStatsChanged(egressStats)
-	self.ingressContractStatsChanged(ingressStats)
-	self.egressContractDetailsChanged(egressDetails)
-	self.ingressContractDetailsChanged(ingressDetails)
+	self.contractReportsChanged(egressStats, ingressStats, egressDetails, ingressDetails)
 }
 
 // runContractStatsFlush carries out the trailing state of a gated contract stats
@@ -8239,27 +8331,19 @@ func (self *DeviceLocal) flushContractStats() (settled bool) {
 	var providerIngressStats *ContractStats
 	var providerEgressDetails *ContractDetailsList
 	var providerIngressDetails *ContractDetailsList
+	reports := self.contractReports()
+	providerReports := self.providerContractReports()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		egressStats, ingressStats, egressDetails, ingressDetails =
-			self.contracts.flushPending(self.settings.ContractStatsEpoch)
+			self.contracts.flushPending(self.settings.ContractStatsEpoch, reports)
 		providerEgressStats, providerIngressStats, providerEgressDetails, providerIngressDetails =
-			self.providerContracts.flushPending(self.settings.ContractStatsEpoch)
+			self.providerContracts.flushPending(self.settings.ContractStatsEpoch, providerReports)
 		settled = self.contracts.settled() && self.providerContracts.settled()
 	}()
-	if egressStats != nil {
-		self.egressContractStatsChanged(egressStats)
-		self.ingressContractStatsChanged(ingressStats)
-		self.egressContractDetailsChanged(egressDetails)
-		self.ingressContractDetailsChanged(ingressDetails)
-	}
-	if providerEgressStats != nil {
-		self.providerEgressContractStatsChanged(providerEgressStats)
-		self.providerIngressContractStatsChanged(providerIngressStats)
-		self.providerEgressContractDetailsChanged(providerEgressDetails)
-		self.providerIngressContractDetailsChanged(providerIngressDetails)
-	}
+	self.contractReportsChanged(egressStats, ingressStats, egressDetails, ingressDetails)
+	self.providerContractReportsChanged(providerEgressStats, providerIngressStats, providerEgressDetails, providerIngressDetails)
 	return
 }
 
@@ -8269,18 +8353,13 @@ func (self *DeviceLocal) updateProviderContractStatsEvents(events []*connect.Con
 	var ingressStats *ContractStats
 	var egressDetails *ContractDetailsList
 	var ingressDetails *ContractDetailsList
+	reports := self.providerContractReports()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		egressStats, ingressStats, egressDetails, ingressDetails = self.providerContracts.update(events, self.settings.ContractStatsEpoch)
+		egressStats, ingressStats, egressDetails, ingressDetails = self.providerContracts.update(events, self.settings.ContractStatsEpoch, reports)
 	}()
-	if egressStats == nil {
-		return
-	}
-	self.providerEgressContractStatsChanged(egressStats)
-	self.providerIngressContractStatsChanged(ingressStats)
-	self.providerEgressContractDetailsChanged(egressDetails)
-	self.providerIngressContractDetailsChanged(ingressDetails)
+	self.providerContractReportsChanged(egressStats, ingressStats, egressDetails, ingressDetails)
 }
 
 // the direction's own contracts fill the contract fields, and the opposite
