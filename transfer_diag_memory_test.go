@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"runtime/metrics"
 	"strings"
 	"sync"
 	"testing"
@@ -307,6 +308,26 @@ func TestTransferDiagnosticSnapshotJoinedAndReadOnly(t *testing.T) {
 	}
 	if parts["memory_device_transfer"]["transfer_root_used_bytes"] != float64(123) || parts["memory"]["go_total_bytes"].(float64) <= 0 {
 		t.Fatal("snapshot did not read live accounting")
+	}
+	// This fixture starts no sampler. Its reader still holds the values used
+	// for this diagnostic batch, even when a class measured zero bytes.
+	runtimeBytes := map[string]uint64{}
+	for _, sample := range device.memorySampler.runtimeReader.samples {
+		if sample.Value.Kind() == metrics.KindUint64 {
+			runtimeBytes[sample.Name] = sample.Value.Uint64()
+		}
+	}
+	for field, metric := range map[string]string{
+		"go_heap_alloc_bytes":  "/memory/classes/heap/objects:bytes",
+		"go_heap_unused_bytes": "/memory/classes/heap/unused:bytes",
+		"go_heap_free_bytes":   "/memory/classes/heap/free:bytes",
+		"go_stack_inuse_bytes": "/memory/classes/heap/stacks:bytes",
+	} {
+		want, sampled := runtimeBytes[metric]
+		got, present := parts["memory"][field]
+		if !sampled || !present || got != float64(want) {
+			t.Errorf("memory.%s = %v (present %t), %s = %d (sampled %t)", field, got, present, metric, want, sampled)
+		}
 	}
 	if after := device.platformTransportBudget.StatsWithRoot(); after != before {
 		t.Fatal("read-only snapshot changed carrier ownership")

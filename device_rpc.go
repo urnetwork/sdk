@@ -381,6 +381,9 @@ type DeviceRemote struct {
 	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
+	// Set by tests to pause a request after it registers and before it receives.
+	testingBeforeHttpResponseWait func(connect.Id)
+
 	// The uploads asked for with a callback (UploadLogs), until the device
 	// process reports the result or the rpc generation that carried the request
 	// ends. Each is taken out before its callback is called, so it is called once.
@@ -5399,7 +5402,7 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			ByJwt:            byJwt,
 		}
 
-		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse, 1)
 		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
@@ -5432,6 +5435,9 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			return nil, err
 		}
 
+		if beforeWait := self.testingBeforeHttpResponseWait; beforeWait != nil {
+			beforeWait(httpRequestId)
+		}
 		select {
 		case httpResponse, ok := <-httpResponseChannel:
 			if !ok {
@@ -5503,7 +5509,7 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			ByJwt:      byJwt,
 		}
 
-		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse, 1)
 		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
@@ -5532,6 +5538,9 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			return nil, err
 		}
 
+		if beforeWait := self.testingBeforeHttpResponseWait; beforeWait != nil {
+			beforeWait(httpRequestId)
+		}
 		select {
 		case httpResponse, ok := <-httpResponseChannel:
 			if !ok {
@@ -5613,10 +5622,10 @@ func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
 		return
 	}
 
+	// The request's single slot accepts a reply even before its caller waits.
 	select {
 	case httpResponseChannel <- httpResponse:
 	default:
-		// no one is still listening, drop the response
 	}
 	close(httpResponseChannel)
 }

@@ -85,7 +85,8 @@ type transferDiagState struct {
 
 // transferDiagMemory is the Go runtime view the MEMSTEADY gate judges
 // (goRuntimeBytes is go_total_bytes), read from the mobile sampler's reader
-// at the diagnostic interval instead of the sampler's own 15 s.
+// at the diagnostic interval. The allocator classes share the total's read
+// so a peak between the sampler's 15 s observations retains its breakdown.
 type transferDiagMemory struct {
 	Part                           string `json:"part"`
 	UnixMillis                     int64  `json:"unix_millis"`
@@ -93,6 +94,10 @@ type transferDiagMemory struct {
 	GoLiveByteCount                int64  `json:"go_live_bytes"`
 	GoGoalByteCount                int64  `json:"go_goal_bytes"`
 	GoLimitByteCount               int64  `json:"go_limit_bytes"`
+	GoHeapAllocByteCount           int64  `json:"go_heap_alloc_bytes"`
+	GoHeapUnusedByteCount          int64  `json:"go_heap_unused_bytes"`
+	GoHeapFreeByteCount            int64  `json:"go_heap_free_bytes"`
+	GoStackInuseByteCount          int64  `json:"go_stack_inuse_bytes"`
 	GoMemoryProfileRateBytes       int64  `json:"memory_profile_rate_bytes"`
 	DeviceMemoryTargetByteCount    int64  `json:"device_memory_target_bytes"`
 	PhysicalByteCount              int64  `json:"physical_bytes"`
@@ -443,6 +448,10 @@ func (self *DeviceLocal) collectTransferDiag(millis int64) []any {
 			GoLiveByteCount:                  runtimeSnapshot.liveByteCount,
 			GoGoalByteCount:                  runtimeSnapshot.goalByteCount,
 			GoLimitByteCount:                 runtimeSnapshot.limitByteCount,
+			GoHeapAllocByteCount:             runtimeSnapshot.heapAllocByteCount,
+			GoHeapUnusedByteCount:            runtimeSnapshot.heapUnusedByteCount,
+			GoHeapFreeByteCount:              runtimeSnapshot.heapFreeByteCount,
+			GoStackInuseByteCount:            runtimeSnapshot.stackInuseByteCount,
 			GoMemoryProfileRateBytes:         runtimeSnapshot.memoryProfileRateByteCount,
 			DeviceMemoryTargetByteCount:      self.settings.MemoryTargetByteCount,
 			PhysicalByteCount:                runtimeSnapshot.physicalByteCount,

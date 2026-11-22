@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"net/rpc"
 	"sync"
 	"sync/atomic"
@@ -138,6 +139,130 @@ func TestDeviceRemotePickerHttpDoesNotWaitForContractStatus(t *testing.T) {
 			t.Fatal("HTTP response registration leaked")
 		}
 	})
+}
+
+func TestDeviceRemoteHttpKeepsResponseReceivedBeforeWait(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				remote, backend, _ := newPickerStatusRpc(t)
+				remote.log = connect.NewNoopLogger()
+				reverse := newDeviceRemoteRpc(t.Context(), remote)
+				defer func() {
+					reverse.Close()
+					<-reverse.done
+				}()
+				server := rpc.NewServer()
+				if err := server.RegisterName("DeviceRemoteRpc", reverse); err != nil {
+					t.Fatal(err)
+				}
+				clientConn, serverConn := net.Pipe()
+				go server.ServeConn(serverConn)
+				client := newDeviceRpcClient(clientConn)
+				defer client.Close()
+
+				registered := make(chan connect.Id, 1)
+				receive := make(chan struct{})
+				defer close(receive)
+				remote.testingBeforeHttpResponseWait = func(id connect.Id) {
+					registered <- id
+					<-receive
+				}
+
+				const url = "https://reply.invalid/refresh"
+				requestBody := ""
+				if method == http.MethodPost {
+					requestBody = "synthetic request"
+				}
+				type result struct {
+					body []byte
+					err  error
+				}
+				start := func(ctx context.Context) (connect.Id, <-chan result) {
+					t.Helper()
+					completed := make(chan result, 1)
+					go func() {
+						if method == http.MethodGet {
+							body, err := remote.httpGetRaw(ctx, url, "")
+							completed <- result{body, err}
+						} else {
+							body, err := remote.httpPostRaw(ctx, url, []byte(requestBody), "")
+							completed <- result{body, err}
+						}
+					}()
+					select {
+					case id := <-registered:
+						request := <-backend.requests
+						if request.RequestId != id || request.RequestUrl != url || string(request.RequestBodyBytes) != requestBody {
+							t.Fatalf("forward request does not match the registered %s request", method)
+						}
+						return id, completed
+					case got := <-completed:
+						t.Fatalf("%s completed before registering: %v", method, got.err)
+						return connect.Id{}, nil
+					}
+				}
+				requirePending := func(id connect.Id, want bool) {
+					t.Helper()
+					remote.stateLock.Lock()
+					_, pending := remote.httpResponseChannels[id]
+					remote.stateLock.Unlock()
+					if pending != want {
+						t.Fatalf("request %v registered = %t, want %t", id, pending, want)
+					}
+				}
+				reply := func(response *DeviceRemoteHttpResponse) {
+					t.Helper()
+					var void RpcVoid
+					if err := client.Call("DeviceRemoteRpc.HttpResponse", response, &void); err != nil {
+						t.Fatal(err)
+					}
+					dispatched := make(chan struct{})
+					reverse.dispatch(func() { close(dispatched) })
+					synctest.Wait()
+					select {
+					case <-dispatched:
+					default:
+						t.Fatal("reverse HTTP response blocked the callback dispatcher")
+					}
+				}
+
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				canceledId, canceled := start(ctx)
+				requirePending(canceledId, true)
+				cancel()
+				receive <- struct{}{}
+				if got := <-canceled; len(got.body) != 0 || got.err == nil || got.err.Error() != "Done" {
+					t.Fatalf("canceled request returned body %q and error %v", got.body, got.err)
+				}
+				requirePending(canceledId, false)
+
+				id, completed := start(t.Context())
+				reply(newDeviceRemoteHttpResponse(canceledId, []byte("late canceled reply"), nil))
+				requirePending(id, true)
+
+				want := &connect.HttpStatusError{
+					StatusCode: http.StatusUnauthorized,
+					Status:     "401 Unauthorized",
+					Body:       []byte("{\"code\":\"session_revoked\"}"),
+				}
+				// Finish dispatch of the typed reply and a duplicate while the
+				// caller is still paused outside its receive select.
+				reply(newDeviceRemoteHttpResponse(id, nil, want))
+				reply(newDeviceRemoteHttpResponse(id, []byte("duplicate reply"), nil))
+				requirePending(id, false)
+				receive <- struct{}{}
+
+				got := <-completed
+				var status *connect.HttpStatusError
+				if len(got.body) != 0 || !errors.As(got.err, &status) || status.StatusCode != want.StatusCode ||
+					status.Status != want.Status || string(status.Body) != string(want.Body) {
+					t.Fatalf("early %s reply returned body %q and error %v, want HTTP %s with body %q", method, got.body, got.err, want.Status, want.Body)
+				}
+			})
+		})
+	}
 }
 
 func TestDeviceRemoteContractStatusKeepsNewerNotification(t *testing.T) {
