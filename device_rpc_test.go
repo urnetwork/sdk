@@ -12,6 +12,7 @@ import (
 	"net/rpc"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3235,6 +3236,71 @@ func TestDeviceRpcHttpOverRpcConcurrent(t *testing.T) {
 		connect.AssertEqual(t, errs[i], nil)
 		// each request got its own response, not another request's
 		connect.AssertEqual(t, results[i], fmt.Sprintf("%d", i))
+	}
+}
+
+// A response can be handed over after its request registered the response
+// channel and before the caller waits on it: the reverse rpc's delivery waits
+// on stateLock while the request holds it to register, and runs the moment the
+// request lets go. The handover never waits, so on an unbuffered channel it
+// found no receiver, dropped the response and closed the channel, and the
+// caller got Done with its transport standing; under load
+// TestDeviceRpcHttpOverRpcConcurrent saw one of its 50 requests do that. Here
+// each request is held between registering and waiting until the local's own
+// response has been handed over, for a get and a post.
+func TestDeviceRpcHttpResponseHandedOverBeforeTheCallerWaits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.URL.Query().Get("id")))
+	}))
+	defer ts.Close()
+
+	_, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
+
+	// Each request waits for its own response's handover, whichever of the
+	// two hooks runs first. The hooks are set before the first request takes
+	// stateLock, and a delivery reads its hook only after taking the channel
+	// under it.
+	var stateLock sync.Mutex
+	requestIdDelivered := map[connect.Id]chan struct{}{}
+	deliveredFor := func(requestId connect.Id) chan struct{} {
+		stateLock.Lock()
+		defer stateLock.Unlock()
+		delivered, ok := requestIdDelivered[requestId]
+		if !ok {
+			delivered = make(chan struct{})
+			requestIdDelivered[requestId] = delivered
+		}
+		return delivered
+	}
+	deviceRemote.testingAfterHttpResponseDelivered = func(requestId connect.Id) {
+		close(deliveredFor(requestId))
+	}
+	var heldCount atomic.Int64
+	deviceRemote.testingAfterHttpResponseRegistered = func(requestId connect.Id) {
+		heldCount.Add(1)
+		select {
+		case <-deliveredFor(requestId):
+		case <-time.After(10 * time.Second):
+			// bounds a missing premise only; the caller then returns Done
+			t.Error("the local's response was never handed over")
+			cancel()
+		}
+	}
+
+	body, err := deviceRemote.httpGetRaw(ctx, ts.URL+"?id=get", "")
+	if err != nil || string(body) != "get" {
+		t.Fatalf("a get answered before its caller waited: body=%q err=%v", body, err)
+	}
+	body, err = deviceRemote.httpPostRaw(ctx, ts.URL+"?id=post", []byte("post"), "")
+	if err != nil || string(body) != "post" {
+		t.Fatalf("a post answered before its caller waited: body=%q err=%v", body, err)
+	}
+	if heldCount.Load() < 2 {
+		t.Fatalf("held %d requests between registering and waiting, expected the get and the post", heldCount.Load())
 	}
 }
 

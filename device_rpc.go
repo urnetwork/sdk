@@ -370,7 +370,17 @@ type DeviceRemote struct {
 	// dedicated rpc listener methods exist for it
 	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
 
+	// Each request's response channel, from its forward call until its response
+	// is handed over or its rpc generation ends. A channel holds one response:
+	// the handover never waits, and it can land after the request registered the
+	// channel and before its caller waits on it, since the delivery waits on
+	// stateLock while the request holds it to register. A channel closed with
+	// nothing in it means the generation ended first.
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
+	// Test-only barriers: after a request registered its response channel and
+	// before its caller waits on it, and after a response was handed over.
+	testingAfterHttpResponseRegistered func(connect.Id)
+	testingAfterHttpResponseDelivered  func(connect.Id)
 	// The uploads asked for with a callback (UploadLogs), until the device
 	// process reports the result or the rpc generation that carried the request
 	// ends. Each is taken out before its callback is called, so it is called once.
@@ -5061,7 +5071,8 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			ByJwt:            byJwt,
 		}
 
-		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		// one slot, for a response handed over before this caller waits
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse, 1)
 		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
@@ -5092,6 +5103,9 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 
 		if err != nil {
 			return nil, err
+		}
+		if self.testingAfterHttpResponseRegistered != nil {
+			self.testingAfterHttpResponseRegistered(httpRequestId)
 		}
 
 		select {
@@ -5165,7 +5179,8 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			ByJwt:      byJwt,
 		}
 
-		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		// one slot, for a response handed over before this caller waits
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse, 1)
 		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
@@ -5192,6 +5207,9 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 
 		if err != nil {
 			return nil, err
+		}
+		if self.testingAfterHttpResponseRegistered != nil {
+			self.testingAfterHttpResponseRegistered(httpRequestId)
 		}
 
 		select {
@@ -5275,12 +5293,19 @@ func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
 		return
 	}
 
+	// Never waits and never drops: only the path that took the channel out of
+	// the map sends on it, so its one slot is free, and the response stays
+	// there for a caller that registered the channel and is not yet waiting.
+	// An unbuffered channel dropped that response, and the caller got Done
+	// with its transport standing.
 	select {
 	case httpResponseChannel <- httpResponse:
 	default:
-		// no one is still listening, drop the response
 	}
 	close(httpResponseChannel)
+	if self.testingAfterHttpResponseDelivered != nil {
+		self.testingAfterHttpResponseDelivered(httpRequestId)
+	}
 }
 
 func (self *DeviceRemote) GetRemoteConnected() bool {
