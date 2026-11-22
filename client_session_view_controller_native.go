@@ -27,6 +27,16 @@ func (self *ClientSessionAction) GetError() *ClientSessionError { return self.Er
 
 func (self *ClientSessionSnapshot) GetSessions() *NetworkSessionInfoList { return self.Sessions }
 
+func (self *ClientSessionSnapshot) GetSessionCount() int { return self.SessionCount }
+
+func (self *ClientSessionSnapshot) GetSessionsHasMore() bool { return self.SessionsHasMore }
+
+func (self *ClientSessionSnapshot) GetGroups() *ClientSessionGroupList { return self.Groups }
+
+func (self *ClientSessionSnapshot) GetOtherSessionCount() int { return self.OtherSessionCount }
+
+func (self *ClientSessionSnapshot) GetTruncated() bool { return self.Truncated }
+
 func (self *ClientSessionSnapshot) GetCurrentSessionId() *Id { return self.CurrentSessionId }
 
 func (self *ClientSessionSnapshot) GetLegacyCoverage() string { return self.LegacyCoverage }
@@ -51,3 +61,13 @@ func (self *ClientSessionSnapshot) GetError() *ClientSessionError { return self.
 
 func (self *ClientSessionAction) GetStatus() string { return self.Status }
 func (self *ClientSessionAction) GetState() string  { return self.State }
+
+func (self *ClientSessionGroup) GetKind() string { return self.Kind }
+
+func (self *ClientSessionGroup) GetCount() int { return self.Count }
+
+func (self *ClientSessionGroup) GetExpanded() bool { return self.Expanded }
+
+func (self *ClientSessionGroup) GetSessions() *NetworkSessionInfoList { return self.Sessions }
+
+func (self *ClientSessionGroup) GetHasMore() bool { return self.HasMore }

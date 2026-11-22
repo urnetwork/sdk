@@ -26,6 +26,17 @@ func jsClientSessionViewController(vc *sdk.ClientSessionViewController, closeCon
 		return js.Null()
 	})
 	m["revokeOtherSessions"] = js.FuncOf(func(js.Value, []js.Value) any { vc.RevokeOtherSessions(); return js.Null() })
+	// a group's kind (snapshot groups[].kind) and whether to open it
+	m["setGroupExpanded"] = js.FuncOf(func(_ js.Value, args []js.Value) any {
+		vc.SetGroupExpanded(stringArg(args, 0), boolArg(args, 1))
+		return js.Null()
+	})
+	// a group's kind, or sdk.ClientSessionGroupSignIns ("sign_ins") for the
+	// device sign-ins
+	m["showMoreSessions"] = js.FuncOf(func(_ js.Value, args []js.Value) any {
+		vc.ShowMoreSessions(stringArg(args, 0))
+		return js.Null()
+	})
 	m["addClientSessionListener"] = js.FuncOf(func(_ js.Value, args []js.Value) any {
 		cb, ok := funcArg(args)
 		if !ok {

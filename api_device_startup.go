@@ -134,9 +134,11 @@ func (self *Api) publishDeviceOwner(
 		if err != nil {
 			return err
 		}
-		if state != prepared.state || localState.deviceAuthGeneration != prepared.localGeneration {
+		if !sameAuthState(state, prepared.state) || localState.deviceAuthGeneration != prepared.localGeneration {
 			return errors.New("device auth startup was superseded in local storage")
 		}
+		// the same sign-in, read now: a notice dismissed since is not taken up
+		prepared.state = state
 	}
 	self.mutex.Lock()
 	current := self.deviceAuthGeneration == prepared.apiGeneration

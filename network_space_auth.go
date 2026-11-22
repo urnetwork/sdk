@@ -211,7 +211,7 @@ func (self *NetworkSpace) authSnapshotCurrentWithLock(snapshot *LocalAuthStateSn
 	if err != nil {
 		return false, localStorageStageError("verify auth snapshot", err)
 	}
-	return state == snapshot.state, nil
+	return sameAuthState(state, snapshot.state), nil
 }
 
 // Removes only enumerated children, never the storage root, the exact checked

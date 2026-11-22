@@ -150,6 +150,13 @@ type cryptoCoin struct {
 	networkWarningKey    string
 	noPaymentLinkNote    string
 	noPaymentLinkNoteKey string
+	// a coin with a confirmation grace (Bitcoin, mmm/BTCPAY.md §16.8): the
+	// line under the quote's countdown, and the one that stands for the
+	// expired copy while the grace runs (CryptoInvoiceState.AwaitingConfirmation)
+	confirmationNote            string
+	confirmationNoteKey         string
+	awaitingConfirmationNote    string
+	awaitingConfirmationNoteKey string
 }
 
 // The coins this sdk knows, by asset (mmm/BTCPAY.md §17.7 for the four added
@@ -223,6 +230,12 @@ var cryptoAssetCoins = map[string]cryptoCoin{
 		networkLineKey:    "crypto_network_bitcoin",
 		networkWarning:    "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
 		networkWarningKey: "crypto_invoice_bitcoin_network_only",
+		// the server credits a Bitcoin payment sent within the quote at its
+		// price while it is mined within 3 hours of the expiry
+		confirmationNote:            "Bitcoin payments can take up to 3 hours to confirm. A payment sent before the quote expires is credited at this price.",
+		confirmationNoteKey:         "crypto_invoice_bitcoin_confirmation_time",
+		awaitingConfirmationNote:    "This quote expired. A payment you sent before it expired is credited at this price once it confirms, which can take up to 3 hours. If you didn't send one, pay another way.",
+		awaitingConfirmationNoteKey: "crypto_invoice_bitcoin_awaiting_confirmation",
 	},
 	CryptoAssetEth: {
 		ticker:            "ETH",
@@ -594,6 +607,18 @@ type CryptoAssetLines struct {
 	// (crypto_invoice_tao_no_payment_link). None for every other coin.
 	NoPaymentLinkNote    string `json:"no_payment_link_note"`
 	NoPaymentLinkNoteKey string `json:"no_payment_link_note_key"`
+	// a coin whose payment the server may credit at the quote after the
+	// quote's expiry (Bitcoin's 3-hour confirmation grace, mmm/BTCPAY.md
+	// §16.8): the line under the countdown while the invoice is payable
+	// (crypto_invoice_bitcoin_confirmation_time). None for every other coin.
+	ConfirmationNote    string `json:"confirmation_note"`
+	ConfirmationNoteKey string `json:"confirmation_note_key"`
+	// the line in place of the expired copy and Refresh quote while
+	// CryptoInvoiceState.AwaitingConfirmation, the grace after the quote
+	// (crypto_invoice_bitcoin_awaiting_confirmation). None for every other
+	// coin.
+	AwaitingConfirmationNote    string `json:"awaiting_confirmation_note"`
+	AwaitingConfirmationNoteKey string `json:"awaiting_confirmation_note_key"`
 }
 
 // The coin's lines (CryptoAssetLines); every one empty for anything else.
@@ -601,12 +626,16 @@ type CryptoAssetLines struct {
 func CryptoAssetLinesFor(asset string) *CryptoAssetLines {
 	coin := cryptoAssetCoins[asset]
 	return &CryptoAssetLines{
-		NetworkLine:          coin.networkLine,
-		NetworkLineKey:       coin.networkLineKey,
-		NetworkWarning:       coin.networkWarning,
-		NetworkWarningKey:    coin.networkWarningKey,
-		NoPaymentLinkNote:    coin.noPaymentLinkNote,
-		NoPaymentLinkNoteKey: coin.noPaymentLinkNoteKey,
+		NetworkLine:                 coin.networkLine,
+		NetworkLineKey:              coin.networkLineKey,
+		NetworkWarning:              coin.networkWarning,
+		NetworkWarningKey:           coin.networkWarningKey,
+		NoPaymentLinkNote:           coin.noPaymentLinkNote,
+		NoPaymentLinkNoteKey:        coin.noPaymentLinkNoteKey,
+		ConfirmationNote:            coin.confirmationNote,
+		ConfirmationNoteKey:         coin.confirmationNoteKey,
+		AwaitingConfirmationNote:    coin.awaitingConfirmationNote,
+		AwaitingConfirmationNoteKey: coin.awaitingConfirmationNoteKey,
 	}
 }
 

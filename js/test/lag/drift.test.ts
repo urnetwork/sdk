@@ -692,7 +692,10 @@ test("V6: the verdict over a fit, as the api decides it", () => {
     assert.deepEqual(drift.decide(null, empty, observations, K99).reason, "ip_country_unknown");
   }
   assert.deepEqual(drift.decide(null, home, observations, K99), { verdict: "inconclusive", reason: "low_precision", judgement: null });
-  assert.equal(drift.decide(fit, home, observations, K99, fit.majorKm - 1).reason, "low_precision");
+  // max_sigma_km bounds rejection only (2026-11-20): too wide still agrees inside, and is inconclusive, not a reject, outside
+  assert.equal(drift.decide(fit, home, observations, K99, fit.majorKm - 1).reason, "inside_ip_country");
+  const wideFar = drift.decide(fit, far, observations, K99, fit.majorKm - 1);
+  assert.deepEqual([wideFar.verdict, wideFar.reason, wideFar.judgement!.overlaps], ["inconclusive", "low_precision", false]);
   // a region wide enough to touch Spain, while the light discs keep Spain out of reach
   const wide = fitAt(fx.CHICAGO, iso(2400));
   const inconsistent = drift.decide(wide, far, observations, K99, 1e9);

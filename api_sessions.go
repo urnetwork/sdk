@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -16,11 +18,51 @@ type SessionLastUsed struct {
 	CountryCode string `json:"country_code"`
 	DeviceType  string `json:"device_type"`
 	AppVersion  string `json:"app_version"`
+	// How the build reached the device (ClientDistribution*), as the server
+	// keeps it with the use; empty from a server that keeps none.
+	Distribution string `json:"distribution"`
+	// The kind of device the Sessions row names: DeviceType, or
+	// SessionDeviceKindExtension for the browser extension, whose builds
+	// report device type web with an extension distribution. The sdk sets it
+	// (sessionDeviceKind); apps label rows with it.
+	DeviceKind string `json:"device_kind"`
 }
+
+const (
+	// Keep this untyped so gomobile exports it on every app platform.
+
+	// SessionLastUsed.DeviceKind of the browser extension's sign-in: label
+	// the row "Browser extension" (sessions_device_extension).
+	SessionDeviceKindExtension = "extension"
+)
+
+// The kind of device a session's last use names: the browser extension for
+// device type web from an extension build, else the device type.
+func sessionDeviceKind(lastUsed *SessionLastUsed) string {
+	if lastUsed.DeviceType == "web" {
+		switch lastUsed.Distribution {
+		case ClientDistributionExtensionChrome, ClientDistributionExtensionFirefox:
+			return SessionDeviceKindExtension
+		}
+	}
+	return lastUsed.DeviceType
+}
+
 type NetworkSessionInfo struct {
-	SessionId       *Id              `json:"session_id"`
-	Current         bool             `json:"current"`
-	Kind            string           `json:"kind"`
+	SessionId *Id  `json:"session_id"`
+	Current   bool `json:"current"`
+	// How the session began: a sign-in method (password, google, auth_code,
+	// ...) or a client's own session (api_key_client, hosted_proxy,
+	// legacy_proxy, device_adopt, legacy). The apps label the sign-in
+	// method with it.
+	Kind string `json:"kind"`
+	// signin, code or client. Empty from a server before the field, when
+	// Kind implies it (sessionCategory).
+	SessionKind string `json:"session_kind"`
+	// For a session a client owns: hosted_proxy, api_key, device or legacy.
+	// Empty for a sign-in, and from a server before the field
+	// (sessionClientKind).
+	ClientKind      string           `json:"client_kind"`
 	CreateTime      *Time            `json:"create_time"`
 	LastMintTime    *Time            `json:"last_mint_time"`
 	TokenExpireTime *Time            `json:"token_expire_time"`
@@ -42,6 +84,9 @@ type NetworkSessionsResult struct {
 	EventId          int64                   `json:"event_id"`
 	CurrentSessionId *Id                     `json:"current_session_id"`
 	LegacyCoverage   string                  `json:"legacy_coverage"`
+	// The cursor of the next page (GET /network/sessions?cursor=), or empty
+	// on the last page and from a server that answers in one page.
+	NextCursor string `json:"next_cursor"`
 }
 type SessionOperationResult struct {
 	OperationId    *Id    `json:"operation_id"`
@@ -98,12 +143,22 @@ func (self *Api) networkSessions(ctx context.Context) (*NetworkSessionsResult, e
 	return self.networkSessionsFor(ctx, self.captureNetworkTarget())
 }
 func (self *Api) networkSessionsFor(ctx context.Context, target networkRenewalTarget) (*NetworkSessionsResult, error) {
+	return self.networkSessionsPageFor(ctx, target, "")
+}
+
+// One page of the list: the first for an empty cursor, else the page that the
+// previous page's NextCursor names.
+func (self *Api) networkSessionsPageFor(ctx context.Context, target networkRenewalTarget, cursor string) (*NetworkSessionsResult, error) {
 	var current bool
 	target, current = self.currentNetworkTarget(target)
 	if !current {
 		return nil, fmt.Errorf("%w: GET /network/sessions", ErrNetworkCredentialRequired)
 	}
-	raw, err := self.getHttpGetRaw()(ctx, self.apiUrl+"/network/sessions", target.byJwt)
+	requestUrl := self.apiUrl + "/network/sessions"
+	if cursor != "" {
+		requestUrl += "?cursor=" + url.QueryEscape(cursor)
+	}
+	raw, err := self.getHttpGetRaw()(ctx, requestUrl, target.byJwt)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +168,11 @@ func (self *Api) networkSessionsFor(ctx context.Context, target networkRenewalTa
 	}
 	if result.Sessions == nil {
 		result.Sessions = NewNetworkSessionInfoList()
+	}
+	for _, info := range result.Sessions.values {
+		if info != nil && info.LastUsed != nil {
+			info.LastUsed.DeviceKind = sessionDeviceKind(info.LastUsed)
+		}
 	}
 	if result.Generation == "" || result.EventId < 1 {
 		return nil, errApiRequestFailed

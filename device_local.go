@@ -1069,7 +1069,9 @@ type DeviceLocalSettings struct {
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
 	// identity while exercising the real tunnel stack on one host. Ordinary
-	// applications leave it nil.
+	// applications leave it nil. A device whose space egresses through a proxy
+	// (an sn miner's proxy slot) needs nothing here: its exit takes the space's
+	// proxy and packet endpoint either way (applyProviderExitEgress).
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings `json:"-"`
@@ -1991,6 +1993,13 @@ func newDeviceLocalWithOverridesForPlatform(
 	platformTransportBudget := connect.NewPlatformTransportBudgetForMemoryTarget(
 		settings.MemoryTargetByteCount,
 	)
+	if mobileMemoryPolicyEnabledForPlatform(settings.MemoryTargetByteCount, settings.LowMemoryProfile) {
+		// a phone's carriers are small enough that its carrier slots must
+		// not bind before its bytes do (server LBALTOPT2 R20)
+		platformTransportBudget = connect.NewMobilePlatformTransportBudgetForMemoryTarget(
+			settings.MemoryTargetByteCount,
+		)
+	}
 	transferMemory := newDeviceLocalTransferMemoryForPlatform(settings, settings.LowMemoryProfile)
 	configureDeviceLocalClientMemoryForPlatform(settings, transferMemory, settings.LowMemoryProfile)
 	if settings.testingBeforePeerPinStoreAdmission != nil {
@@ -2929,22 +2938,32 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 	return nil
 }
 
-// hostedSafePerformanceProfile forces direct mode (`AllowDirect`) off on the
-// way into a hosted device's stored state, so `GetPerformanceProfile` is
-// truthful and the input profile is not mutated in place. Direct mode on a
-// hosted device would leak that the device is hosted, and where it is hosted,
-// via the host addresses in the direct connection setup. Defense in depth
-// alongside the equivalent hard limit on the live multi client
+// Limits a profile on the way into a hosted device's stored state, so
+// `GetPerformanceProfile` is truthful and the input profile is not mutated in
+// place. Every profile write passes through here (the preference catalog's
+// normalize and apply).
+//
+// Direct mode (`AllowDirect`) is forced off. Direct mode on a hosted device
+// would leak that the device is hosted, and where it is hosted, via the host
+// addresses in the direct connection setup. Defense in depth alongside the
+// equivalent hard limit on the live multi client
 // (`connect.MultiClientSettings.OverrideAllowDirect` = false).
+//
+// Post-quantum encryption (`PostQuantumEncryption`) is forced off, so a hosted
+// device's window clients run no per-peer session, as a hosted window without
+// it always has: no required sessions, no wait for a processed key
+// registration, and no post-quantum-only provider pool. A device that is not
+// hosted, every app's, keeps the setting.
 func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
 	if !self.settings.HostedIncompatible {
 		return performanceProfile
 	}
-	if performanceProfile == nil || !performanceProfile.AllowDirect {
+	if performanceProfile == nil || !performanceProfile.AllowDirect && !performanceProfile.PostQuantumEncryption {
 		return performanceProfile
 	}
 	limited := *performanceProfile
 	limited.AllowDirect = false
+	limited.PostQuantumEncryption = false
 	return &limited
 }
 
@@ -2955,7 +2974,11 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 // Applies without saving; its owning operation publishes notifications after unlock.
 func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *PerformanceProfile) (func(), error) {
 	if limited := self.hostedSafePerformanceProfile(performanceProfile); limited != performanceProfile {
-		self.log.Infof("[device]hosted incompatible: AllowDirect forced off\n")
+		self.log.Infof(
+			"[device]hosted incompatible: forced off AllowDirect=%t PostQuantumEncryption=%t\n",
+			performanceProfile.AllowDirect,
+			performanceProfile.PostQuantumEncryption,
+		)
 		performanceProfile = limited
 	}
 	// Own the stored value. App presentation layers commonly retain and mutate
@@ -4366,8 +4389,9 @@ func (self *DeviceLocal) canReferChanged(canRefer bool) {
 func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
 	// self.assertNotLockOwner()
 	// the provider's transports and its attestor follow the mode: a public
-	// provider dials the platform directly (EXTENDER.md J4), and only a
-	// providing one attests its probes (connect/DESIGNNOTES4.md §1)
+	// provider dials the platform on its own egress, through no extender
+	// (EXTENDER.md J4), and only a providing one attests its probes
+	// (connect/DESIGNNOTES4.md §1)
 	self.updateProviderProvideMode()
 	for _, listener := range self.provideModeChangeListeners.Get() {
 		connect.HandleError(func() {
@@ -5038,13 +5062,44 @@ func providerLocalUserNatSettingsForProfile(
 	return localUserNatSettings
 }
 
+// Puts a provider's exit on the provider's egress. When the device's space
+// egresses through a proxy (NetworkSpace.egressProxy), the exit nat's tcp goes
+// through the proxy, its udp only through the space's packet endpoint, which
+// connect requires of a datagram dial through a proxy, and its icmp echo not at
+// all (connect net_proxy_packet_path.go). So no exit flow leaves from this
+// host, and the exit leaves where the provider's platform transports place the
+// provider (connect#227, owner 2026-11-18, "route through the proxy"). The
+// device's own dial seam (DeviceLocalSettings.ProviderDialContextSettings), when
+// set, stays the exit's, ahead of the proxy as connect takes them; without one
+// the exit takes the space's seam, which carries the space's packet endpoint.
+// An exit of a space whose egress is this host keeps its settings.
+func applyProviderExitEgress(
+	localUserNatSettings *connect.LocalUserNatSettings,
+	networkSpace *NetworkSpace,
+	providerDialContextSettings *connect.DialContextSettings,
+) {
+	proxySettings, spaceDialContextSettings := networkSpace.egressProxy()
+	if proxySettings == nil {
+		return
+	}
+	dialContextSettings := providerDialContextSettings
+	if dialContextSettings == nil {
+		dialContextSettings = spaceDialContextSettings
+	}
+	localUserNatSettings.TcpBufferSettings.ProxySettings = proxySettings
+	localUserNatSettings.TcpBufferSettings.DialContextSettings = dialContextSettings
+	localUserNatSettings.UdpBufferSettings.ProxySettings = proxySettings
+	localUserNatSettings.UdpBufferSettings.DialContextSettings = dialContextSettings
+}
+
 // A mode that includes public also decides how the provider reaches the
-// platform: a public provider dials directly on every transport, the standby
-// included, so the platform observes the provider's own address and location
-// (EXTENDER.md J4). A network or friends-and-family provider keeps the shared
-// strategy and its extender dialers, since network peers carry no location
-// metadata. A change that flips that rebuilds the provider transports
-// make-before-break.
+// platform: a public provider dials on its egress on every transport, the
+// standby included -- through no extender, and through its space's proxy when
+// it has one -- so the platform observes the address the provider's exit
+// leaves from, and places it there (EXTENDER.md J4). A network or
+// friends-and-family provider keeps the shared strategy and its extender
+// dialers, since network peers carry no location metadata. A change that flips
+// that rebuilds the provider transports make-before-break.
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	_ = self.setLocalCatalogPreference("provide-mode", provideMode)
 }
@@ -6786,6 +6841,8 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 			self.log,
 			self.settings.ProviderDialContextSettings,
 		)
+		// the exit leaves through the space's proxy, when it has one
+		applyProviderExitEgress(localUserNatSettings, self.networkSpace, self.settings.ProviderDialContextSettings)
 		if self.transferMemory != nil {
 			localUserNatSettings.MemoryBudget = self.transferMemory.nat
 		}

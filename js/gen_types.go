@@ -74,6 +74,7 @@ func generateTypes() ([]byte, error) {
 		sdk.SessionSignOutResult{},
 		sdk.ClientSessionError{},
 		sdk.ClientSessionAction{},
+		sdk.ClientSessionGroup{},
 		sdk.ClientSessionSnapshot{},
 		sdk.RevokeNetworkSessionArgs{},
 		sdk.RevokeOtherNetworkSessionsArgs{},
@@ -310,6 +311,8 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "NetworkSessionInfo[]"
 		case "sdk.ClientSessionActionList":
 			return "ClientSessionAction[]"
+		case "sdk.ClientSessionGroupList":
+			return "ClientSessionGroup[]"
 		case "sdk.StringList":
 			return "string[]"
 		case "sdk.LocationResultList":

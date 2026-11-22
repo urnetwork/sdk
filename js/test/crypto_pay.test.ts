@@ -293,6 +293,10 @@ test("cryptoAssets", () => {
         network_warning_key: lines.networkWarningKey,
         no_payment_link_note: lines.noPaymentLinkNote,
         no_payment_link_note_key: lines.noPaymentLinkNoteKey,
+        confirmation_note: lines.confirmationNote,
+        confirmation_note_key: lines.confirmationNoteKey,
+        awaiting_confirmation_note: lines.awaitingConfirmationNote,
+        awaiting_confirmation_note_key: lines.awaitingConfirmationNoteKey,
         event_product: cryptoPaymentEventProduct(asset),
       },
       vector,
@@ -301,9 +305,13 @@ test("cryptoAssets", () => {
   }
 });
 
-test("cryptoAssetLinesFor hands out a copy, all six lines", () => {
+test("cryptoAssetLinesFor hands out a copy, all ten lines", () => {
   const lines = cryptoAssetLinesFor(CRYPTO_ASSET_TAO);
   assert.deepEqual(Object.keys(lines).sort(), [
+    "awaitingConfirmationNote",
+    "awaitingConfirmationNoteKey",
+    "confirmationNote",
+    "confirmationNoteKey",
     "networkLine",
     "networkLineKey",
     "networkWarning",
@@ -313,7 +321,7 @@ test("cryptoAssetLinesFor hands out a copy, all six lines", () => {
   ]);
   (lines as { networkLine: string }).networkLine = "changed";
   assert.equal(cryptoAssetLinesFor(CRYPTO_ASSET_TAO).networkLine, "Bittensor network");
-  assert.deepEqual(Object.values(cryptoAssetLinesFor("ltc")), ["", "", "", "", "", ""]);
+  assert.deepEqual(Object.values(cryptoAssetLinesFor("ltc")), ["", "", "", "", "", "", "", "", "", ""]);
 });
 
 // The coin a tap on a tab chooses: the coin last chosen in the tab, else the

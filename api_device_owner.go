@@ -100,6 +100,7 @@ func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPu
 	byJwt := prepared.byJwt
 	changed := false
 	networkChanged := false
+	noticeAdopted := false
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
@@ -107,6 +108,7 @@ func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPu
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.newLoginWithLock(byJwt)
+		noticeAdopted = self.adoptAccountSignInRequiredWithLock(prepared.localState, prepared.state)
 		self.log = log
 	})
 	if err == nil && changed && self.tokenManager != nil {
@@ -114,6 +116,9 @@ func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPu
 	}
 	if err == nil && networkChanged {
 		self.networkRenewer.credentialChanged()
+	}
+	if err == nil && noticeAdopted {
+		self.notifyAdoptedAccountSignInNotice()
 	}
 	return err
 }
@@ -132,6 +137,7 @@ func (self *Api) installDeviceRemote(
 	byJwt := prepared.byJwt
 	changed := false
 	networkChanged := false
+	noticeAdopted := false
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
@@ -139,6 +145,7 @@ func (self *Api) installDeviceRemote(
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.newLoginWithLock(byJwt)
+		noticeAdopted = self.adoptAccountSignInRequiredWithLock(prepared.localState, prepared.state)
 		self.log = log
 		self.httpPostRaw = httpPostRaw
 		self.httpPostRawOwner = owner
@@ -157,6 +164,9 @@ func (self *Api) installDeviceRemote(
 	}
 	if err == nil && networkChanged {
 		self.networkRenewer.credentialChanged()
+	}
+	if err == nil && noticeAdopted {
+		self.notifyAdoptedAccountSignInNotice()
 	}
 	return err
 }

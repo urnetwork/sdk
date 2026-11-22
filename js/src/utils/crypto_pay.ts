@@ -119,7 +119,16 @@ interface CryptoCoin {
 }
 
 /** No line: a coin without a warning, or without a note. */
-const NO_LINES = { networkWarning: "", networkWarningKey: "", noPaymentLinkNote: "", noPaymentLinkNoteKey: "" } as const;
+const NO_LINES = {
+  networkWarning: "",
+  networkWarningKey: "",
+  noPaymentLinkNote: "",
+  noPaymentLinkNoteKey: "",
+  confirmationNote: "",
+  confirmationNoteKey: "",
+  awaitingConfirmationNote: "",
+  awaitingConfirmationNoteKey: "",
+} as const;
 
 /** The coins this sdk knows, by asset (mmm/BTCPAY.md §17.7 for the four added on 2026-11-10). A coin missing here is never offered and never shown. */
 const CRYPTO_ASSET_COINS: ReadonlyMap<string, CryptoCoin> = new Map<string, CryptoCoin>([
@@ -184,6 +193,7 @@ const CRYPTO_ASSET_COINS: ReadonlyMap<string, CryptoCoin> = new Map<string, Cryp
       // TAO has no payment uri standard
       uriScheme: "",
       lines: {
+        ...NO_LINES,
         networkLine: "Bittensor network",
         networkLineKey: "crypto_network_tao",
         networkWarning: "Send only TAO on the Bittensor network to this address. TAO sent on any other network won't be credited.",
@@ -210,6 +220,14 @@ const CRYPTO_ASSET_COINS: ReadonlyMap<string, CryptoCoin> = new Map<string, Cryp
         networkLineKey: "crypto_network_bitcoin",
         networkWarning: "Send only Bitcoin on the Bitcoin network to this address. Bitcoin sent on any other network won't be credited.",
         networkWarningKey: "crypto_invoice_bitcoin_network_only",
+        // the server credits a Bitcoin payment sent within the quote at its
+        // price while it is mined within 3 hours of the expiry
+        confirmationNote:
+          "Bitcoin payments can take up to 3 hours to confirm. A payment sent before the quote expires is credited at this price.",
+        confirmationNoteKey: "crypto_invoice_bitcoin_confirmation_time",
+        awaitingConfirmationNote:
+          "This quote expired. A payment you sent before it expired is credited at this price once it confirms, which can take up to 3 hours. If you didn't send one, pay another way.",
+        awaitingConfirmationNoteKey: "crypto_invoice_bitcoin_awaiting_confirmation",
       },
     },
   ],
@@ -534,6 +552,21 @@ export interface CryptoAssetLines {
    */
   readonly noPaymentLinkNote: string;
   readonly noPaymentLinkNoteKey: string;
+  /**
+   * A coin whose payment the server may credit at the quote after the quote's
+   * expiry (Bitcoin's 3-hour confirmation grace, mmm/BTCPAY.md §16.8): the
+   * line under the countdown while the invoice is payable
+   * (crypto_invoice_bitcoin_confirmation_time). None for every other coin.
+   */
+  readonly confirmationNote: string;
+  readonly confirmationNoteKey: string;
+  /**
+   * The line in place of the expired copy and Refresh quote while
+   * CryptoInvoiceState.awaitingConfirmation, the grace after the quote
+   * (crypto_invoice_bitcoin_awaiting_confirmation). None for every other coin.
+   */
+  readonly awaitingConfirmationNote: string;
+  readonly awaitingConfirmationNoteKey: string;
 }
 
 /** The coin's lines (CryptoAssetLines); every one empty for anything else. */

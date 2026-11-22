@@ -57,6 +57,8 @@ var behavioralTypes = map[string]bool{
 	"ClientSessionSnapshot":   true,
 	"NetworkSessionInfoList":  true,
 	"ClientSessionActionList": true,
+	"ClientSessionGroup":      true,
+	"ClientSessionGroupList":  true,
 
 	"Socket": true,
 	// These immutable observations expose private state through getters.

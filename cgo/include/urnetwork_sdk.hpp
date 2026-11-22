@@ -310,6 +310,11 @@ inline constexpr const char* ClientLimitPromptRemoveClient = "remove_client";
 inline constexpr const char* ClientLimitPromptUpgrade = "upgrade";
 inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
 inline constexpr const char* ClientLimitStatusNone = "";
+inline constexpr const char* ClientSessionGroupApiClients = "api_clients";
+inline constexpr const char* ClientSessionGroupHostedProxies = "hosted_proxies";
+inline constexpr const char* ClientSessionGroupOtherClients = "other_clients";
+inline constexpr const char* ClientSessionGroupPairedDevices = "paired_devices";
+inline constexpr const char* ClientSessionGroupSignIns = "sign_ins";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
@@ -652,6 +657,8 @@ inline constexpr int64_t RoutingTierFull = 2;
 inline constexpr int64_t RoutingTierLight = 1;
 inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* SessionDeviceKindExtension = "extension";
+inline constexpr const char* SessionErrorCodeLimitReached = "session_limit_reached";
 inline constexpr const char* ShownPlanFree = "free";
 inline constexpr const char* ShownPlanPro = "pro";
 inline constexpr const char* ShownPlanUnknown = "unknown";
@@ -890,6 +897,8 @@ class ClientRefreshIntegrityNotice;
 class ClientSessionAction;
 class ClientSessionActionList;
 class ClientSessionError;
+class ClientSessionGroup;
+class ClientSessionGroupList;
 class ClientSessionSnapshot;
 class ClientSessionViewController;
 class ConnectGrid;
@@ -1603,6 +1612,7 @@ struct AddAuthResult {
 };
 
 struct ApiError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -1776,6 +1786,7 @@ struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
 	std::optional<bool> upgrade_required;
 	std::optional<bool> no_unique_supply;
+	std::optional<std::string> code;
 	std::string message{};
 	std::optional<std::string> client_limit_prompt;
 };
@@ -2343,6 +2354,10 @@ struct CryptoAssetLines {
 	std::string network_warning_key{};
 	std::string no_payment_link_note{};
 	std::string no_payment_link_note_key{};
+	std::string confirmation_note{};
+	std::string confirmation_note_key{};
+	std::string awaiting_confirmation_note{};
+	std::string awaiting_confirmation_note_key{};
 };
 
 struct CryptoInvoiceState {
@@ -2364,6 +2379,8 @@ struct CryptoInvoiceState {
 	double rate_usd{};
 	std::string expires_at{};
 	int64_t seconds_left{};
+	int64_t confirmation_grace_seconds{};
+	bool awaiting_confirmation{};
 	std::string status{};
 	std::string review_reason{};
 	std::string received{};
@@ -2383,6 +2400,7 @@ struct CryptoPaymentAsset {
 	std::optional<StringList> items;
 	int64_t confirmations_required{};
 	int64_t quote_ttl_seconds{};
+	std::optional<int64_t> confirmation_grace_seconds;
 };
 
 struct CryptoPaymentAssetsResult {
@@ -2421,6 +2439,7 @@ struct CryptoPaymentStatusResult {
 	int64_t confirmations{};
 	int64_t confirmations_required{};
 	std::optional<std::string> expires_at;
+	std::optional<int64_t> confirmation_grace_seconds;
 	std::optional<std::string> credited_at;
 	std::optional<std::string> balance_code;
 	std::optional<CryptoPaymentError> error;
@@ -2446,6 +2465,7 @@ struct CryptoPaymentIntentResult {
 	std::optional<std::string> uri;
 	std::optional<std::string> quoted_at;
 	std::optional<std::string> expires_at;
+	std::optional<int64_t> confirmation_grace_seconds;
 	std::optional<int64_t> confirmations_required;
 	std::optional<CryptoPaymentStatusResult> status;
 	std::optional<CryptoPaymentError> error;
@@ -6777,11 +6797,19 @@ inline void from_json(const nlohmann::json& j, AddAuthResult& v) {
 
 inline void to_json(nlohmann::json& j, const ApiError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, ApiError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -7690,6 +7718,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	if (v.no_unique_supply) {
 		j["no_unique_supply"] = *v.no_unique_supply;
 	}
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 	if (v.client_limit_prompt) {
 		j["client_limit_prompt"] = *v.client_limit_prompt;
@@ -7711,6 +7742,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.no_unique_supply = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -10219,6 +10255,10 @@ inline void to_json(nlohmann::json& j, const CryptoAssetLines& v) {
 	j["network_warning_key"] = v.network_warning_key;
 	j["no_payment_link_note"] = v.no_payment_link_note;
 	j["no_payment_link_note_key"] = v.no_payment_link_note_key;
+	j["confirmation_note"] = v.confirmation_note;
+	j["confirmation_note_key"] = v.confirmation_note_key;
+	j["awaiting_confirmation_note"] = v.awaiting_confirmation_note;
+	j["awaiting_confirmation_note_key"] = v.awaiting_confirmation_note_key;
 }
 inline void from_json(const nlohmann::json& j, CryptoAssetLines& v) {
 	if (!j.is_object()) {
@@ -10242,6 +10282,18 @@ inline void from_json(const nlohmann::json& j, CryptoAssetLines& v) {
 	if (auto it = j.find("no_payment_link_note_key"); it != j.end() && !it->is_null()) {
 		it->get_to(v.no_payment_link_note_key);
 	}
+	if (auto it = j.find("confirmation_note"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_note);
+	}
+	if (auto it = j.find("confirmation_note_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_note_key);
+	}
+	if (auto it = j.find("awaiting_confirmation_note"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation_note);
+	}
+	if (auto it = j.find("awaiting_confirmation_note_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation_note_key);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
@@ -10264,6 +10316,8 @@ inline void to_json(nlohmann::json& j, const CryptoInvoiceState& v) {
 	j["rate_usd"] = v.rate_usd;
 	j["expires_at"] = v.expires_at;
 	j["seconds_left"] = v.seconds_left;
+	j["confirmation_grace_seconds"] = v.confirmation_grace_seconds;
+	j["awaiting_confirmation"] = v.awaiting_confirmation;
 	j["status"] = v.status;
 	j["review_reason"] = v.review_reason;
 	j["received"] = v.received;
@@ -10336,6 +10390,12 @@ inline void from_json(const nlohmann::json& j, CryptoInvoiceState& v) {
 	if (auto it = j.find("seconds_left"); it != j.end() && !it->is_null()) {
 		it->get_to(v.seconds_left);
 	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.confirmation_grace_seconds);
+	}
+	if (auto it = j.find("awaiting_confirmation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.awaiting_confirmation);
+	}
 	if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
 		it->get_to(v.status);
 	}
@@ -10384,6 +10444,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentAsset& v) {
 	}
 	j["confirmations_required"] = v.confirmations_required;
 	j["quote_ttl_seconds"] = v.quote_ttl_seconds;
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
+	}
 }
 inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v) {
 	if (!j.is_object()) {
@@ -10407,6 +10470,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentAsset& v) {
 	}
 	if (auto it = j.find("quote_ttl_seconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.quote_ttl_seconds);
+	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
 	}
 }
 
@@ -10532,6 +10600,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentStatusResult& v) {
 	if (v.expires_at) {
 		j["expires_at"] = *v.expires_at;
 	}
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
+	}
 	if (v.credited_at) {
 		j["credited_at"] = *v.credited_at;
 	}
@@ -10625,6 +10696,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentStatusResult& v) {
 		it->get_to(tmp);
 		v.expires_at = std::move(tmp);
 	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
+	}
 	if (auto it = j.find("credited_at"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
 		it->get_to(tmp);
@@ -10700,6 +10776,9 @@ inline void to_json(nlohmann::json& j, const CryptoPaymentIntentResult& v) {
 	}
 	if (v.expires_at) {
 		j["expires_at"] = *v.expires_at;
+	}
+	if (v.confirmation_grace_seconds) {
+		j["confirmation_grace_seconds"] = *v.confirmation_grace_seconds;
 	}
 	if (v.confirmations_required) {
 		j["confirmations_required"] = *v.confirmations_required;
@@ -10809,6 +10888,11 @@ inline void from_json(const nlohmann::json& j, CryptoPaymentIntentResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.expires_at = std::move(tmp);
+	}
+	if (auto it = j.find("confirmation_grace_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.confirmation_grace_seconds = std::move(tmp);
 	}
 	if (auto it = j.find("confirmations_required"); it != j.end() && !it->is_null()) {
 		int64_t tmp{};
@@ -24016,6 +24100,7 @@ public:
 	void createStripePaymentIntent(const std::optional<StripeCreatePaymentIntentArgs>& args, StripePaymentIntentCallback callback) const;
 	void deleteApiKey(const std::optional<DeleteApiKeyArgs>& args, DeleteApiKeyCallback callback) const;
 	void deviceSetName(const std::optional<DeviceSetNameArgs>& device_set_name, DeviceSetNameCallback callback) const;
+	void dismissAccountSignInNotice() const;
 	void findLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const;
 	void findProviderLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const;
 	void findProviders(const std::optional<FindProvidersArgs>& find_providers, FindProvidersCallback callback) const;
@@ -24023,6 +24108,7 @@ public:
 	void generateSeedphrase(const std::optional<GenerateSeedphraseArgs>& args, GenerateSeedphraseCallback callback) const;
 	void getAccountPayments(GetAccountPaymentsCallback callback) const;
 	void getAccountPoints(GetAccountPointsCallback callback) const;
+	std::string getAccountSignInRequiredCause() const;
 	void getAccountWallets(GetAccountWalletsCallback callback) const;
 	std::string getAuthLogoutCause() const;
 	std::string getByJwt() const;
@@ -24047,6 +24133,7 @@ public:
 	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
+	bool hasAccountSignInNotice() const;
 	bool hasNetworkCredential() const;
 	bool isAuthLogoutCurrent(int64_t generation) const;
 	void listApiKeys(ListApiKeysCallback callback) const;
@@ -24301,6 +24388,28 @@ public:
 	bool getUnsupported() const;
 };
 
+class ClientSessionGroup final : public detail::Handle {
+public:
+	ClientSessionGroup() = default;
+	explicit ClientSessionGroup(uint64_t h) : detail::Handle(h) {}
+	int64_t getCount() const;
+	bool getExpanded() const;
+	bool getHasMore() const;
+	std::string getKind() const;
+	NetworkSessionInfoList getSessions() const;
+};
+
+class ClientSessionGroupList final : public detail::Handle {
+public:
+	ClientSessionGroupList() = default;
+	explicit ClientSessionGroupList(uint64_t h) : detail::Handle(h) {}
+	void add(const ClientSessionGroup& value) const;
+	bool contains(const ClientSessionGroup& v) const;
+	ClientSessionGroup get(int64_t i) const;
+	int64_t len() const;
+	void unmarshalJSON(const uint8_t* b, int32_t b_len) const;
+};
+
 class ClientSessionSnapshot final : public detail::Handle {
 public:
 	ClientSessionSnapshot() = default;
@@ -24311,12 +24420,17 @@ public:
 	ClientSessionError getError() const;
 	int64_t getEventId() const;
 	std::string getGeneration() const;
+	ClientSessionGroupList getGroups() const;
 	std::string getLegacyCoverage() const;
 	bool getLoaded() const;
 	bool getLoading() const;
+	int64_t getOtherSessionCount() const;
 	bool getRefreshing() const;
+	int64_t getSessionCount() const;
 	NetworkSessionInfoList getSessions() const;
+	bool getSessionsHasMore() const;
 	bool getSupported() const;
+	bool getTruncated() const;
 };
 
 class ClientSessionViewController final : public detail::Handle {
@@ -24331,7 +24445,9 @@ public:
 	void revokeOtherSessions() const;
 	void revokeSession(const std::string& session_id) const;
 	void setForeground(bool foreground) const;
+	void setGroupExpanded(const std::string& kind, bool expanded) const;
 	void setVisible(bool visible) const;
+	void showMoreSessions(const std::string& kind) const;
 	void start() const;
 	void stop() const;
 };
@@ -24802,6 +24918,7 @@ class LocalAuthStateSnapshot final : public detail::Handle {
 public:
 	LocalAuthStateSnapshot() = default;
 	explicit LocalAuthStateSnapshot(uint64_t h) : detail::Handle(h) {}
+	bool getAccountSignInRequired() const;
 	std::string getByClientJwt() const;
 	std::string getByJwt() const;
 	bool getEmpty() const;
@@ -24971,6 +25088,7 @@ public:
 	NetworkSessionInfo() = default;
 	explicit NetworkSessionInfo(uint64_t h) : detail::Handle(h) {}
 	int64_t getAcceptUntil() const;
+	std::string getClientKind() const;
 	int64_t getCreateTime() const;
 	bool getCurrent() const;
 	std::string getKind() const;
@@ -24978,6 +25096,7 @@ public:
 	SessionLastUsed getLastUsed() const;
 	std::string getOriginSessionId() const;
 	std::string getSessionId() const;
+	std::string getSessionKind() const;
 	int64_t getTokenExpireTime() const;
 };
 
@@ -25000,6 +25119,7 @@ public:
 	int64_t getEventId() const;
 	std::string getGeneration() const;
 	std::string getLegacyCoverage() const;
+	std::string getNextCursor() const;
 	NetworkSessionInfoList getSessions() const;
 };
 
@@ -25287,7 +25407,9 @@ public:
 	std::string getCity() const;
 	std::string getCountry() const;
 	std::string getCountryCode() const;
+	std::string getDeviceKind() const;
 	std::string getDeviceType() const;
+	std::string getDistribution() const;
 	std::string getRegion() const;
 	int64_t getUnixTime() const;
 };
@@ -33885,6 +34007,9 @@ inline void Api::deviceSetName(const std::optional<DeviceSetNameArgs>& device_se
 	auto* callback_fn = callback ? new DeviceSetNameCallback(std::move(callback)) : nullptr;
 	urnet_api_device_set_name(handle(), device_set_name_c, callback_fn ? &detail::oneshot_device_set_name : nullptr, callback_fn);
 }
+inline void Api::dismissAccountSignInNotice() const {
+	urnet_api_dismiss_account_sign_in_notice(handle());
+}
 inline void Api::findLocations(const std::optional<FindLocationsArgs>& find_locations, FindLocationsCallback callback) const {
 	std::string find_locations_json;
 	const char* find_locations_c = nullptr;
@@ -33942,6 +34067,10 @@ inline void Api::getAccountPayments(GetAccountPaymentsCallback callback) const {
 inline void Api::getAccountPoints(GetAccountPointsCallback callback) const {
 	auto* callback_fn = callback ? new GetAccountPointsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_account_points(handle(), callback_fn ? &detail::oneshot_get_account_points : nullptr, callback_fn);
+}
+inline std::string Api::getAccountSignInRequiredCause() const {
+	char* r_c = urnet_api_get_account_sign_in_required_cause(handle());
+	return detail::takeString(r_c);
 }
 inline void Api::getAccountWallets(GetAccountWalletsCallback callback) const {
 	auto* callback_fn = callback ? new GetAccountWalletsCallback(std::move(callback)) : nullptr;
@@ -34070,6 +34199,10 @@ inline void Api::getReferralNetwork(GetReferralNetworkCallback callback) const {
 inline void Api::getTransferStats(GetTransferStatsCallback callback) const {
 	auto* callback_fn = callback ? new GetTransferStatsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_transfer_stats(handle(), callback_fn ? &detail::oneshot_get_transfer_stats : nullptr, callback_fn);
+}
+inline bool Api::hasAccountSignInNotice() const {
+	bool r = urnet_api_has_account_sign_in_notice(handle());
+	return r;
 }
 inline bool Api::hasNetworkCredential() const {
 	bool r = urnet_api_has_network_credential(handle());
@@ -35350,6 +35483,51 @@ inline bool ClientSessionError::getUnsupported() const {
 	bool r = urnet_client_session_error_get_unsupported(handle());
 	return r;
 }
+inline int64_t ClientSessionGroup::getCount() const {
+	int64_t r = urnet_client_session_group_get_count(handle());
+	return r;
+}
+inline bool ClientSessionGroup::getExpanded() const {
+	bool r = urnet_client_session_group_get_expanded(handle());
+	return r;
+}
+inline bool ClientSessionGroup::getHasMore() const {
+	bool r = urnet_client_session_group_get_has_more(handle());
+	return r;
+}
+inline std::string ClientSessionGroup::getKind() const {
+	char* r_c = urnet_client_session_group_get_kind(handle());
+	return detail::takeString(r_c);
+}
+inline NetworkSessionInfoList ClientSessionGroup::getSessions() const {
+	NetworkSessionInfoList r(urnet_client_session_group_get_sessions(handle()));
+	return r;
+}
+inline void ClientSessionGroupList::add(const ClientSessionGroup& value) const {
+	urnet_client_session_group_list_add(handle(), value.handle());
+}
+inline bool ClientSessionGroupList::contains(const ClientSessionGroup& v) const {
+	bool r = urnet_client_session_group_list_contains(handle(), v.handle());
+	return r;
+}
+inline ClientSessionGroup ClientSessionGroupList::get(int64_t i) const {
+	ClientSessionGroup r(urnet_client_session_group_list_get(handle(), i));
+	return r;
+}
+inline int64_t ClientSessionGroupList::len() const {
+	int64_t r = urnet_client_session_group_list_len(handle());
+	return r;
+}
+inline void ClientSessionGroupList::unmarshalJSON(const uint8_t* b, int32_t b_len) const {
+	char* err_c = nullptr;
+	bool ok = urnet_client_session_group_list_unmarshal_json(handle(), b, b_len, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_client_session_group_list_unmarshal_json failed");
+	}
+}
 inline ClientSessionActionList ClientSessionSnapshot::getActions() const {
 	ClientSessionActionList r(urnet_client_session_snapshot_get_actions(handle()));
 	return r;
@@ -35374,6 +35552,10 @@ inline std::string ClientSessionSnapshot::getGeneration() const {
 	char* r_c = urnet_client_session_snapshot_get_generation(handle());
 	return detail::takeString(r_c);
 }
+inline ClientSessionGroupList ClientSessionSnapshot::getGroups() const {
+	ClientSessionGroupList r(urnet_client_session_snapshot_get_groups(handle()));
+	return r;
+}
 inline std::string ClientSessionSnapshot::getLegacyCoverage() const {
 	char* r_c = urnet_client_session_snapshot_get_legacy_coverage(handle());
 	return detail::takeString(r_c);
@@ -35386,16 +35568,32 @@ inline bool ClientSessionSnapshot::getLoading() const {
 	bool r = urnet_client_session_snapshot_get_loading(handle());
 	return r;
 }
+inline int64_t ClientSessionSnapshot::getOtherSessionCount() const {
+	int64_t r = urnet_client_session_snapshot_get_other_session_count(handle());
+	return r;
+}
 inline bool ClientSessionSnapshot::getRefreshing() const {
 	bool r = urnet_client_session_snapshot_get_refreshing(handle());
+	return r;
+}
+inline int64_t ClientSessionSnapshot::getSessionCount() const {
+	int64_t r = urnet_client_session_snapshot_get_session_count(handle());
 	return r;
 }
 inline NetworkSessionInfoList ClientSessionSnapshot::getSessions() const {
 	NetworkSessionInfoList r(urnet_client_session_snapshot_get_sessions(handle()));
 	return r;
 }
+inline bool ClientSessionSnapshot::getSessionsHasMore() const {
+	bool r = urnet_client_session_snapshot_get_sessions_has_more(handle());
+	return r;
+}
 inline bool ClientSessionSnapshot::getSupported() const {
 	bool r = urnet_client_session_snapshot_get_supported(handle());
+	return r;
+}
+inline bool ClientSessionSnapshot::getTruncated() const {
+	bool r = urnet_client_session_snapshot_get_truncated(handle());
 	return r;
 }
 inline Sub ClientSessionViewController::addClientSessionListener(ClientSessionListener listener) const {
@@ -35431,8 +35629,14 @@ inline void ClientSessionViewController::revokeSession(const std::string& sessio
 inline void ClientSessionViewController::setForeground(bool foreground) const {
 	urnet_client_session_view_controller_set_foreground(handle(), foreground);
 }
+inline void ClientSessionViewController::setGroupExpanded(const std::string& kind, bool expanded) const {
+	urnet_client_session_view_controller_set_group_expanded(handle(), kind.c_str(), expanded);
+}
 inline void ClientSessionViewController::setVisible(bool visible) const {
 	urnet_client_session_view_controller_set_visible(handle(), visible);
+}
+inline void ClientSessionViewController::showMoreSessions(const std::string& kind) const {
+	urnet_client_session_view_controller_show_more_sessions(handle(), kind.c_str());
 }
 inline void ClientSessionViewController::start() const {
 	urnet_client_session_view_controller_start(handle());
@@ -37435,6 +37639,10 @@ inline void IoLoop::close() const {
 	urnet_io_loop_close(handle());
 }
 #endif
+inline bool LocalAuthStateSnapshot::getAccountSignInRequired() const {
+	bool r = urnet_local_auth_state_snapshot_get_account_sign_in_required(handle());
+	return r;
+}
 inline std::string LocalAuthStateSnapshot::getByClientJwt() const {
 	char* r_c = urnet_local_auth_state_snapshot_get_by_client_jwt(handle());
 	return detail::takeString(r_c);
@@ -38321,6 +38529,10 @@ inline int64_t NetworkSessionInfo::getAcceptUntil() const {
 	int64_t r = urnet_network_session_info_get_accept_until(handle());
 	return r;
 }
+inline std::string NetworkSessionInfo::getClientKind() const {
+	char* r_c = urnet_network_session_info_get_client_kind(handle());
+	return detail::takeString(r_c);
+}
 inline int64_t NetworkSessionInfo::getCreateTime() const {
 	int64_t r = urnet_network_session_info_get_create_time(handle());
 	return r;
@@ -38347,6 +38559,10 @@ inline std::string NetworkSessionInfo::getOriginSessionId() const {
 }
 inline std::string NetworkSessionInfo::getSessionId() const {
 	char* r_c = urnet_network_session_info_get_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionInfo::getSessionKind() const {
+	char* r_c = urnet_network_session_info_get_session_kind(handle());
 	return detail::takeString(r_c);
 }
 inline int64_t NetworkSessionInfo::getTokenExpireTime() const {
@@ -38392,6 +38608,10 @@ inline std::string NetworkSessionsResult::getGeneration() const {
 }
 inline std::string NetworkSessionsResult::getLegacyCoverage() const {
 	char* r_c = urnet_network_sessions_result_get_legacy_coverage(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionsResult::getNextCursor() const {
+	char* r_c = urnet_network_sessions_result_get_next_cursor(handle());
 	return detail::takeString(r_c);
 }
 inline NetworkSessionInfoList NetworkSessionsResult::getSessions() const {
@@ -39401,8 +39621,16 @@ inline std::string SessionLastUsed::getCountryCode() const {
 	char* r_c = urnet_session_last_used_get_country_code(handle());
 	return detail::takeString(r_c);
 }
+inline std::string SessionLastUsed::getDeviceKind() const {
+	char* r_c = urnet_session_last_used_get_device_kind(handle());
+	return detail::takeString(r_c);
+}
 inline std::string SessionLastUsed::getDeviceType() const {
 	char* r_c = urnet_session_last_used_get_device_type(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getDistribution() const {
+	char* r_c = urnet_session_last_used_get_distribution(handle());
 	return detail::takeString(r_c);
 }
 inline std::string SessionLastUsed::getRegion() const {

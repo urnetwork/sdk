@@ -1,5 +1,5 @@
 import type { ClientSessionSnapshot, SessionSignOutResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
-export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
+export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, ClientSessionGroup, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
 import type { SocketDevice } from "./socket";
 import type { SubprotocolDevice } from "./subprotocol";
 import type { ClientDistribution } from "./client_info";
@@ -1460,5 +1460,9 @@ export interface ClientSessionViewController {
  getSnapshot(): ClientSessionSnapshot;
  revokeSession(sessionId: string): void;
  revokeOtherSessions(): void;
+ /** Opens a client group (snapshot `groups[].kind`) to its first page of rows, or closes it. */
+ setGroupExpanded(kind: string, expanded: boolean): void;
+ /** Another page of rows: a group's kind, or "sign_ins" for the device sign-ins. */
+ showMoreSessions(kind: string): void;
  addClientSessionListener(callback: (snapshot: ClientSessionSnapshot) => void): Unsubscribe;
 }
