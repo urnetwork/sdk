@@ -252,6 +252,13 @@ func newSidecarLocal(
 		socketsSettings:    socketsSettings,
 	}
 	self.removeEventCallback = local.AddEventCallback(self.events.offer)
+	// whatever components the app names, the network's label table, which every zone the core's DnsClient fetches
+	// writes, and the zone's hints, from the core's first client generation on (the core's dns component, §12.5's
+	// label row), as ur daemon adds it to each network's Sidecar; the core closes it with itself
+	if _, err := local.AddComponent(local.NewDnsComponent()); err != nil {
+		self.Close()
+		return nil, fmt.Errorf("the dns component: %w", err)
+	}
 	for _, name := range components {
 		if err := self.addComponent(local, name); err != nil {
 			if errors.Is(err, errSidecarComponentNotEnrolled) {
