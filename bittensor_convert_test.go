@@ -312,6 +312,36 @@ func convertEngine(chain *convertFakeChain) *bittensorChainEngine {
 	return engine
 }
 
+// An engine that keeps its reads. The read caches are the process's, one slot
+// each, and a test that keeps reads runs on a fixed clock, so a key named only
+// for the test let an earlier run's kept state answer the next run under
+// -count (its first estimate saw the stake the earlier run ended on). The key
+// is this run's alone, and cleanup empties each slot that still holds it.
+func convertEngineKeepingReads(t *testing.T, chain *convertFakeChain) *bittensorChainEngine {
+	t.Helper()
+	engine := convertEngine(chain)
+	engine.cacheKey = t.Name() + "\n" + NewId().String()
+	t.Cleanup(func() {
+		func() {
+			bittensorConvertStateCache.Lock()
+			defer bittensorConvertStateCache.Unlock()
+			if strings.HasPrefix(bittensorConvertStateCache.key, engine.cacheKey+"\n") {
+				bittensorConvertStateCache.key = ""
+				bittensorConvertStateCache.state = nil
+			}
+		}()
+		func() {
+			bittensorChainMetadataCache.Lock()
+			defer bittensorChainMetadataCache.Unlock()
+			if bittensorChainMetadataCache.cacheKey == engine.cacheKey {
+				bittensorChainMetadataCache.cacheKey = ""
+				bittensorChainMetadataCache.meta = nil
+			}
+		}()
+	})
+	return engine
+}
+
 // A key that signs with a fixed signature and remembers what it was asked. The
 // real key's signature is covered in bittensor_chain_signer_test.go.
 type convertTestSigner struct {
@@ -1338,8 +1368,7 @@ func TestConvertWaitAfterTheAppWasAway(t *testing.T) {
 func TestConvertReadsAreKeptForATypedAmountOnly(t *testing.T) {
 	chain := newConvertFakeChain(t)
 	convertLandSuccess(chain)
-	engine := convertEngine(chain)
-	engine.cacheKey = t.Name()
+	engine := convertEngineKeepingReads(t, chain)
 	now := time.Unix(1_800_000_000, 0)
 	engine.now = func() time.Time {
 		return now
