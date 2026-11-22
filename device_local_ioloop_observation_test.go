@@ -74,6 +74,9 @@ type ioLoopWitnessFixture struct {
 // the production os.File/read/drain/send/unsubscribe/close bodies are unchanged.
 func newIoLoopWitnessFixture(t *testing.T, preload [][]byte, now func() time.Time) *ioLoopWitnessFixture {
 	t.Helper()
+	if !runningIsolated(t) {
+		t.Fatal("the native loop witness fixture reconciles the whole process's pool roots, so it runs only in a process of its own (runIsolatedLoadTest)")
+	}
 	for _, size := range []int{60, connect.DefaultTunnelMtu} {
 		connect.MessagePoolReturn(connect.MessagePoolGet(size))
 	}
@@ -139,6 +142,9 @@ func ioLoopWitnessPacket(size int, marker byte) []byte {
 // MSG_PEEK proves the next datagram is still kernel-owned at the held barrier;
 // no sleep, queue-length polling, or assumed absence of a callback is the proof.
 func TestIoLoopHeldSendLeavesNextDatagramNativeOwned(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	first := ioLoopWitnessPacket(60, 0x41)
 	second := ioLoopWitnessPacket(connect.DefaultTunnelMtu, 0x52)
 	var clock atomic.Int64
@@ -184,6 +190,9 @@ func TestIoLoopHeldSendLeavesNextDatagramNativeOwned(t *testing.T) {
 // The staging buffer is reused before forwarding, so independent copies must
 // survive a complete 3-packet batch. Every result still consumes all 3 owners.
 func TestIoLoopPartialBatchDispositionReturnsAllRoots(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	for _, accepted := range []int{0, 1, 3} {
 		packets := [][]byte{
 			ioLoopWitnessPacket(60, 0x41),
@@ -227,6 +236,9 @@ func TestIoLoopPartialBatchDispositionReturnsAllRoots(t *testing.T) {
 // Loop Close owns the descriptor cancellation, not the selected route's device
 // context. Keep that distinction observable without inventing an immediate join.
 func TestIoLoopDeviceCancellationJoinsHeldSendAndFdClose(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopWitnessFixture(t, [][]byte{ioLoopWitnessPacket(60, 0x71)}, time.Now)
 	<-fixture.route.entered
 	fixture.loop.Close()
@@ -246,6 +258,9 @@ func TestIoLoopDeviceCancellationJoinsHeldSendAndFdClose(t *testing.T) {
 // An invalid native descriptor exercises real os.File.Read failure and closes
 // both existing owners without a packet or route invocation.
 func TestIoLoopReadErrorJoinsWithoutPacketOwnership(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	route := &ioLoopWitnessRoute{ctx: ctx, entered: make(chan ioLoopWitnessBatch, 1), responses: make(chan int)}
@@ -269,6 +284,9 @@ func TestIoLoopReadErrorJoinsWithoutPacketOwnership(t *testing.T) {
 // A closed pipe writer is a real EOF control, separate from datagram framing.
 // It invokes the same production blocking-read/terminal cleanup path.
 func TestIoLoopNativeEofJoinsWithoutSend(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	beforeCount, beforeBytes := connect.MessagePoolOutstandingCount(), connect.MessagePoolOutstandingByteCount()
 	reader, writer, err := os.Pipe()
 	if err != nil {

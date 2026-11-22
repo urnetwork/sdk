@@ -9,17 +9,18 @@ import (
 
 const isolatedLoadTestEnv = "URNETWORK_SDK_ISOLATED_LOAD_TEST"
 
-// runIsolatedLoadTest reruns a process-memory test in a fresh copy of the
-// current test binary. The SDK's message pools, TLS certificate cache, gVisor
-// stacks, and Go heap are process-global; measuring an absolute mobile memory
-// ceiling after arbitrary earlier package tests makes the result depend on
-// test order rather than the workload under test.
+// runIsolatedLoadTest reruns a test that measures the process in a fresh copy
+// of the current test binary. The SDK's message pools, TLS certificate cache,
+// gVisor stacks, and Go heap are process-global; measuring an absolute mobile
+// memory ceiling, or reconciling the pools' outstanding roots, after arbitrary
+// earlier package tests makes the result depend on test order, and on what
+// those tests left winding down, rather than on the workload under test.
 //
 // It returns true in the parent after the child completed, and false in the
 // child so the caller executes its test body exactly once.
 func runIsolatedLoadTest(t *testing.T) bool {
 	t.Helper()
-	if os.Getenv(isolatedLoadTestEnv) == t.Name() {
+	if runningIsolated(t) {
 		return false
 	}
 
@@ -35,4 +36,10 @@ func runIsolatedLoadTest(t *testing.T) bool {
 	}
 	t.Logf("isolated load test:\n%s", output)
 	return true
+}
+
+// Whether this test runs in the fresh process runIsolatedLoadTest started for
+// it, so a fixture that measures the process can refuse to run anywhere else.
+func runningIsolated(t *testing.T) bool {
+	return os.Getenv(isolatedLoadTestEnv) == t.Name()
 }

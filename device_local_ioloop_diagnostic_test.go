@@ -46,6 +46,9 @@ type ioLoopDiagnosticNativeFixture struct {
 // only to join an unobserved closer; those cases offer exactly one synthetic byte.
 func newIoLoopDiagnosticNativeFixture(t *testing.T) *ioLoopDiagnosticNativeFixture {
 	t.Helper()
+	if !runningIsolated(t) {
+		t.Fatal("the diagnostic native fixture reconciles the whole process's pool roots, so it runs only in a process of its own (runIsolatedLoadTest)")
+	}
 	connect.MessagePoolReturn(connect.MessagePoolGet(60))
 	previous := connect.SetMessagePoolViolationHandler(func(err error, stack []byte) {
 		t.Errorf("diagnostic native pool violation: %v\n%s", err, stack)
@@ -178,6 +181,9 @@ func ioLoopDiagnosticScalarSlotForTest(session *IoLoopDiagnosticSession) *ioLoop
 }
 
 func TestIoLoopDiagnosticDefaultConstructorRemainsOff(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopDiagnosticNativeFixture(t)
 	loop := fixture.add(t, nil, false, 0x41)
 	if loop.observation != nil {
@@ -187,6 +193,9 @@ func TestIoLoopDiagnosticDefaultConstructorRemainsOff(t *testing.T) {
 }
 
 func TestIoLoopDiagnosticSessionRetainsReplacementLoops(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopDiagnosticNativeFixture(t)
 	session := NewIoLoopDiagnosticSession()
 	first := fixture.add(t, session, true, 0x41)
@@ -211,6 +220,9 @@ func TestIoLoopDiagnosticSessionRetainsReplacementLoops(t *testing.T) {
 }
 
 func TestIoLoopDiagnosticOverflowKeepsTrafficUnobserved(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopDiagnosticNativeFixture(t)
 	session := NewIoLoopDiagnosticSession()
 	for index := 0; index < ioLoopDiagnosticCapacity; index++ {
@@ -233,6 +245,9 @@ func TestIoLoopDiagnosticOverflowKeepsTrafficUnobserved(t *testing.T) {
 }
 
 func TestIoLoopDiagnosticSealJoinsRunAndFd(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopDiagnosticNativeFixture(t)
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -325,6 +340,9 @@ func TestIoLoopDiagnosticSharedDeadlineRetainsPendingUnknown(t *testing.T) {
 }
 
 func TestIoLoopDiagnosticClosedSessionRefusesObservation(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	fixture := newIoLoopDiagnosticNativeFixture(t)
 	session := NewIoLoopDiagnosticSession()
 	first := fixture.add(t, session, true, 0x41)

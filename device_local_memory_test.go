@@ -636,9 +636,17 @@ func TestDeviceLocalProvideMemoryRealloc(t *testing.T) {
 // guards the budget plumbing end to end: a regression that unhooks the
 // budget from the settings or balloons the steady-state footprint shows up
 // here.
+//
+// The quiesced heap is the process's, so the test runs in a process of its
+// own: in the package's second pass under -count=2 it read 23.6 MiB, most of
+// it what the first pass's tests had left, against the 16 MiB it allows, and
+// alone it reads about 5 MiB.
 func TestDeviceLocalMemoryCeiling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal memory ceiling test in -short mode")
+	}
+	if runIsolatedLoadTest(t) {
+		return
 	}
 
 	const budgetByteCount = 32 * 1024 * 1024

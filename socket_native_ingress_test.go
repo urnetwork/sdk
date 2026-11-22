@@ -43,6 +43,9 @@ func (self *privateNativeGoReadPolicy) InspectEgress(mode protocol.ProvideMode, 
 // question. OLD leaves that later native read behind its five-second send;
 // FIX refuses remote admission and returns the exact local response immediately.
 func TestPrivateNativeGoSocketNextReadPrecedesRemoteReadiness(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once

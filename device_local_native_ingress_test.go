@@ -34,6 +34,9 @@ type nativeIngressDeviceFixture struct {
 
 func newNativeIngressDeviceFixture(t *testing.T, observePolicies ...func(connect.SecurityPolicy) connect.SecurityPolicy) *nativeIngressDeviceFixture {
 	t.Helper()
+	if !runningIsolated(t) {
+		t.Fatal("the native ingress fixture reconciles the whole process's pool roots, so it runs only in a process of its own (runIsolatedLoadTest)")
+	}
 	for _, size := range []int{60, 256, 2048} {
 		connect.MessagePoolReturn(connect.MessagePoolGet(size))
 	}
@@ -136,6 +139,9 @@ func requireNativeIngressDnsReply(t *testing.T, packet []byte) {
 // The Apple entry's serialized next read is represented by a second packed
 // call made only after the first has returned, not by a parallel send worker.
 func TestDeviceLocalNativePackedNextReadDoesNotWaitForRemote(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newNativeIngressDeviceFixture(t)
 	remotePacket, dnsPacket := nativeIngressDevicePackets(t)
 	first := packetBatchTestEncode([][]byte{remotePacket})
@@ -173,6 +179,9 @@ func TestDeviceLocalNativePackedNextReadDoesNotWaitForRemote(t *testing.T) {
 // native batch. The two-second watchdog is shorter than the unchanged remote
 // five-second wait; it bounds test failure, not production admission policy.
 func TestDeviceLocalNativeFdNextReadDoesNotWaitForRemote(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newNativeIngressDeviceFixture(t)
 	remotePacket, dnsPacket := nativeIngressDevicePackets(t)
 	fd, peer := testingIoLoopSocketPair(t)

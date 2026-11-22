@@ -1,6 +1,13 @@
 // Actual SDK destination ownership includes the shared internal TUN pump.
 // The stalled work is a borrowed real TCP/53 SYNACK callback. Explicit gates
 // retain scalar receipts; the pump completion primitive has an SDK owner.
+//
+// The fixture reconciles the message pools' outstanding roots, which count the
+// whole process, so each test runs in a process of its own. Inside the
+// package, roots that earlier tests' state still held at the fixture's
+// baseline were returned while it ran, and whichever of these tests ran first
+// counted them as its own: three fewer roots than its baseline (tip-check's
+// roots=5/8 and 2/5; 55/58 in a -count=2 run of the package).
 package sdk
 
 import (
@@ -43,6 +50,9 @@ type muxPumpLifecycleFixture struct {
 // selected mux, internal gVisor TCP server and downstream callback all run.
 func newMuxPumpLifecycleFixture(t *testing.T, closeFromCallback bool) *muxPumpLifecycleFixture {
 	t.Helper()
+	if !runningIsolated(t) {
+		t.Fatal("the mux pump lifecycle fixture reconciles the whole process's pool roots, so it runs only in a process of its own (runIsolatedLoadTest)")
+	}
 	for _, size := range []int{60, 256, 2048} {
 		connect.MessagePoolReturn(connect.MessagePoolGet(size))
 	}
@@ -255,6 +265,9 @@ func (self *muxPumpLifecycleFixture) requireJoined(t *testing.T) {
 
 // Current selection must be admitted before Close's lifecycle Wait starts.
 func TestDeviceLocalCloseAndWaitJoinsCurrentMuxPump(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newMuxPumpLifecycleFixture(t, false)
 	f.holdReply(t)
 	f.closeWithoutJoining(t)
@@ -264,6 +277,9 @@ func TestDeviceLocalCloseAndWaitJoinsCurrentMuxPump(t *testing.T) {
 // A replacement remains independently serviceable while its retired pump is
 // held. The final SDK join owns both generations, even after old field detach.
 func TestDeviceLocalCloseAndWaitJoinsRetiredMuxPump(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newMuxPumpLifecycleFixture(t, false)
 	f.holdReply(t)
 	replaced := make(chan struct{})
@@ -303,6 +319,9 @@ func TestDeviceLocalCloseAndWaitJoinsRetiredMuxPump(t *testing.T) {
 // A native callback may request cancellation and then return. Only an
 // independent owner calls the joining API; the callback never self-joins.
 func TestDeviceLocalMuxPumpCallbackCloseDoesNotSelfJoin(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newMuxPumpLifecycleFixture(t, true)
 	f.holdReply(t)
 	select {
@@ -318,6 +337,9 @@ func TestDeviceLocalMuxPumpCallbackCloseDoesNotSelfJoin(t *testing.T) {
 // Completion remains terminal after the admission lock publishes closed.
 // A later destination setter cannot add another pump behind a completed Wait.
 func TestDeviceLocalMuxPumpJoinIsTerminalAfterClose(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	f := newMuxPumpLifecycleFixture(t, false)
 	f.closeWithoutJoining(t)
 	f.requireJoined(t)
