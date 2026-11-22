@@ -240,7 +240,10 @@ func newProbeHarness(ctx context.Context, device *DeviceLocal) (*probeHarness, e
 	localAddrs := tun.LocalAddresses()
 
 	// egress: the tun's stack emits packets, the device sends them over the
-	// same exits the browser is using
+	// same exits the browser is using. Each read is a pooled packet this pump
+	// owns, and SendPacket sends a copy, so the pump returns every read; it
+	// returned none, and each packet a probe sent stayed outstanding in the
+	// pools for good, read as held by the memory telemetry's pool counts.
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
@@ -252,10 +255,12 @@ func newProbeHarness(ctx context.Context, device *DeviceLocal) (*probeHarness, e
 			}
 			select {
 			case <-cancelCtx.Done():
+				connect.MessagePoolReturn(packet)
 				return
 			default:
 			}
 			device.SendPacket(packet, int32(len(packet)))
+			connect.MessagePoolReturn(packet)
 		}
 	}()
 
