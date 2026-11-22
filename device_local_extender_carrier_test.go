@@ -625,8 +625,7 @@ func TestDeviceLocalProviderExtenderRestartOfAStoppedRoleIsNothing(t *testing.T)
 // replaced until the wait ends, the wait has its floor, and the spread doubles while
 // the replacements do not last.
 func TestDeviceLocalProviderExtenderPanicIsPaced(t *testing.T) {
-	tcpPort := testFreeTcpPort(t)
-	testHoldTcpPort(t, tcpPort)
+	tcpPort, _ := testHoldTcpPort(t)
 	builds := &atomic.Int64{}
 	waits := make(chan time.Duration, 16)
 	fire := make(chan time.Time)
@@ -690,8 +689,7 @@ func TestDeviceLocalProviderExtenderPanicIsPaced(t *testing.T) {
 
 // A device that closes while a failed role waits leaves nothing waiting.
 func TestDeviceLocalProviderExtenderPanicWaitEndsWithTheDevice(t *testing.T) {
-	tcpPort := testFreeTcpPort(t)
-	testHoldTcpPort(t, tcpPort)
+	tcpPort, _ := testHoldTcpPort(t)
 	builds := &atomic.Int64{}
 	waits := make(chan time.Duration, 16)
 	fire := make(chan time.Time, 1)

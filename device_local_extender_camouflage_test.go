@@ -437,8 +437,7 @@ func TestDeviceLocalProviderExtenderCamouflageFollowsTheRole(t *testing.T) {
 		configureTestProvideCamouflage(t, func(settings *extender.ExtenderCamouflageRoleSettings) {
 			settings.VerifyBorrowName = verifier.verify
 		})
-		tcpPort := testFreeTcpPort(t)
-		testHoldTcpPort(t, tcpPort)
+		tcpPort, _ := testHoldTcpPort(t)
 		fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 			settings.TcpPort = tcpPort
 			settings.CamouflageEnabled = true

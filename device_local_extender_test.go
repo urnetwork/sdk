@@ -474,6 +474,8 @@ func newTestProvideExtenderFixtureWithOptions(
 	clock := newTestExtenderClock()
 	operator := newTestProvideExtenderOperator(t, clock, rootPrivateKey)
 
+	// the quic and dns carriers each need a udp port of their own
+	udpPorts := testFreeUdpPorts(t, 2)
 	fixture := &testProvideExtenderFixture{
 		t:              t,
 		clock:          clock,
@@ -481,8 +483,8 @@ func newTestProvideExtenderFixtureWithOptions(
 		operator:       operator,
 		storagePath:    storagePath,
 		tcpPort:        testFreeTcpPort(t),
-		udpPort:        testFreeUdpPort(t),
-		dnsPort:        testFreeUdpPort(t),
+		udpPort:        udpPorts[0],
+		dnsPort:        udpPorts[1],
 		statuses:       make(chan *ExtenderProvideStatus, 256),
 	}
 
@@ -599,8 +601,9 @@ func testLoopbackAddress(address string) string {
 	return net.JoinHostPort("127.0.0.1", port)
 }
 
-// One free tcp port on loopback. The kernel cycles ephemeral assignments, so
-// successive calls return distinct ports.
+// One free tcp port on loopback, released for the caller to bind. Two calls
+// can return the same port: macOS draws ephemeral ports at random, and a port
+// released is free to draw again.
 func testFreeTcpPort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -611,13 +614,35 @@ func testFreeTcpPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func testFreeUdpPort(t *testing.T) int {
+// Free udp ports on loopback, distinct from each other, released for the
+// caller to bind. Every socket stays bound until all are drawn, since a port
+// released can be drawn again: a fixture that drew its quic and dns ports one
+// at a time could get one port for both, and its extender then refused to
+// listen with two udp carriers on one port.
+func testFreeUdpPorts(t *testing.T, count int) []int {
+	t.Helper()
+	ports := make([]int, 0, count)
+	for range count {
+		packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer packetConn.Close()
+		ports = append(ports, packetConn.LocalAddr().(*net.UDPAddr).Port)
+	}
+	return ports
+}
+
+// A udp port on loopback held bound for the test, as another process would
+// hold it. Binding port 0 and keeping the socket leaves no moment in which
+// the port is free.
+func testHeldUdpPort(t *testing.T) int {
 	t.Helper()
 	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer packetConn.Close()
+	t.Cleanup(func() { packetConn.Close() })
 	return packetConn.LocalAddr().(*net.UDPAddr).Port
 }
 
@@ -1258,12 +1283,7 @@ func TestDeviceLocalProviderExtenderOptOut(t *testing.T) {
 // requires, and the dns carrier, activated, with the status naming the one
 // that failed. The mesh rides tcp, so the node still advertises it (D2).
 func TestDeviceLocalProviderExtenderSkipsAFailedCarrier(t *testing.T) {
-	occupiedPort := testFreeUdpPort(t)
-	occupied, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", occupiedPort)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { occupied.Close() })
+	occupiedPort := testHeldUdpPort(t)
 
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 		settings.UdpPort = occupiedPort
@@ -1797,13 +1817,14 @@ func TestDeviceRemoteExtenderProvideStatusPushCarriesARefusal(t *testing.T) {
 	operator.setRefusal("the dns carrier did not answer")
 	// the role's settings as the provider extender fixture builds them, over
 	// ephemeral loopback carriers and the refusing operator
+	udpPorts := testFreeUdpPorts(t, 2)
 	role := &testProvideExtenderFixture{
 		t:        t,
 		clock:    clock,
 		operator: operator,
 		tcpPort:  testFreeTcpPort(t),
-		udpPort:  testFreeUdpPort(t),
-		dnsPort:  testFreeUdpPort(t),
+		udpPort:  udpPorts[0],
+		dnsPort:  udpPorts[1],
 	}
 
 	_, networkSpace := testExtenderStatusSpace(t)

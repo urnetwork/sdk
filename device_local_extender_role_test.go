@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,15 +86,17 @@ func TestDeviceLocalProviderExtenderFeedModeRunsNoNode(t *testing.T) {
 }
 
 // Holds a tcp port on loopback the way another process of this host would, so
-// the role cannot bind it. Returns the release.
-func testHoldTcpPort(t *testing.T, port int) func() {
+// the role cannot bind it. Returns the port and the release. Binding port 0
+// and keeping the listener leaves no moment in which the port is free, as
+// drawing a free port and binding it again would.
+func testHoldTcpPort(t *testing.T) (int, func()) {
 	t.Helper()
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { listener.Close() })
-	return func() { listener.Close() }
+	return listener.Addr().(*net.TCPAddr).Port, func() { listener.Close() }
 }
 
 // The retry seam of a test role: every wait the role asks for is recorded,
@@ -112,8 +113,7 @@ func testTcpRetry(settings *deviceLocalExtenderSettings, waits chan time.Duratio
 // extender node, the status says why, and it waits to bind the port again
 // after extenderProvideTcpRetryTimeout.
 func TestDeviceLocalProviderExtenderWithTcpTakenStartsNoCarrier(t *testing.T) {
-	tcpPort := testFreeTcpPort(t)
-	testHoldTcpPort(t, tcpPort)
+	tcpPort, _ := testHoldTcpPort(t)
 	udpBinds := make(chan int, 64)
 	waits := make(chan time.Duration, 16)
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
@@ -173,8 +173,7 @@ func TestDeviceLocalProviderExtenderWithTcpTakenStartsNoCarrier(t *testing.T) {
 // is how the role moves to another provider process of the host when the one
 // that held the port exits (G2).
 func TestDeviceLocalProviderExtenderStartsWhenTheTcpPortFrees(t *testing.T) {
-	tcpPort := testFreeTcpPort(t)
-	releaseTcpPort := testHoldTcpPort(t, tcpPort)
+	tcpPort, releaseTcpPort := testHoldTcpPort(t)
 	udpBinds := make(chan int, 64)
 	waits := make(chan time.Duration, 16)
 	retry := make(chan time.Time)
@@ -229,12 +228,7 @@ func TestDeviceLocalProviderExtenderStartsWhenTheTcpPortFrees(t *testing.T) {
 // role runs without it (G2): udp 4053 held by another process leaves the
 // extender on tcp and udp 443, advertising no dns carrier.
 func TestDeviceLocalProviderExtenderRunsWithoutATakenDnsPort(t *testing.T) {
-	dnsPort := testFreeUdpPort(t)
-	dnsConn, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(dnsPort)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { dnsConn.Close() })
+	dnsPort := testHeldUdpPort(t)
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
 		settings.DnsPort = dnsPort
 	})
