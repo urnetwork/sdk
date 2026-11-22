@@ -16,6 +16,7 @@ type probeHarnessTestRoute struct {
 	sent chan struct{}
 }
 
+// Takes the packet: returns it to its pool and reports it.
 func (self *probeHarnessTestRoute) SendPacket(
 	source connect.TransferPath,
 	provideMode protocol.ProvideMode,
@@ -30,6 +31,7 @@ func (self *probeHarnessTestRoute) SendPacket(
 	return true
 }
 
+// Takes each packet of the burst as SendPacket does.
 func (self *probeHarnessTestRoute) SendPacketBatch(
 	source connect.TransferPath,
 	provideMode protocol.ProvideMode,
@@ -42,16 +44,20 @@ func (self *probeHarnessTestRoute) SendPacketBatch(
 	return len(packets)
 }
 
+// No resources are held by the fake.
 func (self *probeHarnessTestRoute) Close() {
 }
 
+// No provider ordering exists in the fake.
 func (self *probeHarnessTestRoute) Shuffle() {
 }
 
+// The fake applies no packet security policy.
 func (self *probeHarnessTestRoute) SecurityPolicyStats(reset bool) connect.SecurityPolicyStats {
 	return connect.SecurityPolicyStats{}
 }
 
+// The fake has no local security policy to configure.
 func (self *probeHarnessTestRoute) SetLocalSecurityBypass(localSecurityBypass bool) {
 }
 
