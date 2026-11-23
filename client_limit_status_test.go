@@ -6,9 +6,11 @@ package sdk
 //
 // The device-level tests run a real device against an in-process platform
 // that accepts WebSocket and h1+ upgrades, records the provide intent each
-// connection declares, and sends the platform's client limit close on demand
-// (connect/transport_client_limit.go). connect's own tests pin the hold's
-// timing on a manual clock; these pin what the device declares and reports.
+// connection declares, and on demand sends the platform's client limit close
+// (connect/transport_client_limit.go) to every connection declaring an intent,
+// as the platform does with a client over its limit. connect's own tests pin
+// the hold's timing on a manual clock; these pin what the device declares and
+// reports.
 
 import (
 	"context"
@@ -28,11 +30,14 @@ import (
 type testingClientLimitPlatformConnection struct {
 	provideIntent string
 	conn          connect.H1MessageConn
+	// closed once the platform stops reading the connection: the device
+	// closed it, or the platform did
+	done chan struct{}
 }
 
 // closeForClientLimit sends the platform's client limit close: the close
 // control, the WebSocket close code on WebSocket only, then the socket close.
-func (self testingClientLimitPlatformConnection) closeForClientLimit() {
+func (self *testingClientLimitPlatformConnection) closeForClientLimit() {
 	_ = self.conn.WriteMessage(
 		websocket.BinaryMessage,
 		[]byte{connect.TransportControlClose, 0, 0, 0, byte(connect.TransportCloseReasonClientLimitExceeded)},
@@ -48,12 +53,29 @@ func (self testingClientLimitPlatformConnection) closeForClientLimit() {
 }
 
 // testingClientLimitPlatform is an in-process h1 platform on the v4 loopback.
+//
+// It closes for the client limit as the platform does, by connection and not
+// by device: every open connection declaring the intent, and every one it
+// accepts while it keeps closing (closeForClientLimit). The first connection
+// it accepted is not always the one the device keeps. The device dials before
+// it knows its provide mode, so a public mode that beats the first dial
+// declares on the generation the public rebuild then replaces, and the
+// platform may accept that connection first; an h1+ upgrade the device gave
+// up on stays open here until the platform reads the device's close.
 type testingClientLimitPlatform struct {
 	url         string
-	connections chan testingClientLimitPlatformConnection
+	connections chan *testingClientLimitPlatformConnection
 	// closed when the test ends, so a handler never waits on a full
 	// connections queue that a failed test stopped reading
 	closed chan struct{}
+
+	stateLock sync.Mutex
+	// the connections the platform reads and has not closed
+	openConnections map[*testingClientLimitPlatformConnection]bool
+	// while set, the platform closes the connections declaring
+	// closingProvideIntent for the client limit
+	closing              bool
+	closingProvideIntent string
 }
 
 // newTestingClientLimitPlatform serves the platform on the v4 loopback until
@@ -61,15 +83,17 @@ type testingClientLimitPlatform struct {
 func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 	t.Helper()
 	platform := &testingClientLimitPlatform{
-		connections: make(chan testingClientLimitPlatformConnection, 64),
-		closed:      make(chan struct{}),
+		connections:     make(chan *testingClientLimitPlatformConnection, 64),
+		closed:          make(chan struct{}),
+		openConnections: map[*testingClientLimitPlatformConnection]bool{},
 	}
 	var handlers sync.WaitGroup
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handlers.Add(1)
 		defer handlers.Done()
-		connection := testingClientLimitPlatformConnection{
+		connection := &testingClientLimitPlatformConnection{
 			provideIntent: r.Header.Get(connect.HeaderProvideIntent),
+			done:          make(chan struct{}),
 		}
 		if r.Header.Get("Upgrade") == connect.H1FramerProtocol {
 			raw, err := connect.AcceptFramedUpgrade(w, r, connect.H1FramerProtocol, time.Second)
@@ -90,11 +114,19 @@ func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 			}
 			connection.conn = ws
 		}
-		defer connection.conn.Close()
+		closeAtOnce := platform.listConnection(connection)
+		defer func() {
+			platform.unlistConnection(connection)
+			connection.conn.Close()
+			close(connection.done)
+		}()
 		select {
 		case platform.connections <- connection:
 		case <-platform.closed:
 			return
+		}
+		if closeAtOnce {
+			connection.closeForClientLimit()
 		}
 		for {
 			if _, _, err := connection.conn.ReadMessage(); err != nil {
@@ -112,12 +144,67 @@ func newTestingClientLimitPlatform(t *testing.T) *testingClientLimitPlatform {
 	return platform
 }
 
+// Lists a connection the platform has accepted. While the platform closes its
+// provide intent the connection is not listed, and closeAtOnce asks its
+// handler to close it.
+func (self *testingClientLimitPlatform) listConnection(
+	connection *testingClientLimitPlatformConnection,
+) (closeAtOnce bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closing && self.closingProvideIntent == connection.provideIntent {
+		return true
+	}
+	self.openConnections[connection] = true
+	return false
+}
+
+// Drops a connection the platform stopped reading from the open list.
+func (self *testingClientLimitPlatform) unlistConnection(connection *testingClientLimitPlatformConnection) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	delete(self.openConnections, connection)
+}
+
+// Sends the client limit close to every open connection that declares
+// provideIntent ("" for none), and to every one declaring it that the
+// platform accepts until admit, so the close reaches the connection the
+// device keeps whichever connections the platform accepted first.
+func (self *testingClientLimitPlatform) closeForClientLimit(provideIntent string) {
+	connections := func() []*testingClientLimitPlatformConnection {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.closing = true
+		self.closingProvideIntent = provideIntent
+		connections := []*testingClientLimitPlatformConnection{}
+		for connection := range self.openConnections {
+			if connection.provideIntent == provideIntent {
+				// unlisted, so each connection gets one close
+				delete(self.openConnections, connection)
+				connections = append(connections, connection)
+			}
+		}
+		return connections
+	}()
+	for _, connection := range connections {
+		connection.closeForClientLimit()
+	}
+}
+
+// Ends closeForClientLimit: the platform keeps the connections it accepts from
+// here on.
+func (self *testingClientLimitPlatform) admit() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.closing = false
+}
+
 // nextConnectionDeclaring skips connections until one declares provideIntent
 // ("" for none), or fails.
 func (self *testingClientLimitPlatform) nextConnectionDeclaring(
 	t *testing.T,
 	provideIntent string,
-) testingClientLimitPlatformConnection {
+) *testingClientLimitPlatformConnection {
 	t.Helper()
 	deadline := time.After(60 * time.Second)
 	for {
@@ -128,7 +215,7 @@ func (self *testingClientLimitPlatform) nextConnectionDeclaring(
 			}
 		case <-deadline:
 			t.Fatalf("no platform connection declared provide intent %q", provideIntent)
-			return testingClientLimitPlatformConnection{}
+			return nil
 		}
 	}
 }
@@ -343,11 +430,11 @@ func TestDeviceLocalProviderProvideIntentFollowsThePublicFlag(t *testing.T) {
 }
 
 // The device declares provide intent by itself once it provides publicly. The
-// platform's client limit close of that connection holds the device off and
-// reports ClientLimitStatusExceeded with a retry time at least 15 minutes out,
-// to the getter, the listener and the transport status. Leaving public mode is
-// a new declaration: the hold resets, the status returns to none, and the
-// device reconnects declaring nothing.
+// platform's client limit close of its declared connection holds the device
+// off and reports ClientLimitStatusExceeded with a retry time at least 15
+// minutes out, to the getter, the listener and the transport status. Leaving
+// public mode is a new declaration: the hold resets, the status returns to
+// none, and the device reconnects declaring nothing.
 func TestDeviceLocalClientLimitStatusFollowsTheProviderHold(t *testing.T) {
 	platform := newTestingClientLimitPlatform(t)
 	_, device := newTestingClientLimitDevice(t, platform, nil)
@@ -357,11 +444,11 @@ func TestDeviceLocalClientLimitStatusFollowsTheProviderHold(t *testing.T) {
 
 	connect.AssertEqual(t, device.GetClientLimitStatus(), noneClientLimitStatus())
 	device.SetProvideMode(ProvideModePublic)
-	declared := platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
+	platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
 	waitProviderSettled(t, device)
 
 	closeTime := time.Now()
-	declared.closeForClientLimit()
+	platform.closeForClientLimit(connect.ProvideIntentDeclared)
 	status := listener.next(t, "the client limit close reached no listener")
 	if status.Status != ClientLimitStatusExceeded {
 		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
@@ -376,7 +463,9 @@ func TestDeviceLocalClientLimitStatusFollowsTheProviderHold(t *testing.T) {
 		t.Fatalf("transport status = %+v, want the standby holding", device.GetProviderFamilyTransportStatus())
 	}
 
-	// held: what the platform accepted so far predates the reset
+	// held: the platform judges the next declaration afresh, and what it
+	// accepted so far predates the reset
+	platform.admit()
 	platform.drain()
 	device.SetProvideMode(ProvideModeNetwork)
 	if status := listener.next(t, "the reset reached no listener"); status.Status != ClientLimitStatusNone || status.RetryTime != 0 {
@@ -384,6 +473,55 @@ func TestDeviceLocalClientLimitStatusFollowsTheProviderHold(t *testing.T) {
 	}
 	connect.AssertEqual(t, device.GetClientLimitStatus(), noneClientLimitStatus())
 	platform.nextConnectionDeclaring(t, "")
+}
+
+// The first declared connection the platform accepted can be one the device
+// has dropped: when the public mode beats the device's first dial, that dial
+// declares on the generation the public rebuild replaces, and the platform
+// may accept it first (tip-check at sidecar e733ce8a, where the test closed
+// that connection and the device never heard the close). The client limit
+// close of the connection the device keeps still holds it off. A migration of
+// the public generation drops a declared connection the same way, on demand.
+func TestDeviceLocalClientLimitCloseReachesTheConnectionTheDeviceKeeps(t *testing.T) {
+	platform := newTestingClientLimitPlatform(t)
+	_, device := newTestingClientLimitDevice(t, platform, nil)
+	listener := newTestingClientLimitListener()
+	sub := device.AddClientLimitStatusChangeListener(listener)
+	defer sub.Close()
+
+	device.SetProvideMode(ProvideModePublic)
+	first := platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
+	waitProviderSettled(t, device)
+
+	// replace the public generation make-before-break: the replacement
+	// declares too, and the replaced generation's connection is dropped
+	provider := func() *deviceLocalProvider {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		return device.provider
+	}()
+	if !provider.requestPlatformTransportMigrationWith(deviceLocalProviderMigration{migrateTime: time.Now()}) {
+		t.Fatal("the provider did not start the migration")
+	}
+	waitProviderSettled(t, device)
+	// the state a close of the first declared connection fails in: that
+	// connection predates the current generation, so the device dropped it
+	select {
+	case <-first.done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the device kept the first declared connection after replacing its generation")
+	}
+
+	closeTime := time.Now()
+	platform.closeForClientLimit(connect.ProvideIntentDeclared)
+	status := listener.next(t, "the client limit close reached no listener")
+	if status.Status != ClientLimitStatusExceeded {
+		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
+	}
+	if earliest := closeTime.Add(connect.ClientLimitBackoffTimeout).UnixMilli(); status.RetryTime < earliest {
+		t.Fatalf("retry time = %d, want at least %d (15 minutes after the close)", status.RetryTime, earliest)
+	}
+	connect.AssertEqual(t, device.GetClientLimitStatus(), status)
 }
 
 // A device dials before it knows its provide mode, so its first connection
@@ -398,13 +536,14 @@ func TestDeviceLocalDeclaringProvideIntentLiftsAnUndeclaredHold(t *testing.T) {
 	sub := device.AddClientLimitStatusChangeListener(listener)
 	defer sub.Close()
 
-	undeclared := platform.nextConnectionDeclaring(t, "")
+	platform.nextConnectionDeclaring(t, "")
 	waitProviderSettled(t, device)
-	undeclared.closeForClientLimit()
+	platform.closeForClientLimit("")
 	if status := listener.next(t, "the client limit close reached no listener"); status.Status != ClientLimitStatusExceeded {
 		t.Fatalf("listener status = %+v, want %s", status, ClientLimitStatusExceeded)
 	}
 
+	platform.admit()
 	platform.drain()
 	device.SetProvideMode(ProvideModePublic)
 	if status := listener.next(t, "the new declaration did not lift the hold"); status.Status != ClientLimitStatusNone {
@@ -443,9 +582,9 @@ func TestDeviceRemoteClientLimitStatus(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), noneClientLimitStatus())
 
 	deviceLocal.SetProvideMode(ProvideModePublic)
-	declared := platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
+	platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
 	waitProviderSettled(t, deviceLocal)
-	declared.closeForClientLimit()
+	platform.closeForClientLimit(connect.ProvideIntentDeclared)
 
 	// the sync pushes the current status when the listener attaches, so skip
 	// any none until the hold arrives
