@@ -406,12 +406,14 @@ func TestBrowserStateRemoteReadsClientLimitStatus(t *testing.T) {
 	defer remoteClientLimitSub.Close()
 
 	deviceLocal.SetProvideMode(ProvideModePublic)
-	declared := platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
+	platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
 	waitProviderSettled(t, deviceLocal)
 	testingProviderStateBarrier(t, deviceLocal, listener)
 	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), noneClientLimitStatus())
 
-	declared.closeForClientLimit()
+	// every declared connection, so the close reaches the one the device
+	// keeps (client_limit_status_test.go)
+	platform.closeForClientLimit(connect.ProvideIntentDeclared)
 	var status *ClientLimitStatus
 	for status == nil || status.Status == ClientLimitStatusNone {
 		status = clientLimitListener.next(t, "the client limit close reached no device listener")
@@ -439,14 +441,16 @@ func TestBrowserStateRemoteReadsProviderConnected(t *testing.T) {
 	defer sub.Close()
 
 	deviceLocal.SetProvideMode(ProvideModePublic)
-	declared := platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
+	platform.nextConnectionDeclaring(t, connect.ProvideIntentDeclared)
 	waitProviderSettled(t, deviceLocal)
 	testingProviderStateBarrier(t, deviceLocal, listener)
 	if !deviceRemote.GetProviderConnected() {
 		t.Fatal("the browser-state remote read the connected provider as not connected")
 	}
 
-	declared.closeForClientLimit()
+	// every declared connection, so the close reaches the one the device
+	// keeps (client_limit_status_test.go)
+	platform.closeForClientLimit(connect.ProvideIntentDeclared)
 	if !waitProviderCondition(60*time.Second, func() bool {
 		return !deviceLocal.GetProviderConnected()
 	}) {
