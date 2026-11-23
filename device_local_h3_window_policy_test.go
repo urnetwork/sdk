@@ -72,7 +72,16 @@ func requireH3PolicyTarget(t *testing.T, device *DeviceLocal, want int) *connect
 	}
 }
 
+// Backend health is process-wide in connect (isBackendDegraded): three backend
+// round trips that failed anywhere in the process in the last two minutes hold
+// every empty window at one exit, so the window cannot grow when the mode
+// lifts its cap. Earlier tests' unreachable platforms leave exactly that
+// behind, and this fixture's held discovery completes no round trip that
+// would clear it, so it runs in a process of its own.
 func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	for _, target := range []ByteCount{32 * 1024 * 1024, 64 * 1024 * 1024} {
 		device := newH3PolicyDevice(t, target)
 		device.SetTransportSettings(&TransportSettings{Mode: TransportModeH3})
@@ -124,7 +133,12 @@ func TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect(t *testing.T) {
 	}
 }
 
+// Isolated for the reason TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect
+// is: the explicit profile grows an empty window past one exit.
 func TestDeviceH3WindowPolicyPreservesExplicitProfileAndOtherOwner(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	first := newH3PolicyDevice(t, 32*1024*1024)
 	second := newH3PolicyDevice(t, 64*1024*1024)
 	location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
@@ -274,8 +288,13 @@ func TestDeviceH3WindowCompositionReleasesDeviceStateLock(t *testing.T) {
 
 // Public setters and initial destination construction share the existing
 // preference lock through the real multi-client cap and carrier publication.
-// Holding the first composition forces a later setter to publish last.
+// Holding the first composition forces a later setter to publish last. It runs
+// isolated as TestDeviceH3WindowPolicyTracksLiveModeAndColdReconnect does: the
+// later client policy publishes the uncapped baseline, past one exit.
 func TestDeviceH3WindowCompositionSerializesPolicyPublication(t *testing.T) {
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	for _, kind := range []string{"client", "provider", "destination"} {
 		device := newH3PolicyDevice(t, 32*1024*1024)
 		location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
