@@ -3012,7 +3012,7 @@ entries:
     copyright: Copyright (c) 2009,2014 Google Inc. All rights reserved.
     text: 0a8d61ed3cbf
   - name: github.com/gorilla/websocket
-    version: v1.5.3
+    version: v1.5.4-0.20240701034025-d67f41855da4
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
