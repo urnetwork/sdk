@@ -348,6 +348,7 @@ type DeviceRemote struct {
 	extenderStatusChangeListeners            map[connect.Id]ExtenderStatusChangeListener
 	extenderProvideStatusChangeListeners     map[connect.Id]ExtenderProvideStatusChangeListener
 	clientLimitStatusChangeListeners         map[connect.Id]ClientLimitStatusChangeListener
+	postQuantumUnavailableChangeListeners    map[connect.Id]PostQuantumUnavailableChangeListener
 	transportDelayChangeListeners            map[connect.Id]TransportDelayChangeListener
 	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
 	blockStatsChangeListeners                map[connect.Id]BlockStatsChangeListener
@@ -434,6 +435,10 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last post-quantum notice the local device answered or pushed
+	// (device_remote_post_quantum.go), which the getter answers while the
+	// device process cannot be reached
+	lastPostQuantumUnavailable *PostQuantumUnavailable
 	// the last dns resolver status read or pushed, which the getter answers
 	// while the device process cannot be reached
 	lastDnsResolverStatus *DnsResolverStatus
@@ -624,6 +629,7 @@ func newDeviceRemoteWithOverrides(
 		extenderStatusChangeListeners:            map[connect.Id]ExtenderStatusChangeListener{},
 		extenderProvideStatusChangeListeners:     map[connect.Id]ExtenderProvideStatusChangeListener{},
 		clientLimitStatusChangeListeners:         map[connect.Id]ClientLimitStatusChangeListener{},
+		postQuantumUnavailableChangeListeners:    map[connect.Id]PostQuantumUnavailableChangeListener{},
 		transportDelayChangeListeners:            map[connect.Id]TransportDelayChangeListener{},
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
 		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
@@ -824,6 +830,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		ExtenderStatusChangeListenerIds:           slices.Collect(maps.Keys(self.extenderStatusChangeListeners)),
 		ExtenderProvideStatusChangeListenerIds:    slices.Collect(maps.Keys(self.extenderProvideStatusChangeListeners)),
 		ClientLimitStatusChangeListenerIds:        slices.Collect(maps.Keys(self.clientLimitStatusChangeListeners)),
+		PostQuantumUnavailableChangeListenerIds:   slices.Collect(maps.Keys(self.postQuantumUnavailableChangeListeners)),
 		TransportDelayChangeListenerIds:           slices.Collect(maps.Keys(self.transportDelayChangeListeners)),
 		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
 		BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
@@ -8228,31 +8235,34 @@ type DeviceRemoteSyncRequest struct {
 	// misread state. Zero skips the check (older remote).
 	RpcVersion int
 
-	CanShowRatingDialogChangeListenerIds       []connect.Id
-	CanPromptIntroFunnelChangeListenerIds      []connect.Id
-	AllowForegroundChangeListenerIds           []connect.Id
-	CanReferChangeListenerIds                  []connect.Id
-	ProvideModeChangeListenerIds               []connect.Id
-	ProvideChangeListenerIds                   []connect.Id
-	ProvideControlModeChangeListenerIds        []connect.Id
-	PerformanceProfileChangeListenerIds        []connect.Id
-	ProviderIdentityChangeListenerIds          []connect.Id
-	ProvidePausedChangeListenerIds             []connect.Id
-	ProvideNetworkModeChangeListenerIds        []connect.Id
-	OfflineChangeListenerIds                   []connect.Id
-	VpnInterfaceWhileOfflineChangeListenerIds  []connect.Id
-	ConnectChangeListenerIds                   []connect.Id
-	RouteLocalChangeListenerIds                []connect.Id
-	BlockerEnabledChangeListenerIds            []connect.Id
-	ConnectLocationChangeListenerIds           []connect.Id
-	DefaultLocationChangeListenerIds           []connect.Id
-	ProvideSecretKeysListenerIds               []connect.Id
-	TunnelChangeListenerIds                    []connect.Id
-	ContractStatusChangeListenerIds            []connect.Id
-	WindowStatusChangeListenerIds              []connect.Id
-	ExtenderStatusChangeListenerIds            []connect.Id
-	ExtenderProvideStatusChangeListenerIds     []connect.Id
-	ClientLimitStatusChangeListenerIds         []connect.Id
+	CanShowRatingDialogChangeListenerIds      []connect.Id
+	CanPromptIntroFunnelChangeListenerIds     []connect.Id
+	AllowForegroundChangeListenerIds          []connect.Id
+	CanReferChangeListenerIds                 []connect.Id
+	ProvideModeChangeListenerIds              []connect.Id
+	ProvideChangeListenerIds                  []connect.Id
+	ProvideControlModeChangeListenerIds       []connect.Id
+	PerformanceProfileChangeListenerIds       []connect.Id
+	ProviderIdentityChangeListenerIds         []connect.Id
+	ProvidePausedChangeListenerIds            []connect.Id
+	ProvideNetworkModeChangeListenerIds       []connect.Id
+	OfflineChangeListenerIds                  []connect.Id
+	VpnInterfaceWhileOfflineChangeListenerIds []connect.Id
+	ConnectChangeListenerIds                  []connect.Id
+	RouteLocalChangeListenerIds               []connect.Id
+	BlockerEnabledChangeListenerIds           []connect.Id
+	ConnectLocationChangeListenerIds          []connect.Id
+	DefaultLocationChangeListenerIds          []connect.Id
+	ProvideSecretKeysListenerIds              []connect.Id
+	TunnelChangeListenerIds                   []connect.Id
+	ContractStatusChangeListenerIds           []connect.Id
+	WindowStatusChangeListenerIds             []connect.Id
+	ExtenderStatusChangeListenerIds           []connect.Id
+	ExtenderProvideStatusChangeListenerIds    []connect.Id
+	ClientLimitStatusChangeListenerIds        []connect.Id
+	// the remote's post-quantum notice listeners; a device that predates the
+	// notice ignores them, and the remote reads no notice
+	PostQuantumUnavailableChangeListenerIds    []connect.Id
 	TransportDelayChangeListenerIds            []connect.Id
 	BlockActionWindowChangeListenerIds         []connect.Id
 	BlockStatsChangeListenerIds                []connect.Id
@@ -10157,6 +10167,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerIds            map[connect.Id]bool
 	extenderProvideStatusChangeListenerIds     map[connect.Id]bool
 	clientLimitStatusChangeListenerIds         map[connect.Id]bool
+	postQuantumUnavailableChangeListenerIds    map[connect.Id]bool
 	transportDelayChangeListenerIds            map[connect.Id]bool
 	blockActionWindowChangeListenerIds         map[connect.Id]bool
 	blockStatsChangeListenerIds                map[connect.Id]bool
@@ -10211,6 +10222,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerSub            Sub
 	extenderProvideStatusChangeListenerSub     Sub
 	clientLimitStatusChangeListenerSub         Sub
+	postQuantumUnavailableChangeListenerSub    Sub
 	transportDelayChangeListenerSub            Sub
 	blockActionWindowChangeListenerSub         Sub
 	blockStatsChangeListenerSub                Sub
@@ -10300,6 +10312,7 @@ func newDeviceLocalRpc(
 		extenderStatusChangeListenerIds:            map[connect.Id]bool{},
 		extenderProvideStatusChangeListenerIds:     map[connect.Id]bool{},
 		clientLimitStatusChangeListenerIds:         map[connect.Id]bool{},
+		postQuantumUnavailableChangeListenerIds:    map[connect.Id]bool{},
 		transportDelayChangeListenerIds:            map[connect.Id]bool{},
 		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
 		blockStatsChangeListenerIds:                map[connect.Id]bool{},
@@ -10539,6 +10552,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for clientLimitStatusChangeListenerId := range self.clientLimitStatusChangeListenerIds {
 		self.removeClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
+	}
+	for postQuantumUnavailableChangeListenerId := range self.postQuantumUnavailableChangeListenerIds {
+		self.removePostQuantumUnavailableChangeListenerWithLock(postQuantumUnavailableChangeListenerId)
 	}
 	for transportDelayChangeListenerId := range self.transportDelayChangeListenerIds {
 		self.removeTransportDelayChangeListenerWithLock(transportDelayChangeListenerId)
@@ -11221,6 +11237,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, clientLimitStatusChangeListenerId := range syncRequest.ClientLimitStatusChangeListenerIds {
 		self.addClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
 	}
+	for _, postQuantumUnavailableChangeListenerId := range syncRequest.PostQuantumUnavailableChangeListenerIds {
+		self.addPostQuantumUnavailableChangeListenerWithLock(postQuantumUnavailableChangeListenerId)
+	}
 	for _, transportDelayChangeListenerId := range syncRequest.TransportDelayChangeListenerIds {
 		self.addTransportDelayChangeListenerWithLock(transportDelayChangeListenerId)
 	}
@@ -11413,6 +11432,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.clientLimitStatusChangeListenerSub != nil {
 		self.clientLimitStatusChangedWithLock(self.deviceLocal.GetClientLimitStatus())
+	}
+	if self.postQuantumUnavailableChangeListenerSub != nil {
+		self.postQuantumUnavailableChangedWithLock(self.deviceLocal.GetPostQuantumUnavailable())
 	}
 	if self.transportDelayChangeListenerSub != nil {
 		self.transportDelayChangedWithLock(self.deviceLocal.GetTransportDelay())

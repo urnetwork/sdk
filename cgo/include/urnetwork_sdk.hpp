@@ -23770,6 +23770,7 @@ using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
 using PointsLeaderboardListener = std::function<void()>;
 using PostQuantumIdentityListener = std::function<void()>;
+using PostQuantumUnavailableChangeListener = std::function<void(std::optional<PostQuantumUnavailable> post_quantum_unavailable)>;
 using PostQuantumUnavailableListener = std::function<void()>;
 using ProFeaturesListener = std::function<void(std::optional<ProFeaturesSnapshot> snapshot)>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
@@ -23949,6 +23950,7 @@ public:
 	Sub addOfflineChangeListener(OfflineChangeListener listener) const;
 	Sub addPacketStatsChangeListener(PacketStatsChangeListener listener) const;
 	Sub addPerformanceProfileChangeListener(PerformanceProfileChangeListener listener) const;
+	Sub addPostQuantumUnavailableChangeListener(PostQuantumUnavailableChangeListener listener) const;
 	Sub addProvideChangeListener(ProvideChangeListener listener) const;
 	Sub addProvideControlModeChangeListener(ProvideControlModeChangeListener listener) const;
 	Sub addProvideModeChangeListener(ProvideModeChangeListener listener) const;
@@ -24014,6 +24016,7 @@ public:
 	bool getOffline() const;
 	std::optional<PacketStats> getPacketStats() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
+	std::optional<PostQuantumUnavailable> getPostQuantumUnavailable() const;
 	std::string getProvideControlMode() const;
 	bool getProvideEnabled() const;
 	bool getProvideExtender() const;
@@ -29405,6 +29408,34 @@ inline void oneshot_post_quantum_identity(void* user_data) {
 	delete f;
 }
 
+inline void retained_post_quantum_unavailable_change(void* user_data, const char* post_quantum_unavailable_json) {
+	auto* f = static_cast<PostQuantumUnavailableChangeListener*>(user_data);
+	try {
+		std::optional<PostQuantumUnavailable> post_quantum_unavailable_v;
+		if (post_quantum_unavailable_json) {
+			post_quantum_unavailable_v = parseJson<PostQuantumUnavailable>(post_quantum_unavailable_json);
+		}
+		(*f)(std::move(post_quantum_unavailable_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_post_quantum_unavailable_change(void* user_data, const char* post_quantum_unavailable_json) {
+	auto* f = static_cast<PostQuantumUnavailableChangeListener*>(user_data);
+	try {
+		std::optional<PostQuantumUnavailable> post_quantum_unavailable_v;
+		if (post_quantum_unavailable_json) {
+			post_quantum_unavailable_v = parseJson<PostQuantumUnavailable>(post_quantum_unavailable_json);
+		}
+		(*f)(std::move(post_quantum_unavailable_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_post_quantum_unavailable(void* user_data) {
 	auto* f = static_cast<PostQuantumUnavailableListener*>(user_data);
 	try {
@@ -32816,6 +32847,17 @@ inline Sub Device::addPerformanceProfileChangeListener(PerformanceProfileChangeL
 	}
 	return r;
 }
+inline Sub Device::addPostQuantumUnavailableChangeListener(PostQuantumUnavailableChangeListener listener) const {
+	std::shared_ptr<PostQuantumUnavailableChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<PostQuantumUnavailableChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_post_quantum_unavailable_change_listener(handle(), listener_fn ? &detail::retained_post_quantum_unavailable_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addProvideChangeListener(ProvideChangeListener listener) const {
 	std::shared_ptr<ProvideChangeListener> listener_fn;
 	if (listener) {
@@ -33307,6 +33349,14 @@ inline std::optional<PerformanceProfile> Device::getPerformanceProfile() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<PerformanceProfile>(r_s->c_str());
+}
+inline std::optional<PostQuantumUnavailable> Device::getPostQuantumUnavailable() const {
+	char* r_c = urnet_device_get_post_quantum_unavailable(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PostQuantumUnavailable>(r_s->c_str());
 }
 inline std::string Device::getProvideControlMode() const {
 	char* r_c = urnet_device_get_provide_control_mode(handle());

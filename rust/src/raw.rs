@@ -136,6 +136,7 @@ pub type urnet_peers_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char
 pub type urnet_performance_profile_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_points_leaderboard_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_post_quantum_identity_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_post_quantum_unavailable_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_post_quantum_unavailable_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_pro_features_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_provide_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
@@ -681,6 +682,7 @@ pub struct Raw {
     pub urnet_device_add_offline_change_listener: unsafe extern "C" fn(u64, urnet_offline_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_packet_stats_change_listener: unsafe extern "C" fn(u64, urnet_packet_stats_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_performance_profile_change_listener: unsafe extern "C" fn(u64, urnet_performance_profile_change_cb, *mut c_void) -> u64,
+    pub urnet_device_add_post_quantum_unavailable_change_listener: unsafe extern "C" fn(u64, urnet_post_quantum_unavailable_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provide_change_listener: unsafe extern "C" fn(u64, urnet_provide_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provide_control_mode_change_listener: unsafe extern "C" fn(u64, urnet_provide_control_mode_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provide_mode_change_listener: unsafe extern "C" fn(u64, urnet_provide_mode_change_cb, *mut c_void) -> u64,
@@ -746,6 +748,7 @@ pub struct Raw {
     pub urnet_device_get_offline: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_packet_stats: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_performance_profile: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_device_get_post_quantum_unavailable: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provide_control_mode: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provide_enabled: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_provide_extender: unsafe extern "C" fn(u64) -> bool,
@@ -2234,6 +2237,7 @@ impl Raw {
             urnet_device_add_offline_change_listener: unsafe { *library.get(b"urnet_device_add_offline_change_listener\0")? },
             urnet_device_add_packet_stats_change_listener: unsafe { *library.get(b"urnet_device_add_packet_stats_change_listener\0")? },
             urnet_device_add_performance_profile_change_listener: unsafe { *library.get(b"urnet_device_add_performance_profile_change_listener\0")? },
+            urnet_device_add_post_quantum_unavailable_change_listener: unsafe { *library.get(b"urnet_device_add_post_quantum_unavailable_change_listener\0")? },
             urnet_device_add_provide_change_listener: unsafe { *library.get(b"urnet_device_add_provide_change_listener\0")? },
             urnet_device_add_provide_control_mode_change_listener: unsafe { *library.get(b"urnet_device_add_provide_control_mode_change_listener\0")? },
             urnet_device_add_provide_mode_change_listener: unsafe { *library.get(b"urnet_device_add_provide_mode_change_listener\0")? },
@@ -2299,6 +2303,7 @@ impl Raw {
             urnet_device_get_offline: unsafe { *library.get(b"urnet_device_get_offline\0")? },
             urnet_device_get_packet_stats: unsafe { *library.get(b"urnet_device_get_packet_stats\0")? },
             urnet_device_get_performance_profile: unsafe { *library.get(b"urnet_device_get_performance_profile\0")? },
+            urnet_device_get_post_quantum_unavailable: unsafe { *library.get(b"urnet_device_get_post_quantum_unavailable\0")? },
             urnet_device_get_provide_control_mode: unsafe { *library.get(b"urnet_device_get_provide_control_mode\0")? },
             urnet_device_get_provide_enabled: unsafe { *library.get(b"urnet_device_get_provide_enabled\0")? },
             urnet_device_get_provide_extender: unsafe { *library.get(b"urnet_device_get_provide_extender\0")? },

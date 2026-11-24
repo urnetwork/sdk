@@ -477,6 +477,7 @@ EXPORTS
 	urnet_device_add_offline_change_listener
 	urnet_device_add_packet_stats_change_listener
 	urnet_device_add_performance_profile_change_listener
+	urnet_device_add_post_quantum_unavailable_change_listener
 	urnet_device_add_provide_change_listener
 	urnet_device_add_provide_control_mode_change_listener
 	urnet_device_add_provide_mode_change_listener
@@ -544,6 +545,7 @@ EXPORTS
 	urnet_device_get_offline
 	urnet_device_get_packet_stats
 	urnet_device_get_performance_profile
+	urnet_device_get_post_quantum_unavailable
 	urnet_device_get_provide_control_mode
 	urnet_device_get_provide_enabled
 	urnet_device_get_provide_extender
