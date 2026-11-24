@@ -136,7 +136,7 @@ const json = (status: number, body: unknown) =>
 // client_limit_exceeded false, so callers could neither tell it was a limit
 // nor say which one.
 test("a 402 from auth-client is a plan-limit refusal with the server's message", async () => {
-  const message = "Your plan's limit of 5 active proxies is reached. Remove a proxy to create another, or upgrade to UR Pro for more.";
+  const message = "Your plan's limit of 1 active proxy is reached. Remove proxies to create another, or upgrade to UR Pro for more.";
   const responses = [
     json(402, { x402Version: 1, error: message, accepts: [] }),
     json(200, { proxy_config_result: null, error: { message, client_limit_exceeded: true, upgrade_required: true } }),
