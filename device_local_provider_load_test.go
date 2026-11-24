@@ -47,6 +47,10 @@ import (
 //   - peakTotal/peakHeap: max sampled Go soft-limit usage / live heap during
 //     load. peakTotal is not RSS or the iOS jetsam footprint: binary mappings,
 //     C allocations, and kernel memory are outside this gauge.
+//   - settledPeak: the peak footprint the runtime could not give back: each
+//     sample's soft-limit usage less the free pages the runtime holds, as far
+//     as it still stands once the runtime has collected what was garbage at
+//     the sample (see peakMemoryTelemetry). The peak ceiling judges this one.
 //   - loaded: quiesced heap right after load (flows closed, nat entries and
 //     pools still warm)
 //   - final: quiesced heap after the peers disconnect
@@ -70,7 +74,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		peerCount    = 6
 		rounds       = 4 // sequential connection churn per peer
 		flowsPerPeer = 2 // concurrent tcp flows per peer per round
-		bytesPerFlow = 96 << 10
+		bytesPerFlow = 96 * 1024
 		// short udp flows per peer, to populate the exit nat's flow table the
 		// way scattered real traffic does (entries linger to their idle
 		// timeout, so they land in the loaded measurement)
@@ -108,7 +112,40 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// (sidecar/third_party/mox/URNETWORK.md), 18 fresh processes measured
 		// peakTotal=29.3-30.8 MiB, with a 6.3-MiB idle heap and
 		// 11.0-11.7-MiB loaded heap.
-		peakTotalCeilingDarwin = 32 << 20
+		//
+		// Since 2026-11-23 the ceiling judges the settled peak, not peakTotal.
+		// Under five lanes' load (load average 50-100 on 14 cores) peakTotal
+		// at sdk d27e9903 went past the 32-MiB soft limit in 3 of 183 fresh
+		// processes, at 32.0, 33.3 and 38.3 MiB, the others at 28.4-31.3 MiB.
+		// Traced with gctrace, the 33.3-MiB one was a collection the host
+		// starved: 28 ms to stop the world, 72 ms of marking and 28 ms to stop
+		// it again, while the provider took the heap from 17 to 24 MiB past a
+		// 16-MiB goal; the cycle marked 20 MiB, 6 MiB of which the next
+		// collection freed, and the total fell back under the limit. That
+		// excess was garbage the runtime held, and a ceiling above the soft
+		// limit would have to clear 38.3 MiB, room to hide 6 MiB of
+		// regression. Rebuilt from the 120 traced processes' samples, the
+		// settled peak was 26.2-29.9 MiB (median 27.8) where peakTotal was
+		// 28.8-33.3 (median 29.8); at -count=20 beside the whole sdk package,
+		// 60 processes settled at 26.2-29.3 MiB (median 27.6) with peakTotal
+		// at 28.4-31.0. A footprint the collections leave over the budget
+		// still fails. The websocket bump (GO-2026-6278) did not move the
+		// peak: 60 fresh processes on each side, interleaved, had peakTotal
+		// medians of 29.84 MiB before it (sdk 890d68d8, connect 16328277) and
+		// 29.73 after (sdk d27e9903, connect 2b59b666), 90th percentiles of
+		// 30.44 and 30.40, and the same 6.3-MiB idle and 11.0-MiB loaded
+		// heaps; the 38.3-MiB process was after it.
+		peakTotalCeilingDarwin = 32 * 1024 * 1024
+
+		// peakTotal caught the 2.1-MiB idle growth of 2026-11-21 only by
+		// flaking past its ceiling, and the settled peak sits about 2 MiB
+		// under peakTotal, so it would flag such growth late or not at all.
+		// The idle heap carries that guard instead, deterministically: package
+		// init and the connected peers' state, which every later measurement
+		// adds to. It measured 6.28-6.32 MiB in those 183 processes and
+		// 8.4 MiB at sdk 9a151fd6, before mox's public suffix list was parsed
+		// lazily.
+		idleHeapCeiling = budgetByteCount / 4
 
 		// linux/amd64 carries ~4 MiB more for the same work, and it is the
 		// platform CI runs on, so the darwin figure failed every run on main.
@@ -239,6 +276,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	tcpElapsed := time.Since(loadStart)
 	tcpPeakTotal, tcpPeakHeap, tcpPeakGoroutines := tcpSampler.stop()
+	tcpSettledPeak := tcpSampler.settle()
 
 	// udp burst: scatter short flows into the exit nat's flow table
 	udpSampler := startPeakSampler()
@@ -257,7 +295,9 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	udpElapsed := time.Since(udpStart)
 	udpPeakTotal, udpPeakHeap, udpPeakGoroutines := udpSampler.stop()
+	udpSettledPeak := udpSampler.settle()
 	peakTotal := max(tcpPeakTotal, udpPeakTotal)
+	settledPeak := max(tcpSettledPeak, udpSettledPeak)
 	peakHeap := max(tcpPeakHeap, udpPeakHeap)
 	peakGoroutines := max(tcpPeakGoroutines, udpPeakGoroutines)
 
@@ -269,9 +309,9 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	t.Logf("udp load: %d peers x %d flows = %d round trips in %v (%.1f round trips/s)",
 		peerCount, udpFlowsPerPeer, peerCount*udpFlowsPerPeer, udpElapsed.Round(time.Millisecond),
 		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds())
-	t.Logf("phase peaks: tcp runtime=%s heap=%s goroutines=%d; udp runtime=%s heap=%s goroutines=%d",
-		humanBytes(uint64(tcpPeakTotal)), humanBytes(uint64(tcpPeakHeap)), tcpPeakGoroutines,
-		humanBytes(uint64(udpPeakTotal)), humanBytes(uint64(udpPeakHeap)), udpPeakGoroutines)
+	t.Logf("phase peaks: tcp runtime=%s settled=%s heap=%s goroutines=%d; udp runtime=%s settled=%s heap=%s goroutines=%d",
+		humanBytes(uint64(tcpPeakTotal)), humanBytes(uint64(tcpSettledPeak)), humanBytes(uint64(tcpPeakHeap)), tcpPeakGoroutines,
+		humanBytes(uint64(udpPeakTotal)), humanBytes(uint64(udpSettledPeak)), humanBytes(uint64(udpPeakHeap)), udpPeakGoroutines)
 
 	loadedGoroutines, loadedHeap := sampleStable()
 	stats := GetMemoryStats()
@@ -339,7 +379,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	t.Logf("[provider-mem-json] %s", encoded)
 
 	// the stable measurement line for comparing provider memory changes
-	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s loadedTotal=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d tcpMiBps=%.1f udpRps=%.1f tcpPeakTotal=%s udpPeakTotal=%s",
+	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s loadedTotal=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d tcpMiBps=%.1f udpRps=%.1f tcpPeakTotal=%s udpPeakTotal=%s settledPeak=%s tcpSettledPeak=%s udpSettledPeak=%s",
 		humanBytes(budgetByteCount),
 		humanBytes(idleHeap),
 		humanBytes(uint64(peakTotal)),
@@ -351,19 +391,26 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		float64(bytesMoved)/(1<<20)/tcpElapsed.Seconds(),
 		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds(),
 		humanBytes(uint64(tcpPeakTotal)),
-		humanBytes(uint64(udpPeakTotal)))
+		humanBytes(uint64(udpPeakTotal)),
+		humanBytes(uint64(settledPeak)),
+		humanBytes(uint64(tcpSettledPeak)),
+		humanBytes(uint64(udpSettledPeak)))
 
 	// regression ceilings (see the constants above). Race instrumentation
-	// inflates both numbers (shadow memory lands in the runtime total), so
-	// under -race the [provider-mem] line is log-only.
+	// inflates every one of these numbers (shadow memory lands in the runtime
+	// total), so under -race the [provider-mem] line is log-only.
 	if !raceEnabled {
+		if idleHeap > idleHeapCeiling {
+			t.Errorf("idle quiesced heap %s exceeds the regression ceiling %s",
+				humanBytes(idleHeap), humanBytes(uint64(idleHeapCeiling)))
+		}
 		if loadedHeap > loadedHeapCeiling {
 			t.Errorf("loaded quiesced heap %s exceeds the regression ceiling %s",
 				humanBytes(loadedHeap), humanBytes(uint64(loadedHeapCeiling)))
 		}
-		if peakTotal > peakTotalCeiling {
-			t.Errorf("peak runtime total %s exceeds the regression ceiling %s",
-				humanBytes(uint64(peakTotal)), humanBytes(uint64(peakTotalCeiling)))
+		if settledPeak > peakTotalCeiling {
+			t.Errorf("settled peak footprint %s exceeds the regression ceiling %s (peak runtime total %s)",
+				humanBytes(uint64(settledPeak)), humanBytes(uint64(peakTotalCeiling)), humanBytes(uint64(peakTotal)))
 		}
 	}
 }
@@ -624,6 +671,51 @@ func providerMemoryValues(stats *MemoryStats) providerMemorySnapshot {
 
 const peakMemorySampleCadence = 20 * time.Millisecond
 
+// A sample settles once this many collections have completed after it: the
+// first may have been marking when the sample was read, and keeps live what
+// was allocated during its mark; the second marks after the sample and frees
+// everything that was garbage at it; the third, by starting, has finished
+// sweeping what the second freed.
+const peakMemorySettleCycleCount = 3
+
+// One reading of the footprint the runtime could not give back without
+// collecting: its soft-limit usage (the total less released pages) less the
+// free pages it holds, which it releases when it must hold its limit. The
+// completed collections are counted just before the reading and just after
+// it, so the reading saw at least CyclesBefore of them and at most CyclesAfter.
+type peakMemoryFootprint struct {
+	Bytes        int64
+	CyclesBefore int64
+	CyclesAfter  int64
+}
+
+func readPeakMemoryFootprint() peakMemoryFootprint {
+	cycles := [...]metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}}
+	metrics.Read(cycles[:])
+	cyclesBefore := int64(cycles[0].Value.Uint64())
+	classes := [...]metrics.Sample{
+		{Name: "/memory/classes/total:bytes"},
+		{Name: "/memory/classes/heap/released:bytes"},
+		{Name: "/memory/classes/heap/free:bytes"},
+	}
+	metrics.Read(classes[:])
+	metrics.Read(cycles[:])
+	return peakMemoryFootprint{
+		Bytes: int64(classes[0].Value.Uint64()) -
+			int64(classes[1].Value.Uint64()) -
+			int64(classes[2].Value.Uint64()),
+		CyclesBefore: cyclesBefore,
+		CyclesAfter:  int64(cycles[0].Value.Uint64()),
+	}
+}
+
+// One phase's samples: the raw peak with the allocator state that coincided
+// with it, and the settled peak. The settled peak is the highest footprint
+// that still stood once the runtime had collected after it: each sample's
+// footprint as far as the first reading peakMemorySettleCycleCount completed
+// collections later, or the one after settle's forced collection, still shows
+// it. What a starved collection left behind as garbage does not count; a
+// footprint the collections could not bring down does.
 type peakMemoryTelemetry struct {
 	Cadence       time.Duration          `json:"requested_cadence_ns"`
 	Samples       int                    `json:"samples"`
@@ -636,10 +728,27 @@ type peakMemoryTelemetry struct {
 	PeakSys       int64                  `json:"peak_sys_bytes"`
 	FirstGC       int64                  `json:"first_num_gc"`
 	LastGC        int64                  `json:"last_num_gc"`
-	first, last   time.Time
+	SettledPeak   int64                  `json:"settled_peak_footprint_bytes"`
+	// the samples settle's forced collection settled, for want of a reading
+	// far enough after them
+	SettledAtEnd int `json:"settled_at_end_samples"`
+	first, last  time.Time
+	// the samples still waiting for a reading that settles them
+	settling [peakMemorySettleCycleCount + 1]settlingMemorySample
 }
 
-func (self *peakMemoryTelemetry) record(at time.Time, stats providerMemorySnapshot) {
+// The highest footprint among the held samples read when cycles collections
+// had completed. No samples marks a free slot.
+type settlingMemorySample struct {
+	cycles    int64
+	footprint int64
+	samples   int
+}
+
+// record takes one sample's snapshot, for the raw peak and its attribution,
+// and the footprint read just before it, for the settled peak. It allocates
+// nothing, so the samples add no pressure to the workload they measure.
+func (self *peakMemoryTelemetry) record(at time.Time, stats providerMemorySnapshot, footprint peakMemoryFootprint) {
 	if self.Samples == 0 {
 		self.Cadence, self.first, self.FirstGC = peakMemorySampleCadence, at, stats.NumGC
 	} else {
@@ -653,11 +762,74 @@ func (self *peakMemoryTelemetry) record(at time.Time, stats providerMemorySnapsh
 	self.PeakHeapAlloc = max(self.PeakHeapAlloc, stats.HeapAllocBytes)
 	self.PeakHeapInuse = max(self.PeakHeapInuse, stats.HeapInuseBytes)
 	self.PeakSys = max(self.PeakSys, stats.SysBytes)
+	self.settleThrough(footprint)
+	self.hold(footprint)
+}
+
+// Settles every held sample this reading comes peakMemorySettleCycleCount
+// completed collections after, at the smaller of the two footprints.
+func (self *peakMemoryTelemetry) settleThrough(footprint peakMemoryFootprint) {
+	for i := range self.settling {
+		held := &self.settling[i]
+		if 0 < held.samples && held.cycles+peakMemorySettleCycleCount <= footprint.CyclesBefore {
+			self.SettledPeak = max(self.SettledPeak, min(held.footprint, footprint.Bytes))
+			*held = settlingMemorySample{}
+		}
+	}
+}
+
+// Holds a reading until one comes far enough after it. Readings at one count
+// share a slot. With every slot taken the newest slot takes the reading too,
+// which only makes it wait longer and settle no lower.
+func (self *peakMemoryTelemetry) hold(footprint peakMemoryFootprint) {
+	free := -1
+	newest := -1
+	for i := range self.settling {
+		held := &self.settling[i]
+		switch {
+		case held.samples == 0:
+			if free < 0 {
+				free = i
+			}
+		case held.cycles == footprint.CyclesAfter:
+			held.footprint = max(held.footprint, footprint.Bytes)
+			held.samples++
+			return
+		case newest < 0 || self.settling[newest].cycles < held.cycles:
+			newest = i
+		}
+	}
+	if 0 <= free {
+		self.settling[free] = settlingMemorySample{
+			cycles:    footprint.CyclesAfter,
+			footprint: footprint.Bytes,
+			samples:   1,
+		}
+		return
+	}
+	held := &self.settling[newest]
+	held.cycles = max(held.cycles, footprint.CyclesAfter)
+	held.footprint = max(held.footprint, footprint.Bytes)
+	held.samples++
+}
+
+// Settles every sample still held, at a reading taken after a collection that
+// began after all of them.
+func (self *peakMemoryTelemetry) settleAll(footprint peakMemoryFootprint) {
+	for i := range self.settling {
+		held := &self.settling[i]
+		if 0 < held.samples {
+			self.SettledPeak = max(self.SettledPeak, min(held.footprint, footprint.Bytes))
+			self.SettledAtEnd += held.samples
+			*held = settlingMemorySample{}
+		}
+	}
 }
 
 // peakSampler tracks the max Go soft-limit-accounted bytes, live heap, and
-// goroutine count while running. This is runtime-managed memory minus released
-// heap pages, not process RSS or the iOS jetsam footprint.
+// goroutine count while running, and the settled footprint peak (see
+// peakMemoryTelemetry). Soft-limit usage is runtime-managed memory minus
+// released heap pages, not process RSS or the iOS jetsam footprint.
 type peakSampler struct {
 	stopCh chan struct{}
 	doneCh chan struct{}
@@ -665,8 +837,9 @@ type peakSampler struct {
 	totalMax     atomic.Int64
 	heapMax      atomic.Int64
 	goroutineMax atomic.Int64
-	// Written only by the sampler, then by stop after joining the sampler.
-	// Callers inspect telemetry only after stop; no retained sample list grows.
+	// Written only by the sampler, then by stop and settle after joining the
+	// sampler. Callers inspect telemetry only after stop; no retained sample
+	// list grows.
 	telemetry peakMemoryTelemetry
 }
 
@@ -692,9 +865,10 @@ func startPeakSampler() *peakSampler {
 }
 
 func (self *peakSampler) sample() {
+	footprint := readPeakMemoryFootprint()
 	var stats MemoryStats
 	readMemoryStats(&stats)
-	self.telemetry.record(time.Now(), providerMemoryValues(&stats))
+	self.telemetry.record(time.Now(), providerMemoryValues(&stats), footprint)
 	if self.totalMax.Load() < stats.TotalRuntimeByteCount {
 		self.totalMax.Store(stats.TotalRuntimeByteCount)
 	}
@@ -716,6 +890,16 @@ func (self *peakSampler) stop() (int64, int64, int) {
 	<-self.doneCh
 	self.sample()
 	return self.totalMax.Load(), self.heapMax.Load(), int(self.goroutineMax.Load())
+}
+
+// settle forces a collection, which begins after the sampler's last reading
+// and so frees and sweeps all that was garbage at any sample, settles every
+// sample still held at the footprint left after it, and returns the settled
+// peak. Call it after stop, once the phase's load is done.
+func (self *peakSampler) settle() int64 {
+	runtime.GC()
+	self.telemetry.settleAll(readPeakMemoryFootprint())
+	return self.telemetry.SettledPeak
 }
 
 // writeProviderMemProfile writes a pprof heap profile named `<name>.pprof`
