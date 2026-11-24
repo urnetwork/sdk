@@ -1214,6 +1214,7 @@ struct PointsLeaderboardRow;
 struct PointsLeaderboardMe;
 struct PointsLeaderboardResult;
 struct PointsLeaderboardScrollLabelParts;
+struct PostQuantumUnavailable;
 struct PriceEquivalent;
 struct PriceTier;
 struct ProFeaturesSnapshot;
@@ -3041,6 +3042,7 @@ struct FindProviders2Args {
 	std::optional<bool> force_minimum;
 	std::optional<std::string> ip_family;
 	std::optional<bool> strict;
+	std::optional<bool> require_modern_provider;
 };
 
 struct FindProviders2Result {
@@ -3792,6 +3794,10 @@ struct PointsLeaderboardScrollLabelParts {
 	std::string rank_text{};
 	int64_t tier{};
 	int64_t tier_percent{};
+};
+
+struct PostQuantumUnavailable {
+	std::optional<ConnectLocation> location;
 };
 
 struct PriceEquivalent {
@@ -5773,6 +5779,8 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardScrollLabelParts& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardScrollLabelParts& v);
+inline void to_json(nlohmann::json& j, const PostQuantumUnavailable& v);
+inline void from_json(const nlohmann::json& j, PostQuantumUnavailable& v);
 inline void to_json(nlohmann::json& j, const PriceEquivalent& v);
 inline void from_json(const nlohmann::json& j, PriceEquivalent& v);
 inline void to_json(nlohmann::json& j, const PriceTier& v);
@@ -13222,6 +13230,9 @@ inline void to_json(nlohmann::json& j, const FindProviders2Args& v) {
 	if (v.strict) {
 		j["strict"] = *v.strict;
 	}
+	if (v.require_modern_provider) {
+		j["require_modern_provider"] = *v.require_modern_provider;
+	}
 }
 inline void from_json(const nlohmann::json& j, FindProviders2Args& v) {
 	if (!j.is_object()) {
@@ -13269,6 +13280,11 @@ inline void from_json(const nlohmann::json& j, FindProviders2Args& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.strict = std::move(tmp);
+	}
+	if (auto it = j.find("require_modern_provider"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.require_modern_provider = std::move(tmp);
 	}
 }
 
@@ -16886,6 +16902,23 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardScrollLabelParts
 	}
 	if (auto it = j.find("tier_percent"); it != j.end() && !it->is_null()) {
 		it->get_to(v.tier_percent);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PostQuantumUnavailable& v) {
+	j = nlohmann::json::object();
+	if (v.location) {
+		j["location"] = *v.location;
+	}
+}
+inline void from_json(const nlohmann::json& j, PostQuantumUnavailable& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("location"); it != j.end() && !it->is_null()) {
+		ConnectLocation tmp{};
+		it->get_to(tmp);
+		v.location = std::move(tmp);
 	}
 }
 
@@ -23737,6 +23770,7 @@ using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
 using PointsLeaderboardListener = std::function<void()>;
 using PostQuantumIdentityListener = std::function<void()>;
+using PostQuantumUnavailableListener = std::function<void()>;
 using ProFeaturesListener = std::function<void(std::optional<ProFeaturesSnapshot> snapshot)>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
 using ProvideControlModeChangeListener = std::function<void(std::string provide_control_mode)>;
@@ -24480,6 +24514,7 @@ public:
 	Sub addConnectionStatusListener(ConnectionStatusListener listener) const;
 	Sub addGridListener(GridListener listener) const;
 	Sub addLocationMatchListener(LocationMatchListener listener) const;
+	Sub addPostQuantumUnavailableListener(PostQuantumUnavailableListener listener) const;
 	Sub addSelectedLocationListener(SelectedLocationListener listener) const;
 	void close() const;
 	void connect(const std::optional<ConnectLocation>& location) const;
@@ -24490,6 +24525,7 @@ public:
 	std::string getConnectionStatus() const;
 	ConnectGrid getGrid() const;
 	std::optional<LocationMatch> getLocationMatch() const;
+	std::optional<PostQuantumUnavailable> getPostQuantumUnavailable() const;
 	std::optional<ConnectLocation> getSelectedLocation() const;
 	void start() const;
 	void stop() const;
@@ -29360,6 +29396,26 @@ inline void retained_post_quantum_identity(void* user_data) {
 }
 inline void oneshot_post_quantum_identity(void* user_data) {
 	auto* f = static_cast<PostQuantumIdentityListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_post_quantum_unavailable(void* user_data) {
+	auto* f = static_cast<PostQuantumUnavailableListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_post_quantum_unavailable(void* user_data) {
+	auto* f = static_cast<PostQuantumUnavailableListener*>(user_data);
 	try {
 		(*f)();
 	} catch (const std::exception& e) {
@@ -35718,6 +35774,17 @@ inline Sub ConnectViewController::addLocationMatchListener(LocationMatchListener
 	}
 	return r;
 }
+inline Sub ConnectViewController::addPostQuantumUnavailableListener(PostQuantumUnavailableListener listener) const {
+	std::shared_ptr<PostQuantumUnavailableListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<PostQuantumUnavailableListener>(std::move(listener));
+	}
+	Sub r(urnet_connect_view_controller_add_post_quantum_unavailable_listener(handle(), listener_fn ? &detail::retained_post_quantum_unavailable : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub ConnectViewController::addSelectedLocationListener(SelectedLocationListener listener) const {
 	std::shared_ptr<SelectedLocationListener> listener_fn;
 	if (listener) {
@@ -35775,6 +35842,14 @@ inline std::optional<LocationMatch> ConnectViewController::getLocationMatch() co
 		return std::nullopt;
 	}
 	return detail::parseJson<LocationMatch>(r_s->c_str());
+}
+inline std::optional<PostQuantumUnavailable> ConnectViewController::getPostQuantumUnavailable() const {
+	char* r_c = urnet_connect_view_controller_get_post_quantum_unavailable(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PostQuantumUnavailable>(r_s->c_str());
 }
 inline std::optional<ConnectLocation> ConnectViewController::getSelectedLocation() const {
 	char* r_c = urnet_connect_view_controller_get_selected_location(handle());

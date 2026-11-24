@@ -2137,6 +2137,16 @@ func (self *cAdapterPostQuantumIdentityListener) ProviderIdentitiesChanged() {
 	C.urnet_invoke_post_quantum_identity(self.cbProviderIdentitiesChanged, self.userData)
 }
 
+type cAdapterPostQuantumUnavailableListener struct {
+	cbPostQuantumUnavailableChanged C.urnet_post_quantum_unavailable_cb
+	userData                        unsafe.Pointer
+}
+
+func (self *cAdapterPostQuantumUnavailableListener) PostQuantumUnavailableChanged() {
+	defer cgoGuard("urnet_post_quantum_unavailable_cb")
+	C.urnet_invoke_post_quantum_unavailable(self.cbPostQuantumUnavailableChanged, self.userData)
+}
+
 type cAdapterProFeaturesListener struct {
 	cbProFeaturesChanged C.urnet_pro_features_cb
 	userData             unsafe.Pointer
@@ -9076,6 +9086,21 @@ func urnet_connect_view_controller_add_location_match_listener(self C.uint64_t, 
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_connect_view_controller_add_post_quantum_unavailable_listener
+func urnet_connect_view_controller_add_post_quantum_unavailable_listener(self C.uint64_t, listener_post_quantum_unavailable_changed C.urnet_post_quantum_unavailable_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_connect_view_controller_add_post_quantum_unavailable_listener")
+	self_, ok := resolveHandle[*sdk.ConnectViewController](uint64(self), "urnet_connect_view_controller_add_post_quantum_unavailable_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.PostQuantumUnavailableListener
+	if listener_post_quantum_unavailable_changed != nil {
+		listener_ = &cAdapterPostQuantumUnavailableListener{cbPostQuantumUnavailableChanged: listener_post_quantum_unavailable_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddPostQuantumUnavailableListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_connect_view_controller_add_selected_location_listener
 func urnet_connect_view_controller_add_selected_location_listener(self C.uint64_t, listener_selected_location_changed C.urnet_selected_location_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_connect_view_controller_add_selected_location_listener")
@@ -9203,6 +9228,20 @@ func urnet_connect_view_controller_get_location_match(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_connect_view_controller_get_location_match")
+}
+
+//export urnet_connect_view_controller_get_post_quantum_unavailable
+func urnet_connect_view_controller_get_post_quantum_unavailable(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_connect_view_controller_get_post_quantum_unavailable")
+	self_, ok := resolveHandle[*sdk.ConnectViewController](uint64(self), "urnet_connect_view_controller_get_post_quantum_unavailable")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPostQuantumUnavailable()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_connect_view_controller_get_post_quantum_unavailable")
 }
 
 //export urnet_connect_view_controller_get_selected_location

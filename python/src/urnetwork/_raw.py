@@ -137,6 +137,7 @@ urnet_peers_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_performance_profile_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_points_leaderboard_cb = CFUNCTYPE(None, c_void_p)
 urnet_post_quantum_identity_cb = CFUNCTYPE(None, c_void_p)
+urnet_post_quantum_unavailable_cb = CFUNCTYPE(None, c_void_p)
 urnet_pro_features_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_provide_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_provide_control_mode_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -954,6 +955,8 @@ def bind(lib):
     lib.urnet_connect_view_controller_add_grid_listener.restype = c_uint64
     lib.urnet_connect_view_controller_add_location_match_listener.argtypes = [c_uint64, urnet_location_match_cb, c_void_p]
     lib.urnet_connect_view_controller_add_location_match_listener.restype = c_uint64
+    lib.urnet_connect_view_controller_add_post_quantum_unavailable_listener.argtypes = [c_uint64, urnet_post_quantum_unavailable_cb, c_void_p]
+    lib.urnet_connect_view_controller_add_post_quantum_unavailable_listener.restype = c_uint64
     lib.urnet_connect_view_controller_add_selected_location_listener.argtypes = [c_uint64, urnet_selected_location_cb, c_void_p]
     lib.urnet_connect_view_controller_add_selected_location_listener.restype = c_uint64
     lib.urnet_connect_view_controller_close.argtypes = [c_uint64]
@@ -974,6 +977,8 @@ def bind(lib):
     lib.urnet_connect_view_controller_get_grid.restype = c_uint64
     lib.urnet_connect_view_controller_get_location_match.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_get_location_match.restype = c_void_p
+    lib.urnet_connect_view_controller_get_post_quantum_unavailable.argtypes = [c_uint64]
+    lib.urnet_connect_view_controller_get_post_quantum_unavailable.restype = c_void_p
     lib.urnet_connect_view_controller_get_selected_location.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_get_selected_location.restype = c_void_p
     lib.urnet_connect_view_controller_start.argtypes = [c_uint64]

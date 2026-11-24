@@ -1592,6 +1592,10 @@ type FindProviders2Args struct {
 	// the server holds no admitted provider for is answered from its region,
 	// then its country, and each provider found there carries its Match.
 	Strict bool `json:"strict,omitempty"`
+	// Keeps only providers that negotiate post-quantum encryption, the
+	// providers a device with post-quantum encryption on discovers (connect
+	// FindProviders2Args.RequireModernProvider). An older server ignores it.
+	RequireModernProvider bool `json:"require_modern_provider,omitempty"`
 }
 
 // MultiHopIdList is a list of multi-hop ids, each an ordered *IdList

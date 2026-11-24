@@ -138,6 +138,7 @@ public interface Raw extends Library {
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_post_quantum_identity_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_post_quantum_unavailable_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_pro_features_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_provide_control_mode_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -601,6 +602,7 @@ public interface Raw extends Library {
   long urnet_connect_view_controller_add_connection_status_listener(long a0, urnet_connection_status_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_grid_listener(long a0, urnet_grid_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_location_match_listener(long a0, urnet_location_match_cb a1, Pointer a2);
+  long urnet_connect_view_controller_add_post_quantum_unavailable_listener(long a0, urnet_post_quantum_unavailable_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_selected_location_listener(long a0, urnet_selected_location_cb a1, Pointer a2);
   void urnet_connect_view_controller_close(long a0);
   void urnet_connect_view_controller_connect(long a0, String a1);
@@ -611,6 +613,7 @@ public interface Raw extends Library {
   Pointer urnet_connect_view_controller_get_connection_status(long a0);
   long urnet_connect_view_controller_get_grid(long a0);
   Pointer urnet_connect_view_controller_get_location_match(long a0);
+  Pointer urnet_connect_view_controller_get_post_quantum_unavailable(long a0);
   Pointer urnet_connect_view_controller_get_selected_location(long a0);
   void urnet_connect_view_controller_start(long a0);
   void urnet_connect_view_controller_stop(long a0);
