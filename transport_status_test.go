@@ -89,12 +89,14 @@ func TestTransportStatusDoesNotBuildFullTransportDefaults(t *testing.T) {
 	t.Cleanup(func() { connect.SetMemoryBudget(0) })
 	settings := DefaultTransportSettings()
 
-	var status *TransportStatus
-	allocations := testing.AllocsPerRun(20, func() {
-		status = transportStatus(settings, false)
-	})
+	status, allocations := transportStatusPollAllocations(t, settings, 20, func() {})
 	if status == nil {
 		t.Fatal("transport status is nil")
+	}
+	// every poll builds the status it returns, so a zero count means the
+	// profile no longer sees the polls and the bound below would hold vacuously
+	if allocations <= 0 {
+		t.Fatalf("transportStatus polls counted %.0f objects each, want the status they build", allocations)
 	}
 	// A full DefaultPlatformTransportSettings construction reparses the pinned
 	// certificate bundle and costs hundreds of objects per poll. Leave ample
@@ -103,6 +105,88 @@ func TestTransportStatusDoesNotBuildFullTransportDefaults(t *testing.T) {
 	if allocations >= 100 {
 		t.Fatalf("transportStatus allocated %.0f objects per poll, want fewer than 100", allocations)
 	}
+}
+
+// Another goroutine's allocations in the same window are not the poll's: each
+// poll hands a turn to a goroutine that makes two provider status polls, as an
+// earlier test's devices still winding down in a whole-package run allocate
+// beside this one. The process-wide count, testing.AllocsPerRun's, takes them in
+// and goes over the bound the poll alone meets; the profile's count stays the
+// poll's own.
+func TestTransportStatusPollAllocationsCountOnlyThePoll(t *testing.T) {
+	connect.SetMemoryBudget(32 * 1024 * 1024)
+	t.Cleanup(func() { connect.SetMemoryBudget(0) })
+	settings := DefaultTransportSettings()
+
+	_, alone := transportStatusPollAllocations(t, settings, 20, func() {})
+
+	turns := make(chan struct{})
+	turnDone := make(chan struct{})
+	otherDone := make(chan struct{})
+	go func() {
+		defer close(otherDone)
+		for range turns {
+			transportStatus(settings, true)
+			transportStatus(settings, true)
+			turnDone <- struct{}{}
+		}
+	}()
+	defer func() {
+		close(turns)
+		<-otherDone
+	}()
+	handTurn := func() {
+		turns <- struct{}{}
+		<-turnDone
+	}
+
+	processWide := testing.AllocsPerRun(20, func() {
+		transportStatus(settings, false)
+		handTurn()
+	})
+	if processWide < 100 {
+		t.Fatalf("the process-wide count beside another goroutine's polls was %.0f objects per poll, want at least the bound of 100 that the poll alone (%.0f) meets", processWide, alone)
+	}
+
+	_, besideOthers := transportStatusPollAllocations(t, settings, 20, handTurn)
+	t.Logf("objects per poll: alone %.0f, beside another goroutine's polls %.0f, process-wide %.0f", alone, besideOthers, processWide)
+	if besideOthers != alone {
+		t.Fatalf("transportStatus polls counted %.0f objects each beside another goroutine's polls and %.0f alone", besideOthers, alone)
+	}
+}
+
+// Counts the objects each of polls transportStatus calls allocates, from the
+// allocation profile at full sampling and only under pollTransportStatus's
+// frame, so no other goroutine's allocations count. testing.AllocsPerRun reads
+// the process's malloc count instead, and in a whole-package run that took in
+// what an earlier test's devices allocated while they wound down beside this
+// one: 109 objects per poll at sidecar 44097a35, where a poll alone makes 53
+// (in a traced run, a closed device's pinned platform transport reading the
+// host's interface addresses). between runs after each poll, outside the
+// counted frame.
+func transportStatusPollAllocations(
+	t *testing.T,
+	settings *TransportSettings,
+	polls int,
+	between func(),
+) (*TransportStatus, float64) {
+	t.Helper()
+	// one poll ahead of the count, as testing.AllocsPerRun warms up, so that
+	// nothing built once per process counts
+	status := pollTransportStatus(settings)
+	allocations := profiledAllocationsUnder(t, "sdk.pollTransportStatus", false, func() {
+		for range polls {
+			status = pollTransportStatus(settings)
+			between()
+		}
+	})
+	return status, float64(allocations) / float64(polls)
+}
+
+// One client status poll, as a settings screen makes it, in a frame of its own
+// for the allocation profile to attribute.
+func pollTransportStatus(settings *TransportSettings) *TransportStatus {
+	return transportStatus(settings, false)
 }
 
 type testingTransportStatusChangeListener struct {
