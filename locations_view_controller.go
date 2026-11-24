@@ -111,6 +111,13 @@ type locationsNotification struct {
 	state          FilterLocationsState
 }
 
+// The location browse every app's location chooser renders. While the
+// device's profile has post-quantum encryption on, every request lists only
+// the locations with post-quantum supply (FindLocationsArgs.
+// RequireModernProvider), since discovery under it draws only providers that
+// negotiate post-quantum encryption, so a location the device could never
+// connect to is not offered. A change of the setting asks again with the
+// latest filter. A controller without a device lists every location.
 type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -125,6 +132,14 @@ type LocationsViewController struct {
 
 	nextFilterSequenceNumber int64
 	filterCancel             context.CancelFunc
+	// the latest request's filter, which a post-quantum change asks again
+	filter string
+	// whether the device's profile has post-quantum encryption on, read when
+	// the controller opens and kept by the device's profile changes
+	requireModernProvider bool
+	// a profile change arrived, so the opening read is no longer current
+	requireModernProviderNotified bool
+	performanceProfileSub         Sub
 
 	filteredLocations     *FilteredLocations
 	filteredLocationState FilterLocationsState
@@ -148,7 +163,55 @@ func newLocationsViewController(ctx context.Context, device Device) *LocationsVi
 		filteredLocationListeners: connect.NewCallbackList[FilteredLocationsListener](),
 		// filteredLocationsStateListeners: connect.NewCallbackList[FilteredLocationsStateListener](),
 	}
+	if device != nil {
+		// subscribe before the read: a change in between reaches the listener,
+		// which then outranks the read
+		vc.performanceProfileSub = device.AddPerformanceProfileChangeListener(
+			&locationsViewControllerPerformanceProfileListener{vc: vc},
+		)
+		requireModernProvider := performanceProfileRequiresModernProvider(device.GetPerformanceProfile())
+		func() {
+			vc.stateLock.Lock()
+			defer vc.stateLock.Unlock()
+			if !vc.requireModernProviderNotified {
+				vc.requireModernProvider = requireModernProvider
+			}
+		}()
+	}
 	return vc
+}
+
+// Whether a device with the profile discovers only post-quantum providers.
+func performanceProfileRequiresModernProvider(performanceProfile *PerformanceProfile) bool {
+	return performanceProfile != nil && performanceProfile.PostQuantumEncryption
+}
+
+// Keeps the controller's post-quantum setting with the device's profile.
+type locationsViewControllerPerformanceProfileListener struct {
+	vc *LocationsViewController
+}
+
+func (self *locationsViewControllerPerformanceProfileListener) PerformanceProfileChanged(performanceProfile *PerformanceProfile) {
+	self.vc.requireModernProviderChanged(performanceProfileRequiresModernProvider(performanceProfile))
+}
+
+// A list already asked for under the other setting is asked again, off the
+// device's notification goroutine.
+func (self *LocationsViewController) requireModernProviderChanged(requireModernProvider bool) {
+	repeat := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.requireModernProviderNotified = true
+		if self.requireModernProvider == requireModernProvider {
+			return
+		}
+		self.requireModernProvider = requireModernProvider
+		repeat = self.ctx.Err() == nil && 0 < self.nextFilterSequenceNumber
+	}()
+	if repeat {
+		go connect.HandleError(self.repeatFilterLocations)
+	}
 }
 
 // NewLocationsViewControllerWithApi opens the location browse over an api with
@@ -182,6 +245,9 @@ func (self *LocationsViewController) Close() {
 	}
 
 	self.cancel()
+	if self.performanceProfileSub != nil {
+		self.performanceProfileSub.Close()
+	}
 }
 
 // func (self *LocationsViewController) GetLocations() *ConnectLocationList {
@@ -259,13 +325,28 @@ func (self *LocationsViewController) AddFilteredLocationsListener(listener Filte
 // }
 
 func (self *LocationsViewController) FilterLocations(filter string) {
-	filter = strings.TrimSpace(filter)
+	self.filterLocations(strings.TrimSpace(filter), false)
+}
 
+// Asks again with the latest request's filter, under the current
+// post-quantum setting.
+func (self *LocationsViewController) repeatFilterLocations() {
+	self.filterLocations("", true)
+}
+
+// The filter a repeat asks with is read in the same locked scope that orders
+// the request, so a repeat never replaces a newer filter with an older one.
+func (self *LocationsViewController) filterLocations(filter string, repeat bool) {
 	self.stateLock.Lock()
 	if self.ctx.Err() != nil {
 		self.stateLock.Unlock()
 		return
 	}
+	if repeat {
+		filter = self.filter
+	}
+	self.filter = filter
+	requireModernProvider := self.requireModernProvider
 	previousCancel := self.filterCancel
 	requestCtx, cancel := context.WithCancel(self.ctx)
 	self.filterCancel = cancel
@@ -310,7 +391,14 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 		},
 	))
 
-	if filter == "" {
+	if requireModernProvider {
+		// the post-quantum list, for the initial browse and a search alike
+		findLocations := &FindLocationsArgs{
+			Query:                 filter,
+			RequireModernProvider: true,
+		}
+		self.getApi().findProviderLocations(requestCtx, findLocations, callback)
+	} else if filter == "" {
 		self.getApi().getProviderLocations(requestCtx, callback)
 	} else {
 		findLocations := &FindLocationsArgs{

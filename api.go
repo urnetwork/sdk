@@ -1315,6 +1315,13 @@ type FindLocationsArgs struct {
 	// "quality" (the default) or "speed" (the FindProviders2Args.RankMode
 	// values)
 	RankMode string `json:"rank_mode,omitempty"`
+	// Lists only the locations with post-quantum supply, the providers a
+	// device with post-quantum encryption can use
+	// (`FindProviders2Args.RequireModernProvider`), with their counts. Set
+	// by the locations view controller while the device's profile has
+	// post-quantum encryption on, so a location with no post-quantum exit is
+	// not offered. An older server ignores it.
+	RequireModernProvider bool `json:"require_modern_provider,omitempty"`
 }
 
 type FindLocationsResult struct {

@@ -160,7 +160,7 @@ func testingSignInFenceWritten(t *testing.T, localState *LocalState) []string {
 	if localState.GetVpnInterfaceWhileOffline() {
 		written = append(written, "vpn interface while offline")
 	}
-	if localState.GetPerformanceProfile() != nil {
+	if !performanceProfileValuesEqual(localState.GetPerformanceProfile(), DefaultPerformanceProfile()) {
 		written = append(written, "performance profile")
 	}
 	if localState.GetDnsResolverSettings() != nil {

@@ -266,9 +266,8 @@ func decodeLocalPreference(name string, data []byte) (any, error) {
 		err := json.Unmarshal(data, &value)
 		return value, err
 	case "performance-profile":
-		var value PerformanceProfile
-		err := json.Unmarshal(data, &value)
-		return normalizeSavedPerformanceProfile(&value), err
+		// an older sdk's record loads with the post-quantum default
+		return decodePerformanceProfileRecord(data)
 	case "transport-settings", "provider-transport-settings":
 		var value TransportSettings
 		err := json.Unmarshal(data, &value)
@@ -295,7 +294,7 @@ func decodeLocalPreference(name string, data []byte) (any, error) {
 func (self *DeviceLocal) ownLocalCatalogValue(name string, value any) any {
 	switch name {
 	case "performance-profile":
-		return clonePerformanceProfile(self.hostedSafePerformanceProfile(value.(*PerformanceProfile)))
+		return self.ownPerformanceProfile(value.(*PerformanceProfile))
 	case "transport-settings":
 		return normalizeTransportSettings(value.(*TransportSettings), false)
 	case "provider-transport-settings":
@@ -347,8 +346,10 @@ func (self *LocalState) saveCatalogPreferenceWithLock(name string, value any) er
 	case "route-local", "blocker-enabled":
 		data = []byte(fmt.Sprintf("%t", value.(bool)))
 	case "performance-profile":
-		if value.(*PerformanceProfile) != nil {
-			data, err = json.Marshal(value)
+		// versioned, so the choice saved here is kept
+		// (performanceProfileRecord)
+		if performanceProfile := value.(*PerformanceProfile); performanceProfile != nil {
+			data, err = encodePerformanceProfileRecord(performanceProfile)
 		}
 	case "dns-resolver-settings":
 		data, err = encodeDnsResolverSettingsRecord(value.(*DnsResolverSettings))

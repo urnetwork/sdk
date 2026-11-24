@@ -1638,7 +1638,10 @@ func (self *LocalState) GetProvideControlMode() ProvideControlMode {
 }
 
 // Dropped while the space is signed out, as SetProvideNetworkMode. An invalid
-// profile is still refused with its error.
+// profile is still refused with its error. nil removes the saved profile, so
+// the default profile reads back (GetPerformanceProfile). The record carries
+// the post-quantum default version (performanceProfileRecord), so the choice
+// saved here is kept.
 func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error {
 	path := filepath.Join(self.localStorageDir, ".performance_profile")
 	if profile == nil {
@@ -1652,7 +1655,7 @@ func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error
 		if err := validatePerformanceProfile(profile); err != nil {
 			return localStorageStageError("invalid performance-profile", err)
 		}
-		profileBytes, err := json.Marshal(profile)
+		profileBytes, err := encodePerformanceProfileRecord(profile)
 		if err != nil {
 			return err
 		}
@@ -1671,15 +1674,18 @@ func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error
 	}
 }
 
+// The saved profile, an older sdk's with the post-quantum default applied
+// (decodePerformanceProfileRecord). With no saved profile, a new install or
+// after sign-out, or an unreadable one, the default profile
+// (DefaultPerformanceProfile). Never nil.
 func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
 	path := filepath.Join(self.localStorageDir, ".performance_profile")
 	if performanceProfileBytes, err := os.ReadFile(path); err == nil {
-		var performanceProfile PerformanceProfile
-		if err := json.Unmarshal(performanceProfileBytes, &performanceProfile); err == nil {
-			return normalizeSavedPerformanceProfile(&performanceProfile)
+		if performanceProfile, err := decodePerformanceProfileRecord(performanceProfileBytes); err == nil {
+			return performanceProfile
 		}
 	}
-	return nil
+	return DefaultPerformanceProfile()
 }
 
 // SetRoutingTier persists the RoutingTier dial (see routing_tier.go), the
