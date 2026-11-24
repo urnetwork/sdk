@@ -324,7 +324,7 @@ func TestIoLoopNativeEofJoinsWithoutSend(t *testing.T) {
 func TestIoLoopScalarObservationIsBoundedAndFailClosed(t *testing.T) {
 	start := time.Unix(100, 0)
 	observation := newIoLoopObservation(func() time.Time { return start.Add(time.Second) })
-	if allocations := testing.AllocsPerRun(100, func() {
+	if allocations := profiledAllocsPerRun(t, 100, func() {
 		observation.recordRead(start, 60, nil)
 		observation.recordSend(start, 3, 1)
 	}); allocations != 0 {

@@ -178,7 +178,7 @@ func TestMobilePacketPressureH1ReserveCompactsAckOnlyRejectedSuffix(t *testing.T
 	}
 
 	gate := newGate(true)
-	if allocations := testing.AllocsPerRun(100, func() {
+	if allocations := profiledAllocsPerRun(t, 100, func() {
 		gate.calls.Store(0)
 		_, _ = gate.admitOwnedPacketBatch(packets)
 	}); allocations != 0 {
@@ -230,7 +230,7 @@ func TestMobilePacketPressureGateDisabledAndHotPathDoNotAllocate(t *testing.T) {
 		packets[index] = connect.MessagePoolCopy([]byte{byte(index)})
 		defer connect.MessagePoolReturn(packets[index])
 	}
-	if allocations := testing.AllocsPerRun(100, func() {
+	if allocations := profiledAllocsPerRun(t, 100, func() {
 		_ = gate.shouldDrop()
 		_, _ = gate.admitOwnedPacketBatch(packets)
 	}); allocations != 0 {

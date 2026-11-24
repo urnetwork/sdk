@@ -18,7 +18,7 @@ import (
 func TestMemoryOwnerCensusCoreAllocatesNothing(t *testing.T) {
 	device := &DeviceLocal{}
 	_ = device.memoryOwnerCensus() // initialize the existing process budget
-	if got := testing.AllocsPerRun(100, func() { _ = device.memoryOwnerCensus() }); got != 0 {
+	if got := profiledAllocsPerRun(t, 100, func() { _ = device.memoryOwnerCensus() }); got != 0 {
 		t.Fatalf("owner read allocations=%g", got)
 	}
 	var nilDevice *DeviceLocal

@@ -527,10 +527,10 @@ func TestNilBridgeKeepsTodaysRoute(t *testing.T) {
 		t.Fatal("today's route did not take the bursts")
 	}
 	connect.AssertEqual(t, route.packetCount, 5)
-	singleAllocs := testing.AllocsPerRun(1000, func() {
+	singleAllocs := profiledAllocsPerRun(t, 1000, func() {
 		device.sendPacket(packet)
 	})
-	burstAllocs := testing.AllocsPerRun(1000, func() {
+	burstAllocs := profiledAllocsPerRun(t, 1000, func() {
 		device.sendPacketsWithPolicy(packets, true)
 	})
 	if singleAllocs != 0 || burstAllocs != 0 {
@@ -567,7 +567,7 @@ func TestBridgeBurstAllocatesNothing(t *testing.T) {
 	if device.sendPacketsWithPolicy(packets, false) != 3 || route.packetCount != 3 {
 		t.Fatal("the bridge's default route did not reach today's route")
 	}
-	allocs := testing.AllocsPerRun(1000, func() {
+	allocs := profiledAllocsPerRun(t, 1000, func() {
 		device.sendPacketsWithPolicy(packets, true)
 	})
 	if allocs != 0 {

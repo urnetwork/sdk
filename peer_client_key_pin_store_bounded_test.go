@@ -138,7 +138,7 @@ func TestBoundedPeerPinStoreLoadLimitsAndBudget(t *testing.T) {
 	}
 	defer budget.Release(peerPinStoreMemoryByteCount)
 	before := budget.Stats()
-	allocations := testing.AllocsPerRun(100, func() {
+	allocations := profiledAllocsPerRun(t, 100, func() {
 		store, err := newBoundedPeerClientKeyPinStore(state, nil, budget)
 		if store != nil || !errors.Is(err, errPeerPinStoreBudget) {
 			t.Fatal("full budget admitted a store")

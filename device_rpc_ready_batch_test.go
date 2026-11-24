@@ -186,7 +186,7 @@ func TestDeviceRpcReadyBatchNoPerFlushDescriptorAllocation(t *testing.T) {
 			writer := &deviceRpcReadyBatchTestWriter{boundedDeviceRpcTestWs: newBoundedDeviceRpcTestWs(nil)}
 			mux := newDeviceRpcReadyBatchTestMux(t, writer)
 			defer mux.finishSend()
-			allocations := testing.AllocsPerRun(1000, func() {
+			allocations := profiledAllocsPerRun(t, 1000, func() {
 				for range count {
 					message := connect.MessagePoolGet(256)
 					if !mux.sendBytes.tryAcquire(len(message)) {

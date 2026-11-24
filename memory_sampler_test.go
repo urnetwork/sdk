@@ -55,7 +55,7 @@ func TestMobileMemorySamplerIsBoundedOrderedAndDrainable(t *testing.T) {
 func TestMobileMemorySamplerRecordAllocatesNothing(t *testing.T) {
 	sampler := &mobileMemorySampler{}
 	sample := mobileMemorySample{GoTotalByteCount: 123}
-	if allocations := testing.AllocsPerRun(1000, func() {
+	if allocations := profiledAllocsPerRun(t, 1000, func() {
 		sampler.record(sample)
 	}); allocations != 0 {
 		t.Fatalf("record allocations/run = %.2f, want 0", allocations)
@@ -206,7 +206,7 @@ func TestMobileDeviceMemorySampleHotPathDoesNotAllocate(t *testing.T) {
 			sample.PackQueueCapacityByteCount,
 		)
 	}
-	if allocations := testing.AllocsPerRun(25, func() {
+	if allocations := profiledAllocsPerRun(t, 25, func() {
 		_ = device.memorySample()
 	}); allocations != 0 {
 		t.Fatalf("device memory sample allocations/run = %.2f, want 0", allocations)

@@ -19,7 +19,7 @@ func TestTransferDiagAckRouteFailuresOptIn(t *testing.T) {
 	previousSnapshots := SetTransferDiagnosticSnapshotsEnabled(false)
 	defer SetTransferDiagnosticSnapshotsEnabled(previousSnapshots)
 	disabled := connect.DefaultClientSettings()
-	if allocations := testing.AllocsPerRun(100, func() {
+	if allocations := profiledAllocsPerRun(t, 100, func() {
 		if prepareTransferDiag(disabled) != nil || disabled.EnableAckRouteWriteDiagnostics {
 			t.Fatal("disabled diagnostics installed ACK failure counters")
 		}

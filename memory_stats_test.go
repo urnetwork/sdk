@@ -34,7 +34,7 @@ func TestMobileMemoryRuntimeSnapshotUsesCallerStorageWithoutAllocation(t *testin
 	var reader mobileMemoryRuntimeReader
 	var snapshot mobileMemoryRuntimeSnapshot
 	reader.read(&snapshot, nil)
-	if allocations := testing.AllocsPerRun(25, func() {
+	if allocations := profiledAllocsPerRun(t, 25, func() {
 		reader.read(&snapshot, nil)
 	}); allocations != 0 {
 		t.Fatalf("mobile runtime snapshot allocations/run = %.2f, want 0", allocations)
@@ -43,7 +43,7 @@ func TestMobileMemoryRuntimeSnapshotUsesCallerStorageWithoutAllocation(t *testin
 
 func TestRuntimeTotalByteCountDoesNotAllocate(t *testing.T) {
 	runtimeTotalByteCount()
-	if allocations := testing.AllocsPerRun(25, func() {
+	if allocations := profiledAllocsPerRun(t, 25, func() {
 		_ = runtimeTotalByteCount()
 	}); allocations != 0 {
 		t.Fatalf("runtimeTotalByteCount allocations/run = %.2f, want 0", allocations)
@@ -79,7 +79,7 @@ func TestPhysicalFootprintRecorderTracksLatestAndPeak(t *testing.T) {
 	if current := mobilePhysicalFootprintCurrent.Load(); current != 0 {
 		t.Fatalf("negative sample was not clamped: %d", current)
 	}
-	if allocations := testing.AllocsPerRun(1000, func() {
+	if allocations := profiledAllocsPerRun(t, 1000, func() {
 		recordMobilePhysicalFootprint(60)
 	}); allocations != 0 {
 		t.Fatalf("physical footprint recorder allocations/run = %.2f, want 0", allocations)

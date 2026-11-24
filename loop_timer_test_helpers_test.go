@@ -19,7 +19,20 @@ func timerAllocationsUnder(t *testing.T, function string, run func()) int64 {
 	return profiledAllocationsUnder(t, function, true, run)
 }
 
+// Counts the objects allocated while run executes from inside any function
+// whose name contains function, closures included.
 func profiledAllocationsUnder(t *testing.T, function string, timersOnly bool, run func()) int64 {
+	t.Helper()
+	return profiledAllocationsMatching(t, func(frame string) bool {
+		return strings.Contains(frame, function)
+	}, timersOnly, run)
+}
+
+// Counts the objects allocated while run executes from inside a function owned
+// answers true for. The allocation profile records at most 32 frames of each
+// allocation's stack, so an allocation made more than about 30 calls below
+// the owned function does not count.
+func profiledAllocationsMatching(t *testing.T, owned func(frame string) bool, timersOnly bool, run func()) int64 {
 	t.Helper()
 	timerAllocationProfileLock.Lock()
 	defer timerAllocationProfileLock.Unlock()
@@ -33,17 +46,17 @@ func profiledAllocationsUnder(t *testing.T, function string, timersOnly bool, ru
 	// the profile reports allocations as of the most recent completed cycle
 	runtime.GC()
 	runtime.GC()
-	before := profiledAllocations(function, timersOnly)
+	before := profiledAllocations(owned, timersOnly)
 	run()
 	runtime.GC()
 	runtime.GC()
-	return profiledAllocations(function, timersOnly) - before
+	return profiledAllocations(owned, timersOnly) - before
 }
 
 // The memory profile rate is process state.
 var timerAllocationProfileLock sync.Mutex
 
-func profiledAllocations(function string, timersOnly bool) int64 {
+func profiledAllocations(owned func(frame string) bool, timersOnly bool) int64 {
 	n, _ := runtime.MemProfile(nil, true)
 	records := make([]runtime.MemProfileRecord, n+256)
 	n, ok := runtime.MemProfile(records, true)
@@ -53,7 +66,7 @@ func profiledAllocations(function string, timersOnly bool) int64 {
 	total := int64(0)
 	for _, record := range records[:n] {
 		timer := false
-		owned := false
+		ownedRecord := false
 		frames := runtime.CallersFrames(record.Stack())
 		for {
 			frame, more := frames.Next()
@@ -61,14 +74,14 @@ func profiledAllocations(function string, timersOnly bool) int64 {
 			case "time.NewTimer", "time.After", "time.AfterFunc", "time.newTimer", "time.NewTicker":
 				timer = true
 			}
-			if strings.Contains(frame.Function, function) {
-				owned = true
+			if owned(frame.Function) {
+				ownedRecord = true
 			}
 			if !more {
 				break
 			}
 		}
-		if owned && (timer || !timersOnly) {
+		if ownedRecord && (timer || !timersOnly) {
 			total += record.AllocObjects
 		}
 	}

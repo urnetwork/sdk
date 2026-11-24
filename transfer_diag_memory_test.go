@@ -212,7 +212,7 @@ func TestTransferDiagDisabledRemainsInert(t *testing.T) {
 	previousSnapshots := SetTransferDiagnosticSnapshotsEnabled(false)
 	defer SetTransferDiagnosticSnapshotsEnabled(previousSnapshots)
 	device := &DeviceLocal{}
-	if allocations := testing.AllocsPerRun(100, func() {
+	if allocations := profiledAllocsPerRun(t, 100, func() {
 		if prepareTransferDiag(nil) != nil {
 			t.Fatal("disabled diagnostic counters were constructed")
 		}

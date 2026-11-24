@@ -15,7 +15,7 @@ import (
 // Disabled diagnostics do not inspect the device, allocate or read a clock.
 func TestIoLoopPacingDiagnosticDisabledDoesNotAllocate(t *testing.T) {
 	var session *IoLoopDiagnosticSession
-	allocations := testing.AllocsPerRun(100, func() {
+	allocations := profiledAllocsPerRun(t, 100, func() {
 		if raw, err := session.PacingSnapshotJson(nil); raw != "" || err != nil {
 			panic("disabled diagnostic ran")
 		}
