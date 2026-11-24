@@ -27,7 +27,7 @@ type SidecarEvent struct {
 	// recovery_rebind, recovery_window, recovery_unseen, admissions_near_cap, head_alarm, index_mismatch,
 	// index_malformed, search_alarm, history_drop, access_request, access_decided, directory_erasure, erasure,
 	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, dns_alarm, ct_alarm,
-	// mail_receiver_alarm, and any a later component adds.
+	// mail_receiver_alarm, upgrade_required, and any a later component adds.
 	Kind string `json:"kind"`
 	// The client generation it comes from (§18.5's State block).
 	Generation int64 `json:"generation"`
@@ -102,6 +102,10 @@ type SidecarEvent struct {
 	// device of the scope's member; deposit, a deposit ingest passed over or wrote as evidence unavailable; record, a
 	// mailcfg version a reader passed over.
 	MailReceiverAlarm string `json:"mail_receiver_alarm,omitempty"`
+	// upgrade_required: the authorization features the network turned on that this release lacks, by name, comma
+	// separated (agent_repos, compute_policy, listeners, enclaves): the sidecar holds, applying nothing from that base,
+	// until the update that ends it (DESIGN-COMPUTE §16.6's hold).
+	AuthFeatures string `json:"auth_features,omitempty"`
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI
@@ -159,6 +163,7 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		DnsAlarm:            string(event.DnsAlarm),
 		CtAlarm:             string(event.CtAlarm),
 		MailReceiverAlarm:   string(event.MailReceiverAlarm),
+		AuthFeatures:        event.AuthFeatures.String(),
 	}
 	if erasure := event.Erasure; erasure != nil {
 		bound.Erasure = sidecarErasureOf(erasure)

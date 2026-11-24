@@ -130,6 +130,8 @@ func testFullSidecarEvent(kind string) *sidecar.SidecarEvent {
 		CtAlarm:        sidecar.SidecarCtAlarmRecentIdentity,
 		// mail_receiver_alarm's reason (D-MAIL-15, MAIL-M7-25)
 		MailReceiverAlarm: sidecar.SidecarMailReceiverAlarmScope,
+		// upgrade_required's features (DESIGN-COMPUTE §16.6's hold; CACL-M11-02)
+		AuthFeatures: sidecar.AuthFeatureAgentRepos | sidecar.AuthFeatureListeners,
 	}
 }
 
@@ -142,7 +144,7 @@ func TestEveryEventKindMaps(t *testing.T) {
 		"SearchAlarm": true, "RequestId": true, "Outcome": true, "SendId": true, "ApprovalId": true, "HeadAlarm": true,
 		"Evidence": true, "Erasure": true, "EvsAlarm": true, "VerifiedSince": true, "RecordAlarm": true, "BridgeAlarm": true,
 		"DnsAlarm": true, "EvsAlarmDetail": true, "Version": true, "PushId": true, "Count": true, "CtAlarm": true,
-		"MailReceiverAlarm": true,
+		"MailReceiverAlarm": true, "AuthFeatures": true,
 	}
 	eventType := reflect.TypeFor[sidecar.SidecarEvent]()
 	for i := 0; i < eventType.NumField(); i += 1 {
@@ -181,7 +183,8 @@ func TestEveryEventKindMaps(t *testing.T) {
 			bound.RecordAlarm != string(core.RecordAlarm) || bound.BridgeAlarm != string(core.BridgeAlarm) ||
 			bound.DnsAlarm != string(core.DnsAlarm) || bound.EvsAlarmDetail != string(core.EvsAlarmDetail) ||
 			bound.CtAlarm != string(core.CtAlarm) || bound.Version != int64(core.Version) || bound.Count != int64(core.Count) ||
-			!sameId(bound.PushId, core.PushId) || bound.MailReceiverAlarm != string(core.MailReceiverAlarm) {
+			!sameId(bound.PushId, core.PushId) || bound.MailReceiverAlarm != string(core.MailReceiverAlarm) ||
+			bound.AuthFeatures != core.AuthFeatures.String() || bound.AuthFeatures == "" {
 			t.Errorf("%s: the strings mapped as %+v", kind, bound)
 		}
 		if !sameId(bound.GroupId, core.GroupId) || !sameId(bound.SidecarId, core.SidecarId) || !sameId(bound.RepoId, core.RepoId) ||

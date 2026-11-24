@@ -213,6 +213,9 @@ type SidecarEvent struct {
 	// device of the scope's member; deposit, a deposit ingest passed over or wrote as evidence unavailable; record, a
 	// mailcfg version a reader passed over.
 	MailReceiverAlarm string `json:"mail_receiver_alarm,omitempty"`
+	// upgrade_required: the authorization features the network turned on that this release lacks, by name, comma
+	// separated: the sidecar holds until the update that ends it (DESIGN-COMPUTE §16.6's hold).
+	AuthFeatures string `json:"auth_features,omitempty"`
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI

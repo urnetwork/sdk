@@ -298,6 +298,9 @@ func testFullCoreEvent(t *testing.T, kind sidecar.SidecarEventKind, generation i
 			field.SetInt(int64(100 + i))
 		case reflect.Uint64:
 			field.SetUint(uint64(200 + i))
+		case reflect.Uint32:
+			// a set of bits, such as AuthFeatures, each value one the event names
+			field.SetUint(uint64(1 + i%8))
 		case reflect.Pointer:
 			switch field.Type() {
 			case reflect.TypeFor[*sidecar.Id]():

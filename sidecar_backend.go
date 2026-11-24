@@ -198,6 +198,7 @@ type sidecarControlEvent struct {
 	DnsAlarm          string                      `json:"dns_alarm,omitempty"`
 	CtAlarm           string                      `json:"ct_alarm,omitempty"`
 	MailReceiverAlarm string                      `json:"mail_receiver_alarm,omitempty"`
+	AuthFeatures      string                      `json:"auth_features,omitempty"`
 }
 
 // An event's erasure: the root's DaemonEventErasure.
@@ -245,6 +246,7 @@ func (self *sidecarControlEvent) boundEvent() *SidecarEvent {
 		DnsAlarm:            self.DnsAlarm,
 		CtAlarm:             self.CtAlarm,
 		MailReceiverAlarm:   self.MailReceiverAlarm,
+		AuthFeatures:        self.AuthFeatures,
 	}
 	if erasure := self.Erasure; erasure != nil {
 		bound.Erasure = &SidecarErasure{
