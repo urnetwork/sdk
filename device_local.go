@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 
 	"net/netip"
@@ -1078,6 +1079,20 @@ type DeviceLocalSettings struct {
 	// beside NormalWindowSelectors ipv4 and any. Out of the settings json.
 	//gomobile:noexport Go-only hosted window policy.
 	DisableLimitedWindow bool `json:"-"`
+	// The size of the device's quality window
+	// (`connect.MultiClientSettings.WindowSizes`), in place of the one its
+	// memory profile gives it. Nil keeps the profile's, as apps keep it. A
+	// performance profile that fixes a window sizes that window itself. The
+	// proxy service sets a smaller one for the hosted devices of networks on
+	// the free plan. Out of the settings json.
+	//gomobile:noexport a pointer to another package's struct, which gomobile
+	// does not bind. Go/headless hosts only.
+	QualityWindowSize *connect.WindowSizeSettings `json:"-"`
+	// The size of the device's speed window, as QualityWindowSize is the
+	// quality window's. Out of the settings json.
+	//gomobile:noexport a pointer to another package's struct, which gomobile
+	// does not bind. Go/headless hosts only.
+	SpeedWindowSize *connect.WindowSizeSettings `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -2937,9 +2952,12 @@ func applyPlatformTransportMemoryUsage(
 // process counters its windows count into, whether its strict windows hand
 // drained slots over, whether its windows hold their refill while the payer is
 // out of balance or while no user is active, whose record of user activity
-// they read, which providers its normal windows ask for, and whether it has a
-// limited window. Applied after the developer override of the limited
-// window's fraction, so a host's DisableLimitedWindow outranks it.
+// they read, which providers its normal windows ask for, whether it has a
+// limited window, and the sizes of its quality and speed windows. Applied
+// after the developer override of the limited window's fraction, so a host's
+// DisableLimitedWindow outranks it, and after the memory profile sized the
+// windows, so the host's sizes replace the profile's. The sizes go into a map
+// of the settings' own, so settings that shared the profile's map keep it.
 func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings, deviceLocalSettings *DeviceLocalSettings) {
 	// an app's windows leave a stalled exit in seconds
 	// (app_window_exit_timers.go)
@@ -2954,6 +2972,19 @@ func applyDeviceLocalWindowClientSettings(settings *connect.MultiClientSettings,
 	}
 	if deviceLocalSettings.DisableLimitedWindow {
 		settings.LimitedWindowSizeFraction = 0
+	}
+	if deviceLocalSettings.QualityWindowSize != nil || deviceLocalSettings.SpeedWindowSize != nil {
+		windowSizes := maps.Clone(settings.WindowSizes)
+		if windowSizes == nil {
+			windowSizes = map[connect.WindowType]connect.WindowSizeSettings{}
+		}
+		if deviceLocalSettings.QualityWindowSize != nil {
+			windowSizes[connect.WindowTypeQuality] = *deviceLocalSettings.QualityWindowSize
+		}
+		if deviceLocalSettings.SpeedWindowSize != nil {
+			windowSizes[connect.WindowTypeSpeed] = *deviceLocalSettings.SpeedWindowSize
+		}
+		settings.WindowSizes = windowSizes
 	}
 }
 
