@@ -1096,6 +1096,10 @@ typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char*
 typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 /* PostQuantumIdentityListener */
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
+/* PostQuantumUnavailableChangeListener */
+typedef void (*urnet_post_quantum_unavailable_change_cb)(void* user_data, const char* post_quantum_unavailable_json);
+/* PostQuantumUnavailableListener */
+typedef void (*urnet_post_quantum_unavailable_cb)(void* user_data);
 /* ProFeaturesListener */
 typedef void (*urnet_pro_features_cb)(void* user_data, const char* snapshot_json);
 /* ProvideChangeListener */
@@ -1682,6 +1686,7 @@ int64_t urnet_connect_grid_get_window_target_size(uint64_t self);
 uint64_t urnet_connect_view_controller_add_connection_status_listener(uint64_t self, urnet_connection_status_cb listener_connection_status_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_grid_listener(uint64_t self, urnet_grid_cb listener_grid_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_location_match_listener(uint64_t self, urnet_location_match_cb listener_location_match_changed, void* listener_user_data);
+uint64_t urnet_connect_view_controller_add_post_quantum_unavailable_listener(uint64_t self, urnet_post_quantum_unavailable_cb listener_post_quantum_unavailable_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_selected_location_listener(uint64_t self, urnet_selected_location_cb listener_selected_location_changed, void* listener_user_data);
 void urnet_connect_view_controller_close(uint64_t self);
 void urnet_connect_view_controller_connect(uint64_t self, const char* location_json);
@@ -1692,6 +1697,7 @@ bool urnet_connect_view_controller_get_connected(uint64_t self);
 char* urnet_connect_view_controller_get_connection_status(uint64_t self);
 uint64_t urnet_connect_view_controller_get_grid(uint64_t self);
 char* urnet_connect_view_controller_get_location_match(uint64_t self);
+char* urnet_connect_view_controller_get_post_quantum_unavailable(uint64_t self);
 char* urnet_connect_view_controller_get_selected_location(uint64_t self);
 void urnet_connect_view_controller_start(uint64_t self);
 void urnet_connect_view_controller_stop(uint64_t self);
@@ -1771,6 +1777,7 @@ uint64_t urnet_device_add_network_peers_change_listener(uint64_t self, urnet_net
 uint64_t urnet_device_add_offline_change_listener(uint64_t self, urnet_offline_change_cb listener_offline_changed, void* listener_user_data);
 uint64_t urnet_device_add_packet_stats_change_listener(uint64_t self, urnet_packet_stats_change_cb listener_packet_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_performance_profile_change_listener(uint64_t self, urnet_performance_profile_change_cb listener_performance_profile_changed, void* listener_user_data);
+uint64_t urnet_device_add_post_quantum_unavailable_change_listener(uint64_t self, urnet_post_quantum_unavailable_change_cb listener_post_quantum_unavailable_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_change_listener(uint64_t self, urnet_provide_change_cb listener_provide_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_control_mode_change_listener(uint64_t self, urnet_provide_control_mode_change_cb listener_provide_control_mode_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_mode_change_listener(uint64_t self, urnet_provide_mode_change_cb listener_provide_mode_changed, void* listener_user_data);
@@ -1836,6 +1843,7 @@ uint64_t urnet_device_get_network_space(uint64_t self);
 bool urnet_device_get_offline(uint64_t self);
 char* urnet_device_get_packet_stats(uint64_t self);
 char* urnet_device_get_performance_profile(uint64_t self);
+char* urnet_device_get_post_quantum_unavailable(uint64_t self);
 char* urnet_device_get_provide_control_mode(uint64_t self);
 bool urnet_device_get_provide_enabled(uint64_t self);
 bool urnet_device_get_provide_extender(uint64_t self);
@@ -2824,6 +2832,7 @@ bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
+char* urnet_default_performance_profile(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
@@ -4587,6 +4596,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   max_distance_fraction?: number
  *   enable_max_distance_fraction?: boolean
  *   rank_mode?: string
+ *   require_modern_provider?: boolean
  */
 
 /* FindLocationsResult (json):
@@ -4610,6 +4620,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   force_minimum?: boolean
  *   ip_family?: string
  *   strict?: boolean
+ *   require_modern_provider?: boolean
  */
 
 /* FindProviders2Result (json):
@@ -5348,6 +5359,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rank_text: string
  *   tier: number
  *   tier_percent: number
+ */
+
+/* PostQuantumUnavailable (json):
+ *   location: ConnectLocation | null
  */
 
 /* PriceEquivalent (json):

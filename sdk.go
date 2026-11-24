@@ -1244,17 +1244,19 @@ type ProvideSecretKey struct {
 type WindowType = string
 
 const (
-	// no fixed window type. A nil performance profile and window type auto
-	// mean the same thing: traffic balances across the window types and the
-	// window size settings are ignored.
+	// no fixed window type: traffic balances across the window types and the
+	// window size settings are ignored. The default profile's window type
+	// (DefaultPerformanceProfile).
 	WindowTypeAuto    string = "auto"
 	WindowTypeQuality string = "quality"
 	WindowTypeSpeed   string = "speed"
 )
 
-// a nil profile, or a profile with window type auto (or unset), uses the
-// default "auto" mode. The orthogonal settings (`AllowDirect`,
-// `PostQuantumEncryption`) apply in every mode.
+// a profile with window type auto (or unset) uses the default "auto" mode.
+// The orthogonal settings (`AllowDirect`, `PostQuantumEncryption`) apply in
+// every mode. On an app device no profile means the default profile
+// (DefaultPerformanceProfile); a hosted device keeps no profile, which runs
+// auto without post-quantum encryption.
 type PerformanceProfile struct {
 	WindowType WindowType          `json:"window_type"`
 	WindowSize *WindowSizeSettings `json:"window_size"`
@@ -1262,9 +1264,29 @@ type PerformanceProfile struct {
 	AllowDirect bool `json:"allow_direct"`
 	// enable the post-quantum e2e sessions to providers. Required when set:
 	// a provider that cannot seal the session is skipped, never used in
-	// plaintext at this layer. Unset, the shipping default, no session is
-	// opened to the provider.
+	// plaintext at this layer, and discovery and the location list hold only
+	// providers that negotiate it. On by default (DefaultPerformanceProfile);
+	// unset, no session is opened to the provider. A hosted device always
+	// runs it unset (DeviceLocal.hostedSafePerformanceProfile).
 	PostQuantumEncryption bool `json:"post_quantum_encryption"`
+}
+
+// Post-quantum encryption in the default profile (DefaultPerformanceProfile):
+// on (owner, 2026-11-24). A constant, so an app's connect options can start
+// from it before the device or the saved profile answers without calling
+// into the sdk (gomobile binds it as a compile-time constant).
+const DefaultPostQuantumEncryption bool = true
+
+// The profile of a device the user has not configured: auto, with
+// post-quantum encryption on. A new install starts with it, a profile saved
+// before the default changed loads with post-quantum on, once
+// (performanceProfileRecord), and on an app device setting no profile
+// restores it. A new instance on every call.
+func DefaultPerformanceProfile() *PerformanceProfile {
+	return &PerformanceProfile{
+		WindowType:            WindowTypeAuto,
+		PostQuantumEncryption: DefaultPostQuantumEncryption,
+	}
 }
 
 type WindowSizeSettings struct {

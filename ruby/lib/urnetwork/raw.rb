@@ -137,6 +137,8 @@ module URnetwork
       callback :urnet_performance_profile_change_cb, [:pointer, :string], :void
       callback :urnet_points_leaderboard_cb, [:pointer], :void
       callback :urnet_post_quantum_identity_cb, [:pointer], :void
+      callback :urnet_post_quantum_unavailable_change_cb, [:pointer, :string], :void
+      callback :urnet_post_quantum_unavailable_cb, [:pointer], :void
       callback :urnet_pro_features_cb, [:pointer, :string], :void
       callback :urnet_provide_change_cb, [:pointer, :bool], :void
       callback :urnet_provide_control_mode_change_cb, [:pointer, :string], :void
@@ -600,6 +602,7 @@ module URnetwork
       attach_function :urnet_connect_view_controller_add_connection_status_listener, [:uint64, :urnet_connection_status_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_add_grid_listener, [:uint64, :urnet_grid_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_add_location_match_listener, [:uint64, :urnet_location_match_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_connect_view_controller_add_post_quantum_unavailable_listener, [:uint64, :urnet_post_quantum_unavailable_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_add_selected_location_listener, [:uint64, :urnet_selected_location_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_close, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_connect, [:uint64, :string], :void, blocking: true
@@ -610,6 +613,7 @@ module URnetwork
       attach_function :urnet_connect_view_controller_get_connection_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_get_grid, [:uint64], :uint64, blocking: true
       attach_function :urnet_connect_view_controller_get_location_match, [:uint64], :pointer, blocking: true
+      attach_function :urnet_connect_view_controller_get_post_quantum_unavailable, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_get_selected_location, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_stop, [:uint64], :void, blocking: true
@@ -677,6 +681,7 @@ module URnetwork
       attach_function :urnet_device_add_offline_change_listener, [:uint64, :urnet_offline_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_packet_stats_change_listener, [:uint64, :urnet_packet_stats_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_performance_profile_change_listener, [:uint64, :urnet_performance_profile_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_post_quantum_unavailable_change_listener, [:uint64, :urnet_post_quantum_unavailable_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provide_change_listener, [:uint64, :urnet_provide_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provide_control_mode_change_listener, [:uint64, :urnet_provide_control_mode_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provide_mode_change_listener, [:uint64, :urnet_provide_mode_change_cb, :pointer], :uint64, blocking: true
@@ -742,6 +747,7 @@ module URnetwork
       attach_function :urnet_device_get_offline, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_packet_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_performance_profile, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_post_quantum_unavailable, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_control_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_provide_extender, [:uint64], :bool, blocking: true
@@ -1578,6 +1584,7 @@ module URnetwork
       attach_function :urnet_crypto_wallet_suggestions, [:string], :pointer, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
+      attach_function :urnet_default_performance_profile, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_device_settings, [], :pointer, blocking: true

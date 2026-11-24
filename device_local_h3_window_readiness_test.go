@@ -405,6 +405,10 @@ func testMobilePublicCarrierReadiness(
 			t.Errorf("joined current window retained carrier claims: %+v", stats)
 		}
 	})
+	// carrier readiness, not post-quantum: the fixture's providers run no
+	// end-to-end sessions (EncryptionModeOff above), so the profile turns the
+	// default post-quantum encryption off
+	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 	device.SetTransportSettings(&TransportSettings{Mode: TransportMode(mode)})
 	location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
 	if fixedPeer {

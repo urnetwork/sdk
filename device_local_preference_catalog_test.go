@@ -125,7 +125,9 @@ func TestDeviceLocalPreferenceCatalogDefaultOffEqualSaveAndColdLoad(t *testing.T
 	_, fresh := testingPreferenceSpaceAt(t, directory)
 	restored := testingPreferenceDevice(t, fresh)
 	restored.SetUpgradeMuxSettings(connect.DefaultUpgradeMuxSettings())
-	if restored.GetBlockerEnabled() || restored.GetTransportSettings().Mode != TransportModeAuto || restored.GetPerformanceProfile() != nil {
+	// the constructor holds the default profile, not the saved one
+	if restored.GetBlockerEnabled() || restored.GetTransportSettings().Mode != TransportModeAuto ||
+		!performanceProfileValuesEqual(restored.GetPerformanceProfile(), DefaultPerformanceProfile()) {
 		t.Fatal("constructor implicitly restored catalog preferences")
 	}
 	loaded, err := restored.Load()

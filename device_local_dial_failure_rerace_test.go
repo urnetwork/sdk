@@ -245,6 +245,10 @@ func TestDeviceLocalDialFailureReracesConnectToAnotherExit(t *testing.T) {
 	bridge := newSyntheticTunnelBridge(t, device)
 	defer bridge.Close()
 
+	// the dial-failure rerace, not post-quantum: the synthetic exits run no
+	// end-to-end sessions, so the profile turns the default post-quantum
+	// encryption off
+	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 	device.SetConnectLocation(&ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}})
 	device.SetRouteLocal(false)
 

@@ -199,17 +199,31 @@ func TestDevicePostQuantumProfileAsksDiscoveryForModernProviders(t *testing.T) {
 	assertModernDiscoveryRequest(t, discover(), "discovery after the profile required post-quantum encryption again")
 }
 
-// A device without the requirement, the default and every device before this
-// change, keeps its requests exactly as they were: neither
-// require_modern_provider nor post_quantum_encryption, so discovery stays
-// capability-blind.
-func TestDeviceDefaultProfileKeepsCapabilityBlindDiscovery(t *testing.T) {
+// A device whose profile turns the requirement off, as every device before
+// the post-quantum default did, keeps its requests exactly as they were:
+// neither require_modern_provider nor post_quantum_encryption, so discovery
+// stays capability-blind.
+func TestDeviceProfileWithoutPostQuantumKeepsCapabilityBlindDiscovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+
+	discovery := newTestingPostQuantumDiscovery()
+	newTestingPostQuantumDevice(t, discovery, &PerformanceProfile{WindowType: WindowTypeAuto})
+	for _, body := range discovery.windowDiscovered(t, ctx) {
+		assertCapabilityBlindDiscoveryRequest(t, body, "a device without the requirement")
+	}
+}
+
+// A device that sets no profile runs the default, post-quantum encryption on
+// (owner, 2026-11-24), so its windows ask for modern providers from the
+// first discovery. Before, no profile was capability-blind discovery.
+func TestDeviceDefaultProfileAsksDiscoveryForModernProviders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
 	discovery := newTestingPostQuantumDiscovery()
 	newTestingPostQuantumDevice(t, discovery, nil)
 	for _, body := range discovery.windowDiscovered(t, ctx) {
-		assertCapabilityBlindDiscoveryRequest(t, body, "a device without the requirement")
+		assertModernDiscoveryRequest(t, body, "a device with the default profile")
 	}
 }

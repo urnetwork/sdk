@@ -507,6 +507,8 @@ func defaultDeviceLocalSettingsWithProfile(memoryTargetByteCount ByteCount, lowM
 		// of a stale verification cost less than a probe at every change
 		DnsResolverVerifyMinInterval: 5 * time.Minute,
 
+		postQuantumSupply: defaultPostQuantumSupplySettings(),
+
 		ClientSettings: *clientSettings,
 	}
 }
@@ -885,6 +887,17 @@ type DeviceLocalSettings struct {
 	// lands a newer change inside that window through it; production never
 	// sets it.
 	testingBeforeExtenderProvideApply func(enabled bool)
+	// the tunables of the post-quantum notice's supply check
+	// (device_local_post_quantum.go); nil takes the defaults
+	postQuantumSupply *postQuantumSupplySettings
+	// testingPostQuantumSupplyChecked, when set, runs after each check of the
+	// post-quantum notice answers, on its goroutine; production never sets it.
+	testingPostQuantumSupplyChecked func()
+	// testingPostQuantumWindowStatus, when set, is the window status the
+	// post-quantum notice's connected rule reads, in place of the device's,
+	// so a test can connect a window without providers; the device's window
+	// status listeners still wake it. Production never sets it.
+	testingPostQuantumWindowStatus func() *WindowStatus
 	// Verbose opts into periodic, summarized security-policy diagnostics. It
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
@@ -1581,6 +1594,10 @@ type DeviceLocal struct {
 	transportDelayChangeListeners *connect.CallbackList[TransportDelayChangeListener]
 	// fed by watchProviderConnected from the provider's transport generations
 	providerConnectedChangeCallbacks *connect.CallbackList[func(providerConnected bool)]
+	// the notice that the selected location has no post-quantum exits, with
+	// its listeners (device_local_post_quantum.go). Always set; its checks run
+	// only on a device that is not hosted
+	postQuantumNotice *deviceLocalPostQuantumNotice
 
 	blockActionWindowChangeListeners         *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners                *connect.CallbackList[BlockStatsChangeListener]
@@ -1884,6 +1901,12 @@ func newDeviceLocalWithOverridesForPlatform(
 	settingsCopy := *settings
 	settings = &settingsCopy
 	settings.ClientSettings = *cloneDeviceClientSettings(&settings.ClientSettings)
+	if settings.postQuantumSupply == nil {
+		settings.postQuantumSupply = defaultPostQuantumSupplySettings()
+	} else {
+		postQuantumSupply := *settings.postQuantumSupply
+		settings.postQuantumSupply = &postQuantumSupply
+	}
 	settings.LowMemoryProfile = settings.LowMemoryProfile || mobile
 	if settings.LocalApi != nil && !settings.HostedIncompatible {
 		return nil, errors.New("local device API requires an isolated hosted session")
@@ -2085,6 +2108,13 @@ func newDeviceLocalWithOverridesForPlatform(
 		defaultRouteLocal = false
 		defaultProvideControlMode = ProvideControlModeNever
 	}
+	// an app device starts with the default profile, post-quantum on, until
+	// Load or a setter replaces it; a hosted device starts with none, auto
+	// without post-quantum encryption (hostedSafePerformanceProfile)
+	var defaultPerformanceProfile *PerformanceProfile
+	if !settings.HostedIncompatible {
+		defaultPerformanceProfile = DefaultPerformanceProfile()
+	}
 
 	// The blocker outlives mux/client rebuilds. Construction uses the caller's
 	// defaults; explicit Load owns checked restoration of user preferences.
@@ -2161,6 +2191,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		// contractManager: contractManager,
 		// routeManager: routeManager,
 		stats:                                    newDeviceStats(),
+		performanceProfile:                       defaultPerformanceProfile,
 		connectLocation:                          nil,
 		defaultLocation:                          nil,
 		remoteUserNatClient:                      nil,
@@ -2249,6 +2280,13 @@ func newDeviceLocalWithOverridesForPlatform(
 	}
 	// a connect change wakes the transport delay watch, which reads both
 	deviceLocal.transportConnect = newTransportConnectWindow(ctx, settings, deviceLocal.notifyTransportDelay)
+	deviceLocal.postQuantumNotice = newDeviceLocalPostQuantumNotice(
+		ctx,
+		deviceLocal,
+		settings.postQuantumSupply,
+		settings.testingPostQuantumWindowStatus,
+		settings.testingPostQuantumSupplyChecked,
+	)
 	// the enabled subprotocols follow the device's own client
 	if provider != nil {
 		deviceLocal.attachSubprotocolsToClient(provider.Client())
@@ -2393,6 +2431,17 @@ func newDeviceLocalWithOverridesForPlatform(
 		}
 		deviceLocal.watchExtenderProvideStatus(extenderProvideUpdate)
 	})
+
+	// the notice that the selected location has no post-quantum exits, on its
+	// own goroutine, which subscribes before it first reads the device. A
+	// hosted device runs without post-quantum encryption, so it never checks
+	if !settings.HostedIncompatible {
+		deviceLocal.lifecycleWorkers.Add(1)
+		go connect.HandleError(func() {
+			defer deviceLocal.lifecycleWorkers.Done()
+			deviceLocal.postQuantumNotice.run()
+		})
+	}
 
 	// the transport quality of the window transports. The wake is made with
 	// the device, so a sample that lands the instant the constructor returns
@@ -2967,6 +3016,19 @@ func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *Perfor
 	return &limited
 }
 
+// The profile the device stores for one a caller sets, never the caller's
+// pointer. On an app device no profile is the default profile
+// (DefaultPerformanceProfile), so a caller that passes nil for "the default"
+// keeps post-quantum encryption on; a hosted device's limits apply
+// (hostedSafePerformanceProfile), and it keeps nil as nil.
+func (self *DeviceLocal) ownPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if performanceProfile == nil && !self.settings.HostedIncompatible {
+		return DefaultPerformanceProfile()
+	}
+	return clonePerformanceProfile(self.hostedSafePerformanceProfile(performanceProfile))
+}
+
+// nil sets the default profile on an app device (ownPerformanceProfile).
 func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
 	_ = self.setLocalCatalogPreference("performance-profile", performanceProfile)
 }
@@ -3028,6 +3090,12 @@ func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *Per
 	// getters see what was set, while the live transport above remains
 	// untouched unless installed behavior changed.
 	return func() { self.performanceProfileChanged(performanceProfile) }, nil
+}
+
+// The device's own profile, which it always knows (see
+// DeviceRemote.knownPerformanceProfile).
+func (self *DeviceLocal) knownPerformanceProfile() (*PerformanceProfile, bool) {
+	return self.GetPerformanceProfile(), true
 }
 
 func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {

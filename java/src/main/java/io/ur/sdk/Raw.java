@@ -138,6 +138,8 @@ public interface Raw extends Library {
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_post_quantum_identity_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_post_quantum_unavailable_change_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_post_quantum_unavailable_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_pro_features_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_provide_control_mode_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -601,6 +603,7 @@ public interface Raw extends Library {
   long urnet_connect_view_controller_add_connection_status_listener(long a0, urnet_connection_status_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_grid_listener(long a0, urnet_grid_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_location_match_listener(long a0, urnet_location_match_cb a1, Pointer a2);
+  long urnet_connect_view_controller_add_post_quantum_unavailable_listener(long a0, urnet_post_quantum_unavailable_cb a1, Pointer a2);
   long urnet_connect_view_controller_add_selected_location_listener(long a0, urnet_selected_location_cb a1, Pointer a2);
   void urnet_connect_view_controller_close(long a0);
   void urnet_connect_view_controller_connect(long a0, String a1);
@@ -611,6 +614,7 @@ public interface Raw extends Library {
   Pointer urnet_connect_view_controller_get_connection_status(long a0);
   long urnet_connect_view_controller_get_grid(long a0);
   Pointer urnet_connect_view_controller_get_location_match(long a0);
+  Pointer urnet_connect_view_controller_get_post_quantum_unavailable(long a0);
   Pointer urnet_connect_view_controller_get_selected_location(long a0);
   void urnet_connect_view_controller_start(long a0);
   void urnet_connect_view_controller_stop(long a0);
@@ -678,6 +682,7 @@ public interface Raw extends Library {
   long urnet_device_add_offline_change_listener(long a0, urnet_offline_change_cb a1, Pointer a2);
   long urnet_device_add_packet_stats_change_listener(long a0, urnet_packet_stats_change_cb a1, Pointer a2);
   long urnet_device_add_performance_profile_change_listener(long a0, urnet_performance_profile_change_cb a1, Pointer a2);
+  long urnet_device_add_post_quantum_unavailable_change_listener(long a0, urnet_post_quantum_unavailable_change_cb a1, Pointer a2);
   long urnet_device_add_provide_change_listener(long a0, urnet_provide_change_cb a1, Pointer a2);
   long urnet_device_add_provide_control_mode_change_listener(long a0, urnet_provide_control_mode_change_cb a1, Pointer a2);
   long urnet_device_add_provide_mode_change_listener(long a0, urnet_provide_mode_change_cb a1, Pointer a2);
@@ -743,6 +748,7 @@ public interface Raw extends Library {
   byte urnet_device_get_offline(long a0);
   Pointer urnet_device_get_packet_stats(long a0);
   Pointer urnet_device_get_performance_profile(long a0);
+  Pointer urnet_device_get_post_quantum_unavailable(long a0);
   Pointer urnet_device_get_provide_control_mode(long a0);
   byte urnet_device_get_provide_enabled(long a0);
   byte urnet_device_get_provide_extender(long a0);
@@ -1579,6 +1585,7 @@ public interface Raw extends Library {
   Pointer urnet_crypto_wallet_suggestions(String a0);
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
+  Pointer urnet_default_performance_profile();
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();
   Pointer urnet_default_proxy_device_settings();

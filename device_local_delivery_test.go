@@ -69,6 +69,10 @@ func TestDeviceLocalMuxSecurityDelivery(t *testing.T) {
 	})
 	defer unsub()
 
+	// delivery through the security policy, not post-quantum: the echo
+	// provider runs no end-to-end sessions, so the profile turns the default
+	// post-quantum encryption off
+	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 	device.SetConnectLocation(&ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}})
 	device.SetRouteLocal(false)
 

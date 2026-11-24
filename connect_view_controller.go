@@ -167,6 +167,19 @@ type ConnectViewController struct {
 	locationMatchListeners    *connect.CallbackList[LocationMatchListener]
 	// connectGridListeners       *connect.CallbackList[ConnectGridListener]
 	gridListeners *connect.CallbackList[GridListener]
+
+	// The device's notice that the selected location has no post-quantum
+	// exits, mirrored (connect_view_controller_post_quantum.go): the last value
+	// the device gave, whether a listener call has given one yet, the device's
+	// post-quantum setting as known off, and the notice the listeners last
+	// heard.
+	devicePostQuantumUnavailable      *PostQuantumUnavailable
+	devicePostQuantumUnavailableHeard bool
+	postQuantumEncryptionOff          bool
+	notifiedPostQuantumUnavailable    *PostQuantumUnavailable
+	performanceProfileChangedSub      Sub
+	postQuantumUnavailableChangedSub  Sub
+	postQuantumUnavailableListeners   *connect.CallbackList[PostQuantumUnavailableListener]
 }
 
 func newConnectViewController(ctx context.Context, device Device) *ConnectViewController {
@@ -188,6 +201,8 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 		// connectGridListeners:       connect.NewCallbackList[ConnectGridListener](),
 		// windowSizeListeners:   connect.NewCallbackList[WindowSizeListener](),
 		gridListeners: connect.NewCallbackList[GridListener](),
+
+		postQuantumUnavailableListeners: connect.NewCallbackList[PostQuantumUnavailableListener](),
 	}
 	// if location := device.GetConnectLocation(); location != nil {
 	// 	vc.setConnected(true)
@@ -196,6 +211,8 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 	// 	vc.setGrid()
 	// }
 	vc.connectLocationChangedSub = device.AddConnectLocationChangeListener(vc)
+	// the device's notice that the selection has no post-quantum exits
+	vc.listenToPostQuantumUnavailable()
 
 	connectedLocation := device.GetConnectLocation()
 	vc.ConnectLocationChanged(connectedLocation)
@@ -246,6 +263,7 @@ func (self *ConnectViewController) ConnectLocationChanged(location *ConnectLocat
 	if !retainRemoteGrid {
 		self.setGrid()
 	}
+	self.postQuantumUnavailableUpdated()
 }
 
 func (self *ConnectViewController) Start() {}
@@ -267,6 +285,8 @@ func (self *ConnectViewController) Close() {
 			self.grid = nil
 		}()
 		self.connectLocationChangedSub.Close()
+		self.performanceProfileChangedSub.Close()
+		self.postQuantumUnavailableChangedSub.Close()
 		if grid != nil {
 			grid.close()
 		}
@@ -297,6 +317,7 @@ func (self *ConnectViewController) setConnectionStatus(status ConnectionStatus) 
 	}()
 	if changed {
 		self.connectionStatusChanged()
+		self.postQuantumUnavailableUpdated()
 	}
 }
 
@@ -357,6 +378,7 @@ func (self *ConnectViewController) setSelectedLocation(location *ConnectLocation
 		self.selectedLocation = location
 	}()
 	self.selectedLocationChanged(location)
+	self.postQuantumUnavailableUpdated()
 }
 
 func (self *ConnectViewController) GetSelectedLocation() *ConnectLocation {
@@ -449,6 +471,7 @@ func (self *ConnectViewController) beginGeneration(status ConnectionStatus) {
 	}()
 	if changed {
 		self.connectionStatusChanged()
+		self.postQuantumUnavailableUpdated()
 	}
 	if locationMatchChanged {
 		self.locationMatchChanged()
@@ -507,6 +530,10 @@ func (self *ConnectViewController) setConnectionForGeneration(
 	}
 	if locationMatchChanged {
 		self.locationMatchChanged()
+	}
+	// a connected connection shows no post-quantum notice
+	if changed {
+		self.postQuantumUnavailableUpdated()
 	}
 }
 
@@ -1218,11 +1245,9 @@ func gridConnectionStatus(
 	activeProviderCount int,
 	locationProviderCount int32,
 ) ConnectionStatus {
-	if minSatisfied {
-		return Connected
-	}
-	if 0 < locationProviderCount && 0 < activeProviderCount &&
-		int(locationProviderCount) <= activeProviderCount {
+	// the satisfied cases, the rule the device's post-quantum notice also
+	// reads (connectionSatisfied)
+	if connectionSatisfied(minSatisfied, activeProviderCount, locationProviderCount) {
 		return Connected
 	}
 	if failed {

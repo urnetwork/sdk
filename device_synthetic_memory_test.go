@@ -327,6 +327,10 @@ func newSyntheticMemoryEnvironment(
 	)
 	reliabilitySettings.ProviderProbe = false
 	device.SetReliabilitySettings(reliabilitySettings)
+	// the memory profile, not post-quantum: the synthetic exit runs no
+	// end-to-end sessions, so the profile turns the default post-quantum
+	// encryption off
+	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 
 	// Both measured provider paths use the bounded in-memory routes below. Stop
 	// the unrelated platform carrier from reconnecting to the fake test host;
