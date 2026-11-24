@@ -115,7 +115,7 @@ func TestDeviceLocalLoadStability(t *testing.T) {
 
 	// scaffolding that stays up for the whole test (present in both the baseline
 	// and the final sample, so it cancels out of the return-to-baseline check).
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}

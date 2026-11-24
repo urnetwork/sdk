@@ -369,7 +369,7 @@ func TestSnLedgerAccountsOnBothDevices(t *testing.T) {
 	alice, aliceSs58 := testAliceSs58(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

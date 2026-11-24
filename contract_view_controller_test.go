@@ -31,7 +31,7 @@ func TestContractViewController(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestContractViewControllerExtenderSeries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestContractViewControllerExtenderSeriesFollowsTheDevice(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestContractViewControllerDenseSampling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -678,7 +678,7 @@ func TestContractViewControllerTransportDistribution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -896,7 +896,7 @@ func TestContractViewControllerProviderMirror(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -1058,7 +1058,7 @@ func TestContractViewControllerEnabledFlagsFollowTransportSettings(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}

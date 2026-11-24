@@ -39,56 +39,25 @@ func testing_newRpcDeviceLocal(t *testing.T, ctx context.Context) (*DeviceLocal,
 // The RPC fixture can pin a device-local target without changing the process
 // sizing default used by unrelated devices in the same test process. The
 // device and the space it stands on are joined when the test ends, the device
-// before the space (QD-1224's shape): a Close alone left the device's rpc
-// manager, provider and platform transports, and the space's api, local state
-// and strategy, still closing in whichever test ran next, where
+// before the space (QD-1224's shape), as testing_newNetworkSpace's cleanup is
+// registered before the device's: a Close alone left the device's rpc manager,
+// provider and platform transports, and the space's api, local state and
+// strategy, still closing in whichever test ran next, where
 // TestTransportStatusDoesNotBuildFullTransportDefaults once counted what they
 // allocated as its own.
 func testing_newRpcDeviceLocalWithSettings(t *testing.T, ctx context.Context, settings *DeviceLocalSettings) (*DeviceLocal, *deviceRpcSettings) {
 	t.Helper()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(func() { testingCloseAndJoinSpace(t, networkSpace) })
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(func() { testingCloseAndJoinDevice(t, "local device", deviceLocal) })
+	t.Cleanup(func() { testingCloseAndJoin(t, "local device", deviceLocal) })
 
 	return deviceLocal, defaultDeviceRpcSettings()
-}
-
-// Closes a test's DeviceLocal or DeviceRemote and waits for everything it runs
-// to end. A join that runs out fails the test, which then ends with the device
-// still running.
-func testingCloseAndJoinDevice(t *testing.T, name string, device interface {
-	CloseAndWait(ctx context.Context) error
-}) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := device.CloseAndWait(ctx); err != nil {
-		t.Errorf("the test's %s did not join: %v", name, err)
-	}
-}
-
-// Closes a test's space once the devices on it have joined; the close joins
-// the space's api, its local state's worker and its client strategy.
-// testing_newNetworkSpace alone only cancels them, with the test's context.
-func testingCloseAndJoinSpace(t *testing.T, networkSpace *NetworkSpace) {
-	t.Helper()
-	closed := make(chan struct{})
-	go func() {
-		defer close(closed)
-		networkSpace.Close()
-	}()
-	select {
-	case <-closed:
-	case <-time.After(30 * time.Second):
-		t.Errorf("the test's network space did not join")
-	}
 }
 
 // testing_newRpcDeviceRemote builds a DeviceRemote against deviceLocal's
@@ -114,7 +83,7 @@ func testing_newRpcDeviceRemote(
 		testing_deviceRpcDialer(&remoteSettings),
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(func() { testingCloseAndJoinDevice(t, "remote device", deviceRemote) })
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote device", deviceRemote) })
 
 	return deviceRemote
 }
@@ -124,9 +93,10 @@ func testing_newRpcDeviceRemote(
 // space ran is still running, so the next test measures only itself. The
 // subtest boundary is the point, so the fixtures' cleanups run inside it. A
 // pinned platform transport's family hold watcher is among what the check
-// counts, since the transport's close waits for it. testing_newNetworkSpace's
-// removal of the space's storage is not the fixtures' to join: it runs once
-// the parent context ends, after the check.
+// counts, since the transport's close waits for it, and so is the space's own
+// close and the deletion of its storage, which testing_newNetworkSpace's
+// cleanup runs inside the subtest though the context the space was made from
+// is the parent's and outlives it.
 func TestRpcFixturesJoinTheirDevicesWithTheTest(t *testing.T) {
 	// the goroutines are the process's, so in a fresh process: what an
 	// earlier test left closing could start one during the check

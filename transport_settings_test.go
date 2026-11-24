@@ -325,12 +325,11 @@ func TestDeviceLocalTransportSettingsPersistRestoreAndClone(t *testing.T) {
 func TestDeviceLocalTransportSettingsChangeListeners(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
-	defer testingCloseAndJoinSpace(t, networkSpace)
 
 	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer testingCloseAndJoinDevice(t, "device", device)
+	defer testingCloseAndJoin(t, "device", device)
 	listener := newTestingTransportSettingsChangeListener()
 	clientSub := device.AddTransportSettingsChangeListener(listener)
 	providerSub := device.AddProviderTransportSettingsChangeListener(listener)
@@ -527,9 +526,8 @@ func TestDeviceRemoteTransportSettingsOfflineSyncAndConnectedRpc(t *testing.T) {
 func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
-	defer testingCloseAndJoinSpace(t, networkSpace)
 	clientId := connect.NewId()
 	instanceId := NewId()
 
@@ -544,7 +542,7 @@ func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T)
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer testingCloseAndJoinDevice(t, "remote device", deviceRemote)
+	defer testingCloseAndJoin(t, "remote device", deviceRemote)
 
 	listener := newTestingTransportSettingsChangeListener()
 	clientSub := deviceRemote.AddTransportSettingsChangeListener(listener)
@@ -585,7 +583,7 @@ func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T)
 		clientId,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer testingCloseAndJoinDevice(t, "local device", deviceLocal)
+	defer testingCloseAndJoin(t, "local device", deviceLocal)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(10*time.Second), true)

@@ -13,7 +13,7 @@ func contractStatsFlushTestDevice(t *testing.T, epoch time.Duration) *DeviceLoca
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}

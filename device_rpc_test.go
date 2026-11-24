@@ -93,7 +93,7 @@ func TestDeviceRemoteMissingMethodKeepsSessionAlive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -180,7 +180,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -258,7 +258,7 @@ func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -341,7 +341,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -541,7 +541,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -744,7 +744,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -822,7 +822,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1062,7 +1062,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1254,7 +1254,7 @@ func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1340,7 +1340,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1465,7 +1465,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1636,7 +1636,7 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1694,7 +1694,7 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1771,7 +1771,7 @@ func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem strin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1852,7 +1852,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -1924,7 +1924,7 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -2009,7 +2009,7 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -2073,7 +2073,7 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -2157,7 +2157,7 @@ func TestDeviceRpcSyncRejectsInstanceMismatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -2210,7 +2210,7 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -2780,7 +2780,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -3023,7 +3023,7 @@ func TestDeviceLocalRpcReverseTearsDownOnTransportError(t *testing.T) {
 // transport and waits until the remote has synced (so the remote routes http
 // through the rpc, not the local fallback). Both are closed via t.Cleanup.
 func testing_newSyncedDeviceLocalRemote(t *testing.T, ctx context.Context) (*DeviceLocal, *DeviceRemote) {
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3072,7 +3072,7 @@ func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

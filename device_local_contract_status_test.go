@@ -14,7 +14,7 @@ import (
 // status window so the sliding-window behavior is testable without long waits.
 func testing_newContractStatusDevice(ctx context.Context, t *testing.T, count int, duration time.Duration) *DeviceLocal {
 	t.Helper()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}

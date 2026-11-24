@@ -52,7 +52,7 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 	// Key restoration does not need the automatic network refresh worker.
 	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
@@ -95,7 +95,7 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 
@@ -187,7 +187,7 @@ func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 

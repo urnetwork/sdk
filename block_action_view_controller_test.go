@@ -12,8 +12,8 @@ import (
 // a minimal local device for view controller tests.
 // no destination or network is needed since the tests only exercise
 // device state and listeners.
-func testing_newViewControllerDevice(ctx context.Context) (*DeviceLocal, error) {
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+func testing_newViewControllerDevice(t testing.TB, ctx context.Context) (*DeviceLocal, error) {
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func TestBlockActionViewControllerLocalOverrideAppIds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestBlockActionViewControllerWindowTrim(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestBlockActionViewControllerCountCap(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}

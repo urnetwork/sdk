@@ -1292,42 +1292,6 @@ func (self *NetworkSpace) derivedClientStrategySettings() *connect.ClientStrateg
 	return &settings
 }
 
-func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
-	key := NetworkSpaceKey{
-		HostName: "test",
-		EnvName:  "test",
-	}
-	values := NetworkSpaceValues{
-		Bundled:                  true,
-		NetExposeServerIps:       true,
-		NetExposeServerHostNames: true,
-	}
-	storagePath, err := os.MkdirTemp("", "networkspace")
-	if err != nil {
-		returnErr = err
-		return
-	}
-
-	networkSpace = newNetworkSpace(
-		ctx,
-		key,
-		values,
-		storagePath,
-	)
-	// AsyncLocalState owns a background-context worker rather than inheriting
-	// the NetworkSpace context. Tests historically canceled ctx but never
-	// closed that worker, retaining one goroutine and its temporary storage per
-	// test invocation. Tie both test-only resources to the supplied lifetime.
-	context.AfterFunc(ctx, func() {
-		if networkSpace.asyncLocalState != nil {
-			_ = networkSpace.asyncLocalState.CloseAndWait(context.Background())
-		}
-		_ = os.RemoveAll(storagePath)
-	})
-	byJwt = ""
-	return
-}
-
 // Testing_NewNetworkSpaceWithUrls builds a NetworkSpace that targets explicit
 // api and platform urls instead of deriving them from a host/env via ServiceUrl.
 // This lets integration tests point the SDK at local servers, e.g.

@@ -280,7 +280,7 @@ func newSyntheticMemoryEnvironment(
 		providerUdpAddr: providerUdpAddr,
 	}
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		cancel()
 		t.Fatalf("synthetic network space: %v", err)

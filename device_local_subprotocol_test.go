@@ -450,7 +450,7 @@ func TestDeviceLocalSubprotocolSurface(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 

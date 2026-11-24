@@ -54,7 +54,7 @@ func TestDeviceLocalUploadLogsWithFilesHoldTheAppsLogs(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	device, err := testing_newViewControllerDevice(ctx)
+	device, err := testing_newViewControllerDevice(t, ctx)
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}

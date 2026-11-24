@@ -215,7 +215,7 @@ func TestLocalStateStoresTheProvideExtenderSettingOnlyWhenExplicit(t *testing.T)
 func TestNewDeviceLocalWithProvideExtenderCarriesBothControls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

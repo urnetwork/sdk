@@ -346,7 +346,7 @@ func testingReceiveDeviceRpcAttempt(
 func TestDeviceRemoteGetterDoesNotWaitBehindBlockedDial(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestDeviceRemoteGetterDoesNotWaitBehindBlockedDial(t *testing.T) {
 func TestDeviceRemoteCloseAndWaitJoinsBlockedDial(t *testing.T) {
 	networkCtx, networkCancel := context.WithCancel(t.Context())
 	defer networkCancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(networkCtx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, networkCtx)
 	if err != nil {
 		t.Fatal(err)
 	}

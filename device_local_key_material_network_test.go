@@ -70,7 +70,7 @@ func testingDeviceSeed(t *testing.T, networkSpace *NetworkSpace, clientJwt strin
 func TestDeviceIdentityIsNotTakenByAnotherNetwork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDeviceIdentityIsNotTakenByAnotherNetwork(t *testing.T) {
 func TestDeviceKeyMaterialNamesItsNetwork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestDeviceKeyMaterialNamesItsNetwork(t *testing.T) {
 func TestStaleLogoutIdentityDoesNotFollowTheNextNetwork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestStaleLogoutIdentityDoesNotFollowTheNextNetwork(t *testing.T) {
 func TestStaleLogoutIdentityStaysWithItsNetwork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	networkSpace, _, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

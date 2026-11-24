@@ -54,7 +54,7 @@ func (self *routeLocalTcpCloseSignal) signal() {
 func newRouteLocalTcpCloseHarness(t *testing.T) *routeLocalTcpCloseHarness {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		cancel()
 		t.Fatalf("network space: %v", err)

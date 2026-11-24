@@ -165,7 +165,7 @@ func TestAdvancedModeDegradedWithoutMultiClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	settings := DefaultDeviceLocalSettings()
@@ -243,7 +243,7 @@ func TestDeviceRemoteAdvancedModeActionsReachTheLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -375,7 +375,7 @@ func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -502,7 +502,7 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -685,7 +685,7 @@ func TestDeviceLocalStartProbeSuiteNilConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	settings := DefaultDeviceLocalSettings()

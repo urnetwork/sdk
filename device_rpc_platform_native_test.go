@@ -13,7 +13,7 @@ import (
 // loop, so platform remotes retain synchronous reads and cross-remote state
 // visibility.
 func TestNativePlatformDeviceRpcUsesSynchronousState(t *testing.T) {
-	networkSpace, byJwt, err := testing_newNetworkSpace(t.Context())
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

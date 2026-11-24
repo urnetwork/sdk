@@ -36,7 +36,7 @@ type testingHostedRpcDevice struct {
 func testing_newHostedRpcDevice(t *testing.T, ctx context.Context) *testingHostedRpcDevice {
 	t.Helper()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 	settings := testDeviceLocalSettingsRpc()
 	// the hosted listener replaces the localhost one

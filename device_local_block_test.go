@@ -12,7 +12,7 @@ import (
 )
 
 func testing_newBlockDevice(ctx context.Context, t *testing.T, allowProvider bool) (*DeviceLocal, *NetworkSpace) {
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestDeviceLocalBlockActions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}
@@ -654,7 +654,7 @@ func TestDeviceLocalContractStatsEmitGate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	if err != nil {
 		t.Fatalf("network space: %v", err)
 	}

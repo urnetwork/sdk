@@ -322,7 +322,7 @@ func TestReliabilitySettingsNilWithoutMultiClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	// the DeviceLocal layer (shared with android): no multi client, no
@@ -510,7 +510,7 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -680,7 +680,7 @@ func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -772,7 +772,7 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
@@ -843,7 +843,7 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	networkSpace, byJwt, err := testing_newNetworkSpace(t, ctx)
 	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
