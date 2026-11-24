@@ -157,6 +157,9 @@ type Sidecar struct {
 	connections   *SidecarConnections
 	listeners     *SidecarListeners
 	autoApprovals *SidecarAutoApprovals
+	// the app process's support log ring on the local backend (sidecar_support.go), nil on the remote one or where
+	// none opens
+	supportLog *sidecarSupportLog
 	// the app's compute hosts, as its setters last set them (sidecar_compute_host.go); nil until set
 	connectHost          SidecarConnectHost
 	localInferenceHost   SidecarLocalInferenceHost
@@ -216,6 +219,8 @@ func newSidecarLocal(
 		}
 	}
 	keyStoreAdapter := newSidecarKeyStoreAdapter(keyStore)
+	// §28.7's support log, which the core writes through (sidecar_support.go)
+	supportLog := openSidecarSupportLog(settings.StateDir, coreSettings)
 	cancelCtx, cancel := context.WithCancel(ctx)
 	instance, err := sidecar.NewSidecarInstance(cancelCtx, &sidecar.SidecarInstanceArgs{
 		Backend:   backend,
@@ -224,6 +229,7 @@ func newSidecarLocal(
 		Settings:  coreSettings,
 	})
 	if err != nil {
+		supportLog.close()
 		cancel()
 		return nil, err
 	}
@@ -240,6 +246,7 @@ func newSidecarLocal(
 	local, err := sidecar.NewSidecar(cancelCtx, coreHost, nil, coreSettings)
 	if err != nil {
 		instance.Close()
+		supportLog.close()
 		cancel()
 		return nil, err
 	}
@@ -272,6 +279,7 @@ func newSidecarLocal(
 		componentFactoryOf: options.componentFactoryOf,
 		evsSettings:        evsSettings,
 		socketsSettings:    socketsSettings,
+		supportLog:         supportLog,
 	}
 	self.removeEventCallback = local.AddEventCallback(self.events.offer)
 	// whatever components the app names, the network's label table, which every zone the core's DnsClient fetches
@@ -565,6 +573,8 @@ func (self *Sidecar) Close() {
 			// the instance outlives the run loop, which seals its last writes through it
 			local.CloseAndWait(context.Background())
 			instance.Close()
+			// the app's stop, recorded once the core can write nothing more (sidecar_support.go)
+			self.supportLog.close()
 			// the child token's session goes once no generation can read it
 			if self.host != nil {
 				if session := self.host.swapSession(nil); session != nil {
