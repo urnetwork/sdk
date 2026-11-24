@@ -1578,6 +1578,7 @@ module URnetwork
       attach_function :urnet_crypto_wallet_suggestions, [:string], :pointer, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
+      attach_function :urnet_default_performance_profile, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_device_settings, [], :pointer, blocking: true

@@ -1579,6 +1579,7 @@ public interface Raw extends Library {
   Pointer urnet_crypto_wallet_suggestions(String a0);
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
+  Pointer urnet_default_performance_profile();
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();
   Pointer urnet_default_proxy_device_settings();

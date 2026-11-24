@@ -678,6 +678,7 @@ export interface FindLocationsArgs {
   max_distance_fraction?: number;
   enable_max_distance_fraction?: boolean;
   rank_mode?: string;
+  require_modern_provider?: boolean;
 }
 
 export interface FindLocationsResult {
