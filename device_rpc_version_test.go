@@ -122,11 +122,11 @@ func testing_newRpcDeviceRemote(
 // The rpc fixtures' devices and space end with the test that made them: once a
 // test that synced a remote to a local returns, nothing either device or the
 // space ran is still running, so the next test measures only itself. The
-// subtest boundary is the point, so the fixtures' cleanups run inside it. Two
-// goroutines are left out of the check, as neither is the fixtures' to join:
-// a pinned platform transport's family hold watcher, which connect's
-// PlatformTransport does not wait for, and testing_newNetworkSpace's removal of
-// the space's storage, which runs once the parent context ends, after the check.
+// subtest boundary is the point, so the fixtures' cleanups run inside it. A
+// pinned platform transport's family hold watcher is among what the check
+// counts, since the transport's close waits for it. testing_newNetworkSpace's
+// removal of the space's storage is not the fixtures' to join: it runs once
+// the parent context ends, after the check.
 func TestRpcFixturesJoinTheirDevicesWithTheTest(t *testing.T) {
 	// the goroutines are the process's, so in a fresh process: what an
 	// earlier test left closing could start one during the check
@@ -149,11 +149,6 @@ func TestRpcFixturesJoinTheirDevicesWithTheTest(t *testing.T) {
 	before := captureGoroutineStacks()
 	t.Run("pair", syncedPair)
 	after := captureGoroutineStacks()
-	for sig := range after {
-		if strings.Contains(sig, "connect.(*PlatformTransport).runFamilyHoldWatcher") {
-			delete(after, sig)
-		}
-	}
 	reportGoroutineLeaks(t, before, after, 0)
 }
 
