@@ -139,6 +139,8 @@ func releaseStage(phase string) {
 		}
 	case "check-swift":
 		checkSwift()
+	case "stable":
+		releaseStable()
 	case "public":
 		if hasCredential("conan") || hasCredential("vcpkg") {
 			_, artifacts := verifiedFiles(path("cgo/dist"), packageVersion(), true)

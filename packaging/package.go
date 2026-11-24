@@ -193,7 +193,7 @@ func stageRustRelease(stage, assets string, m nativeManifest) {
 		e.Filename = files[system]
 		e.Archive = name
 		e.ArchiveSHA256 = hash(artifact)
-		e.URL = "https://github.com/urnetwork/build/releases/download/v" + packageVersion() + "/" + name
+		e.URL = releaseDownloadURL(name)
 	}
 	jsonWrite(filepath.Join(stage, "native/manifest.json"), public)
 	textFile(filepath.Join(stage, "src/runtime.rs"), "include!(concat!(env!(\"OUT_DIR\"), \"/runtime.rs\"));\n")
