@@ -1096,6 +1096,8 @@ typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char*
 typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 /* PostQuantumIdentityListener */
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
+/* PostQuantumUnavailableChangeListener */
+typedef void (*urnet_post_quantum_unavailable_change_cb)(void* user_data, const char* post_quantum_unavailable_json);
 /* PostQuantumUnavailableListener */
 typedef void (*urnet_post_quantum_unavailable_cb)(void* user_data);
 /* ProFeaturesListener */
@@ -1775,6 +1777,7 @@ uint64_t urnet_device_add_network_peers_change_listener(uint64_t self, urnet_net
 uint64_t urnet_device_add_offline_change_listener(uint64_t self, urnet_offline_change_cb listener_offline_changed, void* listener_user_data);
 uint64_t urnet_device_add_packet_stats_change_listener(uint64_t self, urnet_packet_stats_change_cb listener_packet_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_performance_profile_change_listener(uint64_t self, urnet_performance_profile_change_cb listener_performance_profile_changed, void* listener_user_data);
+uint64_t urnet_device_add_post_quantum_unavailable_change_listener(uint64_t self, urnet_post_quantum_unavailable_change_cb listener_post_quantum_unavailable_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_change_listener(uint64_t self, urnet_provide_change_cb listener_provide_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_control_mode_change_listener(uint64_t self, urnet_provide_control_mode_change_cb listener_provide_control_mode_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_mode_change_listener(uint64_t self, urnet_provide_mode_change_cb listener_provide_mode_changed, void* listener_user_data);
@@ -1840,6 +1843,7 @@ uint64_t urnet_device_get_network_space(uint64_t self);
 bool urnet_device_get_offline(uint64_t self);
 char* urnet_device_get_packet_stats(uint64_t self);
 char* urnet_device_get_performance_profile(uint64_t self);
+char* urnet_device_get_post_quantum_unavailable(uint64_t self);
 char* urnet_device_get_provide_control_mode(uint64_t self);
 bool urnet_device_get_provide_enabled(uint64_t self);
 bool urnet_device_get_provide_extender(uint64_t self);

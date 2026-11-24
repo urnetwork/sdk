@@ -277,6 +277,8 @@ typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 void urnet_invoke_points_leaderboard(urnet_points_leaderboard_cb cb, void* user_data);
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
 void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data);
+typedef void (*urnet_post_quantum_unavailable_change_cb)(void* user_data, const char* post_quantum_unavailable_json);
+void urnet_invoke_post_quantum_unavailable_change(urnet_post_quantum_unavailable_change_cb cb, void* user_data, const char* post_quantum_unavailable_json);
 typedef void (*urnet_post_quantum_unavailable_cb)(void* user_data);
 void urnet_invoke_post_quantum_unavailable(urnet_post_quantum_unavailable_cb cb, void* user_data);
 typedef void (*urnet_pro_features_cb)(void* user_data, const char* snapshot_json);

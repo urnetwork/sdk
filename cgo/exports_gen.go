@@ -2137,6 +2137,20 @@ func (self *cAdapterPostQuantumIdentityListener) ProviderIdentitiesChanged() {
 	C.urnet_invoke_post_quantum_identity(self.cbProviderIdentitiesChanged, self.userData)
 }
 
+type cAdapterPostQuantumUnavailableChangeListener struct {
+	cbPostQuantumUnavailableChanged C.urnet_post_quantum_unavailable_change_cb
+	userData                        unsafe.Pointer
+}
+
+func (self *cAdapterPostQuantumUnavailableChangeListener) PostQuantumUnavailableChanged(postQuantumUnavailable *sdk.PostQuantumUnavailable) {
+	defer cgoGuard("urnet_post_quantum_unavailable_change_cb")
+	postQuantumUnavailable_ := cJson(postQuantumUnavailable, "urnet_post_quantum_unavailable_change_cb")
+	C.urnet_invoke_post_quantum_unavailable_change(self.cbPostQuantumUnavailableChanged, self.userData, postQuantumUnavailable_)
+	if postQuantumUnavailable_ != nil {
+		cStringFree(postQuantumUnavailable_)
+	}
+}
+
 type cAdapterPostQuantumUnavailableListener struct {
 	cbPostQuantumUnavailableChanged C.urnet_post_quantum_unavailable_cb
 	userData                        unsafe.Pointer
@@ -10495,6 +10509,21 @@ func urnet_device_add_performance_profile_change_listener(self C.uint64_t, liste
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_post_quantum_unavailable_change_listener
+func urnet_device_add_post_quantum_unavailable_change_listener(self C.uint64_t, listener_post_quantum_unavailable_changed C.urnet_post_quantum_unavailable_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_post_quantum_unavailable_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_post_quantum_unavailable_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.PostQuantumUnavailableChangeListener
+	if listener_post_quantum_unavailable_changed != nil {
+		listener_ = &cAdapterPostQuantumUnavailableChangeListener{cbPostQuantumUnavailableChanged: listener_post_quantum_unavailable_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddPostQuantumUnavailableChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_provide_change_listener
 func urnet_device_add_provide_change_listener(self C.uint64_t, listener_provide_changed C.urnet_provide_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_provide_change_listener")
@@ -11361,6 +11390,20 @@ func urnet_device_get_performance_profile(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_performance_profile")
+}
+
+//export urnet_device_get_post_quantum_unavailable
+func urnet_device_get_post_quantum_unavailable(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_post_quantum_unavailable")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_post_quantum_unavailable")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPostQuantumUnavailable()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_post_quantum_unavailable")
 }
 
 //export urnet_device_get_provide_control_mode

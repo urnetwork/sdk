@@ -138,6 +138,7 @@ public interface Raw extends Library {
   interface urnet_performance_profile_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_points_leaderboard_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_post_quantum_identity_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_post_quantum_unavailable_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_post_quantum_unavailable_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_pro_features_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
@@ -681,6 +682,7 @@ public interface Raw extends Library {
   long urnet_device_add_offline_change_listener(long a0, urnet_offline_change_cb a1, Pointer a2);
   long urnet_device_add_packet_stats_change_listener(long a0, urnet_packet_stats_change_cb a1, Pointer a2);
   long urnet_device_add_performance_profile_change_listener(long a0, urnet_performance_profile_change_cb a1, Pointer a2);
+  long urnet_device_add_post_quantum_unavailable_change_listener(long a0, urnet_post_quantum_unavailable_change_cb a1, Pointer a2);
   long urnet_device_add_provide_change_listener(long a0, urnet_provide_change_cb a1, Pointer a2);
   long urnet_device_add_provide_control_mode_change_listener(long a0, urnet_provide_control_mode_change_cb a1, Pointer a2);
   long urnet_device_add_provide_mode_change_listener(long a0, urnet_provide_mode_change_cb a1, Pointer a2);
@@ -746,6 +748,7 @@ public interface Raw extends Library {
   byte urnet_device_get_offline(long a0);
   Pointer urnet_device_get_packet_stats(long a0);
   Pointer urnet_device_get_performance_profile(long a0);
+  Pointer urnet_device_get_post_quantum_unavailable(long a0);
   Pointer urnet_device_get_provide_control_mode(long a0);
   byte urnet_device_get_provide_enabled(long a0);
   byte urnet_device_get_provide_extender(long a0);
