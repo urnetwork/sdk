@@ -204,6 +204,10 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 			return policy
 		})
 
+		// the security policy on the mux path, not post-quantum: the in-process
+		// provider runs no end-to-end sessions, so the profile turns the
+		// default post-quantum encryption off
+		device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 		// build the mux + remote multi-client and publish route.upgradeMux
 		device.SetConnectLocation(&ConnectLocation{
 			ConnectLocationId: &ConnectLocationId{BestAvailable: true},
