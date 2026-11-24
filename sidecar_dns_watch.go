@@ -2,7 +2,9 @@
 
 // D-TRUST-9's zone watch on sdk hosts (QD-1384; the core's dns_watch_component.go): the core's zone watch, whose pass
 // about every 6 h asks two public DoH resolvers about this device's published names and mail hosts and alarms on
-// records it did not request.
+// records it did not request. An sdk host publishes through its tls/ app listeners alone (sidecar_tls.go), with no
+// publish of its own, and the core's watch watches the names they serve beside any publish's, so a desktop app's
+// tls/ Listen joins the watch's next pass and its Close leaves it.
 //
 // The host class decides it, as it decides D-TLS-8's CT watch (sidecar_tls.go): a class that stays up, desktop's, runs
 // it, as ur daemon does for each network it hosts; ios and android run the sidecar role only while the app is open
