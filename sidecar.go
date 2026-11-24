@@ -141,6 +141,20 @@ type Sidecar struct {
 	searchSettings *sidecarSearchSettings
 	searchBackend  sidecarSearchBackend
 	searchHost     *sidecarSearchHost
+	// DESIGN-COMPUTE §15.3's wrappers, each made once at its accessor's first call (CSURF-M11-01) by the constructor in
+	// its area's file, and closed with the Sidecar where the area gives it a close
+	compute       *SidecarCompute
+	models        *SidecarModels
+	enclaves      *SidecarEnclaves
+	agents        *SidecarAgents
+	calendar      *SidecarCalendar
+	connections   *SidecarConnections
+	listeners     *SidecarListeners
+	autoApprovals *SidecarAutoApprovals
+	// the app's compute hosts, as its setters last set them (sidecar_compute_host.go); nil until set
+	connectHost          SidecarConnectHost
+	localInferenceHost   SidecarLocalInferenceHost
+	safetyClassifierHost SidecarSafetyClassifierHost
 }
 
 // A Sidecar on the local backend: the instance under settings' StateDir, the app's keyStore wrapping U, networkSpace's
@@ -470,6 +484,7 @@ func (self *Sidecar) Close() {
 		var mail *SidecarMail
 		var approvals *SidecarApprovals
 		var search *SidecarSearch
+		var computeWrappers []any
 		alreadyClosed := func() bool {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -483,6 +498,7 @@ func (self *Sidecar) Close() {
 			mail = self.mail
 			approvals = self.approvals
 			search = self.search
+			computeWrappers = self.computeWrappersWithLock()
 			return false
 		}()
 		if alreadyClosed {
@@ -511,6 +527,12 @@ func (self *Sidecar) Close() {
 		// and every open search ends, its pages with it
 		if search != nil {
 			search.close()
+		}
+		// and each compute wrapper its area gives a close ends what it holds (§15.3)
+		for _, wrapper := range computeWrappers {
+			if closer, ok := wrapper.(sidecarComputeWrapperCloser); ok {
+				closer.close()
+			}
 		}
 		// and no witness goes to the VPN component after it
 		self.stopForwarding()
@@ -556,4 +578,185 @@ func (self *Sidecar) CloseAndWait(ctx context.Context) error {
 func (self *Sidecar) Core() *sidecar.Sidecar {
 	local, _ := self.backends()
 	return local
+}
+
+// What a compute call answers where its area has not filled its sdk file yet (§15.3; CSURF-M11-01): never a nil, an
+// empty success or a default in its place. Each area's task fills its file, and its calls stop answering this.
+var ErrSidecarComputeNotBuilt = errors.New("not built in this sdk yet")
+
+// What a compute wrapper's constructor and an area's sdk function are given: the Sidecar's ctx, which ends at its
+// Close, and its backends, the core on the local backend or the daemon on the remote one, whose methods are each
+// area's (sidecarBackend.call). Read before stateLock is taken, since a wrapper's constructor runs under it and must
+// neither block nor take it.
+type sidecarComputeArgs struct {
+	ctx    context.Context
+	local  *sidecar.Sidecar
+	remote sidecarBackend
+}
+
+// This Sidecar's args, read under stateLock.
+func (self *Sidecar) computeArgs() *sidecarComputeArgs {
+	local, remote := self.backends()
+	return &sidecarComputeArgs{ctx: self.ctx, local: local, remote: remote}
+}
+
+// What a compute wrapper implements, in its area's file, to end what it holds at the Sidecar's Close.
+type sidecarComputeWrapperCloser interface {
+	close()
+}
+
+// The compute wrappers made so far, for Close. Called with stateLock held.
+func (self *Sidecar) computeWrappersWithLock() []any {
+	wrappers := []any{}
+	add := func(wrapper any, made bool) {
+		if made {
+			wrappers = append(wrappers, wrapper)
+		}
+	}
+	add(self.compute, self.compute != nil)
+	add(self.models, self.models != nil)
+	add(self.enclaves, self.enclaves != nil)
+	add(self.agents, self.agents != nil)
+	add(self.calendar, self.calendar != nil)
+	add(self.connections, self.connections != nil)
+	add(self.listeners, self.listeners != nil)
+	add(self.autoApprovals, self.autoApprovals != nil)
+	return wrappers
+}
+
+// The wrapper in slot, made by newWrapper at the first call, under stateLock, and the same one at every call after,
+// the Sidecar open or closed: a compute accessor never answers nil. newWrapper runs under stateLock, so it only builds.
+func sidecarComputeWrapperOf[T any](self *Sidecar, slot **T, newWrapper func(args *sidecarComputeArgs) *T) *T {
+	args := self.computeArgs()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if *slot == nil {
+		*slot = newWrapper(args)
+	}
+	return *slot
+}
+
+// A Harness on this Sidecar (§15.3, §7): its settings as JSON, the agents it launches and the events it emits
+// (sidecar_harness.go).
+func (self *Sidecar) NewHarness(settingsJson string) (*SidecarHarness, error) {
+	return traceWithReturnError(func() (*SidecarHarness, error) {
+		return newSidecarHarness(self.computeArgs(), settingsJson)
+	})
+}
+
+// The compute balance, purchases, auto-renew, budgets and the spend view (§15.3, §9; sidecar_compute.go).
+func (self *Sidecar) Compute() *SidecarCompute {
+	compute, _ := traceWithReturn(func() *SidecarCompute {
+		return sidecarComputeWrapperOf(self, &self.compute, newSidecarCompute)
+	})
+	return compute
+}
+
+// The model catalog, local model pulls and the person's models key (§15.3, §6, §16.4; sidecar_models.go).
+func (self *Sidecar) Models() *SidecarModels {
+	models, _ := traceWithReturn(func() *SidecarModels {
+		return sidecarComputeWrapperOf(self, &self.models, newSidecarModels)
+	})
+	return models
+}
+
+// The network's enclaves (§15.3, §11; sidecar_enclaves.go).
+func (self *Sidecar) Enclaves() *SidecarEnclaves {
+	enclaves, _ := traceWithReturn(func() *SidecarEnclaves {
+		return sidecarComputeWrapperOf(self, &self.enclaves, newSidecarEnclaves)
+	})
+	return enclaves
+}
+
+// A terminal session over the bundled SSH to host as user, cols by rows, its output to listener (§15.3, §12;
+// sidecar_ssh.go).
+func (self *Sidecar) OpenSsh(host string, user string, cols int, rows int, listener SidecarSshListener) (*SidecarSshSession, error) {
+	return traceWithReturnError(func() (*SidecarSshSession, error) {
+		return openSidecarSsh(self.computeArgs(), host, user, cols, rows, listener)
+	})
+}
+
+// The recURd skill's agents, their inboxes and the agent graph (§15.3, §20; sidecar_agents.go).
+func (self *Sidecar) Agents() *SidecarAgents {
+	agents, _ := traceWithReturn(func() *SidecarAgents {
+		return sidecarComputeWrapperOf(self, &self.agents, newSidecarAgents)
+	})
+	return agents
+}
+
+// The person's calendar links and events (§15.3, §23; sidecar_calendar.go).
+func (self *Sidecar) Calendar() *SidecarCalendar {
+	calendar, _ := traceWithReturn(func() *SidecarCalendar {
+		return sidecarComputeWrapperOf(self, &self.calendar, newSidecarCalendar)
+	})
+	return calendar
+}
+
+// The member's connected services (§15.3, §25; sidecar_connections.go).
+func (self *Sidecar) Connections() *SidecarConnections {
+	connections, _ := traceWithReturn(func() *SidecarConnections {
+		return sidecarComputeWrapperOf(self, &self.connections, newSidecarConnections)
+	})
+	return connections
+}
+
+// The network's listeners (§15.3, §26; sidecar_listeners.go).
+func (self *Sidecar) Listeners() *SidecarListeners {
+	listeners, _ := traceWithReturn(func() *SidecarListeners {
+		return sidecarComputeWrapperOf(self, &self.listeners, newSidecarListeners)
+	})
+	return listeners
+}
+
+// Every disclosure of the newest verified policy, as JSON (§15.3, §2.8; sidecar_disclosures.go).
+func (self *Sidecar) Disclosures() (string, error) {
+	return traceWithReturnError(func() (string, error) {
+		return sidecarDisclosures(self.computeArgs())
+	})
+}
+
+// The person's acknowledgment of disclosure id, their act in the app's UI after it showed the whole text (§15.3,
+// §2.8, D-CSURF-1; sidecar_disclosures.go). No tool, MCP call or RPC reaches it.
+func (self *Sidecar) AckDisclosure(id string) error {
+	return traceWithError(func() error {
+		return ackSidecarDisclosure(self.computeArgs(), id)
+	})
+}
+
+// An Owner's or Admin's acknowledgment of disclosure id for the network, from the app's network settings (§15.3,
+// §2.8, CO-41; sidecar_disclosures.go).
+func (self *Sidecar) AckNetworkDisclosure(id string) error {
+	return traceWithError(func() error {
+		return ackSidecarNetworkDisclosure(self.computeArgs(), id)
+	})
+}
+
+// The person's automatic approvals: their mode, the network's limit and the day's digest (§15.3, §27;
+// sidecar_auto_approvals.go).
+func (self *Sidecar) AutoApprovals() *SidecarAutoApprovals {
+	autoApprovals, _ := traceWithReturn(func() *SidecarAutoApprovals {
+		return sidecarComputeWrapperOf(self, &self.autoApprovals, newSidecarAutoApprovals)
+	})
+	return autoApprovals
+}
+
+// The app's browser seam for connected services (§15.3, §25.5; sidecar_compute_host.go).
+func (self *Sidecar) SetConnectHost(host SidecarConnectHost) {
+	trace(func() {
+		setSidecarComputeHost(self, &self.connectHost, host, sidecarConnectHostAdapter)
+	})
+}
+
+// The app's local inference engine (§15.3, §6.5; sidecar_compute_host.go).
+func (self *Sidecar) SetLocalInferenceHost(host SidecarLocalInferenceHost) {
+	trace(func() {
+		setSidecarComputeHost(self, &self.localInferenceHost, host, sidecarLocalInferenceHostAdapter)
+	})
+}
+
+// The app's safety classifier (§15.3, §27.5; sidecar_compute_host.go).
+func (self *Sidecar) SetSafetyClassifierHost(host SidecarSafetyClassifierHost) {
+	trace(func() {
+		setSidecarComputeHost(self, &self.safetyClassifierHost, host, sidecarSafetyClassifierHostAdapter)
+	})
 }
