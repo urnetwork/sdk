@@ -128,6 +128,11 @@ func testing_newRpcDeviceRemote(
 // PlatformTransport does not wait for, and testing_newNetworkSpace's removal of
 // the space's storage, which runs once the parent context ends, after the check.
 func TestRpcFixturesJoinTheirDevicesWithTheTest(t *testing.T) {
+	// the goroutines are the process's, so in a fresh process: what an
+	// earlier test left closing could start one during the check
+	if runIsolatedLoadTest(t) {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
