@@ -798,6 +798,22 @@ type Device interface {
 	// fires on every change of the client limit status
 	AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub
 
+	// GetPostQuantumUnavailable is the device's notice that the selected
+	// location has no post-quantum exits right now (post_quantum_unavailable.go),
+	// for the apps to say "No post-quantum exits in <location> right now" in
+	// place of connecting, on the connect screen and on every surface that
+	// runs without it. nil while there is none: post-quantum encryption off, a
+	// selection that is not a location or a group, disconnected or connected,
+	// and until the device's check has answered. The device decides it
+	// (device_local_post_quantum.go); a remote device reads through to the
+	// device process, with the last value it answered or pushed while it
+	// cannot be reached, and none from a device process too old to have it.
+	GetPostQuantumUnavailable() *PostQuantumUnavailable
+
+	// fires on every change of the notice, with the new value, and on a
+	// remote device once more each time it syncs with the device process
+	AddPostQuantumUnavailableChangeListener(listener PostQuantumUnavailableChangeListener) Sub
+
 	// RetryClientLimit ends the device's client limit hold so its platform
 	// connection dials again at once, for an app whose user acted on the
 	// status's prompt: a confirmed upgrade, or a slot freed on another

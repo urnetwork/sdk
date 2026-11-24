@@ -3,84 +3,29 @@
 package sdk
 
 // The connect screen's notice that the selected location has no post-quantum
-// exits right now (owner, 2026-11-24: "Tell them, let them choose"). These
-// pin, through the real device and connect view controller and the
-// find-providers2 requests as the platform receives them: a selected location
-// with no post-quantum exits gives the notice instead of a connection that
-// stays connecting, and it clears when exits return; turning post-quantum off,
-// the notice's second action, clears it, discovers without the requirement
-// and is saved; a location with post-quantum exits connects as before, with no
-// notice.
+// exits right now (owner, 2026-11-24: "Tell them, let them choose"). The
+// device decides it (device_local_post_quantum_test.go pins that); these pin
+// that the connect view controller shows the device's notice, through the
+// real device and controller and the find-providers2 requests as the platform
+// receives them: a selected location with no post-quantum exits gives the
+// notice instead of a connection that stays connecting, and it clears when
+// exits return; turning post-quantum off, the notice's second action, clears
+// it, discovers without the requirement and is saved; a location with
+// post-quantum exits connects as before, with no notice; and a controller
+// opened later shows the device's standing notice at once, making no check of
+// its own.
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/urnetwork/connect"
 )
 
-// Answers the controller's find-providers2 requests: modernCount providers
-// for a request with require_modern_provider, count without it. Records each
-// request's flag, in order.
-type testingPostQuantumSupply struct {
-	stateLock   sync.Mutex
-	modernCount int
-	count       int
-	requests    []bool
-}
-
-func (self *testingPostQuantumSupply) set(modernCount int, count int) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.modernCount = modernCount
-	self.count = count
-}
-
-// The require_modern_provider flag of each request so far, then forgets them.
-func (self *testingPostQuantumSupply) takeRequests() []bool {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	requests := self.requests
-	self.requests = nil
-	return requests
-}
-
-func (self *testingPostQuantumSupply) install(t *testing.T, api *Api) {
-	t.Helper()
-	api.setHttpPostRaw(func(_ context.Context, requestUrl string, body []byte, _ string) ([]byte, error) {
-		if !strings.HasSuffix(requestUrl, "/network/find-providers2") {
-			return nil, fmt.Errorf("unexpected request %s", filepath.Base(requestUrl))
-		}
-		fields := map[string]any{}
-		if err := json.Unmarshal(body, &fields); err != nil {
-			return nil, err
-		}
-		requireModernProvider, _ := fields["require_modern_provider"].(bool)
-		count := func() int {
-			self.stateLock.Lock()
-			defer self.stateLock.Unlock()
-			self.requests = append(self.requests, requireModernProvider)
-			if requireModernProvider {
-				return self.modernCount
-			}
-			return self.count
-		}()
-		providers := make([]map[string]any, 0, count)
-		for range count {
-			providers = append(providers, map[string]any{"client_id": NewId().String()})
-		}
-		return json.Marshal(map[string]any{"providers": providers})
-	})
-}
-
-// Signals each change of the notice.
+// Signals each change of the controller's notice.
 type testingPostQuantumUnavailableListener struct {
 	changed chan struct{}
 }
@@ -92,46 +37,15 @@ func (self *testingPostQuantumUnavailableListener) PostQuantumUnavailableChanged
 	}
 }
 
-// A connect view controller of a device with the default profile
-// (post-quantum on) whose supply checks the fake answers, with its notice
-// listener and a barrier after each check. Rechecks run at once, so a test
-// drives them by changing the fake and waiting on the barrier.
-func newTestingPostQuantumSupplyController(t *testing.T, device *DeviceLocal, supply *testingPostQuantumSupply) (*ConnectViewController, *testingPostQuantumUnavailableListener, chan struct{}) {
+// Opens a connect view controller of the device, with its notice listener.
+func newTestingPostQuantumSupplyController(t *testing.T, device *DeviceLocal) (*ConnectViewController, *testingPostQuantumUnavailableListener) {
 	t.Helper()
-	supply.install(t, device.GetApi())
 	vc := device.OpenConnectViewController()
 	t.Cleanup(func() { device.CloseConnectViewController(vc) })
-	checked := make(chan struct{}, 16)
-	vc.postQuantumSupplySettings.RecheckInterval = time.Millisecond
-	vc.testingPostQuantumSupplyChecked = func() {
-		select {
-		case checked <- struct{}{}:
-		default:
-		}
-	}
 	listener := &testingPostQuantumUnavailableListener{changed: make(chan struct{}, 16)}
 	sub := vc.AddPostQuantumUnavailableListener(listener)
 	t.Cleanup(sub.Close)
-	return vc, listener, checked
-}
-
-// Waits on a signal or fails.
-func testingAwaitSignal(t *testing.T, ctx context.Context, signal chan struct{}, description string) {
-	t.Helper()
-	select {
-	case <-signal:
-	case <-ctx.Done():
-		t.Fatalf("no %s", description)
-	}
-}
-
-// A location target, as the location list offers one.
-func testingSupplyLocation() *ConnectLocation {
-	return &ConnectLocation{
-		ConnectLocationId: &ConnectLocationId{LocationId: NewId()},
-		Name:              "Synthetic country",
-		LocationType:      LocationTypeCountry,
-	}
+	return vc, listener
 }
 
 // A selected location with no post-quantum exits, but with exits without
@@ -142,30 +56,28 @@ func TestConnectViewControllerNoticesALocationWithoutPostQuantumExits(t *testing
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
-	fixture.seedDistinctLogin(t)
-	device := testingPreferenceDevice(t, fixture)
-	supply := &testingPostQuantumSupply{modernCount: 0, count: 3}
-	vc, listener, checked := newTestingPostQuantumSupplyController(t, device, supply)
+	device, supply, _ := newTestingPostQuantumNoticeDevice(t, func(settings *DeviceLocalSettings) {
+		settings.postQuantumSupply.RecheckInterval = time.Millisecond
+	})
+	vc, listener := newTestingPostQuantumSupplyController(t, device)
 
 	location := testingSupplyLocation()
 	vc.Connect(location)
-	testingAwaitSignal(t, ctx, listener.changed, "notice for a location without post-quantum exits")
-	notice := vc.GetPostQuantumUnavailable()
-	if notice == nil || notice.Location == nil || notice.Location.ConnectLocationId.LocationId.Cmp(location.ConnectLocationId.LocationId) != 0 {
-		t.Fatalf("the notice is %+v, want the selected location", notice)
+	for vc.GetPostQuantumUnavailable() == nil {
+		testingAwaitSignal(t, ctx, listener.changed, "notice for a location without post-quantum exits")
 	}
+	assertPostQuantumUnavailableFor(t, vc.GetPostQuantumUnavailable(), location, "the controller")
 	if status := vc.GetConnectionStatus(); status == Connected {
 		t.Fatal("a location without post-quantum exits reads connected")
 	}
 	// the post-quantum request found none, so the check asked without it
-	if requests := supply.takeRequests(); len(requests) < 2 || !requests[0] || requests[1] {
-		t.Fatalf("the check asked %v, want with and then without the requirement", requests)
+	if requests := supply.takeRequests(); len(requests) < 2 || !requests[0].requireModernProvider || requests[1].requireModernProvider {
+		t.Fatalf("the check asked %+v, want with and then without the requirement", requests)
 	}
 
 	supply.set(2, 3)
 	for vc.GetPostQuantumUnavailable() != nil {
-		testingAwaitSignal(t, ctx, checked, "recheck after post-quantum exits returned")
+		testingAwaitSignal(t, ctx, listener.changed, "the notice to clear after post-quantum exits returned")
 	}
 }
 
@@ -189,6 +101,7 @@ func TestConnectViewControllerTurningPostQuantumOffConnectsClassicallyAndPersist
 	settings.EnableRpc = false
 	settings.DisableLogging = true
 	settings.ProviderDiscovery = discovery
+	settings.postQuantumSupply.RecheckInterval = time.Millisecond
 	device, err := newDeviceLocalWithOverrides(fixture.networkSpace, auth.GetByClientJwt(),
 		"post-quantum-supply", "test", "0", auth.GetInstanceId(), settings, connect.NewId())
 	if err != nil {
@@ -201,21 +114,21 @@ func TestConnectViewControllerTurningPostQuantumOffConnectsClassicallyAndPersist
 	if err := device.SetAutoSave(true); err != nil {
 		t.Fatal(err)
 	}
-	supply := &testingPostQuantumSupply{modernCount: 0, count: 3}
-	vc, listener, _ := newTestingPostQuantumSupplyController(t, device, supply)
+	supply := newTestingPostQuantumSupply(0, 3)
+	supply.install(t, device.GetApi())
+	vc, listener := newTestingPostQuantumSupplyController(t, device)
 
 	vc.Connect(testingSupplyLocation())
-	testingAwaitSignal(t, ctx, listener.changed, "notice for a location without post-quantum exits")
-	if vc.GetPostQuantumUnavailable() == nil {
-		t.Fatal("no notice for a location without post-quantum exits")
+	for vc.GetPostQuantumUnavailable() == nil {
+		testingAwaitSignal(t, ctx, listener.changed, "notice for a location without post-quantum exits")
 	}
 	for _, body := range discovery.windowDiscovered(t, ctx) {
 		assertModernDiscoveryRequest(t, body, "a post-quantum window")
 	}
 
 	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
-	for vc.GetPostQuantumUnavailable() != nil {
-		testingAwaitSignal(t, ctx, listener.changed, "the notice to clear once post-quantum is off")
+	if vc.GetPostQuantumUnavailable() != nil {
+		t.Fatal("the controller still shows the notice once post-quantum is off")
 	}
 	// the window the change rebuilt asks without the requirement
 	for {
@@ -250,18 +163,56 @@ func TestConnectViewControllerLocationWithPostQuantumExitsHasNoNotice(t *testing
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
-	fixture.seedDistinctLogin(t)
-	device := testingPreferenceDevice(t, fixture)
-	supply := &testingPostQuantumSupply{modernCount: 2, count: 3}
-	vc, _, checked := newTestingPostQuantumSupplyController(t, device, supply)
+	device, supply, checked := newTestingPostQuantumNoticeDevice(t, nil)
+	supply.set(2, 3)
+	vc, _ := newTestingPostQuantumSupplyController(t, device)
 
 	vc.Connect(testingSupplyLocation())
 	testingAwaitSignal(t, ctx, checked, "a check of a location with post-quantum exits")
 	if notice := vc.GetPostQuantumUnavailable(); notice != nil {
 		t.Fatalf("a location with post-quantum exits has the notice %+v", notice)
 	}
-	if requests := supply.takeRequests(); len(requests) != 1 || !requests[0] {
-		t.Fatalf("the check asked %v, want only the post-quantum request", requests)
+	if requests := supply.takeRequests(); len(requests) != 1 || !requests[0].requireModernProvider {
+		t.Fatalf("the check asked %+v, want only the post-quantum request", requests)
+	}
+}
+
+// A controller opened over a device that already has the notice shows it at
+// once, with no check of its own: one source of truth, the device's. Choosing
+// another location in the controller hides it at once, before the device's
+// own clear arrives. Before, a controller decided on its own, with its own
+// requests, and showed nothing until they answered.
+func TestConnectViewControllerShowsTheDevicesNotice(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	device, supply, checked := newTestingPostQuantumNoticeDevice(t, func(settings *DeviceLocalSettings) {
+		settings.postQuantumSupply.RecheckInterval = time.Hour
+	})
+	deviceListener := newTestingPostQuantumUnavailableChangeListener()
+	deviceSub := device.AddPostQuantumUnavailableChangeListener(deviceListener)
+	defer deviceSub.Close()
+
+	location := testingSupplyLocation()
+	device.SetConnectLocation(location)
+	assertPostQuantumUnavailableFor(t, deviceListener.next(t, ctx, "the device's notice"), location, "the device")
+	testingAwaitSignal(t, ctx, checked, "the device's check")
+	supply.takeRequests()
+
+	vc, _ := newTestingPostQuantumSupplyController(t, device)
+	assertPostQuantumUnavailableFor(t, vc.GetPostQuantumUnavailable(), location, "a controller opened over the notice")
+
+	// another selection hides it before the device clears its own; the device's
+	// check of the new location is the only request
+	release := supply.holdRequests()
+	defer release()
+	other := testingSupplyLocation()
+	vc.Connect(other)
+	if notice := vc.GetPostQuantumUnavailable(); notice != nil {
+		t.Fatalf("after choosing another location the controller shows %+v", notice)
+	}
+	supply.awaitRequests(t, ctx, 1, "the device's check of the new location")
+	if requests := supply.takeRequests(); len(requests) != 1 || requests[0].locationId != other.ConnectLocationId.LocationId.String() {
+		t.Fatalf("the requests after the controller opened were %+v, want only the device's check of the new location", requests)
 	}
 }
