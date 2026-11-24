@@ -1096,6 +1096,8 @@ typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char*
 typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 /* PostQuantumIdentityListener */
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
+/* PostQuantumUnavailableListener */
+typedef void (*urnet_post_quantum_unavailable_cb)(void* user_data);
 /* ProFeaturesListener */
 typedef void (*urnet_pro_features_cb)(void* user_data, const char* snapshot_json);
 /* ProvideChangeListener */
@@ -1682,6 +1684,7 @@ int64_t urnet_connect_grid_get_window_target_size(uint64_t self);
 uint64_t urnet_connect_view_controller_add_connection_status_listener(uint64_t self, urnet_connection_status_cb listener_connection_status_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_grid_listener(uint64_t self, urnet_grid_cb listener_grid_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_location_match_listener(uint64_t self, urnet_location_match_cb listener_location_match_changed, void* listener_user_data);
+uint64_t urnet_connect_view_controller_add_post_quantum_unavailable_listener(uint64_t self, urnet_post_quantum_unavailable_cb listener_post_quantum_unavailable_changed, void* listener_user_data);
 uint64_t urnet_connect_view_controller_add_selected_location_listener(uint64_t self, urnet_selected_location_cb listener_selected_location_changed, void* listener_user_data);
 void urnet_connect_view_controller_close(uint64_t self);
 void urnet_connect_view_controller_connect(uint64_t self, const char* location_json);
@@ -1692,6 +1695,7 @@ bool urnet_connect_view_controller_get_connected(uint64_t self);
 char* urnet_connect_view_controller_get_connection_status(uint64_t self);
 uint64_t urnet_connect_view_controller_get_grid(uint64_t self);
 char* urnet_connect_view_controller_get_location_match(uint64_t self);
+char* urnet_connect_view_controller_get_post_quantum_unavailable(uint64_t self);
 char* urnet_connect_view_controller_get_selected_location(uint64_t self);
 void urnet_connect_view_controller_start(uint64_t self);
 void urnet_connect_view_controller_stop(uint64_t self);
@@ -4612,6 +4616,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   force_minimum?: boolean
  *   ip_family?: string
  *   strict?: boolean
+ *   require_modern_provider?: boolean
  */
 
 /* FindProviders2Result (json):
@@ -5350,6 +5355,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rank_text: string
  *   tier: number
  *   tier_percent: number
+ */
+
+/* PostQuantumUnavailable (json):
+ *   location: ConnectLocation | null
  */
 
 /* PriceEquivalent (json):

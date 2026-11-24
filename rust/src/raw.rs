@@ -136,6 +136,7 @@ pub type urnet_peers_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char
 pub type urnet_performance_profile_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_points_leaderboard_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_post_quantum_identity_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_post_quantum_unavailable_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_pro_features_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_provide_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_provide_control_mode_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -601,6 +602,7 @@ pub struct Raw {
     pub urnet_connect_view_controller_add_connection_status_listener: unsafe extern "C" fn(u64, urnet_connection_status_cb, *mut c_void) -> u64,
     pub urnet_connect_view_controller_add_grid_listener: unsafe extern "C" fn(u64, urnet_grid_cb, *mut c_void) -> u64,
     pub urnet_connect_view_controller_add_location_match_listener: unsafe extern "C" fn(u64, urnet_location_match_cb, *mut c_void) -> u64,
+    pub urnet_connect_view_controller_add_post_quantum_unavailable_listener: unsafe extern "C" fn(u64, urnet_post_quantum_unavailable_cb, *mut c_void) -> u64,
     pub urnet_connect_view_controller_add_selected_location_listener: unsafe extern "C" fn(u64, urnet_selected_location_cb, *mut c_void) -> u64,
     pub urnet_connect_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_connect_view_controller_connect: unsafe extern "C" fn(u64, *const c_char) -> (),
@@ -611,6 +613,7 @@ pub struct Raw {
     pub urnet_connect_view_controller_get_connection_status: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_connect_view_controller_get_grid: unsafe extern "C" fn(u64) -> u64,
     pub urnet_connect_view_controller_get_location_match: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_connect_view_controller_get_post_quantum_unavailable: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_connect_view_controller_get_selected_location: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_connect_view_controller_start: unsafe extern "C" fn(u64) -> (),
     pub urnet_connect_view_controller_stop: unsafe extern "C" fn(u64) -> (),
@@ -2152,6 +2155,7 @@ impl Raw {
             urnet_connect_view_controller_add_connection_status_listener: unsafe { *library.get(b"urnet_connect_view_controller_add_connection_status_listener\0")? },
             urnet_connect_view_controller_add_grid_listener: unsafe { *library.get(b"urnet_connect_view_controller_add_grid_listener\0")? },
             urnet_connect_view_controller_add_location_match_listener: unsafe { *library.get(b"urnet_connect_view_controller_add_location_match_listener\0")? },
+            urnet_connect_view_controller_add_post_quantum_unavailable_listener: unsafe { *library.get(b"urnet_connect_view_controller_add_post_quantum_unavailable_listener\0")? },
             urnet_connect_view_controller_add_selected_location_listener: unsafe { *library.get(b"urnet_connect_view_controller_add_selected_location_listener\0")? },
             urnet_connect_view_controller_close: unsafe { *library.get(b"urnet_connect_view_controller_close\0")? },
             urnet_connect_view_controller_connect: unsafe { *library.get(b"urnet_connect_view_controller_connect\0")? },
@@ -2162,6 +2166,7 @@ impl Raw {
             urnet_connect_view_controller_get_connection_status: unsafe { *library.get(b"urnet_connect_view_controller_get_connection_status\0")? },
             urnet_connect_view_controller_get_grid: unsafe { *library.get(b"urnet_connect_view_controller_get_grid\0")? },
             urnet_connect_view_controller_get_location_match: unsafe { *library.get(b"urnet_connect_view_controller_get_location_match\0")? },
+            urnet_connect_view_controller_get_post_quantum_unavailable: unsafe { *library.get(b"urnet_connect_view_controller_get_post_quantum_unavailable\0")? },
             urnet_connect_view_controller_get_selected_location: unsafe { *library.get(b"urnet_connect_view_controller_get_selected_location\0")? },
             urnet_connect_view_controller_start: unsafe { *library.get(b"urnet_connect_view_controller_start\0")? },
             urnet_connect_view_controller_stop: unsafe { *library.get(b"urnet_connect_view_controller_stop\0")? },
