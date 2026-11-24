@@ -20,7 +20,7 @@ func TestPageWorkerReproducesTheIndexVectors(t *testing.T) {
 	}
 	// normalizer 1's pins (§11.14's tables row): facts of the format
 	normVersion, casesVersion, unicodeVersion, textModuleVersion := sidecar.TestHookIndexLinkedTables()
-	if normVersion != "17.0.0" || casesVersion != "17.0.0" || unicodeVersion != "17.0.0" || textModuleVersion != "v0.43.0" {
+	if normVersion != "17.0.0" || casesVersion != "17.0.0" || unicodeVersion != "17.0.0" || textModuleVersion != "v0.44.0" {
 		t.Errorf("sidecar reads the page Worker's build as %s %s %s %s", normVersion, casesVersion, unicodeVersion, textModuleVersion)
 	}
 }

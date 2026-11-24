@@ -4,10 +4,11 @@ package sdk
 
 // The search index's normalizer under the sdk's module graph (SEARCH-M10-41; §4.7, §11.14's tables row, D-TEST-15,
 // FI-22): the apps link the golang.org/x/text sdk's go.mod selects, not the one sidecar's does, and normalizer 1 is
-// x/text v0.43.0 linked unreplaced with Unicode 17.0.0's tables. A bump that rides another module's (x/text rides
-// x/net's) fails here, in the binary the sdk builds, until a new normalizer is assigned; sidecar's check/ holds the
-// go.mod files, and this the selection the build made. sidecar_index_vectors_testhooks_test.go reproduces the vectors
-// themselves in this binary.
+// x/text v0.44.0 linked unreplaced with Unicode 17.0.0's tables. A bump that rides another module's (x/text rides
+// x/net's) fails here, in the binary the sdk builds, until a new normalizer is assigned, or until normalizer 1 is
+// re-pinned on tables that are byte for byte its own, as QD-1385 did from v0.43.0 to v0.44.0; sidecar's check/ holds
+// the go.mod files, and this the selection the build made. sidecar_index_vectors_testhooks_test.go reproduces the
+// vectors themselves in this binary.
 
 import (
 	"runtime/debug"
@@ -22,7 +23,7 @@ import (
 const (
 	sdkNormalizerOneUnicodeVersion    = "17.0.0"
 	sdkNormalizerOneTextModulePath    = "golang.org/x/text"
-	sdkNormalizerOneTextModuleVersion = "v0.43.0"
+	sdkNormalizerOneTextModuleVersion = "v0.44.0"
 )
 
 // What a build's info and tables say against normalizer 1's, a finding each difference.
@@ -72,9 +73,9 @@ func TestSdkLinksNormalizerOne(t *testing.T) {
 
 // A build selecting another x/text, replacing it, or on other tables fails: a bump cannot pass unseen.
 func TestSdkLinksNormalizerOneFailsOnAnotherTextModule(t *testing.T) {
-	other := &debug.BuildInfo{Deps: []*debug.Module{{Path: sdkNormalizerOneTextModulePath, Version: "v0.44.0"}}}
+	other := &debug.BuildInfo{Deps: []*debug.Module{{Path: sdkNormalizerOneTextModulePath, Version: "v0.45.0"}}}
 	if findings := sdkNormalizerOneFindings(other, sdkNormalizerOneUnicodeVersion, sdkNormalizerOneUnicodeVersion, sdkNormalizerOneUnicodeVersion); len(findings) != 1 {
-		t.Errorf("x/text v0.44.0: %v", findings)
+		t.Errorf("x/text v0.45.0: %v", findings)
 	}
 	replaced := &debug.BuildInfo{Deps: []*debug.Module{{
 		Path: sdkNormalizerOneTextModulePath, Version: sdkNormalizerOneTextModuleVersion,
