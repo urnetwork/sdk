@@ -37,20 +37,58 @@ func testing_newRpcDeviceLocal(t *testing.T, ctx context.Context) (*DeviceLocal,
 }
 
 // The RPC fixture can pin a device-local target without changing the process
-// sizing default used by unrelated devices in the same test process.
+// sizing default used by unrelated devices in the same test process. The
+// device and the space it stands on are joined when the test ends, the device
+// before the space (QD-1224's shape): a Close alone left the device's rpc
+// manager, provider and platform transports, and the space's api, local state
+// and strategy, still closing in whichever test ran next, where
+// TestTransportStatusDoesNotBuildFullTransportDefaults once counted what they
+// allocated as its own.
 func testing_newRpcDeviceLocalWithSettings(t *testing.T, ctx context.Context, settings *DeviceLocalSettings) (*DeviceLocal, *deviceRpcSettings) {
 	t.Helper()
 
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	t.Cleanup(func() { testingCloseAndJoinSpace(t, networkSpace) })
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoinDevice(t, "local device", deviceLocal) })
 
 	return deviceLocal, defaultDeviceRpcSettings()
+}
+
+// Closes a test's DeviceLocal or DeviceRemote and waits for everything it runs
+// to end. A join that runs out fails the test, which then ends with the device
+// still running.
+func testingCloseAndJoinDevice(t *testing.T, name string, device interface {
+	CloseAndWait(ctx context.Context) error
+}) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := device.CloseAndWait(ctx); err != nil {
+		t.Errorf("the test's %s did not join: %v", name, err)
+	}
+}
+
+// Closes a test's space once the devices on it have joined; the close joins
+// the space's api, its local state's worker and its client strategy.
+// testing_newNetworkSpace alone only cancels them, with the test's context.
+func testingCloseAndJoinSpace(t *testing.T, networkSpace *NetworkSpace) {
+	t.Helper()
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		networkSpace.Close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(30 * time.Second):
+		t.Errorf("the test's network space did not join")
+	}
 }
 
 // testing_newRpcDeviceRemote builds a DeviceRemote against deviceLocal's
@@ -76,9 +114,42 @@ func testing_newRpcDeviceRemote(
 		testing_deviceRpcDialer(&remoteSettings),
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoinDevice(t, "remote device", deviceRemote) })
 
 	return deviceRemote
+}
+
+// The rpc fixtures' devices and space end with the test that made them: once a
+// test that synced a remote to a local returns, nothing either device or the
+// space ran is still running, so the next test measures only itself. The
+// subtest boundary is the point, so the fixtures' cleanups run inside it. Two
+// goroutines are left out of the check, as neither is the fixtures' to join:
+// a pinned platform transport's family hold watcher, which connect's
+// PlatformTransport does not wait for, and testing_newNetworkSpace's removal of
+// the space's storage, which runs once the parent context ends, after the check.
+func TestRpcFixturesJoinTheirDevicesWithTheTest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	syncedPair := func(t *testing.T) {
+		deviceLocal, settings := testing_newRpcDeviceLocal(t, ctx)
+		deviceRemote := testing_newRpcDeviceRemote(
+			t, deviceLocal, settings, deviceLocal.GetInstanceId(), DeviceRpcVersion,
+		)
+		deviceRemote.Sync()
+		connect.AssertEqual(t, deviceRemote.waitForSync(10*time.Second), true)
+	}
+	// a first pair starts what the process keeps once any device has run
+	t.Run("warm", syncedPair)
+	before := captureGoroutineStacks()
+	t.Run("pair", syncedPair)
+	after := captureGoroutineStacks()
+	for sig := range after {
+		if strings.Contains(sig, "connect.(*PlatformTransport).runFamilyHoldWatcher") {
+			delete(after, sig)
+		}
+	}
+	reportGoroutineLeaks(t, before, after, 0)
 }
 
 // TestDeviceRpcSyncRejectsVersionMismatch: DeviceRemote and DeviceLocal are

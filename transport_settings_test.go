@@ -327,9 +327,10 @@ func TestDeviceLocalTransportSettingsChangeListeners(t *testing.T) {
 	defer cancel()
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	defer testingCloseAndJoinSpace(t, networkSpace)
 
 	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer device.Close()
+	defer testingCloseAndJoinDevice(t, "device", device)
 	listener := newTestingTransportSettingsChangeListener()
 	clientSub := device.AddTransportSettingsChangeListener(listener)
 	providerSub := device.AddProviderTransportSettingsChangeListener(listener)
@@ -528,6 +529,7 @@ func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T)
 	defer cancel()
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	defer testingCloseAndJoinSpace(t, networkSpace)
 	clientId := connect.NewId()
 	instanceId := NewId()
 
@@ -542,7 +544,7 @@ func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T)
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoinDevice(t, "remote device", deviceRemote)
 
 	listener := newTestingTransportSettingsChangeListener()
 	clientSub := deviceRemote.AddTransportSettingsChangeListener(listener)
@@ -583,7 +585,7 @@ func TestDeviceRemoteTransportSettingsChangeListenersOfflineAndRpc(t *testing.T)
 		clientId,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoinDevice(t, "local device", deviceLocal)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(10*time.Second), true)
