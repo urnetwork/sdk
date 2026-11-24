@@ -98,7 +98,7 @@ func TestDeviceLocalSetLogVerbosity(t *testing.T) {
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	connect.AssertEqual(t, device.GetLogVerbosity(), LogVerbosityDefault)
 
@@ -177,7 +177,7 @@ func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	if result, err := deviceLocal.Load(); err != nil || result == nil {
 		t.Fatal("checked local preference load failed before RPC exposure")
 	}
@@ -192,13 +192,13 @@ func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 		remoteSpace, remoteByJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		deviceRemote.Close()
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceRemote", deviceRemote)
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	})
 
 	deviceRemote.Sync()
@@ -308,7 +308,7 @@ func TestDeviceRemoteLogVerbosityQueuedWhileDownCrossesOnConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device remote: %v", err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetRemoteConnected(), false)
 
 	deviceRemote.SetLogVerbosity(LogVerbosityVerbose)
@@ -334,7 +334,7 @@ func TestDeviceRemoteLogVerbosityQueuedWhileDownCrossesOnConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device local: %v", err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	connect.AssertEqual(t, deviceLocal.GetLogVerbosity(), LogVerbosityDefault)
 	if result, err := deviceLocal.Load(); err != nil || result == nil {
 		t.Fatal("checked local preference load failed before queued RPC")
@@ -395,7 +395,7 @@ func TestDeviceRemoteRestoredLogVerbosityIsQueuedForTheDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device remote: %v", err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.GetLogVerbosity(), LogVerbosityTrace)
 
@@ -557,7 +557,7 @@ func TestDeviceRemoteSetLogVerbosityPersistsWithTheTunnelDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device remote: %v", err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetRemoteConnected(), false)
 
 	// the remote restores the persisted level into the app process too, so
@@ -626,7 +626,7 @@ func TestDeviceRemoteHostedSetLogVerbosityStopsAtThisProcess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("device remote: %v", err)
 		}
-		t.Cleanup(deviceRemote.Close)
+		t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 		return deviceRemote
 	}
 	queuedForTheDevice := func(deviceRemote *DeviceRemote) bool {

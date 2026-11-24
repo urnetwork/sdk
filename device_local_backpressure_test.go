@@ -187,7 +187,7 @@ func runRouteLocalOverload(t *testing.T, loseSegment func(packet []byte) bool) r
 	tunSettings.TcpMinRto = routeLocalOverloadRtoFloor
 	tun, err := connect.CreateTun(ctx, tunSettings)
 	if err != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatalf("create tun: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func runRouteLocalOverload(t *testing.T, loseSegment func(packet []byte) bool) r
 
 	teardown := func() {
 		unsub()
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		tun.Close()
 		wg.Wait()
 	}
@@ -368,7 +368,7 @@ func TestDeviceLocalIoLoopEndToEnd(t *testing.T) {
 	tunSettings.TcpReceiveBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
 	tun, err := connect.CreateTun(ctx, tunSettings)
 	if err != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatalf("create tun: %v", err)
 	}
 
@@ -449,7 +449,7 @@ func TestDeviceLocalIoLoopEndToEnd(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	device.Close()
+	testingCloseAndJoin(t, "device", device)
 	testSide.Close()
 	readerWg.Wait()
 

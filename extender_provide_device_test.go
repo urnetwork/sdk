@@ -158,7 +158,7 @@ func testExtenderProvideRemoteBeforeLocal(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	if deviceRemote.GetRemoteConnected() {
 		t.Fatal("the remote found a device process before one was started")
 	}
@@ -173,7 +173,7 @@ func testExtenderProvideRemoteBeforeLocal(
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(deviceLocal.Close)
+		t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 		deviceRemote.Sync()
 		if !deviceRemote.waitForSync(30 * time.Second) {
 			t.Fatal("the device remote did not sync after the device came up")
@@ -306,7 +306,7 @@ func TestDeviceRemoteProvideExtenderLastKnownWhileUnreachable(t *testing.T) {
 		t.Fatalf("queued = %+v, expected a write the device took to leave nothing queued", queued)
 	}
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 
 	// the default is on, so reading off here is the last known value
@@ -325,7 +325,7 @@ func TestDeviceRemoteProvideExtenderSeededBySync(t *testing.T) {
 	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
 	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), false)
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 
 	// the default is on and nothing was queued, so off can only be the seed
@@ -432,7 +432,7 @@ func TestDeviceRemoteExtenderProvideStatusReadCacheSurvivesServiceLoss(t *testin
 	read := deviceRemote.GetExtenderProvideStatus()
 	connect.AssertEqual(t, read.State, ExtenderProvideStateSettingUp)
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.GetExtenderProvideStatus(), read)
@@ -608,7 +608,7 @@ func TestProvideExtenderHostedGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	localRpc := &DeviceLocalRpc{
 		deviceLocal: deviceLocal,
 		settings:    &deviceRpcSettings{DisableHostedIncompatible: true},
@@ -627,7 +627,7 @@ func TestProvideExtenderHostedGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer hostedDevice.Close()
+	defer testingCloseAndJoin(t, "hostedDevice", hostedDevice)
 	hostedDevice.SetProvideExtender(false)
 	connect.AssertEqual(t, hostedDevice.GetProvideExtender(), true)
 	// a hosted device cannot provide, so what it reports is not providing

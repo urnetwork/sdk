@@ -336,7 +336,7 @@ func testingRemoteSettingNamed(t *testing.T, name string) *testingRemoteSetting 
 func testingReportSetting(t *testing.T, deviceRemote *DeviceRemote, setting *testingRemoteSetting, value string) {
 	t.Helper()
 	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-	defer deviceRemoteRpc.Close()
+	defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
 
 	if err := setting.report(deviceRemoteRpc, value); err != nil {
 		t.Fatal(err)
@@ -831,7 +831,7 @@ func TestDeviceRemoteSettingViewOpenedDuringFollowUpSync(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer deviceRemote.Close()
+			defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 			recorder := &testingSettingRecorder{}
 			sub := setting.addListener(deviceRemote, recorder)
@@ -846,7 +846,10 @@ func TestDeviceRemoteSettingViewOpenedDuringFollowUpSync(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer deviceLocal.Close()
+			defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
+			// the joins above wait on the remote's held sync writes, so they are released first
+			defer releaseFollowUpSync()
+			defer releaseFirstSync()
 			setting.deviceSet(deviceLocal, setting.initial)
 			if value := setting.deviceGet(deviceLocal); value != setting.initial {
 				t.Fatalf("%s: the device holds %s, want %s", setting.name, value, setting.initial)
@@ -929,7 +932,7 @@ func TestDeviceRemoteAutoConnectTapTellsPublicProvideMode(t *testing.T) {
 	// the device's state before the tap: auto, idle, providing to network
 	// peers
 	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-	defer deviceRemoteRpc.Close()
+	defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
 	reports := []func() error{
 		func() error { return deviceRemoteRpc.ProvideControlModeChanged(ProvideControlModeAuto, nil) },
 		func() error { return deviceRemoteRpc.ProvideModeChanged(ProvideModeNetwork, nil) },
@@ -1072,7 +1075,7 @@ func TestDeviceRemoteProvideModeChangesNeverChangeTheControlMode(t *testing.T) {
 			defer provideSub.Close()
 
 			deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-			defer deviceRemoteRpc.Close()
+			defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
 			report := func(f func() error) {
 				if err := f(); err != nil {
 					t.Fatal(err)

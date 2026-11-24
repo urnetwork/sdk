@@ -103,7 +103,7 @@ func TestDeviceLocalMemoryTargetUnderLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	// Every measured path below is in-process. Stop the independent carrier
 	// from reconnecting to the fake platform host so its transient H3-over-DNS
 	// allocations do not consume the target during an unrelated load phase.

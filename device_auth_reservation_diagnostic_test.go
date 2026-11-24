@@ -223,7 +223,7 @@ func TestFailedLocalConstructorDoesNotRetireServingAuthOwner(t *testing.T) {
 		fixture.instanceId, settings, connect.NewId(),
 	)
 	if device != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatal("allocator failure unexpectedly produced a replacement device")
 	}
 	if err == nil {

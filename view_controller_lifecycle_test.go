@@ -56,7 +56,7 @@ func TestBrowserStateOnlyConnectLocationReplayRetainsActiveGrid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(device.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 
 	location := &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{BestAvailable: true},

@@ -517,7 +517,7 @@ func TestDirectoryNilOutsideTeam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(remote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 	if directory := remote.GetDirectory(); directory != nil {
 		t.Error("a remote sidecar with no daemon answered a directory")
 	}

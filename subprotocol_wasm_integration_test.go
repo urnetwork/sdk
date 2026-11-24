@@ -41,7 +41,7 @@ func TestSubprotocolWasmCompanionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	device.attachSubprotocolsToClient(pair.a)
 	listener := NewHostedDeviceRpcListener(pair.ctx)
 	defer listener.Close()

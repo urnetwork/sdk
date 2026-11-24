@@ -231,7 +231,7 @@ func TestDeviceLocalDialFailureReracesConnectToAnotherExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	// the provider-qualification sweep dials public health hosts through the
 	// exits; keep every other shipped reliability default
 	reliabilitySettings := reliabilitySettingsFromConnect(

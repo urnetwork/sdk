@@ -507,7 +507,7 @@ func testingLogoutCauseDeviceLocal(t *testing.T, space *NetworkSpace, clientJwt 
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(device.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 	return device
 }
 
@@ -658,7 +658,7 @@ func TestDeviceRemoteReceivesTheCauseOverRpc(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(remote.Close)
+		t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 		remote.Sync()
 		if !remote.waitForSync(testingLogoutCauseStepLimit) || !remote.GetRemoteConnected() {
 			t.Fatalf("%s: the remote did not sync with the device", c.name)
@@ -740,7 +740,7 @@ func TestClientSessionErrorReportsSessionRevokedOnlyForTheTrustedCode(t *testing
 
 	// statuses other than 401 never report a revoked session
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	vc := NewClientSessionViewControllerWithApi(t.Context(), api)
 	defer vc.Close()
 	sent := taggedSessionTestJwt(t, testingSessionId(), "")

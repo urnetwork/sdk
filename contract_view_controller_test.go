@@ -35,7 +35,7 @@ func TestContractViewController(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenContractViewController()
 	defer device.CloseViewController(vc)
@@ -144,7 +144,7 @@ func TestContractViewControllerExtenderSeries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenContractViewController()
 	defer device.CloseViewController(vc)
@@ -299,7 +299,7 @@ func TestContractViewControllerExtenderSeriesFollowsTheDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	wrapped := &testing_extenderStatsDevice{Device: device}
 	vc := newContractViewController(ctx, wrapped)
@@ -385,7 +385,7 @@ func TestContractViewControllerDenseSampling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenContractViewController()
 	defer device.CloseViewController(vc)
@@ -682,7 +682,7 @@ func TestContractViewControllerTransportDistribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenContractViewController()
 	defer device.CloseViewController(vc)
@@ -900,7 +900,7 @@ func TestContractViewControllerProviderMirror(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenContractViewController()
 	defer device.CloseViewController(vc)
@@ -1062,7 +1062,7 @@ func TestContractViewControllerEnabledFlagsFollowTransportSettings(t *testing.T)
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	// a non-default client policy set before the controller opens is seeded
 	device.SetTransportSettings(&TransportSettings{Mode: TransportModeH1})

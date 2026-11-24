@@ -611,7 +611,7 @@ func TestProviderLocationsViewControllerSelection(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	vc := deviceLocal.OpenProviderLocationsViewController()
 

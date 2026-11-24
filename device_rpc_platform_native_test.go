@@ -27,7 +27,7 @@ func TestNativePlatformDeviceRpcUsesSynchronousState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	if deviceRemote.settings.BrowserStateOnly {
 		t.Fatal("native platform remote was restricted to browser cached state")

@@ -280,7 +280,7 @@ func TestNetworkSpaceSetControlIpFamilyPolicyPersists(t *testing.T) {
 		storagePath,
 	)
 	defer networkSpace.close()
-	defer networkSpace.asyncLocalState.Close()
+	defer testingCloseAndJoin(t, "networkSpace.asyncLocalState", networkSpace.asyncLocalState)
 
 	networkSpace.SetControlIpFamilyPolicy(IpFamilyPolicyForce6)
 	// the PROCESS is set synchronously -- that half is not deferred
@@ -363,7 +363,7 @@ func newTestDeviceRemoteWithNoServiceInSpace(t *testing.T, networkSpace *Network
 	if err != nil {
 		t.Fatalf("device remote: %v", err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 
 	if deviceRemote.GetRemoteConnected() {
 		t.Fatal("the test device remote found a service, so the tunnel-down path is not the one under test")
@@ -469,7 +469,7 @@ func TestDeviceRemoteQueuedPolicyCrossesWhenTheTunnelComesUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device remote: %v", err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetRemoteConnected(), false)
 
 	deviceRemote.SetControlIpFamilyPolicy(IpFamilyPolicyForce6)
@@ -484,7 +484,7 @@ func TestDeviceRemoteQueuedPolicyCrossesWhenTheTunnelComesUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device local: %v", err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	if _, ok := localSpaceState.controlIpFamilyPolicyIfSet(); ok {
 		t.Fatal("the device storage already holds a policy, so a crossing would be unobservable")
 	}

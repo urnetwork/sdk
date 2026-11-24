@@ -65,7 +65,7 @@ func TestDeviceLocalCloseRpcServer(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// closing with no server is a no-op
 	deviceLocal.CloseRpcServer()
@@ -106,7 +106,7 @@ func TestDeviceLocalCloseRpcServer(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 	deviceRemote.SetOffline(false)

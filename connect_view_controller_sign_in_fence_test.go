@@ -140,7 +140,7 @@ func testingStartSignInFenceSession(t *testing.T, space *testingAuthClientShape,
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	controller := newConnectViewController(context.Background(), deviceRemote)
 	controller.testingWindowMonitor = newTestingGridWindowMonitor()
 	t.Cleanup(controller.Close)

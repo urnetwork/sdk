@@ -64,7 +64,7 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 		storagePath,
 	)
 	defer networkSpace.close()
-	defer networkSpace.asyncLocalState.Close()
+	defer testingCloseAndJoin(t, "networkSpace.asyncLocalState", networkSpace.asyncLocalState)
 	localState := networkSpace.asyncLocalState.localState
 	if err := localState.SetByJwt(initialJwt); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	windowGenerator := connect.NewApiMultiClientGenerator(
 		ctx,
 		nil,
@@ -264,7 +264,7 @@ func TestDeviceRemoteAppliesStandaloneApiRefreshAndLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	select {
 	case <-firstStarted:

@@ -259,7 +259,7 @@ func TestFailedDpopSignerSendsNothing(t *testing.T) {
 // handling holds.
 func TestDpopRequestUsesTheInstalledTransport(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	signer, _ := dpopTestSigner(t)
 	api.SetDpopSigner(signer)
 	api.SetByJwt(dpopTestStrictToken(t))

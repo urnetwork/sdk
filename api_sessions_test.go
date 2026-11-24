@@ -37,7 +37,7 @@ func TestSessionRejectionPersistenceAndGeneration(t *testing.T) {
 	for _, same := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unrelated", true: "related"}[same], func(t *testing.T) {
 			api := newApi(t.Context(), nil, "https://api.test")
-			defer api.Close()
+			defer testingCloseAndJoin(t, "api", api)
 			network := taggedSessionTestJwt(t, "session-a", "")
 			clientSession := "session-b"
 			if same {
@@ -81,7 +81,7 @@ type accountSignInRequiredFunc func()
 func (self accountSignInRequiredFunc) AccountSignInRequired() { self() }
 func TestSessionRejectionStorageFailureReportedAndFenced(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	jwt := taggedSessionTestJwt(t, "session", "")
 	dir := t.TempDir()
 	store := newRenewalTestLocalState(t, dir, jwt, "")
@@ -121,7 +121,7 @@ func TestSessionRejectionStorageFailureReportedAndFenced(t *testing.T) {
 }
 func TestSessionActionNeverUsesNewAccountAfterAdmission(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	api.SetByJwt(taggedSessionTestJwt(t, "old-session", ""))
 	vc := NewClientSessionViewControllerWithApi(t.Context(), api)
 	defer vc.Close()
@@ -154,7 +154,7 @@ func TestSessionActionNeverUsesNewAccountAfterAdmission(t *testing.T) {
 }
 func TestSessionOperationAcceptsPendingAndKeepsStableRequestIdentity(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	api.SetByJwt(taggedSessionTestJwt(t, "session", ""))
 	id := newId(connect.NewId())
 	api.setHttpPostRaw(func(_ context.Context, _ string, _ []byte, byJwt string) ([]byte, error) {
@@ -167,7 +167,7 @@ func TestSessionOperationAcceptsPendingAndKeepsStableRequestIdentity(t *testing.
 }
 func TestClientSessionControllerCloseCancelsAndSnapshotsOwnMetadata(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	api.SetByJwt(taggedSessionTestJwt(t, "session", ""))
 	started := make(chan struct{})
 	cancelled := make(chan struct{})

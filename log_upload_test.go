@@ -552,7 +552,7 @@ func TestDeviceLocalUploadLogsHoldTheAppsLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	root := t.TempDir()
 	appName := "urnetwork.host.user.log.INFO.20260901-000000.808"

@@ -594,7 +594,7 @@ func TestDeviceLocalExtenderProvideStatusWithoutAProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 
 	status := deviceLocal.GetExtenderProvideStatus()
 	if status == nil {
@@ -784,7 +784,7 @@ func TestDeviceLocalExtenderStatsNilWhileTheRoleIsNotRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	if stats := deviceLocal.GetExtenderStats(); stats != nil {
 		t.Fatalf("stats = %+v while not providing, expected nil", stats)
@@ -811,7 +811,7 @@ func TestDeviceLocalExtenderStatsNilWhileTheRoleIsNotRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer hostedDevice.Close()
+	defer testingCloseAndJoin(t, "hostedDevice", hostedDevice)
 	hostedDevice.SetProvideMode(ProvideModePublic)
 	if stats := hostedDevice.GetExtenderStats(); stats != nil {
 		t.Fatalf("stats = %+v on a hosted device, expected nil", stats)
@@ -846,7 +846,7 @@ func TestExtenderProvideStatusWatchKeepsAChangeBeforeItRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	// released before the device closes
 	t.Cleanup(releaseWatch)
 
@@ -902,7 +902,7 @@ func TestExtenderProvideStatusListenerCoalesces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 
 	var callbackCount atomic.Int64
 	var statusCount atomic.Int64

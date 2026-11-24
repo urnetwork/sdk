@@ -367,7 +367,7 @@ func TestDeviceRemoteGetterDoesNotWaitBehindBlockedDial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	select {
 	case <-dialer.entered:
@@ -628,7 +628,7 @@ func TestDeviceLocalRpcManagerPacesRepeatedAcceptErrors(t *testing.T) {
 		settings,
 		listener,
 	)
-	defer manager.Close()
+	defer testingCloseAndJoin(t, "manager", manager)
 
 	previousTime := testingReceiveDeviceRpcAttempt(t, listener.attemptTimes, time.Second)
 	for range 3 {

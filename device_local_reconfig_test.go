@@ -92,7 +92,7 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	// This test measures subsystem rebuilds while one device stays open. Its
 	// unrelated top-level provider carrier otherwise reconnects to the fake
 	// test host forever, and an H3-over-DNS attempt contributes a transient
@@ -182,7 +182,7 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 
 	// every buffer parked while open must come back once the device (and the last
 	// exit peer) is closed: growth here is a genuinely lost MessagePoolReturn.
-	device.Close()
+	testingCloseAndJoin(t, "device", device)
 	closeProviderNow()
 	sampleStable()
 	reportPoolLeaks(t, prePool, poolTolerance)
@@ -324,6 +324,8 @@ func TestDeviceLocalConcurrentLifecycleChaos(t *testing.T) {
 		t.Fatalf("workers did not exit within %v of device close — a mutator or send path deadlocked", exitBound)
 	}
 	t.Logf("chaos: %d packets sent across the reconfiguration storm", sends.Load())
+	// the close above ran mid-storm; join what it closed before counting
+	testingCloseAndJoin(t, "device", device)
 
 	// everything device-scoped must be gone; the generator's clients were released
 	// through RemoveClientWithArgs and the multi-client close path, and the last

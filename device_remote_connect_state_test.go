@@ -90,7 +90,7 @@ func testingConnectStateRemoteWithoutListeners(t *testing.T) *DeviceRemote {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	return deviceRemote
 }
 
@@ -100,7 +100,7 @@ func testingConnectStateRemoteWithoutListeners(t *testing.T) *DeviceRemote {
 func testingReportConnectState(t *testing.T, deviceRemote *DeviceRemote, location *ConnectLocation, connectEnabled bool) {
 	t.Helper()
 	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-	defer deviceRemoteRpc.Close()
+	defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
 
 	err := deviceRemoteRpc.ConnectLocationChanged(&DeviceRemoteConnectLocationChangeEvent{
 		Location: newDeviceRemoteConnectLocation(location),
@@ -513,7 +513,7 @@ func TestDeviceRemoteConnectTapDuringSyncReachesDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	recorder := &testingConnectStateRecorder{}
 	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
@@ -532,7 +532,9 @@ func TestDeviceRemoteConnectTapDuringSyncReachesDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
+	// the joins above wait on the remote's held sync write, so it is released first
+	defer releaseSync()
 	deviceRemote.Sync()
 
 	select {
@@ -877,7 +879,7 @@ func TestDeviceRemoteViewOpenedDuringFollowUpSyncEndsDisconnected(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	recorder := &testingConnectStateRecorder{}
 	connectLocationSub := deviceRemote.AddConnectLocationChangeListener(recorder)
@@ -894,7 +896,10 @@ func TestDeviceRemoteViewOpenedDuringFollowUpSyncEndsDisconnected(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
+	// the joins above wait on the remote's held sync writes, so they are released first
+	defer releaseFollowUpSync()
+	defer releaseFirstSync()
 	deviceLocal.SetConnectLocation(testingConnectStateLocation("connected"))
 	deviceRemote.Sync()
 

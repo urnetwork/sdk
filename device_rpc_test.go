@@ -114,7 +114,7 @@ func TestDeviceRemoteMissingMethodKeepsSessionAlive(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -127,7 +127,7 @@ func TestDeviceRemoteMissingMethodKeepsSessionAlive(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(10 * time.Second) {
 		t.Fatal("device remote did not complete its initial sync")
@@ -205,7 +205,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -218,7 +218,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(10 * time.Second) {
 		t.Fatal("device remote did not complete its initial sync")
@@ -281,7 +281,7 @@ func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -294,7 +294,7 @@ func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(10 * time.Second) {
 		t.Fatal("device remote did not complete its initial sync")
@@ -368,7 +368,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deviceLocal.Close()
+			defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
@@ -381,7 +381,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deviceRemote.Close()
+			defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 			deviceRemote.Sync()
 			if !deviceRemote.waitForSync(10 * time.Second) {
 				t.Fatal("device remote did not complete its initial sync")
@@ -565,7 +565,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deviceRemote.Close()
+			defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 			// add all listeners
 
@@ -669,7 +669,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deviceLocal.Close()
+			defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 			deviceRemote.Sync()
 
@@ -766,7 +766,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -779,7 +779,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// a local stand-in for the api: what is under test is the http bridge
 	// (remote request -> rpc -> local strategy fetch -> reverse response), and
@@ -844,7 +844,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -857,7 +857,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
@@ -1081,7 +1081,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// a provider listener added before the local connects is carried by the
 	// sync request and receives the initial state on the sync reverse
@@ -1103,7 +1103,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
@@ -1277,7 +1277,7 @@ func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -1290,7 +1290,7 @@ func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	providerPacketStatsListener := &testing_packetStatsChangeListener{}
 	providerPacketStatsSub := deviceRemote.AddProviderPacketStatsChangeListener(providerPacketStatsListener)
@@ -1361,7 +1361,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// set all properties
 
@@ -1405,7 +1405,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote.Sync()
 
@@ -1439,7 +1439,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
 	// connect.AssertEqual(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// make sure the remote value retains the last know state
 
@@ -1486,7 +1486,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// add all listeners
 
@@ -1568,7 +1568,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote.Sync()
 
@@ -1614,7 +1614,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 		connect.AssertEqual(t, monitorEventListener.event, true)
 	})
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// make sure the remote value retains the last know state
 	// the last known state was set in the listeners
@@ -1661,7 +1661,7 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -1674,7 +1674,7 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	deviceRemote.waitForSync(5 * time.Second)
@@ -1730,11 +1730,11 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	listener := NewWebsocketDeviceRpcListener(settings.Address, serverPem, clientCertPem, settings)
 	rpcManager := newDeviceLocalRpcManager(deviceLocal.ctx, deviceLocal, settings, listener)
-	defer rpcManager.Close()
+	defer testingCloseAndJoin(t, "rpcManager", rpcManager)
 
 	// device remote presents its client cert and pins the server cert (mTLS)
 	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
@@ -1749,7 +1749,7 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	synced := deviceRemote.waitForSync(5 * time.Second)
@@ -1796,11 +1796,11 @@ func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem strin
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	listener := NewWebsocketDeviceRpcListener(settings.Address, serverPem, clientCertPem, settings)
 	rpcManager := newDeviceLocalRpcManager(deviceLocal.ctx, deviceLocal, settings, listener)
-	defer rpcManager.Close()
+	defer testingCloseAndJoin(t, "rpcManager", rpcManager)
 
 	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
 	deviceRemote, err := newDeviceRemoteWithOverrides(
@@ -1814,7 +1814,7 @@ func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem strin
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	// the pin does not match, so the handshake fails and sync never completes
@@ -1882,7 +1882,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	err = deviceLocal.SetRpcServer(keyMaterial.GetServerPem(), keyMaterial.GetClientCertPem(), hostPort)
 	connect.AssertEqual(t, err, nil)
@@ -1901,7 +1901,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.waitForSync(500*time.Millisecond), false)
 
@@ -1950,7 +1950,7 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// bind once
 	km1, err := GenerateDeviceRpcKeyMaterial()
@@ -1977,7 +1977,7 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 	deviceRemote.SetOffline(false)
@@ -2032,7 +2032,7 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -2045,7 +2045,7 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	counter := &testing_remoteChangeCounter{}
 	sub := deviceRemote.AddRemoteChangeListener(counter)
@@ -2099,7 +2099,7 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -2112,7 +2112,7 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	counter := &testing_remoteChangeCounter{}
 	sub := deviceRemote.AddRemoteChangeListener(counter)
@@ -2171,7 +2171,7 @@ func TestDeviceRpcSyncRejectsInstanceMismatch(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// the remote expects a different instance on the same address. seed a
 	// cached write while offline: a rejected sync must never apply it.
@@ -2181,7 +2181,7 @@ func TestDeviceRpcSyncRejectsInstanceMismatch(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	localRouteLocal := deviceLocal.GetRouteLocal()
 	deviceRemote.SetRouteLocal(!localRouteLocal)
@@ -2197,7 +2197,7 @@ func TestDeviceRpcSyncRejectsInstanceMismatch(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer matchedRemote.Close()
+	defer testingCloseAndJoin(t, "matchedRemote", matchedRemote)
 
 	matchedRemote.Sync()
 	connect.AssertEqual(t, matchedRemote.waitForSync(5*time.Second), true)
@@ -2250,7 +2250,7 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	err = deviceLocal.SetRpcServer(serverPem, clientCertPem, settings.Address.HostPort())
 	connect.AssertEqual(t, err, nil)
@@ -2267,7 +2267,7 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
@@ -2795,7 +2795,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace, byJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
@@ -2803,7 +2803,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testing_blockingRouteLocalListener{
 		entered: make(chan struct{}),
@@ -3043,13 +3043,13 @@ func testing_newSyncedDeviceLocalRemote(t *testing.T, ctx context.Context) (*Dev
 		networkSpace, byJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		deviceRemote.Close()
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceRemote", deviceRemote)
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	})
 
 	deviceRemote.Sync()
@@ -3089,7 +3089,7 @@ func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// a known starting point the remotes sync to
 	deviceLocal.SetOffline(true)
@@ -3103,7 +3103,7 @@ func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer remote.Close()
+		defer testingCloseAndJoin(t, "remote", remote)
 		remote.Sync()
 		remotes = append(remotes, remote)
 	}

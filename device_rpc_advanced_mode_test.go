@@ -182,7 +182,7 @@ func TestAdvancedModeDegradedWithoutMultiClient(t *testing.T) {
 		connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// the local path: no multi client to act on
 	exitClientId := NewId()
@@ -269,7 +269,7 @@ func TestDeviceRemoteAdvancedModeActionsReachTheLocal(t *testing.T) {
 		clientId,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -284,7 +284,7 @@ func TestDeviceRemoteAdvancedModeActionsReachTheLocal(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// the actions need a multi client to act on
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("advanced mode actions"))
@@ -392,7 +392,7 @@ func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	exitClientId := NewId()
 	connect.AssertEqual(t, deviceRemote.DropExit(exitClientId.IdStr), false)
@@ -443,7 +443,7 @@ func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 		clientId,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -509,7 +509,7 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 	instanceId := NewId()
 
 	deviceLocal := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -520,7 +520,7 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	testingReliabilityWaitFor(t, "the remote reaches the local", func() bool {
 		return deviceRemote.GetRemoteConnected()
@@ -702,7 +702,7 @@ func TestDeviceLocalStartProbeSuiteNilConfig(t *testing.T) {
 		connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// the nil the cgo export and gomobile both let through
 	connect.AssertEqual(t, deviceLocal.StartProbeSuite(nil), true)

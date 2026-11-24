@@ -221,7 +221,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	// The measured provider path uses only the bounded in-memory peer routes
 	// below. Retire the unrelated carrier that reconnects to the fake platform
 	// host, whose H3-over-DNS dial cohorts would phase-shift the memory samples.

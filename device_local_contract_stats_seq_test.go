@@ -115,7 +115,7 @@ func TestDeviceLocalContractStatsSequenceDiscardDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	egressStatsListener := &testing_contractStatsListener{}
 	egressStatsSub := device.AddEgressContractStatsChangeListener(egressStatsListener)

@@ -501,7 +501,7 @@ func TestExtenderSeedImportThroughTheViewController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	vc := newExtenderViewController(deviceLocal.ctx, deviceLocal)
 	t.Cleanup(vc.Close)
 

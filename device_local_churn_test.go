@@ -113,7 +113,7 @@ func runRouteLocalDeviceCycle(t *testing.T, ctx context.Context, networkSpace *N
 	// leaks, not the tun stack itself.
 	tun, err := connect.CreateTun(ctx, tunSettings)
 	if err != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatalf("create tun: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func runRouteLocalDeviceCycle(t *testing.T, ctx context.Context, networkSpace *N
 	_ = runLoadIteration(ctx, tun, echoAddr, rounds, flows, bytesPerFlow)
 
 	unsub()
-	device.Close()
+	testingCloseAndJoin(t, "device", device)
 	tun.Close()
 	wg.Wait()
 }

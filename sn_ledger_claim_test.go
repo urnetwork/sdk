@@ -1724,7 +1724,7 @@ func TestSnLedgerClaimOnBothDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	callback := newRecordingLedgerClaimCallback()
 	deviceLocal.SnLedgerClaim(callback)
 	if events := callback.wait(t); len(events) != 2 || !strings.HasPrefix(events[0].message, SnErrorCodeConnectWalletFirst+": ") {

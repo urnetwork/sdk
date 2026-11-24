@@ -48,7 +48,7 @@ func TestBlockActionViewControllerLocalOverrideAppIds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenBlockActionViewController()
 	defer device.CloseViewController(vc)
@@ -98,7 +98,7 @@ func TestBlockActionViewControllerWindowTrim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenBlockActionViewController()
 	defer device.CloseViewController(vc)
@@ -136,7 +136,7 @@ func TestBlockActionViewControllerCountCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenBlockActionViewController()
 	defer device.CloseViewController(vc)

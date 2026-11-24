@@ -52,7 +52,7 @@ func testingProvideExtenderDevice(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	return deviceLocal
 }
 
@@ -147,7 +147,7 @@ func TestDeviceLocalProvideExtenderWithoutLocalStateIsTheDevicesOwn(t *testing.T
 		t.Fatal("another device on the space took the value set on the first")
 	}
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	laterDeviceLocal := testingProvideExtenderDevice(t, networkSpace, true)
 	if !laterDeviceLocal.GetProvideExtender() {
 		t.Fatal("a later device on the space took the value set on a closed one")
@@ -264,7 +264,7 @@ func TestNewDeviceLocalWithProvideExtenderCarriesBothControls(t *testing.T) {
 		if !bytes.Equal(deviceLocal.GetClientKeySeed(), seed) {
 			t.Errorf("%+v: the device did not take the key material", c)
 		}
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	}
 
 	newDevices := []func() (*DeviceLocal, error){
@@ -287,7 +287,7 @@ func TestNewDeviceLocalWithProvideExtenderCarriesBothControls(t *testing.T) {
 			t.Errorf("constructor %d: settings = %t, %t, expected both on", i,
 				deviceLocal.settings.ProvideExtenderEnabled, deviceLocal.settings.DefaultProvideExtender)
 		}
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	}
 }
 

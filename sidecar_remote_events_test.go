@@ -259,7 +259,7 @@ func openTestEventsSidecar(t *testing.T, dial sidecarControlDial, edit func(sett
 	}
 	backend := remote.remote.(*sidecarRemoteBackend)
 	t.Cleanup(func() {
-		remote.Close()
+		testingCloseAndJoin(t, "remote", remote)
 		select {
 		case <-backend.eventsDone:
 		case <-time.After(testSidecarTimeout):

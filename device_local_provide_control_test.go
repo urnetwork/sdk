@@ -32,7 +32,7 @@ func TestDeviceLocalProvideControlModes(t *testing.T) {
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
 	connect.AssertEqual(t, err, nil)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	assertMode := func(provideMode ProvideMode, provideEnabled bool) {
 		connect.AssertEqual(t, device.GetProvideMode(), provideMode)

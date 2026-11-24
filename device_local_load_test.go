@@ -271,7 +271,7 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 	teardown = func() {
 		// device first: canceling the device ctx releases any bridge send
 		// parked in the retry loop, then the bridge close joins cleanly
-		device.Close() // cancels device ctx, closes provider + mux/nat
+		testingCloseAndJoin(t, "device", device) // cancels device ctx, closes provider + mux/nat
 		bridgeTeardown()
 	}
 	return device, tun, teardown

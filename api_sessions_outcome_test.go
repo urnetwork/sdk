@@ -18,7 +18,7 @@ func TestClientSessionActionTerminalFailureIsVisible(t *testing.T) {
 	for _, state := range []string{"cancelled", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			api := newApi(t.Context(), nil, "https://api.test")
-			defer api.Close()
+			defer testingCloseAndJoin(t, "api", api)
 			api.SetByJwt(taggedSessionTestJwt(t, "session", ""))
 			vc := NewClientSessionViewControllerWithApi(t.Context(), api)
 			defer vc.Close()
@@ -49,7 +49,7 @@ func TestClientSessionPendingRecoveryUsesSameSessionRenewal(t *testing.T) {
 	for _, state := range []string{"enforced", "cancelled", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			api := newApi(t.Context(), nil, "https://api.test")
-			defer api.Close()
+			defer testingCloseAndJoin(t, "api", api)
 			previous := credentialTestJwt(t, gojwt.MapClaims{"network_id": credentialTestNetworkId, "user_id": credentialTestUserId, "session_id": "session", "iat": 1, "exp": 100})
 			renewed := credentialTestJwt(t, gojwt.MapClaims{"network_id": credentialTestNetworkId, "user_id": credentialTestUserId, "session_id": "session", "iat": 2, "exp": 200})
 			store := newRenewalTestLocalState(t, t.TempDir(), previous, "")
@@ -92,7 +92,7 @@ func TestClientSessionPendingRecoveryUsesSameSessionRenewal(t *testing.T) {
 
 func TestClientSessionPendingRecoveryCannotAdoptNewLogin(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	// Even a new login with identical unverified session claims changes the
 	// credential generation; it cannot resume operations admitted before it.
 	token := taggedSessionTestJwt(t, "session", "")

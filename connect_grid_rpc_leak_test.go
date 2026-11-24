@@ -54,7 +54,7 @@ func TestConnectGridBoundedOverRpcUnableToConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	rpcSettings := defaultDeviceRpcSettings()
 	deviceRemote, err := newDeviceRemoteWithOverrides(
@@ -68,7 +68,7 @@ func TestConnectGridBoundedOverRpcUnableToConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// the app-side view controller, like iOS ConnectViewModel
 	vc := newConnectViewController(ctx, deviceRemote)

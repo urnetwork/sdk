@@ -132,6 +132,7 @@ func TestDeviceLocalTeardownUnsubscribesFromSharedApi(t *testing.T) {
 		if got := len(api.authLogoutListeners.Get()); got != initialLogoutListeners {
 			t.Fatalf("iteration %d retained %d logout listeners, want %d", i, got, initialLogoutListeners)
 		}
+		testingCloseAndJoin(t, "device", device)
 	}
 }
 
@@ -223,6 +224,7 @@ func TestHostedDeviceLocalSessionsIsolateSharedApiLifecycle(t *testing.T) {
 		t.Fatal("closing hosted device canceled manager-owned API")
 	default:
 	}
+	testingCloseAndJoin(t, "first", first)
 
 	second.Close()
 	secondApi.tokenManager.Wait()
@@ -231,4 +233,5 @@ func TestHostedDeviceLocalSessionsIsolateSharedApiLifecycle(t *testing.T) {
 	default:
 		t.Fatal("second hosted API session remained live after close")
 	}
+	testingCloseAndJoin(t, "second", second)
 }

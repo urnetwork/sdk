@@ -163,8 +163,8 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 
 		teardown := func() {
 			unsub()
-			device.Close()  // closes the mux + multi-client (cancels generated clients)
-			closeProvider() // release the in-process provider's goroutines
+			testingCloseAndJoin(t, "device", device) // closes the mux + multi-client (cancels generated clients)
+			closeProvider()                          // release the in-process provider's goroutines
 			providerCancel()
 		}
 		return device, teardown

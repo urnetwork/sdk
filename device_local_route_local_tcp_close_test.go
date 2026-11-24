@@ -75,7 +75,7 @@ func newRouteLocalTcpCloseHarness(t *testing.T) *routeLocalTcpCloseHarness {
 	tunSettings.TcpMaxRto = 5 * time.Minute
 	tun, err := connect.CreateTun(ctx, tunSettings)
 	if err != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		cancel()
 		t.Fatalf("create tun: %v", err)
 	}
@@ -116,7 +116,7 @@ func newRouteLocalTcpCloseHarness(t *testing.T) *routeLocalTcpCloseHarness {
 	}()
 	h.close = func() {
 		unsub()
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		tun.Close()
 		wg.Wait()
 		cancel()

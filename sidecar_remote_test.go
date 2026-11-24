@@ -288,7 +288,7 @@ func openTestRemoteSidecar(t *testing.T, socketPath string) (*Sidecar, *sidecarR
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(remote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 	events := &testRemoteEvents{events: make(chan *SidecarEvent, 64)}
 	remote.AddEventListener(events)
 	return remote, remote.remote.(*sidecarRemoteBackend), events
@@ -674,7 +674,7 @@ func TestRemoteVersionSkewIsOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer remote.Close()
+	defer testingCloseAndJoin(t, "remote", remote)
 	err = remote.remote.refresh(context.Background())
 	var refusal *sidecar.DaemonHelloRefusal
 	if !errors.Is(err, errSidecarRemoteOffline) || !errors.As(err, &refusal) || refusal.Code != sidecar.DaemonHelloErrorVersionSkew {
@@ -1075,7 +1075,7 @@ func TestRemoteStatusPoll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer remote.Close()
+	defer testingCloseAndJoin(t, "remote", remote)
 	events := &testRemoteEvents{events: make(chan *SidecarEvent, 64)}
 	remote.AddEventListener(events)
 	// a listener added after the first read hears the next change instead

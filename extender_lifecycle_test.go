@@ -130,7 +130,7 @@ func TestExtenderSpaceAndDeviceChurnLeaksNoGoroutines(t *testing.T) {
 			netip.MustParseAddr("203.0.113.42"),
 			connect.ExtenderSourceDns,
 		)
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		networkSpaceManager.Close()
 	}
 
@@ -425,7 +425,7 @@ func TestExtenderStatusRpcListenerSubscriptionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	server, client := testingPreferenceRpc(t, deviceLocal)
 
 	subscribed := func() bool {

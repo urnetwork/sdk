@@ -46,7 +46,7 @@ func testing_newHostedRpcDevice(t *testing.T, ctx context.Context) *testingHoste
 		networkSpace, byJwt, "", "", "", instanceId, settings, connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 
 	hosted := &testingHostedRpcDevice{
 		ctx:         ctx,
@@ -110,7 +110,7 @@ func (self *testingHostedRpcDevice) newRemote(t *testing.T) *DeviceRemote {
 		dialer,
 	)
 	connect.AssertEqual(t, err, nil)
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	return deviceRemote
 }
 
