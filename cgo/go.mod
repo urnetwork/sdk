@@ -14,20 +14,31 @@ require (
 	github.com/ChainSafe/go-schnorrkel v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
+	github.com/beevik/etree v1.7.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
+	github.com/ebitengine/purego v0.11.2 // indirect
+	github.com/emersion/go-ical v0.0.0-20261112170022-46c5b53a1723 // indirect
 	github.com/emersion/go-imap/v2 v2.0.0-beta.9 // indirect
 	github.com/emersion/go-message v0.18.2 // indirect
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/emersion/go-smtp v0.25.1 // indirect
+	github.com/emersion/go-webdav v0.8.0 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
+	github.com/google/go-sev-guest v0.15.1-0.20261120002523-d591100d9985 // indirect
+	github.com/google/go-tdx-guest v0.3.2-0.20261123220626-a4ee4f4ee52a // indirect
+	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/logger v1.1.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4 // indirect
 	github.com/gtank/merlin v0.1.1 // indirect
@@ -37,9 +48,11 @@ require (
 	github.com/ipfs/go-cid v0.6.2 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
+	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/koron/go-ssdp v0.9.1 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.3.0 // indirect
 	github.com/libp2p/go-libp2p v0.49.0 // indirect
@@ -82,6 +95,7 @@ require (
 	github.com/pion/transport/v4 v4.1.0 // indirect
 	github.com/pion/turn/v5 v5.0.12 // indirect
 	github.com/pion/webrtc/v4 v4.2.18 // indirect
+	github.com/pkg/sftp v1.13.12 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
@@ -90,12 +104,17 @@ require (
 	github.com/quic-go/quic-go v0.61.0 // indirect
 	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/teambition/rrule-go v1.8.2 // indirect
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
 	github.com/urnetwork/operator-core v0.0.0 // indirect
 	github.com/urnetwork/sidecar v0.0.0 // indirect
+	github.com/veraison/go-cose v1.1.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
 	golang.org/x/image v0.44.0 // indirect
@@ -129,5 +148,11 @@ replace github.com/urnetwork/sidecar => ../../sidecar
 replace github.com/emersion/go-smtp => ../../sidecar/third_party/go-smtp
 
 replace github.com/mjl-/mox => ../../sidecar/third_party/mox
+
+// The attestation verifiers' trimmed copies of Google's go-tdx-guest and go-sev-guest, which sidecar's root
+// requires, repeated as the two above are (sidecar/third_party/*/URNETWORK.md).
+replace github.com/google/go-tdx-guest => ../../sidecar/third_party/go-tdx-guest
+
+replace github.com/google/go-sev-guest => ../../sidecar/third_party/go-sev-guest
 
 replace gvisor.dev/gvisor => ../../gvisor
