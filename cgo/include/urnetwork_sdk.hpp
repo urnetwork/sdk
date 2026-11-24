@@ -3017,6 +3017,7 @@ struct FindLocationsArgs {
 	std::optional<float> max_distance_fraction;
 	std::optional<bool> enable_max_distance_fraction;
 	std::optional<std::string> rank_mode;
+	std::optional<bool> require_modern_provider;
 };
 
 struct FindLocationsResult {
@@ -13108,6 +13109,9 @@ inline void to_json(nlohmann::json& j, const FindLocationsArgs& v) {
 	if (v.rank_mode) {
 		j["rank_mode"] = *v.rank_mode;
 	}
+	if (v.require_modern_provider) {
+		j["require_modern_provider"] = *v.require_modern_provider;
+	}
 }
 inline void from_json(const nlohmann::json& j, FindLocationsArgs& v) {
 	if (!j.is_object()) {
@@ -13130,6 +13134,11 @@ inline void from_json(const nlohmann::json& j, FindLocationsArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.rank_mode = std::move(tmp);
+	}
+	if (auto it = j.find("require_modern_provider"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.require_modern_provider = std::move(tmp);
 	}
 }
 
@@ -40586,6 +40595,14 @@ inline std::optional<DeviceLocalSettings> defaultLowMemoryDeviceLocalSettings() 
 		return std::nullopt;
 	}
 	return detail::parseJson<DeviceLocalSettings>(r_s->c_str());
+}
+inline std::optional<PerformanceProfile> defaultPerformanceProfile() {
+	char* r_c = urnet_default_performance_profile();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PerformanceProfile>(r_s->c_str());
 }
 inline std::optional<TransportSettings> defaultProviderTransportSettings() {
 	char* r_c = urnet_default_provider_transport_settings();

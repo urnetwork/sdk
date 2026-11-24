@@ -330,6 +330,10 @@ func (f *h1OwnerFixture) connectDeviceWithTarget(t *testing.T, memoryTarget Byte
 	upgrade.Dns = nil
 	device.SetUpgradeMuxSettings(upgrade)
 	device.SetTransportSettings(&TransportSettings{Mode: TransportModeH1})
+	// the H1 owner boundary, not post-quantum: the fixture's providers run no
+	// end-to-end sessions (EncryptionModeOff above), so the profile turns the
+	// default post-quantum encryption off
+	device.SetPerformanceProfile(&PerformanceProfile{WindowType: WindowTypeAuto})
 	device.SetConnectLocation(&ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}})
 	device.stateLock.Lock()
 	multi, ok := device.remoteUserNatClient.(*connect.RemoteUserNatMultiClient)

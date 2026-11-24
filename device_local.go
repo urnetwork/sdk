@@ -2085,6 +2085,13 @@ func newDeviceLocalWithOverridesForPlatform(
 		defaultRouteLocal = false
 		defaultProvideControlMode = ProvideControlModeNever
 	}
+	// an app device starts with the default profile, post-quantum on, until
+	// Load or a setter replaces it; a hosted device starts with none, auto
+	// without post-quantum encryption (hostedSafePerformanceProfile)
+	var defaultPerformanceProfile *PerformanceProfile
+	if !settings.HostedIncompatible {
+		defaultPerformanceProfile = DefaultPerformanceProfile()
+	}
 
 	// The blocker outlives mux/client rebuilds. Construction uses the caller's
 	// defaults; explicit Load owns checked restoration of user preferences.
@@ -2161,6 +2168,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		// contractManager: contractManager,
 		// routeManager: routeManager,
 		stats:                                    newDeviceStats(),
+		performanceProfile:                       defaultPerformanceProfile,
 		connectLocation:                          nil,
 		defaultLocation:                          nil,
 		remoteUserNatClient:                      nil,
@@ -2967,6 +2975,19 @@ func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *Perfor
 	return &limited
 }
 
+// The profile the device stores for one a caller sets, never the caller's
+// pointer. On an app device no profile is the default profile
+// (DefaultPerformanceProfile), so a caller that passes nil for "the default"
+// keeps post-quantum encryption on; a hosted device's limits apply
+// (hostedSafePerformanceProfile), and it keeps nil as nil.
+func (self *DeviceLocal) ownPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if performanceProfile == nil && !self.settings.HostedIncompatible {
+		return DefaultPerformanceProfile()
+	}
+	return clonePerformanceProfile(self.hostedSafePerformanceProfile(performanceProfile))
+}
+
+// nil sets the default profile on an app device (ownPerformanceProfile).
 func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
 	_ = self.setLocalCatalogPreference("performance-profile", performanceProfile)
 }

@@ -2824,6 +2824,7 @@ bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
+char* urnet_default_performance_profile(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
@@ -4587,6 +4588,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   max_distance_fraction?: number
  *   enable_max_distance_fraction?: boolean
  *   rank_mode?: string
+ *   require_modern_provider?: boolean
  */
 
 /* FindLocationsResult (json):
