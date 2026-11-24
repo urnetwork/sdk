@@ -1311,6 +1311,22 @@ func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceP
 	}()
 }
 
+// The profile the remote holds without asking the device: a pending write,
+// else the last the device answered or reported, which its syncs and its
+// profile reports keep current. known is false before either. For a reader on
+// a notification path, where a remote call would wait on the device.
+func (self *DeviceRemote) knownPerformanceProfile() (performanceProfile *PerformanceProfile, known bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.state.PerformanceProfile.IsSet {
+		return clonePerformanceProfile(self.state.PerformanceProfile.Value), true
+	}
+	if self.lastKnownState.PerformanceProfile.IsSet {
+		return clonePerformanceProfile(self.lastKnownState.PerformanceProfile.Value), true
+	}
+	return nil, false
+}
+
 func (self *DeviceRemote) GetPerformanceProfile() *PerformanceProfile {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

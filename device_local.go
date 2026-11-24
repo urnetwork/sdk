@@ -3051,6 +3051,12 @@ func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *Per
 	return func() { self.performanceProfileChanged(performanceProfile) }, nil
 }
 
+// The device's own profile, which it always knows (see
+// DeviceRemote.knownPerformanceProfile).
+func (self *DeviceLocal) knownPerformanceProfile() (*PerformanceProfile, bool) {
+	return self.GetPerformanceProfile(), true
+}
+
 func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
