@@ -13,7 +13,10 @@
 // opening U by the key store's wrap as `ur daemon` does at start: a store that answers Locked or Failed creates
 // nothing and leaves the core Locked until it can answer (D-SDK-15, §5.9's table). Whatever components the app names,
 // the core runs its dns component, as each of ur daemon's networks does, so its DnsClient feeds the network's label
-// table and follows the zone's hints from the core's first client generation on (§12.5's label row).
+// table and follows the zone's hints from the core's first client generation on (§12.5's label row). On a host class
+// that stays up, desktop's, the core runs D-TRUST-9's zone watch beside it, as ur daemon does and as that class runs
+// D-TLS-8's CT watch; the foreground-only classes, iOS and Android, run none and leave it to the network's daemons, as
+// they leave the CT watch (QD-1384).
 //
 // Outward calls pass the core's gate, Sidecar.Authorize, on both backends, and come back approval_pending:<id>
 // (sidecarResultOf), so no wrapper adds a second check. Nothing here imports mcp/ or cli/ (R-SDK-4).
@@ -49,6 +52,9 @@ type sidecarLocalOptions struct {
 	evsSettings *sidecarEvsSettings
 	// Nil: defaultSidecarSocketsSettings.
 	socketsSettings *sidecarSocketsSettings
+	// The zone watch's, on a host class that stays up. Nil: the core's DefaultDnsWatchComponentSettings, whose public
+	// resolvers a test binary refuses, so a test that composes the watch names its own DNS here.
+	dnsWatchSettings *sidecar.DnsWatchComponentSettings
 	// Called once the components that waited for the core's identity have been built for it
 	// (addDeferredComponentsOnceIdentified). Nil calls nothing.
 	deferredComponentsBuilt func()
@@ -260,6 +266,15 @@ func newSidecarLocal(
 	if _, err := local.AddComponent(local.NewDnsComponent()); err != nil {
 		self.Close()
 		return nil, fmt.Errorf("the dns component: %w", err)
+	}
+	// D-TRUST-9's zone watch on a host class that stays up, as ur daemon adds it beside the dns component and as that
+	// class runs the CT watch (sidecar_dns_watch.go; QD-1384); a foreground-only class leaves it to the network's daemons
+	if watch := newSidecarDnsWatchComponent(local, hostClass, options.dnsWatchSettings); watch != nil {
+		if _, err := local.AddComponent(watch); err != nil {
+			watch.Close()
+			self.Close()
+			return nil, fmt.Errorf("the zone watch: %w", err)
+		}
 	}
 	for _, name := range components {
 		if err := self.addComponent(local, name); err != nil {
