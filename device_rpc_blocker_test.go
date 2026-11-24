@@ -36,7 +36,7 @@ func TestDeviceLocalBlockerEnabled(t *testing.T) {
 	defer cancel()
 
 	deviceLocal, _ := testing_newBlockDevice(ctx, t, false)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 
@@ -88,7 +88,7 @@ func TestDeviceLocalBlockerToggleChurn(t *testing.T) {
 	defer cancel()
 
 	deviceLocal, _ := testing_newBlockDevice(ctx, t, false)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	baseStacks := captureGoroutineStacks()
 	basePool := poolOutstanding()
@@ -184,7 +184,7 @@ func TestDeviceRemoteBlockerEnabledOfflineSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testing_blockerEnabledChangeListener{}
 	sub := deviceRemote.AddBlockerEnabledChangeListener(listener)
@@ -205,7 +205,7 @@ func TestDeviceRemoteBlockerEnabledOfflineSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 

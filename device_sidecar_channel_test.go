@@ -52,7 +52,7 @@ func TestBridgeStatusMirrorFollowsAResync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(remote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 	remote.Sync()
 	if !remote.waitForSync(testSidecarTimeout) {
 		t.Fatal("the remote did not sync with the device")

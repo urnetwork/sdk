@@ -340,14 +340,14 @@ func TestLinkCellOnTheIos32Surrogate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer hookedNat.Close()
+	defer testingCloseAndJoin(t, "hookedNat", hookedNat)
 	t.Logf("cell=link profile=%s step=%q peak=%d steady=%d (reported)", natRow.Profile, natRow.Step, natRow.PeakByteCount, natRow.SteadyByteCount)
 	if got := hookedUpstream.await(t, flowCount); !slices.EqualFunc(got, hookedPayloads, bytes.Equal) {
 		t.Errorf("through the sdk host table the upstream read %q, want %q", got, hookedPayloads)
 	}
 	plainUpstream := newTestingLinkCellUpstream(t)
 	plainNat, plainPayloads := testingLinkCellPublicFlows(t, ctx, nil, plainUpstream, flowCount, "hooked")
-	defer plainNat.Close()
+	defer testingCloseAndJoin(t, "plainNat", plainNat)
 	if got := plainUpstream.await(t, flowCount); !slices.EqualFunc(got, plainPayloads, bytes.Equal) ||
 		!slices.EqualFunc(got, hookedUpstream.await(t, flowCount), bytes.Equal) {
 		t.Error("public flows' bytes differ with the hook and without it")

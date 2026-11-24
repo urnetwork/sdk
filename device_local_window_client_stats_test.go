@@ -54,14 +54,14 @@ func TestDeviceLocalMultiClientsCountIntoTheWindowClientStats(t *testing.T) {
 	// a device without counters forms its windows first; nothing reaches the
 	// host's counters from it
 	alone := newDevice(nil)
-	defer alone.Close()
+	defer testingCloseAndJoin(t, "alone", alone)
 	time.Sleep(50 * time.Millisecond)
 	if count := windowClientStatsExpandPassCount(stats); count != 0 {
 		t.Fatalf("a device without counters counted %d expansion passes into them", count)
 	}
 
 	counted := newDevice(stats)
-	defer counted.Close()
+	defer testingCloseAndJoin(t, "counted", counted)
 	deadline := time.Now().Add(5 * time.Second)
 	for windowClientStatsExpandPassCount(stats) == 0 {
 		if deadline.Before(time.Now()) {

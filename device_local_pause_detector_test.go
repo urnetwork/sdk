@@ -58,7 +58,7 @@ func TestDeviceLocalMultiClientsShareThePauseDetector(t *testing.T) {
 
 	// a device without one runs its own detector and joins nothing
 	alone := newDevice(nil)
-	defer alone.Close()
+	defer testingCloseAndJoin(t, "alone", alone)
 	time.Sleep(20 * time.Millisecond)
 	if count := detector.ClientCount(); count != 1 {
 		t.Fatalf("a device without the shared detector joined it: %d clients", count)
@@ -66,4 +66,5 @@ func TestDeviceLocalMultiClientsShareThePauseDetector(t *testing.T) {
 
 	sharing.Close()
 	waitForPauseDetectorClients(t, detector, 0, "the closed device's multi client did not leave the shared detector")
+	testingCloseAndJoin(t, "sharing", sharing)
 }

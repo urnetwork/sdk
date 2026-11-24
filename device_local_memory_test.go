@@ -590,7 +590,7 @@ func TestDeviceLocalProvideMemoryRealloc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	connect.AssertEqual(
 		t,
 		device.provider.platformTransportSettings.PlatformTransportBudgetPriority,

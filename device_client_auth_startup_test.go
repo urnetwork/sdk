@@ -23,7 +23,7 @@ func TestDeviceLocalClientSeedFailsBeforeApiPublication(t *testing.T) {
 		fixture.instanceId, settings, connect.NewId(),
 	)
 	if device != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatal("device started with an unreadable auth envelope")
 	}
 	if err == nil {
@@ -49,7 +49,7 @@ func TestDeviceRemoteClientSeedFailsBeforeApiPublication(t *testing.T) {
 		connect.NewId(), alwaysOfflineDeviceRpcDialer{},
 	)
 	if device != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatal("remote started with an unreadable auth envelope")
 	}
 	if err == nil {

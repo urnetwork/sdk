@@ -206,10 +206,25 @@ func newTestSeedExtender(t *testing.T, index int, api *testSeedApi, records ...*
 		&net.Dialer{},
 		settings,
 	)
-	go server.ListenAndServe()
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		_ = server.ListenAndServe()
+	}()
 	t.Cleanup(func() {
 		cancel()
-		server.Close()
+		// the server's workers and its serve loop end with the test
+		joined := make(chan struct{})
+		go func() {
+			defer close(joined)
+			server.CloseAndWait()
+			<-served
+		}()
+		select {
+		case <-joined:
+		case <-time.After(30 * time.Second):
+			t.Errorf("the test's seed extender did not join")
+		}
 		feedServer.Close()
 		feedDirectory.Close()
 	})

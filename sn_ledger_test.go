@@ -380,7 +380,7 @@ func TestSnLedgerAccountsOnBothDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	result := testReadLedger(t, deviceLocal.SnLedgerAccounts)
 	if result.Error == nil || result.Error.Code != SnErrorCodeConnectWalletFirst || result.Accounts.Len() != 0 {
 		t.Fatalf("device local without a wallet: %+v", result.Error)

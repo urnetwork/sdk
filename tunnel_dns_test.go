@@ -148,7 +148,7 @@ func TestDeviceLocalTunnelDnsAddresses(t *testing.T) {
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	// no unencrypted local dns is enabled by default, so the device advertises
 	// the dedicated UpgradeMux mask, never its assigned TUN address.
@@ -196,7 +196,7 @@ func TestDeviceLocalTunnelDnsRejectsAssignedAddressCollision(t *testing.T) {
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	settings := device.GetDnsResolverSettings()
 	settings.DnsUpgradeMaskAddress = device.TunnelLocalAddress()
@@ -216,7 +216,7 @@ func TestDeviceLocalTunnelDnsFiltersAssignedAddressFromResolverList(t *testing.T
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	settings := device.GetDnsResolverSettings()
 	settings.EnableLocalDns = true

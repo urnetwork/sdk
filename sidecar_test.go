@@ -211,7 +211,7 @@ func TestNewSidecarLocalRefusesWhatItCannotRun(t *testing.T) {
 	for _, c := range cases {
 		local, err := NewSidecarLocal(c.space, c.keyStore, nil, c.settings)
 		if err == nil {
-			local.Close()
+			testingCloseAndJoin(t, "local", local)
 			t.Errorf("%s: opened", c.name)
 		}
 	}
@@ -345,7 +345,7 @@ func TestComponentsAttachByName(t *testing.T) {
 	failing.StateDir = t.TempDir()
 	failing.Components.Add(SidecarComponentMail)
 	if local, err := NewSidecarLocal(world.space, newTestSidecarKeyStore(), nil, failing); err == nil {
-		local.Close()
+		testingCloseAndJoin(t, "local", local)
 		t.Error("a failing factory opened")
 	}
 	twice := DefaultSidecarSettings()
@@ -353,7 +353,7 @@ func TestComponentsAttachByName(t *testing.T) {
 	twice.Components.Add(SidecarComponentTls)
 	twice.Components.Add(SidecarComponentTls)
 	if local, err := NewSidecarLocal(world.space, newTestSidecarKeyStore(), nil, twice); err == nil {
-		local.Close()
+		testingCloseAndJoin(t, "local", local)
 		t.Error("a component named twice opened")
 	}
 }

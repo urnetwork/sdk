@@ -37,7 +37,7 @@ func TestPeerViewControllerFilter(t *testing.T) {
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
 	connect.AssertEqual(t, err, nil)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	vc := device.OpenPeerViewController()
 	defer device.CloseViewController(vc)

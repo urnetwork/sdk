@@ -58,7 +58,7 @@ func TestDeviceLocalUploadLogsWithFilesHoldTheAppsLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	serviceDir := t.TempDir()
 	modTime := time.Now().Add(-time.Hour)

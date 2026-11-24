@@ -22,7 +22,7 @@ func TestExplicitSessionSignOutBoundedOfflineAndGeneration(t *testing.T) {
 	for _, newLogin := range []bool{false, true} {
 		t.Run(map[bool]string{false: "offline", true: "new-login"}[newLogin], func(t *testing.T) {
 			api := newApi(t.Context(), nil, "https://api.test")
-			defer api.Close()
+			defer testingCloseAndJoin(t, "api", api)
 			token := taggedSessionTestJwt(t, NewId().String(), "")
 			api.SetByJwt(token)
 			target := api.captureNetworkTarget()
@@ -83,7 +83,7 @@ func TestExplicitSessionSignOutRemovesDeviceClientFirst(t *testing.T) {
 	}
 	signOut := func(t *testing.T, deviceByJwt string, removeFails bool) (*SessionSignOutResult, []post, string) {
 		api := newApi(t.Context(), nil, "https://api.test")
-		defer api.Close()
+		defer testingCloseAndJoin(t, "api", api)
 		networkByJwt := taggedSessionTestJwt(t, NewId().String(), "")
 		api.SetByJwt(networkByJwt)
 		if deviceByJwt != "" {
@@ -192,7 +192,7 @@ func TestExplicitSessionSignOutRemovesDeviceClientFirst(t *testing.T) {
 
 func TestExplicitSessionSignOutConfirmsServerCutoff(t *testing.T) {
 	api := newApi(t.Context(), nil, "https://api.test")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	api.SetByJwt(taggedSessionTestJwt(t, NewId().String(), ""))
 	api.setHttpPostRaw(func(_ context.Context, _ string, body []byte, _ string) ([]byte, error) {
 		var args RevokeNetworkSessionArgs

@@ -47,7 +47,7 @@ func TestDeviceLocalContractStatusWindowExpires(t *testing.T) {
 
 	duration := 200 * time.Millisecond
 	device := testing_newContractStatusDevice(ctx, t, 10, duration)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	device.updateContractStatus(&connect.ContractStatus{Premium: true})
 	connect.AssertEqual(t, true, device.GetContractStatus().Premium)
@@ -75,7 +75,7 @@ func TestDeviceLocalContractStatusWindowBounded(t *testing.T) {
 
 	count := 3
 	device := testing_newContractStatusDevice(ctx, t, count, 10*time.Second)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	// a burst well inside the duration window: the count bound is what trims
 	for range 50 {
@@ -94,7 +94,7 @@ func TestDeviceLocalContractStatusErrorClears(t *testing.T) {
 	defer cancel()
 
 	device := testing_newContractStatusDevice(ctx, t, 10, 10*time.Second)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	insufficientBalance := protocol.ContractError_InsufficientBalance
 	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})
@@ -170,7 +170,7 @@ func TestDeviceLocalContractStatusOutOfBalanceSession(t *testing.T) {
 	defer cancel()
 
 	device := testing_newContractStatusDevice(ctx, t, 10, 10*time.Minute)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	initial := device.GetContractStatus()
 	if initial == nil || *initial != (ContractStatus{}) {
@@ -219,7 +219,7 @@ func TestDeviceLocalContractStatusClearsOnDisconnect(t *testing.T) {
 	defer cancel()
 
 	device := testing_newContractStatusDevice(ctx, t, 10, 10*time.Minute)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	insufficientBalance := protocol.ContractError_InsufficientBalance
 	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})

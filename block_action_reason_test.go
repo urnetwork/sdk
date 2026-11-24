@@ -29,7 +29,7 @@ func TestDeviceLocalBlockActionCarriesReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	now := time.Now()
 	device.updateBlockActions([]*connect.BlockAction{

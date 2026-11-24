@@ -58,7 +58,7 @@ func testingDeviceSeed(t *testing.T, networkSpace *NetworkSpace, clientJwt strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	seed := deviceLocal.GetClientKeySeed()
 	if len(seed) == 0 {
 		t.Fatal("the device runs on no client key")
@@ -108,7 +108,7 @@ func TestDeviceKeyMaterialNamesItsNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyMaterial := deviceA.GetKeyMaterial()
-	deviceA.Close()
+	testingCloseAndJoin(t, "deviceA", deviceA)
 	if keyMaterial.networkId != testingIdentityNetworkA {
 		t.Fatal("the device's key material does not name its network")
 	}

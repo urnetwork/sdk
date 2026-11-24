@@ -124,12 +124,12 @@ func testingNewBrowserStateProviderPairWithSettings(
 		networkSpace, "", instanceId, settings, clientId, testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		deviceRemote.Close()
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceRemote", deviceRemote)
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	})
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(30 * time.Second) {
@@ -400,7 +400,7 @@ func TestBrowserStateRemoteReadsClientLimitStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listeningRemote.Close()
+	defer testingCloseAndJoin(t, "listeningRemote", listeningRemote)
 	remoteClientLimitListener := newTestingClientLimitListener()
 	remoteClientLimitSub := listeningRemote.AddClientLimitStatusChangeListener(remoteClientLimitListener)
 	defer remoteClientLimitSub.Close()
@@ -490,7 +490,7 @@ func TestDeviceRemoteReadsProviderConnectedThrough(t *testing.T) {
 		t.Fatal("the native remote read no provider packet stats through")
 	}
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 	// the last value read stays while the device process is gone
 	connect.AssertEqual(t, deviceRemote.GetProviderConnected(), true)
@@ -509,7 +509,7 @@ func TestDeviceLocalRpcSyncAnswersTheProviderState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 
 	for _, providerStateListener := range []bool{true, false} {
 		server, client := testingPreferenceRpc(t, deviceLocal)

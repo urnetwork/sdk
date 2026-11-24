@@ -243,7 +243,7 @@ func TestPlatformNetworkSpaceRefusesUserEndpointSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(device.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 	vc := newExtenderViewController(device.ctx, device)
 	t.Cleanup(vc.Close)
 
@@ -348,7 +348,7 @@ func TestHostedDeviceRefusesDnsResolverSettings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(device.Close)
+		t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 		return device
 	}
 	namedDohUrl := "https://192.0.2.53/dns-query"

@@ -383,7 +383,7 @@ func TestDeviceRemoteResetExtendersReachesTheDeviceProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	bringUp := func() *DeviceLocal {
 		t.Helper()
 		localSettings := testExtenderStatusDeviceSettings()
@@ -394,7 +394,7 @@ func TestDeviceRemoteResetExtendersReachesTheDeviceProcess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(deviceLocal.Close)
+		t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 		deviceRemote.Sync()
 		if !deviceRemote.waitForSync(30 * time.Second) {
 			t.Fatal("the device remote did not sync after the device came up")
@@ -453,7 +453,7 @@ func TestHostedDeviceNeverResetsExtenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceLocal.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceLocal", deviceLocal) })
 	deviceLocal.ResetExtenders()
 	deviceLocal.applyExtenderReset(connect.NewId().String())
 
@@ -465,7 +465,7 @@ func TestHostedDeviceNeverResetsExtenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceRemote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "deviceRemote", deviceRemote) })
 	deviceRemote.ResetExtenders()
 
 	if after := testExtenderResetIps(networkSpace); !slices.Equal(after, ips) {

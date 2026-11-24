@@ -296,7 +296,7 @@ func newTestingClientLimitDevice(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(device.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 	return networkSpace, device
 }
 
@@ -595,7 +595,7 @@ func TestDeviceRemoteClientLimitStatus(t *testing.T) {
 	connect.AssertEqual(t, status, deviceLocal.GetClientLimitStatus())
 	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), status)
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetClientLimitStatus(), status)
 }

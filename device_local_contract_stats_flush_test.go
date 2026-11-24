@@ -26,7 +26,7 @@ func contractStatsFlushTestDevice(t *testing.T, epoch time.Duration) *DeviceLoca
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	t.Cleanup(device.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "device", device) })
 	return device
 }
 

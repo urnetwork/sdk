@@ -189,6 +189,19 @@ func waitTestProviderMigration(t *testing.T, provider *deviceLocalProvider) {
 	receiveTestProviderMove(t, done, "the migration worker did not finish")
 }
 
+// Closes a transport group the test made and, where its type has a waiting
+// close, as the platform's family group does, waits for it to end.
+func testingCloseAndJoinTransport(t *testing.T, name string, transport migratablePlatformTransport) {
+	t.Helper()
+	if joinable, ok := transport.(interface {
+		CloseAndWait(ctx context.Context) error
+	}); ok {
+		testingCloseAndJoin(t, name, joinable)
+		return
+	}
+	transport.Close()
+}
+
 // A whole move over real transports: the provider's transport group reached
 // by name takes an advisory move to a target address served by another edge.
 // The replacement group dials the target with the platform hostname kept for
@@ -224,7 +237,7 @@ func TestDeviceLocalProviderMoveSwapsToTheTargetMakeBeforeBreak(t *testing.T) {
 	clientSettings.ControlPingTimeout = 0
 	clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOff
 	client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), clientSettings)
-	defer client.Close()
+	defer testingCloseAndJoin(t, "client", client)
 
 	settings := connect.DefaultPlatformTransportSettings()
 	settings.EnableH1Plus = false
@@ -250,7 +263,7 @@ func TestDeviceLocalProviderMoveSwapsToTheTargetMakeBeforeBreak(t *testing.T) {
 	}
 	old := provider.newProviderPlatformTransport(auth, connect.TransportModeH1, settings)
 	provider.platformTransport = old
-	defer old.Close()
+	defer testingCloseAndJoinTransport(t, "old", old)
 	receiveTestProviderMove(t, edgeByName.requests, "the provider did not reach the edge by name")
 	if !waitForProviderCondition(10*time.Second, old.IsConnected) {
 		t.Fatal("the provider did not connect")
@@ -281,7 +294,7 @@ func TestDeviceLocalProviderMoveSwapsToTheTargetMakeBeforeBreak(t *testing.T) {
 	if current == old || !current.IsConnected() {
 		t.Fatal("the connected replacement is not the provider's transport")
 	}
-	defer current.Close()
+	defer testingCloseAndJoinTransport(t, "current", current)
 	if !settings.ResidentMoveTracker.MovedWithin(time.Minute, time.Now()) {
 		t.Fatal("the move does not count for the client interval")
 	}
@@ -757,10 +770,10 @@ func TestDeviceLocalProviderPlatformMigrationNeverBreaksBeforeMake(t *testing.T)
 		} else if 0 < len(got) {
 			t.Fatalf("%s: reports = %v, want none", c.name, got)
 		}
-		old.Close()
-		next.Close()
+		testingCloseAndJoin(t, "old", old)
+		testingCloseAndJoin(t, "next", next)
 		strategy.Close()
-		client.Close()
+		testingCloseAndJoin(t, "client", client)
 		cancel()
 	}
 }
@@ -947,7 +960,7 @@ func TestDeviceLocalProviderMoveOnAltMovesH1AndKeepsH3OnAlt(t *testing.T) {
 	clientSettings.ControlPingTimeout = 0
 	clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOff
 	client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), clientSettings)
-	defer client.Close()
+	defer testingCloseAndJoin(t, "client", client)
 
 	// tied tiers, so H3 runs beside H1 whenever it may dial
 	modePreferences := map[connect.TransportMode]int{connect.TransportModeH1: 1, connect.TransportModeH3: 1}
@@ -995,7 +1008,7 @@ func TestDeviceLocalProviderMoveOnAltMovesH1AndKeepsH3OnAlt(t *testing.T) {
 	}
 	old := provider.newProviderPlatformTransport(auth, connect.TransportModeAuto, settings)
 	provider.platformTransport = old
-	defer old.Close()
+	defer testingCloseAndJoinTransport(t, "old", old)
 	oldGroup := old.(*connect.FamilyPlatformTransportGroup)
 	if oldGroup.Ipv4Transport() == nil {
 		t.Fatal("the provider has no v4 pinned transport")

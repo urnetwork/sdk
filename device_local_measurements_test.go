@@ -102,7 +102,7 @@ func TestDeviceLocalMeasurementsEnabledPersists(t *testing.T) {
 	if networkSpace.asyncLocalState.GetLocalState().GetMeasurementsEnabled() {
 		t.Fatal("the opt-out was not stored in the space")
 	}
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	networkSpaceManager.Close()
 
 	restartedManager, restartedSpace := testMeasurementsSpace(t, storagePath)
@@ -178,7 +178,7 @@ func TestDeviceRemoteMeasurementsEnabledSeededBySync(t *testing.T) {
 	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
 	connect.AssertEqual(t, deviceLocal.GetMeasurementsEnabled(), false)
 
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 
 	if queued := testQueuedMeasurementsEnabled(deviceRemote); queued.IsSet {

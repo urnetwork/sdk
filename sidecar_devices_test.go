@@ -34,7 +34,7 @@ func openTestRemoteApprovals(t *testing.T, socketPath string, signer SidecarPres
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(remote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 	approvals := remote.GetApprovals()
 	if approvals == nil {
 		t.Fatal("no approvals")

@@ -26,7 +26,7 @@ import (
 func testingReportProvideEnabled(t *testing.T, deviceRemote *DeviceRemote, provideEnabled bool) {
 	t.Helper()
 	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-	defer deviceRemoteRpc.Close()
+	defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
 
 	if err := deviceRemoteRpc.ProvideChanged(provideEnabled, nil); err != nil {
 		t.Fatal(err)
@@ -157,7 +157,9 @@ func TestDeviceRemoteProvideEnabledReportAndWriteTellTheLatestLast(t *testing.T)
 	defer releaseHeld()
 
 	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
-	defer deviceRemoteRpc.Close()
+	defer testingCloseAndJoin(t, "deviceRemoteRpc", deviceRemoteRpc)
+	// the join above waits on the held report's delivery, so it is released first
+	defer releaseHeld()
 	held.armed.Store(true)
 	if err := deviceRemoteRpc.ProvideChanged(true, nil); err != nil {
 		t.Fatal(err)
@@ -221,7 +223,7 @@ func TestDeviceRemoteProvideEnabledViewOpenedDuringFollowUpSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	recorder := &testingSettingRecorder{}
 	sub := deviceRemote.AddProvideChangeListener(recorder)
@@ -236,7 +238,10 @@ func TestDeviceRemoteProvideEnabledViewOpenedDuringFollowUpSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
+	// the joins above wait on the remote's held sync writes, so they are released first
+	defer releaseFollowUpSync()
+	defer releaseFirstSync()
 	connect.AssertEqual(t, deviceLocal.GetProvideControlMode(), ProvideControlModeManual)
 	deviceLocal.SetProvideMode(ProvideModeNone)
 	connect.AssertEqual(t, deviceLocal.GetProvideEnabled(), false)

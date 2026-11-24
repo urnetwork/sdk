@@ -464,7 +464,7 @@ func TestDeviceLocalSubprotocolSurface(t *testing.T) {
 		false,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	listener := newRecordingSubprotocolListener()
 	if _, err := deviceLocal.EnableSubprotocol(100, listener); err == nil {

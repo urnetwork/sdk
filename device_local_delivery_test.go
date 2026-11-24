@@ -53,7 +53,7 @@ func TestDeviceLocalMuxSecurityDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	// count echoes by the returning packet's SOURCE port (= the probe's dst port)
 	var mu sync.Mutex

@@ -341,7 +341,7 @@ func TestReliabilitySettingsNilWithoutMultiClient(t *testing.T) {
 		connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), nil)
 	// the writes a disconnected caller might still make are safe no-ops
@@ -517,7 +517,7 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	instanceId := NewId()
 
 	deviceLocal := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -528,7 +528,7 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// no multi client: settings are nil on BOTH ends (never a zero struct --
 	// see TestReliabilitySettingsNilWithoutMultiClient), while the readouts
@@ -706,7 +706,7 @@ func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
 		clientId,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -721,7 +721,7 @@ func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// the actions need a multi client to act on
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability actions"))
@@ -782,7 +782,7 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 	firstLocalClosed := false
 	defer func() {
 		if !firstLocalClosed {
-			deviceLocal.Close()
+			testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		}
 	}()
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("connected override"))
@@ -796,7 +796,7 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// set while CONNECTED: the rpc call succeeds, so an ordinary setter
 	// would clear its queued state here
@@ -815,11 +815,11 @@ func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
 	})
 
 	// the extension restarts: a fresh local with no memory of the override
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	firstLocalClosed = true
 
 	deviceLocal2 := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
-	defer deviceLocal2.Close()
+	defer testingCloseAndJoin(t, "deviceLocal2", deviceLocal2)
 	testingForceDeviceRpcResync(deviceRemote)
 	testingReliabilityWaitFor(t, "the remote syncs to the restarted local", func() bool {
 		return deviceRemote.GetRemoteConnected()
@@ -859,7 +859,7 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	// no service and nothing queued: nil, so a caller has nothing to
 	// read-modify-write (see TestReliabilitySettingsNilWithoutMultiClient)
@@ -903,7 +903,7 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	firstLocalClosed := false
 	defer func() {
 		if !firstLocalClosed {
-			deviceLocal.Close()
+			testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		}
 	}()
 	testingForceDeviceRpcResync(deviceRemote)
@@ -929,11 +929,11 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	// override is runtime-only state -- nothing on the local persists it --
 	// so only the remote's sync-state re-apply can restore it. Again the
 	// sync lands before the tunnel is up.
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	firstLocalClosed = true
 
 	deviceLocal2 := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
-	defer deviceLocal2.Close()
+	defer testingCloseAndJoin(t, "deviceLocal2", deviceLocal2)
 	testingForceDeviceRpcResync(deviceRemote)
 	testingReliabilityWaitFor(t, "the remote syncs to the restarted local", func() bool {
 		return deviceRemote.GetRemoteConnected()

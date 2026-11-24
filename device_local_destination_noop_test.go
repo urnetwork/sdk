@@ -67,7 +67,7 @@ func TestDeviceLocalEquivalentDestinationDoesNotRebuildProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -140,7 +140,7 @@ func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	windowStatusRecorder := &destinationWindowStatusRecorder{}
 	windowStatusSub := device.AddWindowStatusChangeListener(windowStatusRecorder)
 	defer windowStatusSub.Close()
@@ -217,7 +217,7 @@ func TestDeviceLocalDestinationTransportChangeRebuildsProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil

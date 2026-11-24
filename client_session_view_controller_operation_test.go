@@ -46,7 +46,7 @@ func newClientSessionOperationTestFixture(t *testing.T) *clientSessionOperationT
 	controller.testingAfterAction = func() { completed <- struct{}{} }
 	t.Cleanup(func() {
 		controller.Close()
-		api.Close()
+		testingCloseAndJoin(t, "api", api)
 	})
 	return &clientSessionOperationTestFixture{
 		api: api, controller: controller, currentSessionId: currentSessionId, completed: completed,

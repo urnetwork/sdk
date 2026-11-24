@@ -270,7 +270,7 @@ func TestDeviceLocalContractErrorLogClearedByDisconnectLogsAtOnce(t *testing.T) 
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	line := testingNoPermissionErrorKind.line
 	for range 100 {

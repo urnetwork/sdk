@@ -293,7 +293,7 @@ func TestClientStartupCommitFailurePreservesPreviousDeviceOwner(t *testing.T) {
 		fixture.instanceId, settings, connect.NewId(),
 	)
 	if device != nil {
-		device.Close()
+		testingCloseAndJoin(t, "device", device)
 		t.Fatal("oversize auth started a replacement device")
 	}
 	if err == nil {

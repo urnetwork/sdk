@@ -60,7 +60,7 @@ func TestDeviceRemoteOfflineProvideState(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testOfflineProvideListener{
 		modes:   make(chan ProvideMode, 16),

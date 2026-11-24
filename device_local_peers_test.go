@@ -51,7 +51,7 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
 	connect.AssertEqual(t, err, nil)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	listener := &testNetworkPeersListener{
 		networkPeers: make(chan *NetworkPeers, 16),
@@ -144,7 +144,7 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
 	connect.AssertEqual(t, err, nil)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	listener := &testNetworkPeersListener{
 		networkPeers: make(chan *NetworkPeers, 16),
@@ -204,7 +204,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 
 	deviceLocal, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", instanceId, settings, clientId)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -215,7 +215,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testNetworkPeersListener{
 		networkPeers: make(chan *NetworkPeers, 16),

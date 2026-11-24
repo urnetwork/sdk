@@ -56,7 +56,7 @@ func TestDeviceLocalProviderMigrateKeepsOldOnTimeout(t *testing.T) {
 	defer cancel()
 
 	client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), connect.DefaultClientSettings())
-	defer client.Close()
+	defer testingCloseAndJoin(t, "client", client)
 
 	clientStrategy := connect.NewClientStrategyWithDefaults(ctx)
 	defer clientStrategy.Close()
@@ -92,7 +92,7 @@ func TestDeviceLocalProviderMigrateKeepsOldOnTimeout(t *testing.T) {
 	}
 	// the bare provider has no local user nat; the transports close with the
 	// client ctx
-	defer oldTransport.Close()
+	defer testingCloseAndJoin(t, "oldTransport", oldTransport)
 
 	migrateFrame := connect.RequireToFrameWithDefaultProtocolVersion(&protocol.ResidentMigrate{
 		MigrateTime: uint64(time.Now().UnixMilli()),

@@ -391,7 +391,7 @@ func TestDeviceRemoteProviderFamilyTransportStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -404,7 +404,7 @@ func TestDeviceRemoteProviderFamilyTransportStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(10 * time.Second) {
 		t.Fatal("device remote did not complete its initial sync")

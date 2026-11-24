@@ -37,7 +37,7 @@ func TestDeviceRemoteOfflineToConnectedSync(t *testing.T) {
 		testing_deviceRpcDialerDefault(),
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testOfflineProvideListener{
 		modes:   make(chan ProvideMode, 16),
@@ -86,7 +86,7 @@ func TestDeviceRemoteOfflineToConnectedSync(t *testing.T) {
 	settings.DisableLogging = true
 	deviceLocal, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", instanceId, settings, clientId)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	// the control mode owns the effective provide mode on the local: the
 	// stale raw None queued before it must not override the Network mapping

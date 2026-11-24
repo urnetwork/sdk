@@ -733,7 +733,7 @@ func openTestRemoteSidecarSigning(t *testing.T, socketPath string, signer Sideca
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(remote.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "remote", remote) })
 	backend := remote.remote.(*sidecarRemoteBackend)
 	if _, err := backend.pair(t.Context(), "a-synthetic-child-token"); err != nil {
 		t.Fatal(err)

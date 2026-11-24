@@ -51,7 +51,7 @@ func TestRemoveConnectedProviderIsSafeWhenDisconnected(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	listener := &testing_connectedProviderLocationChangeListener{
 		changed: make(chan struct{}, 1),
@@ -95,7 +95,7 @@ func TestRemoveConnectedProviderIsSafeWhenDisconnected(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
@@ -103,7 +103,7 @@ func TestRemoveConnectedProviderIsSafeWhenDisconnected(t *testing.T) {
 	deviceRemote.RemoveConnectedProvider(nil)
 
 	// and with the rpc down
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	deviceRemote.RemoveConnectedProvider(newId(connect.NewId()))
 }
 
@@ -136,7 +136,7 @@ func TestRemoveConnectedProviderFailedCallClosesMatchingService(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -149,7 +149,7 @@ func TestRemoveConnectedProviderFailedCallClosesMatchingService(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	deviceRemote.Sync()
 	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
@@ -234,7 +234,7 @@ func TestDeviceRemoteConnectedProviderLocations(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -247,7 +247,7 @@ func TestDeviceRemoteConnectedProviderLocations(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer deviceRemote.Close()
+	defer testingCloseAndJoin(t, "deviceRemote", deviceRemote)
 
 	listener := &testing_connectedProviderLocationChangeListener{
 		changed: make(chan struct{}, 1),
@@ -266,7 +266,7 @@ func TestDeviceRemoteConnectedProviderLocations(t *testing.T) {
 	connect.AssertEqual(t, locations.Len(), 0)
 
 	// with the rpc down the last readable list is retained rather than drained
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	frozen := deviceRemote.GetConnectedProviderLocations()
 	if frozen == nil {
 		t.Fatal("a disconnected remote must return the retained list, not nil")

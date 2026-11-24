@@ -91,12 +91,12 @@ func testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
 		networkSpace, "", instanceId, settings, clientId, testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		deviceRemote.Close()
-		deviceLocal.Close()
+		testingCloseAndJoin(t, "deviceRemote", deviceRemote)
+		testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	})
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(30 * time.Second) {
@@ -267,7 +267,7 @@ func TestDeviceLocalExtenderStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	status := deviceLocal.GetExtenderStatus()
 	connect.AssertEqual(t, status.KnownCount, 1)
@@ -313,7 +313,7 @@ func TestDeviceLocalHostedExtenderStatusIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	status := deviceLocal.GetExtenderStatus()
 	if status == nil || status.Extenders == nil {

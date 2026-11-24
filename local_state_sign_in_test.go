@@ -209,7 +209,7 @@ func TestLocalStateRolledBackSignInKeepsTheFenceClosed(t *testing.T) {
 // through the same commit, so it closes the fence too. The next sign-in saves.
 func TestLocalStateRejectedNetworkCredentialClosesTheFence(t *testing.T) {
 	api := newApi(t.Context(), nil, "http://127.0.0.1:1")
-	defer api.Close()
+	defer testingCloseAndJoin(t, "api", api)
 	networkJwt := taggedSessionTestJwt(t, "session", "")
 	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, "")
 	api.SetByJwt(networkJwt)

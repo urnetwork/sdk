@@ -258,7 +258,7 @@ func TestDeviceLocalBlockActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	blockOverride := &BlockActionOverride{
 		OverrideId:    NewId(),
@@ -355,7 +355,7 @@ func TestDeviceLocalPacketAndBlockStats(t *testing.T) {
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	packetStatsListener := &testing_packetStatsListener{}
 	packetStatsSub := device.AddPacketStatsChangeListener(packetStatsListener)
@@ -437,7 +437,7 @@ func TestDeviceLocalContractStats(t *testing.T) {
 	defer cancel()
 
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	egressStatsListener := &testing_contractStatsListener{}
 	egressStatsSub := device.AddEgressContractStatsChangeListener(egressStatsListener)
@@ -668,7 +668,7 @@ func TestDeviceLocalContractStatsEmitGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	egressStatsListener := &testing_contractStatsListener{}
 	egressStatsSub := device.AddEgressContractStatsChangeListener(egressStatsListener)
@@ -718,7 +718,7 @@ func TestDeviceLocalProviderPacketStats(t *testing.T) {
 
 	// with the provider disabled the getter is nil and the listener noops
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	if packetStats := device.GetProviderPacketStats(); packetStats != nil {
 		t.Fatalf("expected nil provider packet stats without a provider")
 	}
@@ -727,7 +727,7 @@ func TestDeviceLocalProviderPacketStats(t *testing.T) {
 	noopSub.Close()
 
 	providerDevice, _ := testing_newBlockDevice(ctx, t, true)
-	defer providerDevice.Close()
+	defer testingCloseAndJoin(t, "providerDevice", providerDevice)
 
 	// with a provider but no provided traffic the stats are zero
 	packetStats := providerDevice.GetProviderPacketStats()
@@ -802,7 +802,7 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 
 	// with the provider disabled the getters are nil
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	if stats := device.GetProviderEgressContractStats(); stats != nil {
 		t.Fatalf("expected nil provider egress stats without a provider")
 	}
@@ -817,7 +817,7 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 	}
 
 	providerDevice, _ := testing_newBlockDevice(ctx, t, true)
-	defer providerDevice.Close()
+	defer testingCloseAndJoin(t, "providerDevice", providerDevice)
 
 	ingressStatsListener := &testing_contractStatsListener{}
 	ingressStatsSub := providerDevice.AddProviderIngressContractStatsChangeListener(ingressStatsListener)
@@ -938,14 +938,14 @@ func TestDeviceLocalNetworkPeers(t *testing.T) {
 
 	// with the provider disabled there are no network peers
 	device, _ := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 	if networkPeers := device.GetNetworkPeers(); networkPeers != nil {
 		t.Fatalf("expected nil network peers without a provider")
 	}
 
 	// with a provider and no platform announcements, the peers are empty
 	providerDevice, _ := testing_newBlockDevice(ctx, t, true)
-	defer providerDevice.Close()
+	defer testingCloseAndJoin(t, "providerDevice", providerDevice)
 	networkPeers := providerDevice.GetNetworkPeers()
 	if networkPeers == nil {
 		t.Fatalf("expected network peers with a provider")

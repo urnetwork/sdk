@@ -30,7 +30,7 @@ func locationsRequestApi(t *testing.T, read func(context.Context, string) ([]byt
 		}
 		return read(ctx, args.Query)
 	})
-	t.Cleanup(api.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "api", api) })
 	return api
 }
 func locationsRequestBody(name string) []byte {

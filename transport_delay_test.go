@@ -862,7 +862,7 @@ func TestDeviceLocalTransportDelayFollowsTheMultiClientGeneration(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	listener := newTestingTransportDelayListener()
 	sub := device.AddTransportDelayChangeListener(listener)
@@ -936,7 +936,7 @@ func TestDeviceLocalTransportDelayDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	defer device.Close()
+	defer testingCloseAndJoin(t, "device", device)
 
 	testTransportDelayConnect(device)
 	multi, generation := testTransportDelayMultiClient(t, device)
@@ -984,7 +984,7 @@ func TestDeviceRemoteTransportDelay(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.GetTransportDelay(), testTransportDelayBad)
 
 	// the cache survives the device process going away
-	deviceLocal.Close()
+	testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 	testWaitRemoteDisconnected(t, deviceRemote)
 	connect.AssertEqual(t, deviceRemote.GetTransportDelay(), testTransportDelayBad)
 
@@ -999,7 +999,7 @@ func TestDeviceRemoteTransportDelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(replacement.Close)
+	t.Cleanup(func() { testingCloseAndJoin(t, "replacement", replacement) })
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(30 * time.Second) {
 		t.Fatal("the device remote did not sync with the new device process")

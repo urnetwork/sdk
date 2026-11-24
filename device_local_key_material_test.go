@@ -75,7 +75,7 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 		keyMaterial,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	seed[0] = 99
 
@@ -115,7 +115,7 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 		false,
 	)
 	connect.AssertEqual(t, err, nil)
-	defer deviceLocal.Close()
+	defer testingCloseAndJoin(t, "deviceLocal", deviceLocal)
 
 	listener := &testing_provideSecretKeysListener{}
 	sub := deviceLocal.AddProvideSecretKeysListener(listener)
@@ -211,7 +211,7 @@ func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
 	key1 := d1.GetPublicIdentityKey()
 	cert1 := d1.GetProvideTlsCertificatePem()
 	keyMaterial := d1.GetKeyMaterial()
-	d1.Close()
+	testingCloseAndJoin(t, "d1", d1)
 
 	connect.AssertEqual(t, 0 < len(key1), true)
 	connect.AssertNotEqual(t, keyMaterial, (*DeviceLocalKeyMaterial)(nil))
@@ -222,14 +222,14 @@ func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
 	d2 := newDevice(keyMaterial)
 	key2 := d2.GetPublicIdentityKey()
 	cert2 := d2.GetProvideTlsCertificatePem()
-	d2.Close()
+	testingCloseAndJoin(t, "d2", d2)
 	connect.AssertEqual(t, key2, key1)
 	connect.AssertEqual(t, cert2, cert1)
 
 	// a start without material generates a fresh identity
 	d3 := newDevice(nil)
 	key3 := d3.GetPublicIdentityKey()
-	d3.Close()
+	testingCloseAndJoin(t, "d3", d3)
 	connect.AssertNotEqual(t, key3, key1)
 }
 
