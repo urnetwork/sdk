@@ -310,8 +310,9 @@ func TestComputeSurfaceSignaturesAreGomobileSafe(t *testing.T) {
 	if !slices.Equal(found, sortedAccessors) {
 		t.Errorf("sidecar.go declares %v of the accessors %v", found, sortedAccessors)
 	}
-	// Sidecar itself is declared in sidecar.go, whose other calls are no compute surface's
-	findings := testComputeSignatureFindings(t, append(slices.Clone(testComputeSdkFiles), "sidecar.go"), nil)
+	// Sidecar itself is declared in sidecar.go, whose other calls are no compute surface's; Api, api.go's, is the app's
+	// own client, which gomobile already binds and Compute().StorePurchase takes for the network's credential (§15.3)
+	findings := testComputeSignatureFindings(t, append(slices.Clone(testComputeSdkFiles), "sidecar.go"), map[string]string{"Api": "struct"})
 	for _, finding := range findings {
 		accessor := slices.ContainsFunc(accessors, func(accessor string) bool {
 			return strings.HasPrefix(finding, "sidecar.go: Sidecar."+accessor+" ")
