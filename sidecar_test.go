@@ -10,6 +10,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -101,6 +102,10 @@ func (self *testSidecarWorld) requireNothingCreated(t *testing.T) {
 			names = append(names, name)
 		}
 		t.Errorf("the state directory holds %v", names)
+	}
+	// nor the support log's ring, which stateFiles leaves out: it writes nothing until the instance opens
+	if _, err := os.Stat(sidecar.SupportLogDirectory(self.stateDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the support log's ring is on disk: %v", err)
 	}
 }
 

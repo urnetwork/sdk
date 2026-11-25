@@ -390,7 +390,9 @@ func TestAbsentWithRecordedIdMakesNoRoot(t *testing.T) {
 	}
 }
 
-// Every file under a state directory, by its path, with its bytes.
+// Every file of the instance's state under a state directory, by its path, with its bytes. The support log's ring
+// is the app's log, not the instance's state, and writes as the sidecar runs once the instance has opened
+// (sidecar_support.go), so it is left out; requireNothingCreated holds it to nothing created while locked apart.
 func (self *testSidecarWorld) stateFiles(t *testing.T) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{}
@@ -399,6 +401,9 @@ func (self *testSidecarWorld) stateFiles(t *testing.T) map[string][]byte {
 			return walkErr
 		}
 		if entry.IsDir() {
+			if path == sidecar.SupportLogDirectory(self.stateDir) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		content, err := os.ReadFile(path)
