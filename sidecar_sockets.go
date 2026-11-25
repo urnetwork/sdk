@@ -14,10 +14,14 @@
 // which hands Accept only what an audience check passed, as plain HTTP/1.1, so the app never sees the edge's
 // ciphertext. Without the tls component named, a tls/ Listen answers that the sidecar runs none.
 //
-// A tls/ or smtp/ listen's grant asks its lifetime through the backend, the core's SocketListenSettings.Expires or
-// TlsListenSettings.Expires, held to the requests rule's maxExpiry (owner decision 687). Listen and ListenContext ask
-// none, so the rule's expiresDefault applies: §18.5 binds no lifetime for an app to ask yet, which a bound call's shape
-// waits on (question listen-expires-surfaces-sdk-listen-expiry).
+// A tls/ or smtp/ listen's grant asks its lifetime (owner decision 687; QD-1419): ListenExpires takes it in
+// milliseconds from now, as Dial's timeout and the daemon's expires_ms are, and hands it to the core as
+// SocketListenSettings.Expires, or TlsListenSettings.Expires on a tls/ name, which the requests rule's maxExpiry holds:
+// a longer one is refused by the core, its error naming the maximum, and a negative one or one past what a duration
+// holds is refused here, before the core. Listen and the Go-only ListenContext ask none, so the rule's expiresDefault
+// applies, as before. A listener's GetGrantExpiresMillis is the end of the grant it registered under, as the core's
+// listener keeps it: its action's expiry where the grant is the one a decision on that listen activated, 0 where a
+// standing grant passed it or the name's listen asks none.
 //
 // Listening follows §18.4's table: on iOS and Android in the foreground, the sidecar role running only while the app
 // is open (owner decision 197), and never on a Worker, whose build links no sdk.Sidecar (this file is !js). An app
@@ -69,6 +73,8 @@ func defaultSidecarSocketsSettings() *sidecarSocketsSettings {
 var (
 	// A Dial or Accept timeout out of range.
 	errSidecarSocketTimeout = errors.New("a socket timeout is 0 or a positive count of milliseconds within the int32 range")
+	// A listen's grant lifetime that is negative or past what a duration holds.
+	errSidecarSocketListenExpires = errors.New("a listen's expiry is 0 or a positive count of milliseconds within a duration's range")
 	// The Sidecar closed.
 	errSidecarSocketsClosed = errors.New("the sidecar's sockets closed")
 	// An Accept whose timeout passed with no stream.
@@ -84,10 +90,12 @@ type sidecarSocketsBackend interface {
 	Listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error)
 }
 
-// A listener of the core's: its net.Listener, and an accept a context ends.
+// A listener of the core's: its net.Listener, an accept a context ends, and when the grant it registered under ends,
+// zero for none it asked (sidecar.SocketListener's and sidecar.TlsListener's GrantExpires).
 type sidecarSocketListenerBackend interface {
 	net.Listener
 	AcceptContext(ctx context.Context) (net.Conn, error)
+	GrantExpires() time.Time
 }
 
 // sidecarSocketsBackend over the core.
@@ -227,6 +235,25 @@ func (self *SidecarSockets) Listen(address string, weight int32) (*SidecarSocket
 	})
 }
 
+// Listen whose tls/ or smtp/ grant asks to last expiresMillis from now (owner decision 687; QD-1419), 0 for the
+// requests rule's expiresDefault, as Listen asks: the rule's maxExpiry holds it, a longer one refused by the core with
+// the maximum named, and a negative one or one past what a duration holds is refused before the core. Asked again
+// after a person approves, the same expiresMillis spends the approval. A name whose listen asks no grant refuses any
+// but 0.
+func (self *SidecarSockets) ListenExpires(address string, weight int32, expiresMillis int64) (*SidecarSocketListener, error) {
+	return traceWithReturnError(func() (*SidecarSocketListener, error) {
+		expires := time.Duration(expiresMillis) * time.Millisecond
+		if expiresMillis < 0 || expires/time.Millisecond != time.Duration(expiresMillis) {
+			return nil, errSidecarSocketListenExpires
+		}
+		listener, err := self.listen(self.ctx, address, int(weight), expires)
+		if err != nil {
+			return nil, err
+		}
+		return &SidecarSocketListener{sockets: self, listener: listener}, nil
+	})
+}
+
 // A listen bounded by ctx and ListenTimeout, a tls/ or smtp/ name's grant asking to last expires, 0 for the requests
 // rule's expiresDefault, the gate's pending answer named as SidecarResult names it.
 func (self *SidecarSockets) listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
@@ -301,6 +328,23 @@ func (self *SidecarSocketListener) GetAddr() string {
 		return ""
 	}
 	return addr
+}
+
+// When the grant the listen registered under ends, in milliseconds since the epoch (QD-1419): the end its tls/ or smtp/
+// listen asked, where the grant is the one a decision on that listen activated, after which the service ends the
+// listen and a person approves it again. 0 where a standing grant passed it and for a name whose listen asks none.
+func (self *SidecarSocketListener) GetGrantExpiresMillis() int64 {
+	expiresMillis, err := traceWithReturn(func() int64 {
+		grantExpires := self.listener.GrantExpires()
+		if grantExpires.IsZero() {
+			return 0
+		}
+		return grantExpires.UnixMilli()
+	})
+	if err != nil {
+		return 0
+	}
+	return expiresMillis
 }
 
 // Unlistens at once (§9.9). A second Close does nothing.

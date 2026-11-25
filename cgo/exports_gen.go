@@ -22751,6 +22751,17 @@ func urnet_sidecar_socket_listener_get_addr(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_sidecar_socket_listener_get_grant_expires_millis
+func urnet_sidecar_socket_listener_get_grant_expires_millis(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_sidecar_socket_listener_get_grant_expires_millis")
+	self_, ok := resolveHandle[*sdk.SidecarSocketListener](uint64(self), "urnet_sidecar_socket_listener_get_grant_expires_millis")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetGrantExpiresMillis()
+	return C.int64_t(r0)
+}
+
 //export urnet_sidecar_sockets_dial
 func urnet_sidecar_sockets_dial(self C.uint64_t, address *C.char, timeoutMillis C.int64_t, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_sidecar_sockets_dial")
@@ -22777,6 +22788,24 @@ func urnet_sidecar_sockets_listen(self C.uint64_t, address *C.char, weight C.int
 		return 0
 	}
 	r0, err := self_.Listen(goString(address), int32(int64(weight)))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_sockets_listen_expires
+func urnet_sidecar_sockets_listen_expires(self C.uint64_t, address *C.char, weight C.int64_t, expiresMillis C.int64_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_sockets_listen_expires")
+	self_, ok := resolveHandle[*sdk.SidecarSockets](uint64(self), "urnet_sidecar_sockets_listen_expires")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.ListenExpires(goString(address), int32(int64(weight)), int64(expiresMillis))
 	if err != nil {
 		setErrorOut(outError, err)
 		return 0

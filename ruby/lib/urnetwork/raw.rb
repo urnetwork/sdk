@@ -1469,8 +1469,10 @@ module URnetwork
       attach_function :urnet_sidecar_socket_listener_accept, [:uint64, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_socket_listener_close, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_socket_listener_get_addr, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_socket_listener_get_grant_expires_millis, [:uint64], :int64, blocking: true
       attach_function :urnet_sidecar_sockets_dial, [:uint64, :string, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_sockets_listen, [:uint64, :string, :int64, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_sockets_listen_expires, [:uint64, :string, :int64, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sn_fleet_claim_advance, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_leave, [:uint64, :uint64, :urnet_sn_fleet_device_leave_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_refresh, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true

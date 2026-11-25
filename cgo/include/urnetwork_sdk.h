@@ -2699,11 +2699,13 @@ void urnet_sidecar_search_handle_more(uint64_t self, int64_t page_size);
 uint64_t urnet_sidecar_socket_listener_accept(uint64_t self, int64_t timeout_millis, char** out_error);
 bool urnet_sidecar_socket_listener_close(uint64_t self, char** out_error);
 char* urnet_sidecar_socket_listener_get_addr(uint64_t self);
+int64_t urnet_sidecar_socket_listener_get_grant_expires_millis(uint64_t self);
 
 /* ----- SidecarSockets ----- */
 
 uint64_t urnet_sidecar_sockets_dial(uint64_t self, const char* address, int64_t timeout_millis, char** out_error);
 uint64_t urnet_sidecar_sockets_listen(uint64_t self, const char* address, int64_t weight, char** out_error);
+uint64_t urnet_sidecar_sockets_listen_expires(uint64_t self, const char* address, int64_t weight, int64_t expires_millis, char** out_error);
 
 /* ----- SnFleetClaim ----- */
 

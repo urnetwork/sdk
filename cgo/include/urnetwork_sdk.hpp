@@ -27350,6 +27350,7 @@ public:
 	Socket accept(int64_t timeout_millis) const;
 	void close() const;
 	std::string getAddr() const;
+	int64_t getGrantExpiresMillis() const;
 };
 
 class SidecarSockets final : public detail::Handle {
@@ -27358,6 +27359,7 @@ public:
 	explicit SidecarSockets(uint64_t h) : detail::Handle(h) {}
 	Socket dial(const std::string& address, int64_t timeout_millis) const;
 	SidecarSocketListener listen(const std::string& address, int64_t weight) const;
+	SidecarSocketListener listenExpires(const std::string& address, int64_t weight, int64_t expires_millis) const;
 };
 
 class SnFleetClaim final : public detail::Handle {
@@ -42404,6 +42406,10 @@ inline std::string SidecarSocketListener::getAddr() const {
 	char* r_c = urnet_sidecar_socket_listener_get_addr(handle());
 	return detail::takeString(r_c);
 }
+inline int64_t SidecarSocketListener::getGrantExpiresMillis() const {
+	int64_t r = urnet_sidecar_socket_listener_get_grant_expires_millis(handle());
+	return r;
+}
 inline Socket SidecarSockets::dial(const std::string& address, int64_t timeout_millis) const {
 	char* err_c = nullptr;
 	Socket r(urnet_sidecar_sockets_dial(handle(), address.c_str(), timeout_millis, &err_c));
@@ -42415,6 +42421,14 @@ inline Socket SidecarSockets::dial(const std::string& address, int64_t timeout_m
 inline SidecarSocketListener SidecarSockets::listen(const std::string& address, int64_t weight) const {
 	char* err_c = nullptr;
 	SidecarSocketListener r(urnet_sidecar_sockets_listen(handle(), address.c_str(), weight, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline SidecarSocketListener SidecarSockets::listenExpires(const std::string& address, int64_t weight, int64_t expires_millis) const {
+	char* err_c = nullptr;
+	SidecarSocketListener r(urnet_sidecar_sockets_listen_expires(handle(), address.c_str(), weight, expires_millis, &err_c));
 	if (err_c) {
 		detail::throwError(err_c);
 	}

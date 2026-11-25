@@ -172,6 +172,8 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		// format 2's reads and the drop calls (SDK-M10-05)
 		"SidecarEvs.ReadVersion", "SidecarEvs.Write", "SidecarEvs.History", "SidecarEvs.DropHistoryPreview", "SidecarEvs.DropHistory",
 		"SidecarEvs.CancelDrop", "SidecarEvs.Drops",
+		// a listen's grant lifetime and its end (owner decision 687, QD-1419)
+		"SidecarSockets.ListenExpires", "SidecarSocketListener.GetGrantExpiresMillis",
 	} {
 		if _, ok := exported[identifier]; !ok {
 			t.Errorf("%s is not exported", identifier)

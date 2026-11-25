@@ -2664,10 +2664,14 @@ def bind(lib):
     lib.urnet_sidecar_socket_listener_close.restype = c_bool
     lib.urnet_sidecar_socket_listener_get_addr.argtypes = [c_uint64]
     lib.urnet_sidecar_socket_listener_get_addr.restype = c_void_p
+    lib.urnet_sidecar_socket_listener_get_grant_expires_millis.argtypes = [c_uint64]
+    lib.urnet_sidecar_socket_listener_get_grant_expires_millis.restype = c_int64
     lib.urnet_sidecar_sockets_dial.argtypes = [c_uint64, c_char_p, c_int64, POINTER(c_void_p)]
     lib.urnet_sidecar_sockets_dial.restype = c_uint64
     lib.urnet_sidecar_sockets_listen.argtypes = [c_uint64, c_char_p, c_int64, POINTER(c_void_p)]
     lib.urnet_sidecar_sockets_listen.restype = c_uint64
+    lib.urnet_sidecar_sockets_listen_expires.argtypes = [c_uint64, c_char_p, c_int64, c_int64, POINTER(c_void_p)]
+    lib.urnet_sidecar_sockets_listen_expires.restype = c_uint64
     lib.urnet_sn_fleet_claim_advance.argtypes = [c_uint64, urnet_sn_fleet_claim_cb, c_void_p]
     lib.urnet_sn_fleet_claim_advance.restype = None
     lib.urnet_sn_fleet_claim_leave.argtypes = [c_uint64, c_uint64, urnet_sn_fleet_device_leave_cb, c_void_p]

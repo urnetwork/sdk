@@ -29,6 +29,8 @@ type testSidecarSocketsBackend struct {
 	lifetimes []time.Duration
 	// answered by Listen in place of a listener, when set
 	listenErr error
+	// the grant end each listen on an address comes to, zero for none
+	addressGrantEnds map[string]time.Time
 }
 
 func newTestSidecarSocketsBackend() *testSidecarSocketsBackend {
@@ -66,10 +68,11 @@ func (self *testSidecarSocketsBackend) Listen(ctx context.Context, address strin
 	self.weights = append(self.weights, weight)
 	self.lifetimes = append(self.lifetimes, expires)
 	listener := &testSidecarSocketListener{
-		backend:  self,
-		address:  address,
-		accepted: make(chan net.Conn),
-		closed:   make(chan struct{}),
+		backend:         self,
+		address:         address,
+		accepted:        make(chan net.Conn),
+		closed:          make(chan struct{}),
+		grantExpireTime: self.addressGrantEnds[address],
 	}
 	self.listeners[address] = listener
 	return listener, nil
@@ -83,6 +86,8 @@ type testSidecarSocketListener struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	closeSeen int
+	// the grant end it came to, zero for none
+	grantExpireTime time.Time
 }
 
 func (self *testSidecarSocketListener) AcceptContext(ctx context.Context) (net.Conn, error) {
@@ -112,6 +117,10 @@ func (self *testSidecarSocketListener) Close() error {
 
 func (self *testSidecarSocketListener) Addr() net.Addr {
 	return &sidecar.SocketAddr{}
+}
+
+func (self *testSidecarSocketListener) GrantExpires() time.Time {
+	return self.grantExpireTime
 }
 
 // SidecarSockets on backend until the test ends.
