@@ -233,6 +233,8 @@ func newSidecarLocal(
 		cancel()
 		return nil, err
 	}
+	// the ring writes once the instance has opened: nothing reaches the state directory while it is locked or failed
+	supportLog.startWhenOpen(cancelCtx, instance)
 	var networkId *sidecar.Id
 	if records := instance.Networks(); 0 < len(records) {
 		// one network a Sidecar until several networks land (CORE-M6-01)

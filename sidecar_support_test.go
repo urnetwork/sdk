@@ -3,7 +3,10 @@
 package sdk
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 )
@@ -55,4 +58,48 @@ func TestSidecarSupportLogNeedsAnAbsoluteStateDirectory(t *testing.T) {
 	}
 	var none *sidecarSupportLog
 	none.close()
+}
+
+// A Sidecar whose key store is locked writes nothing of its ring into the state directory; once the instance opens,
+// the ring writes what it held, the app's start among it.
+func TestSidecarSupportLogWaitsForTheInstanceToOpen(t *testing.T) {
+	world := newTestSidecarWorld(t)
+	world.keyStore.setMode(testKeyStoreLocked)
+	local := world.open(t)
+	awaitTestSidecarState(t, local, sidecar.SidecarStateLocked, "")
+	if local.supportLog == nil {
+		t.Fatal("a local Sidecar with a state directory holds no support log")
+	}
+	select {
+	case <-local.supportLog.writing:
+		t.Fatal("the ring writes while the key store is locked")
+	default:
+	}
+	world.requireNothingCreated(t)
+
+	world.keyStore.setMode(testKeyStoreWorking)
+	if err := local.Core().Unlock(nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-local.supportLog.writing:
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("the ring never wrote once the instance opened")
+	}
+	if _, err := os.Stat(filepath.Join(sidecar.SupportLogDirectory(world.stateDir), "key")); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := local.supportLog.log.Bundle(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := 0
+	for _, event := range bundle.Document.Events {
+		if event.Component == "app" && event.Code == "started" {
+			started += 1
+		}
+	}
+	if started != 1 {
+		t.Fatalf("%d app.started once the ring wrote", started)
+	}
 }
