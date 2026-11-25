@@ -2831,6 +2831,15 @@ entries:
     spdx: CC-BY-4.0
     notice: '"ETH diamond (gray)" by the Ethereum Foundation (ethereum.org), licensed under CC BY 4.0. Changed: its five facets are filled in one flat colour and it is fitted to a 24x24 box.'
     text: d557539df68e
+  - name: filippo.io/edwards25519
+    version: v1.2.0
+    kind: software
+    origin: go
+    apps: [android, apple, windows, linux]
+    url: https://pkg.go.dev/filippo.io/edwards25519
+    spdx: BSD-3-Clause
+    copyright: Copyright (c) 2009 The Go Authors. All rights reserved.
+    text: 2d36597f7117
   - name: find-up
     version: 4.1.0
     kind: software
@@ -2866,7 +2875,7 @@ entries:
     copyright: Copyright 2018 Stefan Penner
     text: 902dbb415467
   - name: github.com/andybalholm/brotli
-    version: v1.2.7
+    version: v1.3.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -2986,7 +2995,7 @@ entries:
     copyright: Copyright (c) 2009,2014 Google Inc. All rights reserved.
     text: 0a8d61ed3cbf
   - name: github.com/gorilla/websocket
-    version: v1.5.3
+    version: v1.5.4-0.20240701034025-d67f41855da4
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3006,7 +3015,7 @@ entries:
       Copyright (c) 2019 Henry de Valence
     text: be6d5d5a6d9b
   - name: github.com/gtank/ristretto255
-    version: v0.1.2
+    version: v0.2.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3027,7 +3036,7 @@ entries:
     copyright: Copyright (c) 2014 HashiCorp, Inc.
     text: 6c7088eb877b
   - name: github.com/huin/goupnp
-    version: v1.3.0
+    version: v1.3.1
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3045,7 +3054,7 @@ entries:
     copyright: Copyright (c) 2016 Protocol Labs, Inc.
     text: 870903a5afd2
   - name: github.com/jackpal/go-nat-pmp
-    version: v1.0.2
+    version: v1.1.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3063,7 +3072,7 @@ entries:
     copyright: Copyright (c) 2014 Juan Batiz-Benet
     text: 2537fe852143
   - name: github.com/klauspost/compress
-    version: v1.20.2
+    version: v1.20.5
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3077,16 +3086,16 @@ entries:
       Copyright (c) 2011 The Snappy-Go Authors. All rights reserved.
     text: 0d9e582ee4bf
   - name: github.com/klauspost/cpuid/v2
-    version: v2.4.0
+    version: v2.4.2
     kind: software
     origin: go
-    apps: [android, apple, windows, linux]
+    apps: [windows, linux]
     url: https://github.com/klauspost/cpuid
     spdx: MIT
     copyright: Copyright (c) 2015 Klaus Post
     text: 52e4fc775654
   - name: github.com/koron/go-ssdp
-    version: v0.9.1
+    version: v0.9.2
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3115,7 +3124,7 @@ entries:
     copyright: Copyright (c) 2017 Protocol Labs
     text: 43e3810bf4cf
   - name: github.com/libp2p/go-libp2p
-    version: v0.49.0
+    version: v0.52.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3133,7 +3142,7 @@ entries:
     copyright: Copyright (c) Protocol Labs, Inc.
     text: bfe24471d066
   - name: github.com/libp2p/go-libp2p-pubsub
-    version: v0.17.0
+    version: v0.19.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3263,7 +3272,7 @@ entries:
     copyright: Copyright (c) 2020 The Contributors
     text: ea631b288d44
   - name: github.com/multiformats/go-multihash
-    version: v0.2.3
+    version: v0.3.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3298,6 +3307,15 @@ entries:
     spdx: BSD-3-Clause
     copyright: Copyright (c) 2011, Open Knowledge Foundation Ltd.
     text: aa1376b9bc5d
+  - name: github.com/pandatix/go-abnf
+    version: v0.5.5
+    kind: software
+    origin: go
+    apps: [android, apple, windows, linux]
+    url: https://github.com/pandatix/go-abnf
+    spdx: MIT
+    copyright: Copyright (c) 2024 Lucas TESSON - PandatiX <lucastesson@protonmail.com>
+    text: "446707246094"
   - name: github.com/pbnjay/memory
     version: v0.0.0-20210728143218-7b4eea64cf58
     kind: software
@@ -3316,7 +3334,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/pion/dtls/v3
-    version: v3.1.5
+    version: v3.1.8
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3324,7 +3342,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/pion/ice/v4
-    version: v4.4.1
+    version: v4.4.2
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3332,7 +3350,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/pion/interceptor
-    version: v0.1.47
+    version: v0.1.48
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3348,7 +3366,7 @@ entries:
     spdx: MIT
     text: 87272dba8c4f
   - name: github.com/pion/mdns/v2
-    version: v2.1.0
+    version: v2.2.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3405,8 +3423,8 @@ entries:
     url: https://github.com/pion/srtp
     spdx: MIT
     text: 6483daf6c8aa
-  - name: github.com/pion/stun/v3
-    version: v3.1.6
+  - name: github.com/pion/stun/v4
+    version: v4.0.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3422,7 +3440,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/pion/turn/v5
-    version: v5.0.12
+    version: v5.1.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3430,7 +3448,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/pion/webrtc/v4
-    version: v4.2.18
+    version: v4.2.20
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3438,7 +3456,7 @@ entries:
     spdx: MIT
     text: 6483daf6c8aa
   - name: github.com/prometheus/client_golang
-    version: v1.24.1
+    version: v1.25.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3450,7 +3468,7 @@ entries:
       Copyright 2010 The Go Authors
     text: 1684095fc389
   - name: github.com/prometheus/client_model
-    version: v0.6.2
+    version: v0.6.3
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3459,7 +3477,7 @@ entries:
     copyright: Copyright 2012-2015 The Prometheus Authors
     text: 626ae7655337
   - name: github.com/prometheus/common
-    version: v0.70.1
+    version: v0.74.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3468,7 +3486,7 @@ entries:
     copyright: Copyright 2015 The Prometheus Authors
     text: 38cfc4d7f287
   - name: github.com/prometheus/procfs
-    version: v0.21.1
+    version: v0.23.0
     kind: software
     origin: go
     apps: [android, linux]
@@ -3586,7 +3604,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/crypto
-    version: v0.58.0
+    version: v0.59.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3604,7 +3622,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/exp
-    version: v0.0.0-20260727155853-b88d891fe743
+    version: v0.0.0-20261121134650-e1094eeca1b5
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3613,7 +3631,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/image
-    version: v0.44.0
+    version: v0.48.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3631,7 +3649,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/net
-    version: v0.62.0
+    version: v0.63.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3640,7 +3658,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/sync
-    version: v0.24.0
+    version: v0.25.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -3649,7 +3667,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/sys
-    version: v0.49.0
+    version: v0.50.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3658,7 +3676,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/text
-    version: v0.43.0
+    version: v0.44.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3667,7 +3685,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: golang.org/x/time
-    version: v0.15.0
+    version: v0.16.0
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3676,7 +3694,7 @@ entries:
     copyright: Copyright 2009 The Go Authors.
     text: 911f8f578293
   - name: google.golang.org/protobuf
-    version: v1.36.11
+    version: v1.36.12
     kind: software
     origin: go
     apps: [android, apple, windows, linux, web, extension]
@@ -3885,7 +3903,7 @@ entries:
     copyright: Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
     text: 48da2f39e100
   - name: lukechampine.com/blake3
-    version: v1.4.1
+    version: v1.5.3
     kind: software
     origin: go
     apps: [android, apple, windows, linux]
@@ -9271,6 +9289,28 @@ texts:
        CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
        ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
        POSSIBILITY OF SUCH DAMAGE.
+  "446707246094": |
+    MIT License
+
+    Copyright (c) 2024 Lucas TESSON - PandatiX <lucastesson@protonmail.com>
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
   a5ad31f419c7: |
     Copyright 2013 John Howard Palevich
 
