@@ -35,6 +35,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 )
@@ -78,10 +79,11 @@ func sidecarTlsAddress(address string) bool {
 	return err == nil && namespace == sidecar.SocketNamespaceTls
 }
 
-// A tls/ name's listen on the core's ListenTls at weight, 0 for 100, bounded by ctx. The certificate it ensures is
-// ordered on the first listen and may outlast ctx, in which case the order runs on and a later Listen finds it.
-func listenSidecarTls(ctx context.Context, local *sidecar.Sidecar, address string, weight int) (sidecarSocketListenerBackend, error) {
-	listener, err := local.ListenTls(ctx, address, &sidecar.TlsListenSettings{Weight: weight})
+// A tls/ name's listen on the core's ListenTls at weight, 0 for 100, its grant asking to last expires, 0 for the
+// requests rule's expiresDefault, bounded by ctx. The certificate it ensures is ordered on the first listen and may
+// outlast ctx, in which case the order runs on and a later Listen finds it.
+func listenSidecarTls(ctx context.Context, local *sidecar.Sidecar, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
+	listener, err := local.ListenTls(ctx, address, &sidecar.TlsListenSettings{Weight: weight, Expires: expires})
 	if err != nil {
 		return nil, err
 	}

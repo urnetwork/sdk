@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 )
@@ -23,8 +24,9 @@ import (
 type testSidecarSocketsBackend struct {
 	stateLock sync.Mutex
 	listeners map[string]*testSidecarSocketListener
-	// each Listen's weight, in order
-	weights []int
+	// each Listen's weight and the grant lifetime it asked, in order
+	weights   []int
+	lifetimes []time.Duration
 	// answered by Listen in place of a listener, when set
 	listenErr error
 }
@@ -55,13 +57,14 @@ func (self *testSidecarSocketsBackend) Dial(ctx context.Context, address string)
 	}
 }
 
-func (self *testSidecarSocketsBackend) Listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error) {
+func (self *testSidecarSocketsBackend) Listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.listenErr != nil {
 		return nil, self.listenErr
 	}
 	self.weights = append(self.weights, weight)
+	self.lifetimes = append(self.lifetimes, expires)
 	listener := &testSidecarSocketListener{
 		backend:  self,
 		address:  address,

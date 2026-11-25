@@ -14,6 +14,11 @@
 // which hands Accept only what an audience check passed, as plain HTTP/1.1, so the app never sees the edge's
 // ciphertext. Without the tls component named, a tls/ Listen answers that the sidecar runs none.
 //
+// A tls/ or smtp/ listen's grant asks its lifetime through the backend, the core's SocketListenSettings.Expires or
+// TlsListenSettings.Expires, held to the requests rule's maxExpiry (owner decision 687). Listen and ListenContext ask
+// none, so the rule's expiresDefault applies: §18.5 binds no lifetime for an app to ask yet, which a bound call's shape
+// waits on (question listen-expires-surfaces-sdk-listen-expiry).
+//
 // Listening follows §18.4's table: on iOS and Android in the foreground, the sidecar role running only while the app
 // is open (owner decision 197), and never on a Worker, whose build links no sdk.Sidecar (this file is !js). An app
 // reports its foreground through SDK-M10-02's host calls; until those land this file rests on the role's own rule,
@@ -74,8 +79,9 @@ var (
 type sidecarSocketsBackend interface {
 	// sidecar.Sidecar.Dial with no filter.
 	Dial(ctx context.Context, address string) (net.Conn, error)
-	// sidecar.Sidecar.Listen at weight, 0 taking the core's 100.
-	Listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error)
+	// sidecar.Sidecar.Listen at weight, 0 taking the core's 100, a tls/ or smtp/ name's grant asking to last expires,
+	// 0 taking the requests rule's expiresDefault.
+	Listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error)
 }
 
 // A listener of the core's: its net.Listener, and an accept a context ends.
@@ -99,11 +105,11 @@ func (self *sidecarSocketsCoreBackend) Dial(ctx context.Context, address string)
 }
 
 // See sidecarSocketsBackend. A tls/ name goes through the tls component's front (sidecar_tls.go).
-func (self *sidecarSocketsCoreBackend) Listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error) {
+func (self *sidecarSocketsCoreBackend) Listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
 	if sidecarTlsAddress(address) {
-		return listenSidecarTls(ctx, self.local, address, weight)
+		return listenSidecarTls(ctx, self.local, address, weight, expires)
 	}
-	listener, err := self.local.Listen(ctx, address, &sidecar.SocketListenSettings{Weight: weight})
+	listener, err := self.local.Listen(ctx, address, &sidecar.SocketListenSettings{Weight: weight, Expires: expires})
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +215,11 @@ func (self *SidecarSockets) Dial(address string, timeoutMillis int64) (*Socket, 
 
 // A listen on address in this sidecar's network at weight, 1 to 1000 and 0 for 100 (§9.5), live once the service's
 // first verdict takes it; on tls/ and smtp/ §5.4's gate first, whose pending answer is an error naming
-// approval_pending:<id>. Accept its streams on a worker thread, and Close it when done.
+// approval_pending:<id>, and whose grant lasts the requests rule's expiresDefault. Accept its streams on a worker
+// thread, and Close it when done.
 func (self *SidecarSockets) Listen(address string, weight int32) (*SidecarSocketListener, error) {
 	return traceWithReturnError(func() (*SidecarSocketListener, error) {
-		listener, err := self.listen(self.ctx, address, int(weight))
+		listener, err := self.listen(self.ctx, address, int(weight), 0)
 		if err != nil {
 			return nil, err
 		}
@@ -220,8 +227,9 @@ func (self *SidecarSockets) Listen(address string, weight int32) (*SidecarSocket
 	})
 }
 
-// A listen bounded by ctx and ListenTimeout, the gate's pending answer named as SidecarResult names it.
-func (self *SidecarSockets) listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error) {
+// A listen bounded by ctx and ListenTimeout, a tls/ or smtp/ name's grant asking to last expires, 0 for the requests
+// rule's expiresDefault, the gate's pending answer named as SidecarResult names it.
+func (self *SidecarSockets) listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
 	if self.ctx.Err() != nil {
 		return nil, errSidecarSocketsClosed
 	}
@@ -230,7 +238,7 @@ func (self *SidecarSockets) listen(ctx context.Context, address string, weight i
 	// a listen outlives no Sidecar
 	stop := context.AfterFunc(self.ctx, cancel)
 	defer stop()
-	listener, err := self.backend.Listen(listenCtx, address, weight)
+	listener, err := self.backend.Listen(listenCtx, address, weight, expires)
 	if err != nil {
 		var pending *sidecar.ApprovalPendingError
 		if errors.As(err, &pending) {
@@ -241,10 +249,11 @@ func (self *SidecarSockets) listen(ctx context.Context, address string, weight i
 	return listener, nil
 }
 
-// Go only: a listen on address as a net.Listener, at the core's default weight, for an app's own Go server. ctx bounds
-// the listen alone, as net.ListenConfig's does; the listener lives until its Close or the Sidecar's.
+// Go only: a listen on address as a net.Listener, at the core's default weight and a tls/ or smtp/ grant's
+// expiresDefault, for an app's own Go server. ctx bounds the listen alone, as net.ListenConfig's does; the listener
+// lives until its Close or the Sidecar's.
 func (self *SidecarSockets) ListenContext(ctx context.Context, address string) (net.Listener, error) {
-	listener, err := self.listen(ctx, address, 0)
+	listener, err := self.listen(ctx, address, 0, 0)
 	if err != nil {
 		return nil, err
 	}
