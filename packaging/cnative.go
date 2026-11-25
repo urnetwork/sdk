@@ -69,7 +69,7 @@ endif()
 		archive := "URnetworkSdk-C-" + packageVersion() + "-" + lib.Platform + ".zip"
 		p := filepath.Join(artifacts, archive)
 		zipTree(dir, p)
-		index.Assets = append(index.Assets, cNativeAsset{Platform: lib.Platform, URL: "https://github.com/urnetwork/build/releases/download/v" + packageVersion() + "/" + archive,
+		index.Assets = append(index.Assets, cNativeAsset{Platform: lib.Platform, URL: releaseDownloadURL(archive),
 			Archive: archive, SHA256: hash(p), SHA512: fmt.Sprintf("%x", sha512.Sum512(read(p)))})
 		if dst := os.Getenv("SDK_C_RELEASE_ASSETS"); dst != "" {
 			copyFile(p, filepath.Join(dst, archive))
