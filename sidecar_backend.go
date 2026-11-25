@@ -754,6 +754,15 @@ func (self *sidecarRemoteBackend) call(ctx context.Context, method string, param
 	return self.callBounded(ctx, self.settings.CallTimeout, method, params, confirmed, result)
 }
 
+// A control session of a wrapper's own, for a long poll held open apart from the calls, whose one session it would
+// otherwise hold (support.watch, sidecar_support_conversation.go). The caller closes it. Fails when no daemon answers.
+func (self *sidecarRemoteBackend) dialOwn(ctx context.Context) (sidecarControlChannel, error) {
+	if self.ctx.Err() != nil {
+		return nil, errSidecarRemoteClosed
+	}
+	return self.dial(ctx)
+}
+
 // One call within timeout, dialing a session when none is open. A session that fails is dropped and the backend reads
 // offline, so the next call dials again; a daemon's refusal keeps the session.
 func (self *sidecarRemoteBackend) callBounded(ctx context.Context, timeout time.Duration, method string, params any, confirmed bool, result any) error {
