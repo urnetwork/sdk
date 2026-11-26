@@ -119,6 +119,19 @@ var mobileSidecarGoOnlyIds = map[string]bool{
 	"DeviceLocal.NewBridgeLink":    true,
 }
 
+// The model routes' mirror's Go-only members (api_compute_models.go; CSRV-M11-01,
+// DESIGN-COMPUTE §14.3): apps call the callback forms, ComputeModelIndex and
+// ComputeModelChunk, which read under DefaultComputeModelApiSettings. The forms
+// under settings take a context and are marked //gomobile:noexport, and only they
+// read the settings' two durations, so those fields stay for Go hosts while the
+// settings' byte bounds and DefaultComputeModelApiSettings bind.
+var mobileComputeModelGoOnlyIds = map[string]bool{
+	"Api.ComputeModelIndexSyncWithSettings": true,
+	"Api.ComputeModelChunkSyncWithSettings": true,
+	"ComputeModelApiSettings.IndexTimeout":  true,
+	"ComputeModelApiSettings.ChunkTimeout":  true,
+}
+
 // The entry points an app's VPN component gives its forwarding key store through
 // (sidecar §18.6's Setup, owner decision 197, QD-844; SDK-M8-06's tables): the
 // setter on the settings a gomobile host builds, and the constructor that takes
@@ -141,7 +154,7 @@ func allowedMobileOmission(identifier string) bool {
 	}
 	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] ||
 		mobileExtenderStringSliceIds[identifier] || mobileSnFleetGoOnlyIds[identifier] ||
-		mobileSidecarGoOnlyIds[identifier] {
+		mobileSidecarGoOnlyIds[identifier] || mobileComputeModelGoOnlyIds[identifier] {
 		return true
 	}
 	parts := strings.SplitN(identifier, ".", 2)
