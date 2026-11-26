@@ -2770,12 +2770,35 @@ func (self *testing_blockingRouteLocalListener) RouteLocalChanged(routeLocal boo
 	}
 }
 
+// Closes told once the remote tells it want. It marks the end of a run of
+// reverse notifications: the remote delivers its callbacks serially in the
+// order the local sent them, so a marker sent after the run is told only once
+// every notification of the run has been delivered.
+type testing_blockerEnabledMarkerListener struct {
+	want     bool
+	told     chan struct{}
+	toldOnce sync.Once
+}
+
+func (self *testing_blockerEnabledMarkerListener) BlockerEnabledChanged(blockerEnabled bool) {
+	if blockerEnabled == self.want {
+		self.toldOnce.Do(func() { close(self.told) })
+	}
+}
+
 // TestDeviceLocalRpcReverseStalledRemote drives a real remote into a stalled
 // state (its callback drain is parked in a listener) and fires a burst of state
 // changes on the local device. Because reverse delivery is async and coalescing,
 // the local setters must not block on the stalled remote, and once the remote
 // resumes it must converge to the final value having seen far fewer events than
 // were fired.
+//
+// Each step waits on the event it needs, not on how soon it comes, so a loaded
+// machine makes the test slower and never fails it: the burst must return while
+// the remote is still parked, and the remote has drained once a marker sent
+// after the burst is delivered. It used to require the burst within a second
+// and read the listener two seconds after the release, and a loaded machine
+// took longer than the second.
 func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2817,33 +2840,66 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	defer sub.Close()
 
 	deviceRemote.Sync()
-	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
+	guard := testingWaitGuard(t, time.Minute)
+	if !deviceRemote.waitForSync(guard) {
+		t.Fatalf("the remote did not sync in %v", guard)
+	}
 
 	// force a change to drive the remote listener, then wait until it is parked
 	initial := deviceLocal.GetRouteLocal()
 	final := !initial
 	deviceLocal.SetRouteLocal(final)
+	guard = testingWaitGuard(t, time.Minute)
 	select {
 	case <-listener.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("remote listener never received the initial update")
+	case <-time.After(guard):
+		t.Fatalf("remote listener never received the initial update in %v", guard)
 	}
 
 	// with the remote stalled, fire a burst. each setter only enqueues a reverse
-	// notification, so these must return promptly rather than block on the remote.
-	// (the old synchronous path would block the setter on the stalled remote.)
+	// notification, so the burst returns while the remote stays parked. the old
+	// synchronous path would block a setter once the remote's callback buffer
+	// filled, until the release that only comes after the burst, so the burst
+	// must outrun that buffer.
 	const burst = 100
-	start := time.Now()
-	for i := 0; i < burst; i++ {
-		deviceLocal.SetRouteLocal(initial)
-		deviceLocal.SetRouteLocal(final)
+	if 2*burst <= settings.CallbackBufferSize+1 {
+		t.Fatalf("a burst of %d updates does not outrun the remote's callback buffer of %d", 2*burst, settings.CallbackBufferSize)
 	}
-	elapsed := time.Since(start)
-	connect.AssertEqual(t, elapsed < time.Second, true)
+	burstDone := make(chan struct{})
+	go func() {
+		defer close(burstDone)
+		for i := 0; i < burst; i++ {
+			deviceLocal.SetRouteLocal(initial)
+			deviceLocal.SetRouteLocal(final)
+		}
+	}()
+	guard = testingWaitGuard(t, time.Minute)
+	select {
+	case <-burstDone:
+	case <-time.After(guard):
+		t.Fatalf("the burst of %d route local updates did not return in %v while the remote was parked: a setter waits on the stalled remote", 2*burst, guard)
+	}
 
-	// resume the remote and let it drain
+	// resume the remote and wait for it to drain: a marker goes out on the same
+	// reverse queue after the burst's last notification, so once it is delivered
+	// every route local delivery has ended. its listener is added only after the
+	// burst, so the marker's key is first queued then: the queue keeps a key
+	// where it was first queued, and one queued before the burst's last
+	// notification would carry the marker ahead of it.
 	doRelease()
-	time.Sleep(2 * time.Second)
+	marker := &testing_blockerEnabledMarkerListener{
+		want: !deviceLocal.GetBlockerEnabled(),
+		told: make(chan struct{}),
+	}
+	markerSub := deviceRemote.AddBlockerEnabledChangeListener(marker)
+	defer markerSub.Close()
+	deviceLocal.SetBlockerEnabled(marker.want)
+	guard = testingWaitGuard(t, time.Minute)
+	select {
+	case <-marker.told:
+	case <-time.After(guard):
+		t.Fatalf("the remote did not deliver the marker sent after the burst in %v", guard)
+	}
 
 	listener.stateLock.Lock()
 	last := listener.last
@@ -2852,8 +2908,12 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 
 	// converged to the final value, and coalescing collapsed the burst far below
 	// the number of updates fired (1 initial + 2*burst)
-	connect.AssertEqual(t, last, final)
-	connect.AssertEqual(t, count < 1+2*burst, true)
+	if last != final {
+		t.Fatalf("the remote's listener was last told %t, not the final %t", last, final)
+	}
+	if 1+2*burst <= count {
+		t.Fatalf("the remote's listener was told %d times for %d updates: the burst did not coalesce", count, 1+2*burst)
+	}
 }
 
 // testing_blockingReverseRpc stands in for the app side of the reverse rpc. The
@@ -3330,7 +3390,10 @@ func (self *testing_httpAndStateReverseRpc) HttpResponse(httpResponse *DeviceRem
 // sendLoop, so a state notification stuck in the coalescing queue does not
 // head-of-line block an http response (and vice versa). With sendLoop blocked
 // (back pressure) inside a state-notification delivery to a parked app, a
-// directly delivered http response must still arrive promptly.
+// directly delivered http response must still arrive, and its delivery
+// return, while the notification stays stuck: one that waited behind it would
+// do neither before the release, which only comes at the end. It used to
+// require both within a second, which a loaded machine can take longer than.
 func TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -3374,28 +3437,37 @@ func TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification(t *testing.T) {
 
 	// park sendLoop inside a state-notification delivery (the app handler blocks)
 	localRpc.reverseNotify("DeviceRemoteRpc.TunnelChanged", true)
+	guard := testingWaitGuard(t, time.Minute)
 	select {
 	case <-server.tunnelEntered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("sendLoop never delivered the state notification")
+	case <-time.After(guard):
+		t.Fatalf("sendLoop never delivered the state notification in %v", guard)
 	}
 
 	// with sendLoop stuck, an http response delivered directly must still arrive
 	httpResponse := newDeviceRemoteHttpResponse(connect.NewId(), []byte("ok"), nil)
-	start := time.Now()
-	localRpc.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
-	elapsed := time.Since(start)
+	delivered := make(chan struct{})
+	go func() {
+		defer close(delivered)
+		localRpc.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
+	}()
 
+	guard = testingWaitGuard(t, time.Minute)
 	select {
 	case got := <-server.httpReceived:
 		connect.AssertEqual(t, got.RequestId, httpResponse.RequestId)
 		connect.AssertEqual(t, string(got.BodyBytes), "ok")
-	case <-time.After(time.Second):
-		t.Fatal("http response was not delivered while a state notification was stuck in sendLoop")
+	case <-time.After(guard):
+		t.Fatalf("http response was not delivered in %v while a state notification was stuck in sendLoop", guard)
 	}
-	// delivered promptly, i.e. it did not wait behind the state notification that
-	// is blocking sendLoop
-	connect.AssertEqual(t, elapsed < time.Second, true)
+	// and its delivery returned, i.e. it did not wait behind the state
+	// notification that is blocking sendLoop
+	guard = testingWaitGuard(t, time.Minute)
+	select {
+	case <-delivered:
+	case <-time.After(guard):
+		t.Fatalf("the http response's delivery did not return in %v while a state notification was stuck in sendLoop", guard)
+	}
 }
 
 // testing_panicRpc has a served method that panics, to exercise the forward
