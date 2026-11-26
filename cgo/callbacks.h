@@ -101,6 +101,8 @@ typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
 void urnet_invoke_client_session(urnet_client_session_cb cb, void* user_data, uint64_t snapshot);
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success);
+typedef void (*urnet_compute_model_bytes_cb)(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param);
+void urnet_invoke_compute_model_bytes(urnet_compute_model_bytes_cb cb, void* user_data, const uint8_t* result, int32_t result_len, const char* err_param);
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
 void urnet_invoke_connect_change(urnet_connect_change_cb cb, void* user_data, bool connect_enabled);
 typedef void (*urnet_connect_location_change_cb)(void* user_data, const char* location_json);

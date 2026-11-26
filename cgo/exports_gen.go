@@ -764,6 +764,27 @@ func (self *cAdapterCommitCallback) Complete(success bool) {
 	C.urnet_invoke_commit(self.cbComplete, self.userData, C.bool(bool(success)))
 }
 
+type cAdapterComputeModelBytesCallback struct {
+	cbResult C.urnet_compute_model_bytes_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterComputeModelBytesCallback) Result(result []byte, errParam error) {
+	defer cgoGuard("urnet_compute_model_bytes_cb")
+	var result_ *C.uint8_t
+	if 0 < len(result) {
+		result_ = (*C.uint8_t)(unsafe.Pointer(&result[0]))
+	}
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_compute_model_bytes(self.cbResult, self.userData, result_, C.int32_t(len(result)), errParam_)
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterConnectChangeListener struct {
 	cbConnectChanged C.urnet_connect_change_cb
 	userData         unsafe.Pointer
@@ -5044,6 +5065,34 @@ func urnet_api_close(self C.uint64_t) {
 		return
 	}
 	self_.Close()
+}
+
+//export urnet_api_compute_model_chunk
+func urnet_api_compute_model_chunk(self C.uint64_t, sha256Text *C.char, n C.int64_t, callback_result C.urnet_compute_model_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_model_chunk")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_model_chunk")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeModelBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeModelBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeModelChunk(goString(sha256Text), int(int64(n)), callback_)
+}
+
+//export urnet_api_compute_model_index
+func urnet_api_compute_model_index(self C.uint64_t, sha256Text *C.char, callback_result C.urnet_compute_model_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_model_index")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_model_index")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeModelBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeModelBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeModelIndex(goString(sha256Text), callback_)
 }
 
 //export urnet_api_create_account_wallet
@@ -9866,6 +9915,16 @@ func urnet_crypto_wallet_suggestions(asset *C.char) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_crypto_wallet_suggestions")
+}
+
+//export urnet_default_compute_model_api_settings
+func urnet_default_compute_model_api_settings() *C.char {
+	defer cgoGuard("urnet_default_compute_model_api_settings")
+	r0 := sdk.DefaultComputeModelApiSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_compute_model_api_settings")
 }
 
 //export urnet_default_device_local_settings

@@ -50,6 +50,7 @@ module URnetwork
       callback :urnet_client_refresh_integrity_cb, [:pointer, :uint64], :void
       callback :urnet_client_session_cb, [:pointer, :uint64], :void
       callback :urnet_commit_cb, [:pointer, :bool], :void
+      callback :urnet_compute_model_bytes_cb, [:pointer, :pointer, :int32, :string], :void
       callback :urnet_connect_change_cb, [:pointer, :bool], :void
       callback :urnet_connect_location_change_cb, [:pointer, :string], :void
       callback :urnet_connected_provider_location_change_cb, [:pointer], :void
@@ -346,6 +347,8 @@ module URnetwork
       attach_function :urnet_api_claim_network_name, [:uint64, :string, :urnet_claim_network_name_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_client_events_send, [:uint64, :string, :urnet_client_events_send_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_close, [:uint64], :void, blocking: true
+      attach_function :urnet_api_compute_model_chunk, [:uint64, :string, :int64, :urnet_compute_model_bytes_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_model_index, [:uint64, :string, :urnet_compute_model_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_account_wallet, [:uint64, :string, :urnet_create_account_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_api_key, [:uint64, :string, :urnet_create_api_key_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_crypto_payment_intent, [:uint64, :string, :urnet_crypto_payment_intent_cb, :pointer], :void, blocking: true
@@ -1629,6 +1632,7 @@ module URnetwork
       attach_function :urnet_crypto_asset_ticker, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_term_notice_due, [:string], :bool, blocking: true
       attach_function :urnet_crypto_wallet_suggestions, [:string], :pointer, blocking: true
+      attach_function :urnet_default_compute_model_api_settings, [], :pointer, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true

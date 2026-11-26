@@ -51,6 +51,7 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_client_refresh_integrity_cb(IntPtr a0, ulong a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_client_session_cb(IntPtr a0, ulong a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_commit_cb(IntPtr a0, byte a1);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_compute_model_bytes_cb(IntPtr a0, IntPtr a1, int a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_connect_change_cb(IntPtr a0, byte a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_connect_location_change_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_connected_provider_location_change_cb(IntPtr a0);
@@ -347,6 +348,8 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_claim_network_name(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_claim_network_name_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_client_events_send(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_client_events_send_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_close(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_compute_model_chunk(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, urnet_compute_model_bytes_cb a3, IntPtr a4);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_compute_model_index(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_compute_model_bytes_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_account_wallet(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_create_account_wallet_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_api_key(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_create_api_key_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_crypto_payment_intent(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_crypto_payment_intent_cb a2, IntPtr a3);
@@ -1630,6 +1633,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_crypto_asset_ticker([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_crypto_term_notice_due([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_crypto_wallet_suggestions([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_default_compute_model_api_settings();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_default_device_local_settings();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_default_low_memory_device_local_settings();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_default_provider_transport_settings();

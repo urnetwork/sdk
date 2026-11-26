@@ -50,6 +50,7 @@ urnet_client_limit_status_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_client_refresh_integrity_cb = CFUNCTYPE(None, c_void_p, c_uint64)
 urnet_client_session_cb = CFUNCTYPE(None, c_void_p, c_uint64)
 urnet_commit_cb = CFUNCTYPE(None, c_void_p, c_bool)
+urnet_compute_model_bytes_cb = CFUNCTYPE(None, c_void_p, POINTER(c_uint8), c_int32, c_char_p)
 urnet_connect_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_connect_location_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_connected_provider_location_change_cb = CFUNCTYPE(None, c_void_p)
@@ -416,6 +417,10 @@ def bind(lib):
     lib.urnet_api_client_events_send.restype = None
     lib.urnet_api_close.argtypes = [c_uint64]
     lib.urnet_api_close.restype = None
+    lib.urnet_api_compute_model_chunk.argtypes = [c_uint64, c_char_p, c_int64, urnet_compute_model_bytes_cb, c_void_p]
+    lib.urnet_api_compute_model_chunk.restype = None
+    lib.urnet_api_compute_model_index.argtypes = [c_uint64, c_char_p, urnet_compute_model_bytes_cb, c_void_p]
+    lib.urnet_api_compute_model_index.restype = None
     lib.urnet_api_create_account_wallet.argtypes = [c_uint64, c_char_p, urnet_create_account_wallet_cb, c_void_p]
     lib.urnet_api_create_account_wallet.restype = None
     lib.urnet_api_create_api_key.argtypes = [c_uint64, c_char_p, urnet_create_api_key_cb, c_void_p]
@@ -2982,6 +2987,8 @@ def bind(lib):
     lib.urnet_crypto_term_notice_due.restype = c_bool
     lib.urnet_crypto_wallet_suggestions.argtypes = [c_char_p]
     lib.urnet_crypto_wallet_suggestions.restype = c_void_p
+    lib.urnet_default_compute_model_api_settings.argtypes = []
+    lib.urnet_default_compute_model_api_settings.restype = c_void_p
     lib.urnet_default_device_local_settings.argtypes = []
     lib.urnet_default_device_local_settings.restype = c_void_p
     lib.urnet_default_low_memory_device_local_settings.argtypes = []

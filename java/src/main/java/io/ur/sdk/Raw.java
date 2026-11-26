@@ -51,6 +51,7 @@ public interface Raw extends Library {
   interface urnet_client_refresh_integrity_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_client_session_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_commit_cb extends Callback { void invoke(Pointer a0, byte a1); }
+  interface urnet_compute_model_bytes_cb extends Callback { void invoke(Pointer a0, Pointer a1, int a2, String a3); }
   interface urnet_connect_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_connect_location_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_connected_provider_location_change_cb extends Callback { void invoke(Pointer a0); }
@@ -347,6 +348,8 @@ public interface Raw extends Library {
   void urnet_api_claim_network_name(long a0, String a1, urnet_claim_network_name_cb a2, Pointer a3);
   void urnet_api_client_events_send(long a0, String a1, urnet_client_events_send_cb a2, Pointer a3);
   void urnet_api_close(long a0);
+  void urnet_api_compute_model_chunk(long a0, String a1, long a2, urnet_compute_model_bytes_cb a3, Pointer a4);
+  void urnet_api_compute_model_index(long a0, String a1, urnet_compute_model_bytes_cb a2, Pointer a3);
   void urnet_api_create_account_wallet(long a0, String a1, urnet_create_account_wallet_cb a2, Pointer a3);
   void urnet_api_create_api_key(long a0, String a1, urnet_create_api_key_cb a2, Pointer a3);
   void urnet_api_create_crypto_payment_intent(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
@@ -1630,6 +1633,7 @@ public interface Raw extends Library {
   Pointer urnet_crypto_asset_ticker(String a0);
   byte urnet_crypto_term_notice_due(String a0);
   Pointer urnet_crypto_wallet_suggestions(String a0);
+  Pointer urnet_default_compute_model_api_settings();
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
   Pointer urnet_default_provider_transport_settings();

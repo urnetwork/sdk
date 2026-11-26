@@ -337,6 +337,13 @@ void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success) {
 	cb(user_data, success);
 }
 
+void urnet_invoke_compute_model_bytes(urnet_compute_model_bytes_cb cb, void* user_data, const uint8_t* result, int32_t result_len, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, result, result_len, err_param);
+}
+
 void urnet_invoke_connect_change(urnet_connect_change_cb cb, void* user_data, bool connect_enabled) {
 	if (cb == 0) {
 		return;

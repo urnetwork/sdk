@@ -919,6 +919,8 @@ typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t noti
 typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
+/* ComputeModelBytesCallback */
+typedef void (*urnet_compute_model_bytes_cb)(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param);
 /* ConnectChangeListener */
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
 /* ConnectLocationChangeListener */
@@ -1400,6 +1402,8 @@ void urnet_api_check_balance_code(uint64_t self, const char* args_json, urnet_ch
 void urnet_api_claim_network_name(uint64_t self, const char* args_json, urnet_claim_network_name_cb callback_result, void* callback_user_data);
 void urnet_api_client_events_send(uint64_t self, const char* args_json, urnet_client_events_send_cb callback_result, void* callback_user_data);
 void urnet_api_close(uint64_t self);
+void urnet_api_compute_model_chunk(uint64_t self, const char* sha256_text, int64_t n, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
+void urnet_api_compute_model_index(uint64_t self, const char* sha256_text, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_create_crypto_payment_intent(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
@@ -2910,6 +2914,7 @@ bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const 
 char* urnet_crypto_asset_ticker(const char* asset);
 bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
+char* urnet_default_compute_model_api_settings(void);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
@@ -3774,6 +3779,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientLimitStatus (json):
  *   Status: string
  *   RetryTime: number
+ */
+
+/* ComputeModelApiSettings (json):
+ *   IndexMaxByteCount: number
+ *   ChunkMaxByteCount: number
+ *   IndexTimeout: number (ns)
+ *   ChunkTimeout: number (ns)
  */
 
 /* ConnectLocation (json):

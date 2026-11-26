@@ -39,6 +39,8 @@ EXPORTS
 	urnet_api_claim_network_name
 	urnet_api_client_events_send
 	urnet_api_close
+	urnet_api_compute_model_chunk
+	urnet_api_compute_model_index
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
 	urnet_api_create_crypto_payment_intent
@@ -389,6 +391,7 @@ EXPORTS
 	urnet_crypto_wallet_suggestions
 	urnet_decode_base58
 	urnet_decrypt_data
+	urnet_default_compute_model_api_settings
 	urnet_default_device_local_settings
 	urnet_default_low_memory_device_local_settings
 	urnet_default_provider_transport_settings
