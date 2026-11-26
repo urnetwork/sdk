@@ -42,6 +42,8 @@ const (
 	credentialTestDeviceId       = "00000000-0000-0000-0000-00000000d001"
 	credentialTestKeyClientId    = "00000000-0000-0000-0000-00000000e001"
 	credentialTestExplicitByJwt  = "explicit-owner-credential"
+	// a local model file's SHA-256, for the compute model routes
+	credentialTestModelSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
 
 type apiCredentialCase struct {
@@ -188,6 +190,21 @@ func apiCredentialCases() []apiCredentialCase {
 		}},
 		{"SnValidateWalletSyncWithContext", "POST /sn/wallet/validate", "/sn/wallet/validate", sendsNone, func(ctx context.Context, api *Api) error {
 			_, err := api.SnValidateWalletSyncWithContext(ctx, "coldkey")
+			return err
+		}},
+		// the compute model routes, public, which read no credential and are sent none (CSRV-M11-01)
+		{"ComputeModelIndex", "GET /compute/models/%s/index", "/compute/models/" + credentialTestModelSha256 + "/index", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[[]byte]) { api.ComputeModelIndex(credentialTestModelSha256, cb) })
+		}},
+		{"ComputeModelIndexSyncWithContext", "GET /compute/models/%s/index", "/compute/models/" + credentialTestModelSha256 + "/index", sendsNone, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeModelIndexSyncWithContext(ctx, credentialTestModelSha256)
+			return err
+		}},
+		{"ComputeModelChunk", "GET /compute/models/%s/chunks/%d", "/compute/models/" + credentialTestModelSha256 + "/chunks/3", sendsNone, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[[]byte]) { api.ComputeModelChunk(credentialTestModelSha256, 3, cb) })
+		}},
+		{"ComputeModelChunkSyncWithContext", "GET /compute/models/%s/chunks/%d", "/compute/models/" + credentialTestModelSha256 + "/chunks/3", sendsNone, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeModelChunkSyncWithContext(ctx, credentialTestModelSha256, 3)
 			return err
 		}},
 
