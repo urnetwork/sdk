@@ -64,14 +64,22 @@ type sidecarSupportSettings struct {
 	WatchRetryMinInterval time.Duration
 	// The longest such wait: 30 s.
 	WatchRetryMaxInterval time.Duration
+	// The longest a support wake reads before it answers (sidecar_support_notify.go): 25 s, inside the about 30 s an
+	// app's OS gives a background push to finish in, so the app ends its window on Wake's answer.
+	WakeTimeout time.Duration
+	// The notifications one subscription holds for its listener before it drops the next: 64. A dropped notification's
+	// event stays in the conversation, and the next notification's unread count covers it.
+	NotificationQueueCount int
 }
 
 // The defaults, the only place one is set.
 func defaultSidecarSupportSettings() *sidecarSupportSettings {
 	return &sidecarSupportSettings{
-		WatchCallTimeout:      35 * time.Second,
-		WatchRetryMinInterval: 1 * time.Second,
-		WatchRetryMaxInterval: 30 * time.Second,
+		WatchCallTimeout:       35 * time.Second,
+		WatchRetryMinInterval:  1 * time.Second,
+		WatchRetryMaxInterval:  30 * time.Second,
+		WakeTimeout:            25 * time.Second,
+		NotificationQueueCount: 64,
 	}
 }
 
