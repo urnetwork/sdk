@@ -585,6 +585,14 @@ inline constexpr const char* SidecarApprovalKindRecoveryWindow = "recovery_windo
 inline constexpr const char* SidecarApprovalKindRequest = "request";
 inline constexpr const char* SidecarApprovalKindRevocationProposal = "revocation_proposal";
 inline constexpr const char* SidecarBridgeAlarmForwardingRevoked = "forwarding_revoked";
+inline constexpr const char* SidecarCarriedExpired = "expired";
+inline constexpr const char* SidecarCarriedParked = "parked";
+inline constexpr const char* SidecarCarriedRemoved = "removed";
+inline constexpr const char* SidecarCarriedRevoked = "revoked";
+inline constexpr const char* SidecarCarriedRole = "role";
+inline constexpr const char* SidecarCarriedSignature = "signature";
+inline constexpr const char* SidecarCarriedTagged = "tagged";
+inline constexpr const char* SidecarCarriedUnlisted = "unlisted";
 inline constexpr const char* SidecarCodeApprovalAuthority = "APPROVAL_AUTHORITY";
 inline constexpr const char* SidecarCodeApprovalDecided = "APPROVAL_DECIDED";
 inline constexpr const char* SidecarCodeApprovalNotEligible = "APPROVAL_NOT_ELIGIBLE";
@@ -1280,6 +1288,7 @@ struct SidecarApprovalItem;
 struct SidecarAuthFeature;
 struct SidecarBurner;
 struct SidecarBytes;
+struct SidecarCarriedConfigRecord;
 struct SidecarCleanupWorker;
 struct SidecarDevice;
 struct SidecarDirectoryCoverage;
@@ -1496,6 +1505,7 @@ using SidecarAliasList = std::vector<SidecarAlias>;
 using SidecarAnnouncementList = std::vector<SidecarAnnouncement>;
 using SidecarApprovalList = std::vector<SidecarApprovalItem>;
 using SidecarAuthFeatures = std::vector<SidecarAuthFeature>;
+using SidecarCarriedConfigRecordList = std::vector<SidecarCarriedConfigRecord>;
 using SidecarCleanupWorkerList = std::vector<SidecarCleanupWorker>;
 using SidecarDeviceList = std::vector<SidecarDevice>;
 using SidecarDirectoryFieldList = std::vector<SidecarDirectoryField>;
@@ -4169,6 +4179,18 @@ struct SidecarBytes {
 	std::optional<std::string> message;
 };
 
+struct SidecarCarriedConfigRecord {
+	std::string record{};
+	std::optional<std::string> signer_id;
+	std::optional<std::string> member_id;
+	std::string why{};
+	std::optional<int64_t> position;
+	std::optional<int64_t> not_after_millis;
+	std::optional<std::string> role;
+	std::optional<bool> member_removed;
+	std::optional<StringList> filed_by;
+};
+
 struct SidecarCleanupWorker {
 	std::optional<std::string> sidecar_id;
 	std::optional<std::string> member_id;
@@ -6114,6 +6136,8 @@ inline void to_json(nlohmann::json& j, const SidecarBurner& v);
 inline void from_json(const nlohmann::json& j, SidecarBurner& v);
 inline void to_json(nlohmann::json& j, const SidecarBytes& v);
 inline void from_json(const nlohmann::json& j, SidecarBytes& v);
+inline void to_json(nlohmann::json& j, const SidecarCarriedConfigRecord& v);
+inline void from_json(const nlohmann::json& j, SidecarCarriedConfigRecord& v);
 inline void to_json(nlohmann::json& j, const SidecarCleanupWorker& v);
 inline void from_json(const nlohmann::json& j, SidecarCleanupWorker& v);
 inline void to_json(nlohmann::json& j, const SidecarDevice& v);
@@ -18924,6 +18948,79 @@ inline void from_json(const nlohmann::json& j, SidecarBytes& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarCarriedConfigRecord& v) {
+	j = nlohmann::json::object();
+	j["record"] = v.record;
+	if (v.signer_id) {
+		j["signer_id"] = *v.signer_id;
+	}
+	if (v.member_id) {
+		j["member_id"] = *v.member_id;
+	}
+	j["why"] = v.why;
+	if (v.position) {
+		j["position"] = *v.position;
+	}
+	if (v.not_after_millis) {
+		j["not_after_millis"] = *v.not_after_millis;
+	}
+	if (v.role) {
+		j["role"] = *v.role;
+	}
+	if (v.member_removed) {
+		j["member_removed"] = *v.member_removed;
+	}
+	if (v.filed_by) {
+		j["filed_by"] = *v.filed_by;
+	}
+}
+inline void from_json(const nlohmann::json& j, SidecarCarriedConfigRecord& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("record"); it != j.end() && !it->is_null()) {
+		it->get_to(v.record);
+	}
+	if (auto it = j.find("signer_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.signer_id = std::move(tmp);
+	}
+	if (auto it = j.find("member_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.member_id = std::move(tmp);
+	}
+	if (auto it = j.find("why"); it != j.end() && !it->is_null()) {
+		it->get_to(v.why);
+	}
+	if (auto it = j.find("position"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.position = std::move(tmp);
+	}
+	if (auto it = j.find("not_after_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.not_after_millis = std::move(tmp);
+	}
+	if (auto it = j.find("role"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.role = std::move(tmp);
+	}
+	if (auto it = j.find("member_removed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.member_removed = std::move(tmp);
+	}
+	if (auto it = j.find("filed_by"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.filed_by = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarCleanupWorker& v) {
 	j = nlohmann::json::object();
 	if (v.sidecar_id) {
@@ -27396,6 +27493,7 @@ public:
 	void enrollWithDevice(const Device& device, SidecarResultCallback callback) const;
 	SidecarApprovals getApprovals() const;
 	std::optional<SidecarAuthFeatures> getAuthFeatures() const;
+	std::optional<SidecarCarriedConfigRecordList> getCarriedConfigRecords() const;
 	SidecarDirectory getDirectory() const;
 	SidecarDiscovery getDiscovery() const;
 	SidecarEvs getEvs() const;
@@ -42451,6 +42549,18 @@ inline std::optional<SidecarAuthFeatures> Sidecar::getAuthFeatures() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<SidecarAuthFeatures>(r_s->c_str());
+}
+inline std::optional<SidecarCarriedConfigRecordList> Sidecar::getCarriedConfigRecords() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_get_carried_config_records(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarCarriedConfigRecordList>(r_s->c_str());
 }
 inline SidecarDirectory Sidecar::getDirectory() const {
 	SidecarDirectory r(urnet_sidecar_get_directory(handle()));

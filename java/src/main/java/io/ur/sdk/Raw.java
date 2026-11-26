@@ -1426,6 +1426,7 @@ public interface Raw extends Library {
   void urnet_sidecar_enroll_with_device(long a0, long a1, urnet_sidecar_result_cb a2, Pointer a3);
   long urnet_sidecar_get_approvals(long a0);
   Pointer urnet_sidecar_get_auth_features(long a0, PointerByReference a1);
+  Pointer urnet_sidecar_get_carried_config_records(long a0, PointerByReference a1);
   long urnet_sidecar_get_directory(long a0);
   long urnet_sidecar_get_discovery(long a0);
   long urnet_sidecar_get_evs(long a0);

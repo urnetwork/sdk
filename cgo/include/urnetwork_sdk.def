@@ -1377,6 +1377,7 @@ EXPORTS
 	urnet_sidecar_evs_write
 	urnet_sidecar_get_approvals
 	urnet_sidecar_get_auth_features
+	urnet_sidecar_get_carried_config_records
 	urnet_sidecar_get_directory
 	urnet_sidecar_get_discovery
 	urnet_sidecar_get_evs

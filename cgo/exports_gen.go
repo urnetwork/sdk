@@ -22108,6 +22108,24 @@ func urnet_sidecar_get_auth_features(self C.uint64_t, outError **C.char) *C.char
 	return cJson(r0, "urnet_sidecar_get_auth_features")
 }
 
+//export urnet_sidecar_get_carried_config_records
+func urnet_sidecar_get_carried_config_records(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_get_carried_config_records")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_get_carried_config_records")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.GetCarriedConfigRecords()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_sidecar_get_carried_config_records")
+}
+
 //export urnet_sidecar_get_directory
 func urnet_sidecar_get_directory(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_sidecar_get_directory")

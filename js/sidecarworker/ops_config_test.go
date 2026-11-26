@@ -7,13 +7,16 @@ package sidecarworker
 // head saved with a names table, K_sock and a policy that ACL's own compile compiles. The view shows members with
 // their roles and the policy's emails for them, sidecars with their client names, tags, read_only and consent, the
 // head's tags, groups and labels, the policy's document and rules, and the settings; it carries no key; and it fails
-// closed while no verified state is given.
+// closed while no verified state is given. It lists the head's records whose signer no longer stands (QD-1207), with
+// the signer, its name, member and role, why and who files another, says when it cannot tell, and shows nothing of a
+// head the state does not stand on.
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -326,5 +329,117 @@ func TestConfigPortRangeText(t *testing.T) {
 		if text := configPortRangeText(c.ports); text != c.text {
 			t.Errorf("%+v reads %q, want %q", c.ports, text, c.text)
 		}
+	}
+}
+
+// The head the world's newest base names, read as a page Worker reads it.
+func (self *testConfigWorld) newestHead() *sidecar.ConfigHead {
+	self.t.Helper()
+	base := self.net.State().Base()
+	head, err := self.net.Heads().ReadConfigHead(self.net.Context(), base.GetConfigVersion(), base.GetConfigHeadSha256())
+	if err != nil {
+		self.t.Fatal(err)
+	}
+	return head
+}
+
+// The head's ServiceSettings with mail_strict set to mailStrict, signed by signer, and its names table naming the
+// owner's tablet beside alice's laptop, saved by the world's writer.
+func (self *testConfigWorld) fileSettings(signer *sidecartest.AdmissionDevice, tablet *sidecartest.AdmissionDevice, mailStrict bool) {
+	self.t.Helper()
+	held, known := self.net.State().HeadSettings()
+	if !known {
+		self.t.Fatal("the world's settings are not known")
+	}
+	settings := &protocol.ServiceSettings{}
+	if held != nil {
+		settings = proto.Clone(held).(*protocol.ServiceSettings)
+	}
+	settings.MailStrict = mailStrict
+	signed := self.net.Sign(signer, bridge.SignedType_SIGNED_SERVICE_SETTINGS, settings)
+	names, err := proto.Marshal(&protocol.ConfigNameTable{Names: []*protocol.ConfigName{
+		{SidecarId: self.aliceLaptop.SidecarId.Bytes(), Name: "alice-laptop"},
+		{SidecarId: tablet.SidecarId.Bytes(), Name: "owner-tablet"},
+	}})
+	if err != nil {
+		self.t.Fatal(err)
+	}
+	self.net.SaveHead(func(head *sidecar.ConfigHead) (*sidecar.ConfigHead, error) {
+		head, err := head.WithFile(sidecar.ConfigHeadServiceSettingsPath, signed)
+		if err != nil {
+			return nil, err
+		}
+		return head.WithFile(sidecar.ConfigHeadNamesPath, names)
+	})
+}
+
+// The owner's tablet signs the network's ServiceSettings, which the owner's writer files, and the owner revokes it as
+// lost: config_view lists the record the head carries under the tablet, by its client name, with the owner's member and
+// role, the revocation's position and the roles that file another. Once the owner files fresh settings, nothing is
+// listed. A view whose head did not open says it cannot tell, and one given a head the state does not stand on shows
+// nothing, refusing as unverified.
+func TestConfigViewListsTheCarriedRecords(t *testing.T) {
+	world := newTestConfigWorld(t)
+	owner := world.net.Owner()
+	tablet := world.net.Device("owner settings tablet", owner.MemberId)
+	world.net.AdmitDevice(owner, tablet, 0)
+	world.fileSettings(tablet, tablet, true)
+	staleHead := world.newestHead()
+	viewOf := func(label string, config *WorkerConfigState) *Reply {
+		t.Helper()
+		worker := world.worker(func(args *WorkerArgs) {
+			args.Config = func() (*WorkerConfigState, error) {
+				return config, nil
+			}
+		})
+		return testReplyOf(t, worker.worker, &Request{Id: label, Operation: OperationConfigView})
+	}
+	standing := viewOf("standing", &WorkerConfigState{State: world.net.State(), Head: world.newestHead(), Local: world.plan.Local})
+	if !standing.Ok || len(standing.Config.Carried) != 0 || standing.Config.CarriedUnknown {
+		t.Fatalf("while the tablet stands: %+v", standing)
+	}
+
+	world.net.MustLand(world.net.Sign(owner, bridge.SignedType_SIGNED_SIDECAR_REVOKE, world.net.Revocation(tablet, bridge.SidecarRevokeReason_SIDECAR_REVOKE_REASON_LOST, 0)))
+	revokedAt := world.net.Row(tablet).GetRevokedAt()
+	if revokedAt == 0 {
+		t.Fatal("the tablet is not revoked")
+	}
+	revoked := viewOf("revoked", &WorkerConfigState{State: world.net.State(), Head: world.newestHead(), Local: world.plan.Local})
+	if !revoked.Ok || len(revoked.Config.Carried) != 1 || revoked.Config.CarriedUnknown {
+		t.Fatalf("after the revocation: %+v", revoked)
+	}
+	want, err := json.Marshal(&ConfigCarriedView{
+		Record:          sidecar.ConfigHeadServiceSettingsPath,
+		SignerSidecarId: tablet.SidecarId.String(),
+		SignerName:      "owner-tablet",
+		MemberId:        owner.MemberId.String(),
+		Why:             sidecar.ConfigCarriedRevoked,
+		At:              fmt.Sprint(revokedAt),
+		Role:            "owner",
+		FiledBy:         []string{"owner", "admin"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := json.Marshal(revoked.Config.Carried[0]); err != nil || string(got) != string(want) {
+		t.Errorf("the carried record\n  %s\nwant\n  %s", got, want)
+	}
+
+	unread := viewOf("unread", &WorkerConfigState{State: world.net.State()})
+	if !unread.Ok || !unread.Config.HeadUnread || !unread.Config.CarriedUnknown || len(unread.Config.Carried) != 0 {
+		t.Errorf("a view whose head did not open: %+v", unread.Config)
+	}
+	other := viewOf("other", &WorkerConfigState{State: world.net.State(), Head: world.plan.Head, Local: world.plan.Local})
+	if other.Ok || other.Code != CodeUnverified || other.Config != nil {
+		t.Errorf("a view of a head the state does not stand on: %+v", other)
+	}
+
+	world.fileSettings(owner, tablet, false)
+	if head := world.newestHead(); head == staleHead {
+		t.Fatal("the owner's settings saved no new head")
+	}
+	refiled := viewOf("refiled", &WorkerConfigState{State: world.net.State(), Head: world.newestHead(), Local: world.plan.Local})
+	if !refiled.Ok || len(refiled.Config.Carried) != 0 || refiled.Config.CarriedUnknown {
+		t.Errorf("after the owner's fresh settings: %+v", refiled.Config)
 	}
 }

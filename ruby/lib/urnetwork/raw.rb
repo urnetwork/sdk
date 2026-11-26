@@ -1425,6 +1425,7 @@ module URnetwork
       attach_function :urnet_sidecar_enroll_with_device, [:uint64, :uint64, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_get_approvals, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_auth_features, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_get_carried_config_records, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_get_directory, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_discovery, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_get_evs, [:uint64], :uint64, blocking: true
