@@ -65,6 +65,9 @@ func TestTunnelRecoveryStageLogChild(t *testing.T) {
 // The exported lines come from the real checked mutation, not a formatter
 // fixture: first the file commit fails, then it commits before cancellation
 // prevents live application. No external saver is installed in either case.
+// Its device joins through testingCloseAndJoin, the package's join, whose
+// guard leaves a loaded machine's close more room than the 5 s of the
+// preference tests' join.
 func testingRecoverySaveFailures(t *testing.T) {
 	t.Helper()
 	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
@@ -79,7 +82,7 @@ func testingRecoverySaveFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal("actual diagnostic device construction failed")
 	}
-	t.Cleanup(func() { testingJoinPreferenceDevice(t, device) })
+	t.Cleanup(func() { testingCloseAndJoin(t, "diagnostic device", device) })
 	device.SetUpgradeMuxSettings(nil)
 	policyPath := filepath.Join(fixture.localState.localStorageDir, ".blocker_enabled")
 	if err := os.WriteFile(policyPath, []byte("private-load-marker"), LocalStorageFilePermissions); err != nil {
@@ -132,18 +135,27 @@ func testingRecoverySaveFailures(t *testing.T) {
 	if saved, err := fixture.localState.LoadConnectLocation(); err != nil || !connectLocationValuesEqual(saved, target) {
 		t.Fatal("successful commit before cancellation was not actually durable")
 	}
-	testingJoinPreferenceDevice(t, device)
+	testingCloseAndJoin(t, "diagnostic device", device)
 }
 
+// The recovery lines the extension's own process writes reach the app's
+// diagnostic export, redacted or not, and no untrusted input does. The wait
+// for that process is on its exit, however long a loaded machine takes to
+// start and run it: a fixed 15 s once killed a child that had written every
+// line and was ending. The child takes the guard as its own -test.timeout, so
+// one that never ends fails itself with its goroutines dumped; the kill a
+// tenth later is only the backstop for a child stuck where that timeout does
+// not reach, before its tests start.
 func TestTunnelRecoveryStageSurvivesSeparateProcessDiagnosticExport(t *testing.T) {
 	restoreTestingLogDir(t)
 	root := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	guard := testingWaitGuard(t, 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), guard+guard/10)
 	defer cancel()
-	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestTunnelRecoveryStageLogChild$", "-test.count=1")
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestTunnelRecoveryStageLogChild$", "-test.count=1", "-test.timeout="+guard.String())
 	command.Env = append(os.Environ(), "SDK_RECOVERY_LOG_ROOT="+root)
 	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("extension log writer did not complete: %v\n%s", err, output)
+		t.Fatalf("extension log writer did not complete (given %v): %v\n%s", guard, err, output)
 	}
 	if err := SetLogDirForProcess(root, "app"); err != nil {
 		t.Fatal("could not configure app exporter")
