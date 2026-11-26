@@ -68,7 +68,8 @@ func (self *sdkSidecarHost) swapSession(session *sidecarApiSession) *sidecarApiS
 }
 
 // Sets every service url of settings from networkSpace: its api and platform urls, and the other services by the
-// host table's labels in place of the api url's.
+// host table's labels in place of the api url's; and the host table's user root (§12.4; QD-1407), under which the
+// core resolves and files network labels, as ur's daemon takes it.
 func applySidecarServiceUrls(networkSpace *NetworkSpace, settings *sidecar.SidecarSettings) error {
 	list, err := sidecar.SidecarHostListV1()
 	if err != nil {
@@ -108,6 +109,7 @@ func applySidecarServiceUrls(networkSpace *NetworkSpace, settings *sidecar.Sidec
 	settings.GkmUrl = urls[sidecar.SidecarHostServiceGkm]
 	settings.SocketsUrl = urls[sidecar.SidecarHostServiceSockets]
 	settings.DnsUrl = urls[sidecar.SidecarHostServiceDns]
+	settings.UserRoot = list.UserRoot
 	settings.Tls.CertsResource = certsResource
 	return nil
 }
