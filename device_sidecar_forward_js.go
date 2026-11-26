@@ -41,6 +41,9 @@ func (self *deviceLocalForwardingHost) restore(owner *deviceLocalBridgeOwner) er
 
 func (self *deviceLocalForwardingHost) close() {}
 
+// No role's clock to check on js.
+func (self *deviceLocalForwardingHost) checkClock() {}
+
 func (self *deviceLocalForwardingHost) keys(networkId connect.Id) (*bridge.ForwardingKeys, error) {
 	return nil, errDeviceBridgeBrowser
 }

@@ -507,6 +507,8 @@ type deviceLocalForwarding struct {
 	statusChanged func()
 	// wakes the promotion loop at once after a state was handed
 	promotionWanted chan struct{}
+	// has the refresh loop read the clock again at once (checkClock, sidecar_clock_check_forward.go), holding one check
+	clockChecked chan struct{}
 }
 
 // Opens the sealed store over the root key: made where create and none is, else Present's only.
@@ -643,6 +645,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		self.clock = clock
 		self.statusChanged = deps.statusChanged
 		self.promotionWanted = make(chan struct{}, 1)
+		self.clockChecked = make(chan struct{}, 1)
 	}()
 	if lapsed {
 		// a token past its exp at start: pending until a new hand-off (forward_client_lapsed)
@@ -693,6 +696,12 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 	go self.runRefresh(ctx)
 	go self.runPoll(ctx)
 	go self.runPromotion(ctx)
+	// a desktop's cap on the role's wall-clock waits, the bridges' own interval; none on a phone, which adds no periodic
+	// wakeup and is checked at each wake (sidecar_clock_check_forward.go)
+	if interval := self.host.bridgeSettings.ClockCheckInterval; 0 < interval {
+		self.loops.Add(1)
+		go self.runClockCap(ctx, interval)
+	}
 	return nil
 }
 
@@ -753,12 +762,14 @@ func (self *deviceLocalForwarding) witness(pin *bridge.AuthPin, fork bool) error
 }
 
 // F's refresh by its own proofs at its window's point, the new token kept before it is presented (the file's comment).
+// The point is the wall clock's, so a check of the clock (sidecar_clock_check_forward.go) arms the wait for it anew from
+// now, refreshing at once past it; a retry's wait is relative, and a check leaves it as it is.
 func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 	defer self.loops.Done()
 	retryCount := 0
 	for {
 		self.stateLock.Lock()
-		client, clock := self.client, self.clockWithLock()
+		client, clock, clockChecked := self.client, self.clockWithLock(), self.clockChecked
 		self.stateLock.Unlock()
 		byJwt, err := self.keys.token()
 		wait := self.settings.RefreshRetryMaxTimeout
@@ -769,10 +780,15 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 		}
 		if 0 < retryCount {
 			wait = deviceForwardBackoff(self.settings.RefreshRetryMinTimeout, self.settings.RefreshRetryMaxTimeout, retryCount)
+			// a retry's wait is relative: no check cuts it short, a nil channel never being ready
+			clockChecked = nil
 		}
 		select {
 		case <-ctx.Done():
 			return
+		case <-clockChecked:
+			// the next turn arms the wait for the point anew from the clock's now
+			continue
 		case <-clock.After(max(wait, 0)):
 		}
 		if client == nil {

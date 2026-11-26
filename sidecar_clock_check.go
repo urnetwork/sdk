@@ -9,6 +9,13 @@
 // (deviceLocalBridgeSettingsFor), so a desktop app that never calls it is late by at most that after it wakes.
 // Untagged, as device_sidecar.go is, since the tunnel links it.
 //
+// The same call reaches every forwarding role (QD-1422; sidecar's core_clock_check.go): each role's Forwarder, whose
+// next follow, compile and the posture's overdue-alarm points (narrowing_overdue) are the wall clock's, and the role's
+// refresh of its forwarding client F, due at a point of F's lifetime, which a phone that slept past it would reach only
+// after the timer's remaining awake time, F's exp passed and the role lapsed meanwhile. Each reads the clock again at
+// once and arms its waits anew (sidecar_clock_check_forward.go). On a desktop the roles take the bridges' interval as
+// the same cap, checking each ClockCheckInterval; on iOS and Android, none, and add no periodic wakeup.
+//
 // The call sites, which the app phase writes, since the apps' code is not in these repos; the call returns at once
 // and never blocks, so each may make it on whatever thread the platform calls it on:
 //
@@ -29,11 +36,12 @@
 
 package sdk
 
-// Has every forwarding role's bridge read the clock again at once (the file's comment): each publishes at now, ending
-// the flows of an expiry or a drain's end that the device slept past or a step of its clock passed, and arms its waits
+// Has every forwarding role's bridge, Forwarder and F's refresh read the clock again at once (the file's comment):
+// each bridge publishes at now, ending the flows of an expiry or a drain's end that the device slept past or a step of
+// its clock passed, each Forwarder does what came due, and each refresh past its point runs, all arming their waits
 // again from now. The VPN component calls it when the device wakes and when its clock changes. Returns at once, from
-// any thread: it reads which bridge the device holds and hands each a check, waiting on none. A device that holds
-// none, in legacy, off, hosted or closed, does nothing, since nothing of its rules is timed.
+// any thread: it reads which bridge and which roles the device holds and hands each a check, waiting on none. A device
+// that holds none, in legacy, off, hosted or closed, does nothing, since nothing of its rules is timed.
 func (self *DeviceLocal) CheckClock() {
 	trace(func() {
 		held := func() deviceBridge {
@@ -43,6 +51,10 @@ func (self *DeviceLocal) CheckClock() {
 		}()
 		if held != nil {
 			held.CheckClock()
+		}
+		// set once at the device's construction
+		if self.bridgeOwner != nil && self.bridgeOwner.forwarding != nil {
+			self.bridgeOwner.forwarding.checkClock()
 		}
 	})
 }
