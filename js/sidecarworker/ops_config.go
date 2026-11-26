@@ -16,6 +16,12 @@
 //	          requests rule's detail by id (AclLocalPolicy), each list in rule_id order
 //	settings  self_admit and the SCIM signer, which every verifier knows from rows; the head's other ServiceSettings
 //	          with §7.9's defaults, where the head opened; and the AdminSet's k of n (§7.9's authority row)
+//	carried   the head's ServiceSettings and VersioningRules records whose signer no longer stands as one who may sign
+//	          them (D-TEAM-26; owner decision 699; QD-1207; ConfigState.CarriedRecords): each with its signer, the
+//	          signer's client name and member, why it no longer stands, and the roles that may file another. Every
+//	          reader holds such a record under its first signer until one of them files another. Not known where the
+//	          head did not open; a head that is not the one the state stands on shows nothing, as a head whose names do
+//	          not verify shows nothing
 //
 // Nothing else of the head crosses: not K_sock's socket/key, not the folds' statements, not the bridge ledger. The
 // view carries ids, names, roles, states and the policy's text, never a key, a wrap or a signature (I-1, I-2, I-7).
@@ -102,6 +108,12 @@ type ConfigView struct {
 	Labels   []*ConfigNameView   `json:"labels"`
 	Policy   *ConfigPolicyView   `json:"policy,omitempty"`
 	Settings *ConfigSettingsView `json:"settings"`
+	// The head's records whose signer no longer stands, ServiceSettings' before VersioningRules'; empty while every
+	// record's signer stands, and while CarriedUnknown.
+	Carried []*ConfigCarriedView `json:"carried"`
+	// The head did not open on this device, so whether a record stands under a signer who no longer stands is not
+	// known here.
+	CarriedUnknown bool `json:"carried_unknown,omitempty"`
 	// A list held more than ConfigMaxRowCount rows: the rest are not shown.
 	Truncated bool `json:"truncated,omitempty"`
 }
@@ -201,6 +213,30 @@ type ConfigSettingsView struct {
 	DirectoryWorkers string `json:"directory_workers,omitempty"`
 }
 
+// One record of the head that stands under a signer who no longer stands (sidecar.ConfigCarriedRecord).
+type ConfigCarriedView struct {
+	// service_settings or versioning_rules.
+	Record string `json:"record"`
+	// The sidecar whose identity key signed it, and its client name as the head's names table resolves it; both empty
+	// where the record names no signer.
+	SignerSidecarId string `json:"signer_sidecar_id,omitempty"`
+	SignerName      string `json:"signer_name,omitempty"`
+	// The signer's member, as its row names it; empty for a tagged signer and one no row holds.
+	MemberId string `json:"member_id,omitempty"`
+	// revoked, parked, expired, removed, tagged, role, unlisted or signature (sidecar.ConfigCarried...).
+	Why string `json:"why"`
+	// revoked and parked: the log position the signer was revoked or parked at, decimal.
+	At string `json:"at,omitempty"`
+	// expired: when the signer's admission ended, ms since the epoch.
+	NotAfterMillis int64 `json:"not_after_millis,omitempty"`
+	// The role the signer's member holds now, while it is a member.
+	Role string `json:"role,omitempty"`
+	// The signer's member is no longer the network's.
+	MemberRemoved bool `json:"member_removed,omitempty"`
+	// The roles whose devices may file another, in role order (sidecar.ConfigCarriedRecordFilers).
+	FiledBy []string `json:"filed_by"`
+}
+
 // The bounded lists of one config view: each takes rows up to ConfigMaxRowCount, the rest marking the view truncated,
 // and steps between rows so a large state yields.
 type configViewBuilder struct {
@@ -238,6 +274,7 @@ func configViewOf(ctx context.Context, worker *Worker, config *WorkerConfigState
 		Tags:       []*ConfigNameView{},
 		Groups:     []*ConfigNameView{},
 		Labels:     []*ConfigNameView{},
+		Carried:    []*ConfigCarriedView{},
 	}
 	if base := state.Base(); base != nil {
 		view.ConfigVersion = strconv.FormatUint(base.GetConfigVersion(), 10)
@@ -331,7 +368,50 @@ func configViewOf(ctx context.Context, worker *Worker, config *WorkerConfigState
 		view.Policy = policy
 	}
 	view.Settings = configSettingsViewOf(state)
+	carried, carriedUnknown, err := configCarriedViewsOf(state, config.Head, clientNames)
+	if err != nil {
+		return nil, err
+	}
+	view.Carried, view.CarriedUnknown = carried, carriedUnknown
 	return view, nil
+}
+
+// The head's records whose signer no longer stands at state (ConfigState.CarriedRecords), each signer named as the
+// head's names table resolves it, clientNames. Not known where head did not open while the state holds a record, or
+// where the state keeps no record's hash; errConfigViewUnverified where head is not the head the state stands on.
+func configCarriedViewsOf(state *sidecar.ConfigState, head *sidecar.ConfigHead, clientNames map[sidecar.Id]string) ([]*ConfigCarriedView, bool, error) {
+	views := []*ConfigCarriedView{}
+	records, err := state.CarriedRecords(head)
+	switch {
+	case errors.Is(err, sidecar.ErrConfigCarriedUnknown):
+		return views, true, nil
+	case head == nil && errors.Is(err, sidecar.ErrConfigCarriedHead):
+		// the state holds a record, and its head did not open here
+		return views, true, nil
+	case err != nil:
+		return nil, false, fmt.Errorf("%w: %w", errConfigViewUnverified, err)
+	}
+	for _, record := range records {
+		view := &ConfigCarriedView{
+			Record:         record.Record,
+			Why:            record.Why,
+			NotAfterMillis: record.NotAfterMs,
+			Role:           record.Role,
+			MemberRemoved:  record.MemberRemoved,
+			FiledBy:        sidecar.ConfigCarriedRecordFilers(record.Record),
+		}
+		if record.SignerId != (sidecar.Id{}) {
+			view.SignerSidecarId, view.SignerName = record.SignerId.String(), clientNames[record.SignerId]
+		}
+		if record.MemberId != nil {
+			view.MemberId = record.MemberId.String()
+		}
+		if record.At != 0 {
+			view.At = strconv.FormatUint(record.At, 10)
+		}
+		views = append(views, view)
+	}
+	return views, false, nil
 }
 
 // One sidecar's view at state, its name name, judged expired by nowMillis.
