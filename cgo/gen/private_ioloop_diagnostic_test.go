@@ -13,7 +13,8 @@ import (
 )
 
 // The private !windows session must not become empty JSON in common exports;
-// ordinary loop handles and the already-published teardown observation remain.
+// ordinary loop handles and the already-published teardown observation remain,
+// the observation's constructor answering its handle since QD-1423.
 func TestPrivateIoLoopDiagnosticSessionIsExcludedFromCAbi(t *testing.T) {
 	g := testingPreferenceGenerator(t)
 	for _, name := range []string{"IoLoopDiagnosticSession", "NewIoLoopDiagnosticSession"} {
@@ -71,7 +72,7 @@ func TestPrivateIoLoopDiagnosticSessionIsExcludedFromCAbi(t *testing.T) {
 		{artifact: "exports_gen.go", symbol: "//export urnet_new_device_local\n"},
 		{artifact: filepath.Join("include", "urnetwork_sdk.def"), symbol: "\n\turnet_new_device_local\n"},
 		{artifact: "exports_gen.go", symbol: "//export urnet_device_local_begin_memory_teardown_observation\n"},
-		{artifact: filepath.Join("include", "urnetwork_sdk.h"), symbol: "char* urnet_device_local_begin_memory_teardown_observation("},
+		{artifact: filepath.Join("include", "urnetwork_sdk.h"), symbol: "uint64_t urnet_device_local_begin_memory_teardown_observation("},
 	} {
 		if !strings.Contains(contentsKVs[expected.artifact], expected.symbol) {
 			t.Errorf("existing public binding changed: artifact=%s symbol=%s", expected.artifact, expected.symbol)

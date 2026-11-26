@@ -69,6 +69,10 @@ var behavioralTypes = map[string]bool{
 	"LocalStateKeyMaterialReadResult": true,
 	// Its guarded action must retain the private API owner and generation.
 	"ClientRefreshIntegrityNotice": true,
+	// A device's teardown observation (QD-1423): its own goroutine samples until it is finished, aborted or its
+	// lifetime ends, and only its methods read what it holds. As json it crossed as "{}", starting an observer the
+	// C side could not finish; as a handle desktop instrumentation finishes it as the mobile apps do.
+	"MemoryTeardownObservation": true,
 
 	"NetworkSpaceManager":        true,
 	"NetworkSpace":               true,

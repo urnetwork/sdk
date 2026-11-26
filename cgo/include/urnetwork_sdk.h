@@ -919,6 +919,8 @@ typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t noti
 typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
+/* ComputeModelBytesCallback */
+typedef void (*urnet_compute_model_bytes_cb)(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param);
 /* ConnectChangeListener */
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
 /* ConnectLocationChangeListener */
@@ -1400,6 +1402,8 @@ void urnet_api_check_balance_code(uint64_t self, const char* args_json, urnet_ch
 void urnet_api_claim_network_name(uint64_t self, const char* args_json, urnet_claim_network_name_cb callback_result, void* callback_user_data);
 void urnet_api_client_events_send(uint64_t self, const char* args_json, urnet_client_events_send_cb callback_result, void* callback_user_data);
 void urnet_api_close(uint64_t self);
+void urnet_api_compute_model_chunk(uint64_t self, const char* sha256_text, int64_t n, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
+void urnet_api_compute_model_index(uint64_t self, const char* sha256_text, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_create_crypto_payment_intent(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
@@ -1919,7 +1923,7 @@ uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_pack
 uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
 uint64_t urnet_device_local_add_receive_packets(uint64_t self, urnet_receive_packets_cb receive_packets_receive_packets, void* receive_packets_user_data);
 uint64_t urnet_device_local_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
-char* urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
+uint64_t urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
 void urnet_device_local_check_clock(uint64_t self);
 void urnet_device_local_clear_sn_wallet_cache(uint64_t self);
 void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
@@ -2346,6 +2350,13 @@ void urnet_locations_view_controller_stop(uint64_t self);
 void urnet_login_view_controller_close(uint64_t self);
 void urnet_login_view_controller_start(uint64_t self);
 void urnet_login_view_controller_stop(uint64_t self);
+
+/* ----- MemoryTeardownObservation ----- */
+
+char* urnet_memory_teardown_observation_abort_and_take_json(uint64_t self, int64_t timeout_milliseconds);
+char* urnet_memory_teardown_observation_finish_and_take_json(uint64_t self, int64_t timeout_milliseconds);
+char* urnet_memory_teardown_observation_get_observer_id(uint64_t self);
+bool urnet_memory_teardown_observation_wait_for_device_close(uint64_t self, int64_t timeout_milliseconds);
 
 /* ----- NetworkNameValidationViewController ----- */
 
@@ -2910,6 +2921,7 @@ bool urnet_crypto_asset_sells(const char* assets_json, const char* asset, const 
 char* urnet_crypto_asset_ticker(const char* asset);
 bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
+char* urnet_default_compute_model_api_settings(void);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
@@ -3774,6 +3786,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientLimitStatus (json):
  *   Status: string
  *   RetryTime: number
+ */
+
+/* ComputeModelApiSettings (json):
+ *   IndexMaxByteCount: number
+ *   ChunkMaxByteCount: number
+ *   IndexTimeout: number (ns)
+ *   ChunkTimeout: number (ns)
  */
 
 /* ConnectLocation (json):
@@ -4826,9 +4845,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   GCCycleCount: number
  *   ForcedGCCycleCount: number
  *   GCPauseTotalNanoseconds: number
- */
-
-/* MemoryTeardownObservation (json):
  */
 
 /* MultiHopIdList (json):

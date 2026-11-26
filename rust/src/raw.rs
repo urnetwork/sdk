@@ -49,6 +49,7 @@ pub type urnet_client_limit_status_change_cb = Option<unsafe extern "C" fn(*mut 
 pub type urnet_client_refresh_integrity_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_client_session_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_commit_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
+pub type urnet_compute_model_bytes_cb = Option<unsafe extern "C" fn(*mut c_void, *const u8, i32, *const c_char) -> ()>;
 pub type urnet_connect_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_connect_location_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_connected_provider_location_change_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
@@ -347,6 +348,8 @@ pub struct Raw {
     pub urnet_api_claim_network_name: unsafe extern "C" fn(u64, *const c_char, urnet_claim_network_name_cb, *mut c_void) -> (),
     pub urnet_api_client_events_send: unsafe extern "C" fn(u64, *const c_char, urnet_client_events_send_cb, *mut c_void) -> (),
     pub urnet_api_close: unsafe extern "C" fn(u64) -> (),
+    pub urnet_api_compute_model_chunk: unsafe extern "C" fn(u64, *const c_char, i64, urnet_compute_model_bytes_cb, *mut c_void) -> (),
+    pub urnet_api_compute_model_index: unsafe extern "C" fn(u64, *const c_char, urnet_compute_model_bytes_cb, *mut c_void) -> (),
     pub urnet_api_create_account_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_create_account_wallet_cb, *mut c_void) -> (),
     pub urnet_api_create_api_key: unsafe extern "C" fn(u64, *const c_char, urnet_create_api_key_cb, *mut c_void) -> (),
     pub urnet_api_create_crypto_payment_intent: unsafe extern "C" fn(u64, *const c_char, urnet_crypto_payment_intent_cb, *mut c_void) -> (),
@@ -812,7 +815,7 @@ pub struct Raw {
     pub urnet_device_local_add_receive_packet_batch: unsafe extern "C" fn(u64, urnet_receive_packet_batch_cb, *mut c_void) -> u64,
     pub urnet_device_local_add_receive_packets: unsafe extern "C" fn(u64, urnet_receive_packets_cb, *mut c_void) -> u64,
     pub urnet_device_local_add_sn_wallet_change_listener: unsafe extern "C" fn(u64, urnet_sn_wallet_change_cb, *mut c_void) -> u64,
-    pub urnet_device_local_begin_memory_teardown_observation: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
+    pub urnet_device_local_begin_memory_teardown_observation: unsafe extern "C" fn(u64, *mut *mut c_char) -> u64,
     pub urnet_device_local_check_clock: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_local_clear_sn_wallet_cache: unsafe extern "C" fn(u64) -> (),
     pub urnet_device_local_close_block_action_view_controller: unsafe extern "C" fn(u64, u64) -> (),
@@ -1191,6 +1194,10 @@ pub struct Raw {
     pub urnet_login_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_login_view_controller_start: unsafe extern "C" fn(u64) -> (),
     pub urnet_login_view_controller_stop: unsafe extern "C" fn(u64) -> (),
+    pub urnet_memory_teardown_observation_abort_and_take_json: unsafe extern "C" fn(u64, i64) -> *mut c_char,
+    pub urnet_memory_teardown_observation_finish_and_take_json: unsafe extern "C" fn(u64, i64) -> *mut c_char,
+    pub urnet_memory_teardown_observation_get_observer_id: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_memory_teardown_observation_wait_for_device_close: unsafe extern "C" fn(u64, i64) -> bool,
     pub urnet_network_name_validation_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_network_name_validation_view_controller_network_check: unsafe extern "C" fn(u64, *const c_char, urnet_network_check_cb, *mut c_void) -> (),
     pub urnet_network_name_validation_view_controller_start: unsafe extern "C" fn(u64) -> (),
@@ -1630,6 +1637,7 @@ pub struct Raw {
     pub urnet_crypto_asset_ticker: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_crypto_term_notice_due: unsafe extern "C" fn(*const c_char) -> bool,
     pub urnet_crypto_wallet_suggestions: unsafe extern "C" fn(*const c_char) -> *mut c_char,
+    pub urnet_default_compute_model_api_settings: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_default_device_local_settings: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_default_low_memory_device_local_settings: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_default_provider_transport_settings: unsafe extern "C" fn() -> *mut c_char,
@@ -1897,6 +1905,8 @@ impl Raw {
             urnet_api_claim_network_name: unsafe { *library.get(b"urnet_api_claim_network_name\0")? },
             urnet_api_client_events_send: unsafe { *library.get(b"urnet_api_client_events_send\0")? },
             urnet_api_close: unsafe { *library.get(b"urnet_api_close\0")? },
+            urnet_api_compute_model_chunk: unsafe { *library.get(b"urnet_api_compute_model_chunk\0")? },
+            urnet_api_compute_model_index: unsafe { *library.get(b"urnet_api_compute_model_index\0")? },
             urnet_api_create_account_wallet: unsafe { *library.get(b"urnet_api_create_account_wallet\0")? },
             urnet_api_create_api_key: unsafe { *library.get(b"urnet_api_create_api_key\0")? },
             urnet_api_create_crypto_payment_intent: unsafe { *library.get(b"urnet_api_create_crypto_payment_intent\0")? },
@@ -2741,6 +2751,10 @@ impl Raw {
             urnet_login_view_controller_close: unsafe { *library.get(b"urnet_login_view_controller_close\0")? },
             urnet_login_view_controller_start: unsafe { *library.get(b"urnet_login_view_controller_start\0")? },
             urnet_login_view_controller_stop: unsafe { *library.get(b"urnet_login_view_controller_stop\0")? },
+            urnet_memory_teardown_observation_abort_and_take_json: unsafe { *library.get(b"urnet_memory_teardown_observation_abort_and_take_json\0")? },
+            urnet_memory_teardown_observation_finish_and_take_json: unsafe { *library.get(b"urnet_memory_teardown_observation_finish_and_take_json\0")? },
+            urnet_memory_teardown_observation_get_observer_id: unsafe { *library.get(b"urnet_memory_teardown_observation_get_observer_id\0")? },
+            urnet_memory_teardown_observation_wait_for_device_close: unsafe { *library.get(b"urnet_memory_teardown_observation_wait_for_device_close\0")? },
             urnet_network_name_validation_view_controller_close: unsafe { *library.get(b"urnet_network_name_validation_view_controller_close\0")? },
             urnet_network_name_validation_view_controller_network_check: unsafe { *library.get(b"urnet_network_name_validation_view_controller_network_check\0")? },
             urnet_network_name_validation_view_controller_start: unsafe { *library.get(b"urnet_network_name_validation_view_controller_start\0")? },
@@ -3180,6 +3194,7 @@ impl Raw {
             urnet_crypto_asset_ticker: unsafe { *library.get(b"urnet_crypto_asset_ticker\0")? },
             urnet_crypto_term_notice_due: unsafe { *library.get(b"urnet_crypto_term_notice_due\0")? },
             urnet_crypto_wallet_suggestions: unsafe { *library.get(b"urnet_crypto_wallet_suggestions\0")? },
+            urnet_default_compute_model_api_settings: unsafe { *library.get(b"urnet_default_compute_model_api_settings\0")? },
             urnet_default_device_local_settings: unsafe { *library.get(b"urnet_default_device_local_settings\0")? },
             urnet_default_low_memory_device_local_settings: unsafe { *library.get(b"urnet_default_low_memory_device_local_settings\0")? },
             urnet_default_provider_transport_settings: unsafe { *library.get(b"urnet_default_provider_transport_settings\0")? },

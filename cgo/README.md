@@ -82,7 +82,8 @@ handle registry.
 After changing the sdk surface, run `make generate` and commit the regenerated
 files. Review the `coverage_report.txt` diff to confirm surface changes are
 intentional. The generator fails on c name collisions and warns on data types
-with empty json shapes (usually a type that should be classified behavioral).
+with empty json shapes (usually a type that should be classified behavioral),
+which `go test ./gen` fails on.
 
 The Python, Java, C#, Rust and Ruby packages bind `include/urnetwork_sdk.h`
 through `../packaging/generate.go`. When the header changes, also run

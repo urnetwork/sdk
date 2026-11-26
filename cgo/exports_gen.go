@@ -764,6 +764,27 @@ func (self *cAdapterCommitCallback) Complete(success bool) {
 	C.urnet_invoke_commit(self.cbComplete, self.userData, C.bool(bool(success)))
 }
 
+type cAdapterComputeModelBytesCallback struct {
+	cbResult C.urnet_compute_model_bytes_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterComputeModelBytesCallback) Result(result []byte, errParam error) {
+	defer cgoGuard("urnet_compute_model_bytes_cb")
+	var result_ *C.uint8_t
+	if 0 < len(result) {
+		result_ = (*C.uint8_t)(unsafe.Pointer(&result[0]))
+	}
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_compute_model_bytes(self.cbResult, self.userData, result_, C.int32_t(len(result)), errParam_)
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterConnectChangeListener struct {
 	cbConnectChanged C.urnet_connect_change_cb
 	userData         unsafe.Pointer
@@ -5044,6 +5065,34 @@ func urnet_api_close(self C.uint64_t) {
 		return
 	}
 	self_.Close()
+}
+
+//export urnet_api_compute_model_chunk
+func urnet_api_compute_model_chunk(self C.uint64_t, sha256Text *C.char, n C.int64_t, callback_result C.urnet_compute_model_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_model_chunk")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_model_chunk")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeModelBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeModelBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeModelChunk(goString(sha256Text), int(int64(n)), callback_)
+}
+
+//export urnet_api_compute_model_index
+func urnet_api_compute_model_index(self C.uint64_t, sha256Text *C.char, callback_result C.urnet_compute_model_bytes_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_model_index")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_model_index")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeModelBytesCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeModelBytesCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeModelIndex(goString(sha256Text), callback_)
 }
 
 //export urnet_api_create_account_wallet
@@ -9868,6 +9917,16 @@ func urnet_crypto_wallet_suggestions(asset *C.char) *C.char {
 	return cJson(r0, "urnet_crypto_wallet_suggestions")
 }
 
+//export urnet_default_compute_model_api_settings
+func urnet_default_compute_model_api_settings() *C.char {
+	defer cgoGuard("urnet_default_compute_model_api_settings")
+	r0 := sdk.DefaultComputeModelApiSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_compute_model_api_settings")
+}
+
 //export urnet_default_device_local_settings
 func urnet_default_device_local_settings() *C.char {
 	defer cgoGuard("urnet_default_device_local_settings")
@@ -12129,21 +12188,21 @@ func urnet_device_local_add_sn_wallet_change_listener(self C.uint64_t, listener_
 }
 
 //export urnet_device_local_begin_memory_teardown_observation
-func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outError **C.char) *C.char {
+func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_device_local_begin_memory_teardown_observation")
 	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_begin_memory_teardown_observation")
 	if !ok {
-		return nil
+		return 0
 	}
 	r0, err := self_.BeginMemoryTeardownObservation()
 	if err != nil {
 		setErrorOut(outError, err)
-		return nil
+		return 0
 	}
 	if r0 == nil {
-		return nil
+		return 0
 	}
-	return cJson(r0, "urnet_device_local_begin_memory_teardown_observation")
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_device_local_check_clock
@@ -17936,6 +17995,50 @@ func urnet_memory_classes_json_for_diag() *C.char {
 	defer cgoGuard("urnet_memory_classes_json_for_diag")
 	r0 := sdk.MemoryClassesJsonForDiag()
 	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_abort_and_take_json
+func urnet_memory_teardown_observation_abort_and_take_json(self C.uint64_t, timeoutMilliseconds C.int64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_abort_and_take_json")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_abort_and_take_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.AbortAndTakeJson(int64(timeoutMilliseconds))
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_finish_and_take_json
+func urnet_memory_teardown_observation_finish_and_take_json(self C.uint64_t, timeoutMilliseconds C.int64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_finish_and_take_json")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_finish_and_take_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.FinishAndTakeJson(int64(timeoutMilliseconds))
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_get_observer_id
+func urnet_memory_teardown_observation_get_observer_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_get_observer_id")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_get_observer_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetObserverId()
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_wait_for_device_close
+func urnet_memory_teardown_observation_wait_for_device_close(self C.uint64_t, timeoutMilliseconds C.int64_t) C.bool {
+	defer cgoGuard("urnet_memory_teardown_observation_wait_for_device_close")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_wait_for_device_close")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.WaitForDeviceClose(int64(timeoutMilliseconds))
+	return C.bool(r0)
 }
 
 //export urnet_monthly_equivalent_amount

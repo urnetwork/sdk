@@ -917,6 +917,7 @@ class LocalStateLocationReadResult;
 class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
+class MemoryTeardownObservation;
 class NetworkNameValidationViewController;
 class NetworkSessionInfo;
 class NetworkSessionInfoList;
@@ -1066,6 +1067,7 @@ struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
 struct ClientInfo;
 struct ClientLimitStatus;
+struct ComputeModelApiSettings;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
@@ -1168,7 +1170,6 @@ struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
-struct MemoryTeardownObservation;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -2277,6 +2278,13 @@ struct ClientLimitStatus {
 	int64_t RetryTime{};
 };
 
+struct ComputeModelApiSettings {
+	int64_t IndexMaxByteCount{};
+	int64_t ChunkMaxByteCount{};
+	int64_t IndexTimeout{};
+	int64_t ChunkTimeout{};
+};
+
 struct ConnectedProviderLocation {
 	std::optional<std::string> ClientId;
 	std::string Country{};
@@ -3266,9 +3274,6 @@ struct MemoryStats {
 	int64_t GCCycleCount{};
 	int64_t ForcedGCCycleCount{};
 	int64_t GCPauseTotalNanoseconds{};
-};
-
-struct MemoryTeardownObservation {
 };
 
 struct NetExtender {
@@ -5683,6 +5688,8 @@ inline void to_json(nlohmann::json& j, const ClientInfo& v);
 inline void from_json(const nlohmann::json& j, ClientInfo& v);
 inline void to_json(nlohmann::json& j, const ClientLimitStatus& v);
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v);
+inline void to_json(nlohmann::json& j, const ComputeModelApiSettings& v);
+inline void from_json(const nlohmann::json& j, ComputeModelApiSettings& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
@@ -5887,8 +5894,6 @@ inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
-inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
-inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -10087,6 +10092,31 @@ inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	}
 	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RetryTime);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ComputeModelApiSettings& v) {
+	j = nlohmann::json::object();
+	j["IndexMaxByteCount"] = v.IndexMaxByteCount;
+	j["ChunkMaxByteCount"] = v.ChunkMaxByteCount;
+	j["IndexTimeout"] = v.IndexTimeout;
+	j["ChunkTimeout"] = v.ChunkTimeout;
+}
+inline void from_json(const nlohmann::json& j, ComputeModelApiSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("IndexMaxByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IndexMaxByteCount);
+	}
+	if (auto it = j.find("ChunkMaxByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ChunkMaxByteCount);
+	}
+	if (auto it = j.find("IndexTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IndexTimeout);
+	}
+	if (auto it = j.find("ChunkTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ChunkTimeout);
 	}
 }
 
@@ -14477,15 +14507,6 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 	if (auto it = j.find("GCPauseTotalNanoseconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GCPauseTotalNanoseconds);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
-	if (!j.is_object()) {
-		return;
 	}
 }
 
@@ -25612,6 +25633,7 @@ using ClientLimitStatusChangeListener = std::function<void(std::optional<ClientL
 using ClientRefreshIntegrityListener = std::function<void(ClientRefreshIntegrityNotice notice)>;
 using ClientSessionListener = std::function<void(ClientSessionSnapshot snapshot)>;
 using CommitCallback = std::function<void(bool success)>;
+using ComputeModelBytesCallback = std::function<void(const uint8_t* result, int32_t result_len, std::optional<std::string> err_param)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using ConnectedProviderLocationChangeListener = std::function<void()>;
@@ -26095,6 +26117,8 @@ public:
 	void claimNetworkName(const std::optional<ClaimNetworkNameArgs>& args, ClaimNetworkNameCallback callback) const;
 	void clientEventsSend(const std::optional<ClientEventsSendArgs>& args, ClientEventsSendCallback callback) const;
 	void close() const;
+	void computeModelChunk(const std::string& sha256_text, int64_t n, ComputeModelBytesCallback callback) const;
+	void computeModelIndex(const std::string& sha256_text, ComputeModelBytesCallback callback) const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
 	void createCryptoPaymentIntent(const std::optional<CreateCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const;
@@ -26507,7 +26531,7 @@ public:
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
-	std::optional<MemoryTeardownObservation> beginMemoryTeardownObservation() const;
+	MemoryTeardownObservation beginMemoryTeardownObservation() const;
 	void checkClock() const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
@@ -27004,6 +27028,16 @@ public:
 	void close() const;
 	void start() const;
 	void stop() const;
+};
+
+class MemoryTeardownObservation final : public detail::Handle {
+public:
+	MemoryTeardownObservation() = default;
+	explicit MemoryTeardownObservation(uint64_t h) : detail::Handle(h) {}
+	std::string abortAndTakeJson(int64_t timeout_milliseconds) const;
+	std::string finishAndTakeJson(int64_t timeout_milliseconds) const;
+	std::string getObserverId() const;
+	bool waitForDeviceClose(int64_t timeout_milliseconds) const;
 };
 
 class NetworkNameValidationViewController final : public detail::Handle {
@@ -28987,6 +29021,34 @@ inline void oneshot_commit(void* user_data, bool success) {
 	auto* f = static_cast<CommitCallback*>(user_data);
 	try {
 		(*f)(success);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_compute_model_bytes(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param) {
+	auto* f = static_cast<ComputeModelBytesCallback*>(user_data);
+	try {
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(result, result_len, std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_compute_model_bytes(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param) {
+	auto* f = static_cast<ComputeModelBytesCallback*>(user_data);
+	try {
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(result, result_len, std::move(err_param_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -36811,6 +36873,14 @@ inline void Api::clientEventsSend(const std::optional<ClientEventsSendArgs>& arg
 inline void Api::close() const {
 	urnet_api_close(handle());
 }
+inline void Api::computeModelChunk(const std::string& sha256_text, int64_t n, ComputeModelBytesCallback callback) const {
+	auto* callback_fn = callback ? new ComputeModelBytesCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_model_chunk(handle(), sha256_text.c_str(), n, callback_fn ? &detail::oneshot_compute_model_bytes : nullptr, callback_fn);
+}
+inline void Api::computeModelIndex(const std::string& sha256_text, ComputeModelBytesCallback callback) const {
+	auto* callback_fn = callback ? new ComputeModelBytesCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_model_index(handle(), sha256_text.c_str(), callback_fn ? &detail::oneshot_compute_model_bytes : nullptr, callback_fn);
+}
 inline void Api::createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const {
 	std::string create_account_wallet_json;
 	const char* create_account_wallet_c = nullptr;
@@ -38798,17 +38868,13 @@ inline Sub DeviceLocal::addSnWalletChangeListener(SnWalletChangeListener listene
 	}
 	return r;
 }
-inline std::optional<MemoryTeardownObservation> DeviceLocal::beginMemoryTeardownObservation() const {
+inline MemoryTeardownObservation DeviceLocal::beginMemoryTeardownObservation() const {
 	char* err_c = nullptr;
-	char* r_c = urnet_device_local_begin_memory_teardown_observation(handle(), &err_c);
+	MemoryTeardownObservation r(urnet_device_local_begin_memory_teardown_observation(handle(), &err_c));
 	if (err_c) {
 		detail::throwError(err_c);
 	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<MemoryTeardownObservation>(r_s->c_str());
+	return r;
 }
 inline void DeviceLocal::checkClock() const {
 	urnet_device_local_check_clock(handle());
@@ -41178,6 +41244,22 @@ inline void LoginViewController::start() const {
 }
 inline void LoginViewController::stop() const {
 	urnet_login_view_controller_stop(handle());
+}
+inline std::string MemoryTeardownObservation::abortAndTakeJson(int64_t timeout_milliseconds) const {
+	char* r_c = urnet_memory_teardown_observation_abort_and_take_json(handle(), timeout_milliseconds);
+	return detail::takeString(r_c);
+}
+inline std::string MemoryTeardownObservation::finishAndTakeJson(int64_t timeout_milliseconds) const {
+	char* r_c = urnet_memory_teardown_observation_finish_and_take_json(handle(), timeout_milliseconds);
+	return detail::takeString(r_c);
+}
+inline std::string MemoryTeardownObservation::getObserverId() const {
+	char* r_c = urnet_memory_teardown_observation_get_observer_id(handle());
+	return detail::takeString(r_c);
+}
+inline bool MemoryTeardownObservation::waitForDeviceClose(int64_t timeout_milliseconds) const {
+	bool r = urnet_memory_teardown_observation_wait_for_device_close(handle(), timeout_milliseconds);
+	return r;
 }
 inline void NetworkNameValidationViewController::close() const {
 	urnet_network_name_validation_view_controller_close(handle());
@@ -43742,6 +43824,14 @@ inline std::optional<StringList> cryptoWalletSuggestions(const std::string& asse
 		return std::nullopt;
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<ComputeModelApiSettings> defaultComputeModelApiSettings() {
+	char* r_c = urnet_default_compute_model_api_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeModelApiSettings>(r_s->c_str());
 }
 inline std::optional<DeviceLocalSettings> defaultDeviceLocalSettings() {
 	char* r_c = urnet_default_device_local_settings();
