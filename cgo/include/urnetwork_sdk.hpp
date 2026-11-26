@@ -606,6 +606,10 @@ inline constexpr const char* SidecarComponentEvs = "evs";
 inline constexpr const char* SidecarComponentMail = "mail";
 inline constexpr const char* SidecarComponentSockets = "sockets";
 inline constexpr const char* SidecarComponentTls = "tls";
+inline constexpr const char* SidecarComputeFinalizeAcknowledge = "acknowledge";
+inline constexpr const char* SidecarComputeFinalizeFinish = "finish";
+inline constexpr const char* SidecarComputeFinalizeKeep = "keep";
+inline constexpr const char* SidecarComputeFinalizeNone = "none";
 inline constexpr const char* SidecarDecisionApprove = "approve";
 inline constexpr const char* SidecarDecisionDeny = "deny";
 inline constexpr const char* SidecarDecisionRevoke = "revoke";
@@ -620,6 +624,12 @@ inline constexpr const char* SidecarDirectoryKindWorker = "worker";
 inline constexpr const char* SidecarDirectoryRequestsClosed = "closed";
 inline constexpr const char* SidecarDirectoryRequestsOpen = "open";
 inline constexpr const char* SidecarDirectoryRevokeHidden = "hidden";
+inline constexpr const char* SidecarDiscoveryHide = "hide";
+inline constexpr const char* SidecarDiscoveryOff = "off";
+inline constexpr const char* SidecarDiscoveryOn = "on";
+inline constexpr const char* SidecarDiscoveryOwn = "own";
+inline constexpr const char* SidecarDiscoveryProxy = "proxy";
+inline constexpr const char* SidecarDiscoveryUnhide = "unhide";
 inline constexpr int64_t SidecarForwardKeyStoreFailed = 0;
 inline constexpr int64_t SidecarForwardKeyStoreLocked = 4;
 inline constexpr int64_t SidecarForwardKeyStoreOk = 1;
@@ -928,14 +938,26 @@ class SessionLastUsed;
 class SessionOperationResult;
 class SessionSignOutResult;
 class Sidecar;
+class SidecarAgents;
 class SidecarApprovals;
+class SidecarAutoApprovals;
+class SidecarCalendar;
+class SidecarCompute;
+class SidecarConnections;
 class SidecarDirectory;
+class SidecarDiscovery;
+class SidecarEnclaves;
 class SidecarEvs;
+class SidecarHarness;
+class SidecarListeners;
 class SidecarMail;
+class SidecarModels;
 class SidecarSearch;
 class SidecarSearchHandle;
 class SidecarSocketListener;
 class SidecarSockets;
+class SidecarSshSession;
+class SidecarSupport;
 class SnFleetClaim;
 class SnFleetDevice;
 class Socket;
@@ -1254,6 +1276,7 @@ struct SidecarAlias;
 struct SidecarAnnouncement;
 struct SidecarCleanupList;
 struct SidecarApprovalItem;
+struct SidecarAuthFeature;
 struct SidecarBurner;
 struct SidecarBytes;
 struct SidecarCleanupWorker;
@@ -1471,6 +1494,7 @@ using SidecarAccessRequestList = std::vector<SidecarAccessRequest>;
 using SidecarAliasList = std::vector<SidecarAlias>;
 using SidecarAnnouncementList = std::vector<SidecarAnnouncement>;
 using SidecarApprovalList = std::vector<SidecarApprovalItem>;
+using SidecarAuthFeatures = std::vector<SidecarAuthFeature>;
 using SidecarCleanupWorkerList = std::vector<SidecarCleanupWorker>;
 using SidecarDeviceList = std::vector<SidecarDevice>;
 using SidecarDirectoryFieldList = std::vector<SidecarDirectoryField>;
@@ -4106,6 +4130,19 @@ struct SidecarApprovalItem {
 	std::optional<StringList> decisions;
 };
 
+struct SidecarAuthFeature {
+	std::string name{};
+	bool on{};
+	bool implemented{};
+	bool supported{};
+	bool support_known{};
+	bool may_turn_on{};
+	std::optional<IdList> admin_member_ids;
+	std::optional<IdList> pausing_sidecar_ids;
+	bool pausing_known{};
+	bool pausing_more{};
+};
+
 struct SidecarBurner {
 	bool ok{};
 	std::optional<std::string> address;
@@ -4286,6 +4323,7 @@ struct SidecarEvent {
 	std::optional<std::string> dns_alarm;
 	std::optional<std::string> ct_alarm;
 	std::optional<std::string> mail_receiver_alarm;
+	std::optional<std::string> auth_features;
 };
 
 struct SidecarForwardSecret {
@@ -6065,6 +6103,8 @@ inline void to_json(nlohmann::json& j, const SidecarCleanupList& v);
 inline void from_json(const nlohmann::json& j, SidecarCleanupList& v);
 inline void to_json(nlohmann::json& j, const SidecarApprovalItem& v);
 inline void from_json(const nlohmann::json& j, SidecarApprovalItem& v);
+inline void to_json(nlohmann::json& j, const SidecarAuthFeature& v);
+inline void from_json(const nlohmann::json& j, SidecarAuthFeature& v);
 inline void to_json(nlohmann::json& j, const SidecarBurner& v);
 inline void from_json(const nlohmann::json& j, SidecarBurner& v);
 inline void to_json(nlohmann::json& j, const SidecarBytes& v);
@@ -18676,6 +18716,63 @@ inline void from_json(const nlohmann::json& j, SidecarApprovalItem& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SidecarAuthFeature& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	j["on"] = v.on;
+	j["implemented"] = v.implemented;
+	j["supported"] = v.supported;
+	j["support_known"] = v.support_known;
+	j["may_turn_on"] = v.may_turn_on;
+	if (v.admin_member_ids) {
+		j["admin_member_ids"] = *v.admin_member_ids;
+	}
+	if (v.pausing_sidecar_ids) {
+		j["pausing_sidecar_ids"] = *v.pausing_sidecar_ids;
+	}
+	j["pausing_known"] = v.pausing_known;
+	j["pausing_more"] = v.pausing_more;
+}
+inline void from_json(const nlohmann::json& j, SidecarAuthFeature& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("on"); it != j.end() && !it->is_null()) {
+		it->get_to(v.on);
+	}
+	if (auto it = j.find("implemented"); it != j.end() && !it->is_null()) {
+		it->get_to(v.implemented);
+	}
+	if (auto it = j.find("supported"); it != j.end() && !it->is_null()) {
+		it->get_to(v.supported);
+	}
+	if (auto it = j.find("support_known"); it != j.end() && !it->is_null()) {
+		it->get_to(v.support_known);
+	}
+	if (auto it = j.find("may_turn_on"); it != j.end() && !it->is_null()) {
+		it->get_to(v.may_turn_on);
+	}
+	if (auto it = j.find("admin_member_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.admin_member_ids = std::move(tmp);
+	}
+	if (auto it = j.find("pausing_sidecar_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.pausing_sidecar_ids = std::move(tmp);
+	}
+	if (auto it = j.find("pausing_known"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pausing_known);
+	}
+	if (auto it = j.find("pausing_more"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pausing_more);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SidecarBurner& v) {
 	j = nlohmann::json::object();
 	j["ok"] = v.ok;
@@ -19614,6 +19711,9 @@ inline void to_json(nlohmann::json& j, const SidecarEvent& v) {
 	if (v.mail_receiver_alarm) {
 		j["mail_receiver_alarm"] = *v.mail_receiver_alarm;
 	}
+	if (v.auth_features) {
+		j["auth_features"] = *v.auth_features;
+	}
 }
 inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
 	if (!j.is_object()) {
@@ -19774,6 +19874,11 @@ inline void from_json(const nlohmann::json& j, SidecarEvent& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.mail_receiver_alarm = std::move(tmp);
+	}
+	if (auto it = j.find("auth_features"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.auth_features = std::move(tmp);
 	}
 }
 
@@ -25666,6 +25771,8 @@ using SidecarRevokePlanCallback = std::function<void(std::optional<SidecarRevoke
 using SidecarSearchListener = std::function<void(std::optional<SidecarSearchHitList> hits, std::optional<SidecarSearchProgress> progress, bool done)>;
 using SidecarSendCheckCallback = std::function<void(std::optional<SidecarSendCheck> result, std::optional<std::string> err_param)>;
 using SidecarSendResultCallback = std::function<void(std::optional<SidecarSendResult> result, std::optional<std::string> err_param)>;
+using SidecarSshListener = std::function<void(std::string event_json)>;
+using SidecarSupportListener = std::function<void(std::string update_json)>;
 using SidecarUsedAtCallback = std::function<void(std::optional<SidecarUsedAtResult> result, std::optional<std::string> err_param)>;
 using SidecarVaultEntriesCallback = std::function<void(std::optional<SidecarVaultEntries> result, std::optional<std::string> err_param)>;
 struct SnClaimCallback {
@@ -27240,12 +27347,23 @@ class Sidecar final : public detail::Handle {
 public:
 	Sidecar() = default;
 	explicit Sidecar(uint64_t h) : detail::Handle(h) {}
+	void ackDisclosure(const std::string& id) const;
+	void ackNetworkDisclosure(const std::string& id) const;
 	Sub addEventListener(SidecarEventListener listener) const;
+	SidecarAgents agents() const;
+	SidecarAutoApprovals autoApprovals() const;
+	SidecarCalendar calendar() const;
 	void close() const;
+	SidecarCompute compute() const;
 	void confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const;
+	SidecarConnections connections() const;
+	std::string disclosures() const;
+	SidecarEnclaves enclaves() const;
 	void enrollWithDevice(const Device& device, SidecarResultCallback callback) const;
 	SidecarApprovals getApprovals() const;
+	std::optional<SidecarAuthFeatures> getAuthFeatures() const;
 	SidecarDirectory getDirectory() const;
+	SidecarDiscovery getDiscovery() const;
 	SidecarEvs getEvs() const;
 	SidecarMail getMail() const;
 	SidecarSearch getSearch() const;
@@ -27253,10 +27371,22 @@ public:
 	SidecarSockets getSockets() const;
 	std::string getState() const;
 	std::string getStateReason() const;
+	SidecarListeners listeners() const;
+	SidecarModels models() const;
+	SidecarHarness newHarness(const std::string& settings_json) const;
+	SidecarSshSession openSsh(const std::string& host, const std::string& user, int64_t cols, int64_t rows, SidecarSshListener listener) const;
 	void setForwardingDevice(const Device& device) const;
 	void setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const;
 	void signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const;
+	SidecarSupport support() const;
+	std::optional<SidecarAuthFeature> turnOnAuthFeature(const std::string& name) const;
 	void unlock(const std::string& passphrase, SidecarResultCallback callback) const;
+};
+
+class SidecarAgents final : public detail::Handle {
+public:
+	SidecarAgents() = default;
+	explicit SidecarAgents(uint64_t h) : detail::Handle(h) {}
 };
 
 class SidecarApprovals final : public detail::Handle {
@@ -27269,6 +27399,39 @@ public:
 	std::optional<SidecarApprovalList> getPending() const;
 	void previewRevokeDevice(const std::string& sidecar_id, const std::string& reason, int64_t lost_at_millis, int64_t since_n, SidecarRevokePlanCallback callback) const;
 	void revokeDevice(const std::string& plan_id, const std::optional<SidecarRevokeItemList>& revoke_keys, SidecarResultCallback callback) const;
+};
+
+class SidecarAutoApprovals final : public detail::Handle {
+public:
+	SidecarAutoApprovals() = default;
+	explicit SidecarAutoApprovals(uint64_t h) : detail::Handle(h) {}
+};
+
+class SidecarCalendar final : public detail::Handle {
+public:
+	SidecarCalendar() = default;
+	explicit SidecarCalendar(uint64_t h) : detail::Handle(h) {}
+};
+
+class SidecarCompute final : public detail::Handle {
+public:
+	SidecarCompute() = default;
+	explicit SidecarCompute(uint64_t h) : detail::Handle(h) {}
+	void autoRenew(const std::string& change_json) const;
+	std::string balance() const;
+	std::string charges(const std::string& request_json) const;
+	std::string checkout(const std::string& request_json) const;
+	std::string packs(const std::string& market) const;
+	std::string raiseBudget(const std::string& request_json) const;
+	std::string redeem(const std::string& code) const;
+	std::string spend(const std::string& request_json) const;
+	std::string storePurchase(const Api& api, const std::string& market, const std::string& purchase_json) const;
+};
+
+class SidecarConnections final : public detail::Handle {
+public:
+	SidecarConnections() = default;
+	explicit SidecarConnections(uint64_t h) : detail::Handle(h) {}
 };
 
 class SidecarDirectory final : public detail::Handle {
@@ -27284,6 +27447,21 @@ public:
 	void revokeRepo(const std::string& repo_id, SidecarResultCallback callback) const;
 	void setRuns(const std::string& project_key, const std::string& value, SidecarResultCallback callback) const;
 	void setWorker(bool enabled, SidecarResultCallback callback) const;
+};
+
+class SidecarDiscovery final : public detail::Handle {
+public:
+	SidecarDiscovery() = default;
+	explicit SidecarDiscovery(uint64_t h) : detail::Handle(h) {}
+	void list(SidecarBytesCallback callback) const;
+	void set(const std::string& setting, const std::string& value, SidecarResultCallback callback) const;
+	void share(const std::string& device, bool share, SidecarResultCallback callback) const;
+};
+
+class SidecarEnclaves final : public detail::Handle {
+public:
+	SidecarEnclaves() = default;
+	explicit SidecarEnclaves(uint64_t h) : detail::Handle(h) {}
 };
 
 class SidecarEvs final : public detail::Handle {
@@ -27303,6 +27481,18 @@ public:
 	void write(const std::string& repo_id, const std::string& path, const uint8_t* data, int32_t data_len, const std::string& versioning, SidecarResultCallback callback) const;
 };
 
+class SidecarHarness final : public detail::Handle {
+public:
+	SidecarHarness() = default;
+	explicit SidecarHarness(uint64_t h) : detail::Handle(h) {}
+};
+
+class SidecarListeners final : public detail::Handle {
+public:
+	SidecarListeners() = default;
+	explicit SidecarListeners(uint64_t h) : detail::Handle(h) {}
+};
+
 class SidecarMail final : public detail::Handle {
 public:
 	SidecarMail() = default;
@@ -27318,6 +27508,12 @@ public:
 	void getVaultEntries(SidecarVaultEntriesCallback callback) const;
 	void send(const std::optional<SidecarDraft>& draft, SidecarResultCallback callback) const;
 	void setReceiverEnabled(bool enabled, SidecarResultCallback callback) const;
+};
+
+class SidecarModels final : public detail::Handle {
+public:
+	SidecarModels() = default;
+	explicit SidecarModels(uint64_t h) : detail::Handle(h) {}
 };
 
 class SidecarSearch final : public detail::Handle {
@@ -27361,6 +27557,25 @@ public:
 	Socket dial(const std::string& address, int64_t timeout_millis) const;
 	SidecarSocketListener listen(const std::string& address, int64_t weight) const;
 	SidecarSocketListener listenExpires(const std::string& address, int64_t weight, int64_t expires_millis) const;
+};
+
+class SidecarSshSession final : public detail::Handle {
+public:
+	SidecarSshSession() = default;
+	explicit SidecarSshSession(uint64_t h) : detail::Handle(h) {}
+};
+
+class SidecarSupport final : public detail::Handle {
+public:
+	SidecarSupport() = default;
+	explicit SidecarSupport(uint64_t h) : detail::Handle(h) {}
+	Sub addListener(SidecarSupportListener listener) const;
+	std::string conversation(const std::string& request_json) const;
+	void delete_(const std::string& entry) const;
+	std::string logs(const std::string& request_json) const;
+	std::string send(const std::string& request_json) const;
+	void setSettings(const std::string& settings_json) const;
+	std::string settings() const;
 };
 
 class SnFleetClaim final : public detail::Handle {
@@ -32999,6 +33214,46 @@ inline void oneshot_sidecar_send_result(void* user_data, const char* result_json
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_ssh(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarSshListener*>(user_data);
+	try {
+		(*f)(std::string(event_json ? event_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_ssh(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarSshListener*>(user_data);
+	try {
+		(*f)(std::string(event_json ? event_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_support(void* user_data, const char* update_json) {
+	auto* f = static_cast<SidecarSupportListener*>(user_data);
+	try {
+		(*f)(std::string(update_json ? update_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_support(void* user_data, const char* update_json) {
+	auto* f = static_cast<SidecarSupportListener*>(user_data);
+	try {
+		(*f)(std::string(update_json ? update_json : ""));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -42025,6 +42280,26 @@ inline bool SessionSignOutResult::getRevocationConfirmed() const {
 	bool r = urnet_session_sign_out_result_get_revocation_confirmed(handle());
 	return r;
 }
+inline void Sidecar::ackDisclosure(const std::string& id) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_ack_disclosure(handle(), id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_ack_disclosure failed");
+	}
+}
+inline void Sidecar::ackNetworkDisclosure(const std::string& id) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_ack_network_disclosure(handle(), id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_ack_network_disclosure failed");
+	}
+}
 inline Sub Sidecar::addEventListener(SidecarEventListener listener) const {
 	std::shared_ptr<SidecarEventListener> listener_fn;
 	if (listener) {
@@ -42036,12 +42311,44 @@ inline Sub Sidecar::addEventListener(SidecarEventListener listener) const {
 	}
 	return r;
 }
+inline SidecarAgents Sidecar::agents() const {
+	SidecarAgents r(urnet_sidecar_agents(handle()));
+	return r;
+}
+inline SidecarAutoApprovals Sidecar::autoApprovals() const {
+	SidecarAutoApprovals r(urnet_sidecar_auto_approvals(handle()));
+	return r;
+}
+inline SidecarCalendar Sidecar::calendar() const {
+	SidecarCalendar r(urnet_sidecar_calendar(handle()));
+	return r;
+}
 inline void Sidecar::close() const {
 	urnet_sidecar_close(handle());
+}
+inline SidecarCompute Sidecar::compute() const {
+	SidecarCompute r(urnet_sidecar_compute(handle()));
+	return r;
 }
 inline void Sidecar::confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_confirm_forwarding_setup(handle(), network_id.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline SidecarConnections Sidecar::connections() const {
+	SidecarConnections r(urnet_sidecar_connections(handle()));
+	return r;
+}
+inline std::string Sidecar::disclosures() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_disclosures(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline SidecarEnclaves Sidecar::enclaves() const {
+	SidecarEnclaves r(urnet_sidecar_enclaves(handle()));
+	return r;
 }
 inline void Sidecar::enrollWithDevice(const Device& device, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
@@ -42051,8 +42358,24 @@ inline SidecarApprovals Sidecar::getApprovals() const {
 	SidecarApprovals r(urnet_sidecar_get_approvals(handle()));
 	return r;
 }
+inline std::optional<SidecarAuthFeatures> Sidecar::getAuthFeatures() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_get_auth_features(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarAuthFeatures>(r_s->c_str());
+}
 inline SidecarDirectory Sidecar::getDirectory() const {
 	SidecarDirectory r(urnet_sidecar_get_directory(handle()));
+	return r;
+}
+inline SidecarDiscovery Sidecar::getDiscovery() const {
+	SidecarDiscovery r(urnet_sidecar_get_discovery(handle()));
 	return r;
 }
 inline SidecarEvs Sidecar::getEvs() const {
@@ -42083,6 +42406,37 @@ inline std::string Sidecar::getStateReason() const {
 	char* r_c = urnet_sidecar_get_state_reason(handle());
 	return detail::takeString(r_c);
 }
+inline SidecarListeners Sidecar::listeners() const {
+	SidecarListeners r(urnet_sidecar_listeners(handle()));
+	return r;
+}
+inline SidecarModels Sidecar::models() const {
+	SidecarModels r(urnet_sidecar_models(handle()));
+	return r;
+}
+inline SidecarHarness Sidecar::newHarness(const std::string& settings_json) const {
+	char* err_c = nullptr;
+	SidecarHarness r(urnet_sidecar_new_harness(handle(), settings_json.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline SidecarSshSession Sidecar::openSsh(const std::string& host, const std::string& user, int64_t cols, int64_t rows, SidecarSshListener listener) const {
+	std::shared_ptr<SidecarSshListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarSshListener>(std::move(listener));
+	}
+	char* err_c = nullptr;
+	SidecarSshSession r(urnet_sidecar_open_ssh(handle(), host.c_str(), user.c_str(), cols, rows, listener_fn ? &detail::retained_sidecar_ssh : nullptr, listener_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline void Sidecar::setForwardingDevice(const Device& device) const {
 	urnet_sidecar_set_forwarding_device(handle(), device.handle());
 }
@@ -42093,6 +42447,22 @@ inline void Sidecar::setPushToken(const std::string& platform, const std::string
 inline void Sidecar::signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_sign_edge_login(handle(), origin.c_str(), nonce_base64.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline SidecarSupport Sidecar::support() const {
+	SidecarSupport r(urnet_sidecar_support(handle()));
+	return r;
+}
+inline std::optional<SidecarAuthFeature> Sidecar::turnOnAuthFeature(const std::string& name) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_turn_on_auth_feature(handle(), name.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SidecarAuthFeature>(r_s->c_str());
 }
 inline void Sidecar::unlock(const std::string& passphrase, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
@@ -42142,6 +42512,80 @@ inline void SidecarApprovals::revokeDevice(const std::string& plan_id, const std
 	}
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_approvals_revoke_device(handle(), plan_id.c_str(), revoke_keys_c, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarCompute::autoRenew(const std::string& change_json) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_compute_auto_renew(handle(), change_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_compute_auto_renew failed");
+	}
+}
+inline std::string SidecarCompute::balance() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_balance(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::charges(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_charges(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::checkout(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_checkout(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::packs(const std::string& market) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_packs(handle(), market.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::raiseBudget(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_raise_budget(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::redeem(const std::string& code) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_redeem(handle(), code.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::spend(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_spend(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarCompute::storePurchase(const Api& api, const std::string& market, const std::string& purchase_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_compute_store_purchase(handle(), api.handle(), market.c_str(), purchase_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void SidecarDirectory::announceRepo(const std::string& repo_id, const std::optional<SidecarRepoAnnouncement>& announcement, SidecarResultCallback callback) const {
 	std::string announcement_json;
@@ -42211,6 +42655,18 @@ inline void SidecarDirectory::setRuns(const std::string& project_key, const std:
 inline void SidecarDirectory::setWorker(bool enabled, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_directory_set_worker(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDiscovery::list(SidecarBytesCallback callback) const {
+	auto* callback_fn = callback ? new SidecarBytesCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_discovery_list(handle(), callback_fn ? &detail::oneshot_sidecar_bytes : nullptr, callback_fn);
+}
+inline void SidecarDiscovery::set(const std::string& setting, const std::string& value, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_discovery_set(handle(), setting.c_str(), value.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline void SidecarDiscovery::share(const std::string& device, bool share, SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_discovery_share(handle(), device.c_str(), share, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
 inline Sub SidecarEvs::addRepoChangeListener(const std::string& repo_id, SidecarRepoChangeListener listener) const {
 	std::shared_ptr<SidecarRepoChangeListener> listener_fn;
@@ -42437,6 +42893,73 @@ inline SidecarSocketListener SidecarSockets::listenExpires(const std::string& ad
 		detail::throwError(err_c);
 	}
 	return r;
+}
+inline Sub SidecarSupport::addListener(SidecarSupportListener listener) const {
+	std::shared_ptr<SidecarSupportListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarSupportListener>(std::move(listener));
+	}
+	char* err_c = nullptr;
+	Sub r(urnet_sidecar_support_add_listener(handle(), listener_fn ? &detail::retained_sidecar_support : nullptr, listener_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::string SidecarSupport::conversation(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_support_conversation(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarSupport::delete_(const std::string& entry) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_support_delete(handle(), entry.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_support_delete failed");
+	}
+}
+inline std::string SidecarSupport::logs(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_support_logs(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarSupport::send(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_support_send(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarSupport::setSettings(const std::string& settings_json) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_support_set_settings(handle(), settings_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_support_set_settings failed");
+	}
+}
+inline std::string SidecarSupport::settings() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_support_settings(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void SnFleetClaim::advance(SnFleetClaimCallback callback) const {
 	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;

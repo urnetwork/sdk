@@ -6,7 +6,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -263,11 +262,7 @@ func TestPreferenceBindingLegacyDataAndKeyContractsRemain(t *testing.T) {
 
 func TestPreferenceBindingGeneratedFilesCarryGettersAndAdditiveAbi(t *testing.T) {
 	g := testingPreferenceGenerator(t)
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("test source path unavailable")
-	}
-	baseline, err := os.ReadFile(filepath.Join(filepath.Dir(source), "testdata", "exported_symbols.txt"))
+	baseline, err := os.ReadFile(filepath.Join(testingGenDir(t), "testdata", "exported_symbols.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}

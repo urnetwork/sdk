@@ -40,15 +40,29 @@ func testingExtenderCName(cName string) bool {
 	return false
 }
 
+// The package's directory, read once before any test changes directory: go test
+// runs a package's tests in it.
+var testingPackageDirectory = func() string {
+	directory, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return directory
+}()
+
 // The directory holding the generator, which every generated artifact is
-// beside or under.
+// beside or under: this file's directory, or, where -trimpath leaves
+// runtime.Caller a module path rather than a file's (lowgo builds with it),
+// the package's directory, which go test runs the tests in.
 func testingGenDir(t *testing.T) string {
 	t.Helper()
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
+	if _, filename, _, ok := runtime.Caller(0); ok && filepath.IsAbs(filename) {
+		return filepath.Dir(filename)
+	}
+	if testingPackageDirectory == "" {
 		t.Fatal("could not resolve test path")
 	}
-	return filepath.Dir(filename)
+	return testingPackageDirectory
 }
 
 func testingGeneratedFile(t *testing.T, parts ...string) string {

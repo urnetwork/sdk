@@ -4,17 +4,12 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestExportedSymbolCompatibilityBaseline(t *testing.T) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not resolve test path")
-	}
-	genDir := filepath.Dir(filename)
+	genDir := testingGenDir(t)
 	baselineFile, err := os.Open(filepath.Join(genDir, "testdata", "exported_symbols.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -24,9 +19,9 @@ func TestExportedSymbolCompatibilityBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// THE \r STRIP IS LOAD BEARING AND IT IS A FIX. The anchor below is "\n\t" + symbol + "\n",
+	// The \r strip is load bearing, and it is a fix. The anchor below is "\n\t" + symbol + "\n",
 	// and on a CRLF checkout -- which is what core.autocrlf=true gives every Windows clone of
-	// this repo -- the octet after the symbol is \r, so NOT ONE of this file's symbols matched
+	// this repo -- the octet after the symbol is \r, so not one of this file's symbols matched
 	// and every assertion here failed. It was invisible because the gen package did not compile
 	// on Windows at all: golang.org/x/tools was missing its go.sum h1 line, so `go test ./gen`
 	// answered "setup failed" before reaching this.

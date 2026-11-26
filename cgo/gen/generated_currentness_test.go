@@ -67,9 +67,12 @@ func TestGeneratedArtifactsMatchCurrentSDKSurface(t *testing.T) {
 // this test and the one above check the sdk surface through to every binding.
 func TestLanguageBindingsMatchTrackedHeader(t *testing.T) {
 	sdkDirectory := filepath.Dir(filepath.Dir(testingGenDir(t)))
+	// The packaging module finds the header beside its own source through
+	// runtime.Caller, which an inherited -trimpath (lowgo's) turns into a module
+	// path; the flag here outranks GOFLAGS.
 	command := exec.Command(
 		"go", "-C", filepath.Join(sdkDirectory, "packaging"),
-		"run", ".", "check-generated",
+		"run", "-trimpath=false", ".", "check-generated",
 	)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("packaging check-generated: %v\n%s", err, output)

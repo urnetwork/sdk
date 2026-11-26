@@ -252,11 +252,54 @@ func TestSdkApiUrlServedByStreamingRouteIsRouted(t *testing.T) {
 	}
 }
 
+// The route source a server checkout's api serves: api.go's table, and each
+// mount it appends from a file of its own (api/*_mount.go, such as the compute
+// model routes' compute_models_mount.go), whose registrations are as literal.
+func serverRoutesSource(serverApiPath string) ([]byte, error) {
+	routesSource, err := os.ReadFile(serverApiPath)
+	if err != nil {
+		return nil, err
+	}
+	mountPaths, err := filepath.Glob(filepath.Join(filepath.Dir(serverApiPath), "*_mount.go"))
+	if err != nil {
+		return nil, err
+	}
+	for _, mountPath := range mountPaths {
+		mountSource, err := os.ReadFile(mountPath)
+		if err != nil {
+			return nil, err
+		}
+		routesSource = append(append(routesSource, '\n'), mountSource...)
+	}
+	return routesSource, nil
+}
+
+// A mount's literal registrations count as the server's routes, as api.go's do.
+// Runs on a synthetic checkout.
+func TestServerRoutesSourceReadsTheMounts(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "api.go"), []byte(`router.NewRoute("GET", "/clock", handlers.Clock),`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "compute_models_mount.go"), []byte(`router.NewRoute("GET", "/compute/models/([^/]+)/index", index),`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	routesSource, err := serverRoutesSource(filepath.Join(directory, "api.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := serverRoutePatterns(t, string(routesSource))
+	urls := []*sdkApiUrl{{path: "/clock", position: "synthetic"}, {path: "/compute/models/%s/index", position: "synthetic"}}
+	if unrouted := unroutedSdkApiUrls(urls, routes); len(unrouted) != 0 || len(routes) != 2 {
+		t.Fatalf("routes %v leave %v unrouted", routes, unrouted)
+	}
+}
+
 // Reads the sibling server checkout read-only. Without one it skips with a note
 // on stderr, so the skip is never silent.
 func TestSdkApiUrlsMatchServerRoutes(t *testing.T) {
 	serverApiPath := filepath.Join("..", "server", "api", "api.go")
-	routesSource, err := os.ReadFile(serverApiPath)
+	routesSource, err := serverRoutesSource(serverApiPath)
 	if err != nil {
 		message := fmt.Sprintf(
 			"server route conformance needs the server repo beside the sdk (%s): %s",
