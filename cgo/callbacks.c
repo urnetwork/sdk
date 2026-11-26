@@ -337,6 +337,13 @@ void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success) {
 	cb(user_data, success);
 }
 
+void urnet_invoke_compute_api(urnet_compute_api_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_compute_model_bytes(urnet_compute_model_bytes_cb cb, void* user_data, const uint8_t* result, int32_t result_len, const char* err_param) {
 	if (cb == 0) {
 		return;

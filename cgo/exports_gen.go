@@ -764,6 +764,27 @@ func (self *cAdapterCommitCallback) Complete(success bool) {
 	C.urnet_invoke_commit(self.cbComplete, self.userData, C.bool(bool(success)))
 }
 
+type cAdapterComputeApiCallback struct {
+	cbResult C.urnet_compute_api_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterComputeApiCallback) Result(result *sdk.ComputeApiResult, errParam error) {
+	defer cgoGuard("urnet_compute_api_cb")
+	result_ := cJson(result, "urnet_compute_api_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_compute_api(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterComputeModelBytesCallback struct {
 	cbResult C.urnet_compute_model_bytes_cb
 	userData unsafe.Pointer
@@ -5067,6 +5088,194 @@ func urnet_api_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_api_compute_accept_terms
+func urnet_api_compute_accept_terms(self C.uint64_t, args *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_accept_terms")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_accept_terms")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_accept_terms") {
+			return
+		}
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeAcceptTerms(args_, callback_)
+}
+
+//export urnet_api_compute_accept_terms_sync
+func urnet_api_compute_accept_terms_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_accept_terms_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_accept_terms_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_accept_terms_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.ComputeAcceptTermsSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_accept_terms_sync")
+}
+
+//export urnet_api_compute_auto_renew
+func urnet_api_compute_auto_renew(self C.uint64_t, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_auto_renew")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_auto_renew")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeAutoRenew(callback_)
+}
+
+//export urnet_api_compute_auto_renew_sync
+func urnet_api_compute_auto_renew_sync(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_auto_renew_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_auto_renew_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeAutoRenewSync()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_auto_renew_sync")
+}
+
+//export urnet_api_compute_balance
+func urnet_api_compute_balance(self C.uint64_t, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_balance")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_balance")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeBalance(callback_)
+}
+
+//export urnet_api_compute_balance_sync
+func urnet_api_compute_balance_sync(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_balance_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_balance_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeBalanceSync()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_balance_sync")
+}
+
+//export urnet_api_compute_charges
+func urnet_api_compute_charges(self C.uint64_t, cursor *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_charges")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_charges")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeCharges(goString(cursor), callback_)
+}
+
+//export urnet_api_compute_charges_sync
+func urnet_api_compute_charges_sync(self C.uint64_t, cursor *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_charges_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_charges_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeChargesSync(goString(cursor))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_charges_sync")
+}
+
+//export urnet_api_compute_checkout
+func urnet_api_compute_checkout(self C.uint64_t, args *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_checkout")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_checkout")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_checkout") {
+			return
+		}
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeCheckout(args_, callback_)
+}
+
+//export urnet_api_compute_checkout_sync
+func urnet_api_compute_checkout_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_checkout_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_checkout_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_checkout_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.ComputeCheckoutSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_checkout_sync")
+}
+
 //export urnet_api_compute_model_chunk
 func urnet_api_compute_model_chunk(self C.uint64_t, sha256Text *C.char, n C.int64_t, callback_result C.urnet_compute_model_bytes_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_compute_model_chunk")
@@ -5093,6 +5302,240 @@ func urnet_api_compute_model_index(self C.uint64_t, sha256Text *C.char, callback
 		callback_ = &cAdapterComputeModelBytesCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.ComputeModelIndex(goString(sha256Text), callback_)
+}
+
+//export urnet_api_compute_promo_redeem
+func urnet_api_compute_promo_redeem(self C.uint64_t, args *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_promo_redeem")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_promo_redeem")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_promo_redeem") {
+			return
+		}
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputePromoRedeem(args_, callback_)
+}
+
+//export urnet_api_compute_promo_redeem_sync
+func urnet_api_compute_promo_redeem_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_promo_redeem_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_promo_redeem_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_promo_redeem_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.ComputePromoRedeemSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_promo_redeem_sync")
+}
+
+//export urnet_api_compute_refund
+func urnet_api_compute_refund(self C.uint64_t, args *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_refund")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_refund")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_refund") {
+			return
+		}
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeRefund(args_, callback_)
+}
+
+//export urnet_api_compute_refund_sync
+func urnet_api_compute_refund_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_refund_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_refund_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_refund_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.ComputeRefundSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_refund_sync")
+}
+
+//export urnet_api_compute_set_auto_renew
+func urnet_api_compute_set_auto_renew(self C.uint64_t, args *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_set_auto_renew")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_set_auto_renew")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_set_auto_renew") {
+			return
+		}
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeSetAutoRenew(args_, callback_)
+}
+
+//export urnet_api_compute_set_auto_renew_sync
+func urnet_api_compute_set_auto_renew_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_set_auto_renew_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_set_auto_renew_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.ComputeApiArgs
+	if args != nil {
+		args_ = &sdk.ComputeApiArgs{}
+		if !goJson(args, args_, "urnet_api_compute_set_auto_renew_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.ComputeSetAutoRenewSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_set_auto_renew_sync")
+}
+
+//export urnet_api_compute_spend
+func urnet_api_compute_spend(self C.uint64_t, by *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_spend")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_spend")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeSpend(goString(by), callback_)
+}
+
+//export urnet_api_compute_spend_sync
+func urnet_api_compute_spend_sync(self C.uint64_t, by *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_spend_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_spend_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeSpendSync(goString(by))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_spend_sync")
+}
+
+//export urnet_api_compute_statement
+func urnet_api_compute_statement(self C.uint64_t, month *C.char, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_statement")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_statement")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeStatement(goString(month), callback_)
+}
+
+//export urnet_api_compute_statement_sync
+func urnet_api_compute_statement_sync(self C.uint64_t, month *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_statement_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_statement_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeStatementSync(goString(month))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_statement_sync")
+}
+
+//export urnet_api_compute_terms
+func urnet_api_compute_terms(self C.uint64_t, callback_result C.urnet_compute_api_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_compute_terms")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_terms")
+	if !ok {
+		return
+	}
+	var callback_ sdk.ComputeApiCallback
+	if callback_result != nil {
+		callback_ = &cAdapterComputeApiCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ComputeTerms(callback_)
+}
+
+//export urnet_api_compute_terms_sync
+func urnet_api_compute_terms_sync(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_compute_terms_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_compute_terms_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ComputeTermsSync()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_compute_terms_sync")
 }
 
 //export urnet_api_create_account_wallet
@@ -21971,6 +22414,16 @@ func urnet_sidecar_calendar(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_check_clock
+func urnet_sidecar_check_clock(self C.uint64_t) {
+	defer cgoGuard("urnet_sidecar_check_clock")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_check_clock")
+	if !ok {
+		return
+	}
+	self_.CheckClock()
 }
 
 //export urnet_sidecar_close
