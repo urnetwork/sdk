@@ -50,6 +50,33 @@ static_assert(std::is_same_v<decltype(std::declval<const urnet::LocalState&>().l
                              std::optional<urnet::ProvideSecretKeyList>>);
 static_assert(std::is_same_v<urnet::ProvideSecretKeyList, std::vector<urnet::ProvideSecretKey>>);
 
+// A device's teardown observation is a move-only owned handle (QD-1423): the C
+// constructor answers the handle rather than json, and the four methods bind.
+static_assert(std::is_move_constructible_v<urnet::MemoryTeardownObservation>);
+static_assert(!std::is_copy_constructible_v<urnet::MemoryTeardownObservation>);
+static_assert(std::is_same_v<decltype(&urnet_device_local_begin_memory_teardown_observation), uint64_t (*)(uint64_t, char**)>);
+static_assert(std::is_same_v<decltype(&urnet_memory_teardown_observation_get_observer_id), char* (*)(uint64_t)>);
+static_assert(std::is_same_v<decltype(&urnet_memory_teardown_observation_wait_for_device_close), bool (*)(uint64_t, int64_t)>);
+static_assert(std::is_same_v<decltype(&urnet_memory_teardown_observation_finish_and_take_json), char* (*)(uint64_t, int64_t)>);
+static_assert(std::is_same_v<decltype(&urnet_memory_teardown_observation_abort_and_take_json), char* (*)(uint64_t, int64_t)>);
+
+// Compile the instrumentation's caller shape without constructing a device:
+// begin, close the device, then finish on its join or abort without one.
+void use_memory_teardown_observation(const urnet::DeviceLocal& device, int64_t timeout_milliseconds) {
+	try {
+		urnet::MemoryTeardownObservation observation = device.beginMemoryTeardownObservation();
+		std::string observer_id = observation.getObserverId();
+		(void)observer_id;
+		device.close();
+		std::string receipt = observation.waitForDeviceClose(timeout_milliseconds)
+			? observation.finishAndTakeJson(timeout_milliseconds)
+			: observation.abortAndTakeJson(timeout_milliseconds);
+		(void)receipt;
+	} catch (const urnet::Error& error) {
+		(void)error;
+	}
+}
+
 // Compile each explicit operation without joining their independent policies.
 // This function is never invoked; actual storage semantics have Go controls.
 void use_checked_provider_keys(const urnet::LocalState& local_state,
@@ -225,6 +252,7 @@ void reference_everything(const urnet::DeviceLocal& device, const urnet::DeviceR
 	(void)oneshot_local_state_save;
 	(void)&use_preference_observations;
 	(void)&use_checked_provider_keys;
+	(void)&use_memory_teardown_observation;
 	use_flow_owner_lookup(device);
 	use_advanced_mode(remote);
 }
