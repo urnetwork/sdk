@@ -533,6 +533,14 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_APPROVAL_KIND_REQUEST "request"
 #define URNET_SIDECAR_APPROVAL_KIND_REVOCATION_PROPOSAL "revocation_proposal"
 #define URNET_SIDECAR_BRIDGE_ALARM_FORWARDING_REVOKED "forwarding_revoked"
+#define URNET_SIDECAR_CARRIED_EXPIRED "expired"
+#define URNET_SIDECAR_CARRIED_PARKED "parked"
+#define URNET_SIDECAR_CARRIED_REMOVED "removed"
+#define URNET_SIDECAR_CARRIED_REVOKED "revoked"
+#define URNET_SIDECAR_CARRIED_ROLE "role"
+#define URNET_SIDECAR_CARRIED_SIGNATURE "signature"
+#define URNET_SIDECAR_CARRIED_TAGGED "tagged"
+#define URNET_SIDECAR_CARRIED_UNLISTED "unlisted"
 #define URNET_SIDECAR_CODE_APPROVAL_AUTHORITY "APPROVAL_AUTHORITY"
 #define URNET_SIDECAR_CODE_APPROVAL_DECIDED "APPROVAL_DECIDED"
 #define URNET_SIDECAR_CODE_APPROVAL_NOT_ELIGIBLE "APPROVAL_NOT_ELIGIBLE"
@@ -2650,6 +2658,7 @@ uint64_t urnet_sidecar_enclaves(uint64_t self);
 void urnet_sidecar_enroll_with_device(uint64_t self, uint64_t device, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 uint64_t urnet_sidecar_get_approvals(uint64_t self);
 char* urnet_sidecar_get_auth_features(uint64_t self, char** out_error);
+char* urnet_sidecar_get_carried_config_records(uint64_t self, char** out_error);
 uint64_t urnet_sidecar_get_directory(uint64_t self);
 uint64_t urnet_sidecar_get_discovery(uint64_t self);
 uint64_t urnet_sidecar_get_evs(uint64_t self);
@@ -5924,6 +5933,22 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   signer_sidecar_id?: string (uuid) | null
  *   code?: string
  *   message?: string
+ */
+
+/* SidecarCarriedConfigRecord (json):
+ *   record: string
+ *   signer_id?: string (uuid) | null
+ *   member_id?: string (uuid) | null
+ *   why: string
+ *   position?: number
+ *   not_after_millis?: number
+ *   role?: string
+ *   member_removed?: boolean
+ *   filed_by: StringList | null
+ */
+
+/* SidecarCarriedConfigRecordList (json):
+ *   = SidecarCarriedConfigRecord | null[]
  */
 
 /* SidecarCleanupList (json):
