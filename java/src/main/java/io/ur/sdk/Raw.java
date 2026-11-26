@@ -1470,8 +1470,10 @@ public interface Raw extends Library {
   long urnet_sidecar_socket_listener_accept(long a0, long a1, PointerByReference a2);
   byte urnet_sidecar_socket_listener_close(long a0, PointerByReference a1);
   Pointer urnet_sidecar_socket_listener_get_addr(long a0);
+  long urnet_sidecar_socket_listener_get_grant_expires_millis(long a0);
   long urnet_sidecar_sockets_dial(long a0, String a1, long a2, PointerByReference a3);
   long urnet_sidecar_sockets_listen(long a0, String a1, long a2, PointerByReference a3);
+  long urnet_sidecar_sockets_listen_expires(long a0, String a1, long a2, long a3, PointerByReference a4);
   void urnet_sn_fleet_claim_advance(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);
   void urnet_sn_fleet_claim_leave(long a0, long a1, urnet_sn_fleet_device_leave_cb a2, Pointer a3);
   void urnet_sn_fleet_claim_refresh(long a0, urnet_sn_fleet_claim_cb a1, Pointer a2);

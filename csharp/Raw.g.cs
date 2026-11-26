@@ -1470,8 +1470,10 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_socket_listener_accept(ulong a0, long a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_sidecar_socket_listener_close(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_sidecar_socket_listener_get_addr(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_sidecar_socket_listener_get_grant_expires_millis(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_sockets_dial(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, out IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_sockets_listen(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, out IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_sidecar_sockets_listen_expires(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, long a3, out IntPtr a4);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_advance(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_leave(ulong a0, ulong a1, urnet_sn_fleet_device_leave_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_sn_fleet_claim_refresh(ulong a0, urnet_sn_fleet_claim_cb a1, IntPtr a2);

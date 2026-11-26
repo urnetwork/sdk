@@ -1384,8 +1384,10 @@ EXPORTS
 	urnet_sidecar_socket_listener_accept
 	urnet_sidecar_socket_listener_close
 	urnet_sidecar_socket_listener_get_addr
+	urnet_sidecar_socket_listener_get_grant_expires_millis
 	urnet_sidecar_sockets_dial
 	urnet_sidecar_sockets_listen
+	urnet_sidecar_sockets_listen_expires
 	urnet_sidecar_unlock
 	urnet_sn_claim_transactions_for
 	urnet_sn_claims_for

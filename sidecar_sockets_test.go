@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/sidecar"
 )
@@ -23,10 +24,13 @@ import (
 type testSidecarSocketsBackend struct {
 	stateLock sync.Mutex
 	listeners map[string]*testSidecarSocketListener
-	// each Listen's weight, in order
-	weights []int
+	// each Listen's weight and the grant lifetime it asked, in order
+	weights   []int
+	lifetimes []time.Duration
 	// answered by Listen in place of a listener, when set
 	listenErr error
+	// the grant end each listen on an address comes to, zero for none
+	addressGrantEnds map[string]time.Time
 }
 
 func newTestSidecarSocketsBackend() *testSidecarSocketsBackend {
@@ -55,18 +59,20 @@ func (self *testSidecarSocketsBackend) Dial(ctx context.Context, address string)
 	}
 }
 
-func (self *testSidecarSocketsBackend) Listen(ctx context.Context, address string, weight int) (sidecarSocketListenerBackend, error) {
+func (self *testSidecarSocketsBackend) Listen(ctx context.Context, address string, weight int, expires time.Duration) (sidecarSocketListenerBackend, error) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.listenErr != nil {
 		return nil, self.listenErr
 	}
 	self.weights = append(self.weights, weight)
+	self.lifetimes = append(self.lifetimes, expires)
 	listener := &testSidecarSocketListener{
-		backend:  self,
-		address:  address,
-		accepted: make(chan net.Conn),
-		closed:   make(chan struct{}),
+		backend:         self,
+		address:         address,
+		accepted:        make(chan net.Conn),
+		closed:          make(chan struct{}),
+		grantExpireTime: self.addressGrantEnds[address],
 	}
 	self.listeners[address] = listener
 	return listener, nil
@@ -80,6 +86,8 @@ type testSidecarSocketListener struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	closeSeen int
+	// the grant end it came to, zero for none
+	grantExpireTime time.Time
 }
 
 func (self *testSidecarSocketListener) AcceptContext(ctx context.Context) (net.Conn, error) {
@@ -109,6 +117,10 @@ func (self *testSidecarSocketListener) Close() error {
 
 func (self *testSidecarSocketListener) Addr() net.Addr {
 	return &sidecar.SocketAddr{}
+}
+
+func (self *testSidecarSocketListener) GrantExpires() time.Time {
+	return self.grantExpireTime
 }
 
 // SidecarSockets on backend until the test ends.
