@@ -1316,15 +1316,31 @@ EXPORTS
 	urnet_set_network_country_code
 	urnet_set_transfer_diagnostic_snapshots_enabled
 	urnet_short_ss58
+	urnet_sidecar_ack_disclosure
+	urnet_sidecar_ack_network_disclosure
 	urnet_sidecar_add_event_listener
+	urnet_sidecar_agents
 	urnet_sidecar_approvals_add_pending_listener
 	urnet_sidecar_approvals_decide
 	urnet_sidecar_approvals_get_devices
 	urnet_sidecar_approvals_get_pending
 	urnet_sidecar_approvals_preview_revoke_device
 	urnet_sidecar_approvals_revoke_device
+	urnet_sidecar_auto_approvals
+	urnet_sidecar_calendar
 	urnet_sidecar_close
+	urnet_sidecar_compute
+	urnet_sidecar_compute_auto_renew
+	urnet_sidecar_compute_balance
+	urnet_sidecar_compute_charges
+	urnet_sidecar_compute_checkout
+	urnet_sidecar_compute_packs
+	urnet_sidecar_compute_raise_budget
+	urnet_sidecar_compute_redeem
+	urnet_sidecar_compute_spend
+	urnet_sidecar_compute_store_purchase
 	urnet_sidecar_confirm_forwarding_setup
+	urnet_sidecar_connections
 	urnet_sidecar_directory_announce_repo
 	urnet_sidecar_directory_get
 	urnet_sidecar_directory_get_repo_id
@@ -1334,6 +1350,11 @@ EXPORTS
 	urnet_sidecar_directory_revoke_repo
 	urnet_sidecar_directory_set_runs
 	urnet_sidecar_directory_set_worker
+	urnet_sidecar_disclosures
+	urnet_sidecar_discovery_list
+	urnet_sidecar_discovery_set
+	urnet_sidecar_discovery_share
+	urnet_sidecar_enclaves
 	urnet_sidecar_enroll_with_device
 	urnet_sidecar_evs_add_repo_change_listener
 	urnet_sidecar_evs_cancel_drop
@@ -1347,7 +1368,9 @@ EXPORTS
 	urnet_sidecar_evs_read_version
 	urnet_sidecar_evs_write
 	urnet_sidecar_get_approvals
+	urnet_sidecar_get_auth_features
 	urnet_sidecar_get_directory
+	urnet_sidecar_get_discovery
 	urnet_sidecar_get_evs
 	urnet_sidecar_get_mail
 	urnet_sidecar_get_search
@@ -1355,6 +1378,7 @@ EXPORTS
 	urnet_sidecar_get_sockets
 	urnet_sidecar_get_state
 	urnet_sidecar_get_state_reason
+	urnet_sidecar_listeners
 	urnet_sidecar_mail_burn
 	urnet_sidecar_mail_check_send
 	urnet_sidecar_mail_create_burner
@@ -1366,6 +1390,9 @@ EXPORTS
 	urnet_sidecar_mail_get_vault_entries
 	urnet_sidecar_mail_send
 	urnet_sidecar_mail_set_receiver_enabled
+	urnet_sidecar_models
+	urnet_sidecar_new_harness
+	urnet_sidecar_open_ssh
 	urnet_sidecar_search_acknowledge_indexer
 	urnet_sidecar_search_drop_cache
 	urnet_sidecar_search_get_indexers
@@ -1388,6 +1415,15 @@ EXPORTS
 	urnet_sidecar_sockets_dial
 	urnet_sidecar_sockets_listen
 	urnet_sidecar_sockets_listen_expires
+	urnet_sidecar_support
+	urnet_sidecar_support_add_listener
+	urnet_sidecar_support_conversation
+	urnet_sidecar_support_delete
+	urnet_sidecar_support_logs
+	urnet_sidecar_support_send
+	urnet_sidecar_support_set_settings
+	urnet_sidecar_support_settings
+	urnet_sidecar_turn_on_auth_feature
 	urnet_sidecar_unlock
 	urnet_sn_claim_transactions_for
 	urnet_sn_claims_for
