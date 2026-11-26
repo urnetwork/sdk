@@ -136,6 +136,23 @@ var behavioralTypes = map[string]bool{
 	"SidecarDirectory":      true,
 	"SidecarSearch":         true,
 	"SidecarSearchHandle":   true,
+	// A desktop app's view of service discovery (sidecar §18.5, §17.7.1): the Sidecar's ctx and its daemon session.
+	"SidecarDiscovery": true,
+	// The compute surface's wrappers (DESIGN-COMPUTE §15.3; CSURF-M11-01), each over the Sidecar's ctx and backends,
+	// and the support conversation's (§28.4). Several are shells whose methods their areas add in their own files; as
+	// handles those methods bind when they land, where as json each accessor would answer "{}" and changing it to a
+	// handle would then break the abi.
+	"SidecarAgents":        true,
+	"SidecarAutoApprovals": true,
+	"SidecarCalendar":      true,
+	"SidecarCompute":       true,
+	"SidecarConnections":   true,
+	"SidecarEnclaves":      true,
+	"SidecarHarness":       true,
+	"SidecarListeners":     true,
+	"SidecarModels":        true,
+	"SidecarSshSession":    true,
+	"SidecarSupport":       true,
 }
 
 // skipped types are not exported. mirror the gomobile validate exclusions
@@ -152,6 +169,11 @@ var skipTypes = map[string]string{
 	"RemoteSubprotocol":         "Go/JS RPC session; native bindings use DeviceLocal subprotocol methods",
 	"DeviceLocalRpc":            "rpc gob internal (macOS parity: ignored)",
 	"DeviceRemoteRpc":           "rpc gob internal (macOS parity: ignored)",
+	// the app's compute hosts, whose setters skipMethods names with the reason
+	"SidecarConnectHost":            "an app's compute host; see Sidecar.SetConnectHost",
+	"SidecarLocalInferenceHost":     "an app's compute host; see Sidecar.SetLocalInferenceHost",
+	"SidecarLocalInferenceListener": "the local inference host's listener; see Sidecar.SetLocalInferenceHost",
+	"SidecarSafetyClassifierHost":   "an app's compute host; see Sidecar.SetSafetyClassifierHost",
 }
 
 var skipTypePatterns = []*regexp.Regexp{
@@ -186,6 +208,8 @@ var skipFuncs = map[string]string{
 	"DecodeBase58":               "byte buffer result; manual export in exports_manual.go",
 	"DecryptData":                "byte buffer result; manual export in exports_manual.go",
 	"GenerateSharedSecret":       "byte buffer result; manual export in exports_manual.go",
+	// a list whose name lacks the List suffix the pattern below matches
+	"NewSidecarAuthFeatures": "list constructor: lists cross the abi as json arrays",
 }
 
 var skipFuncPatterns = []*regexp.Regexp{
@@ -218,6 +242,14 @@ var skipMethods = map[string]string{
 	"Sidecar.CloseAndWait":         "go context does not cross the abi; use urnet_sidecar_close",
 	"SidecarSockets.ListenContext": "Go only: a net.Listener for a Go embedder's own server (sidecar §18.5)",
 	"DeviceLocal.NewBridgeLink":    "Go only: §17.10's BridgeHost, which the device's own bridge calls in process",
+	// The app's compute hosts (DESIGN-COMPUTE §15.3), which the iOS, macOS and Android apps (gomobile) and the js leg
+	// implement. The desktop apps this abi serves run local inference and the classifier in ur daemon's engine
+	// process (§6.5, §27.5), and take connect's callback on a loopback port, the daemon's or the sdk's own (§25.5),
+	// so they set no host; a local Sidecar here sees none and refuses, as sidecar_compute_host.go says. Each host's
+	// methods answer a result and an error, which no c callback here carries.
+	"Sidecar.SetConnectHost":          "the iOS and Android apps' browser seam; desktops take connect's callback on a loopback port (DESIGN-COMPUTE §25.5)",
+	"Sidecar.SetLocalInferenceHost":   "the iOS, macOS and Android apps' LiteRT-LM; desktops run ur daemon's engine process (DESIGN-COMPUTE §6.5)",
+	"Sidecar.SetSafetyClassifierHost": "the iOS, macOS and Android apps' ONNX Runtime; desktops run ur daemon's engine process (DESIGN-COMPUTE §27.5)",
 
 	// byte results cross via the buffer-out pattern, see exports_manual.go
 	"DeviceLocal.GetClientKeySeed":                           "manual export urnet_device_local_get_client_key_seed",

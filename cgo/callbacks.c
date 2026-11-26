@@ -1401,6 +1401,20 @@ void urnet_invoke_sidecar_send_result(urnet_sidecar_send_result_cb cb, void* use
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sidecar_ssh(urnet_sidecar_ssh_cb cb, void* user_data, const char* event_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, event_json);
+}
+
+void urnet_invoke_sidecar_support(urnet_sidecar_support_cb cb, void* user_data, const char* update_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, update_json);
+}
+
 void urnet_invoke_sidecar_used_at(urnet_sidecar_used_at_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	if (cb == 0) {
 		return;
