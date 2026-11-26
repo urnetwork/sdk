@@ -296,8 +296,9 @@ func TestNoSidecarSymbolIsPending(t *testing.T) {
 		// format 2's reads and the drop calls (SDK-M10-05)
 		"SidecarEvs.ReadVersion", "SidecarEvs.Write", "SidecarEvs.History", "SidecarEvs.DropHistoryPreview", "SidecarEvs.DropHistory",
 		"SidecarEvs.CancelDrop", "SidecarEvs.Drops",
-		// a listen's grant lifetime and its end (owner decision 687, QD-1419)
-		"SidecarSockets.ListenExpires", "SidecarSocketListener.GetGrantExpiresMillis",
+		// a listen's grant lifetime and its end (owner decision 687, QD-1419), and the clock check that ends its
+		// streams whose grant lapsed while the device slept (owner decision 803, QD-1427)
+		"SidecarSockets.ListenExpires", "SidecarSocketListener.GetGrantExpiresMillis", "Sidecar.CheckClock",
 		// the authorization features' prompt (CACL-M11-03) and a desktop app's discovery (owner decision 778)
 		"Sidecar.GetAuthFeatures", "Sidecar.TurnOnAuthFeature", "Sidecar.GetDiscovery", "SidecarDiscovery.List",
 		"SidecarDiscovery.Share", "SidecarDiscovery.Set",

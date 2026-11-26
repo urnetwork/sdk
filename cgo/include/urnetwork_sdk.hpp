@@ -1075,6 +1075,8 @@ struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
 struct ClientInfo;
 struct ClientLimitStatus;
+struct ComputeApiArgs;
+struct ComputeApiResult;
 struct ComputeModelApiSettings;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
@@ -2286,6 +2288,14 @@ struct ClientInfo {
 struct ClientLimitStatus {
 	std::string Status{};
 	int64_t RetryTime{};
+};
+
+struct ComputeApiArgs {
+	std::string Json{};
+};
+
+struct ComputeApiResult {
+	std::string Json{};
 };
 
 struct ComputeModelApiSettings {
@@ -5710,6 +5720,10 @@ inline void to_json(nlohmann::json& j, const ClientInfo& v);
 inline void from_json(const nlohmann::json& j, ClientInfo& v);
 inline void to_json(nlohmann::json& j, const ClientLimitStatus& v);
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v);
+inline void to_json(nlohmann::json& j, const ComputeApiArgs& v);
+inline void from_json(const nlohmann::json& j, ComputeApiArgs& v);
+inline void to_json(nlohmann::json& j, const ComputeApiResult& v);
+inline void from_json(const nlohmann::json& j, ComputeApiResult& v);
 inline void to_json(nlohmann::json& j, const ComputeModelApiSettings& v);
 inline void from_json(const nlohmann::json& j, ComputeModelApiSettings& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
@@ -10116,6 +10130,32 @@ inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
 	}
 	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RetryTime);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ComputeApiArgs& v) {
+	j = nlohmann::json::object();
+	j["Json"] = v.Json;
+}
+inline void from_json(const nlohmann::json& j, ComputeApiArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Json"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Json);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ComputeApiResult& v) {
+	j = nlohmann::json::object();
+	j["Json"] = v.Json;
+}
+inline void from_json(const nlohmann::json& j, ComputeApiResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Json"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Json);
 	}
 }
 
@@ -25730,6 +25770,7 @@ using ClientLimitStatusChangeListener = std::function<void(std::optional<ClientL
 using ClientRefreshIntegrityListener = std::function<void(ClientRefreshIntegrityNotice notice)>;
 using ClientSessionListener = std::function<void(ClientSessionSnapshot snapshot)>;
 using CommitCallback = std::function<void(bool success)>;
+using ComputeApiCallback = std::function<void(std::optional<ComputeApiResult> result, std::optional<std::string> err_param)>;
 using ComputeModelBytesCallback = std::function<void(const uint8_t* result, int32_t result_len, std::optional<std::string> err_param)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -26214,8 +26255,30 @@ public:
 	void claimNetworkName(const std::optional<ClaimNetworkNameArgs>& args, ClaimNetworkNameCallback callback) const;
 	void clientEventsSend(const std::optional<ClientEventsSendArgs>& args, ClientEventsSendCallback callback) const;
 	void close() const;
+	void computeAcceptTerms(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeAcceptTermsSync(const std::optional<ComputeApiArgs>& args) const;
+	void computeAutoRenew(ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeAutoRenewSync() const;
+	void computeBalance(ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeBalanceSync() const;
+	void computeCharges(const std::string& cursor, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeChargesSync(const std::string& cursor) const;
+	void computeCheckout(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeCheckoutSync(const std::optional<ComputeApiArgs>& args) const;
 	void computeModelChunk(const std::string& sha256_text, int64_t n, ComputeModelBytesCallback callback) const;
 	void computeModelIndex(const std::string& sha256_text, ComputeModelBytesCallback callback) const;
+	void computePromoRedeem(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computePromoRedeemSync(const std::optional<ComputeApiArgs>& args) const;
+	void computeRefund(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeRefundSync(const std::optional<ComputeApiArgs>& args) const;
+	void computeSetAutoRenew(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeSetAutoRenewSync(const std::optional<ComputeApiArgs>& args) const;
+	void computeSpend(const std::string& by, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeSpendSync(const std::string& by) const;
+	void computeStatement(const std::string& month, ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeStatementSync(const std::string& month) const;
+	void computeTerms(ComputeApiCallback callback) const;
+	std::optional<ComputeApiResult> computeTermsSync() const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
 	void createCryptoPaymentIntent(const std::optional<CreateCryptoPaymentIntentArgs>& args, CryptoPaymentIntentCallback callback) const;
@@ -27484,6 +27547,7 @@ public:
 	SidecarAgents agents() const;
 	SidecarAutoApprovals autoApprovals() const;
 	SidecarCalendar calendar() const;
+	void checkClock() const;
 	void close() const;
 	SidecarCompute compute() const;
 	void confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const;
@@ -29119,6 +29183,42 @@ inline void oneshot_commit(void* user_data, bool success) {
 	auto* f = static_cast<CommitCallback*>(user_data);
 	try {
 		(*f)(success);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_compute_api(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<ComputeApiCallback*>(user_data);
+	try {
+		std::optional<ComputeApiResult> result_v;
+		if (result_json) {
+			result_v = parseJson<ComputeApiResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_compute_api(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<ComputeApiCallback*>(user_data);
+	try {
+		std::optional<ComputeApiResult> result_v;
+		if (result_json) {
+			result_v = parseJson<ComputeApiResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -36971,6 +37071,110 @@ inline void Api::clientEventsSend(const std::optional<ClientEventsSendArgs>& arg
 inline void Api::close() const {
 	urnet_api_close(handle());
 }
+inline void Api::computeAcceptTerms(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_accept_terms(handle(), args_c, callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeAcceptTermsSync(const std::optional<ComputeApiArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_accept_terms_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeAutoRenew(ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_auto_renew(handle(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeAutoRenewSync() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_auto_renew_sync(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeBalance(ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_balance(handle(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeBalanceSync() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_balance_sync(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeCharges(const std::string& cursor, ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_charges(handle(), cursor.c_str(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeChargesSync(const std::string& cursor) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_charges_sync(handle(), cursor.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeCheckout(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_checkout(handle(), args_c, callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeCheckoutSync(const std::optional<ComputeApiArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_checkout_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
 inline void Api::computeModelChunk(const std::string& sha256_text, int64_t n, ComputeModelBytesCallback callback) const {
 	auto* callback_fn = callback ? new ComputeModelBytesCallback(std::move(callback)) : nullptr;
 	urnet_api_compute_model_chunk(handle(), sha256_text.c_str(), n, callback_fn ? &detail::oneshot_compute_model_bytes : nullptr, callback_fn);
@@ -36978,6 +37182,138 @@ inline void Api::computeModelChunk(const std::string& sha256_text, int64_t n, Co
 inline void Api::computeModelIndex(const std::string& sha256_text, ComputeModelBytesCallback callback) const {
 	auto* callback_fn = callback ? new ComputeModelBytesCallback(std::move(callback)) : nullptr;
 	urnet_api_compute_model_index(handle(), sha256_text.c_str(), callback_fn ? &detail::oneshot_compute_model_bytes : nullptr, callback_fn);
+}
+inline void Api::computePromoRedeem(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_promo_redeem(handle(), args_c, callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computePromoRedeemSync(const std::optional<ComputeApiArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_promo_redeem_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeRefund(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_refund(handle(), args_c, callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeRefundSync(const std::optional<ComputeApiArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_refund_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeSetAutoRenew(const std::optional<ComputeApiArgs>& args, ComputeApiCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_set_auto_renew(handle(), args_c, callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeSetAutoRenewSync(const std::optional<ComputeApiArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_set_auto_renew_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeSpend(const std::string& by, ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_spend(handle(), by.c_str(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeSpendSync(const std::string& by) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_spend_sync(handle(), by.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeStatement(const std::string& month, ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_statement(handle(), month.c_str(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeStatementSync(const std::string& month) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_statement_sync(handle(), month.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
+}
+inline void Api::computeTerms(ComputeApiCallback callback) const {
+	auto* callback_fn = callback ? new ComputeApiCallback(std::move(callback)) : nullptr;
+	urnet_api_compute_terms(handle(), callback_fn ? &detail::oneshot_compute_api : nullptr, callback_fn);
+}
+inline std::optional<ComputeApiResult> Api::computeTermsSync() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_compute_terms_sync(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ComputeApiResult>(r_s->c_str());
 }
 inline void Api::createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const {
 	std::string create_account_wallet_json;
@@ -42502,6 +42838,9 @@ inline SidecarAutoApprovals Sidecar::autoApprovals() const {
 inline SidecarCalendar Sidecar::calendar() const {
 	SidecarCalendar r(urnet_sidecar_calendar(handle()));
 	return r;
+}
+inline void Sidecar::checkClock() const {
+	urnet_sidecar_check_clock(handle());
 }
 inline void Sidecar::close() const {
 	urnet_sidecar_close(handle());
