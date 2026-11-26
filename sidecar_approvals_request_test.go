@@ -539,30 +539,49 @@ func TestRequestNotListedOnANonCapablePhone(t *testing.T) {
 	}
 }
 
-// A fake leaser of the phone's approval logs: what each commit hints.
+// A fake leaser of the phone's approval leases: what each commit under a lease hints.
 type testRequestLeaser struct {
 	stateLock sync.Mutex
-	callbacks map[sidecar.Id][]func(logId sidecar.Id)
+	callbacks map[sidecar.ApprovalPhoneLease][]func(lease sidecar.ApprovalPhoneLease)
 }
 
-func (self *testRequestLeaser) Lease(logId sidecar.Id, callback func(logId sidecar.Id)) (func(), error) {
+func (self *testRequestLeaser) Lease(lease sidecar.ApprovalPhoneLease, callback func(lease sidecar.ApprovalPhoneLease)) (func(), error) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.callbacks == nil {
-		self.callbacks = map[sidecar.Id][]func(logId sidecar.Id){}
+		self.callbacks = map[sidecar.ApprovalPhoneLease][]func(lease sidecar.ApprovalPhoneLease){}
 	}
-	self.callbacks[logId] = append(self.callbacks[logId], callback)
+	self.callbacks[lease] = append(self.callbacks[lease], callback)
 	return func() {}, nil
 }
 
-func (self *testRequestLeaser) commit(logId sidecar.Id) {
-	callbacks := func() []func(logId sidecar.Id) {
+// Nothing stands at this fake's evs but what its process holds.
+func (self *testRequestLeaser) Standing(repoId sidecar.Id) ([]sidecar.ApprovalPhoneLease, error) {
+	return nil, nil
+}
+
+func (self *testRequestLeaser) Drop(lease sidecar.ApprovalPhoneLease) error {
+	return nil
+}
+
+// A commit of repoId: each callback of a lease on it, as a request's notice under a/ commits.
+func (self *testRequestLeaser) commit(repoId sidecar.Id) {
+	callbacks := func() []func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		return slices.Clone(self.callbacks[logId])
+		callbacks := []func(){}
+		for lease, leaseCallbacks := range self.callbacks {
+			if lease.RepoId != repoId {
+				continue
+			}
+			for _, callback := range leaseCallbacks {
+				callbacks = append(callbacks, func() { callback(lease) })
+			}
+		}
+		return callbacks
 	}()
 	for _, callback := range callbacks {
-		callback(logId)
+		callback()
 	}
 }
 
@@ -588,7 +607,9 @@ func TestRequestHintReachesThePendingListener(t *testing.T) {
 	hinted := make(chan struct{}, 4)
 	phone, err := local.Core().BindApprovalPhone(&sidecar.ApprovalPhoneArgs{
 		Leaser: leaser,
-		Logs:   func() ([]sidecar.Id, error) { return []sidecar.Id{log.logId}, nil },
+		Logs: func() ([]sidecar.ApprovalPhoneLog, error) {
+			return []sidecar.ApprovalPhoneLog{{LogId: log.logId, Vault: true}}, nil
+		},
 		Hinted: func() { hinted <- struct{}{} },
 	})
 	if err != nil {
