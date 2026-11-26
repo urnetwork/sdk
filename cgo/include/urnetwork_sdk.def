@@ -1358,6 +1358,7 @@ EXPORTS
 	urnet_sidecar_approvals_revoke_device
 	urnet_sidecar_auto_approvals
 	urnet_sidecar_calendar
+	urnet_sidecar_check_clock
 	urnet_sidecar_close
 	urnet_sidecar_compute
 	urnet_sidecar_compute_auto_renew

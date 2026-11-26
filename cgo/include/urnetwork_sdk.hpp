@@ -27547,6 +27547,7 @@ public:
 	SidecarAgents agents() const;
 	SidecarAutoApprovals autoApprovals() const;
 	SidecarCalendar calendar() const;
+	void checkClock() const;
 	void close() const;
 	SidecarCompute compute() const;
 	void confirmForwardingSetup(const std::string& network_id, SidecarResultCallback callback) const;
@@ -42837,6 +42838,9 @@ inline SidecarAutoApprovals Sidecar::autoApprovals() const {
 inline SidecarCalendar Sidecar::calendar() const {
 	SidecarCalendar r(urnet_sidecar_calendar(handle()));
 	return r;
+}
+inline void Sidecar::checkClock() const {
+	urnet_sidecar_check_clock(handle());
 }
 inline void Sidecar::close() const {
 	urnet_sidecar_close(handle());

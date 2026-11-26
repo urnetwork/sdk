@@ -2673,6 +2673,7 @@ uint64_t urnet_sidecar_add_event_listener(uint64_t self, urnet_sidecar_event_cb 
 uint64_t urnet_sidecar_agents(uint64_t self);
 uint64_t urnet_sidecar_auto_approvals(uint64_t self);
 uint64_t urnet_sidecar_calendar(uint64_t self);
+void urnet_sidecar_check_clock(uint64_t self);
 void urnet_sidecar_close(uint64_t self);
 uint64_t urnet_sidecar_compute(uint64_t self);
 void urnet_sidecar_confirm_forwarding_setup(uint64_t self, const char* network_id, urnet_sidecar_result_cb callback_result, void* callback_user_data);

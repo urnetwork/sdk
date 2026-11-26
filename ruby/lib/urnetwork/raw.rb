@@ -1439,6 +1439,7 @@ module URnetwork
       attach_function :urnet_sidecar_agents, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_auto_approvals, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_calendar, [:uint64], :uint64, blocking: true
+      attach_function :urnet_sidecar_check_clock, [:uint64], :void, blocking: true
       attach_function :urnet_sidecar_close, [:uint64], :void, blocking: true
       attach_function :urnet_sidecar_compute, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_confirm_forwarding_setup, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true

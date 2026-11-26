@@ -2600,6 +2600,8 @@ def bind(lib):
     lib.urnet_sidecar_auto_approvals.restype = c_uint64
     lib.urnet_sidecar_calendar.argtypes = [c_uint64]
     lib.urnet_sidecar_calendar.restype = c_uint64
+    lib.urnet_sidecar_check_clock.argtypes = [c_uint64]
+    lib.urnet_sidecar_check_clock.restype = None
     lib.urnet_sidecar_close.argtypes = [c_uint64]
     lib.urnet_sidecar_close.restype = None
     lib.urnet_sidecar_compute.argtypes = [c_uint64]

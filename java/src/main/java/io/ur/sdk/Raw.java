@@ -1440,6 +1440,7 @@ public interface Raw extends Library {
   long urnet_sidecar_agents(long a0);
   long urnet_sidecar_auto_approvals(long a0);
   long urnet_sidecar_calendar(long a0);
+  void urnet_sidecar_check_clock(long a0);
   void urnet_sidecar_close(long a0);
   long urnet_sidecar_compute(long a0);
   void urnet_sidecar_confirm_forwarding_setup(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);

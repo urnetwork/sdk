@@ -22416,6 +22416,16 @@ func urnet_sidecar_calendar(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_sidecar_check_clock
+func urnet_sidecar_check_clock(self C.uint64_t) {
+	defer cgoGuard("urnet_sidecar_check_clock")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_check_clock")
+	if !ok {
+		return
+	}
+	self_.CheckClock()
+}
+
 //export urnet_sidecar_close
 func urnet_sidecar_close(self C.uint64_t) {
 	defer cgoGuard("urnet_sidecar_close")
