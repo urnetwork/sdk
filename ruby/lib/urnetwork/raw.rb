@@ -50,6 +50,7 @@ module URnetwork
       callback :urnet_client_refresh_integrity_cb, [:pointer, :uint64], :void
       callback :urnet_client_session_cb, [:pointer, :uint64], :void
       callback :urnet_commit_cb, [:pointer, :bool], :void
+      callback :urnet_compute_api_cb, [:pointer, :string, :string], :void
       callback :urnet_compute_model_bytes_cb, [:pointer, :pointer, :int32, :string], :void
       callback :urnet_connect_change_cb, [:pointer, :bool], :void
       callback :urnet_connect_location_change_cb, [:pointer, :string], :void
@@ -347,8 +348,30 @@ module URnetwork
       attach_function :urnet_api_claim_network_name, [:uint64, :string, :urnet_claim_network_name_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_client_events_send, [:uint64, :string, :urnet_client_events_send_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_close, [:uint64], :void, blocking: true
+      attach_function :urnet_api_compute_accept_terms, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_accept_terms_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_auto_renew, [:uint64, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_auto_renew_sync, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_balance, [:uint64, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_balance_sync, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_charges, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_charges_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_checkout, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_checkout_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_compute_model_chunk, [:uint64, :string, :int64, :urnet_compute_model_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_compute_model_index, [:uint64, :string, :urnet_compute_model_bytes_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_promo_redeem, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_promo_redeem_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_refund, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_refund_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_set_auto_renew, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_set_auto_renew_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_spend, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_spend_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_statement, [:uint64, :string, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_statement_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_compute_terms, [:uint64, :urnet_compute_api_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_compute_terms_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_create_account_wallet, [:uint64, :string, :urnet_create_account_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_api_key, [:uint64, :string, :urnet_create_api_key_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_crypto_payment_intent, [:uint64, :string, :urnet_crypto_payment_intent_cb, :pointer], :void, blocking: true

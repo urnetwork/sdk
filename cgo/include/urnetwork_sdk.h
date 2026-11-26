@@ -927,6 +927,8 @@ typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t noti
 typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
+/* ComputeApiCallback */
+typedef void (*urnet_compute_api_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ComputeModelBytesCallback */
 typedef void (*urnet_compute_model_bytes_cb)(void* user_data, const uint8_t* result, int32_t result_len, const char* err_param);
 /* ConnectChangeListener */
@@ -1410,8 +1412,30 @@ void urnet_api_check_balance_code(uint64_t self, const char* args_json, urnet_ch
 void urnet_api_claim_network_name(uint64_t self, const char* args_json, urnet_claim_network_name_cb callback_result, void* callback_user_data);
 void urnet_api_client_events_send(uint64_t self, const char* args_json, urnet_client_events_send_cb callback_result, void* callback_user_data);
 void urnet_api_close(uint64_t self);
+void urnet_api_compute_accept_terms(uint64_t self, const char* args_json, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_accept_terms_sync(uint64_t self, const char* args_json, char** out_error);
+void urnet_api_compute_auto_renew(uint64_t self, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_auto_renew_sync(uint64_t self, char** out_error);
+void urnet_api_compute_balance(uint64_t self, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_balance_sync(uint64_t self, char** out_error);
+void urnet_api_compute_charges(uint64_t self, const char* cursor, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_charges_sync(uint64_t self, const char* cursor, char** out_error);
+void urnet_api_compute_checkout(uint64_t self, const char* args_json, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_checkout_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_compute_model_chunk(uint64_t self, const char* sha256_text, int64_t n, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
 void urnet_api_compute_model_index(uint64_t self, const char* sha256_text, urnet_compute_model_bytes_cb callback_result, void* callback_user_data);
+void urnet_api_compute_promo_redeem(uint64_t self, const char* args_json, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_promo_redeem_sync(uint64_t self, const char* args_json, char** out_error);
+void urnet_api_compute_refund(uint64_t self, const char* args_json, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_refund_sync(uint64_t self, const char* args_json, char** out_error);
+void urnet_api_compute_set_auto_renew(uint64_t self, const char* args_json, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_set_auto_renew_sync(uint64_t self, const char* args_json, char** out_error);
+void urnet_api_compute_spend(uint64_t self, const char* by, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_spend_sync(uint64_t self, const char* by, char** out_error);
+void urnet_api_compute_statement(uint64_t self, const char* month, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_statement_sync(uint64_t self, const char* month, char** out_error);
+void urnet_api_compute_terms(uint64_t self, urnet_compute_api_cb callback_result, void* callback_user_data);
+char* urnet_api_compute_terms_sync(uint64_t self, char** out_error);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_create_crypto_payment_intent(uint64_t self, const char* args_json, urnet_crypto_payment_intent_cb callback_result, void* callback_user_data);
@@ -3795,6 +3819,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientLimitStatus (json):
  *   Status: string
  *   RetryTime: number
+ */
+
+/* ComputeApiArgs (json):
+ *   Json: string
+ */
+
+/* ComputeApiResult (json):
+ *   Json: string
  */
 
 /* ComputeModelApiSettings (json):
