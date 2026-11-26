@@ -2573,6 +2573,8 @@ def bind(lib):
     lib.urnet_sidecar_get_approvals.restype = c_uint64
     lib.urnet_sidecar_get_auth_features.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_sidecar_get_auth_features.restype = c_void_p
+    lib.urnet_sidecar_get_carried_config_records.argtypes = [c_uint64, POINTER(c_void_p)]
+    lib.urnet_sidecar_get_carried_config_records.restype = c_void_p
     lib.urnet_sidecar_get_directory.argtypes = [c_uint64]
     lib.urnet_sidecar_get_directory.restype = c_uint64
     lib.urnet_sidecar_get_discovery.argtypes = [c_uint64]
