@@ -245,8 +245,8 @@ var skipMethods = map[string]string{
 	// The app's compute hosts (DESIGN-COMPUTE §15.3), which the iOS, macOS and Android apps (gomobile) and the js leg
 	// implement. The desktop apps this abi serves run local inference and the classifier in ur daemon's engine
 	// process (§6.5, §27.5), and take connect's callback on a loopback port, the daemon's or the sdk's own (§25.5),
-	// so they set no host; a local Sidecar here sees none and refuses, as sidecar_compute_host.go says. Each host's
-	// methods answer a result and an error, which no c callback here carries.
+	// so they set no host; a local Sidecar here sees none and refuses, as sidecar_compute_host.go says. Each host
+	// has methods that answer a result and an error, which no c callback here carries.
 	"Sidecar.SetConnectHost":          "the iOS and Android apps' browser seam; desktops take connect's callback on a loopback port (DESIGN-COMPUTE §25.5)",
 	"Sidecar.SetLocalInferenceHost":   "the iOS, macOS and Android apps' LiteRT-LM; desktops run ur daemon's engine process (DESIGN-COMPUTE §6.5)",
 	"Sidecar.SetSafetyClassifierHost": "the iOS, macOS and Android apps' ONNX Runtime; desktops run ur daemon's engine process (DESIGN-COMPUTE §27.5)",
