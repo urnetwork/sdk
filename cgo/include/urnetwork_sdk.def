@@ -39,8 +39,30 @@ EXPORTS
 	urnet_api_claim_network_name
 	urnet_api_client_events_send
 	urnet_api_close
+	urnet_api_compute_accept_terms
+	urnet_api_compute_accept_terms_sync
+	urnet_api_compute_auto_renew
+	urnet_api_compute_auto_renew_sync
+	urnet_api_compute_balance
+	urnet_api_compute_balance_sync
+	urnet_api_compute_charges
+	urnet_api_compute_charges_sync
+	urnet_api_compute_checkout
+	urnet_api_compute_checkout_sync
 	urnet_api_compute_model_chunk
 	urnet_api_compute_model_index
+	urnet_api_compute_promo_redeem
+	urnet_api_compute_promo_redeem_sync
+	urnet_api_compute_refund
+	urnet_api_compute_refund_sync
+	urnet_api_compute_set_auto_renew
+	urnet_api_compute_set_auto_renew_sync
+	urnet_api_compute_spend
+	urnet_api_compute_spend_sync
+	urnet_api_compute_statement
+	urnet_api_compute_statement_sync
+	urnet_api_compute_terms
+	urnet_api_compute_terms_sync
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
 	urnet_api_create_crypto_payment_intent
@@ -1336,6 +1358,7 @@ EXPORTS
 	urnet_sidecar_approvals_revoke_device
 	urnet_sidecar_auto_approvals
 	urnet_sidecar_calendar
+	urnet_sidecar_check_clock
 	urnet_sidecar_close
 	urnet_sidecar_compute
 	urnet_sidecar_compute_auto_renew

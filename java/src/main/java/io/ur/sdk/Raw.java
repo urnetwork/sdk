@@ -51,6 +51,7 @@ public interface Raw extends Library {
   interface urnet_client_refresh_integrity_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_client_session_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_commit_cb extends Callback { void invoke(Pointer a0, byte a1); }
+  interface urnet_compute_api_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_compute_model_bytes_cb extends Callback { void invoke(Pointer a0, Pointer a1, int a2, String a3); }
   interface urnet_connect_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_connect_location_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -348,8 +349,30 @@ public interface Raw extends Library {
   void urnet_api_claim_network_name(long a0, String a1, urnet_claim_network_name_cb a2, Pointer a3);
   void urnet_api_client_events_send(long a0, String a1, urnet_client_events_send_cb a2, Pointer a3);
   void urnet_api_close(long a0);
+  void urnet_api_compute_accept_terms(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_accept_terms_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_auto_renew(long a0, urnet_compute_api_cb a1, Pointer a2);
+  Pointer urnet_api_compute_auto_renew_sync(long a0, PointerByReference a1);
+  void urnet_api_compute_balance(long a0, urnet_compute_api_cb a1, Pointer a2);
+  Pointer urnet_api_compute_balance_sync(long a0, PointerByReference a1);
+  void urnet_api_compute_charges(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_charges_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_checkout(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_checkout_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_compute_model_chunk(long a0, String a1, long a2, urnet_compute_model_bytes_cb a3, Pointer a4);
   void urnet_api_compute_model_index(long a0, String a1, urnet_compute_model_bytes_cb a2, Pointer a3);
+  void urnet_api_compute_promo_redeem(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_promo_redeem_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_refund(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_refund_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_set_auto_renew(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_set_auto_renew_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_spend(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_spend_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_statement(long a0, String a1, urnet_compute_api_cb a2, Pointer a3);
+  Pointer urnet_api_compute_statement_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_compute_terms(long a0, urnet_compute_api_cb a1, Pointer a2);
+  Pointer urnet_api_compute_terms_sync(long a0, PointerByReference a1);
   void urnet_api_create_account_wallet(long a0, String a1, urnet_create_account_wallet_cb a2, Pointer a3);
   void urnet_api_create_api_key(long a0, String a1, urnet_create_api_key_cb a2, Pointer a3);
   void urnet_api_create_crypto_payment_intent(long a0, String a1, urnet_crypto_payment_intent_cb a2, Pointer a3);
@@ -1417,6 +1440,7 @@ public interface Raw extends Library {
   long urnet_sidecar_agents(long a0);
   long urnet_sidecar_auto_approvals(long a0);
   long urnet_sidecar_calendar(long a0);
+  void urnet_sidecar_check_clock(long a0);
   void urnet_sidecar_close(long a0);
   long urnet_sidecar_compute(long a0);
   void urnet_sidecar_confirm_forwarding_setup(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
