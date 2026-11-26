@@ -176,6 +176,15 @@ urnet_payment_methods
 urnet_device_get_transport_delay
 urnet_device_add_transport_delay_change_listener
 
+# a device's memory teardown observation (QD-1423): the constructor keeps its name and
+# answers a handle, which desktop instrumentation finishes or aborts with these methods
+# before it releases it, as the mobile apps do
+urnet_device_local_begin_memory_teardown_observation
+urnet_memory_teardown_observation_abort_and_take_json
+urnet_memory_teardown_observation_finish_and_take_json
+urnet_memory_teardown_observation_get_observer_id
+urnet_memory_teardown_observation_wait_for_device_close
+
 # sdk.Sidecar (sidecar §18.5's Gate table, SDK-M8-06; DESIGN-COMPUTE §15.3): its handles'
 # methods and its constructors as the C ABI's regeneration bound them, which the Windows
 # and Linux apps' sidecar role calls, and the constructor that gives their VPN component

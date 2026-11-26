@@ -814,7 +814,7 @@ module URnetwork
       attach_function :urnet_device_local_add_receive_packet_batch, [:uint64, :urnet_receive_packet_batch_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_receive_packets, [:uint64, :urnet_receive_packets_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_sn_wallet_change_listener, [:uint64, :urnet_sn_wallet_change_cb, :pointer], :uint64, blocking: true
-      attach_function :urnet_device_local_begin_memory_teardown_observation, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_device_local_begin_memory_teardown_observation, [:uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_check_clock, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_clear_sn_wallet_cache, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_close_block_action_view_controller, [:uint64, :uint64], :void, blocking: true
@@ -1193,6 +1193,10 @@ module URnetwork
       attach_function :urnet_login_view_controller_close, [:uint64], :void, blocking: true
       attach_function :urnet_login_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_login_view_controller_stop, [:uint64], :void, blocking: true
+      attach_function :urnet_memory_teardown_observation_abort_and_take_json, [:uint64, :int64], :pointer, blocking: true
+      attach_function :urnet_memory_teardown_observation_finish_and_take_json, [:uint64, :int64], :pointer, blocking: true
+      attach_function :urnet_memory_teardown_observation_get_observer_id, [:uint64], :pointer, blocking: true
+      attach_function :urnet_memory_teardown_observation_wait_for_device_close, [:uint64, :int64], :bool, blocking: true
       attach_function :urnet_network_name_validation_view_controller_close, [:uint64], :void, blocking: true
       attach_function :urnet_network_name_validation_view_controller_network_check, [:uint64, :string, :urnet_network_check_cb, :pointer], :void, blocking: true
       attach_function :urnet_network_name_validation_view_controller_start, [:uint64], :void, blocking: true

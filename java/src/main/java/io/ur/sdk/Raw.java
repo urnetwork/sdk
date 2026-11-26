@@ -815,7 +815,7 @@ public interface Raw extends Library {
   long urnet_device_local_add_receive_packet_batch(long a0, urnet_receive_packet_batch_cb a1, Pointer a2);
   long urnet_device_local_add_receive_packets(long a0, urnet_receive_packets_cb a1, Pointer a2);
   long urnet_device_local_add_sn_wallet_change_listener(long a0, urnet_sn_wallet_change_cb a1, Pointer a2);
-  Pointer urnet_device_local_begin_memory_teardown_observation(long a0, PointerByReference a1);
+  long urnet_device_local_begin_memory_teardown_observation(long a0, PointerByReference a1);
   void urnet_device_local_check_clock(long a0);
   void urnet_device_local_clear_sn_wallet_cache(long a0);
   void urnet_device_local_close_block_action_view_controller(long a0, long a1);
@@ -1194,6 +1194,10 @@ public interface Raw extends Library {
   void urnet_login_view_controller_close(long a0);
   void urnet_login_view_controller_start(long a0);
   void urnet_login_view_controller_stop(long a0);
+  Pointer urnet_memory_teardown_observation_abort_and_take_json(long a0, long a1);
+  Pointer urnet_memory_teardown_observation_finish_and_take_json(long a0, long a1);
+  Pointer urnet_memory_teardown_observation_get_observer_id(long a0);
+  byte urnet_memory_teardown_observation_wait_for_device_close(long a0, long a1);
   void urnet_network_name_validation_view_controller_close(long a0);
   void urnet_network_name_validation_view_controller_network_check(long a0, String a1, urnet_network_check_cb a2, Pointer a3);
   void urnet_network_name_validation_view_controller_start(long a0);

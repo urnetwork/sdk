@@ -917,6 +917,7 @@ class LocalStateLocationReadResult;
 class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
+class MemoryTeardownObservation;
 class NetworkNameValidationViewController;
 class NetworkSessionInfo;
 class NetworkSessionInfoList;
@@ -1169,7 +1170,6 @@ struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
-struct MemoryTeardownObservation;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -3274,9 +3274,6 @@ struct MemoryStats {
 	int64_t GCCycleCount{};
 	int64_t ForcedGCCycleCount{};
 	int64_t GCPauseTotalNanoseconds{};
-};
-
-struct MemoryTeardownObservation {
 };
 
 struct NetExtender {
@@ -5897,8 +5894,6 @@ inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
-inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
-inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -14512,15 +14507,6 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 	if (auto it = j.find("GCPauseTotalNanoseconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GCPauseTotalNanoseconds);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
-	if (!j.is_object()) {
-		return;
 	}
 }
 
@@ -26545,7 +26531,7 @@ public:
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
-	std::optional<MemoryTeardownObservation> beginMemoryTeardownObservation() const;
+	MemoryTeardownObservation beginMemoryTeardownObservation() const;
 	void checkClock() const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
@@ -27042,6 +27028,16 @@ public:
 	void close() const;
 	void start() const;
 	void stop() const;
+};
+
+class MemoryTeardownObservation final : public detail::Handle {
+public:
+	MemoryTeardownObservation() = default;
+	explicit MemoryTeardownObservation(uint64_t h) : detail::Handle(h) {}
+	std::string abortAndTakeJson(int64_t timeout_milliseconds) const;
+	std::string finishAndTakeJson(int64_t timeout_milliseconds) const;
+	std::string getObserverId() const;
+	bool waitForDeviceClose(int64_t timeout_milliseconds) const;
 };
 
 class NetworkNameValidationViewController final : public detail::Handle {
@@ -38872,17 +38868,13 @@ inline Sub DeviceLocal::addSnWalletChangeListener(SnWalletChangeListener listene
 	}
 	return r;
 }
-inline std::optional<MemoryTeardownObservation> DeviceLocal::beginMemoryTeardownObservation() const {
+inline MemoryTeardownObservation DeviceLocal::beginMemoryTeardownObservation() const {
 	char* err_c = nullptr;
-	char* r_c = urnet_device_local_begin_memory_teardown_observation(handle(), &err_c);
+	MemoryTeardownObservation r(urnet_device_local_begin_memory_teardown_observation(handle(), &err_c));
 	if (err_c) {
 		detail::throwError(err_c);
 	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<MemoryTeardownObservation>(r_s->c_str());
+	return r;
 }
 inline void DeviceLocal::checkClock() const {
 	urnet_device_local_check_clock(handle());
@@ -41252,6 +41244,22 @@ inline void LoginViewController::start() const {
 }
 inline void LoginViewController::stop() const {
 	urnet_login_view_controller_stop(handle());
+}
+inline std::string MemoryTeardownObservation::abortAndTakeJson(int64_t timeout_milliseconds) const {
+	char* r_c = urnet_memory_teardown_observation_abort_and_take_json(handle(), timeout_milliseconds);
+	return detail::takeString(r_c);
+}
+inline std::string MemoryTeardownObservation::finishAndTakeJson(int64_t timeout_milliseconds) const {
+	char* r_c = urnet_memory_teardown_observation_finish_and_take_json(handle(), timeout_milliseconds);
+	return detail::takeString(r_c);
+}
+inline std::string MemoryTeardownObservation::getObserverId() const {
+	char* r_c = urnet_memory_teardown_observation_get_observer_id(handle());
+	return detail::takeString(r_c);
+}
+inline bool MemoryTeardownObservation::waitForDeviceClose(int64_t timeout_milliseconds) const {
+	bool r = urnet_memory_teardown_observation_wait_for_device_close(handle(), timeout_milliseconds);
+	return r;
 }
 inline void NetworkNameValidationViewController::close() const {
 	urnet_network_name_validation_view_controller_close(handle());

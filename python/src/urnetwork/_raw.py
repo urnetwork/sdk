@@ -1352,7 +1352,7 @@ def bind(lib):
     lib.urnet_device_local_add_sn_wallet_change_listener.argtypes = [c_uint64, urnet_sn_wallet_change_cb, c_void_p]
     lib.urnet_device_local_add_sn_wallet_change_listener.restype = c_uint64
     lib.urnet_device_local_begin_memory_teardown_observation.argtypes = [c_uint64, POINTER(c_void_p)]
-    lib.urnet_device_local_begin_memory_teardown_observation.restype = c_void_p
+    lib.urnet_device_local_begin_memory_teardown_observation.restype = c_uint64
     lib.urnet_device_local_check_clock.argtypes = [c_uint64]
     lib.urnet_device_local_check_clock.restype = None
     lib.urnet_device_local_clear_sn_wallet_cache.argtypes = [c_uint64]
@@ -2109,6 +2109,14 @@ def bind(lib):
     lib.urnet_login_view_controller_start.restype = None
     lib.urnet_login_view_controller_stop.argtypes = [c_uint64]
     lib.urnet_login_view_controller_stop.restype = None
+    lib.urnet_memory_teardown_observation_abort_and_take_json.argtypes = [c_uint64, c_int64]
+    lib.urnet_memory_teardown_observation_abort_and_take_json.restype = c_void_p
+    lib.urnet_memory_teardown_observation_finish_and_take_json.argtypes = [c_uint64, c_int64]
+    lib.urnet_memory_teardown_observation_finish_and_take_json.restype = c_void_p
+    lib.urnet_memory_teardown_observation_get_observer_id.argtypes = [c_uint64]
+    lib.urnet_memory_teardown_observation_get_observer_id.restype = c_void_p
+    lib.urnet_memory_teardown_observation_wait_for_device_close.argtypes = [c_uint64, c_int64]
+    lib.urnet_memory_teardown_observation_wait_for_device_close.restype = c_bool
     lib.urnet_network_name_validation_view_controller_close.argtypes = [c_uint64]
     lib.urnet_network_name_validation_view_controller_close.restype = None
     lib.urnet_network_name_validation_view_controller_network_check.argtypes = [c_uint64, c_char_p, urnet_network_check_cb, c_void_p]

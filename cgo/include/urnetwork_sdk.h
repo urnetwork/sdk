@@ -1923,7 +1923,7 @@ uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_pack
 uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
 uint64_t urnet_device_local_add_receive_packets(uint64_t self, urnet_receive_packets_cb receive_packets_receive_packets, void* receive_packets_user_data);
 uint64_t urnet_device_local_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
-char* urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
+uint64_t urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
 void urnet_device_local_check_clock(uint64_t self);
 void urnet_device_local_clear_sn_wallet_cache(uint64_t self);
 void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
@@ -2350,6 +2350,13 @@ void urnet_locations_view_controller_stop(uint64_t self);
 void urnet_login_view_controller_close(uint64_t self);
 void urnet_login_view_controller_start(uint64_t self);
 void urnet_login_view_controller_stop(uint64_t self);
+
+/* ----- MemoryTeardownObservation ----- */
+
+char* urnet_memory_teardown_observation_abort_and_take_json(uint64_t self, int64_t timeout_milliseconds);
+char* urnet_memory_teardown_observation_finish_and_take_json(uint64_t self, int64_t timeout_milliseconds);
+char* urnet_memory_teardown_observation_get_observer_id(uint64_t self);
+bool urnet_memory_teardown_observation_wait_for_device_close(uint64_t self, int64_t timeout_milliseconds);
 
 /* ----- NetworkNameValidationViewController ----- */
 
@@ -4838,9 +4845,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   GCCycleCount: number
  *   ForcedGCCycleCount: number
  *   GCPauseTotalNanoseconds: number
- */
-
-/* MemoryTeardownObservation (json):
  */
 
 /* MultiHopIdList (json):

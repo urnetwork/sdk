@@ -12188,21 +12188,21 @@ func urnet_device_local_add_sn_wallet_change_listener(self C.uint64_t, listener_
 }
 
 //export urnet_device_local_begin_memory_teardown_observation
-func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outError **C.char) *C.char {
+func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_device_local_begin_memory_teardown_observation")
 	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_begin_memory_teardown_observation")
 	if !ok {
-		return nil
+		return 0
 	}
 	r0, err := self_.BeginMemoryTeardownObservation()
 	if err != nil {
 		setErrorOut(outError, err)
-		return nil
+		return 0
 	}
 	if r0 == nil {
-		return nil
+		return 0
 	}
-	return cJson(r0, "urnet_device_local_begin_memory_teardown_observation")
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_device_local_check_clock
@@ -17995,6 +17995,50 @@ func urnet_memory_classes_json_for_diag() *C.char {
 	defer cgoGuard("urnet_memory_classes_json_for_diag")
 	r0 := sdk.MemoryClassesJsonForDiag()
 	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_abort_and_take_json
+func urnet_memory_teardown_observation_abort_and_take_json(self C.uint64_t, timeoutMilliseconds C.int64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_abort_and_take_json")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_abort_and_take_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.AbortAndTakeJson(int64(timeoutMilliseconds))
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_finish_and_take_json
+func urnet_memory_teardown_observation_finish_and_take_json(self C.uint64_t, timeoutMilliseconds C.int64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_finish_and_take_json")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_finish_and_take_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.FinishAndTakeJson(int64(timeoutMilliseconds))
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_get_observer_id
+func urnet_memory_teardown_observation_get_observer_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_memory_teardown_observation_get_observer_id")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_get_observer_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetObserverId()
+	return cString(string(r0))
+}
+
+//export urnet_memory_teardown_observation_wait_for_device_close
+func urnet_memory_teardown_observation_wait_for_device_close(self C.uint64_t, timeoutMilliseconds C.int64_t) C.bool {
+	defer cgoGuard("urnet_memory_teardown_observation_wait_for_device_close")
+	self_, ok := resolveHandle[*sdk.MemoryTeardownObservation](uint64(self), "urnet_memory_teardown_observation_wait_for_device_close")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.WaitForDeviceClose(int64(timeoutMilliseconds))
+	return C.bool(r0)
 }
 
 //export urnet_monthly_equivalent_amount
