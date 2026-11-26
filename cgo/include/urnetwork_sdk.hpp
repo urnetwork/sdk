@@ -26401,6 +26401,7 @@ public:
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
 	std::optional<MemoryTeardownObservation> beginMemoryTeardownObservation() const;
+	void checkClock() const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
 	void closeClientSessionViewController(const ClientSessionViewController& vc) const;
@@ -38553,6 +38554,9 @@ inline std::optional<MemoryTeardownObservation> DeviceLocal::beginMemoryTeardown
 		return std::nullopt;
 	}
 	return detail::parseJson<MemoryTeardownObservation>(r_s->c_str());
+}
+inline void DeviceLocal::checkClock() const {
+	urnet_device_local_check_clock(handle());
 }
 inline void DeviceLocal::clearSnWalletCache() const {
 	urnet_device_local_clear_sn_wallet_cache(handle());

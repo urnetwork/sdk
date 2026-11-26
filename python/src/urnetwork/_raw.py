@@ -1346,6 +1346,8 @@ def bind(lib):
     lib.urnet_device_local_add_sn_wallet_change_listener.restype = c_uint64
     lib.urnet_device_local_begin_memory_teardown_observation.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_device_local_begin_memory_teardown_observation.restype = c_void_p
+    lib.urnet_device_local_check_clock.argtypes = [c_uint64]
+    lib.urnet_device_local_check_clock.restype = None
     lib.urnet_device_local_clear_sn_wallet_cache.argtypes = [c_uint64]
     lib.urnet_device_local_clear_sn_wallet_cache.restype = None
     lib.urnet_device_local_close_block_action_view_controller.argtypes = [c_uint64, c_uint64]

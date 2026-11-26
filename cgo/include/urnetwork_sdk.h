@@ -1906,6 +1906,7 @@ uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receiv
 uint64_t urnet_device_local_add_receive_packets(uint64_t self, urnet_receive_packets_cb receive_packets_receive_packets, void* receive_packets_user_data);
 uint64_t urnet_device_local_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
 char* urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
+void urnet_device_local_check_clock(uint64_t self);
 void urnet_device_local_clear_sn_wallet_cache(uint64_t self);
 void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_client_session_view_controller(uint64_t self, uint64_t vc);

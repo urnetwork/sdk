@@ -12122,6 +12122,16 @@ func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outEr
 	return cJson(r0, "urnet_device_local_begin_memory_teardown_observation")
 }
 
+//export urnet_device_local_check_clock
+func urnet_device_local_check_clock(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_check_clock")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_check_clock")
+	if !ok {
+		return
+	}
+	self_.CheckClock()
+}
+
 //export urnet_device_local_clear_sn_wallet_cache
 func urnet_device_local_clear_sn_wallet_cache(self C.uint64_t) {
 	defer cgoGuard("urnet_device_local_clear_sn_wallet_cache")

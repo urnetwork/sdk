@@ -7,6 +7,9 @@
 //	LinkCountMax  per platform: 0 in the iOS tunnel until §22.9 measures a link there (owner decision 100), so every
 //	              link entry and every exit answers with a reject and no window client is built; a phone's 8; a
 //	              desktop's 64. It is no cap: a busy link is never closed for room (R-BRIDGE-11)
+//	clock         on iOS and Android the waits are uncapped, the VPN component calling DeviceLocal.CheckClock at each
+//	              wake and clock change; elsewhere, a low-memory device included, a desktop's ClockCheckInterval caps them
+//	              (owner decision 789, sidecar_clock_check.go)
 //	egress spec   off unless EnableBridgeEgress: the VPN component runs the device's IP and port forwarding alone (owner
 //	              decision 197), and §17.9's egress spec on app devices follows M8 (§18.17), so until an app turns it on
 //	              a packet no entry holds takes the device's own route whatever the state's spec says
@@ -29,8 +32,14 @@ import (
 // (deviceBridgeHostingSettings).
 func deviceLocalBridgeSettingsFor(settings *DeviceLocalSettings, goos string) *sidecardevice.BridgeSettings {
 	var bridgeSettings *sidecardevice.BridgeSettings
-	if settings.LowMemoryProfile || goos == "ios" || goos == "android" {
+	phone := goos == "ios" || goos == "android"
+	if settings.LowMemoryProfile || phone {
 		bridgeSettings = sidecardevice.MobileBridgeSettings()
+		if !phone {
+			// a low-memory desktop takes a phone's sizes, not its wake: no platform call checks its clock, so its
+			// waits keep a desktop's cap (sidecar_clock_check.go; owner decision 789)
+			bridgeSettings.ClockCheckInterval = sidecardevice.DefaultBridgeSettings().ClockCheckInterval
+		}
 	} else {
 		bridgeSettings = sidecardevice.DefaultBridgeSettings()
 	}

@@ -810,6 +810,7 @@ module URnetwork
       attach_function :urnet_device_local_add_receive_packets, [:uint64, :urnet_receive_packets_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_sn_wallet_change_listener, [:uint64, :urnet_sn_wallet_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_begin_memory_teardown_observation, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_device_local_check_clock, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_clear_sn_wallet_cache, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_close_block_action_view_controller, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_device_local_close_client_session_view_controller, [:uint64, :uint64], :void, blocking: true

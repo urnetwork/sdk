@@ -811,6 +811,7 @@ public interface Raw extends Library {
   long urnet_device_local_add_receive_packets(long a0, urnet_receive_packets_cb a1, Pointer a2);
   long urnet_device_local_add_sn_wallet_change_listener(long a0, urnet_sn_wallet_change_cb a1, Pointer a2);
   Pointer urnet_device_local_begin_memory_teardown_observation(long a0, PointerByReference a1);
+  void urnet_device_local_check_clock(long a0);
   void urnet_device_local_clear_sn_wallet_cache(long a0);
   void urnet_device_local_close_block_action_view_controller(long a0, long a1);
   void urnet_device_local_close_client_session_view_controller(long a0, long a1);

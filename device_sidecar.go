@@ -75,6 +75,9 @@ type deviceBridge interface {
 	Status() sidecardevice.BridgeStatus
 	// Calls callback after each publish; the returned function removes it.
 	AddChangeCallback(callback func()) func()
+	// Reads the clock again at once when the device wakes or its clock changes, never blocking (owner decision 789,
+	// sidecar_clock_check.go): device.Bridge.CheckClock, and a router's asks each role's.
+	CheckClock()
 }
 
 // A deviceBridge its owner builds and ends: where its rejects and resolver replies enter the tun, its close, and the
