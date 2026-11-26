@@ -13,7 +13,7 @@
 // next follow, compile and the posture's overdue-alarm points (narrowing_overdue) are the wall clock's, and the role's
 // refresh of its forwarding client F, due at a point of F's lifetime, which a phone that slept past it would reach only
 // after the timer's remaining awake time, F's exp passed and the role lapsed meanwhile. Each reads the clock again at
-// once and arms its waits anew (sidecar_clock_check_forward.go). On a desktop the roles take the bridges' interval as
+// once and arms its waits anew (device_sidecar_clock_check.go). On a desktop the roles take the bridges' interval as
 // the same cap, checking each ClockCheckInterval; on iOS and Android, none, and add no periodic wakeup.
 //
 // The call sites, which the app phase writes, since the apps' code is not in these repos; the call returns at once

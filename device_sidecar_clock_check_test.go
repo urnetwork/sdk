@@ -1,6 +1,6 @@
 //go:build !js
 
-// The forwarding roles' clock (sidecar_clock_check_forward.go; QD-1422), on a role clock whose wall time jumps while
+// The forwarding roles' clock (device_sidecar_clock_check.go; QD-1422), on a role clock whose wall time jumps while
 // its timers stand still, as a device's does across a sleep: DeviceLocal.CheckClock refreshes F at once once the
 // device slept past its refresh point, which its standing wait would have reached only after the remaining awake time,
 // and has the role's Forwarder follow what came due; and a desktop role checks itself each of the bridges'

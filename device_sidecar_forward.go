@@ -507,7 +507,7 @@ type deviceLocalForwarding struct {
 	statusChanged func()
 	// wakes the promotion loop at once after a state was handed
 	promotionWanted chan struct{}
-	// has the refresh loop read the clock again at once (checkClock, sidecar_clock_check_forward.go), holding one check
+	// has the refresh loop read the clock again at once (checkClock, device_sidecar_clock_check.go), holding one check
 	clockChecked chan struct{}
 }
 
@@ -697,7 +697,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 	go self.runPoll(ctx)
 	go self.runPromotion(ctx)
 	// a desktop's cap on the role's wall-clock waits, the bridges' own interval; none on a phone, which adds no periodic
-	// wakeup and is checked at each wake (sidecar_clock_check_forward.go)
+	// wakeup and is checked at each wake (device_sidecar_clock_check.go)
 	if interval := self.host.bridgeSettings.ClockCheckInterval; 0 < interval {
 		self.loops.Add(1)
 		go self.runClockCap(ctx, interval)
@@ -762,7 +762,7 @@ func (self *deviceLocalForwarding) witness(pin *bridge.AuthPin, fork bool) error
 }
 
 // F's refresh by its own proofs at its window's point, the new token kept before it is presented (the file's comment).
-// The point is the wall clock's, so a check of the clock (sidecar_clock_check_forward.go) arms the wait for it anew from
+// The point is the wall clock's, so a check of the clock (device_sidecar_clock_check.go) arms the wait for it anew from
 // now, refreshing at once past it; a retry's wait is relative, and a check leaves it as it is.
 func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 	defer self.loops.Done()
