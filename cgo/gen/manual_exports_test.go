@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,8 +13,8 @@ import (
 // this matched nothing at all there -- which would make every case below pass vacuously.
 var exportDirective = regexp.MustCompile(`(?m)^//export (\w+)[ \t]*\r?$`)
 
-// THE .def IS A PROMISE ABOUT WHAT THE SHIPPED LIBRARY CONTAINS, AND manualExports READS RAW FILE
-// BYTES.
+// The .def is a promise about what the shipped library contains, and manualExports reads raw file
+// bytes.
 //
 // An MSVC import library is generated from include/urnetwork_sdk.def. A .def that names a symbol
 // the dll does not export is a link error at the consumer, and manualExports has no compiler in
@@ -101,11 +100,7 @@ func TestManualExportsPublishesOnlyWhatAShippedBuildCompiles(t *testing.T) {
 	}
 
 	// the real directory, from the cgo module root the way the generator runs
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not resolve test path")
-	}
-	t.Chdir(filepath.Join(filepath.Dir(filename), ".."))
+	t.Chdir(filepath.Join(testingGenDir(t), ".."))
 	published := map[string]bool{}
 	for _, name := range manualExports(".") {
 		published[name] = true
@@ -151,32 +146,28 @@ func TestManualExportsPublishesOnlyWhatAShippedBuildCompiles(t *testing.T) {
 	t.Logf("manualExports published %d names from the cgo package; it skipped %d files: %v", len(published), len(skipped), skipped)
 }
 
-// EVERY HAND-WRITTEN EXPORT THAT SHIPS IS NAMED IN THE .def.
+// Every hand-written export that ships is named in the .def.
 //
-// THIS CASE USED TO BE TestTheDefIsStaleWithRespectToTheHandWrittenMessagingSurface, AND IT PASSED
-// ON THE DEFECT. It counted how many of the messaging exports the .def named and LOGGED "0 of 34;
+// This case used to be TestTheDefIsStaleWithRespectToTheHandWrittenMessagingSurface, and it passed
+// on the defect. It counted how many of the messaging exports the .def named and logged "0 of 34;
 // `make generate` is owed" -- so a .def an MSVC consumer could link none of the messaging surface
 // through was a green run. Measured against the shipping library at sdk cfe3ce4, the gap was wider
 // than the case knew: the DLL's cgo header declared 654 urnet_ exports and the .def named 609,
-// and the 45 missing were the 34 messaging exports AND all 11 of exports_manual.go's byte-buffer
+// and the 45 missing were the 34 messaging exports and all 11 of exports_manual.go's byte-buffer
 // exports. The .def now names all 654, and this is a gate rather than a log line.
 //
-// THE SET IS manualExports() ITSELF, run from the cgo module root the way the generator runs it, so
+// The set is manualExports() itself, run from the cgo module root the way the generator runs it, so
 // a new //export in any shipped hand-written file that is not in the .def is red here, and the
 // build-tag exclusion is the generator's own and not a second reading of it.
 //
-// WHAT IT DOES NOT HOLD: that the GENERATED exports and the .def agree. That is
+// What it does not hold: that the generated exports and the .def agree. That is
 // TestExportedSymbolCompatibilityBaseline's half, over its own list.
 //
 // The messaging exports this case also counted, and the case holding their header, moved to
 // github.com/urnetwork/message with the messaging ABI. The control that stops an empty scan
 // passing is now the byte-buffer surface in exports_manual.go.
 func TestTheDefNamesEveryHandWrittenExportThatShips(t *testing.T) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not resolve test path")
-	}
-	root := filepath.Join(filepath.Dir(filename), "..")
+	root := filepath.Join(testingGenDir(t), "..")
 	defBytes, err := os.ReadFile(filepath.Join(root, "include", "urnetwork_sdk.def"))
 	if err != nil {
 		t.Fatal(err)

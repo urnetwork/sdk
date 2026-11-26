@@ -51,13 +51,31 @@ done
 printf 'archive\n' >"$output"
 `
 
+// The package's directory, read once before any test changes directory: go test runs a package's tests in it.
+var buildContractPackageDirectory = func() string {
+	directory, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return directory
+}()
+
+// The cgo module's Makefile, beside this file's directory, or beside the package's directory where -trimpath (lowgo
+// builds with it) leaves runtime.Caller a module path rather than a file's.
 func cgoMakefile(t *testing.T) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate build contract test")
 	}
-	path := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "Makefile"))
+	directory := filepath.Dir(currentFile)
+	if !filepath.IsAbs(currentFile) {
+		if buildContractPackageDirectory == "" {
+			t.Fatal("locate build contract test")
+		}
+		directory = buildContractPackageDirectory
+	}
+	path := filepath.Clean(filepath.Join(directory, "..", "Makefile"))
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("locate cgo Makefile: %v", err)
 	}
