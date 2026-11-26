@@ -207,6 +207,84 @@ func apiCredentialCases() []apiCredentialCase {
 			_, err := api.ComputeModelChunkSyncWithContext(ctx, credentialTestModelSha256, 3)
 			return err
 		}},
+		// the api compute routes, a sidecar's or the network credential's, Client in the route table (CSRV-M12-04)
+		{"ComputeBalance", "GET /compute/balance", "/compute/balance", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeBalance(cb) })
+		}},
+		{"ComputeBalanceSyncWithContext", "GET /compute/balance", "/compute/balance", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeBalanceSyncWithContext(ctx)
+			return err
+		}},
+		{"ComputeCheckout", "POST /compute/checkout", "/compute/checkout", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeCheckout(&ComputeApiArgs{}, cb) })
+		}},
+		{"ComputeCheckoutSyncWithContext", "POST /compute/checkout", "/compute/checkout", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeCheckoutSyncWithContext(ctx, &ComputeApiArgs{})
+			return err
+		}},
+		{"ComputeAutoRenew", "GET /compute/auto-renew", "/compute/auto-renew", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeAutoRenew(cb) })
+		}},
+		{"ComputeAutoRenewSyncWithContext", "GET /compute/auto-renew", "/compute/auto-renew", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeAutoRenewSyncWithContext(ctx)
+			return err
+		}},
+		{"ComputeSetAutoRenew", "POST /compute/auto-renew", "/compute/auto-renew", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeSetAutoRenew(&ComputeApiArgs{}, cb) })
+		}},
+		{"ComputeSetAutoRenewSyncWithContext", "POST /compute/auto-renew", "/compute/auto-renew", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeSetAutoRenewSyncWithContext(ctx, &ComputeApiArgs{})
+			return err
+		}},
+		{"ComputeCharges", "GET /compute/charges", "/compute/charges", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeCharges("", cb) })
+		}},
+		{"ComputeChargesSyncWithContext", "GET /compute/charges", "/compute/charges", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeChargesSyncWithContext(ctx, "next")
+			return err
+		}},
+		{"ComputeStatement", "GET /compute/statement", "/compute/statement", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeStatement("2026-11", cb) })
+		}},
+		{"ComputeStatementSyncWithContext", "GET /compute/statement", "/compute/statement", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeStatementSyncWithContext(ctx, "2026-11")
+			return err
+		}},
+		{"ComputeSpend", "GET /compute/spend", "/compute/spend", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeSpend("model", cb) })
+		}},
+		{"ComputeSpendSyncWithContext", "GET /compute/spend", "/compute/spend", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeSpendSyncWithContext(ctx, "")
+			return err
+		}},
+		{"ComputeRefund", "POST /compute/refund", "/compute/refund", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeRefund(&ComputeApiArgs{}, cb) })
+		}},
+		{"ComputeRefundSyncWithContext", "POST /compute/refund", "/compute/refund", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeRefundSyncWithContext(ctx, &ComputeApiArgs{})
+			return err
+		}},
+		{"ComputePromoRedeem", "POST /compute/promo/redeem", "/compute/promo/redeem", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputePromoRedeem(&ComputeApiArgs{}, cb) })
+		}},
+		{"ComputePromoRedeemSyncWithContext", "POST /compute/promo/redeem", "/compute/promo/redeem", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputePromoRedeemSyncWithContext(ctx, &ComputeApiArgs{})
+			return err
+		}},
+		{"ComputeTerms", "GET /compute/terms", "/compute/terms", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeTerms(cb) })
+		}},
+		{"ComputeTermsSyncWithContext", "GET /compute/terms", "/compute/terms", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeTermsSyncWithContext(ctx)
+			return err
+		}},
+		{"ComputeAcceptTerms", "POST /compute/terms", "/compute/terms", sendsCurrent, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*ComputeApiResult]) { api.ComputeAcceptTerms(&ComputeApiArgs{}, cb) })
+		}},
+		{"ComputeAcceptTermsSyncWithContext", "POST /compute/terms", "/compute/terms", sendsCurrent, func(ctx context.Context, api *Api) error {
+			_, err := api.ComputeAcceptTermsSyncWithContext(ctx, &ComputeApiArgs{})
+			return err
+		}},
 
 		// client routes: the caller's own client, what every installation
 		// shows, or something the caller pays for
