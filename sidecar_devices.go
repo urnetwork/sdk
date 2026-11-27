@@ -8,7 +8,8 @@
 // its alarms-only refusals in them (§18.4).
 //
 // The copy an app shows is §18.5's; these carry what it needs: a device's state and last change, a plan's rows,
-// signatures and Presence, and a refusal's code. A device's forwarding Delegation is no device of its own: the list
+// signatures and Presence, and a refusal's code. Beside them, the network's acknowledgments of disclosures that each
+// tagged or cloud sidecar's card names (DESIGN-COMPUTE §2.8; CTRUST-M12-02), which sidecar_disclosures.go fills. A device's forwarding Delegation is no device of its own: the list
 // shows one device per app, and a compromise plan's rows name the Delegation among what the revocation ends, as the
 // core's cascade lists it (DESIGN-DETAILS 4.7).
 
@@ -178,3 +179,42 @@ type SidecarRevokePlan struct {
 
 // Answers once, with a plan or a refusal in it, or an error when the call could not run.
 type SidecarRevokePlanCallback connect.ApiCallback[*SidecarRevokePlan]
+
+// One acknowledgment of a disclosure an Owner or Admin gave for the network (DESIGN-COMPUTE §2.8's network row, CO-41;
+// CTRUST-M12-02): what each tagged or cloud sidecar's card names of the disclosures it relies on, and what an Owner's or
+// Admin's network settings list beside each disclosure, from Sidecar.NetworkDisclosures. json in the C ABI and js.
+type SidecarNetworkDisclosure struct {
+	// The disclosure, family:slug.
+	Id string `json:"id"`
+	// The version it acknowledged, and the disclosure's current one; 0 where the statement does not read.
+	Version        int32 `json:"version,omitempty"`
+	CurrentVersion int32 `json:"current_version,omitempty"`
+	// The locale of the text the Owner or Admin was shown, which need not be English.
+	Locale string `json:"locale,omitempty"`
+	// Who gave it: the Owner's or Admin's member, and their device whose identity key signed it.
+	MemberId  *Id `json:"member_id,omitempty"`
+	SidecarId *Id `json:"sidecar_id,omitempty"`
+	// When it signed, in unix milliseconds: the time of the network's position it names; 0 where this device no longer
+	// holds that position.
+	SignedAtMillis int64 `json:"signed_at_millis,omitempty"`
+	// Whether this device takes it; else why not: statement, signature, network, id, pin or signer.
+	Taken   bool   `json:"taken,omitempty"`
+	Refusal string `json:"refusal,omitempty"`
+	// Whether it covers a tagged or cloud sidecar's use now; through a new version's grace until GraceEndMillis, unix
+	// milliseconds, while InGrace.
+	Stands         bool  `json:"stands,omitempty"`
+	InGrace        bool  `json:"in_grace,omitempty"`
+	GraceEndMillis int64 `json:"grace_end_millis,omitempty"`
+}
+
+// The network's acknowledgments, in the policy's order.
+type SidecarNetworkDisclosureList struct {
+	exportedList[*SidecarNetworkDisclosure]
+}
+
+// An empty list.
+func NewSidecarNetworkDisclosureList() *SidecarNetworkDisclosureList {
+	return &SidecarNetworkDisclosureList{
+		exportedList: *newExportedList[*SidecarNetworkDisclosure](),
+	}
+}

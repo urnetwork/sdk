@@ -39,7 +39,7 @@ func TestComputeAccessorsAnswerNotBuiltUntilFilled(t *testing.T) {
 	if harness, err := running.NewHarness("{}"); harness == nil || err != nil {
 		t.Errorf("a running Sidecar's NewHarness: %v, %v", harness, err)
 	}
-	// the disclosures are CTRUST-M11-01's and -M12-01's, built: a bare Sidecar has no core, and a running one, which
+	// the disclosures are CTRUST-M11-01's, -M12-01's and -M12-02's, built: a bare Sidecar has no core, and a running one, which
 	// holds no verified compute policy in a source build, answers policy_unavailable, never an empty list
 	if disclosures, err := (&Sidecar{}).Disclosures(); disclosures != "" || !errors.Is(err, errSidecarDisclosuresNoCore) {
 		t.Errorf("a bare Sidecar's Disclosures: %q, %v", disclosures, err)
@@ -52,14 +52,14 @@ func TestComputeAccessorsAnswerNotBuiltUntilFilled(t *testing.T) {
 		if session != nil || !errors.Is(err, ErrSidecarComputeNotBuilt) {
 			t.Errorf("OpenSsh: %v, %v", session, err)
 		}
-		// nothing was shown, so nothing is acknowledged or opened
+		// nothing was shown, so nothing is acknowledged, for the person or the network, or opened
 		if err := sidecar.AckDisclosure("search:parallel"); !errors.Is(err, errSidecarDisclosureNotShown) {
 			t.Errorf("AckDisclosure: %v", err)
 		}
 		if err := sidecar.OpenDisclosure("search:parallel"); !errors.Is(err, errSidecarDisclosureNotShown) {
 			t.Errorf("OpenDisclosure: %v", err)
 		}
-		if err := sidecar.AckNetworkDisclosure("search:parallel"); !errors.Is(err, ErrSidecarComputeNotBuilt) {
+		if err := sidecar.AckNetworkDisclosure("search:parallel"); !errors.Is(err, errSidecarDisclosureNotShown) {
 			t.Errorf("AckNetworkDisclosure: %v", err)
 		}
 		for name, made := range map[string]bool{
@@ -325,8 +325,11 @@ func TestComputeSurfaceSignaturesAreGomobileSafe(t *testing.T) {
 	}
 	// Sidecar itself is declared in sidecar.go, whose other calls are no compute surface's; Api, api.go's, is the app's
 	// own client, which gomobile already binds and Compute().StorePurchase takes for the network's credential (§15.3);
-	// Sub, sub.go's, is the sdk's own subscription, which Models().AddListener answers as every view controller does
-	findings := testComputeSignatureFindings(t, append(slices.Clone(testComputeSdkFiles), "sidecar.go"), map[string]string{"Api": "struct", "Sub": "interface"})
+	// Sub, sub.go's, is the sdk's own subscription, which Models().AddListener answers as every view controller does;
+	// SidecarNetworkDisclosureList, sidecar_devices.go's, is the tagged sidecar's card's list, a struct of an
+	// exportedList as the device list is, which NetworkDisclosures answers (CTRUST-M12-02)
+	findings := testComputeSignatureFindings(t, append(slices.Clone(testComputeSdkFiles), "sidecar.go"),
+		map[string]string{"Api": "struct", "Sub": "interface", "SidecarNetworkDisclosureList": "struct"})
 	for _, finding := range findings {
 		accessor := slices.ContainsFunc(accessors, func(accessor string) bool {
 			return strings.HasPrefix(finding, "sidecar.go: Sidecar."+accessor+" ")

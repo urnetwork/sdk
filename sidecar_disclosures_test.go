@@ -2,11 +2,12 @@
 
 package sdk
 
-// Disclosures for the apps (sidecar_disclosures.go; CTRUST-M11-01, CTRUST-M12-01): Disclosures()' JSON, the core's
-// list over a real registry, in the locale SetDisclosureLocale set, else English; what it remembers per id, which
-// AckDisclosure and OpenDisclosure take; disclosure_changed where the version shown is no longer current; the acts
-// sent as the person's confirmed calls, which the daemon refuses unconfirmed; and the listener. On a stand-in of ur
-// daemon's disclosure methods; the daemon's own rules are the root's disclosure_daemon_test.go's.
+// Disclosures for the apps (sidecar_disclosures.go; CTRUST-M11-01, CTRUST-M12-01, CTRUST-M12-02): Disclosures()' JSON,
+// the core's list over a real registry, in the locale SetDisclosureLocale set, else English; what it remembers per id,
+// which AckDisclosure, OpenDisclosure and AckNetworkDisclosure take; disclosure_changed where the version shown is no
+// longer current; the acts sent as the person's confirmed calls, which the daemon refuses unconfirmed; the network's
+// acknowledgments a card lists; and the listener. On a stand-in of ur daemon's disclosure methods; the daemon's own
+// rules are the root's disclosure_daemon_test.go's.
 
 import (
 	"context"
@@ -63,7 +64,8 @@ type testDisclosureDaemonCall struct {
 }
 
 // ur daemon's disclosure methods over a registry, keeping its Confirm rule: an act no person confirmed is refused and
-// records nothing; an act at a version that is not the current one answers disclosure_changed.
+// records nothing; an act at a version that is not the current one answers disclosure_changed. The network's
+// acknowledgments it records are listed as the core lists a taken entry, an Owner's of version shown.
 type testDisclosureDaemon struct {
 	registry *sidecar.ComputeDisclosureRegistry
 
@@ -71,6 +73,9 @@ type testDisclosureDaemon struct {
 	calls        []testDisclosureDaemonCall
 	acknowledged map[string]uint32
 	opened       map[string]uint32
+	networks     map[string]*sidecarControlDisclosureNetworkActParams
+	// what ack_network answers in place of recording, an error for a device that may not make the act
+	networkRefusal error
 }
 
 func newTestDisclosureDaemon(t *testing.T, source *testSdkDisclosureSource) *testDisclosureDaemon {
@@ -79,7 +84,8 @@ func newTestDisclosureDaemon(t *testing.T, source *testSdkDisclosureSource) *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testDisclosureDaemon{registry: registry, acknowledged: map[string]uint32{}, opened: map[string]uint32{}}
+	return &testDisclosureDaemon{registry: registry, acknowledged: map[string]uint32{}, opened: map[string]uint32{},
+		networks: map[string]*sidecarControlDisclosureNetworkActParams{}}
 }
 
 func (self *testDisclosureDaemon) sidecarId() *Id {
@@ -134,8 +140,43 @@ func (self *testDisclosureDaemon) call(ctx context.Context, method string, param
 			for _, view := range list.Disclosures {
 				view.Scope, view.Acknowledged = sidecar.ComputeDisclosureScopePerson, self.acknowledged[view.Id]
 				view.Covered = !view.Asks || view.Version <= view.Acknowledged
+				if network := self.networks[view.Id]; network != nil {
+					view.Network = &sidecar.ComputeNetworkDisclosure{
+						Id: view.Id, Version: network.Version, Locale: network.Locale, Revision: network.Revision,
+						MemberId: testSdkDisclosureOwner, SidecarId: testSdkDisclosureOwnerDevice, PinVersion: 40,
+						SignedAtMs: 1796083200000, Taken: true, Stands: view.Version <= network.Version,
+					}
+				}
 			}
 			return list, nil
+		case sidecarControlMethodDisclosureAckNetwork, sidecarControlMethodDisclosureRemoveNetwork:
+			if !confirmed {
+				return nil, &sidecarControlError{Code: -32000, Message: "the call is not the person's confirmed act"}
+			}
+			if method == sidecarControlMethodDisclosureRemoveNetwork {
+				remove := &sidecarControlDisclosureRemoveParams{}
+				if err := json.Unmarshal(paramsJson, remove); err != nil {
+					return nil, err
+				}
+				delete(self.networks, remove.Id)
+				return &sidecarControlDisclosureActReply{Id: remove.Id}, nil
+			}
+			if self.networkRefusal != nil {
+				return nil, self.networkRefusal
+			}
+			act := &sidecarControlDisclosureNetworkActParams{}
+			if err := json.Unmarshal(paramsJson, act); err != nil {
+				return nil, err
+			}
+			disclosure, err := self.registry.Disclosure(act.Id)
+			if err != nil {
+				return &sidecarControlDisclosureActReply{Id: act.Id, Refusal: sidecar.ComputeDisclosureCodeRequired}, nil
+			}
+			if disclosure.Version() != act.Version {
+				return &sidecarControlDisclosureActReply{Id: act.Id, Refusal: sidecar.ComputeDisclosureCodeChanged}, nil
+			}
+			self.networks[act.Id] = act
+			return &sidecarControlDisclosureActReply{Id: act.Id, Version: act.Version}, nil
 		case sidecarControlMethodDisclosureAck, sidecarControlMethodDisclosureOpen:
 			if !confirmed {
 				return nil, &sidecarControlError{Code: -32000, Message: "the call is not the person's confirmed act"}
@@ -334,9 +375,98 @@ func TestAckDisclosureChanged(t *testing.T) {
 	if err != nil || !strings.Contains(answer, `"acknowledged":2`) || !strings.Contains(answer, `"covered":true`) {
 		t.Fatalf("after the acknowledgment: %s, %v", answer, err)
 	}
-	// a network's acknowledgment is CTRUST-M12-02's
-	if err := app.AckNetworkDisclosure("inference:engy"); !errors.Is(err, ErrSidecarComputeNotBuilt) {
-		t.Errorf("AckNetworkDisclosure: %v", err)
+}
+
+// The Owner and the device the stand-in's network acknowledgments name.
+var (
+	testSdkDisclosureOwner       = sidecar.Id{0x0a, 0x01}
+	testSdkDisclosureOwnerDevice = sidecar.Id{0x0a, 0x02}
+)
+
+// AckNetworkDisclosure signs for the version, locale and revision Disclosures() last returned: refused where none was
+// returned, sending nothing; sent as the person's confirmed act with the locale shown, German here; listed then on the
+// card's list, which changes nothing the acts take; disclosure_changed where the policy moved on, recording nothing; a
+// device the daemon refuses, as a Member's, records nothing; and RemoveNetworkDisclosure takes it out.
+func TestAckNetworkDisclosure(t *testing.T) {
+	source := &testSdkDisclosureSource{policy: testSdkDisclosurePolicy()}
+	daemon := newTestDisclosureDaemon(t, source)
+	app := newTestDisclosureSidecar(daemon)
+	listener := &testDisclosuresListener{}
+	sub := app.AddDisclosuresListener(listener)
+	defer sub.Close()
+
+	if err := app.AckNetworkDisclosure("inference:engy"); !errors.Is(err, errSidecarDisclosureNotShown) || len(daemon.taken()) != 0 {
+		t.Fatalf("before any list: %v, %d calls", err, len(daemon.taken()))
+	}
+	app.SetDisclosureLocale("de")
+	if _, err := app.Disclosures(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AckNetworkDisclosure("inference:engy"); err != nil {
+		t.Fatal(err)
+	}
+	last := daemon.taken()[len(daemon.taken())-1]
+	if last.method != sidecarControlMethodDisclosureAckNetwork || !last.confirmed ||
+		string(last.params) != `{"network":"the paired network","id":"inference:engy","version":1,"locale":"de","revision":0}` {
+		t.Fatalf("the call %+v %s", last, last.params)
+	}
+	if listener.told() != 2 {
+		t.Errorf("the listener was told %d times, want 2", listener.told())
+	}
+	// the card's list names it, and reading it moves nothing the acts take
+	moved := testSdkDisclosurePolicy()
+	moved.Version, moved.Disclosures[0].Version = 4, 2
+	networks, err := app.NetworkDisclosures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if networks.Len() != 1 {
+		t.Fatalf("%d network acknowledgments", networks.Len())
+	}
+	engy := networks.Get(0)
+	if engy.Id != "inference:engy" || engy.Version != 1 || engy.CurrentVersion != 1 || engy.Locale != "de" || !engy.Taken ||
+		!engy.Stands || engy.MemberId == nil || engy.SidecarId == nil || engy.SignedAtMillis != 1796083200000 {
+		t.Errorf("the card's entry %+v", engy)
+	}
+	source.set(moved)
+	networks, err = app.NetworkDisclosures()
+	if err != nil || networks.Len() != 1 || networks.Get(0).Stands || networks.Get(0).CurrentVersion != 2 {
+		t.Fatalf("at version 2: %v, %v", networks, err)
+	}
+	if shown := app.disclosureMemoryOf().shown("inference:engy"); shown == nil || shown.version != 1 {
+		t.Fatalf("the card's list moved what was shown: %+v", shown)
+	}
+	// the version shown is no longer the current one
+	if err := app.AckNetworkDisclosure("inference:engy"); !errors.Is(err, sidecar.ErrDisclosureChanged) {
+		t.Fatalf("a version moved on: %v", err)
+	}
+	// a device the daemon refuses records nothing
+	daemon.networkRefusal = &sidecarControlError{Code: -32000, Message: "this device's member is no Owner or Admin"}
+	if _, err := app.Disclosures(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AckNetworkDisclosure("inference:engy"); err == nil || !strings.Contains(err.Error(), "no Owner or Admin") {
+		t.Fatalf("a Member's device: %v", err)
+	}
+	if networks, _ := app.NetworkDisclosures(); networks.Len() != 1 || networks.Get(0).Version != 1 {
+		t.Fatalf("a refused act recorded: %+v", networks.Get(0))
+	}
+	// an unconfirmed call is the daemon's to refuse
+	unconfirmed := &sidecarControlDisclosureActReply{}
+	params := &sidecarControlDisclosureNetworkActParams{Id: "inference:engy", Version: 2, Locale: "en"}
+	if err := daemon.call(t.Context(), sidecarControlMethodDisclosureAckNetwork, params, false, unconfirmed); err == nil {
+		t.Fatal("an unconfirmed network acknowledgment was taken")
+	}
+	// the removal, sent confirmed
+	if err := app.RemoveNetworkDisclosure("inference:engy"); err != nil {
+		t.Fatal(err)
+	}
+	last = daemon.taken()[len(daemon.taken())-1]
+	if last.method != sidecarControlMethodDisclosureRemoveNetwork || !last.confirmed || string(last.params) != `{"network":"the paired network","id":"inference:engy"}` {
+		t.Fatalf("the removal's call %+v %s", last, last.params)
+	}
+	if networks, _ := app.NetworkDisclosures(); networks.Len() != 0 {
+		t.Fatalf("after the removal: %d", networks.Len())
 	}
 }
 
@@ -384,11 +514,14 @@ func TestAckDisclosureRemoteUnconfirmedRecordsNothing(t *testing.T) {
 	}
 }
 
-// Every exported signature this file adds is one gomobile binds: strings, errors, a listener interface and Sub.
+// Every exported signature this file adds is one gomobile binds: strings, errors, a listener interface, Sub and a
+// typed list.
 func TestSidecarDisclosuresBindable(t *testing.T) {
 	var _ func(string) = (&Sidecar{}).SetDisclosureLocale
 	var _ func(string) error = (&Sidecar{}).OpenDisclosure
 	var _ func(SidecarDisclosuresListener) Sub = (&Sidecar{}).AddDisclosuresListener
+	var _ func(string) error = (&Sidecar{}).RemoveNetworkDisclosure
+	var _ func() (*SidecarNetworkDisclosureList, error) = (&Sidecar{}).NetworkDisclosures
 	listener := &testDisclosuresListener{}
 	app := &Sidecar{}
 	sub := app.AddDisclosuresListener(listener)
