@@ -423,6 +423,9 @@ func (self *DeviceLocal) bridgeStatusListeners() *connect.CallbackList[BridgeSta
 // Tells the status listeners, on a goroutine of its own, so no listener runs under a lock of the device's or the
 // owner's.
 func (self *DeviceLocal) notifyBridgeStatus() {
+	if settings := self.settings; settings != nil && settings.testingBridgeStatusNotify != nil {
+		settings.testingBridgeStatusNotify()
+	}
 	listeners := self.bridgeStatusListeners().Get()
 	if len(listeners) == 0 {
 		return

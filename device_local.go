@@ -999,6 +999,9 @@ type DeviceLocalSettings struct {
 	// Adjusts what the forwarding roles' Forwarders are built over (a test's
 	// transport and urls). Nil adjusts nothing.
 	testingForwardingDeps func(deps *deviceForwardingDeps)
+	// A test's count of the bridge status notifications, called at each before
+	// any listener is looked up. Nil counts none.
+	testingBridgeStatusNotify func()
 
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
 	// 10.x.y.h (RFC1918, DHCP-shaped) address instead of drawing from connect's

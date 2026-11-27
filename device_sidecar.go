@@ -610,19 +610,23 @@ func (self *DeviceLocal) sendBridgeRun(route *deviceLocalSendRoute, client conne
 }
 
 // Holds bridge, nil for none, in the send route, each mux's zone and the routes, from now on; nothing once closed.
-// Called by the device role's owner under its lock.
+// Called by the device role's owner under its lock, after every call that may move a posture. The status listeners are
+// told only of a change, the held bridge, and with it its zone, or the routes kept: a hold that changes nothing tells
+// nobody, as a held bridge's own publishes tell them through bridgeChanged (QD-1437; CODESTYLE's notify on an actual
+// change).
 func (self *DeviceLocal) holdBridge(bridge deviceBridge) {
 	var routes []netip.Prefix
 	if bridge != nil {
 		routes = bridge.Routes()
 	}
 	readNumber := self.bridgeReadNumber.Add(1)
-	held := func() bool {
+	changed := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.closed {
 			return false
 		}
+		changed := false
 		if self.bridge != bridge {
 			self.bridge = bridge
 			self.bridgeZone = nil
@@ -630,13 +634,18 @@ func (self *DeviceLocal) holdBridge(bridge deviceBridge) {
 				self.bridgeZone = &deviceBridgeZone{bridge: bridge}
 			}
 			self.updateSendRouteWithLock()
+			changed = true
 		}
+		previousRoutes := self.bridgeRoutes
 		self.setBridgeRoutesWithLock(readNumber, routes)
+		if !slices.Equal(previousRoutes, self.bridgeRoutes) {
+			changed = true
+		}
 		self.applyBridgeZoneWithLock()
-		return true
+		return changed
 	}()
 	// told once the lock is let go
-	if held {
+	if changed {
 		self.notifyBridgeStatus()
 	}
 }
@@ -842,12 +851,40 @@ func (self *deviceLocalBridgeOwner) onRole(networkId connect.Id, build bool, cal
 	return err
 }
 
+// Runs read on networkId's bridge, the primary's or another role's, under the operation lock and with no settle: a
+// read moves no posture between legacy and past it, and a settle holds the bridges again, which tells the status
+// listeners, whose status reads a role's posture here, so with one listener each status asked for the next (QD-1437).
+// A read whose decision publishes tells them through the bridge's own change callback. errDeviceBridgeLegacy for a role
+// with no bridge.
+func (self *deviceLocalBridgeOwner) readRole(networkId connect.Id, read func(bridge deviceBridgeOwned)) error {
+	if self.refusal != nil {
+		return self.refusal
+	}
+	self.operationLock.Lock()
+	defer self.operationLock.Unlock()
+	if self.closed {
+		return errDeviceBridgeClosed
+	}
+	bridge := self.bridge
+	if networkId != self.networkId {
+		index := slices.IndexFunc(self.others, func(role *deviceLocalBridgeRole) bool { return role.networkId == networkId })
+		if index < 0 {
+			return errDeviceBridgeNetwork
+		}
+		bridge = self.others[index].bridge
+	}
+	if bridge == nil {
+		return errDeviceBridgeLegacy
+	}
+	read(bridge)
+	return nil
+}
+
 // networkId's posture decision, legacy's with no bridge.
 func (self *deviceLocalBridgeOwner) roleDecision(networkId connect.Id) sidecardevice.PostureDecision {
 	decision := sidecardevice.PostureDecision{State: sidecardevice.PostureLegacy}
-	self.onRole(networkId, false, func(bridge deviceBridgeOwned) error {
+	self.readRole(networkId, func(bridge deviceBridgeOwned) {
 		decision = bridge.Decision()
-		return nil
 	})
 	return decision
 }
@@ -856,9 +893,8 @@ func (self *deviceLocalBridgeOwner) roleDecision(networkId connect.Id) sidecarde
 // posture's alarm times, where roleDecision answers the decision last adopted.
 func (self *deviceLocalBridgeOwner) roleDecisionNow(networkId connect.Id) sidecardevice.PostureDecision {
 	decision := sidecardevice.PostureDecision{State: sidecardevice.PostureLegacy}
-	self.onRole(networkId, false, func(bridge deviceBridgeOwned) error {
+	self.readRole(networkId, func(bridge deviceBridgeOwned) {
 		decision = bridge.DecisionNow()
-		return nil
 	})
 	return decision
 }
@@ -866,9 +902,8 @@ func (self *deviceLocalBridgeOwner) roleDecisionNow(networkId connect.Id) sideca
 // networkId's bridge status, legacy's with no bridge.
 func (self *deviceLocalBridgeOwner) roleStatus(networkId connect.Id) sidecardevice.BridgeStatus {
 	status := sidecardevice.BridgeStatus{State: sidecardevice.PostureLegacy}
-	self.onRole(networkId, false, func(bridge deviceBridgeOwned) error {
+	self.readRole(networkId, func(bridge deviceBridgeOwned) {
 		status = bridge.Status()
-		return nil
 	})
 	return status
 }
