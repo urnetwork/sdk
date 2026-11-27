@@ -626,11 +626,6 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 	if !ok {
 		t.Fatal("synthetic route does not expose multi-client packet accounting")
 	}
-	// The refusal counters belong to one multi client; a destination change
-	// rebuilds it, and the retired one's counts would be lost to the sum.
-	if multi != self.multi {
-		t.Fatal("the compact route's multi client was replaced during the soak, so its refusals cannot be reconciled")
-	}
 	collapsed := int64(multi.TcpCollapseDropCount())
 	generation := int64(multi.FlowGenerationDropCount())
 	t.Logf(
@@ -640,7 +635,11 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 		collapsed,
 		generation,
 	)
-	if err := syntheticPacketRejectionError(rejected, blocked, collapsed, generation); err != nil {
+	// The refusal counters belong to one multi client; a destination change
+	// rebuilds it, and the retired one's counts would be lost to the sum.
+	if multi != self.multi {
+		t.Error("the compact route's multi client was replaced during the soak, so its refusals cannot be reconciled")
+	} else if err := syntheticPacketRejectionError(rejected, blocked, collapsed, generation); err != nil {
 		t.Error(err)
 	}
 	for _, port := range []int{80, 443, 465, 587} {
