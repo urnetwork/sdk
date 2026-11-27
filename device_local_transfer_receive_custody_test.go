@@ -2,12 +2,13 @@ package sdk
 
 import (
 	"context"
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/protocol"
 	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/protocol"
 )
 
 // Interrupt the first contract refusal at an application-supplied logger,
@@ -17,18 +18,19 @@ type custodyTestLogger struct {
 	interrupted bool
 }
 
-func (l *custodyTestLogger) Errorf(format string, args ...any) {
-	if !l.interrupted && strings.HasPrefix(format, "[r]drop queue head no contract") {
-		l.interrupted = true
+// Stop at the refusal that follows materialization of the worker-owned item.
+func (self *custodyTestLogger) Errorf(format string, args ...any) {
+	if !self.interrupted && strings.HasPrefix(format, "[r]drop queue head no contract") {
+		self.interrupted = true
 		panic("synthetic receive interruption")
 	}
-	l.Logger.Errorf(format, args...)
+	self.Logger.Errorf(format, args...)
 }
 
 // Build the mobile client and provider hierarchies with their shipping
 // factories. Use cleartext here to isolate the allocator and callback boundary.
 func TestDeviceLocalMobileReceiveCustody(t *testing.T) {
-	connect.MessagePoolOutstandingCount()
+	count, size := connect.MessagePoolOutstandingCount(), connect.MessagePoolOutstandingByteCount()
 	for _, providerRole := range []bool{false, true} {
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
@@ -82,5 +84,8 @@ func TestDeviceLocalMobileReceiveCustody(t *testing.T) {
 				t.Errorf("provider=%v delivered=%d leaf=%d root change=%d", providerRole, delivered, rx.UsedByteCount(), root.UsedByteCount()-start)
 			}
 		})
+	}
+	if got, bytes := connect.MessagePoolOutstandingCount(), connect.MessagePoolOutstandingByteCount(); got != count || bytes != size {
+		t.Errorf("mobile receive custody left %d roots / %d bytes, started with %d / %d", got, bytes, count, size)
 	}
 }
