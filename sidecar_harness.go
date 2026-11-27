@@ -88,6 +88,9 @@ type SidecarHarness struct {
 	harness *sidecar.Harness
 	// the batcher every agent's events pass through to the listeners
 	batcher *sidecar.HarnessEventBatcher
+	// the runs' history, continue and storage (sidecar_harness_history.go, sidecar_harness_runs.go): nil takes the
+	// Sidecar's in process or the daemon's methods remotely; a test's where it sets one
+	history sidecarHarnessHistory
 
 	stateLock sync.Mutex
 	listeners map[int]*sidecarHarnessListenerQueue
