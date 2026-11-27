@@ -157,6 +157,8 @@ type Sidecar struct {
 	connections   *SidecarConnections
 	listeners     *SidecarListeners
 	autoApprovals *SidecarAutoApprovals
+	// the disclosures' locale and what Disclosures() last returned per id (sidecar_disclosures.go), made at its first use
+	disclosures *sidecarDisclosureMemory
 	// the app process's support log ring on the local backend (sidecar_support.go), nil on the remote one or where
 	// none opens
 	supportLog *sidecarSupportLog
@@ -738,7 +740,7 @@ func (self *Sidecar) Listeners() *SidecarListeners {
 // Every disclosure of the newest verified policy, as JSON (§15.3, §2.8; sidecar_disclosures.go).
 func (self *Sidecar) Disclosures() (string, error) {
 	return traceWithReturnError(func() (string, error) {
-		return sidecarDisclosures(self.computeArgs())
+		return sidecarDisclosures(self.computeArgs(), self.disclosureMemoryOf())
 	})
 }
 
@@ -746,7 +748,7 @@ func (self *Sidecar) Disclosures() (string, error) {
 // §2.8, D-CSURF-1; sidecar_disclosures.go). No tool, MCP call or RPC reaches it.
 func (self *Sidecar) AckDisclosure(id string) error {
 	return traceWithError(func() error {
-		return ackSidecarDisclosure(self.computeArgs(), id)
+		return ackSidecarDisclosure(self.computeArgs(), self.disclosureMemoryOf(), id)
 	})
 }
 
@@ -754,7 +756,7 @@ func (self *Sidecar) AckDisclosure(id string) error {
 // §2.8, CO-41; sidecar_disclosures.go).
 func (self *Sidecar) AckNetworkDisclosure(id string) error {
 	return traceWithError(func() error {
-		return ackSidecarNetworkDisclosure(self.computeArgs(), id)
+		return ackSidecarNetworkDisclosure(self.computeArgs(), self.disclosureMemoryOf(), id)
 	})
 }
 

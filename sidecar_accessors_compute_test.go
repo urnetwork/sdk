@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/urnetwork/sidecar"
 )
 
 // The files CSURF-M11-01 creates or fills: the accessors' and hosts' and each area's shell.
@@ -37,17 +39,25 @@ func TestComputeAccessorsAnswerNotBuiltUntilFilled(t *testing.T) {
 	if harness, err := running.NewHarness("{}"); harness == nil || err != nil {
 		t.Errorf("a running Sidecar's NewHarness: %v, %v", harness, err)
 	}
+	// the disclosures are CTRUST-M11-01's and -M12-01's, built: a bare Sidecar has no core, and a running one, which
+	// holds no verified compute policy in a source build, answers policy_unavailable, never an empty list
+	if disclosures, err := (&Sidecar{}).Disclosures(); disclosures != "" || !errors.Is(err, errSidecarDisclosuresNoCore) {
+		t.Errorf("a bare Sidecar's Disclosures: %q, %v", disclosures, err)
+	}
+	if disclosures, err := running.Disclosures(); disclosures != "" || !errors.Is(err, sidecar.ErrComputeDisclosurePolicyUnavailable) {
+		t.Errorf("a running Sidecar's Disclosures: %q, %v", disclosures, err)
+	}
 	for _, sidecar := range []*Sidecar{{}, running} {
 		session, err := sidecar.OpenSsh("laptop.ur.example", "agent", 80, 24, nil)
 		if session != nil || !errors.Is(err, ErrSidecarComputeNotBuilt) {
 			t.Errorf("OpenSsh: %v, %v", session, err)
 		}
-		disclosures, err := sidecar.Disclosures()
-		if disclosures != "" || !errors.Is(err, ErrSidecarComputeNotBuilt) {
-			t.Errorf("Disclosures: %q, %v", disclosures, err)
-		}
-		if err := sidecar.AckDisclosure("search:parallel"); !errors.Is(err, ErrSidecarComputeNotBuilt) {
+		// nothing was shown, so nothing is acknowledged or opened
+		if err := sidecar.AckDisclosure("search:parallel"); !errors.Is(err, errSidecarDisclosureNotShown) {
 			t.Errorf("AckDisclosure: %v", err)
+		}
+		if err := sidecar.OpenDisclosure("search:parallel"); !errors.Is(err, errSidecarDisclosureNotShown) {
+			t.Errorf("OpenDisclosure: %v", err)
 		}
 		if err := sidecar.AckNetworkDisclosure("search:parallel"); !errors.Is(err, ErrSidecarComputeNotBuilt) {
 			t.Errorf("AckNetworkDisclosure: %v", err)

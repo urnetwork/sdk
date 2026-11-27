@@ -369,6 +369,8 @@ typedef void (*urnet_sidecar_bytes_cb)(void* user_data, const char* result_json,
 void urnet_invoke_sidecar_bytes(urnet_sidecar_bytes_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_json);
 void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_data, const char* page_json);
+typedef void (*urnet_sidecar_disclosures_cb)(void* user_data);
+void urnet_invoke_sidecar_disclosures(urnet_sidecar_disclosures_cb cb, void* user_data);
 typedef void (*urnet_sidecar_drop_preview_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_drop_preview(urnet_sidecar_drop_preview_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_drops_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -383,6 +385,8 @@ typedef char* (*urnet_sidecar_forward_key_store_get_secret_cb)(void* user_data, 
 char* urnet_invoke_sidecar_forward_key_store_get_secret(urnet_sidecar_forward_key_store_get_secret_cb cb, void* user_data, const char* name);
 typedef int64_t (*urnet_sidecar_forward_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
 int64_t urnet_invoke_sidecar_forward_key_store_put_secret(urnet_sidecar_forward_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64);
+typedef void (*urnet_sidecar_harness_cb)(void* user_data, const char* event_json);
+void urnet_invoke_sidecar_harness(urnet_sidecar_harness_cb cb, void* user_data, const char* event_json);
 typedef void (*urnet_sidecar_history_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef int64_t (*urnet_sidecar_key_store_delete_secret_cb)(void* user_data, const char* name);
@@ -391,6 +395,10 @@ typedef char* (*urnet_sidecar_key_store_get_secret_cb)(void* user_data, const ch
 char* urnet_invoke_sidecar_key_store_get_secret(urnet_sidecar_key_store_get_secret_cb cb, void* user_data, const char* name);
 typedef int64_t (*urnet_sidecar_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
 int64_t urnet_invoke_sidecar_key_store_put_secret(urnet_sidecar_key_store_put_secret_cb cb, void* user_data, const char* name, const char* value_base64);
+typedef void (*urnet_sidecar_models_cb)(void* user_data);
+void urnet_invoke_sidecar_models(urnet_sidecar_models_cb cb, void* user_data);
+typedef void (*urnet_sidecar_models_pull_cb)(void* user_data, const char* status_json);
+void urnet_invoke_sidecar_models_pull(urnet_sidecar_models_pull_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_sidecar_one_time_codes_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_one_time_codes(urnet_sidecar_one_time_codes_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef char* (*urnet_sidecar_presence_signer_get_attestation_cb)(void* user_data);
@@ -413,6 +421,8 @@ typedef void (*urnet_sidecar_ssh_cb)(void* user_data, const char* event_json);
 void urnet_invoke_sidecar_ssh(urnet_sidecar_ssh_cb cb, void* user_data, const char* event_json);
 typedef void (*urnet_sidecar_support_cb)(void* user_data, const char* update_json);
 void urnet_invoke_sidecar_support(urnet_sidecar_support_cb cb, void* user_data, const char* update_json);
+typedef void (*urnet_sidecar_support_notification_cb)(void* user_data, const char* notification_json);
+void urnet_invoke_sidecar_support_notification(urnet_sidecar_support_notification_cb cb, void* user_data, const char* notification_json);
 typedef void (*urnet_sidecar_used_at_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sidecar_used_at(urnet_sidecar_used_at_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sidecar_vault_entries_cb)(void* user_data, const char* result_json, const char* err_param);

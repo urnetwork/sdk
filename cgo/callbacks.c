@@ -1275,6 +1275,13 @@ void urnet_invoke_sidecar_directory(urnet_sidecar_directory_cb cb, void* user_da
 	cb(user_data, page_json);
 }
 
+void urnet_invoke_sidecar_disclosures(urnet_sidecar_disclosures_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data);
+}
+
 void urnet_invoke_sidecar_drop_preview(urnet_sidecar_drop_preview_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	if (cb == 0) {
 		return;
@@ -1324,6 +1331,13 @@ int64_t urnet_invoke_sidecar_forward_key_store_put_secret(urnet_sidecar_forward_
 	return cb(user_data, name, value_base64);
 }
 
+void urnet_invoke_sidecar_harness(urnet_sidecar_harness_cb cb, void* user_data, const char* event_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, event_json);
+}
+
 void urnet_invoke_sidecar_history(urnet_sidecar_history_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	if (cb == 0) {
 		return;
@@ -1350,6 +1364,20 @@ int64_t urnet_invoke_sidecar_key_store_put_secret(urnet_sidecar_key_store_put_se
 		return 0;
 	}
 	return cb(user_data, name, value_base64);
+}
+
+void urnet_invoke_sidecar_models(urnet_sidecar_models_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data);
+}
+
+void urnet_invoke_sidecar_models_pull(urnet_sidecar_models_pull_cb cb, void* user_data, const char* status_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, status_json);
 }
 
 void urnet_invoke_sidecar_one_time_codes(urnet_sidecar_one_time_codes_cb cb, void* user_data, const char* result_json, const char* err_param) {
@@ -1427,6 +1455,13 @@ void urnet_invoke_sidecar_support(urnet_sidecar_support_cb cb, void* user_data, 
 		return;
 	}
 	cb(user_data, update_json);
+}
+
+void urnet_invoke_sidecar_support_notification(urnet_sidecar_support_notification_cb cb, void* user_data, const char* notification_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, notification_json);
 }
 
 void urnet_invoke_sidecar_used_at(urnet_sidecar_used_at_cb cb, void* user_data, const char* result_json, const char* err_param) {

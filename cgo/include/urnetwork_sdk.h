@@ -660,6 +660,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SIDECAR_SEND_PREDICTION_OK "ok"
 #define URNET_SIDECAR_SEND_PREDICTION_TOO_LARGE "too_large"
 #define URNET_SIDECAR_SEND_PREDICTION_UNKNOWN "unknown"
+#define URNET_SIDECAR_WAKE_CLASS_SUPPORT "support"
 #define URNET_SN_ALPHA_SYMBOL "SN25α"
 #define URNET_SN_CHAIN_ID_MAINNET 964
 #define URNET_SN_CHAIN_ID_TESTNET 945
@@ -1191,6 +1192,8 @@ typedef void (*urnet_sidecar_burner_cb)(void* user_data, const char* result_json
 typedef void (*urnet_sidecar_bytes_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarDirectoryListener */
 typedef void (*urnet_sidecar_directory_cb)(void* user_data, const char* page_json);
+/* SidecarDisclosuresListener */
+typedef void (*urnet_sidecar_disclosures_cb)(void* user_data);
 /* SidecarDropPreviewCallback */
 typedef void (*urnet_sidecar_drop_preview_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarDropsCallback */
@@ -1203,12 +1206,18 @@ typedef void (*urnet_sidecar_event_cb)(void* user_data, const char* event_json);
 typedef int64_t (*urnet_sidecar_forward_key_store_delete_secret_cb)(void* user_data, const char* name);
 typedef char* (*urnet_sidecar_forward_key_store_get_secret_cb)(void* user_data, const char* name);
 typedef int64_t (*urnet_sidecar_forward_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
+/* SidecarHarnessListener */
+typedef void (*urnet_sidecar_harness_cb)(void* user_data, const char* event_json);
 /* SidecarHistoryCallback */
 typedef void (*urnet_sidecar_history_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarKeyStore */
 typedef int64_t (*urnet_sidecar_key_store_delete_secret_cb)(void* user_data, const char* name);
 typedef char* (*urnet_sidecar_key_store_get_secret_cb)(void* user_data, const char* name);
 typedef int64_t (*urnet_sidecar_key_store_put_secret_cb)(void* user_data, const char* name, const char* value_base64);
+/* SidecarModelsListener */
+typedef void (*urnet_sidecar_models_cb)(void* user_data);
+/* SidecarModelsPullListener */
+typedef void (*urnet_sidecar_models_pull_cb)(void* user_data, const char* status_json);
 /* SidecarOneTimeCodesCallback */
 typedef void (*urnet_sidecar_one_time_codes_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarPresenceSigner */
@@ -1230,6 +1239,8 @@ typedef void (*urnet_sidecar_send_result_cb)(void* user_data, const char* result
 typedef void (*urnet_sidecar_ssh_cb)(void* user_data, const char* event_json);
 /* SidecarSupportListener */
 typedef void (*urnet_sidecar_support_cb)(void* user_data, const char* update_json);
+/* SidecarSupportNotificationListener */
+typedef void (*urnet_sidecar_support_notification_cb)(void* user_data, const char* notification_json);
 /* SidecarUsedAtCallback */
 typedef void (*urnet_sidecar_used_at_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SidecarVaultEntriesCallback */
@@ -2669,6 +2680,7 @@ bool urnet_session_sign_out_result_get_revocation_confirmed(uint64_t self);
 
 bool urnet_sidecar_ack_disclosure(uint64_t self, const char* id, char** out_error);
 bool urnet_sidecar_ack_network_disclosure(uint64_t self, const char* id, char** out_error);
+uint64_t urnet_sidecar_add_disclosures_listener(uint64_t self, urnet_sidecar_disclosures_cb listener_disclosures_changed, void* listener_user_data);
 uint64_t urnet_sidecar_add_event_listener(uint64_t self, urnet_sidecar_event_cb listener_sidecar_event_received, void* listener_user_data);
 uint64_t urnet_sidecar_agents(uint64_t self);
 uint64_t urnet_sidecar_auto_approvals(uint64_t self);
@@ -2696,7 +2708,9 @@ char* urnet_sidecar_get_state_reason(uint64_t self);
 uint64_t urnet_sidecar_listeners(uint64_t self);
 uint64_t urnet_sidecar_models(uint64_t self);
 uint64_t urnet_sidecar_new_harness(uint64_t self, const char* settings_json, char** out_error);
+bool urnet_sidecar_open_disclosure(uint64_t self, const char* id, char** out_error);
 uint64_t urnet_sidecar_open_ssh(uint64_t self, const char* host, const char* user, int64_t cols, int64_t rows, urnet_sidecar_ssh_cb listener_on_event, void* listener_user_data, char** out_error);
+void urnet_sidecar_set_disclosure_locale(uint64_t self, const char* locale);
 void urnet_sidecar_set_forwarding_device(uint64_t self, uint64_t device);
 void urnet_sidecar_set_push_token(uint64_t self, const char* platform, const char* token, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_sign_edge_login(uint64_t self, const char* origin, const char* nonce_base64, urnet_sidecar_result_cb callback_result, void* callback_user_data);
@@ -2757,6 +2771,21 @@ void urnet_sidecar_evs_read_head(uint64_t self, const char* repo_id, const char*
 void urnet_sidecar_evs_read_version(uint64_t self, const char* repo_id, const char* path, int64_t version, urnet_sidecar_bytes_cb callback_result, void* callback_user_data);
 void urnet_sidecar_evs_write(uint64_t self, const char* repo_id, const char* path, const uint8_t* data, int32_t data_len, const char* versioning, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 
+/* ----- SidecarHarness ----- */
+
+void urnet_sidecar_harness_abort(uint64_t self, const char* agent_id);
+uint64_t urnet_sidecar_harness_add_listener(uint64_t self, urnet_sidecar_harness_cb listener_on_event, void* listener_user_data);
+char* urnet_sidecar_harness_agents(uint64_t self, char** out_error);
+bool urnet_sidecar_harness_close(uint64_t self, const char* agent_id, char** out_error);
+bool urnet_sidecar_harness_compact(uint64_t self, const char* agent_id, const char* instructions, char** out_error);
+bool urnet_sidecar_harness_follow_up(uint64_t self, const char* agent_id, const char* text, char** out_error);
+char* urnet_sidecar_harness_new_agent(uint64_t self, const char* spec_json, char** out_error);
+bool urnet_sidecar_harness_prompt(uint64_t self, const char* agent_id, const char* text, char** out_error);
+bool urnet_sidecar_harness_respond_ui(uint64_t self, const char* request_id, const char* response_json, char** out_error);
+void urnet_sidecar_harness_set_foreground(uint64_t self, bool foreground);
+bool urnet_sidecar_harness_set_model(uint64_t self, const char* agent_id, const char* model, char** out_error);
+bool urnet_sidecar_harness_steer(uint64_t self, const char* agent_id, const char* text, char** out_error);
+
 /* ----- SidecarMail ----- */
 
 void urnet_sidecar_mail_burn(uint64_t self, const char* address, urnet_sidecar_result_cb callback_result, void* callback_user_data);
@@ -2770,6 +2799,17 @@ void urnet_sidecar_mail_get_used_at(uint64_t self, const char* entry_id, urnet_s
 void urnet_sidecar_mail_get_vault_entries(uint64_t self, urnet_sidecar_vault_entries_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_send(uint64_t self, const char* draft_json, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 void urnet_sidecar_mail_set_receiver_enabled(uint64_t self, bool enabled, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarModels ----- */
+
+uint64_t urnet_sidecar_models_add_listener(uint64_t self, urnet_sidecar_models_cb listener_models_changed, void* listener_user_data);
+char* urnet_sidecar_models_catalog(uint64_t self, char** out_error);
+bool urnet_sidecar_models_pull(uint64_t self, const char* name, urnet_sidecar_models_pull_cb listener_on_pull, void* listener_user_data, char** out_error);
+char* urnet_sidecar_models_pulls(uint64_t self);
+char* urnet_sidecar_models_recommended(uint64_t self, char** out_error);
+bool urnet_sidecar_models_remove(uint64_t self, const char* name, char** out_error);
+bool urnet_sidecar_models_set_settings(uint64_t self, const char* change_json, char** out_error);
+char* urnet_sidecar_models_settings(uint64_t self, char** out_error);
 
 /* ----- SidecarSearch ----- */
 
@@ -2805,12 +2845,15 @@ uint64_t urnet_sidecar_sockets_listen_expires(uint64_t self, const char* address
 /* ----- SidecarSupport ----- */
 
 uint64_t urnet_sidecar_support_add_listener(uint64_t self, urnet_sidecar_support_cb listener_on_update, void* listener_user_data, char** out_error);
+uint64_t urnet_sidecar_support_add_notification_listener(uint64_t self, urnet_sidecar_support_notification_cb listener_on_notification, void* listener_user_data, char** out_error);
 char* urnet_sidecar_support_conversation(uint64_t self, const char* request_json, char** out_error);
 bool urnet_sidecar_support_delete(uint64_t self, const char* entry, char** out_error);
 char* urnet_sidecar_support_logs(uint64_t self, const char* request_json, char** out_error);
 char* urnet_sidecar_support_send(uint64_t self, const char* request_json, char** out_error);
 bool urnet_sidecar_support_set_settings(uint64_t self, const char* settings_json, char** out_error);
 char* urnet_sidecar_support_settings(uint64_t self, char** out_error);
+int64_t urnet_sidecar_support_unread(uint64_t self, char** out_error);
+void urnet_sidecar_support_wake(uint64_t self, urnet_sidecar_result_cb callback_result, void* callback_user_data);
 
 /* ----- SnFleetClaim ----- */
 

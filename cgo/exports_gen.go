@@ -2872,6 +2872,16 @@ func (self *cAdapterSidecarDirectoryListener) DirectoryChanged(page *sdk.Sidecar
 	}
 }
 
+type cAdapterSidecarDisclosuresListener struct {
+	cbDisclosuresChanged C.urnet_sidecar_disclosures_cb
+	userData             unsafe.Pointer
+}
+
+func (self *cAdapterSidecarDisclosuresListener) DisclosuresChanged() {
+	defer cgoGuard("urnet_sidecar_disclosures_cb")
+	C.urnet_invoke_sidecar_disclosures(self.cbDisclosuresChanged, self.userData)
+}
+
 type cAdapterSidecarDropPreviewCallback struct {
 	cbResult C.urnet_sidecar_drop_preview_cb
 	userData unsafe.Pointer
@@ -2991,6 +3001,18 @@ func (self *cAdapterSidecarForwardKeyStore) PutSecret(name string, valueBase64 s
 	return int32(int64(r0_))
 }
 
+type cAdapterSidecarHarnessListener struct {
+	cbOnEvent C.urnet_sidecar_harness_cb
+	userData  unsafe.Pointer
+}
+
+func (self *cAdapterSidecarHarnessListener) OnEvent(eventJson string) {
+	defer cgoGuard("urnet_sidecar_harness_cb")
+	eventJson_ := cString(string(eventJson))
+	C.urnet_invoke_sidecar_harness(self.cbOnEvent, self.userData, eventJson_)
+	cStringFree(eventJson_)
+}
+
 type cAdapterSidecarHistoryCallback struct {
 	cbResult C.urnet_sidecar_history_cb
 	userData unsafe.Pointer
@@ -3052,6 +3074,28 @@ func (self *cAdapterSidecarKeyStore) PutSecret(name string, valueBase64 string) 
 	cStringFree(name_)
 	cStringFree(valueBase64_)
 	return int32(int64(r0_))
+}
+
+type cAdapterSidecarModelsListener struct {
+	cbModelsChanged C.urnet_sidecar_models_cb
+	userData        unsafe.Pointer
+}
+
+func (self *cAdapterSidecarModelsListener) ModelsChanged() {
+	defer cgoGuard("urnet_sidecar_models_cb")
+	C.urnet_invoke_sidecar_models(self.cbModelsChanged, self.userData)
+}
+
+type cAdapterSidecarModelsPullListener struct {
+	cbOnPull C.urnet_sidecar_models_pull_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSidecarModelsPullListener) OnPull(statusJson string) {
+	defer cgoGuard("urnet_sidecar_models_pull_cb")
+	statusJson_ := cString(string(statusJson))
+	C.urnet_invoke_sidecar_models_pull(self.cbOnPull, self.userData, statusJson_)
+	cStringFree(statusJson_)
 }
 
 type cAdapterSidecarOneTimeCodesCallback struct {
@@ -3241,6 +3285,18 @@ func (self *cAdapterSidecarSupportListener) OnUpdate(updateJson string) {
 	updateJson_ := cString(string(updateJson))
 	C.urnet_invoke_sidecar_support(self.cbOnUpdate, self.userData, updateJson_)
 	cStringFree(updateJson_)
+}
+
+type cAdapterSidecarSupportNotificationListener struct {
+	cbOnNotification C.urnet_sidecar_support_notification_cb
+	userData         unsafe.Pointer
+}
+
+func (self *cAdapterSidecarSupportNotificationListener) OnNotification(notificationJson string) {
+	defer cgoGuard("urnet_sidecar_support_notification_cb")
+	notificationJson_ := cString(string(notificationJson))
+	C.urnet_invoke_sidecar_support_notification(self.cbOnNotification, self.userData, notificationJson_)
+	cStringFree(notificationJson_)
 }
 
 type cAdapterSidecarUsedAtCallback struct {
@@ -22359,6 +22415,21 @@ func urnet_sidecar_ack_network_disclosure(self C.uint64_t, id *C.char, outError 
 	return C.bool(true)
 }
 
+//export urnet_sidecar_add_disclosures_listener
+func urnet_sidecar_add_disclosures_listener(self C.uint64_t, listener_disclosures_changed C.urnet_sidecar_disclosures_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_add_disclosures_listener")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_add_disclosures_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarDisclosuresListener
+	if listener_disclosures_changed != nil {
+		listener_ = &cAdapterSidecarDisclosuresListener{cbDisclosuresChanged: listener_disclosures_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddDisclosuresListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_sidecar_add_event_listener
 func urnet_sidecar_add_event_listener(self C.uint64_t, listener_sidecar_event_received C.urnet_sidecar_event_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_sidecar_add_event_listener")
@@ -22742,6 +22813,21 @@ func urnet_sidecar_new_harness(self C.uint64_t, settingsJson *C.char, outError *
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_sidecar_open_disclosure
+func urnet_sidecar_open_disclosure(self C.uint64_t, id *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_open_disclosure")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_open_disclosure")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.OpenDisclosure(goString(id))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_sidecar_open_ssh
 func urnet_sidecar_open_ssh(self C.uint64_t, host *C.char, user *C.char, cols C.int64_t, rows C.int64_t, listener_on_event C.urnet_sidecar_ssh_cb, listener_user_data unsafe.Pointer, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_sidecar_open_ssh")
@@ -22762,6 +22848,16 @@ func urnet_sidecar_open_ssh(self C.uint64_t, host *C.char, user *C.char, cols C.
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_set_disclosure_locale
+func urnet_sidecar_set_disclosure_locale(self C.uint64_t, locale *C.char) {
+	defer cgoGuard("urnet_sidecar_set_disclosure_locale")
+	self_, ok := resolveHandle[*sdk.Sidecar](uint64(self), "urnet_sidecar_set_disclosure_locale")
+	if !ok {
+		return
+	}
+	self_.SetDisclosureLocale(goString(locale))
 }
 
 //export urnet_sidecar_set_forwarding_device
@@ -23433,6 +23529,176 @@ func urnet_sidecar_evs_write(self C.uint64_t, repoId *C.char, path *C.char, data
 	self_.Write(goId(repoId, "urnet_sidecar_evs_write"), goString(path), goBytes(data, data_len), goString(versioning), callback_)
 }
 
+//export urnet_sidecar_harness_abort
+func urnet_sidecar_harness_abort(self C.uint64_t, agentId *C.char) {
+	defer cgoGuard("urnet_sidecar_harness_abort")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_abort")
+	if !ok {
+		return
+	}
+	self_.Abort(goString(agentId))
+}
+
+//export urnet_sidecar_harness_add_listener
+func urnet_sidecar_harness_add_listener(self C.uint64_t, listener_on_event C.urnet_sidecar_harness_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_harness_add_listener")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_add_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarHarnessListener
+	if listener_on_event != nil {
+		listener_ = &cAdapterSidecarHarnessListener{cbOnEvent: listener_on_event, userData: listener_user_data}
+	}
+	r0 := self_.AddListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_harness_agents
+func urnet_sidecar_harness_agents(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_agents")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_agents")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Agents()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_close
+func urnet_sidecar_harness_close(self C.uint64_t, agentId *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_close")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_close")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Close(goString(agentId))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_compact
+func urnet_sidecar_harness_compact(self C.uint64_t, agentId *C.char, instructions *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_compact")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_compact")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Compact(goString(agentId), goString(instructions))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_follow_up
+func urnet_sidecar_harness_follow_up(self C.uint64_t, agentId *C.char, text *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_follow_up")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_follow_up")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.FollowUp(goString(agentId), goString(text))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_new_agent
+func urnet_sidecar_harness_new_agent(self C.uint64_t, specJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_new_agent")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_new_agent")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.NewAgent(goString(specJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_prompt
+func urnet_sidecar_harness_prompt(self C.uint64_t, agentId *C.char, text *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_prompt")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_prompt")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Prompt(goString(agentId), goString(text))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_respond_ui
+func urnet_sidecar_harness_respond_ui(self C.uint64_t, requestId *C.char, responseJson *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_respond_ui")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_respond_ui")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.RespondUi(goString(requestId), goString(responseJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_set_foreground
+func urnet_sidecar_harness_set_foreground(self C.uint64_t, foreground C.bool) {
+	defer cgoGuard("urnet_sidecar_harness_set_foreground")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_set_foreground")
+	if !ok {
+		return
+	}
+	self_.SetForeground(bool(foreground))
+}
+
+//export urnet_sidecar_harness_set_model
+func urnet_sidecar_harness_set_model(self C.uint64_t, agentId *C.char, model *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_set_model")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_set_model")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetModel(goString(agentId), goString(model))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_steer
+func urnet_sidecar_harness_steer(self C.uint64_t, agentId *C.char, text *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_steer")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_steer")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Steer(goString(agentId), goString(text))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_sidecar_mail_burn
 func urnet_sidecar_mail_burn(self C.uint64_t, address *C.char, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_sidecar_mail_burn")
@@ -23596,6 +23862,126 @@ func urnet_sidecar_mail_set_receiver_enabled(self C.uint64_t, enabled C.bool, ca
 		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SetReceiverEnabled(bool(enabled), callback_)
+}
+
+//export urnet_sidecar_models_add_listener
+func urnet_sidecar_models_add_listener(self C.uint64_t, listener_models_changed C.urnet_sidecar_models_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_models_add_listener")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_add_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarModelsListener
+	if listener_models_changed != nil {
+		listener_ = &cAdapterSidecarModelsListener{cbModelsChanged: listener_models_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_sidecar_models_catalog
+func urnet_sidecar_models_catalog(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_models_catalog")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_catalog")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Catalog()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_models_pull
+func urnet_sidecar_models_pull(self C.uint64_t, name *C.char, listener_on_pull C.urnet_sidecar_models_pull_cb, listener_user_data unsafe.Pointer, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_models_pull")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_pull")
+	if !ok {
+		return C.bool(false)
+	}
+	var listener_ sdk.SidecarModelsPullListener
+	if listener_on_pull != nil {
+		listener_ = &cAdapterSidecarModelsPullListener{cbOnPull: listener_on_pull, userData: listener_user_data}
+	}
+	err := self_.Pull(goString(name), listener_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_models_pulls
+func urnet_sidecar_models_pulls(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_sidecar_models_pulls")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_pulls")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Pulls()
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_models_recommended
+func urnet_sidecar_models_recommended(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_models_recommended")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_recommended")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Recommended()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_models_remove
+func urnet_sidecar_models_remove(self C.uint64_t, name *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_models_remove")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_remove")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Remove(goString(name))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_models_set_settings
+func urnet_sidecar_models_set_settings(self C.uint64_t, changeJson *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_models_set_settings")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_set_settings")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetSettings(goString(changeJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_models_settings
+func urnet_sidecar_models_settings(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_models_settings")
+	self_, ok := resolveHandle[*sdk.SidecarModels](uint64(self), "urnet_sidecar_models_settings")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Settings()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
 }
 
 //export urnet_sidecar_search_acknowledge_indexer
@@ -23889,6 +24275,25 @@ func urnet_sidecar_support_add_listener(self C.uint64_t, listener_on_update C.ur
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_sidecar_support_add_notification_listener
+func urnet_sidecar_support_add_notification_listener(self C.uint64_t, listener_on_notification C.urnet_sidecar_support_notification_cb, listener_user_data unsafe.Pointer, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_sidecar_support_add_notification_listener")
+	self_, ok := resolveHandle[*sdk.SidecarSupport](uint64(self), "urnet_sidecar_support_add_notification_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SidecarSupportNotificationListener
+	if listener_on_notification != nil {
+		listener_ = &cAdapterSidecarSupportNotificationListener{cbOnNotification: listener_on_notification, userData: listener_user_data}
+	}
+	r0, err := self_.AddNotificationListener(listener_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_sidecar_support_conversation
 func urnet_sidecar_support_conversation(self C.uint64_t, requestJson *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_sidecar_support_conversation")
@@ -23977,6 +24382,35 @@ func urnet_sidecar_support_settings(self C.uint64_t, outError **C.char) *C.char 
 		return nil
 	}
 	return cString(string(r0))
+}
+
+//export urnet_sidecar_support_unread
+func urnet_sidecar_support_unread(self C.uint64_t, outError **C.char) C.int64_t {
+	defer cgoGuard("urnet_sidecar_support_unread")
+	self_, ok := resolveHandle[*sdk.SidecarSupport](uint64(self), "urnet_sidecar_support_unread")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.Unread()
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.int64_t(r0)
+}
+
+//export urnet_sidecar_support_wake
+func urnet_sidecar_support_wake(self C.uint64_t, callback_result C.urnet_sidecar_result_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sidecar_support_wake")
+	self_, ok := resolveHandle[*sdk.SidecarSupport](uint64(self), "urnet_sidecar_support_wake")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SidecarResultCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSidecarResultCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.Wake(callback_)
 }
 
 //export urnet_sn_claim_transactions_for

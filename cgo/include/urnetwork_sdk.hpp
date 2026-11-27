@@ -712,6 +712,7 @@ inline constexpr const char* SidecarSendOutcomeUnknown = "unknown";
 inline constexpr const char* SidecarSendPredictionOk = "ok";
 inline constexpr const char* SidecarSendPredictionTooLarge = "too_large";
 inline constexpr const char* SidecarSendPredictionUnknown = "unknown";
+inline constexpr const char* SidecarWakeClassSupport = "support";
 inline constexpr const char* SnAlphaSymbol = "SN25α";
 inline constexpr int64_t SnChainIdMainnet = 964;
 inline constexpr int64_t SnChainIdTestnet = 945;
@@ -25905,6 +25906,7 @@ using SidecarApprovalListener = std::function<void(std::optional<SidecarApproval
 using SidecarBurnerCallback = std::function<void(std::optional<SidecarBurner> result, std::optional<std::string> err_param)>;
 using SidecarBytesCallback = std::function<void(std::optional<SidecarBytes> result, std::optional<std::string> err_param)>;
 using SidecarDirectoryListener = std::function<void(std::optional<SidecarDirectoryPage> page)>;
+using SidecarDisclosuresListener = std::function<void()>;
 using SidecarDropPreviewCallback = std::function<void(std::optional<SidecarDropPreview> result, std::optional<std::string> err_param)>;
 using SidecarDropsCallback = std::function<void(std::optional<SidecarDrops> result, std::optional<std::string> err_param)>;
 using SidecarErasuresCallback = std::function<void(std::optional<SidecarErasures> result, std::optional<std::string> err_param)>;
@@ -25914,12 +25916,15 @@ struct SidecarForwardKeyStore {
 	std::function<std::optional<SidecarForwardSecret>(std::string name)> get_secret;
 	std::function<int64_t(std::string name, std::string value_base64)> put_secret;
 };
+using SidecarHarnessListener = std::function<void(std::string event_json)>;
 using SidecarHistoryCallback = std::function<void(std::optional<SidecarHistory> result, std::optional<std::string> err_param)>;
 struct SidecarKeyStore {
 	std::function<int64_t(std::string name)> delete_secret;
 	std::function<std::optional<SidecarSecret>(std::string name)> get_secret;
 	std::function<int64_t(std::string name, std::string value_base64)> put_secret;
 };
+using SidecarModelsListener = std::function<void()>;
+using SidecarModelsPullListener = std::function<void(std::string status_json)>;
 using SidecarOneTimeCodesCallback = std::function<void(std::optional<SidecarOneTimeCodes> result, std::optional<std::string> err_param)>;
 struct SidecarPresenceSigner {
 	std::function<std::string()> get_attestation;
@@ -25933,6 +25938,7 @@ using SidecarSendCheckCallback = std::function<void(std::optional<SidecarSendChe
 using SidecarSendResultCallback = std::function<void(std::optional<SidecarSendResult> result, std::optional<std::string> err_param)>;
 using SidecarSshListener = std::function<void(std::string event_json)>;
 using SidecarSupportListener = std::function<void(std::string update_json)>;
+using SidecarSupportNotificationListener = std::function<void(std::string notification_json)>;
 using SidecarUsedAtCallback = std::function<void(std::optional<SidecarUsedAtResult> result, std::optional<std::string> err_param)>;
 using SidecarVaultEntriesCallback = std::function<void(std::optional<SidecarVaultEntries> result, std::optional<std::string> err_param)>;
 struct SnClaimCallback {
@@ -27543,6 +27549,7 @@ public:
 	explicit Sidecar(uint64_t h) : detail::Handle(h) {}
 	void ackDisclosure(const std::string& id) const;
 	void ackNetworkDisclosure(const std::string& id) const;
+	Sub addDisclosuresListener(SidecarDisclosuresListener listener) const;
 	Sub addEventListener(SidecarEventListener listener) const;
 	SidecarAgents agents() const;
 	SidecarAutoApprovals autoApprovals() const;
@@ -27570,7 +27577,9 @@ public:
 	SidecarListeners listeners() const;
 	SidecarModels models() const;
 	SidecarHarness newHarness(const std::string& settings_json) const;
+	void openDisclosure(const std::string& id) const;
 	SidecarSshSession openSsh(const std::string& host, const std::string& user, int64_t cols, int64_t rows, SidecarSshListener listener) const;
+	void setDisclosureLocale(const std::string& locale) const;
 	void setForwardingDevice(const Device& device) const;
 	void setPushToken(const std::string& platform, const std::string& token, SidecarResultCallback callback) const;
 	void signEdgeLogin(const std::string& origin, const std::string& nonce_base64, SidecarResultCallback callback) const;
@@ -27681,6 +27690,18 @@ class SidecarHarness final : public detail::Handle {
 public:
 	SidecarHarness() = default;
 	explicit SidecarHarness(uint64_t h) : detail::Handle(h) {}
+	void abort(const std::string& agent_id) const;
+	Sub addListener(SidecarHarnessListener listener) const;
+	std::string agents() const;
+	void close(const std::string& agent_id) const;
+	void compact(const std::string& agent_id, const std::string& instructions) const;
+	void followUp(const std::string& agent_id, const std::string& text) const;
+	std::string newAgent(const std::string& spec_json) const;
+	void prompt(const std::string& agent_id, const std::string& text) const;
+	void respondUi(const std::string& request_id, const std::string& response_json) const;
+	void setForeground(bool foreground) const;
+	void setModel(const std::string& agent_id, const std::string& model) const;
+	void steer(const std::string& agent_id, const std::string& text) const;
 };
 
 class SidecarListeners final : public detail::Handle {
@@ -27710,6 +27731,14 @@ class SidecarModels final : public detail::Handle {
 public:
 	SidecarModels() = default;
 	explicit SidecarModels(uint64_t h) : detail::Handle(h) {}
+	Sub addListener(SidecarModelsListener listener) const;
+	std::string catalog() const;
+	void pull(const std::string& name, SidecarModelsPullListener listener) const;
+	std::string pulls() const;
+	std::string recommended() const;
+	void remove(const std::string& name) const;
+	void setSettings(const std::string& change_json) const;
+	std::string settings() const;
 };
 
 class SidecarSearch final : public detail::Handle {
@@ -27766,12 +27795,15 @@ public:
 	SidecarSupport() = default;
 	explicit SidecarSupport(uint64_t h) : detail::Handle(h) {}
 	Sub addListener(SidecarSupportListener listener) const;
+	Sub addNotificationListener(SidecarSupportNotificationListener listener) const;
 	std::string conversation(const std::string& request_json) const;
 	void delete_(const std::string& entry) const;
 	std::string logs(const std::string& request_json) const;
 	std::string send(const std::string& request_json) const;
 	void setSettings(const std::string& settings_json) const;
 	std::string settings() const;
+	int64_t unread() const;
+	void wake(SidecarResultCallback callback) const;
 };
 
 class SnFleetClaim final : public detail::Handle {
@@ -32950,6 +32982,26 @@ inline void oneshot_sidecar_directory(void* user_data, const char* page_json) {
 	delete f;
 }
 
+inline void retained_sidecar_disclosures(void* user_data) {
+	auto* f = static_cast<SidecarDisclosuresListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_disclosures(void* user_data) {
+	auto* f = static_cast<SidecarDisclosuresListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sidecar_drop_preview(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SidecarDropPreviewCallback*>(user_data);
 	try {
@@ -33130,6 +33182,26 @@ inline int64_t retained_sidecar_forward_key_store_put_secret(void* user_data, co
 	return r;
 }
 
+inline void retained_sidecar_harness(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarHarnessListener*>(user_data);
+	try {
+		(*f)(std::string(event_json ? event_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_harness(void* user_data, const char* event_json) {
+	auto* f = static_cast<SidecarHarnessListener*>(user_data);
+	try {
+		(*f)(std::string(event_json ? event_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sidecar_history(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SidecarHistoryCallback*>(user_data);
 	try {
@@ -33208,6 +33280,46 @@ inline int64_t retained_sidecar_key_store_put_secret(void* user_data, const char
 	} catch (...) {
 	}
 	return r;
+}
+
+inline void retained_sidecar_models(void* user_data) {
+	auto* f = static_cast<SidecarModelsListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_models(void* user_data) {
+	auto* f = static_cast<SidecarModelsListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_models_pull(void* user_data, const char* status_json) {
+	auto* f = static_cast<SidecarModelsPullListener*>(user_data);
+	try {
+		(*f)(std::string(status_json ? status_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_models_pull(void* user_data, const char* status_json) {
+	auto* f = static_cast<SidecarModelsPullListener*>(user_data);
+	try {
+		(*f)(std::string(status_json ? status_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
 }
 
 inline void retained_sidecar_one_time_codes(void* user_data, const char* result_json, const char* err_param) {
@@ -33514,6 +33626,26 @@ inline void oneshot_sidecar_support(void* user_data, const char* update_json) {
 	auto* f = static_cast<SidecarSupportListener*>(user_data);
 	try {
 		(*f)(std::string(update_json ? update_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sidecar_support_notification(void* user_data, const char* notification_json) {
+	auto* f = static_cast<SidecarSupportNotificationListener*>(user_data);
+	try {
+		(*f)(std::string(notification_json ? notification_json : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sidecar_support_notification(void* user_data, const char* notification_json) {
+	auto* f = static_cast<SidecarSupportNotificationListener*>(user_data);
+	try {
+		(*f)(std::string(notification_json ? notification_json : ""));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -42816,6 +42948,17 @@ inline void Sidecar::ackNetworkDisclosure(const std::string& id) const {
 		throw Error("urnet: urnet_sidecar_ack_network_disclosure failed");
 	}
 }
+inline Sub Sidecar::addDisclosuresListener(SidecarDisclosuresListener listener) const {
+	std::shared_ptr<SidecarDisclosuresListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarDisclosuresListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_add_disclosures_listener(handle(), listener_fn ? &detail::retained_sidecar_disclosures : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Sidecar::addEventListener(SidecarEventListener listener) const {
 	std::shared_ptr<SidecarEventListener> listener_fn;
 	if (listener) {
@@ -42953,6 +43096,16 @@ inline SidecarHarness Sidecar::newHarness(const std::string& settings_json) cons
 	}
 	return r;
 }
+inline void Sidecar::openDisclosure(const std::string& id) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_open_disclosure(handle(), id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_open_disclosure failed");
+	}
+}
 inline SidecarSshSession Sidecar::openSsh(const std::string& host, const std::string& user, int64_t cols, int64_t rows, SidecarSshListener listener) const {
 	std::shared_ptr<SidecarSshListener> listener_fn;
 	if (listener) {
@@ -42967,6 +43120,9 @@ inline SidecarSshSession Sidecar::openSsh(const std::string& host, const std::st
 		r.retain(listener_fn);
 	}
 	return r;
+}
+inline void Sidecar::setDisclosureLocale(const std::string& locale) const {
+	urnet_sidecar_set_disclosure_locale(handle(), locale.c_str());
 }
 inline void Sidecar::setForwardingDevice(const Device& device) const {
 	urnet_sidecar_set_forwarding_device(handle(), device.handle());
@@ -43250,6 +43406,109 @@ inline void SidecarEvs::write(const std::string& repo_id, const std::string& pat
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_evs_write(handle(), repo_id.c_str(), path.c_str(), data, data_len, versioning.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
+inline void SidecarHarness::abort(const std::string& agent_id) const {
+	urnet_sidecar_harness_abort(handle(), agent_id.c_str());
+}
+inline Sub SidecarHarness::addListener(SidecarHarnessListener listener) const {
+	std::shared_ptr<SidecarHarnessListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarHarnessListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_harness_add_listener(handle(), listener_fn ? &detail::retained_sidecar_harness : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::string SidecarHarness::agents() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_agents(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarHarness::close(const std::string& agent_id) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_close(handle(), agent_id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_close failed");
+	}
+}
+inline void SidecarHarness::compact(const std::string& agent_id, const std::string& instructions) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_compact(handle(), agent_id.c_str(), instructions.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_compact failed");
+	}
+}
+inline void SidecarHarness::followUp(const std::string& agent_id, const std::string& text) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_follow_up(handle(), agent_id.c_str(), text.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_follow_up failed");
+	}
+}
+inline std::string SidecarHarness::newAgent(const std::string& spec_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_new_agent(handle(), spec_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarHarness::prompt(const std::string& agent_id, const std::string& text) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_prompt(handle(), agent_id.c_str(), text.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_prompt failed");
+	}
+}
+inline void SidecarHarness::respondUi(const std::string& request_id, const std::string& response_json) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_respond_ui(handle(), request_id.c_str(), response_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_respond_ui failed");
+	}
+}
+inline void SidecarHarness::setForeground(bool foreground) const {
+	urnet_sidecar_harness_set_foreground(handle(), foreground);
+}
+inline void SidecarHarness::setModel(const std::string& agent_id, const std::string& model) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_set_model(handle(), agent_id.c_str(), model.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_set_model failed");
+	}
+}
+inline void SidecarHarness::steer(const std::string& agent_id, const std::string& text) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_steer(handle(), agent_id.c_str(), text.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_steer failed");
+	}
+}
 inline void SidecarMail::burn(const std::string& address, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_burn(handle(), address.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
@@ -43309,6 +43568,82 @@ inline void SidecarMail::send(const std::optional<SidecarDraft>& draft, SidecarR
 inline void SidecarMail::setReceiverEnabled(bool enabled, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_mail_set_receiver_enabled(handle(), enabled, callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline Sub SidecarModels::addListener(SidecarModelsListener listener) const {
+	std::shared_ptr<SidecarModelsListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarModelsListener>(std::move(listener));
+	}
+	Sub r(urnet_sidecar_models_add_listener(handle(), listener_fn ? &detail::retained_sidecar_models : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::string SidecarModels::catalog() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_models_catalog(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarModels::pull(const std::string& name, SidecarModelsPullListener listener) const {
+	std::shared_ptr<SidecarModelsPullListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarModelsPullListener>(std::move(listener));
+	}
+	if (listener_fn) {
+		retain(listener_fn);
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_models_pull(handle(), name.c_str(), listener_fn ? &detail::retained_sidecar_models_pull : nullptr, listener_fn.get(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_models_pull failed");
+	}
+}
+inline std::string SidecarModels::pulls() const {
+	char* r_c = urnet_sidecar_models_pulls(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SidecarModels::recommended() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_models_recommended(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarModels::remove(const std::string& name) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_models_remove(handle(), name.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_models_remove failed");
+	}
+}
+inline void SidecarModels::setSettings(const std::string& change_json) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_models_set_settings(handle(), change_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_models_set_settings failed");
+	}
+}
+inline std::string SidecarModels::settings() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_models_settings(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void SidecarSearch::acknowledgeIndexer(const std::string& member_id, bool allow, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
@@ -43440,6 +43775,21 @@ inline Sub SidecarSupport::addListener(SidecarSupportListener listener) const {
 	}
 	return r;
 }
+inline Sub SidecarSupport::addNotificationListener(SidecarSupportNotificationListener listener) const {
+	std::shared_ptr<SidecarSupportNotificationListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SidecarSupportNotificationListener>(std::move(listener));
+	}
+	char* err_c = nullptr;
+	Sub r(urnet_sidecar_support_add_notification_listener(handle(), listener_fn ? &detail::retained_sidecar_support_notification : nullptr, listener_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline std::string SidecarSupport::conversation(const std::string& request_json) const {
 	char* err_c = nullptr;
 	char* r_c = urnet_sidecar_support_conversation(handle(), request_json.c_str(), &err_c);
@@ -43491,6 +43841,18 @@ inline std::string SidecarSupport::settings() const {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
+}
+inline int64_t SidecarSupport::unread() const {
+	char* err_c = nullptr;
+	int64_t r = urnet_sidecar_support_unread(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline void SidecarSupport::wake(SidecarResultCallback callback) const {
+	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
+	urnet_sidecar_support_wake(handle(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
 }
 inline void SnFleetClaim::advance(SnFleetClaimCallback callback) const {
 	auto* callback_fn = callback ? new SnFleetClaimCallback(std::move(callback)) : nullptr;

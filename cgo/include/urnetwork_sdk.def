@@ -1348,6 +1348,7 @@ EXPORTS
 	urnet_short_ss58
 	urnet_sidecar_ack_disclosure
 	urnet_sidecar_ack_network_disclosure
+	urnet_sidecar_add_disclosures_listener
 	urnet_sidecar_add_event_listener
 	urnet_sidecar_agents
 	urnet_sidecar_approvals_add_pending_listener
@@ -1410,6 +1411,18 @@ EXPORTS
 	urnet_sidecar_get_sockets
 	urnet_sidecar_get_state
 	urnet_sidecar_get_state_reason
+	urnet_sidecar_harness_abort
+	urnet_sidecar_harness_add_listener
+	urnet_sidecar_harness_agents
+	urnet_sidecar_harness_close
+	urnet_sidecar_harness_compact
+	urnet_sidecar_harness_follow_up
+	urnet_sidecar_harness_new_agent
+	urnet_sidecar_harness_prompt
+	urnet_sidecar_harness_respond_ui
+	urnet_sidecar_harness_set_foreground
+	urnet_sidecar_harness_set_model
+	urnet_sidecar_harness_steer
 	urnet_sidecar_listeners
 	urnet_sidecar_mail_burn
 	urnet_sidecar_mail_check_send
@@ -1423,7 +1436,16 @@ EXPORTS
 	urnet_sidecar_mail_send
 	urnet_sidecar_mail_set_receiver_enabled
 	urnet_sidecar_models
+	urnet_sidecar_models_add_listener
+	urnet_sidecar_models_catalog
+	urnet_sidecar_models_pull
+	urnet_sidecar_models_pulls
+	urnet_sidecar_models_recommended
+	urnet_sidecar_models_remove
+	urnet_sidecar_models_set_settings
+	urnet_sidecar_models_settings
 	urnet_sidecar_new_harness
+	urnet_sidecar_open_disclosure
 	urnet_sidecar_open_ssh
 	urnet_sidecar_search_acknowledge_indexer
 	urnet_sidecar_search_drop_cache
@@ -1437,6 +1459,7 @@ EXPORTS
 	urnet_sidecar_search_set_foreground
 	urnet_sidecar_search_set_policy
 	urnet_sidecar_search_set_remote
+	urnet_sidecar_set_disclosure_locale
 	urnet_sidecar_set_forwarding_device
 	urnet_sidecar_set_push_token
 	urnet_sidecar_sign_edge_login
@@ -1449,12 +1472,15 @@ EXPORTS
 	urnet_sidecar_sockets_listen_expires
 	urnet_sidecar_support
 	urnet_sidecar_support_add_listener
+	urnet_sidecar_support_add_notification_listener
 	urnet_sidecar_support_conversation
 	urnet_sidecar_support_delete
 	urnet_sidecar_support_logs
 	urnet_sidecar_support_send
 	urnet_sidecar_support_set_settings
 	urnet_sidecar_support_settings
+	urnet_sidecar_support_unread
+	urnet_sidecar_support_wake
 	urnet_sidecar_turn_on_auth_feature
 	urnet_sidecar_unlock
 	urnet_sn_claim_transactions_for

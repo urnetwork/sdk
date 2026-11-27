@@ -183,6 +183,7 @@ module URnetwork
       callback :urnet_sidecar_burner_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_bytes_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_directory_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_disclosures_cb, [:pointer], :void
       callback :urnet_sidecar_drop_preview_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_drops_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_erasures_cb, [:pointer, :string, :string], :void
@@ -190,10 +191,13 @@ module URnetwork
       callback :urnet_sidecar_forward_key_store_delete_secret_cb, [:pointer, :string], :int64
       callback :urnet_sidecar_forward_key_store_get_secret_cb, [:pointer, :string], :pointer
       callback :urnet_sidecar_forward_key_store_put_secret_cb, [:pointer, :string, :string], :int64
+      callback :urnet_sidecar_harness_cb, [:pointer, :string], :void
       callback :urnet_sidecar_history_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_key_store_delete_secret_cb, [:pointer, :string], :int64
       callback :urnet_sidecar_key_store_get_secret_cb, [:pointer, :string], :pointer
       callback :urnet_sidecar_key_store_put_secret_cb, [:pointer, :string, :string], :int64
+      callback :urnet_sidecar_models_cb, [:pointer], :void
+      callback :urnet_sidecar_models_pull_cb, [:pointer, :string], :void
       callback :urnet_sidecar_one_time_codes_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_presence_signer_get_attestation_cb, [:pointer], :pointer
       callback :urnet_sidecar_presence_signer_sign_with_presence_cb, [:pointer, :string], :pointer
@@ -205,6 +209,7 @@ module URnetwork
       callback :urnet_sidecar_send_result_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_ssh_cb, [:pointer, :string], :void
       callback :urnet_sidecar_support_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_support_notification_cb, [:pointer, :string], :void
       callback :urnet_sidecar_used_at_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_vault_entries_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_claim_confirmed_cb, [:pointer, :int64, :string, :int64], :void
@@ -1435,6 +1440,7 @@ module URnetwork
       attach_function :urnet_session_sign_out_result_get_revocation_confirmed, [:uint64], :bool, blocking: true
       attach_function :urnet_sidecar_ack_disclosure, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_ack_network_disclosure, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_add_disclosures_listener, [:uint64, :urnet_sidecar_disclosures_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_add_event_listener, [:uint64, :urnet_sidecar_event_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_agents, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_auto_approvals, [:uint64], :uint64, blocking: true
@@ -1462,7 +1468,9 @@ module URnetwork
       attach_function :urnet_sidecar_listeners, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_models, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_new_harness, [:uint64, :string, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_open_disclosure, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_open_ssh, [:uint64, :string, :string, :int64, :int64, :urnet_sidecar_ssh_cb, :pointer, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_set_disclosure_locale, [:uint64, :string], :void, blocking: true
       attach_function :urnet_sidecar_set_forwarding_device, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_sidecar_set_push_token, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_sign_edge_login, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
@@ -1507,6 +1515,18 @@ module URnetwork
       attach_function :urnet_sidecar_evs_read_head, [:uint64, :string, :string, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_read_version, [:uint64, :string, :string, :int64, :urnet_sidecar_bytes_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_evs_write, [:uint64, :string, :string, :pointer, :int32, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_harness_abort, [:uint64, :string], :void, blocking: true
+      attach_function :urnet_sidecar_harness_add_listener, [:uint64, :urnet_sidecar_harness_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_harness_agents, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_close, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_compact, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_follow_up, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_new_agent, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_prompt, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_respond_ui, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_set_foreground, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_sidecar_harness_set_model, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_steer, [:uint64, :string, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_mail_burn, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_check_send, [:uint64, :string, :urnet_sidecar_send_check_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_create_burner, [:uint64, :string, :urnet_sidecar_burner_cb, :pointer], :void, blocking: true
@@ -1518,6 +1538,14 @@ module URnetwork
       attach_function :urnet_sidecar_mail_get_vault_entries, [:uint64, :urnet_sidecar_vault_entries_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_send, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_mail_set_receiver_enabled, [:uint64, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_models_add_listener, [:uint64, :urnet_sidecar_models_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_models_catalog, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_models_pull, [:uint64, :string, :urnet_sidecar_models_pull_cb, :pointer, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_models_pulls, [:uint64], :pointer, blocking: true
+      attach_function :urnet_sidecar_models_recommended, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_models_remove, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_models_set_settings, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_models_settings, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_search_acknowledge_indexer, [:uint64, :string, :bool, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_search_drop_cache, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_search_get_indexers, [:uint64], :pointer, blocking: true
@@ -1538,12 +1566,15 @@ module URnetwork
       attach_function :urnet_sidecar_sockets_listen, [:uint64, :string, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_sockets_listen_expires, [:uint64, :string, :int64, :int64, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_support_add_listener, [:uint64, :urnet_sidecar_support_cb, :pointer, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_support_add_notification_listener, [:uint64, :urnet_sidecar_support_notification_cb, :pointer, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_support_conversation, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_support_delete, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_support_logs, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_support_send, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_support_set_settings, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_support_settings, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_support_unread, [:uint64, :pointer], :int64, blocking: true
+      attach_function :urnet_sidecar_support_wake, [:uint64, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_advance, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_leave, [:uint64, :uint64, :urnet_sn_fleet_device_leave_cb, :pointer], :void, blocking: true
       attach_function :urnet_sn_fleet_claim_refresh, [:uint64, :urnet_sn_fleet_claim_cb, :pointer], :void, blocking: true
