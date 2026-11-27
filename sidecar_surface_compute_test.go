@@ -210,7 +210,7 @@ const (
 )
 
 // What this package declares for the apps' legs: each method by receiver.name, interfaces' included, and each type's
-// kind, struct or interface.
+// kind: struct, interface, or named, a type of its own over another.
 type sdkComputeDeclarations struct {
 	methods map[string]*ast.FuncType
 	types   map[string]string
@@ -304,6 +304,10 @@ func sdkComputeDeclared(files []*ast.File) *sdkComputeDeclarations {
 					switch typeType := typeSpec.Type.(type) {
 					case *ast.StructType:
 						declared.types[typeSpec.Name.Name] = "struct"
+					case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr:
+						// a type of its own over another, which gomobile binds by what it names: SidecarResultCallback,
+						// connect's ApiCallback over SidecarResult, as the sdk's callbacks are bound
+						declared.types[typeSpec.Name.Name] = "named"
 					case *ast.InterfaceType:
 						declared.types[typeSpec.Name.Name] = "interface"
 						for _, method := range typeType.Methods.List {
@@ -343,8 +347,8 @@ func sdkComputeSignatureText(signature *ast.FuncType) string {
 	return "(" + strings.Join(sdkComputeKinds(signature.Params), ", ") + ") (" + strings.Join(sdkComputeKinds(signature.Results), ", ") + ")"
 }
 
-// Whether a kind is one §15.3's gomobile rule allows: a basic kind, an interface of this package's, or a pointer to a
-// struct of its own.
+// Whether a kind is one §15.3's gomobile rule allows: a basic kind, an interface or a named type of this package's, or
+// a pointer to a struct of its own.
 func (self *sdkComputeDeclarations) gomobileSafe(kind string) bool {
 	switch {
 	case slices.Contains(sdkComputeBasicKinds, kind):
@@ -352,7 +356,7 @@ func (self *sdkComputeDeclarations) gomobileSafe(kind string) bool {
 	case strings.HasPrefix(kind, "*"):
 		return self.types[strings.TrimPrefix(kind, "*")] == "struct"
 	}
-	return self.types[kind] == "interface"
+	return self.types[kind] == "interface" || self.types[kind] == "named"
 }
 
 // Whether a declared kind is what §15.3 writes, its wildcards read.
@@ -461,6 +465,34 @@ func TestComputeSdkMethodsAreDeclaredOrUnbuilt(t *testing.T) {
 	}
 	for key, recorded := range sdkComputeMethodDiffers {
 		t.Logf("%s is declared %s, which §15.3 does not write: raised in csurf-m11-02-store-purchase-api", key, recorded)
+	}
+	// what the sdk's compute types declare beyond §15.3's listing, for the review phase to weigh, each still bound by
+	// gomobile, so held to §15.3's rule: Sidecar's own methods are mostly no compute surface's, so only its accessors
+	// are held
+	receivers := []string{}
+	designed := []string{}
+	for _, method := range sdkComputeMethodDesign {
+		if method.receiver != "Sidecar" && !slices.Contains(receivers, method.receiver) {
+			receivers = append(receivers, method.receiver)
+		}
+		designed = append(designed, method.receiver+"."+method.name)
+	}
+	beyond := []string{}
+	for key, signature := range declared.methods {
+		receiver, name, _ := strings.Cut(key, ".")
+		if !slices.Contains(receivers, receiver) || !ast.IsExported(name) || slices.Contains(designed, key) {
+			continue
+		}
+		beyond = append(beyond, key)
+		for _, kind := range slices.Concat(sdkComputeKinds(signature.Params), sdkComputeKinds(signature.Results)) {
+			if !declared.gomobileSafe(kind) {
+				t.Errorf("%s takes or answers %s, which §15.3's gomobile rule does not bind", key, kind)
+			}
+		}
+	}
+	slices.Sort(beyond)
+	if 0 < len(beyond) {
+		t.Logf("declared beyond §15.3's listing: %s", strings.Join(beyond, ", "))
 	}
 }
 
