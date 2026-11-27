@@ -25,6 +25,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -265,7 +266,7 @@ func sdkComputeReadPackage(t *testing.T, directory string) []*ast.File {
 		if !compiled {
 			continue
 		}
-		syntax, err := parser.ParseFile(token.NewFileSet(), directory+string(os.PathSeparator)+name, nil, parser.SkipObjectResolution)
+		syntax, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
