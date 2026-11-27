@@ -21,8 +21,12 @@
 //	           on every VPN component's leg); team hints come by §6.8's long-poll on F, which reaches every
 //	           network (D's pushes on 21842 wait on PROTO's move of the push types, plan-PROTO-device-role-push-types)
 //	refresh    F refreshes itself by its own proofs at 40 to 50% of its lifetime, keeping the new token before it is
-//	           presented; a token past its exp at start holds the posture pending (forward_client_lapsed) until a new
-//	           hand-off, by the posture's fork hold, which a witness's fork shares
+//	           presented
+//	lapse      F past its exp lapses with no grace (§18.6's after row), found at start, at a failed refresh, or at a
+//	           failed follow while no refresh is in flight: the posture takes the fork hold, which a witness's fork
+//	           shares, before the role shows the lapse or the Forwarder raises forward_client_lapsed, so no status
+//	           reports a lapse while the posture still serves its state (markLapsed), and holds it pending until a new
+//	           hand-off
 //	witness    witness(networkId, pin, fork) hands the app's witnessed pin to the Forwarder, which follows to it and
 //	           raises head_alarm on a pin off its chain; a fork holds the posture pending until a later witness clears it
 //	alarms     the Forwarder's bridge_alarm stands in the role's status and its head_alarm, the newest, with its two
@@ -140,6 +144,10 @@ type deviceForwardingDeps struct {
 	clock         sidecar.Clock
 	// a test's generator of a link's window clients in place of connect's, nil for connect's (device_sidecar_host.go)
 	linkGenerator func(ctx context.Context, source *deviceForwardLinkSource, credentials connect.NetworkClientCredentials, target connect.Id) connect.MultiClientGenerator
+	// a test's hooks, nil for none: after a lapse is kept and before the posture is put on its hold (markLapsed), and
+	// after the fork hold is read and before the posture's write of it (applyFork)
+	testingBeforeLapseHold func()
+	testingBeforeForkWrite func()
 }
 
 // deps' clock, or real time.
@@ -497,6 +505,10 @@ type deviceLocalForwarding struct {
 	// the posture's fork hold: F lapsed, or the app's sidecar role reported a fork
 	lapsed      bool
 	witnessFork bool
+	// the lapse the role shows, set only once the posture holds it (markLapsed)
+	lapseShown bool
+	// a refresh of F is in flight, whose outcome decides a lapse meanwhile, not a follow's failure (clientLapsed)
+	refreshing bool
 	// F's token's exp, zero for none
 	expiresAt time.Time
 	// the newest head_alarm the Forwarder raised, nil before one
@@ -509,6 +521,9 @@ type deviceLocalForwarding struct {
 	promotionWanted chan struct{}
 	// has the refresh loop read the clock again at once (checkClock, device_sidecar_clock_check.go), holding one check
 	clockChecked chan struct{}
+	// a test's hooks (deviceForwardingDeps), nil for none
+	testingBeforeLapseHold func()
+	testingBeforeForkWrite func()
 }
 
 // Opens the sealed store over the root key: made where create and none is, else Present's only.
@@ -642,15 +657,21 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		self.client = client
 		self.expiresAt = expiresAt
 		self.lapsed = lapsed
+		// a new run shows a lapse only once its own posture holds it; a hold an earlier lapse left stays until a witness
+		// clears it, being the one a witness's fork shares
+		self.lapseShown = false
+		self.refreshing = false
 		self.clock = clock
 		self.statusChanged = deps.statusChanged
 		self.promotionWanted = make(chan struct{}, 1)
 		self.clockChecked = make(chan struct{}, 1)
+		self.testingBeforeLapseHold = deps.testingBeforeLapseHold
+		self.testingBeforeForkWrite = deps.testingBeforeForkWrite
 	}()
 	if lapsed {
 		// a token past its exp at start: pending until a new hand-off (forward_client_lapsed)
 		self.log.Infof("[forward]%s the forwarding client lapsed\n", self.networkId)
-		self.sink.applyFork()
+		self.markLapsed()
 	}
 	forwarderSettings := self.settings.Forwarder
 	if forwarderSettings == nil {
@@ -672,7 +693,7 @@ func (self *deviceLocalForwarding) restart(deps *deviceForwardingDeps) error {
 		Heads:         heads,
 		Gkm:           client.Gkm(),
 		Binding:       client.Binding,
-		ClientLapsed:  self.lapsedNow,
+		ClientLapsed:  self.clientLapsed,
 		Store:         self.forwarderStore,
 		Keys:          self.keys,
 		Sink:          self.sink,
@@ -730,11 +751,32 @@ func (self *deviceLocalForwarding) currentForwarder() *sidecar.Forwarder {
 	return self.forwarder
 }
 
-// Whether F lapsed: its token past its exp. The Forwarder reads it when a follow fails.
+// Whether F lapsed: its token past its exp, by the clock alone. The role's links and its signer read it, so they
+// refuse from the exp on, before any posture's hold (device_sidecar_host.go). Changes nothing, so it is safe under the
+// bridge's calls.
 func (self *deviceLocalForwarding) lapsedNow() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.lapsed || (!self.expiresAt.IsZero() && !self.clockWithLock().Now().Before(self.expiresAt))
+}
+
+// The Forwarder's ClientLapsed, on its goroutine at a failed follow: whether F lapsed, past its exp with no refresh in
+// flight, the posture taking the lapse's hold first (markLapsed), so the forward_client_lapsed a true answer raises
+// never reports a lapse the posture does not hold. A refresh in flight decides by its outcome, so one api took after
+// the exp this device's clock reads does not lapse the role.
+func (self *deviceLocalForwarding) clientLapsed() bool {
+	lapsed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.lapsed {
+			return true
+		}
+		if self.refreshing {
+			return false
+		}
+		return !self.expiresAt.IsZero() && !self.clockWithLock().Now().Before(self.expiresAt)
+	}()
+	return lapsed && self.markLapsed()
 }
 
 // The role's clock, real time before a Forwarder runs.
@@ -763,9 +805,15 @@ func (self *deviceLocalForwarding) witness(pin *bridge.AuthPin, fork bool) error
 
 // F's refresh by its own proofs at its window's point, the new token kept before it is presented (the file's comment).
 // The point is the wall clock's, so a check of the clock (device_sidecar_clock_check.go) arms the wait for it anew from
-// now, refreshing at once past it; a retry's wait is relative, and a check leaves it as it is.
+// now, refreshing at once past it; a retry's wait is relative, and a check leaves it as it is. A refresh that fails
+// past F's exp lapses the role (markLapsed); while one is in flight a failed follow leaves the lapse to its outcome.
 func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 	defer self.loops.Done()
+	setRefreshing := func(refreshing bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.refreshing = refreshing
+	}
 	retryCount := 0
 	for {
 		self.stateLock.Lock()
@@ -795,8 +843,10 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 			retryCount += 1
 			continue
 		}
+		setRefreshing(true)
 		newJwt, err := client.Refresh(ctx)
 		if err != nil {
+			setRefreshing(false)
 			if ctx.Err() != nil {
 				return
 			}
@@ -808,33 +858,63 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 			continue
 		}
 		if err := self.keys.setToken(newJwt); err != nil {
+			setRefreshing(false)
 			// not kept, so not presented (D-CORE-8's order)
 			retryCount += 1
 			continue
 		}
 		client.SetByJwt(newJwt)
 		retryCount = 0
+		// the new exp with the refresh's end, so a follow failing meanwhile meets the old exp only while the refresh
+		// is in flight
 		self.stateLock.Lock()
 		self.expiresAt = deviceForwardTokenExpiry(newJwt)
+		self.refreshing = false
 		self.stateLock.Unlock()
 	}
 }
 
-// Holds the posture pending for a lapsed F, and tells the status listeners, since the lapse is in the status whether
-// or not the posture moved.
-func (self *deviceLocalForwarding) markLapsed() {
-	self.stateLock.Lock()
-	changed := !self.lapsed
-	self.lapsed = true
-	statusChanged := self.statusChanged
-	self.stateLock.Unlock()
-	if !changed {
-		return
+// F lapsed (4.2.6's lapsed). The lapse is kept first, so every write of the fork hold from then on holds it
+// (applyFork); then the posture is put on the hold, and only once its decision holds the lapse does the role show it
+// and tell the status listeners, so no status, and no forward_client_lapsed raised on it (clientLapsed), reports a lapse
+// while the posture still serves the state it held. A posture with no anchor, legacy, holds it already, since SetPending
+// takes the hold with the anchor. One whose store refused the hold shows nothing yet, and the next failed refresh or
+// follow puts the hold on again. Answers whether the posture holds the lapse.
+func (self *deviceLocalForwarding) markLapsed() bool {
+	beforeHold, statusChanged := func() (func(), func()) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lapsed = true
+		return self.testingBeforeLapseHold, self.statusChanged
+	}()
+	if beforeHold != nil {
+		beforeHold()
 	}
-	self.sink.applyFork()
-	if statusChanged != nil {
+	held := func() bool {
+		if self.host == nil || self.host.owner == nil {
+			return true
+		}
+		decision := self.host.owner.roleDecision(self.networkId)
+		return decision.State == sidecardevice.PostureLegacy || decision.Fork
+	}
+	if !held() {
+		err := self.sink.applyFork()
+		if !held() {
+			self.log.Infof("[forward]%s the posture did not take the lapse's hold: %v\n", self.networkId, err)
+			return false
+		}
+	}
+	shown := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		shown := self.lapseShown
+		self.lapseShown = true
+		return shown
+	}()
+	if !shown && statusChanged != nil {
 		statusChanged()
 	}
+	return true
 }
 
 // §6.8's long-poll on F: each team hint's position, and a resync or a gap as a hint naming none, to the Forwarder.
@@ -940,10 +1020,17 @@ func (self *deviceLocalForwarding) checkPromotion() bool {
 	return promoted
 }
 
-// What the role shows.
+// What the role shows. The Forwarder's alarms are read before the lapse shown, and the lapse before the posture, so a
+// status carrying forward_client_lapsed shows the lapse, and one showing the lapse finds the posture holding it
+// (markLapsed).
 func (self *deviceLocalForwarding) status() deviceForwardingStatus {
+	forwarder := self.currentForwarder()
+	var forwarderStatus sidecar.ForwarderStatus
+	if forwarder != nil {
+		forwarderStatus = forwarder.Status()
+	}
 	self.stateLock.Lock()
-	forwarder, lapsed, expiresAt, headAlarm := self.forwarder, self.lapsed, self.expiresAt, self.headAlarm
+	lapsed, expiresAt, headAlarm := self.lapseShown, self.expiresAt, self.headAlarm
 	self.stateLock.Unlock()
 	status := deviceForwardingStatus{
 		NetworkId:              self.networkId,
@@ -968,7 +1055,6 @@ func (self *deviceLocalForwarding) status() deviceForwardingStatus {
 		status.KeySet = deviceForwardKeySetActive
 	}
 	if forwarder != nil {
-		forwarderStatus := forwarder.Status()
 		status.TipN = forwarderStatus.Tip.GetVersion()
 		status.CompiledN = forwarderStatus.CompiledPin.GetVersion()
 		status.CompileCount = forwarderStatus.CompileCount
@@ -1048,20 +1134,18 @@ func (self *deviceForwardSink) onRole(build bool, call func(bridge deviceBridgeO
 	return owner.onRole(self.role.networkId, build, call)
 }
 
-// legacy -> pending, building the role's bridge, which takes the fork hold at once where one stands (a lapsed F).
+// legacy -> pending, building the role's bridge, which takes the fork hold where one stands (a lapsed F) in the same
+// call, so no decision shows the anchor without the hold.
 func (self *deviceForwardSink) SetPending(pending *bridge.Pending) error {
-	if err := self.onRole(true, func(bridge deviceBridgeOwned) error {
-		return bridge.SetPending(pending)
-	}); err != nil {
-		return err
-	}
-	self.role.stateLock.Lock()
-	hold := self.role.witnessFork || self.role.lapsed
-	self.role.stateLock.Unlock()
-	if hold {
-		return self.applyFork()
-	}
-	return nil
+	return self.onRole(true, func(bridge deviceBridgeOwned) error {
+		if err := bridge.SetPending(pending); err != nil {
+			return err
+		}
+		if !self.role.forkHold() {
+			return nil
+		}
+		return bridge.SetFork(true)
+	})
 }
 
 // A compiled state with its log run; a promotion is looked for after it.
@@ -1104,14 +1188,27 @@ func (self *deviceForwardSink) SetFork(fork bool) error {
 	return self.applyFork()
 }
 
-// Puts the fork hold on the posture: a witness's fork or a lapsed F.
+// Puts the fork hold on the posture: a witness's fork or a lapsed F. The hold is read inside the owner's call, under the
+// lock that orders every write to the posture, so of two calls at once, a witness clearing its fork while F lapses,
+// the later write carries both changes, and a hold read before a change is never written after it.
 func (self *deviceForwardSink) applyFork() error {
-	self.role.stateLock.Lock()
-	hold := self.role.witnessFork || self.role.lapsed
-	self.role.stateLock.Unlock()
 	return self.onRole(false, func(bridge deviceBridgeOwned) error {
+		hold := self.role.forkHold()
+		self.role.stateLock.Lock()
+		beforeWrite := self.role.testingBeforeForkWrite
+		self.role.stateLock.Unlock()
+		if beforeWrite != nil {
+			beforeWrite()
+		}
 		return bridge.SetFork(hold)
 	})
+}
+
+// The fork hold: the app's sidecar role reported a fork, or F lapsed.
+func (self *deviceLocalForwarding) forkHold() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.witnessFork || self.lapsed
 }
 
 // The posture's decision at the clock's now, as the Forwarder reads it at each alarm time (DESIGN-DETAILS 4.2.5): the

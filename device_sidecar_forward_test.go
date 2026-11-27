@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -17,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -828,6 +830,301 @@ func TestForwardClientLapsesUnrefreshed(t *testing.T) {
 	}
 	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
 		t.Errorf("a lapsed role's decision %+v", decision)
+	}
+}
+
+// A role handed F's token, issued at start for lifetime s, its Forwarder started, on the desktop class's Forwarder
+// settings as adjust leaves them and with the hooks hooks sets, either nil for none.
+func testingForwardLapseRole(
+	t *testing.T,
+	forward *testingForwardDevice,
+	start time.Time,
+	lifetime int64,
+	adjust func(settings *deviceForwardingSettings),
+	hooks func(deps *deviceForwardingDeps),
+) (*DeviceLocal, *deviceLocalForwarding) {
+	t.Helper()
+	device := forward.device(t, func(settings *DeviceLocalSettings) {
+		forwardingSettings := defaultDeviceForwardingSettings()
+		forwardingSettings.Forwarder = sidecar.DefaultForwarderSettings(sidecar.ForwarderHostDesktop)
+		if adjust != nil {
+			adjust(forwardingSettings)
+		}
+		settings.forwardingSettings = forwardingSettings
+		forwardingDeps := settings.testingForwardingDeps
+		settings.testingForwardingDeps = func(deps *deviceForwardingDeps) {
+			forwardingDeps(deps)
+			if hooks != nil {
+				hooks(deps)
+			}
+		}
+	})
+	networkId := forward.role.vectors.networkId()
+	keys, err := device.forwardingHost().keys(networkId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handOff := forward.identity.handOff(t, keys, forward.pending(), nil)
+	handOff.ForwardClientJwt = testingForwardJwt(t, start.Unix(), lifetime)
+	if err := device.forwardingHost().handOff(handOff); err != nil {
+		t.Fatal(err)
+	}
+	testingForwardStarted(t, device, networkId)
+	role, _ := device.forwardingHost().role(networkId, false)
+	return device, role
+}
+
+// The first status a listener is told that shows the role's network as fits answers, within the test's bound.
+func testingForwardStatusWhere(t *testing.T, changed chan *BridgeStatus, fits func(network *BridgeNetworkStatus) bool, what string) *BridgeNetworkStatus {
+	t.Helper()
+	deadline := time.After(testSidecarTimeout)
+	for {
+		select {
+		case status := <-changed:
+			if status.Networks != nil && status.Networks.Len() == 1 && fits(status.Networks.Get(0)) {
+				return status.Networks.Get(0)
+			}
+		case <-deadline:
+			t.Fatalf("no status %s", what)
+			return nil
+		}
+	}
+}
+
+// A refresh failing past F's exp lapses the role, which shows the lapse only once the posture holds it: held between
+// the refresh's failure and the posture's hold, the role already refuses to sign, its posture serves as it did, and no
+// status shows the lapse, the role's, the device's or one a listener is told; let go, the status that first shows the
+// lapse finds the posture pending on the fork hold (tip-check at sidecar 901a06b7 read the decision of a status that
+// showed it, the hold not yet on).
+func TestForwardLapseShowsOnlyOnceThePostureHoldsIt(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	atHold := make(chan struct{})
+	releaseHold := make(chan struct{})
+	atHoldOnce := &sync.Once{}
+	lifetime := int64(7 * 24 * 60 * 60)
+	device, role := testingForwardLapseRole(t, forward, start, lifetime, func(settings *deviceForwardingSettings) {
+		// the Forwarder follows at its start alone, so the refresh is what finds the lapse
+		settings.Forwarder.FollowInterval = 1000 * time.Hour
+		settings.Forwarder.FollowRetryInterval = 1000 * time.Hour
+	}, func(deps *deviceForwardingDeps) {
+		deps.testingBeforeLapseHold = func() {
+			atHoldOnce.Do(func() {
+				close(atHold)
+			})
+			<-releaseHold
+		}
+	})
+	changed := make(chan *BridgeStatus, 64)
+	sub := device.AddBridgeStatusChangeListener(&testingBridgeStatusListener{changed: changed})
+	defer sub.Close()
+
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh := transport.next(t)
+	clock.Advance(time.Duration(lifetime) * time.Second)
+	refresh.answer <- ""
+	select {
+	case <-atHold:
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("the refresh that failed past the exp lapsed nothing")
+	}
+	if decision := role.sink.Decision(); decision.Fork {
+		t.Fatalf("the posture held the lapse before its hold was put on: %+v", decision)
+	}
+	if role.status().Lapsed {
+		t.Error("the role shows the lapse while its posture does not hold it")
+	}
+	if network := device.GetBridgeStatus().Networks.Get(0); network.Lapsed {
+		t.Error("the device's status shows the lapse while the posture does not hold it")
+	}
+	if _, err := role.signWindowDelegation(context.Background(), &bridge.WindowDelegation{}); !errors.Is(err, errDeviceForwardLinkLapsed) {
+		t.Errorf("the lapsed role signed for a link: %v", err)
+	}
+	// every status a listener is told while the hold waits was read while it waits
+	device.notifyBridgeStatus()
+	testingForwardStatusWhere(t, changed, func(network *BridgeNetworkStatus) bool {
+		if network.Lapsed {
+			t.Error("a listener was told of the lapse while the posture did not hold it")
+		}
+		return true
+	}, "came while the hold waited")
+	for drained := false; !drained; {
+		select {
+		case status := <-changed:
+			if status.Networks != nil && status.Networks.Len() == 1 && status.Networks.Get(0).Lapsed {
+				t.Error("a listener was told of the lapse while the posture did not hold it")
+			}
+		default:
+			drained = true
+		}
+	}
+
+	close(releaseHold)
+	testingForwardStatusWhere(t, changed, func(network *BridgeNetworkStatus) bool {
+		return network.Lapsed
+	}, "carried the lapse")
+	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
+		t.Errorf("the status showed the lapse with the posture's decision %+v", decision)
+	}
+}
+
+// A follow finding F past its exp, no refresh in flight, lapses the role, the posture taking the hold before the
+// Forwarder raises forward_client_lapsed: the status that first carries the alarm shows the lapse, and the posture is
+// pending on the fork hold, though no refresh failed (the Forwarder raised the alarm by the clock alone, while the
+// posture served on until a refresh failed).
+func TestForwardFollowFindingFLapsedHoldsBeforeTheAlarm(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	lifetime := int64(7 * 24 * 60 * 60)
+	device, role := testingForwardLapseRole(t, forward, start, lifetime, func(settings *deviceForwardingSettings) {
+		// F's refresh point past its exp, so no refresh is in flight or has failed when a follow finds F lapsed
+		settings.RefreshWindowStart, settings.RefreshWindowEnd = 2, 2
+	}, nil)
+	changed := make(chan *BridgeStatus, 64)
+	sub := device.AddBridgeStatusChangeListener(&testingBridgeStatusListener{changed: changed})
+	defer sub.Close()
+
+	clock.Advance(time.Duration(lifetime) * time.Second * 3 / 2)
+	network := testingForwardStatusWhere(t, changed, func(network *BridgeNetworkStatus) bool {
+		return network.Alarms != nil && network.Alarms.Contains(sidecar.ForwarderAlarmForwardClientLapsed)
+	}, "carried forward_client_lapsed")
+	if !network.Lapsed {
+		t.Error("a status carried forward_client_lapsed without the lapse")
+	}
+	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
+		t.Errorf("forward_client_lapsed was raised with the posture's decision %+v", decision)
+	}
+	select {
+	case refresh := <-transport.requests:
+		t.Errorf("a refresh was asked at %v", refresh.request.URL)
+	default:
+	}
+}
+
+// A follow that fails past F's exp while a refresh is in flight leaves the lapse to the refresh: api, its clock behind
+// this device's, takes it, F holds the new token, and the role never lapsed nor raised forward_client_lapsed.
+func TestForwardFollowDuringARefreshLeavesTheLapseToIt(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	lifetime := int64(7 * 24 * 60 * 60)
+	device, role := testingForwardLapseRole(t, forward, start, lifetime, nil, nil)
+
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh := transport.next(t)
+	// this device's clock passes the exp while the refresh waits
+	clock.Advance(time.Duration(lifetime)*time.Second/2 + time.Minute)
+	// a witness follows, and fails, before it returns
+	if err := device.forwardingHost().witness(role.networkId, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if status := role.status(); status.Lapsed || slices.Contains(status.Alarms, sidecar.ForwarderAlarmForwardClientLapsed) {
+		t.Errorf("a follow lapsed the role while its refresh was in flight: %+v", status)
+	}
+	if decision := role.sink.Decision(); decision.Fork {
+		t.Errorf("a follow put the lapse's hold on while the refresh was in flight: %+v", decision)
+	}
+	renewed := testingForwardJwt(t, clock.Now().Unix(), lifetime)
+	refresh.answer <- renewed
+
+	// the next refresh presents the new token, which the refresh kept as F's, and the role stands unlapsed
+	clock.Advance(time.Duration(lifetime) * time.Second / 2)
+	refresh = transport.next(t)
+	if bearer := refresh.request.Header.Get("Authorization"); bearer != "Bearer "+renewed {
+		t.Errorf("the next refresh presented %q", bearer)
+	}
+	if err := device.forwardingHost().witness(role.networkId, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if status := role.status(); status.Lapsed || slices.Contains(status.Alarms, sidecar.ForwarderAlarmForwardClientLapsed) {
+		t.Errorf("the renewed role lapsed: %+v", status)
+	}
+	refresh.answer <- testingForwardJwt(t, clock.Now().Unix(), lifetime)
+}
+
+// A witness clearing its fork while F lapses leaves the posture holding the lapse: the fork hold is read under the lock
+// that orders the posture's writes, so the witness's write, its hold read before the lapse, comes before the lapse's
+// own and never after it (the hold was read before that lock, so a lapse put on between the read and the write was
+// written over).
+func TestForwardForkHoldReadUnderThePostureWrite(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	atWrite := make(chan struct{}, 1)
+	releaseWrite := make(chan struct{})
+	armed := &atomic.Bool{}
+	device, role := testingForwardLapseRole(t, forward, time.Now(), int64(7*24*60*60), nil, func(deps *deviceForwardingDeps) {
+		deps.testingBeforeForkWrite = func() {
+			if armed.CompareAndSwap(true, false) {
+				atWrite <- struct{}{}
+				<-releaseWrite
+			}
+		}
+	})
+	// nothing of the role calls the posture meanwhile
+	role.stop()
+	// a fork the app's sidecar role reported stands
+	if err := role.sink.SetFork(true); err != nil {
+		t.Fatal(err)
+	}
+	armed.Store(true)
+	cleared := make(chan error, 1)
+	go func() {
+		cleared <- role.sink.SetFork(false)
+	}()
+	select {
+	case <-atWrite:
+	case <-time.After(testSidecarTimeout):
+		t.Fatal("the witness's write never came")
+	}
+	if device.bridgeOwner.operationLock.TryLock() {
+		device.bridgeOwner.operationLock.Unlock()
+		t.Error("the fork hold was read outside the lock that orders the posture's writes")
+	}
+	held := make(chan bool, 1)
+	go func() {
+		held <- role.markLapsed()
+	}()
+	close(releaseWrite)
+	for _, wait := range []func() bool{
+		func() bool {
+			select {
+			case err := <-cleared:
+				if err != nil {
+					t.Errorf("the witness's write: %v", err)
+				}
+				return true
+			case <-time.After(testSidecarTimeout):
+				return false
+			}
+		},
+		func() bool {
+			select {
+			case ok := <-held:
+				if !ok {
+					t.Error("the posture did not take the lapse")
+				}
+				return true
+			case <-time.After(testSidecarTimeout):
+				return false
+			}
+		},
+	} {
+		if !wait() {
+			t.Fatal("a write of the fork hold never returned")
+		}
+	}
+	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
+		t.Errorf("the witness's write lost the lapse's hold: %+v", decision)
+	}
+	if !role.status().Lapsed {
+		t.Error("the held lapse is not shown")
 	}
 }
 
