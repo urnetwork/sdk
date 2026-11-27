@@ -30,11 +30,14 @@ var testComputeSdkFiles = []string{
 // with no error, and the wrappers come back made, never nil, on both a bare and a running Sidecar.
 func TestComputeAccessorsAnswerNotBuiltUntilFilled(t *testing.T) {
 	running := newTestSidecarWorld(t).open(t)
+	// the Harness is HARN-M11-10's, built: a bare Sidecar has no core to run one, a running one its own
+	if harness, err := (&Sidecar{}).NewHarness("{}"); harness != nil || !errors.Is(err, errSidecarHarnessNoCore) {
+		t.Errorf("a bare Sidecar's NewHarness: %v, %v", harness, err)
+	}
+	if harness, err := running.NewHarness("{}"); harness == nil || err != nil {
+		t.Errorf("a running Sidecar's NewHarness: %v, %v", harness, err)
+	}
 	for _, sidecar := range []*Sidecar{{}, running} {
-		harness, err := sidecar.NewHarness("{}")
-		if harness != nil || !errors.Is(err, ErrSidecarComputeNotBuilt) {
-			t.Errorf("NewHarness: %v, %v", harness, err)
-		}
 		session, err := sidecar.OpenSsh("laptop.ur.example", "agent", 80, 24, nil)
 		if session != nil || !errors.Is(err, ErrSidecarComputeNotBuilt) {
 			t.Errorf("OpenSsh: %v, %v", session, err)
