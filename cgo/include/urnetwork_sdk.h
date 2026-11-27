@@ -430,6 +430,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_SEED_SOURCE_IMPORT "import"
 #define URNET_EXTENDER_SEED_SOURCE_MIRROR "mirror"
 #define URNET_EXTENDER_SEED_SOURCE_STORE "store"
+#define URNET_GOOGLE_SIGN_IN_FAILURE_SOURCE_ANDROID "android"
+#define URNET_GOOGLE_SIGN_IN_FAILURE_SOURCE_APPLE "apple"
 #define URNET_IP_FAMILY_DUALSTACK "dualstack"
 #define URNET_IP_FAMILY_FILTER_V4_CAPABLE "v4-capable"
 #define URNET_IP_FAMILY_FILTER_V6_CAPABLE "v6-capable"
@@ -2888,6 +2890,7 @@ char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);
 char* urnet_get_regional_dns_servers(void);
 int64_t urnet_get_tunnel_local_prefix_length_ipv6(void);
+char* urnet_google_sign_in_failure_message(const char* source, const char* domain, int64_t code, const char* message);
 char* urnet_gossip_url(const char* key_json, const char* values_json);
 bool urnet_has_regional_dns_recommendation(const char* country_code);
 char* urnet_host_base_name(const char* host);
@@ -2903,6 +2906,7 @@ bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_sandbox_purchase_refusal(const char* result_json);
 bool urnet_is_valid_payment_reference(const char* s);
 void urnet_log_app_info(const char* tag, const char* message);
+void urnet_log_google_sign_in_failure(const char* source, const char* domain, int64_t code);
 char* urnet_log_inventory(void);
 char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);

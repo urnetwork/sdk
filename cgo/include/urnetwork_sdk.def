@@ -962,6 +962,7 @@ EXPORTS
 	urnet_get_recommended_dns_resolver_settings
 	urnet_get_regional_dns_servers
 	urnet_get_tunnel_local_prefix_length_ipv6
+	urnet_google_sign_in_failure_message
 	urnet_gossip_url
 	urnet_has_regional_dns_recommendation
 	urnet_host_base_name
@@ -1078,6 +1079,7 @@ EXPORTS
 	urnet_locations_view_controller_start
 	urnet_locations_view_controller_stop
 	urnet_log_app_info
+	urnet_log_google_sign_in_failure
 	urnet_log_inventory
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start

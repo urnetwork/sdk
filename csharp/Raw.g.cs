@@ -1641,6 +1641,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_recommended_dns_resolver_settings([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_regional_dns_servers();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_get_tunnel_local_prefix_length_ipv6();
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_google_sign_in_failure_message([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_gossip_url([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_has_regional_dns_recommendation([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_host_base_name([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
@@ -1656,6 +1657,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_is_sandbox_purchase_refusal([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_is_valid_payment_reference([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_log_app_info([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_log_google_sign_in_failure([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_log_inventory();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_memory_classes_json_for_diag();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern double urnet_monthly_equivalent_amount(double a0, long a1);

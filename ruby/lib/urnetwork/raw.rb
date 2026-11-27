@@ -1640,6 +1640,7 @@ module URnetwork
       attach_function :urnet_get_recommended_dns_resolver_settings, [:string], :pointer, blocking: true
       attach_function :urnet_get_regional_dns_servers, [], :pointer, blocking: true
       attach_function :urnet_get_tunnel_local_prefix_length_ipv6, [], :int64, blocking: true
+      attach_function :urnet_google_sign_in_failure_message, [:string, :string, :int64, :string], :pointer, blocking: true
       attach_function :urnet_gossip_url, [:string, :string], :pointer, blocking: true
       attach_function :urnet_has_regional_dns_recommendation, [:string], :bool, blocking: true
       attach_function :urnet_host_base_name, [:string], :pointer, blocking: true
@@ -1655,6 +1656,7 @@ module URnetwork
       attach_function :urnet_is_sandbox_purchase_refusal, [:string], :bool, blocking: true
       attach_function :urnet_is_valid_payment_reference, [:string], :bool, blocking: true
       attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
+      attach_function :urnet_log_google_sign_in_failure, [:string, :string, :int64], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true
       attach_function :urnet_memory_classes_json_for_diag, [], :pointer, blocking: true
       attach_function :urnet_monthly_equivalent_amount, [:double, :int64], :double, blocking: true

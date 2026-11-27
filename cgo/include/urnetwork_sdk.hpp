@@ -481,6 +481,8 @@ inline constexpr const char* ExtenderSeedSourceEmbedded = "embedded";
 inline constexpr const char* ExtenderSeedSourceImport = "import";
 inline constexpr const char* ExtenderSeedSourceMirror = "mirror";
 inline constexpr const char* ExtenderSeedSourceStore = "store";
+inline constexpr const char* GoogleSignInFailureSourceAndroid = "android";
+inline constexpr const char* GoogleSignInFailureSourceApple = "apple";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
 inline constexpr const char* IpFamilyFilterV4Capable = "v4-capable";
 inline constexpr const char* IpFamilyFilterV6Capable = "v6-capable";
@@ -41147,6 +41149,10 @@ inline int64_t getTunnelLocalPrefixLengthIpv6() {
 	int64_t r = urnet_get_tunnel_local_prefix_length_ipv6();
 	return r;
 }
+inline std::string googleSignInFailureMessage(const std::string& source, const std::string& domain, int64_t code, const std::string& message) {
+	char* r_c = urnet_google_sign_in_failure_message(source.c_str(), domain.c_str(), code, message.c_str());
+	return detail::takeString(r_c);
+}
 inline std::string gossipUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -41239,6 +41245,9 @@ inline bool isValidPaymentReference(const std::string& s) {
 }
 inline void logAppInfo(const std::string& tag, const std::string& message) {
 	urnet_log_app_info(tag.c_str(), message.c_str());
+}
+inline void logGoogleSignInFailure(const std::string& source, const std::string& domain, int64_t code) {
+	urnet_log_google_sign_in_failure(source.c_str(), domain.c_str(), code);
 }
 inline std::optional<LogFileInfoList> logInventory() {
 	char* r_c = urnet_log_inventory();
