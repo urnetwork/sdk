@@ -246,6 +246,9 @@ type syntheticMemoryEnvironment struct {
 	bridge    *syntheticTunnelBridge
 	peer      *providerLoadPeer
 	packetSub Sub
+	// the compact route's multi client once the window formed, whose refusal
+	// counters the traffic assertion reconciles
+	multi *connect.RemoteUserNatMultiClient
 
 	endpoints       *syntheticEndpointServers
 	providerTcpAddr string
@@ -419,6 +422,12 @@ func newSyntheticMemoryEnvironment(
 		env.Close()
 		t.Fatalf("synthetic window did not retain the provider-probe override: %+v", effective)
 	}
+	multi, ok := device.sendRoute.Load().remoteUserNatClient.(*connect.RemoteUserNatMultiClient)
+	if !ok {
+		env.Close()
+		t.Fatal("synthetic route does not expose multi-client packet accounting")
+	}
+	env.multi = multi
 
 	env.peer = newProviderLoadPeer(t, ctx, device.provider.Client())
 	return env
@@ -601,9 +610,12 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 			self.bridge.receiveBatchCount.Load(),
 		)
 	}
-	// SendPacketBatch refuses policy blocks and redundant TCP packets already
-	// covered by Transfer. The two workloads have no fixed count relationship;
-	// require every refusal to have a measured cause instead of a guessed tail.
+	// SendPacketBatch refuses policy blocks, redundant TCP packets already
+	// covered by Transfer, and the device's answers to a completed flow's late
+	// packets (a reset or re-acknowledgement offered while that flow's ended
+	// generation is still delivering, which takes no new generation). The
+	// workloads have no fixed count relationship; require every refusal to
+	// have a measured cause instead of a guessed tail.
 	clientStats := self.remote.GetPacketStats()
 	rejected := self.bridge.droppedPacketCount.Load()
 	blocked := int64(0)
@@ -614,9 +626,21 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 	if !ok {
 		t.Fatal("synthetic route does not expose multi-client packet accounting")
 	}
+	// The refusal counters belong to one multi client; a destination change
+	// rebuilds it, and the retired one's counts would be lost to the sum.
+	if multi != self.multi {
+		t.Fatal("the compact route's multi client was replaced during the soak, so its refusals cannot be reconciled")
+	}
 	collapsed := int64(multi.TcpCollapseDropCount())
-	t.Logf("compact packet route refusals: rejected=%d blocked=%d collapsed=%d", rejected, blocked, collapsed)
-	if err := syntheticPacketRejectionError(rejected, blocked, collapsed); err != nil {
+	generation := int64(multi.FlowGenerationDropCount())
+	t.Logf(
+		"compact packet route refusals: rejected=%d blocked=%d collapsed=%d generation=%d",
+		rejected,
+		blocked,
+		collapsed,
+		generation,
+	)
+	if err := syntheticPacketRejectionError(rejected, blocked, collapsed, generation); err != nil {
 		t.Error(err)
 	}
 	for _, port := range []int{80, 443, 465, 587} {
@@ -671,14 +695,17 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 	)
 }
 
-// Reconciles the compact ABI's refusal count against intentional route outcomes.
-func syntheticPacketRejectionError(rejected int64, blocked int64, collapsed int64) error {
-	if rejected != blocked+collapsed {
+// Reconciles the compact ABI's refusal count against intentional route
+// outcomes: policy blocks, TCP collapse, and packets whose tuple could take no
+// flow generation.
+func syntheticPacketRejectionError(rejected int64, blocked int64, collapsed int64, generation int64) error {
+	if rejected != blocked+collapsed+generation {
 		return fmt.Errorf(
-			"compact packet route rejections are unexplained: rejected=%d blocked=%d collapsed=%d",
+			"compact packet route rejections are unexplained: rejected=%d blocked=%d collapsed=%d generation=%d",
 			rejected,
 			blocked,
 			collapsed,
+			generation,
 		)
 	}
 	return nil
