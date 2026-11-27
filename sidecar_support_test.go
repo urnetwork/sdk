@@ -11,14 +11,28 @@ import (
 	"github.com/urnetwork/sidecar"
 )
 
+// Waits until local's ring writes to disk, which it begins only once local's instance has opened (sidecar_support.go):
+// a Sidecar closed before then leaves nothing of its ring on disk, by design.
+func awaitTestSupportLogWriting(t *testing.T, local *Sidecar) {
+	t.Helper()
+	select {
+	case <-local.supportLog.writing:
+	case <-time.After(testSidecarTimeout):
+		state, _ := local.instance.State()
+		t.Fatalf("the ring did not begin writing in %v: the instance is %s", testSidecarTimeout, state)
+	}
+}
+
 // A local Sidecar keeps the app process's support log under its state directory, recording its start and, once the
-// core has closed, its stop (DESIGN-COMPUTE §28.7).
+// core has closed, its stop (DESIGN-COMPUTE §28.7). The core opens the instance on its own goroutine, so the test waits
+// for the ring to write before it closes: a close that came first would leave neither event on disk.
 func TestSidecarLocalKeepsTheAppsSupportLog(t *testing.T) {
 	world := newTestSidecarWorld(t)
 	local := world.open(t)
 	if local.supportLog == nil {
 		t.Fatal("a local Sidecar with a state directory opened no support log")
 	}
+	awaitTestSupportLogWriting(t, local)
 	world.close(t, local)
 
 	reopened, err := sidecar.OpenSupportLog(&sidecar.SupportLogArgs{
@@ -81,11 +95,7 @@ func TestSidecarSupportLogWaitsForTheInstanceToOpen(t *testing.T) {
 	if err := local.Core().Unlock(nil); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-local.supportLog.writing:
-	case <-time.After(testSidecarTimeout):
-		t.Fatal("the ring never wrote once the instance opened")
-	}
+	awaitTestSupportLogWriting(t, local)
 	if _, err := os.Stat(filepath.Join(sidecar.SupportLogDirectory(world.stateDir), "key")); err != nil {
 		t.Fatal(err)
 	}
@@ -102,4 +112,24 @@ func TestSidecarSupportLogWaitsForTheInstanceToOpen(t *testing.T) {
 	if started != 1 {
 		t.Fatalf("%d app.started once the ring wrote", started)
 	}
+}
+
+// A Sidecar closed before its instance opens writes nothing of its ring, the app's start and stop included
+// (DESIGN-COMPUTE §28.7): the order in which a test that closes without waiting for the ring finds no app.started and
+// no app.stopped on disk. A locked key store holds the instance shut through the close.
+func TestSidecarClosedBeforeItsInstanceOpensWritesNoSupportLog(t *testing.T) {
+	world := newTestSidecarWorld(t)
+	world.keyStore.setMode(testKeyStoreLocked)
+	local := world.open(t)
+	awaitTestSidecarState(t, local, sidecar.SidecarStateLocked, "")
+	if local.supportLog == nil {
+		t.Fatal("a local Sidecar with a state directory holds no support log")
+	}
+	world.close(t, local)
+	select {
+	case <-local.supportLog.writing:
+		t.Fatal("the ring wrote for an instance that never opened")
+	default:
+	}
+	world.requireNothingCreated(t)
 }
