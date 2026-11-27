@@ -1247,6 +1247,27 @@ bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data
 	return cb(user_data, device, proxy_config_result_json);
 }
 
+void urnet_invoke_sidecar_agents_on_agents_changed(urnet_sidecar_agents_on_agents_changed_cb cb, void* user_data) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data);
+}
+
+void urnet_invoke_sidecar_agents_on_notification(urnet_sidecar_agents_on_notification_cb cb, void* user_data, const char* notification_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, notification_json);
+}
+
+void urnet_invoke_sidecar_agents_on_thread_message(urnet_sidecar_agents_on_thread_message_cb cb, void* user_data, const char* message_json) {
+	if (cb == 0) {
+		return;
+	}
+	cb(user_data, message_json);
+}
+
 void urnet_invoke_sidecar_approval(urnet_sidecar_approval_cb cb, void* user_data, const char* pending_json) {
 	if (cb == 0) {
 		return;

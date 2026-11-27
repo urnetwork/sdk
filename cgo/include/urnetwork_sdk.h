@@ -1184,6 +1184,10 @@ typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_j
 typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetupNewDeviceCallback */
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
+/* SidecarAgentsListener */
+typedef void (*urnet_sidecar_agents_on_agents_changed_cb)(void* user_data);
+typedef void (*urnet_sidecar_agents_on_notification_cb)(void* user_data, const char* notification_json);
+typedef void (*urnet_sidecar_agents_on_thread_message_cb)(void* user_data, const char* message_json);
 /* SidecarApprovalListener */
 typedef void (*urnet_sidecar_approval_cb)(void* user_data, const char* pending_json);
 /* SidecarBurnerCallback */
@@ -2717,6 +2721,15 @@ void urnet_sidecar_sign_edge_login(uint64_t self, const char* origin, const char
 uint64_t urnet_sidecar_support(uint64_t self);
 char* urnet_sidecar_turn_on_auth_feature(uint64_t self, const char* name, char** out_error);
 void urnet_sidecar_unlock(uint64_t self, const char* passphrase, urnet_sidecar_result_cb callback_result, void* callback_user_data);
+
+/* ----- SidecarAgents ----- */
+
+uint64_t urnet_sidecar_agents_add_listener(uint64_t self, urnet_sidecar_agents_on_agents_changed_cb listener_on_agents_changed, urnet_sidecar_agents_on_notification_cb listener_on_notification, urnet_sidecar_agents_on_thread_message_cb listener_on_thread_message, void* listener_user_data, char** out_error);
+char* urnet_sidecar_agents_broadcast(uint64_t self, const char* request_json, char** out_error);
+char* urnet_sidecar_agents_graph(uint64_t self, const char* request_json, char** out_error);
+char* urnet_sidecar_agents_inbox(uint64_t self, const char* request_json, char** out_error);
+char* urnet_sidecar_agents_list(uint64_t self, char** out_error);
+char* urnet_sidecar_agents_send(uint64_t self, const char* request_json, char** out_error);
 
 /* ----- SidecarApprovals ----- */
 

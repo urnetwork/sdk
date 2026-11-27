@@ -361,6 +361,12 @@ typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const ch
 void urnet_invoke_set_points_leaderboard_public(urnet_set_points_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
 bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data, uint64_t device, const char* proxy_config_result_json);
+typedef void (*urnet_sidecar_agents_on_agents_changed_cb)(void* user_data);
+void urnet_invoke_sidecar_agents_on_agents_changed(urnet_sidecar_agents_on_agents_changed_cb cb, void* user_data);
+typedef void (*urnet_sidecar_agents_on_notification_cb)(void* user_data, const char* notification_json);
+void urnet_invoke_sidecar_agents_on_notification(urnet_sidecar_agents_on_notification_cb cb, void* user_data, const char* notification_json);
+typedef void (*urnet_sidecar_agents_on_thread_message_cb)(void* user_data, const char* message_json);
+void urnet_invoke_sidecar_agents_on_thread_message(urnet_sidecar_agents_on_thread_message_cb cb, void* user_data, const char* message_json);
 typedef void (*urnet_sidecar_approval_cb)(void* user_data, const char* pending_json);
 void urnet_invoke_sidecar_approval(urnet_sidecar_approval_cb cb, void* user_data, const char* pending_json);
 typedef void (*urnet_sidecar_burner_cb)(void* user_data, const char* result_json, const char* err_param);

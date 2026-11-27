@@ -179,6 +179,9 @@ module URnetwork
       callback :urnet_set_payout_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_set_points_leaderboard_public_cb, [:pointer, :string, :string], :void
       callback :urnet_setup_new_device_cb, [:pointer, :uint64, :string], :bool
+      callback :urnet_sidecar_agents_on_agents_changed_cb, [:pointer], :void
+      callback :urnet_sidecar_agents_on_notification_cb, [:pointer, :string], :void
+      callback :urnet_sidecar_agents_on_thread_message_cb, [:pointer, :string], :void
       callback :urnet_sidecar_approval_cb, [:pointer, :string], :void
       callback :urnet_sidecar_burner_cb, [:pointer, :string, :string], :void
       callback :urnet_sidecar_bytes_cb, [:pointer, :string, :string], :void
@@ -1477,6 +1480,12 @@ module URnetwork
       attach_function :urnet_sidecar_support, [:uint64], :uint64, blocking: true
       attach_function :urnet_sidecar_turn_on_auth_feature, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_unlock, [:uint64, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
+      attach_function :urnet_sidecar_agents_add_listener, [:uint64, :urnet_sidecar_agents_on_agents_changed_cb, :urnet_sidecar_agents_on_notification_cb, :urnet_sidecar_agents_on_thread_message_cb, :pointer, :pointer], :uint64, blocking: true
+      attach_function :urnet_sidecar_agents_broadcast, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_agents_graph, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_agents_inbox, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_agents_list, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_agents_send, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_approvals_add_pending_listener, [:uint64, :urnet_sidecar_approval_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_sidecar_approvals_decide, [:uint64, :string, :string, :urnet_sidecar_result_cb, :pointer], :void, blocking: true
       attach_function :urnet_sidecar_approvals_get_devices, [:uint64], :pointer, blocking: true

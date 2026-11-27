@@ -25902,6 +25902,11 @@ using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkRe
 using SetPayoutWalletCallback = std::function<void(std::optional<SetPayoutWalletResult> result, std::optional<std::string> err_param)>;
 using SetPointsLeaderboardPublicCallback = std::function<void(std::optional<SetPointsLeaderboardPublicResult> result, std::optional<std::string> err_param)>;
 using SetupNewDeviceCallback = std::function<bool(Device device, std::optional<ProxyConfigResult> proxy_config_result)>;
+struct SidecarAgentsListener {
+	std::function<void()> on_agents_changed;
+	std::function<void(std::string notification_json)> on_notification;
+	std::function<void(std::string message_json)> on_thread_message;
+};
 using SidecarApprovalListener = std::function<void(std::optional<SidecarApprovalList> pending)>;
 using SidecarBurnerCallback = std::function<void(std::optional<SidecarBurner> result, std::optional<std::string> err_param)>;
 using SidecarBytesCallback = std::function<void(std::optional<SidecarBytes> result, std::optional<std::string> err_param)>;
@@ -27592,6 +27597,12 @@ class SidecarAgents final : public detail::Handle {
 public:
 	SidecarAgents() = default;
 	explicit SidecarAgents(uint64_t h) : detail::Handle(h) {}
+	Sub addListener(SidecarAgentsListener listener) const;
+	std::string broadcast(const std::string& request_json) const;
+	std::string graph(const std::string& request_json) const;
+	std::string inbox(const std::string& request_json) const;
+	std::string list() const;
+	std::string send(const std::string& request_json) const;
 };
 
 class SidecarApprovals final : public detail::Handle {
@@ -32852,6 +32863,40 @@ inline bool oneshot_setup_new_device(void* user_data, uint64_t device, const cha
 	}
 	delete f;
 	return r;
+}
+
+inline void retained_sidecar_agents_on_agents_changed(void* user_data) {
+	auto* f = static_cast<SidecarAgentsListener*>(user_data);
+	try {
+		if (f->on_agents_changed) {
+			f->on_agents_changed();
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void retained_sidecar_agents_on_notification(void* user_data, const char* notification_json) {
+	auto* f = static_cast<SidecarAgentsListener*>(user_data);
+	try {
+		if (f->on_notification) {
+			f->on_notification(std::string(notification_json ? notification_json : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void retained_sidecar_agents_on_thread_message(void* user_data, const char* message_json) {
+	auto* f = static_cast<SidecarAgentsListener*>(user_data);
+	try {
+		if (f->on_thread_message) {
+			f->on_thread_message(std::string(message_json ? message_json : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
 }
 
 inline void retained_sidecar_approval(void* user_data, const char* pending_json) {
@@ -43154,6 +43199,61 @@ inline std::optional<SidecarAuthFeature> Sidecar::turnOnAuthFeature(const std::s
 inline void Sidecar::unlock(const std::string& passphrase, SidecarResultCallback callback) const {
 	auto* callback_fn = callback ? new SidecarResultCallback(std::move(callback)) : nullptr;
 	urnet_sidecar_unlock(handle(), passphrase.c_str(), callback_fn ? &detail::oneshot_sidecar_result : nullptr, callback_fn);
+}
+inline Sub SidecarAgents::addListener(SidecarAgentsListener listener) const {
+	std::shared_ptr<SidecarAgentsListener> listener_fn;
+	if ((static_cast<bool>(listener.on_agents_changed) || static_cast<bool>(listener.on_notification) || static_cast<bool>(listener.on_thread_message))) {
+		listener_fn = std::make_shared<SidecarAgentsListener>(std::move(listener));
+	}
+	char* err_c = nullptr;
+	Sub r(urnet_sidecar_agents_add_listener(handle(), listener_fn ? &detail::retained_sidecar_agents_on_agents_changed : nullptr, listener_fn ? &detail::retained_sidecar_agents_on_notification : nullptr, listener_fn ? &detail::retained_sidecar_agents_on_thread_message : nullptr, listener_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::string SidecarAgents::broadcast(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_agents_broadcast(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarAgents::graph(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_agents_graph(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarAgents::inbox(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_agents_inbox(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarAgents::list() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_agents_list(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarAgents::send(const std::string& request_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_agents_send(handle(), request_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline Sub SidecarApprovals::addPendingListener(SidecarApprovalListener listener) const {
 	std::shared_ptr<SidecarApprovalListener> listener_fn;

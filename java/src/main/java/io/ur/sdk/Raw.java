@@ -180,6 +180,9 @@ public interface Raw extends Library {
   interface urnet_set_payout_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_set_points_leaderboard_public_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_setup_new_device_cb extends Callback { byte invoke(Pointer a0, long a1, String a2); }
+  interface urnet_sidecar_agents_on_agents_changed_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_sidecar_agents_on_notification_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sidecar_agents_on_thread_message_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_approval_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_sidecar_burner_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sidecar_bytes_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -1478,6 +1481,12 @@ public interface Raw extends Library {
   long urnet_sidecar_support(long a0);
   Pointer urnet_sidecar_turn_on_auth_feature(long a0, String a1, PointerByReference a2);
   void urnet_sidecar_unlock(long a0, String a1, urnet_sidecar_result_cb a2, Pointer a3);
+  long urnet_sidecar_agents_add_listener(long a0, urnet_sidecar_agents_on_agents_changed_cb a1, urnet_sidecar_agents_on_notification_cb a2, urnet_sidecar_agents_on_thread_message_cb a3, Pointer a4, PointerByReference a5);
+  Pointer urnet_sidecar_agents_broadcast(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_agents_graph(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_agents_inbox(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_agents_list(long a0, PointerByReference a1);
+  Pointer urnet_sidecar_agents_send(long a0, String a1, PointerByReference a2);
   long urnet_sidecar_approvals_add_pending_listener(long a0, urnet_sidecar_approval_cb a1, Pointer a2);
   void urnet_sidecar_approvals_decide(long a0, String a1, String a2, urnet_sidecar_result_cb a3, Pointer a4);
   Pointer urnet_sidecar_approvals_get_devices(long a0);

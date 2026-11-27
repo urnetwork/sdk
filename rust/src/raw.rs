@@ -178,6 +178,9 @@ pub type urnet_set_network_referral_cb = Option<unsafe extern "C" fn(*mut c_void
 pub type urnet_set_payout_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_set_points_leaderboard_public_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_setup_new_device_cb = Option<unsafe extern "C" fn(*mut c_void, u64, *const c_char) -> bool>;
+pub type urnet_sidecar_agents_on_agents_changed_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_sidecar_agents_on_notification_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_sidecar_agents_on_thread_message_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_approval_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_sidecar_burner_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sidecar_bytes_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -1478,6 +1481,12 @@ pub struct Raw {
     pub urnet_sidecar_support: unsafe extern "C" fn(u64) -> u64,
     pub urnet_sidecar_turn_on_auth_feature: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_sidecar_unlock: unsafe extern "C" fn(u64, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
+    pub urnet_sidecar_agents_add_listener: unsafe extern "C" fn(u64, urnet_sidecar_agents_on_agents_changed_cb, urnet_sidecar_agents_on_notification_cb, urnet_sidecar_agents_on_thread_message_cb, *mut c_void, *mut *mut c_char) -> u64,
+    pub urnet_sidecar_agents_broadcast: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_sidecar_agents_graph: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_sidecar_agents_inbox: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_sidecar_agents_list: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
+    pub urnet_sidecar_agents_send: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_sidecar_approvals_add_pending_listener: unsafe extern "C" fn(u64, urnet_sidecar_approval_cb, *mut c_void) -> u64,
     pub urnet_sidecar_approvals_decide: unsafe extern "C" fn(u64, *const c_char, *const c_char, urnet_sidecar_result_cb, *mut c_void) -> (),
     pub urnet_sidecar_approvals_get_devices: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -3085,6 +3094,12 @@ impl Raw {
             urnet_sidecar_support: unsafe { *library.get(b"urnet_sidecar_support\0")? },
             urnet_sidecar_turn_on_auth_feature: unsafe { *library.get(b"urnet_sidecar_turn_on_auth_feature\0")? },
             urnet_sidecar_unlock: unsafe { *library.get(b"urnet_sidecar_unlock\0")? },
+            urnet_sidecar_agents_add_listener: unsafe { *library.get(b"urnet_sidecar_agents_add_listener\0")? },
+            urnet_sidecar_agents_broadcast: unsafe { *library.get(b"urnet_sidecar_agents_broadcast\0")? },
+            urnet_sidecar_agents_graph: unsafe { *library.get(b"urnet_sidecar_agents_graph\0")? },
+            urnet_sidecar_agents_inbox: unsafe { *library.get(b"urnet_sidecar_agents_inbox\0")? },
+            urnet_sidecar_agents_list: unsafe { *library.get(b"urnet_sidecar_agents_list\0")? },
+            urnet_sidecar_agents_send: unsafe { *library.get(b"urnet_sidecar_agents_send\0")? },
             urnet_sidecar_approvals_add_pending_listener: unsafe { *library.get(b"urnet_sidecar_approvals_add_pending_listener\0")? },
             urnet_sidecar_approvals_decide: unsafe { *library.get(b"urnet_sidecar_approvals_decide\0")? },
             urnet_sidecar_approvals_get_devices: unsafe { *library.get(b"urnet_sidecar_approvals_get_devices\0")? },
