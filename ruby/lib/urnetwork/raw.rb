@@ -1529,10 +1529,17 @@ module URnetwork
       attach_function :urnet_sidecar_harness_agents, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_harness_close, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_harness_compact, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_continue, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_continue_plan, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_expire_oldest_blobs, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_harness_follow_up, [:uint64, :string, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_harness_new_agent, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_harness_prompt, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_prune, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_prune_plan, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sidecar_harness_respond_ui, [:uint64, :string, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_sidecar_harness_runs, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_sidecar_harness_set_auto_expire, [:uint64, :bool, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_harness_set_foreground, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_sidecar_harness_set_model, [:uint64, :string, :string, :pointer], :bool, blocking: true
       attach_function :urnet_sidecar_harness_steer, [:uint64, :string, :string, :pointer], :bool, blocking: true

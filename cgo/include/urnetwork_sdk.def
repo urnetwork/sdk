@@ -1422,10 +1422,17 @@ EXPORTS
 	urnet_sidecar_harness_agents
 	urnet_sidecar_harness_close
 	urnet_sidecar_harness_compact
+	urnet_sidecar_harness_continue
+	urnet_sidecar_harness_continue_plan
+	urnet_sidecar_harness_expire_oldest_blobs
 	urnet_sidecar_harness_follow_up
 	urnet_sidecar_harness_new_agent
 	urnet_sidecar_harness_prompt
+	urnet_sidecar_harness_prune
+	urnet_sidecar_harness_prune_plan
 	urnet_sidecar_harness_respond_ui
+	urnet_sidecar_harness_runs
+	urnet_sidecar_harness_set_auto_expire
 	urnet_sidecar_harness_set_foreground
 	urnet_sidecar_harness_set_model
 	urnet_sidecar_harness_steer

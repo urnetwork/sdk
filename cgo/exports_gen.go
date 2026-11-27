@@ -23719,6 +23719,51 @@ func urnet_sidecar_harness_compact(self C.uint64_t, agentId *C.char, instruction
 	return C.bool(true)
 }
 
+//export urnet_sidecar_harness_continue
+func urnet_sidecar_harness_continue(self C.uint64_t, specJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_continue")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_continue")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Continue(goString(specJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_continue_plan
+func urnet_sidecar_harness_continue_plan(self C.uint64_t, specJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_continue_plan")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_continue_plan")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ContinuePlan(goString(specJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_expire_oldest_blobs
+func urnet_sidecar_harness_expire_oldest_blobs(self C.uint64_t, capName *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_expire_oldest_blobs")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_expire_oldest_blobs")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.ExpireOldestBlobs(goString(capName))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
 //export urnet_sidecar_harness_follow_up
 func urnet_sidecar_harness_follow_up(self C.uint64_t, agentId *C.char, text *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_sidecar_harness_follow_up")
@@ -23764,6 +23809,36 @@ func urnet_sidecar_harness_prompt(self C.uint64_t, agentId *C.char, text *C.char
 	return C.bool(true)
 }
 
+//export urnet_sidecar_harness_prune
+func urnet_sidecar_harness_prune(self C.uint64_t, specJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_prune")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_prune")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Prune(goString(specJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_prune_plan
+func urnet_sidecar_harness_prune_plan(self C.uint64_t, specJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_prune_plan")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_prune_plan")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.PrunePlan(goString(specJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
 //export urnet_sidecar_harness_respond_ui
 func urnet_sidecar_harness_respond_ui(self C.uint64_t, requestId *C.char, responseJson *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_sidecar_harness_respond_ui")
@@ -23772,6 +23847,36 @@ func urnet_sidecar_harness_respond_ui(self C.uint64_t, requestId *C.char, respon
 		return C.bool(false)
 	}
 	err := self_.RespondUi(goString(requestId), goString(responseJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_sidecar_harness_runs
+func urnet_sidecar_harness_runs(self C.uint64_t, filterJson *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_sidecar_harness_runs")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_runs")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Runs(goString(filterJson))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
+//export urnet_sidecar_harness_set_auto_expire
+func urnet_sidecar_harness_set_auto_expire(self C.uint64_t, on C.bool, outError **C.char) C.bool {
+	defer cgoGuard("urnet_sidecar_harness_set_auto_expire")
+	self_, ok := resolveHandle[*sdk.SidecarHarness](uint64(self), "urnet_sidecar_harness_set_auto_expire")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetAutoExpire(bool(on))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

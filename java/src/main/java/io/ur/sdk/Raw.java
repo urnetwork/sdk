@@ -1530,10 +1530,17 @@ public interface Raw extends Library {
   Pointer urnet_sidecar_harness_agents(long a0, PointerByReference a1);
   byte urnet_sidecar_harness_close(long a0, String a1, PointerByReference a2);
   byte urnet_sidecar_harness_compact(long a0, String a1, String a2, PointerByReference a3);
+  Pointer urnet_sidecar_harness_continue(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_harness_continue_plan(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_harness_expire_oldest_blobs(long a0, String a1, PointerByReference a2);
   byte urnet_sidecar_harness_follow_up(long a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_sidecar_harness_new_agent(long a0, String a1, PointerByReference a2);
   byte urnet_sidecar_harness_prompt(long a0, String a1, String a2, PointerByReference a3);
+  Pointer urnet_sidecar_harness_prune(long a0, String a1, PointerByReference a2);
+  Pointer urnet_sidecar_harness_prune_plan(long a0, String a1, PointerByReference a2);
   byte urnet_sidecar_harness_respond_ui(long a0, String a1, String a2, PointerByReference a3);
+  Pointer urnet_sidecar_harness_runs(long a0, String a1, PointerByReference a2);
+  byte urnet_sidecar_harness_set_auto_expire(long a0, byte a1, PointerByReference a2);
   void urnet_sidecar_harness_set_foreground(long a0, byte a1);
   byte urnet_sidecar_harness_set_model(long a0, String a1, String a2, PointerByReference a3);
   byte urnet_sidecar_harness_steer(long a0, String a1, String a2, PointerByReference a3);

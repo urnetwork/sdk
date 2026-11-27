@@ -2791,10 +2791,17 @@ uint64_t urnet_sidecar_harness_add_listener(uint64_t self, urnet_sidecar_harness
 char* urnet_sidecar_harness_agents(uint64_t self, char** out_error);
 bool urnet_sidecar_harness_close(uint64_t self, const char* agent_id, char** out_error);
 bool urnet_sidecar_harness_compact(uint64_t self, const char* agent_id, const char* instructions, char** out_error);
+char* urnet_sidecar_harness_continue(uint64_t self, const char* spec_json, char** out_error);
+char* urnet_sidecar_harness_continue_plan(uint64_t self, const char* spec_json, char** out_error);
+char* urnet_sidecar_harness_expire_oldest_blobs(uint64_t self, const char* cap_name, char** out_error);
 bool urnet_sidecar_harness_follow_up(uint64_t self, const char* agent_id, const char* text, char** out_error);
 char* urnet_sidecar_harness_new_agent(uint64_t self, const char* spec_json, char** out_error);
 bool urnet_sidecar_harness_prompt(uint64_t self, const char* agent_id, const char* text, char** out_error);
+char* urnet_sidecar_harness_prune(uint64_t self, const char* spec_json, char** out_error);
+char* urnet_sidecar_harness_prune_plan(uint64_t self, const char* spec_json, char** out_error);
 bool urnet_sidecar_harness_respond_ui(uint64_t self, const char* request_id, const char* response_json, char** out_error);
+char* urnet_sidecar_harness_runs(uint64_t self, const char* filter_json, char** out_error);
+bool urnet_sidecar_harness_set_auto_expire(uint64_t self, bool on, char** out_error);
 void urnet_sidecar_harness_set_foreground(uint64_t self, bool foreground);
 bool urnet_sidecar_harness_set_model(uint64_t self, const char* agent_id, const char* model, char** out_error);
 bool urnet_sidecar_harness_steer(uint64_t self, const char* agent_id, const char* text, char** out_error);

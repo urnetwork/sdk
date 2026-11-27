@@ -27706,10 +27706,17 @@ public:
 	std::string agents() const;
 	void close(const std::string& agent_id) const;
 	void compact(const std::string& agent_id, const std::string& instructions) const;
+	std::string continue_(const std::string& spec_json) const;
+	std::string continuePlan(const std::string& spec_json) const;
+	std::string expireOldestBlobs(const std::string& cap_name) const;
 	void followUp(const std::string& agent_id, const std::string& text) const;
 	std::string newAgent(const std::string& spec_json) const;
 	void prompt(const std::string& agent_id, const std::string& text) const;
+	std::string prune(const std::string& spec_json) const;
+	std::string prunePlan(const std::string& spec_json) const;
 	void respondUi(const std::string& request_id, const std::string& response_json) const;
+	std::string runs(const std::string& filter_json) const;
+	void setAutoExpire(bool on) const;
 	void setForeground(bool foreground) const;
 	void setModel(const std::string& agent_id, const std::string& model) const;
 	void steer(const std::string& agent_id, const std::string& text) const;
@@ -43548,6 +43555,30 @@ inline void SidecarHarness::compact(const std::string& agent_id, const std::stri
 		throw Error("urnet: urnet_sidecar_harness_compact failed");
 	}
 }
+inline std::string SidecarHarness::continue_(const std::string& spec_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_continue(handle(), spec_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarHarness::continuePlan(const std::string& spec_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_continue_plan(handle(), spec_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarHarness::expireOldestBlobs(const std::string& cap_name) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_expire_oldest_blobs(handle(), cap_name.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
 inline void SidecarHarness::followUp(const std::string& agent_id, const std::string& text) const {
 	char* err_c = nullptr;
 	bool ok = urnet_sidecar_harness_follow_up(handle(), agent_id.c_str(), text.c_str(), &err_c);
@@ -43576,6 +43607,22 @@ inline void SidecarHarness::prompt(const std::string& agent_id, const std::strin
 		throw Error("urnet: urnet_sidecar_harness_prompt failed");
 	}
 }
+inline std::string SidecarHarness::prune(const std::string& spec_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_prune(handle(), spec_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline std::string SidecarHarness::prunePlan(const std::string& spec_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_prune_plan(handle(), spec_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
 inline void SidecarHarness::respondUi(const std::string& request_id, const std::string& response_json) const {
 	char* err_c = nullptr;
 	bool ok = urnet_sidecar_harness_respond_ui(handle(), request_id.c_str(), response_json.c_str(), &err_c);
@@ -43584,6 +43631,24 @@ inline void SidecarHarness::respondUi(const std::string& request_id, const std::
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_sidecar_harness_respond_ui failed");
+	}
+}
+inline std::string SidecarHarness::runs(const std::string& filter_json) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_sidecar_harness_runs(handle(), filter_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void SidecarHarness::setAutoExpire(bool on) const {
+	char* err_c = nullptr;
+	bool ok = urnet_sidecar_harness_set_auto_expire(handle(), on, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_sidecar_harness_set_auto_expire failed");
 	}
 }
 inline void SidecarHarness::setForeground(bool foreground) const {
