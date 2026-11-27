@@ -191,6 +191,7 @@ func sidecarCoreEventOf(event *sidecarControlEvent) sidecar.SidecarEvent {
 		CtAlarm:           sidecar.SidecarCtAlarm(event.CtAlarm),
 		MailReceiverAlarm: sidecar.SidecarMailReceiverAlarm(event.MailReceiverAlarm),
 		AuthFeatures:      sidecar.ParseAuthFeatureNames(event.AuthFeatures),
+		DisclosureId:      event.DisclosureId,
 	}
 	if erasure := event.Erasure; erasure != nil {
 		core.Erasure = &sidecar.SidecarErasure{

@@ -216,6 +216,9 @@ type SidecarEvent struct {
 	// upgrade_required: the authorization features the network turned on that this release lacks, by name, comma
 	// separated: the sidecar holds until the update that ends it (DESIGN-COMPUTE §16.6's hold).
 	AuthFeatures string `json:"auth_features,omitempty"`
+	// disclosure_changed: the disclosure whose acknowledgment for the network names an older version than Version, its
+	// current one (DESIGN-COMPUTE §2.8).
+	DisclosureId string `json:"disclosure_id,omitempty"`
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI

@@ -27,7 +27,7 @@ type SidecarEvent struct {
 	// recovery_rebind, recovery_window, recovery_unseen, admissions_near_cap, head_alarm, index_mismatch,
 	// index_malformed, search_alarm, history_drop, access_request, access_decided, directory_erasure, erasure,
 	// mail_send, evs_conflict, evs_alarm, evs_gap, credential_store, record_alarm, bridge_alarm, dns_alarm, ct_alarm,
-	// mail_receiver_alarm, upgrade_required, and any a later component adds.
+	// mail_receiver_alarm, upgrade_required, disclosure_changed, and any a later component adds.
 	Kind string `json:"kind"`
 	// The client generation it comes from (§18.5's State block).
 	Generation int64 `json:"generation"`
@@ -81,7 +81,8 @@ type SidecarEvent struct {
 	EvsAlarm string `json:"evs_alarm,omitempty"`
 	// evs_alarm of reason prefix_rule: ignored, refused, set_void or set_newer, what it stands for.
 	EvsAlarmDetail string `json:"evs_alarm_detail,omitempty"`
-	// evs_alarm of reason prefix_rule: the ref version of the first change it names, or a set's log position.
+	// evs_alarm of reason prefix_rule: the ref version of the first change it names, or a set's log position;
+	// disclosure_changed: the disclosure's current version.
 	Version int64 `json:"version,omitempty"`
 	// evs_alarm of reason prefix_rule: the push of the first change it names; nil for a set's.
 	PushId *Id `json:"push_id,omitempty"`
@@ -106,6 +107,10 @@ type SidecarEvent struct {
 	// separated (agent_repos, compute_policy, listeners, enclaves): the sidecar holds, applying nothing from that base,
 	// until the update that ends it (DESIGN-COMPUTE §16.6's hold).
 	AuthFeatures string `json:"auth_features,omitempty"`
+	// disclosure_changed, on an Owner's or Admin's device (DESIGN-COMPUTE §2.8's new version row): the disclosure whose
+	// acknowledgment for the network names an older version than its current one, Version. The app's notice to read the
+	// new text and acknowledge it again for the network (AckNetworkDisclosure), before its grace ends.
+	DisclosureId string `json:"disclosure_id,omitempty"`
 }
 
 // An erasure as the device running it, or one that may finish it, sees it (§11.12, §11.13's wait). json in the C ABI
@@ -164,6 +169,7 @@ func newSidecarEventOf(event *sidecar.SidecarEvent) *SidecarEvent {
 		CtAlarm:             string(event.CtAlarm),
 		MailReceiverAlarm:   string(event.MailReceiverAlarm),
 		AuthFeatures:        event.AuthFeatures.String(),
+		DisclosureId:        event.DisclosureId,
 	}
 	if erasure := event.Erasure; erasure != nil {
 		bound.Erasure = sidecarErasureOf(erasure)
