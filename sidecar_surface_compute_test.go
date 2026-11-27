@@ -192,9 +192,10 @@ var sdkComputeMethodUnbuilt = []string{
 	"SidecarAutoApprovals.Settings", "SidecarAutoApprovals.SetSettings", "SidecarAutoApprovals.Digest",
 }
 
-// Declared signatures §15.3 does not write, as receiver.name to the declared kinds, each raised where it is decided:
-// StorePurchase takes the app's own Api, which holds the network's credential, since that credential never enters the
-// Sidecar (I-6); BAL-M12-19's draft left it for the design records, and csurf-m11-02-store-purchase-api asks it.
+// Declared signatures §15.3 does not write yet, as receiver.name to the declared kinds, each with the answer that keeps
+// it: StorePurchase takes the app's own Api, which holds the network's credential, since that credential never enters
+// the Sidecar (I-6), as BAL-M12-19 built it; the owner took §15.3's line as built (csurf-m11-02-store-purchase-api,
+// QD-1442), and design-records' fold of it removes this entry.
 var sdkComputeMethodDiffers = map[string]string{
 	"SidecarCompute.StorePurchase": "(*Api, string, string) (string, error)",
 }
@@ -464,7 +465,7 @@ func TestComputeSdkMethodsAreDeclaredOrUnbuilt(t *testing.T) {
 		}
 	}
 	for key, recorded := range sdkComputeMethodDiffers {
-		t.Logf("%s is declared %s, which §15.3 does not write: raised in csurf-m11-02-store-purchase-api", key, recorded)
+		t.Logf("%s is declared %s, which §15.3 writes once its fold lands (QD-1442)", key, recorded)
 	}
 	// what the sdk's compute types declare beyond §15.3's listing, for the review phase to weigh, each still bound by
 	// gomobile, so held to §15.3's rule: Sidecar's own methods are mostly no compute surface's, so only its accessors
