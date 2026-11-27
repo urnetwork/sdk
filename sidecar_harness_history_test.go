@@ -19,6 +19,12 @@ type sidecarHarnessTestHistory struct {
 	plan      *sidecar.SessionContinuePlan
 	continued *sidecar.SessionContinued
 	err       error
+	// the run view's answer, and each filter, expiry, switch and prune asked (sidecar_harness_runs_test.go)
+	sizes    *sidecar.SessionSizes
+	filters  []*sidecar.SessionSizesFilter
+	expiries []string
+	switches []bool
+	prunes   []*sidecar.SessionPruneSpec
 }
 
 func (self *sidecarHarnessTestHistory) ContinuePlan(ctx context.Context, spec *sidecar.SessionContinueSpec) (*sidecar.SessionContinuePlan, error) {
