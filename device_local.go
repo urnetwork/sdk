@@ -2525,6 +2525,12 @@ func newDeviceLocalWithOverridesForPlatform(
 		deviceLocal.extenderReleaseUnbind = networkSpace.bindExtenderRelease(api.GetByJwt)
 	}
 
+	// the carrier policies the device starts on, logged before a saved
+	// preference or a remote's sync can change them, so with the line of every
+	// change after (logTransportPolicy) the log names the policy in force
+	deviceLocal.logTransportPolicy(false, transportSettings, "built")
+	deviceLocal.logTransportPolicy(true, providerTransportSettings, "built")
+
 	// The rpc manager starts last. From then on a remote can call the device:
 	// on ios the app's DeviceRemote redials the listener until it answers, and
 	// its first sync sets the provide mode and the transport settings under
@@ -7255,9 +7261,27 @@ func (self *DeviceLocal) applyTransportSettingsWithLock(transportSettings *Trans
 		apiGenerator.SetPlatformTransportPolicy(mode, preferences)
 	}
 	return func() {
+		self.logTransportPolicy(false, transportSettings, "changed")
 		self.transportSettingsChanged(transportSettings)
 		self.transportStatusChanged(self.GetTransportStatus())
 	}, nil
+}
+
+// Logs a carrier policy in force at default verbosity, the client's or the
+// provider's, as the device was built with it or as it changed (support inbox
+// 8667): which carriers a connect can dial is otherwise in no log, whether it
+// came from a default, a saved preference, an app's setter or a remote's sync.
+// The change paths run this after their locks are released. The line names
+// only modes and priorities (transportPolicyLogText).
+func (self *DeviceLocal) logTransportPolicy(provider bool, transportSettings *TransportSettings, cause string) {
+	if self.log == nil {
+		return
+	}
+	policyName := "transport policy"
+	if provider {
+		policyName = "provider transport policy"
+	}
+	self.log.Infof("[device]%s = %s (%s)\n", policyName, transportPolicyLogText(transportSettings, provider), cause)
 }
 
 func (self *DeviceLocal) GetTransportSettings() *TransportSettings {
@@ -7350,6 +7374,7 @@ func (self *DeviceLocal) applyProviderTransportSettingsWithLock(transportSetting
 		provider.SetTransportPolicy(mode, preferences)
 	}
 	return func() {
+		self.logTransportPolicy(true, transportSettings, "changed")
 		self.providerTransportSettingsChanged(transportSettings)
 		self.providerTransportStatusChanged(self.GetProviderTransportStatus())
 	}, nil

@@ -6,7 +6,9 @@ package sdk
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/urnetwork/connect"
 )
@@ -196,6 +198,20 @@ func normalizeTransportSettings(settings *TransportSettings, provider bool) *Tra
 		Mode:               mode,
 		AutoModePriorities: list,
 	}
+}
+
+// The policy as a log line names it, normalized: the mode, then every Auto
+// priority in the order Auto tries them, as
+// "mode=auto auto=h1:1,h3:2,dns:3,dnspump:4". The priorities are kept while
+// another mode is selected, so they are named then too. Only mode names and
+// numbers appear.
+func transportPolicyLogText(settings *TransportSettings, provider bool) string {
+	settings = normalizeTransportSettings(settings, provider)
+	priorityTexts := make([]string, 0, settings.AutoModePriorities.Len())
+	for _, item := range settings.AutoModePriorities.getAll() {
+		priorityTexts = append(priorityTexts, fmt.Sprintf("%s:%d", item.Mode, item.Priority))
+	}
+	return fmt.Sprintf("mode=%s auto=%s", settings.Mode, strings.Join(priorityTexts, ","))
 }
 
 func cloneTransportSettings(settings *TransportSettings) *TransportSettings {
