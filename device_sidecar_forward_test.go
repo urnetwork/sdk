@@ -1050,6 +1050,37 @@ func TestForwardFollowDuringARefreshLeavesTheLapseToIt(t *testing.T) {
 	refresh.answer <- testingForwardJwt(t, clock.Now().Unix(), lifetime)
 }
 
+// A refresh api never answers ends at RefreshTimeout as a failure, so past F's exp it lapses the role and the posture
+// holds it, where no bound held one before and the role served on while the refresh waited.
+func TestForwardRefreshNeverAnsweredEndsAndLapses(t *testing.T) {
+	forward := newTestingForwardDevice(t)
+	start := time.Unix(1800000000, 0)
+	clock := newTestingForwardClock(start)
+	// asked refreshes wait for an answer that never comes
+	transport := &testingForwardRefreshTransport{requests: make(chan *testingForwardRefresh)}
+	forward.clock, forward.transport = clock, transport
+	lifetime := int64(7 * 24 * 60 * 60)
+	device, role := testingForwardLapseRole(t, forward, start, lifetime, func(settings *deviceForwardingSettings) {
+		settings.RefreshTimeout = time.Millisecond
+		// F's refresh point past its exp, and the Forwarder following at its start alone, so the refresh is what
+		// finds the lapse
+		settings.RefreshWindowStart, settings.RefreshWindowEnd = 2, 2
+		settings.Forwarder.FollowInterval = 1000 * time.Hour
+		settings.Forwarder.FollowRetryInterval = 1000 * time.Hour
+	}, nil)
+	changed := make(chan *BridgeStatus, 64)
+	sub := device.AddBridgeStatusChangeListener(&testingBridgeStatusListener{changed: changed})
+	defer sub.Close()
+
+	clock.Advance(2*time.Duration(lifetime)*time.Second + time.Minute)
+	testingForwardStatusWhere(t, changed, func(network *BridgeNetworkStatus) bool {
+		return network.Lapsed
+	}, "carried the lapse")
+	if decision := role.sink.Decision(); decision.State == sidecar.BridgeSinkEnforcing || !decision.Fork {
+		t.Errorf("the refresh that never answered lapsed the role with the posture's decision %+v", decision)
+	}
+}
+
 // A witness clearing its fork while F lapses leaves the posture holding the lapse: the fork hold is read under the lock
 // that orders the posture's writes, so the witness's write, its hold read before the lapse, comes before the lapse's
 // own and never after it (the hold was read before that lock, so a lapse put on between the read and the write was

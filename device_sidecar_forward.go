@@ -86,6 +86,10 @@ type deviceForwardingSettings struct {
 	// The wait after a failed refresh, doubling to the max: 10 s and 10 min.
 	RefreshRetryMinTimeout time.Duration
 	RefreshRetryMaxTimeout time.Duration
+	// The bound of one refresh, a request's as PollTimeout is, in real time: 30 s, as long as one of the Forwarder's
+	// fetches. One past it fails, so a refresh api never answers neither stalls F's refreshes nor holds off a lapse,
+	// which a refresh in flight decides (clientLapsed). Non-positive bounds none.
+	RefreshTimeout time.Duration
 	// The bound of one long-poll on F, which api holds up to 25 s: 40 s.
 	PollTimeout time.Duration
 	// The wait after a failed poll, doubling to the max: 1 s and 60 s.
@@ -104,6 +108,7 @@ func defaultDeviceForwardingSettings() *deviceForwardingSettings {
 		RefreshWindowEnd:       0.5,
 		RefreshRetryMinTimeout: 10 * time.Second,
 		RefreshRetryMaxTimeout: 10 * time.Minute,
+		RefreshTimeout:         30 * time.Second,
 		PollTimeout:            40 * time.Second,
 		PollRetryMinTimeout:    time.Second,
 		PollRetryMaxTimeout:    60 * time.Second,
@@ -844,7 +849,12 @@ func (self *deviceLocalForwarding) runRefresh(ctx context.Context) {
 			continue
 		}
 		setRefreshing(true)
-		newJwt, err := client.Refresh(ctx)
+		refreshCtx, cancelRefresh := ctx, context.CancelFunc(func() {})
+		if 0 < self.settings.RefreshTimeout {
+			refreshCtx, cancelRefresh = context.WithTimeout(ctx, self.settings.RefreshTimeout)
+		}
+		newJwt, err := client.Refresh(refreshCtx)
+		cancelRefresh()
 		if err != nil {
 			setRefreshing(false)
 			if ctx.Err() != nil {
