@@ -339,8 +339,9 @@ func TestDeviceLocalProxiedExitLeavesThroughTheSpaceProxy(t *testing.T) {
 
 	source := connect.SourceId(connect.NewId())
 	udpPort := udpDestination.LocalAddr().(*net.UDPAddr).Port
-	datagram := craftIpv4Packet(connect.IpProtocolUdp, net.ParseIP("10.0.0.1"), 40000, net.ParseIP("127.0.0.1"), udpPort, false, []byte("exit"))
-	if !localUserNat.SendPacket(source, protocol.ProvideMode_Public, datagram, -1) {
+	datagram := craftIpv4Packet(connect.IpProtocolUdp, net.ParseIP("192.0.2.42"), 40000, net.ParseIP("127.0.0.1"), udpPort, false, []byte("exit"))
+	// The loopback canary is eligible only for the authenticated Network relationship.
+	if !localUserNat.SendPacket(source, protocol.ProvideMode_Network, datagram, -1) {
 		t.Fatal("the datagram was not queued")
 	}
 	select {
@@ -357,11 +358,19 @@ func TestDeviceLocalProxiedExitLeavesThroughTheSpaceProxy(t *testing.T) {
 	}
 
 	tcpPort := tcpDestination.listener.Addr().(*net.TCPAddr).Port
-	syn := craftIpv4Packet(connect.IpProtocolTcp, net.ParseIP("10.0.0.1"), 40001, net.ParseIP("127.0.0.1"), tcpPort, true, nil)
-	if !localUserNat.SendPacket(source, protocol.ProvideMode_Public, syn, -1) {
-		t.Fatal("the syn was not queued")
+	for _, tc := range []struct {
+		address string
+		mode    protocol.ProvideMode
+	}{
+		{address: "203.0.113.47", mode: protocol.ProvideMode_Public},
+		{address: "127.0.0.1", mode: protocol.ProvideMode_Network},
+	} {
+		syn := craftIpv4Packet(connect.IpProtocolTcp, net.ParseIP("192.0.2.42"), 40001, net.ParseIP(tc.address), tcpPort, true, nil)
+		if !localUserNat.SendPacket(source, tc.mode, syn, -1) {
+			t.Fatal("the syn was not queued")
+		}
+		socks.waitTarget(t, ctx, tcpDestination, fmt.Sprintf("%s:%d", tc.address, tcpPort))
 	}
-	socks.waitTarget(t, ctx, tcpDestination, tcpDestination.listener.Addr().String())
 	if count := tcpDestination.acceptedCount.Load(); count != 0 {
 		t.Fatalf("the exit's tcp reached its destination from this host %d times", count)
 	}
@@ -379,14 +388,37 @@ func TestDeviceLocalUnproxiedExitLeavesFromThisHost(t *testing.T) {
 	localUserNat := device.remoteUserNatProviderLocalUserNat
 
 	tcpPort := tcpDestination.listener.Addr().(*net.TCPAddr).Port
-	syn := craftIpv4Packet(connect.IpProtocolTcp, net.ParseIP("10.0.0.1"), 40001, net.ParseIP("127.0.0.1"), tcpPort, true, nil)
-	if !localUserNat.SendPacket(connect.SourceId(connect.NewId()), protocol.ProvideMode_Public, syn, -1) {
-		t.Fatal("the syn was not queued")
+	source := connect.SourceId(connect.NewId())
+	refused := make(chan struct{}, 1)
+	unsub := localUserNat.AddReceivePacketCallback(func(path connect.TransferPath, _ protocol.ProvideMode, _ *connect.IpPath, packet []byte) {
+		// The NAT answers a policy refusal with an IPv4 destination unreachable.
+		if path.SourceId == source.SourceId && len(packet) > 20 && packet[0] == 0x45 && packet[9] == 1 && packet[20] == 3 {
+			select {
+			case refused <- struct{}{}:
+			default:
+			}
+		}
+	})
+	defer unsub()
+	send := func(mode protocol.ProvideMode, port int) {
+		syn := craftIpv4Packet(connect.IpProtocolTcp, net.ParseIP("192.0.2.42"), port, net.ParseIP("127.0.0.1"), tcpPort, true, nil)
+		if !localUserNat.SendPacket(source, mode, syn, -1) {
+			t.Fatal("the syn was not queued")
+		}
 	}
+	send(protocol.ProvideMode_Public, 40001)
+	select {
+	case <-refused:
+	case <-tcpDestination.accepted:
+		t.Fatal("a Public exit reached the host listener")
+	case <-ctx.Done():
+		t.Fatal("the Public exit produced no refusal")
+	}
+	send(protocol.ProvideMode_Network, 40002)
 	select {
 	case <-tcpDestination.accepted:
 	case <-ctx.Done():
-		t.Fatal("the exit's tcp never reached its destination")
+		t.Fatal("the authorized Network exit never reached its local destination")
 	}
 }
 
