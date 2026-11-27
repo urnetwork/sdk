@@ -3032,6 +3032,8 @@ def bind(lib):
     lib.urnet_get_regional_dns_servers.restype = c_void_p
     lib.urnet_get_tunnel_local_prefix_length_ipv6.argtypes = []
     lib.urnet_get_tunnel_local_prefix_length_ipv6.restype = c_int64
+    lib.urnet_google_sign_in_failure_message.argtypes = [c_char_p, c_char_p, c_int64, c_char_p]
+    lib.urnet_google_sign_in_failure_message.restype = c_void_p
     lib.urnet_gossip_url.argtypes = [c_char_p, c_char_p]
     lib.urnet_gossip_url.restype = c_void_p
     lib.urnet_has_regional_dns_recommendation.argtypes = [c_char_p]
@@ -3062,6 +3064,8 @@ def bind(lib):
     lib.urnet_is_valid_payment_reference.restype = c_bool
     lib.urnet_log_app_info.argtypes = [c_char_p, c_char_p]
     lib.urnet_log_app_info.restype = None
+    lib.urnet_log_google_sign_in_failure.argtypes = [c_char_p, c_char_p, c_int64]
+    lib.urnet_log_google_sign_in_failure.restype = None
     lib.urnet_log_inventory.argtypes = []
     lib.urnet_log_inventory.restype = c_void_p
     lib.urnet_memory_classes_json_for_diag.argtypes = []

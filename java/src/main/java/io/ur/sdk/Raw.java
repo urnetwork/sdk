@@ -1641,6 +1641,7 @@ public interface Raw extends Library {
   Pointer urnet_get_recommended_dns_resolver_settings(String a0);
   Pointer urnet_get_regional_dns_servers();
   long urnet_get_tunnel_local_prefix_length_ipv6();
+  Pointer urnet_google_sign_in_failure_message(String a0, String a1, long a2, String a3);
   Pointer urnet_gossip_url(String a0, String a1);
   byte urnet_has_regional_dns_recommendation(String a0);
   Pointer urnet_host_base_name(String a0);
@@ -1656,6 +1657,7 @@ public interface Raw extends Library {
   byte urnet_is_sandbox_purchase_refusal(String a0);
   byte urnet_is_valid_payment_reference(String a0);
   void urnet_log_app_info(String a0, String a1);
+  void urnet_log_google_sign_in_failure(String a0, String a1, long a2);
   Pointer urnet_log_inventory();
   Pointer urnet_memory_classes_json_for_diag();
   double urnet_monthly_equivalent_amount(double a0, long a1);

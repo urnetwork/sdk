@@ -16743,6 +16743,13 @@ func urnet_get_tunnel_local_prefix_length_ipv6() C.int64_t {
 	return C.int64_t(r0)
 }
 
+//export urnet_google_sign_in_failure_message
+func urnet_google_sign_in_failure_message(source *C.char, domain *C.char, code C.int64_t, message *C.char) *C.char {
+	defer cgoGuard("urnet_google_sign_in_failure_message")
+	r0 := sdk.GoogleSignInFailureMessage(goString(source), goString(domain), int(int64(code)), goString(message))
+	return cString(string(r0))
+}
+
 //export urnet_gossip_url
 func urnet_gossip_url(key *C.char, values *C.char) *C.char {
 	defer cgoGuard("urnet_gossip_url")
@@ -18361,6 +18368,12 @@ func urnet_locations_view_controller_stop(self C.uint64_t) {
 func urnet_log_app_info(tag *C.char, message *C.char) {
 	defer cgoGuard("urnet_log_app_info")
 	sdk.LogAppInfo(goString(tag), goString(message))
+}
+
+//export urnet_log_google_sign_in_failure
+func urnet_log_google_sign_in_failure(source *C.char, domain *C.char, code C.int64_t) {
+	defer cgoGuard("urnet_log_google_sign_in_failure")
+	sdk.LogGoogleSignInFailure(goString(source), goString(domain), int(int64(code)))
 }
 
 //export urnet_log_inventory
