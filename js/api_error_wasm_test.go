@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // Api promise rejections carry the kind fields the pages branch on, and the

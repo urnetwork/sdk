@@ -22,8 +22,8 @@ func TestHotspotProxyBindsForAndroidWithoutOmissions(t *testing.T) {
 		"-tags=sdk_mobile_bind",
 		"-outdir="+outputDirectory,
 		"-javapkg=com.bringyour",
-		"github.com/urnetwork/sdk",
-		"github.com/urnetwork/sdk/hotspot",
+		"github.com/urnetwork/sdk/v2026",
+		"github.com/urnetwork/sdk/v2026/hotspot",
 	)
 	command.Dir = "../.."
 	command.Env = append(
