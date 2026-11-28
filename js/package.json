@@ -54,7 +54,8 @@
     "build:bundle": "rollup -c",
     "dev": "rollup -c -w",
     "prepublishOnly": "npm run build && test -s wasm/sdk.wasm && test -s wasm/wasm_exec.js",
-    "test": "node --test test/*.test.ts test/lag/*.test.ts"
+    "test": "node --test test/*.test.ts test/lag/*.test.ts",
+    "typecheck:examples": "tsc -p examples/tsconfig.json"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

@@ -1,0 +1,20 @@
+{
+  // Type-checks the examples against the sdk's source, the way a project that
+  // installed @urnetwork/sdk sees its types: `npm run typecheck:examples`.
+  // Nothing is emitted; the package build (../tsconfig.json) excludes this
+  // folder.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "baseUrl": ".",
+    "paths": {
+      "@urnetwork/sdk": ["../src/index.ts"],
+      "@urnetwork/sdk/client": ["../src/client.ts"]
+    }
+  },
+  "include": ["*.ts"],
+  "exclude": []
+}
