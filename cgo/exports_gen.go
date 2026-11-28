@@ -17406,6 +17406,20 @@ func urnet_local_state_get_favorite_locations(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_local_state_get_favorite_locations")
 }
 
+//export urnet_local_state_get_hotspot_proxy_preferences
+func urnet_local_state_get_hotspot_proxy_preferences(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_hotspot_proxy_preferences")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_hotspot_proxy_preferences")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetHotspotProxyPreferences()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_local_state_get_hotspot_proxy_preferences")
+}
+
 //export urnet_local_state_get_instance_id
 func urnet_local_state_get_instance_id(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_local_state_get_instance_id")
@@ -18119,6 +18133,28 @@ func urnet_local_state_set_extender_gossip_mode(self C.uint64_t, mode *C.char, o
 		return C.bool(false)
 	}
 	err := self_.SetExtenderGossipMode(goString(mode))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_hotspot_proxy_preferences
+func urnet_local_state_set_hotspot_proxy_preferences(self C.uint64_t, preferences *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_hotspot_proxy_preferences")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_hotspot_proxy_preferences")
+	if !ok {
+		return C.bool(false)
+	}
+	var preferences_ *sdk.HotspotProxyPreferences
+	if preferences != nil {
+		preferences_ = &sdk.HotspotProxyPreferences{}
+		if !goJson(preferences, preferences_, "urnet_local_state_set_hotspot_proxy_preferences") {
+			return C.bool(false)
+		}
+	}
+	err := self_.SetHotspotProxyPreferences(preferences_)
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

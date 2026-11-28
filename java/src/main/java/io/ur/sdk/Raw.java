@@ -1141,6 +1141,7 @@ public interface Raw extends Library {
   Pointer urnet_local_state_get_excluded_exit_locations(long a0);
   Pointer urnet_local_state_get_extender_gossip_mode(long a0);
   Pointer urnet_local_state_get_favorite_locations(long a0);
+  Pointer urnet_local_state_get_hotspot_proxy_preferences(long a0);
   Pointer urnet_local_state_get_instance_id(long a0);
   long urnet_local_state_get_log_verbosity(long a0);
   byte urnet_local_state_get_measurements_enabled(long a0);
@@ -1187,6 +1188,7 @@ public interface Raw extends Library {
   byte urnet_local_state_set_device_local_key_material(long a0, long a1, PointerByReference a2);
   byte urnet_local_state_set_dns_resolver_settings(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_extender_gossip_mode(long a0, String a1, PointerByReference a2);
+  byte urnet_local_state_set_hotspot_proxy_preferences(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_instance_id(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_intro_funnel_last_prompted(long a0, PointerByReference a1);
   byte urnet_local_state_set_log_verbosity(long a0, long a1, PointerByReference a2);

@@ -2032,6 +2032,8 @@ def bind(lib):
     lib.urnet_local_state_get_extender_gossip_mode.restype = c_void_p
     lib.urnet_local_state_get_favorite_locations.argtypes = [c_uint64]
     lib.urnet_local_state_get_favorite_locations.restype = c_void_p
+    lib.urnet_local_state_get_hotspot_proxy_preferences.argtypes = [c_uint64]
+    lib.urnet_local_state_get_hotspot_proxy_preferences.restype = c_void_p
     lib.urnet_local_state_get_instance_id.argtypes = [c_uint64]
     lib.urnet_local_state_get_instance_id.restype = c_void_p
     lib.urnet_local_state_get_log_verbosity.argtypes = [c_uint64]
@@ -2124,6 +2126,8 @@ def bind(lib):
     lib.urnet_local_state_set_dns_resolver_settings.restype = c_bool
     lib.urnet_local_state_set_extender_gossip_mode.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_local_state_set_extender_gossip_mode.restype = c_bool
+    lib.urnet_local_state_set_hotspot_proxy_preferences.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_local_state_set_hotspot_proxy_preferences.restype = c_bool
     lib.urnet_local_state_set_instance_id.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_local_state_set_instance_id.restype = c_bool
     lib.urnet_local_state_set_intro_funnel_last_prompted.argtypes = [c_uint64, POINTER(c_void_p)]

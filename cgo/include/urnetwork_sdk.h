@@ -2278,6 +2278,7 @@ char* urnet_local_state_get_dns_resolver_settings(uint64_t self);
 char* urnet_local_state_get_excluded_exit_locations(uint64_t self);
 char* urnet_local_state_get_extender_gossip_mode(uint64_t self);
 char* urnet_local_state_get_favorite_locations(uint64_t self);
+char* urnet_local_state_get_hotspot_proxy_preferences(uint64_t self);
 char* urnet_local_state_get_instance_id(uint64_t self);
 int64_t urnet_local_state_get_log_verbosity(uint64_t self);
 bool urnet_local_state_get_measurements_enabled(uint64_t self);
@@ -2324,6 +2325,7 @@ bool urnet_local_state_set_default_location(uint64_t self, const char* connect_l
 bool urnet_local_state_set_device_local_key_material(uint64_t self, uint64_t key_material, char** out_error);
 bool urnet_local_state_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json, char** out_error);
 bool urnet_local_state_set_extender_gossip_mode(uint64_t self, const char* mode, char** out_error);
+bool urnet_local_state_set_hotspot_proxy_preferences(uint64_t self, const char* preferences_json, char** out_error);
 bool urnet_local_state_set_instance_id(uint64_t self, const char* instance_id, char** out_error);
 bool urnet_local_state_set_intro_funnel_last_prompted(uint64_t self, char** out_error);
 bool urnet_local_state_set_log_verbosity(uint64_t self, int64_t level, char** out_error);
@@ -4782,6 +4784,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* GetReferralNetworkResult (json):
  *   network?: ReferralNetwork | null
  *   error?: GetReferralNetworkError | null
+ */
+
+/* HotspotProxyPreferences (json):
+ *   enabled: boolean
+ *   username?: string
+ *   password?: string
  */
 
 /* Id (json):
