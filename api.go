@@ -3462,6 +3462,45 @@ type ProviderStatus struct {
 	EvaluateTime *Time                  `json:"evaluate_time"`
 	// nil when the server could not read the histogram
 	Appearances *ProviderAppearanceHistogram `json:"appearances,omitempty"`
+	// the data SN25 counted for this client in the newest settled epoch;
+	// nil while the server has read no settled epoch, and from a server
+	// that predates the field
+	Provided *ProviderStatusProvided `json:"provided,omitempty"`
+}
+
+// How a client's provided data was paid in its epoch
+// (ProviderStatusProvided.Payout).
+const (
+	// counted in the epoch's SN25 operator pool, to the client's payout wallet
+	ProviderStatusProvidedPaid = "paid"
+	// left out of the pool for the network's Top 200 head seat, which earns it
+	ProviderStatusProvidedHead = "head"
+	// no payout wallet: SN25 paid nothing for it
+	ProviderStatusProvidedUnpaid = "unpaid"
+	// the epoch counted nothing for the client
+	ProviderStatusProvidedNone = "none"
+)
+
+// One client's data in the newest settled SN25 epoch: the usage bytes the
+// epoch's payout split its pool by (the epoch's provider rows), the figure
+// SN25 paid on. Data, never an amount.
+type ProviderStatusProvided struct {
+	Epoch          int64     `json:"epoch"`
+	UsageByteCount ByteCount `json:"usage_byte_count"`
+	// one of ProviderStatusProvided*
+	Payout string `json:"payout"`
+}
+
+// The network's data in the newest settled SN25 epoch, over all its devices:
+// what the epoch counted, and the part of it SN25 did not pay because the
+// device had no payout wallet, the unpaid data provided.
+type ProviderStatusNetworkProvided struct {
+	Epoch           int64     `json:"epoch"`
+	UsageByteCount  ByteCount `json:"usage_byte_count"`
+	UnpaidByteCount ByteCount `json:"unpaid_byte_count"`
+	// the network has more devices than the totals read, so they are at least
+	// these
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // The bound form of []*ProviderStatus.
@@ -3482,6 +3521,9 @@ type GetProviderStatusResult struct {
 	Providers *ProviderStatusList `json:"providers"`
 	// the network has more provider clients than one answer covers
 	Truncated bool `json:"truncated,omitempty"`
+	// the network's data in the newest settled epoch; nil while the server
+	// has read none, and from a server that predates it
+	Provided *ProviderStatusNetworkProvided `json:"provided,omitempty"`
 }
 
 // Receives the GetProviderStatus answer.

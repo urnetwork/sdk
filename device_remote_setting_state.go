@@ -301,6 +301,7 @@ func (self *DeviceRemote) recordPendingSettingWritesWithLock() {
 	self.lastKnownState.ProvideExtender.Merge(self.state.ProvideExtender)
 	self.lastKnownState.MeasurementsEnabled.Merge(self.state.MeasurementsEnabled)
 	self.lastKnownState.ProvideExtenderPortMapping.Merge(self.state.ProvideExtenderPortMapping)
+	self.lastKnownState.ProvideShareLimits.Merge(self.state.ProvideShareLimits)
 	self.lastKnownState.TransportSettings.Merge(self.state.TransportSettings)
 	self.lastKnownState.ProviderTransportSettings.Merge(self.state.ProviderTransportSettings)
 	self.lastKnownState.BlockActionOverrides.Merge(self.state.BlockActionOverrides)

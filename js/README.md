@@ -16,6 +16,12 @@ The unqualified command selects `latest`. Preview builds use
 `npm install @urnetwork/sdk@nightly`. ESM, CommonJS, TypeScript declarations,
 React bindings, WASM and its matching Go runtime glue are included.
 
+## Examples
+
+[`examples/proxy-device.ts`](examples/proxy-device.ts) starts a hosted proxy
+device with the TypeScript API, prints its proxy URLs and removes it on Ctrl-C;
+see [`examples/README.md`](examples/README.md).
+
 ## Sockets and Direct Sockets
 
 An initialized Device exposes `dial`, `dialTls` and `directSockets`. Conn has

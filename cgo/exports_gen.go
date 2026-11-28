@@ -2243,6 +2243,20 @@ func (self *cAdapterProvideSecretKeysListener) ProvideSecretKeysChanged(provideS
 	}
 }
 
+type cAdapterProvideShareStatusChangeListener struct {
+	cbProvideShareStatusChanged C.urnet_provide_share_status_change_cb
+	userData                    unsafe.Pointer
+}
+
+func (self *cAdapterProvideShareStatusChangeListener) ProvideShareStatusChanged(status *sdk.ProvideShareStatus) {
+	defer cgoGuard("urnet_provide_share_status_change_cb")
+	status_ := cJson(status, "urnet_provide_share_status_change_cb")
+	C.urnet_invoke_provide_share_status_change(self.cbProvideShareStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterProviderIdentityChangeListener struct {
 	cbProviderIdentitiesChanged C.urnet_provider_identity_change_cb
 	userData                    unsafe.Pointer
@@ -10652,6 +10666,21 @@ func urnet_device_add_provide_secret_keys_listener(self C.uint64_t, listener_pro
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_provide_share_status_change_listener
+func urnet_device_add_provide_share_status_change_listener(self C.uint64_t, listener_provide_share_status_changed C.urnet_provide_share_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_provide_share_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_provide_share_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProvideShareStatusChangeListener
+	if listener_provide_share_status_changed != nil {
+		listener_ = &cAdapterProvideShareStatusChangeListener{cbProvideShareStatusChanged: listener_provide_share_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProvideShareStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_provider_egress_contract_details_change_listener
 func urnet_device_add_provider_egress_contract_details_change_listener(self C.uint64_t, listener_contract_details_changed C.urnet_contract_details_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_provider_egress_contract_details_change_listener")
@@ -11521,6 +11550,34 @@ func urnet_device_get_provide_paused(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_get_provide_share_limits
+func urnet_device_get_provide_share_limits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provide_share_limits")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provide_share_limits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProvideShareLimits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provide_share_limits")
+}
+
+//export urnet_device_get_provide_share_status
+func urnet_device_get_provide_share_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provide_share_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provide_share_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProvideShareStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provide_share_status")
+}
+
 //export urnet_device_get_provider_egress_contract_details
 func urnet_device_get_provider_egress_contract_details(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_provider_egress_contract_details")
@@ -12186,6 +12243,23 @@ func urnet_device_set_provide_paused(self C.uint64_t, providePaused C.bool) {
 		return
 	}
 	self_.SetProvidePaused(bool(providePaused))
+}
+
+//export urnet_device_set_provide_share_limits
+func urnet_device_set_provide_share_limits(self C.uint64_t, limits *C.char) {
+	defer cgoGuard("urnet_device_set_provide_share_limits")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_provide_share_limits")
+	if !ok {
+		return
+	}
+	var limits_ *sdk.ProvideShareLimits
+	if limits != nil {
+		limits_ = &sdk.ProvideShareLimits{}
+		if !goJson(limits, limits_, "urnet_device_set_provide_share_limits") {
+			return
+		}
+	}
+	self_.SetProvideShareLimits(limits_)
 }
 
 //export urnet_device_set_provider_transport_settings
@@ -16913,6 +16987,13 @@ func urnet_is_favorite_exit(location *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_is_invalid_user_auth_phone
+func urnet_is_invalid_user_auth_phone(userAuth *C.char) C.bool {
+	defer cgoGuard("urnet_is_invalid_user_auth_phone")
+	r0 := sdk.IsInvalidUserAuthPhone(goString(userAuth))
+	return C.bool(r0)
+}
+
 //export urnet_is_points_leaderboard_sort
 func urnet_is_points_leaderboard_sort(sort *C.char) C.bool {
 	defer cgoGuard("urnet_is_points_leaderboard_sort")
@@ -16945,6 +17026,13 @@ func urnet_is_sandbox_purchase_refusal(result *C.char) C.bool {
 func urnet_is_valid_payment_reference(s *C.char) C.bool {
 	defer cgoGuard("urnet_is_valid_payment_reference")
 	r0 := sdk.IsValidPaymentReference(goString(s))
+	return C.bool(r0)
+}
+
+//export urnet_is_valid_user_auth_phone
+func urnet_is_valid_user_auth_phone(userAuth *C.char) C.bool {
+	defer cgoGuard("urnet_is_valid_user_auth_phone")
+	r0 := sdk.IsValidUserAuthPhone(goString(userAuth))
 	return C.bool(r0)
 }
 
@@ -20776,6 +20864,16 @@ func urnet_new_pro_features_notice_tracker() C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_provide_share_limits
+func urnet_new_provide_share_limits(maxBytesPerSecond C.int64_t, monthlyByteCount C.int64_t) *C.char {
+	defer cgoGuard("urnet_new_provide_share_limits")
+	r0 := sdk.NewProvideShareLimits(int64(maxBytesPerSecond), int64(monthlyByteCount))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_provide_share_limits")
+}
+
 //export urnet_new_proxy_device_with_defaults
 func urnet_new_proxy_device_with_defaults(proxyConfig *C.char, setupNewDeviceCallback_setup_new_device C.urnet_setup_new_device_cb, setupNewDeviceCallback_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_new_proxy_device_with_defaults")
@@ -22161,6 +22259,31 @@ func urnet_provider_status_view_controller_get_last_fetch_error(self C.uint64_t)
 	return cString(string(r0))
 }
 
+//export urnet_provider_status_view_controller_get_network_provided
+func urnet_provider_status_view_controller_get_network_provided(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_network_provided")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_network_provided")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetNetworkProvided()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_network_provided")
+}
+
+//export urnet_provider_status_view_controller_get_provided_epoch
+func urnet_provider_status_view_controller_get_provided_epoch(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_provided_epoch")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_provided_epoch")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetProvidedEpoch()
+	return C.int64_t(r0)
+}
+
 //export urnet_provider_status_view_controller_get_provider_status
 func urnet_provider_status_view_controller_get_provider_status(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_provider_status_view_controller_get_provider_status")
@@ -22234,6 +22357,17 @@ func urnet_provider_status_view_controller_get_truncated(self C.uint64_t) C.bool
 	}
 	r0 := self_.GetTruncated()
 	return C.bool(r0)
+}
+
+//export urnet_provider_status_view_controller_get_unpaid_byte_count
+func urnet_provider_status_view_controller_get_unpaid_byte_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_unpaid_byte_count")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_unpaid_byte_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetUnpaidByteCount()
+	return C.int64_t(r0)
 }
 
 //export urnet_provider_status_view_controller_refresh

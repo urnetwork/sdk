@@ -581,6 +581,10 @@ void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* use
 	cb(user_data, provide_secret_key_list_json);
 }
 
+void urnet_invoke_provide_share_status_change(urnet_provide_share_status_change_cb cb, void* user_data, const char* status_json) {
+	cb(user_data, status_json);
+}
+
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data) {
 	cb(user_data);
 }
