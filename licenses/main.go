@@ -31,9 +31,13 @@
 //	npm-web    ur.io: production dependencies of react/ and astro/
 //	npm-extension  extension: production dependencies
 //
-// -check recollects only what identifies an entry (origin, name, version, apps),
-// never the network-fetched text, so it runs offline. It also checks that the
-// runtime JSON exactly matches every entry and text in the local YAML catalog.
+// -check recollects what identifies an entry (origin, name, version, apps),
+// never the network-fetched text, so it runs offline. A Go module read from a
+// local directory, the SDK itself or a sibling go.mod replaces a module with,
+// can change its LICENSE or NOTICE while its version stays the same, so -check
+// also compares that text with the catalog's; go.sum pins every other module's
+// files (QD-1455). It also checks that the runtime JSON exactly matches every
+// entry and text in the local YAML catalog.
 package main
 
 import (
@@ -117,6 +121,9 @@ type entry struct {
 
 	// the text itself while collecting; Text becomes its id on write
 	text string
+	// while collecting a go entry, the checkout its text was read from when
+	// that is a local directory rather than the module cache; empty otherwise
+	localDir string
 }
 
 func (self *entry) key() string {
@@ -208,12 +215,7 @@ func run(check string, skip string, mmmCheckout string) error {
 				targetEntries = append(targetEntries, e)
 			}
 		}
-		if err := checkPolicy(targetEntries, func(e *entry) string {
-			if t := existing.Texts[e.Text]; t != nil {
-				return *t
-			}
-			return ""
-		}); err != nil {
+		if err := checkPolicy(targetEntries, existing.storedText); err != nil {
 			return err
 		}
 		return existing.checkRuntimeFile(filepath.Join(sdkDir, "license_data.json"))
@@ -260,8 +262,12 @@ func run(check string, skip string, mmmCheckout string) error {
 	return out.write(filepath.Join(sdkDir, "license.yml"))
 }
 
-// runCheck recollects the target's origins offline and reports entries that
-// are missing from, or stale in, license.yml
+// Recollects the target's origins offline and reports entries that are missing
+// from, or stale in, license.yml. The text of a go entry is compared only when
+// it was read from a local directory: a module from the module cache cannot
+// change its files at the same version, since go.sum pins them, while a
+// replaced sibling's LICENSE or NOTICE can, and the apps would show the old
+// one with no other check failing (QD-1455).
 func runCheck(existing *licenseFile, targets []string) error {
 	var problems []string
 	for _, origin := range targets {
@@ -279,20 +285,28 @@ func runCheck(existing *licenseFile, targets []string) error {
 				have[e.key()] = e
 			}
 		}
+		// an entry with no version, the SDK's own and the siblings' among
+		// them, is named without a trailing space
+		label := func(e *entry) string {
+			return strings.TrimSpace(origin + " " + e.Name + " " + e.Version)
+		}
 		for k, e := range want {
 			h, ok := have[k]
 			switch {
 			case !ok:
-				problems = append(problems, fmt.Sprintf("missing %s %s %s", origin, e.Name, e.Version))
+				problems = append(problems, "missing "+label(e))
 			case !slices.Equal(h.Apps, e.Apps):
-				problems = append(problems, fmt.Sprintf("%s %s %s: apps %v, want %v", origin, e.Name, e.Version, h.Apps, e.Apps))
+				problems = append(problems, fmt.Sprintf("%s: apps %v, want %v", label(e), h.Apps, e.Apps))
 			case origin == "extra" && !extraEqual(h, e, existing):
 				problems = append(problems, fmt.Sprintf("extra %s: changed in extra.yml", e.Name))
+			// the catalog holds each text as normalizeText wrote it
+			case e.localDir != "" && existing.storedText(h) != normalizeText(e.text):
+				problems = append(problems, fmt.Sprintf("%s: license text changed in %s", label(e), e.localDir))
 			}
 		}
 		for k, e := range have {
 			if _, ok := want[k]; !ok {
-				problems = append(problems, fmt.Sprintf("stale %s %s %s", origin, e.Name, e.Version))
+				problems = append(problems, "stale "+label(e))
 			}
 		}
 	}
@@ -304,16 +318,12 @@ func runCheck(existing *licenseFile, targets []string) error {
 }
 
 func extraEqual(have *entry, want *entry, existing *licenseFile) bool {
-	text := ""
-	if t := existing.Texts[have.Text]; t != nil {
-		text = *t
-	}
 	return have.Kind == want.Kind &&
 		have.Url == want.Url &&
 		have.Spdx == want.Spdx &&
 		have.Copyright == want.Copyright &&
 		have.Notice == want.Notice &&
-		text == normalizeText(want.text)
+		existing.storedText(have) == normalizeText(want.text)
 }
 
 func collect(origin string) ([]*entry, error) {
@@ -366,6 +376,7 @@ type goPackage struct {
 	Module   *struct {
 		Path    string
 		Version string
+		Main    bool
 		Dir     string
 		Replace *struct {
 			Path    string
@@ -378,7 +389,9 @@ type goPackage struct {
 func collectGo() ([]*entry, error) {
 	type module struct {
 		path, version, dir string
-		apps               map[string]bool
+		// dir is a checkout whose files can change at the same version
+		local bool
+		apps  map[string]bool
 	}
 	modules := map[string]*module{}
 	stdApps := map[string]bool{}
@@ -416,10 +429,16 @@ func collectGo() ([]*entry, error) {
 				continue
 			}
 			path, version, dir := pkg.Module.Path, pkg.Module.Version, pkg.Module.Dir
+			// the main module is the SDK's own checkout
+			local := pkg.Module.Main
 			if pkg.Module.Replace != nil {
 				dir = pkg.Module.Replace.Dir
 				if pkg.Module.Replace.Version != "" {
 					version = pkg.Module.Replace.Version
+				} else {
+					// a replace by a directory names no version; one by a
+					// module path must, and that module comes from the cache
+					local = true
 				}
 			}
 			if slices.Contains(extra.SkipGoModules, path) {
@@ -429,9 +448,11 @@ func collectGo() ([]*entry, error) {
 			if strings.HasPrefix(path, "github.com/urnetwork/sdk/") {
 				continue
 			}
+			// the first build that links a module gives its version and
+			// directory, and so whether its text is a checkout's
 			m := modules[path]
 			if m == nil {
-				m = &module{path: path, version: version, dir: dir, apps: map[string]bool{}}
+				m = &module{path: path, version: version, dir: dir, local: local, apps: map[string]bool{}}
 				modules[path] = m
 			}
 			for _, app := range target.apps {
@@ -453,6 +474,10 @@ func collectGo() ([]*entry, error) {
 		if version == "" || version == "v0.0.0" {
 			version = ""
 		}
+		localDir := ""
+		if m.local {
+			localDir = m.dir
+		}
 		entries = append(entries, &entry{
 			Name:      m.path,
 			Version:   version,
@@ -463,6 +488,7 @@ func collectGo() ([]*entry, error) {
 			Spdx:      detectSpdx(text),
 			Copyright: extractCopyright(text),
 			text:      text,
+			localDir:  localDir,
 		})
 	}
 
@@ -1272,6 +1298,15 @@ func readLicenseFile(path string) (*licenseFile, error) {
 		f.Texts = map[string]*string{}
 	}
 	return f, nil
+}
+
+// the text a read catalog holds for one of its entries, empty when the entry's
+// id names none
+func (self *licenseFile) storedText(e *entry) string {
+	if t := self.Texts[e.Text]; t != nil {
+		return *t
+	}
+	return ""
 }
 
 func (self *licenseFile) keepOrigin(existing *licenseFile, origin string) {
