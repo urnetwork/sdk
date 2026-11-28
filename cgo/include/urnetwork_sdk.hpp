@@ -1203,6 +1203,7 @@ struct GetProviderStatusResult;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
 struct GetReferralNetworkResult;
+struct HotspotProxyPreferences;
 struct Id;
 struct LeaderboardEarner;
 struct LeaderboardError;
@@ -3349,6 +3350,12 @@ struct ReferralNetwork {
 struct GetReferralNetworkResult {
 	std::optional<ReferralNetwork> network;
 	std::optional<GetReferralNetworkError> error;
+};
+
+struct HotspotProxyPreferences {
+	bool enabled{};
+	std::optional<std::string> username;
+	std::optional<std::string> password;
 };
 
 struct Id {
@@ -5848,6 +5855,8 @@ inline void to_json(nlohmann::json& j, const ReferralNetwork& v);
 inline void from_json(const nlohmann::json& j, ReferralNetwork& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkResult& v);
 inline void from_json(const nlohmann::json& j, GetReferralNetworkResult& v);
+inline void to_json(nlohmann::json& j, const HotspotProxyPreferences& v);
+inline void from_json(const nlohmann::json& j, HotspotProxyPreferences& v);
 inline void to_json(nlohmann::json& j, const Id& v);
 inline void from_json(const nlohmann::json& j, Id& v);
 inline void to_json(nlohmann::json& j, const LeaderboardEarner& v);
@@ -14657,6 +14666,35 @@ inline void from_json(const nlohmann::json& j, GetReferralNetworkResult& v) {
 		GetReferralNetworkError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const HotspotProxyPreferences& v) {
+	j = nlohmann::json::object();
+	j["enabled"] = v.enabled;
+	if (v.username) {
+		j["username"] = *v.username;
+	}
+	if (v.password) {
+		j["password"] = *v.password;
+	}
+}
+inline void from_json(const nlohmann::json& j, HotspotProxyPreferences& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+		it->get_to(v.enabled);
+	}
+	if (auto it = j.find("username"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.username = std::move(tmp);
+	}
+	if (auto it = j.find("password"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.password = std::move(tmp);
 	}
 }
 
@@ -25749,6 +25787,7 @@ public:
 	std::optional<ConnectLocationList> getExcludedExitLocations() const;
 	std::string getExtenderGossipMode() const;
 	std::optional<ConnectLocationList> getFavoriteLocations() const;
+	std::optional<HotspotProxyPreferences> getHotspotProxyPreferences() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
 	bool getMeasurementsEnabled() const;
@@ -25795,6 +25834,7 @@ public:
 	void setDeviceLocalKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	void setHotspotProxyPreferences(const std::optional<HotspotProxyPreferences>& preferences) const;
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
 	void setLogVerbosity(int64_t level) const;
@@ -39095,6 +39135,14 @@ inline std::optional<ConnectLocationList> LocalState::getFavoriteLocations() con
 	}
 	return detail::parseJson<ConnectLocationList>(r_s->c_str());
 }
+inline std::optional<HotspotProxyPreferences> LocalState::getHotspotProxyPreferences() const {
+	char* r_c = urnet_local_state_get_hotspot_proxy_preferences(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<HotspotProxyPreferences>(r_s->c_str());
+}
 inline std::string LocalState::getInstanceId() const {
 	char* r_c = urnet_local_state_get_instance_id(handle());
 	return detail::takeString(r_c);
@@ -39509,6 +39557,22 @@ inline void LocalState::setExtenderGossipMode(const std::string& mode) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_extender_gossip_mode failed");
+	}
+}
+inline void LocalState::setHotspotProxyPreferences(const std::optional<HotspotProxyPreferences>& preferences) const {
+	std::string preferences_json;
+	const char* preferences_c = nullptr;
+	if (preferences) {
+		preferences_json = nlohmann::json(*preferences).dump();
+		preferences_c = preferences_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_hotspot_proxy_preferences(handle(), preferences_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_hotspot_proxy_preferences failed");
 	}
 }
 inline void LocalState::setInstanceId(const std::string& instance_id) const {

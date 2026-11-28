@@ -1157,6 +1157,7 @@ module URnetwork
       attach_function :urnet_local_state_get_excluded_exit_locations, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_extender_gossip_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_favorite_locations, [:uint64], :pointer, blocking: true
+      attach_function :urnet_local_state_get_hotspot_proxy_preferences, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_instance_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_log_verbosity, [:uint64], :int64, blocking: true
       attach_function :urnet_local_state_get_measurements_enabled, [:uint64], :bool, blocking: true
@@ -1203,6 +1204,7 @@ module URnetwork
       attach_function :urnet_local_state_set_device_local_key_material, [:uint64, :uint64, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_dns_resolver_settings, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_extender_gossip_mode, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_set_hotspot_proxy_preferences, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_instance_id, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_intro_funnel_last_prompted, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_log_verbosity, [:uint64, :int64, :pointer], :bool, blocking: true

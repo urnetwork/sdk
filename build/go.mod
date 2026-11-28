@@ -85,7 +85,9 @@ require (
 	github.com/urnetwork/connect v0.0.0 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/proxy v0.0.0 // indirect
 	github.com/urnetwork/quic-go v0.0.0 // indirect
+	github.com/urnetwork/userwireguard v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261121134650-e1094eeca1b5 // indirect
@@ -97,6 +99,7 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
+	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.5.3 // indirect
@@ -119,6 +122,13 @@ replace github.com/urnetwork/quic-go => ../../quic-go
 replace github.com/urnetwork/goidenticons => ../../goidenticons
 
 replace gvisor.dev/gvisor => ../../gvisor
+
+// The proxy repo, for the android binding's hotspot proxy (../hotspot).
+// Go ignores the sdk's replacements, so this module selects the sibling
+// checkouts too.
+replace github.com/urnetwork/proxy => ../../proxy
+
+replace github.com/urnetwork/userwireguard => ../../userwireguard
 
 tool (
 	golang.org/x/mobile/cmd/gobind

@@ -1177,6 +1177,11 @@ type deviceMultiClientGenerator interface {
 type DeviceLocal struct {
 	peerKeyPinStore *boundedPeerClientKeyPinStore
 	sockets         deviceSockets
+	// The sockets that leave only through the remote route
+	// (socket_tunnel_only.go), with their own private tun, and the packets
+	// their pump dropped because the route had no remote.
+	tunnelOnlySockets         deviceSockets
+	tunnelOnlyDropPacketCount atomic.Int64
 
 	networkSpace *NetworkSpace
 	// api is the credential session used by this device. Ordinary app devices
@@ -2773,6 +2778,7 @@ func (self *DeviceLocal) setUpgradeMuxSettingsWithSelection(
 	self.upgradeMuxSettings = settings
 	selectionChanged := self.dnsResolver.setSelection(presetId, personalId)
 	self.sockets.setResolver(self.dnsResolverSettingsWithLock())
+	self.tunnelOnlySockets.setResolver(self.dnsResolverSettingsWithLock())
 	// apply to the live mux immediately when non-nil (rebuilds its DohCache); nil takes
 	// effect on the next client recreation, which then creates no mux
 	if self.upgradeMux != nil && settings != nil {
@@ -6384,6 +6390,16 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 // ready-only capability; generic Go senders and local protocol owners still wait
 // within SendTimeout. No refused original is retained behind the native reader.
 func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress bool) int {
+	return self.sendPacketsWithRoutePolicy(packets, nativeIngress, false)
+}
+
+// Takes every pooled original, like sendPacketsWithPolicy. A tunnel-only send
+// leaves only through the remote route, the upgrade mux or the remote user nat
+// client: with neither in the route snapshot the burst is returned to the pool
+// and counted, and the local user nat never carries it, so a route that turns
+// local under an open connection drops its packets rather than sending them
+// outside the tunnel.
+func (self *DeviceLocal) sendPacketsWithRoutePolicy(packets [][]byte, nativeIngress bool, tunnelOnly bool) int {
 	if len(packets) == 0 {
 		return 0
 	}
@@ -6418,6 +6434,13 @@ func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress b
 		return 0
 	}
 	route := self.sendRoute.Load()
+	if tunnelOnly && route.upgradeMux == nil && route.remoteUserNatClient == nil {
+		for _, packet := range packets {
+			connect.MessagePoolReturn(packet)
+		}
+		self.tunnelOnlyDropPacketCount.Add(int64(len(packets)))
+		return 0
+	}
 	packetByteCount := 0
 	for _, packet := range packets {
 		packetByteCount += len(packet)
@@ -6452,7 +6475,7 @@ func (self *DeviceLocal) sendPacketsWithPolicy(packets [][]byte, nativeIngress b
 			)
 		}
 	}
-	if route.routeLocal && route.provider != nil {
+	if !tunnelOnly && route.routeLocal && route.provider != nil {
 		if localUserNat := route.provider.LocalUserNat(); localUserNat != nil {
 			sentPacketCount := localUserNat.SendPacketBatch(
 				source,
@@ -6581,6 +6604,7 @@ func (self *DeviceLocal) Close() {
 	self.lifecycleJoinOnce.Do(func() {
 		go func() {
 			self.sockets.closeAndWait()
+			self.tunnelOnlySockets.closeAndWait()
 			if self.authPublication != nil {
 				<-self.authPublication.Done()
 			}
