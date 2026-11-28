@@ -1223,7 +1223,6 @@ struct ManagedDevice;
 struct MemoryStats;
 struct MemoryTeardownObservation;
 struct MicrosoftSignInResult;
-struct MicrosoftSignInSettings;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -3550,10 +3549,6 @@ struct MemoryTeardownObservation {
 
 struct MicrosoftSignInResult {
 	std::string IdToken{};
-};
-
-struct MicrosoftSignInSettings {
-	int64_t AttemptTimeout{};
 };
 
 struct NetExtender {
@@ -5895,8 +5890,6 @@ inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
 inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
 inline void to_json(nlohmann::json& j, const MicrosoftSignInResult& v);
 inline void from_json(const nlohmann::json& j, MicrosoftSignInResult& v);
-inline void to_json(nlohmann::json& j, const MicrosoftSignInSettings& v);
-inline void from_json(const nlohmann::json& j, MicrosoftSignInSettings& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -15514,19 +15507,6 @@ inline void from_json(const nlohmann::json& j, MicrosoftSignInResult& v) {
 	}
 	if (auto it = j.find("IdToken"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IdToken);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const MicrosoftSignInSettings& v) {
-	j = nlohmann::json::object();
-	j["AttemptTimeout"] = v.AttemptTimeout;
-}
-inline void from_json(const nlohmann::json& j, MicrosoftSignInSettings& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("AttemptTimeout"); it != j.end() && !it->is_null()) {
-		it->get_to(v.AttemptTimeout);
 	}
 }
 
@@ -42057,14 +42037,6 @@ inline std::optional<DeviceLocalSettings> defaultLowMemoryDeviceLocalSettings() 
 		return std::nullopt;
 	}
 	return detail::parseJson<DeviceLocalSettings>(r_s->c_str());
-}
-inline std::optional<MicrosoftSignInSettings> defaultMicrosoftSignInSettings() {
-	char* r_c = urnet_default_microsoft_sign_in_settings();
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<MicrosoftSignInSettings>(r_s->c_str());
 }
 inline std::optional<PerformanceProfile> defaultPerformanceProfile() {
 	char* r_c = urnet_default_performance_profile();
