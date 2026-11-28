@@ -3483,10 +3483,12 @@ const (
 
 // One client's data in the newest settled SN25 epoch: the usage bytes the
 // epoch's payout split its pool by (the epoch's provider rows), the figure
-// SN25 paid on. Data, never an amount.
+// SN25 paid on. Data, never an amount. The byte counts here and in
+// ProviderStatusNetworkProvided are int64, not ByteCount, so gobind binds
+// them as primitives (build/cmd/mobileexports type_alias_test.go).
 type ProviderStatusProvided struct {
-	Epoch          int64     `json:"epoch"`
-	UsageByteCount ByteCount `json:"usage_byte_count"`
+	Epoch          int64 `json:"epoch"`
+	UsageByteCount int64 `json:"usage_byte_count"`
 	// one of ProviderStatusProvided*
 	Payout string `json:"payout"`
 }
@@ -3495,9 +3497,9 @@ type ProviderStatusProvided struct {
 // what the epoch counted, and the part of it SN25 did not pay because the
 // device had no payout wallet, the unpaid data provided.
 type ProviderStatusNetworkProvided struct {
-	Epoch           int64     `json:"epoch"`
-	UsageByteCount  ByteCount `json:"usage_byte_count"`
-	UnpaidByteCount ByteCount `json:"unpaid_byte_count"`
+	Epoch           int64 `json:"epoch"`
+	UsageByteCount  int64 `json:"usage_byte_count"`
+	UnpaidByteCount int64 `json:"unpaid_byte_count"`
 	// the network has more devices than the totals read, so they are at least
 	// these
 	Truncated bool `json:"truncated,omitempty"`
