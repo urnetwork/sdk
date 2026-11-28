@@ -484,6 +484,7 @@ EXPORTS
 	urnet_device_add_provide_network_mode_change_listener
 	urnet_device_add_provide_paused_change_listener
 	urnet_device_add_provide_secret_keys_listener
+	urnet_device_add_provide_share_status_change_listener
 	urnet_device_add_provider_egress_contract_details_change_listener
 	urnet_device_add_provider_egress_contract_stats_change_listener
 	urnet_device_add_provider_identity_change_listener
@@ -553,6 +554,8 @@ EXPORTS
 	urnet_device_get_provide_mode
 	urnet_device_get_provide_network_mode
 	urnet_device_get_provide_paused
+	urnet_device_get_provide_share_limits
+	urnet_device_get_provide_share_status
 	urnet_device_get_provider_egress_contract_details
 	urnet_device_get_provider_egress_contract_stats
 	urnet_device_get_provider_family_transport_status
@@ -870,6 +873,7 @@ EXPORTS
 	urnet_device_set_provide_mode
 	urnet_device_set_provide_network_mode
 	urnet_device_set_provide_paused
+	urnet_device_set_provide_share_limits
 	urnet_device_set_provider_transport_settings
 	urnet_device_set_route_local
 	urnet_device_set_transport_settings
@@ -1241,6 +1245,7 @@ EXPORTS
 	urnet_new_onboarding_step_skipped_event
 	urnet_new_platform_device_remote
 	urnet_new_pro_features_notice_tracker
+	urnet_new_provide_share_limits
 	urnet_new_proxy_device_with_defaults
 	urnet_new_purchase_cancelled_event
 	urnet_new_purchase_completed_event

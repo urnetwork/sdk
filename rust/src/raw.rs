@@ -145,6 +145,7 @@ pub type urnet_provide_mode_change_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_provide_network_mode_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_provide_paused_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_provide_secret_keys_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_provide_share_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_provider_identity_change_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_provider_status_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_provider_transport_settings_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -689,6 +690,7 @@ pub struct Raw {
     pub urnet_device_add_provide_network_mode_change_listener: unsafe extern "C" fn(u64, urnet_provide_network_mode_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provide_paused_change_listener: unsafe extern "C" fn(u64, urnet_provide_paused_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provide_secret_keys_listener: unsafe extern "C" fn(u64, urnet_provide_secret_keys_cb, *mut c_void) -> u64,
+    pub urnet_device_add_provide_share_status_change_listener: unsafe extern "C" fn(u64, urnet_provide_share_status_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provider_egress_contract_details_change_listener: unsafe extern "C" fn(u64, urnet_contract_details_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provider_egress_contract_stats_change_listener: unsafe extern "C" fn(u64, urnet_contract_stats_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_provider_identity_change_listener: unsafe extern "C" fn(u64, urnet_provider_identity_change_cb, *mut c_void) -> u64,
@@ -756,6 +758,8 @@ pub struct Raw {
     pub urnet_device_get_provide_mode: unsafe extern "C" fn(u64) -> i64,
     pub urnet_device_get_provide_network_mode: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provide_paused: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_device_get_provide_share_limits: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_device_get_provide_share_status: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provider_egress_contract_details: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provider_egress_contract_stats: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_provider_family_transport_status: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -808,6 +812,7 @@ pub struct Raw {
     pub urnet_device_set_provide_mode: unsafe extern "C" fn(u64, i64) -> (),
     pub urnet_device_set_provide_network_mode: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_device_set_provide_paused: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_device_set_provide_share_limits: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_device_set_provider_transport_settings: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_device_set_route_local: unsafe extern "C" fn(u64, bool) -> (),
     pub urnet_device_set_transport_settings: unsafe extern "C" fn(u64, *const c_char) -> (),
@@ -1698,6 +1703,7 @@ pub struct Raw {
     pub urnet_new_onboarding_step_skipped_event: unsafe extern "C" fn(*const c_char, i64, i64) -> *mut c_char,
     pub urnet_new_platform_device_remote: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *mut *mut c_char) -> u64,
     pub urnet_new_pro_features_notice_tracker: unsafe extern "C" fn() -> u64,
+    pub urnet_new_provide_share_limits: unsafe extern "C" fn(i64, i64) -> *mut c_char,
     pub urnet_new_proxy_device_with_defaults: unsafe extern "C" fn(*const c_char, urnet_setup_new_device_cb, *mut c_void) -> u64,
     pub urnet_new_purchase_cancelled_event: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, bool, f64, *const c_char) -> *mut c_char,
     pub urnet_new_purchase_completed_event: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, bool, f64, *const c_char) -> *mut c_char,
@@ -2246,6 +2252,7 @@ impl Raw {
             urnet_device_add_provide_network_mode_change_listener: unsafe { *library.get(b"urnet_device_add_provide_network_mode_change_listener\0")? },
             urnet_device_add_provide_paused_change_listener: unsafe { *library.get(b"urnet_device_add_provide_paused_change_listener\0")? },
             urnet_device_add_provide_secret_keys_listener: unsafe { *library.get(b"urnet_device_add_provide_secret_keys_listener\0")? },
+            urnet_device_add_provide_share_status_change_listener: unsafe { *library.get(b"urnet_device_add_provide_share_status_change_listener\0")? },
             urnet_device_add_provider_egress_contract_details_change_listener: unsafe { *library.get(b"urnet_device_add_provider_egress_contract_details_change_listener\0")? },
             urnet_device_add_provider_egress_contract_stats_change_listener: unsafe { *library.get(b"urnet_device_add_provider_egress_contract_stats_change_listener\0")? },
             urnet_device_add_provider_identity_change_listener: unsafe { *library.get(b"urnet_device_add_provider_identity_change_listener\0")? },
@@ -2313,6 +2320,8 @@ impl Raw {
             urnet_device_get_provide_mode: unsafe { *library.get(b"urnet_device_get_provide_mode\0")? },
             urnet_device_get_provide_network_mode: unsafe { *library.get(b"urnet_device_get_provide_network_mode\0")? },
             urnet_device_get_provide_paused: unsafe { *library.get(b"urnet_device_get_provide_paused\0")? },
+            urnet_device_get_provide_share_limits: unsafe { *library.get(b"urnet_device_get_provide_share_limits\0")? },
+            urnet_device_get_provide_share_status: unsafe { *library.get(b"urnet_device_get_provide_share_status\0")? },
             urnet_device_get_provider_egress_contract_details: unsafe { *library.get(b"urnet_device_get_provider_egress_contract_details\0")? },
             urnet_device_get_provider_egress_contract_stats: unsafe { *library.get(b"urnet_device_get_provider_egress_contract_stats\0")? },
             urnet_device_get_provider_family_transport_status: unsafe { *library.get(b"urnet_device_get_provider_family_transport_status\0")? },
@@ -2365,6 +2374,7 @@ impl Raw {
             urnet_device_set_provide_mode: unsafe { *library.get(b"urnet_device_set_provide_mode\0")? },
             urnet_device_set_provide_network_mode: unsafe { *library.get(b"urnet_device_set_provide_network_mode\0")? },
             urnet_device_set_provide_paused: unsafe { *library.get(b"urnet_device_set_provide_paused\0")? },
+            urnet_device_set_provide_share_limits: unsafe { *library.get(b"urnet_device_set_provide_share_limits\0")? },
             urnet_device_set_provider_transport_settings: unsafe { *library.get(b"urnet_device_set_provider_transport_settings\0")? },
             urnet_device_set_route_local: unsafe { *library.get(b"urnet_device_set_route_local\0")? },
             urnet_device_set_transport_settings: unsafe { *library.get(b"urnet_device_set_transport_settings\0")? },
@@ -3255,6 +3265,7 @@ impl Raw {
             urnet_new_onboarding_step_skipped_event: unsafe { *library.get(b"urnet_new_onboarding_step_skipped_event\0")? },
             urnet_new_platform_device_remote: unsafe { *library.get(b"urnet_new_platform_device_remote\0")? },
             urnet_new_pro_features_notice_tracker: unsafe { *library.get(b"urnet_new_pro_features_notice_tracker\0")? },
+            urnet_new_provide_share_limits: unsafe { *library.get(b"urnet_new_provide_share_limits\0")? },
             urnet_new_proxy_device_with_defaults: unsafe { *library.get(b"urnet_new_proxy_device_with_defaults\0")? },
             urnet_new_purchase_cancelled_event: unsafe { *library.get(b"urnet_new_purchase_cancelled_event\0")? },
             urnet_new_purchase_completed_event: unsafe { *library.get(b"urnet_new_purchase_completed_event\0")? },

@@ -348,6 +348,7 @@ type DeviceRemote struct {
 	extenderStatusChangeListeners            map[connect.Id]ExtenderStatusChangeListener
 	extenderProvideStatusChangeListeners     map[connect.Id]ExtenderProvideStatusChangeListener
 	clientLimitStatusChangeListeners         map[connect.Id]ClientLimitStatusChangeListener
+	provideShareStatusChangeListeners        map[connect.Id]ProvideShareStatusChangeListener
 	postQuantumUnavailableChangeListeners    map[connect.Id]PostQuantumUnavailableChangeListener
 	transportDelayChangeListeners            map[connect.Id]TransportDelayChangeListener
 	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
@@ -435,6 +436,9 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last provide share status the local device answered or pushed, so
+	// a status read while the rpc is down still shows this month's sharing
+	lastProvideShareStatus *ProvideShareStatus
 	// the last post-quantum notice the local device answered or pushed
 	// (device_remote_post_quantum.go), which the getter answers while the
 	// device process cannot be reached
@@ -629,6 +633,7 @@ func newDeviceRemoteWithOverrides(
 		extenderStatusChangeListeners:            map[connect.Id]ExtenderStatusChangeListener{},
 		extenderProvideStatusChangeListeners:     map[connect.Id]ExtenderProvideStatusChangeListener{},
 		clientLimitStatusChangeListeners:         map[connect.Id]ClientLimitStatusChangeListener{},
+		provideShareStatusChangeListeners:        map[connect.Id]ProvideShareStatusChangeListener{},
 		postQuantumUnavailableChangeListeners:    map[connect.Id]PostQuantumUnavailableChangeListener{},
 		transportDelayChangeListeners:            map[connect.Id]TransportDelayChangeListener{},
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
@@ -830,6 +835,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		ExtenderStatusChangeListenerIds:           slices.Collect(maps.Keys(self.extenderStatusChangeListeners)),
 		ExtenderProvideStatusChangeListenerIds:    slices.Collect(maps.Keys(self.extenderProvideStatusChangeListeners)),
 		ClientLimitStatusChangeListenerIds:        slices.Collect(maps.Keys(self.clientLimitStatusChangeListeners)),
+		ProvideShareStatusChangeListenerIds:       slices.Collect(maps.Keys(self.provideShareStatusChangeListeners)),
 		PostQuantumUnavailableChangeListenerIds:   slices.Collect(maps.Keys(self.postQuantumUnavailableChangeListeners)),
 		TransportDelayChangeListenerIds:           slices.Collect(maps.Keys(self.transportDelayChangeListeners)),
 		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
@@ -7944,6 +7950,9 @@ type DeviceRemoteState struct {
 	// the router port mapping setting (connect EXTENDER.md S10), stored beside
 	// the provider extender setting and queued as it is
 	ProvideExtenderPortMapping deviceRemoteValue[bool]
+	// the owner's share limits (provide_share.go), queued as the provider
+	// extender setting is
+	ProvideShareLimits deviceRemoteValue[*ProvideShareLimits]
 	// the id of a reset of the extender state (EXTENDER.md E7) queued for the
 	// device process, a one-shot command applied during sync; a newer reset
 	// replaces an older one, which it covers
@@ -8034,6 +8043,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.ProvideExtender.Merge(update.ProvideExtender)
 	self.MeasurementsEnabled.Merge(update.MeasurementsEnabled)
 	self.ProvideExtenderPortMapping.Merge(update.ProvideExtenderPortMapping)
+	self.ProvideShareLimits.Merge(update.ProvideShareLimits)
 	self.ExtenderReset.Merge(update.ExtenderReset)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
@@ -8086,6 +8096,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.ProvideExtender.IsSet ||
 		self.MeasurementsEnabled.IsSet ||
 		self.ProvideExtenderPortMapping.IsSet ||
+		self.ProvideShareLimits.IsSet ||
 		self.ExtenderReset.IsSet ||
 		self.ProvidePaused.IsSet ||
 		self.Offline.IsSet ||
@@ -8260,6 +8271,9 @@ type DeviceRemoteSyncRequest struct {
 	ExtenderStatusChangeListenerIds           []connect.Id
 	ExtenderProvideStatusChangeListenerIds    []connect.Id
 	ClientLimitStatusChangeListenerIds        []connect.Id
+	// the remote's provide share status listeners; a device that predates
+	// the share limits ignores them, and the remote reads the getter
+	ProvideShareStatusChangeListenerIds []connect.Id
 	// the remote's post-quantum notice listeners; a device that predates the
 	// notice ignores them, and the remote reads no notice
 	PostQuantumUnavailableChangeListenerIds    []connect.Id
@@ -10167,6 +10181,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerIds            map[connect.Id]bool
 	extenderProvideStatusChangeListenerIds     map[connect.Id]bool
 	clientLimitStatusChangeListenerIds         map[connect.Id]bool
+	provideShareStatusChangeListenerIds        map[connect.Id]bool
 	postQuantumUnavailableChangeListenerIds    map[connect.Id]bool
 	transportDelayChangeListenerIds            map[connect.Id]bool
 	blockActionWindowChangeListenerIds         map[connect.Id]bool
@@ -10222,6 +10237,7 @@ type DeviceLocalRpc struct {
 	extenderStatusChangeListenerSub            Sub
 	extenderProvideStatusChangeListenerSub     Sub
 	clientLimitStatusChangeListenerSub         Sub
+	provideShareStatusChangeListenerSub        Sub
 	postQuantumUnavailableChangeListenerSub    Sub
 	transportDelayChangeListenerSub            Sub
 	blockActionWindowChangeListenerSub         Sub
@@ -10312,6 +10328,7 @@ func newDeviceLocalRpc(
 		extenderStatusChangeListenerIds:            map[connect.Id]bool{},
 		extenderProvideStatusChangeListenerIds:     map[connect.Id]bool{},
 		clientLimitStatusChangeListenerIds:         map[connect.Id]bool{},
+		provideShareStatusChangeListenerIds:        map[connect.Id]bool{},
 		postQuantumUnavailableChangeListenerIds:    map[connect.Id]bool{},
 		transportDelayChangeListenerIds:            map[connect.Id]bool{},
 		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
@@ -10552,6 +10569,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for clientLimitStatusChangeListenerId := range self.clientLimitStatusChangeListenerIds {
 		self.removeClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
+	}
+	for provideShareStatusChangeListenerId := range self.provideShareStatusChangeListenerIds {
+		self.removeProvideShareStatusChangeListenerWithLock(provideShareStatusChangeListenerId)
 	}
 	for postQuantumUnavailableChangeListenerId := range self.postQuantumUnavailableChangeListenerIds {
 		self.removePostQuantumUnavailableChangeListenerWithLock(postQuantumUnavailableChangeListenerId)
@@ -10807,6 +10827,7 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.ProvideExtender.Set(self.deviceLocal.GetProvideExtender())
 	state.MeasurementsEnabled.Set(self.deviceLocal.GetMeasurementsEnabled())
 	state.ProvideExtenderPortMapping.Set(self.deviceLocal.GetProvideExtenderPortMapping())
+	state.ProvideShareLimits.Set(self.deviceLocal.GetProvideShareLimits())
 	state.ProvidePaused.Set(self.deviceLocal.GetProvidePaused())
 	state.Offline.Set(self.deviceLocal.GetOffline())
 	state.VpnInterfaceWhileOffline.Set(self.deviceLocal.GetVpnInterfaceWhileOffline())
@@ -11018,6 +11039,10 @@ func (self *DeviceLocalRpc) Sync(
 	// and so is the router port mapping setting (connect EXTENDER.md S10)
 	if state.ProvideExtenderPortMapping.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideExtenderPortMapping(state.ProvideExtenderPortMapping.Value)
+	}
+	// and the share limits (provide_share.go)
+	if state.ProvideShareLimits.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetProvideShareLimits(state.ProvideShareLimits.Value)
 	}
 	// a reset the app made while this process could not be reached (E7)
 	if state.ExtenderReset.IsSet && !hostedIncompatible {
@@ -11237,6 +11262,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, clientLimitStatusChangeListenerId := range syncRequest.ClientLimitStatusChangeListenerIds {
 		self.addClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
 	}
+	for _, provideShareStatusChangeListenerId := range syncRequest.ProvideShareStatusChangeListenerIds {
+		self.addProvideShareStatusChangeListenerWithLock(provideShareStatusChangeListenerId)
+	}
 	for _, postQuantumUnavailableChangeListenerId := range syncRequest.PostQuantumUnavailableChangeListenerIds {
 		self.addPostQuantumUnavailableChangeListenerWithLock(postQuantumUnavailableChangeListenerId)
 	}
@@ -11432,6 +11460,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.clientLimitStatusChangeListenerSub != nil {
 		self.clientLimitStatusChangedWithLock(self.deviceLocal.GetClientLimitStatus())
+	}
+	if self.provideShareStatusChangeListenerSub != nil {
+		self.provideShareStatusChangedWithLock(self.deviceLocal.GetProvideShareStatus())
 	}
 	if self.postQuantumUnavailableChangeListenerSub != nil {
 		self.postQuantumUnavailableChangedWithLock(self.deviceLocal.GetPostQuantumUnavailable())

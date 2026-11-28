@@ -295,6 +295,8 @@ typedef void (*urnet_provide_paused_change_cb)(void* user_data, bool provide_pau
 void urnet_invoke_provide_paused_change(urnet_provide_paused_change_cb cb, void* user_data, bool provide_paused);
 typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provide_secret_key_list_json);
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json);
+typedef void (*urnet_provide_share_status_change_cb)(void* user_data, const char* status_json);
+void urnet_invoke_provide_share_status_change(urnet_provide_share_status_change_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data);
 typedef void (*urnet_provider_status_cb)(void* user_data);

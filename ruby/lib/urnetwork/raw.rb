@@ -146,6 +146,7 @@ module URnetwork
       callback :urnet_provide_network_mode_change_cb, [:pointer, :string], :void
       callback :urnet_provide_paused_change_cb, [:pointer, :bool], :void
       callback :urnet_provide_secret_keys_cb, [:pointer, :string], :void
+      callback :urnet_provide_share_status_change_cb, [:pointer, :string], :void
       callback :urnet_provider_identity_change_cb, [:pointer], :void
       callback :urnet_provider_status_cb, [:pointer], :void
       callback :urnet_provider_transport_settings_change_cb, [:pointer, :string], :void
@@ -688,6 +689,7 @@ module URnetwork
       attach_function :urnet_device_add_provide_network_mode_change_listener, [:uint64, :urnet_provide_network_mode_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provide_paused_change_listener, [:uint64, :urnet_provide_paused_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provide_secret_keys_listener, [:uint64, :urnet_provide_secret_keys_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_provide_share_status_change_listener, [:uint64, :urnet_provide_share_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provider_egress_contract_details_change_listener, [:uint64, :urnet_contract_details_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provider_egress_contract_stats_change_listener, [:uint64, :urnet_contract_stats_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_provider_identity_change_listener, [:uint64, :urnet_provider_identity_change_cb, :pointer], :uint64, blocking: true
@@ -755,6 +757,8 @@ module URnetwork
       attach_function :urnet_device_get_provide_mode, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_provide_network_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_paused, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_get_provide_share_limits, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_provide_share_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provider_egress_contract_details, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provider_egress_contract_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provider_family_transport_status, [:uint64], :pointer, blocking: true
@@ -807,6 +811,7 @@ module URnetwork
       attach_function :urnet_device_set_provide_mode, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_device_set_provide_network_mode, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_paused, [:uint64, :bool], :void, blocking: true
+      attach_function :urnet_device_set_provide_share_limits, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provider_transport_settings, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_route_local, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_transport_settings, [:uint64, :string], :void, blocking: true
@@ -1697,6 +1702,7 @@ module URnetwork
       attach_function :urnet_new_onboarding_step_skipped_event, [:string, :int64, :int64], :pointer, blocking: true
       attach_function :urnet_new_platform_device_remote, [:uint64, :string, :string, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_pro_features_notice_tracker, [], :uint64, blocking: true
+      attach_function :urnet_new_provide_share_limits, [:int64, :int64], :pointer, blocking: true
       attach_function :urnet_new_proxy_device_with_defaults, [:string, :urnet_setup_new_device_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_purchase_cancelled_event, [:string, :string, :string, :bool, :double, :string], :pointer, blocking: true
       attach_function :urnet_new_purchase_completed_event, [:string, :string, :string, :bool, :double, :string], :pointer, blocking: true

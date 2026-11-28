@@ -656,9 +656,30 @@ type Device interface {
 
 	AddProvideModeChangeListener(listener ProvideModeChangeListener) Sub
 
+	// the platform's pause, the battery and power policy; the share budget's
+	// pause is GetProvideShareStatus().BudgetReached
 	SetProvidePaused(providePaused bool)
 
 	GetProvidePaused() bool
+
+	// GetProvideShareLimits is the owner's cap on how much this device shares
+	// (provide_share.go): the sharing speed and the monthly data budget, zero
+	// for none. A device that cannot be reached reads the value queued for
+	// it, else the last value read, else none.
+	GetProvideShareLimits() *ProvideShareLimits
+
+	// applied at once and kept across restarts; queued while the device
+	// cannot be reached and replayed at the next sync, as the provide mode is
+	SetProvideShareLimits(limits *ProvideShareLimits)
+
+	// GetProvideShareStatus is this month's sharing against the limits: the
+	// data shared, when the month ends, and whether the budget paused
+	// providing. Never nil.
+	GetProvideShareStatus() *ProvideShareStatus
+
+	// at most about once a second while the device shares, and at once when
+	// the limits, the month or the budget state change
+	AddProvideShareStatusChangeListener(listener ProvideShareStatusChangeListener) Sub
 
 	SetOffline(offline bool)
 

@@ -146,6 +146,7 @@ urnet_provide_mode_change_cb = CFUNCTYPE(None, c_void_p, c_int64)
 urnet_provide_network_mode_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_provide_paused_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_provide_secret_keys_cb = CFUNCTYPE(None, c_void_p, c_char_p)
+urnet_provide_share_status_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_provider_identity_change_cb = CFUNCTYPE(None, c_void_p)
 urnet_provider_status_cb = CFUNCTYPE(None, c_void_p)
 urnet_provider_transport_settings_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -1128,6 +1129,8 @@ def bind(lib):
     lib.urnet_device_add_provide_paused_change_listener.restype = c_uint64
     lib.urnet_device_add_provide_secret_keys_listener.argtypes = [c_uint64, urnet_provide_secret_keys_cb, c_void_p]
     lib.urnet_device_add_provide_secret_keys_listener.restype = c_uint64
+    lib.urnet_device_add_provide_share_status_change_listener.argtypes = [c_uint64, urnet_provide_share_status_change_cb, c_void_p]
+    lib.urnet_device_add_provide_share_status_change_listener.restype = c_uint64
     lib.urnet_device_add_provider_egress_contract_details_change_listener.argtypes = [c_uint64, urnet_contract_details_change_cb, c_void_p]
     lib.urnet_device_add_provider_egress_contract_details_change_listener.restype = c_uint64
     lib.urnet_device_add_provider_egress_contract_stats_change_listener.argtypes = [c_uint64, urnet_contract_stats_change_cb, c_void_p]
@@ -1262,6 +1265,10 @@ def bind(lib):
     lib.urnet_device_get_provide_network_mode.restype = c_void_p
     lib.urnet_device_get_provide_paused.argtypes = [c_uint64]
     lib.urnet_device_get_provide_paused.restype = c_bool
+    lib.urnet_device_get_provide_share_limits.argtypes = [c_uint64]
+    lib.urnet_device_get_provide_share_limits.restype = c_void_p
+    lib.urnet_device_get_provide_share_status.argtypes = [c_uint64]
+    lib.urnet_device_get_provide_share_status.restype = c_void_p
     lib.urnet_device_get_provider_egress_contract_details.argtypes = [c_uint64]
     lib.urnet_device_get_provider_egress_contract_details.restype = c_void_p
     lib.urnet_device_get_provider_egress_contract_stats.argtypes = [c_uint64]
@@ -1366,6 +1373,8 @@ def bind(lib):
     lib.urnet_device_set_provide_network_mode.restype = None
     lib.urnet_device_set_provide_paused.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_provide_paused.restype = None
+    lib.urnet_device_set_provide_share_limits.argtypes = [c_uint64, c_char_p]
+    lib.urnet_device_set_provide_share_limits.restype = None
     lib.urnet_device_set_provider_transport_settings.argtypes = [c_uint64, c_char_p]
     lib.urnet_device_set_provider_transport_settings.restype = None
     lib.urnet_device_set_route_local.argtypes = [c_uint64, c_bool]
@@ -3146,6 +3155,8 @@ def bind(lib):
     lib.urnet_new_platform_device_remote.restype = c_uint64
     lib.urnet_new_pro_features_notice_tracker.argtypes = []
     lib.urnet_new_pro_features_notice_tracker.restype = c_uint64
+    lib.urnet_new_provide_share_limits.argtypes = [c_int64, c_int64]
+    lib.urnet_new_provide_share_limits.restype = c_void_p
     lib.urnet_new_proxy_device_with_defaults.argtypes = [c_char_p, urnet_setup_new_device_cb, c_void_p]
     lib.urnet_new_proxy_device_with_defaults.restype = c_uint64
     lib.urnet_new_purchase_cancelled_event.argtypes = [c_char_p, c_char_p, c_char_p, c_bool, c_double, c_char_p]
