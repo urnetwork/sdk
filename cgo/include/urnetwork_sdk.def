@@ -901,6 +901,7 @@ EXPORTS
 	urnet_encrypt_data
 	urnet_evm_mirror_ss58
 	urnet_export_diagnostic_bundle
+	urnet_export_upload_logs
 	urnet_extender_dns_name
 	urnet_extender_hosts
 	urnet_extender_root_public_keys
@@ -1093,6 +1094,7 @@ EXPORTS
 	urnet_log_app_info
 	urnet_log_google_sign_in_failure
 	urnet_log_inventory
+	urnet_log_tails
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start
 	urnet_login_view_controller_stop
