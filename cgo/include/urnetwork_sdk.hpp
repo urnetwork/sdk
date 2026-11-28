@@ -520,6 +520,8 @@ inline constexpr const char* LocationsLoading = "LOCATIONS_LOADING";
 inline constexpr int64_t LogVerbosityDefault = 0;
 inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
+inline constexpr const char* LowDataWarningKindByteCount = "byte_count";
+inline constexpr const char* LowDataWarningKindPercent = "percent";
 inline constexpr int64_t LowMemoryDeviceTargetByteCount = 33554432;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr const char* ManageDevicesErrorLoadFailed = "load_failed";
@@ -1165,6 +1167,7 @@ struct LocationGroupResult;
 struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
+struct LowDataWarning;
 struct ProFeaturesStatus;
 struct ManageDevicesSnapshot;
 struct ManagedDevice;
@@ -3320,6 +3323,13 @@ struct LogFileInfo {
 	std::string Severity{};
 	int64_t ByteCount{};
 	int64_t ModifiedMillis{};
+};
+
+struct LowDataWarning {
+	std::string Kind{};
+	int64_t AvailableByteCount{};
+	int64_t StartBalanceByteCount{};
+	int32_t AvailablePercent{};
 };
 
 struct ProFeaturesStatus {
@@ -5679,6 +5689,8 @@ inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
+inline void to_json(nlohmann::json& j, const LowDataWarning& v);
+inline void from_json(const nlohmann::json& j, LowDataWarning& v);
 inline void to_json(nlohmann::json& j, const ProFeaturesStatus& v);
 inline void from_json(const nlohmann::json& j, ProFeaturesStatus& v);
 inline void to_json(nlohmann::json& j, const ManageDevicesSnapshot& v);
@@ -14561,6 +14573,31 @@ inline void from_json(const nlohmann::json& j, LogFileInfo& v) {
 	}
 	if (auto it = j.find("ModifiedMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ModifiedMillis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const LowDataWarning& v) {
+	j = nlohmann::json::object();
+	j["Kind"] = v.Kind;
+	j["AvailableByteCount"] = v.AvailableByteCount;
+	j["StartBalanceByteCount"] = v.StartBalanceByteCount;
+	j["AvailablePercent"] = v.AvailablePercent;
+}
+inline void from_json(const nlohmann::json& j, LowDataWarning& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("AvailableByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AvailableByteCount);
+	}
+	if (auto it = j.find("StartBalanceByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StartBalanceByteCount);
+	}
+	if (auto it = j.find("AvailablePercent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AvailablePercent);
 	}
 }
 
@@ -41256,6 +41293,20 @@ inline std::optional<LogFileInfoList> logInventory() {
 		return std::nullopt;
 	}
 	return detail::parseJson<LogFileInfoList>(r_s->c_str());
+}
+inline std::optional<LowDataWarning> lowDataWarningForBalance(const LocalState& local_state, const std::optional<SubscriptionBalanceResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* r_c = urnet_low_data_warning_for_balance(local_state.handle(), result_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<LowDataWarning>(r_s->c_str());
 }
 inline std::string memoryClassesJsonForDiag() {
 	char* r_c = urnet_memory_classes_json_for_diag();

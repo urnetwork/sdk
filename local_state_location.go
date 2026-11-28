@@ -83,8 +83,9 @@ func (self *LocalState) setLocationWithLock(name string, location *ConnectLocati
 	return self.writePreferenceBytesWithLock(name, data)
 }
 
-// Both callers supply fixed existing filenames. Nil means explicit removal;
-// a complete nonnil byte record commits before live preference adoption.
+// Callers supply fixed existing filenames: the locations, the preference
+// catalog and the low-data warning state. Nil means explicit removal; a
+// complete nonnil byte record commits before live preference adoption.
 func (self *LocalState) writePreferenceBytesWithLock(name string, data []byte) (returnErr error) {
 	if self.ctx.Err() != nil {
 		return errors.New("location storage owner is closed")

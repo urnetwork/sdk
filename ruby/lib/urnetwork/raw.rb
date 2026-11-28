@@ -1658,6 +1658,7 @@ module URnetwork
       attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
       attach_function :urnet_log_google_sign_in_failure, [:string, :string, :int64], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true
+      attach_function :urnet_low_data_warning_for_balance, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_memory_classes_json_for_diag, [], :pointer, blocking: true
       attach_function :urnet_monthly_equivalent_amount, [:double, :int64], :double, blocking: true
       attach_function :urnet_nano_cents_to_usd, [:int64], :double, blocking: true
