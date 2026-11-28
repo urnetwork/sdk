@@ -16913,6 +16913,13 @@ func urnet_is_favorite_exit(location *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_is_invalid_user_auth_phone
+func urnet_is_invalid_user_auth_phone(userAuth *C.char) C.bool {
+	defer cgoGuard("urnet_is_invalid_user_auth_phone")
+	r0 := sdk.IsInvalidUserAuthPhone(goString(userAuth))
+	return C.bool(r0)
+}
+
 //export urnet_is_points_leaderboard_sort
 func urnet_is_points_leaderboard_sort(sort *C.char) C.bool {
 	defer cgoGuard("urnet_is_points_leaderboard_sort")
@@ -16945,6 +16952,13 @@ func urnet_is_sandbox_purchase_refusal(result *C.char) C.bool {
 func urnet_is_valid_payment_reference(s *C.char) C.bool {
 	defer cgoGuard("urnet_is_valid_payment_reference")
 	r0 := sdk.IsValidPaymentReference(goString(s))
+	return C.bool(r0)
+}
+
+//export urnet_is_valid_user_auth_phone
+func urnet_is_valid_user_auth_phone(userAuth *C.char) C.bool {
+	defer cgoGuard("urnet_is_valid_user_auth_phone")
+	r0 := sdk.IsValidUserAuthPhone(goString(userAuth))
 	return C.bool(r0)
 }
 

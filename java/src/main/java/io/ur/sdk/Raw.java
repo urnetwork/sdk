@@ -1665,10 +1665,12 @@ public interface Raw extends Library {
   byte urnet_is_cant_reach_error(String a0);
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_favorite_exit(String a0);
+  byte urnet_is_invalid_user_auth_phone(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
   byte urnet_is_sandbox_purchase_refusal(String a0);
   byte urnet_is_valid_payment_reference(String a0);
+  byte urnet_is_valid_user_auth_phone(String a0);
   void urnet_log_app_info(String a0, String a1);
   void urnet_log_google_sign_in_failure(String a0, String a1, long a2);
   Pointer urnet_log_inventory();

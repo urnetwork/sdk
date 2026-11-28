@@ -1664,10 +1664,12 @@ module URnetwork
       attach_function :urnet_is_cant_reach_error, [:string], :bool, blocking: true
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
       attach_function :urnet_is_favorite_exit, [:string], :bool, blocking: true
+      attach_function :urnet_is_invalid_user_auth_phone, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true
       attach_function :urnet_is_sandbox_purchase_refusal, [:string], :bool, blocking: true
       attach_function :urnet_is_valid_payment_reference, [:string], :bool, blocking: true
+      attach_function :urnet_is_valid_user_auth_phone, [:string], :bool, blocking: true
       attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
       attach_function :urnet_log_google_sign_in_failure, [:string, :string, :int64], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true

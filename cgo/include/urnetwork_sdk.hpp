@@ -41463,6 +41463,10 @@ inline bool isFavoriteExit(const std::optional<ConnectLocation>& location) {
 	bool r = urnet_is_favorite_exit(location_c);
 	return r;
 }
+inline bool isInvalidUserAuthPhone(const std::string& user_auth) {
+	bool r = urnet_is_invalid_user_auth_phone(user_auth.c_str());
+	return r;
+}
 inline bool isPointsLeaderboardSort(const std::string& sort) {
 	bool r = urnet_is_points_leaderboard_sort(sort.c_str());
 	return r;
@@ -41483,6 +41487,10 @@ inline bool isSandboxPurchaseRefusal(const std::optional<VerifyStorePurchaseResu
 }
 inline bool isValidPaymentReference(const std::string& s) {
 	bool r = urnet_is_valid_payment_reference(s.c_str());
+	return r;
+}
+inline bool isValidUserAuthPhone(const std::string& user_auth) {
+	bool r = urnet_is_valid_user_auth_phone(user_auth.c_str());
 	return r;
 }
 inline void logAppInfo(const std::string& tag, const std::string& message) {
