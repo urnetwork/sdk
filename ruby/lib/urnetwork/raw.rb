@@ -1625,7 +1625,6 @@ module URnetwork
       attach_function :urnet_decode_microsoft_sign_in_attempt, [:string, :pointer], :uint64, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
-      attach_function :urnet_default_microsoft_sign_in_settings, [], :pointer, blocking: true
       attach_function :urnet_default_performance_profile, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true

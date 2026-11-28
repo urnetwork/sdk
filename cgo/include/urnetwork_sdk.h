@@ -2925,7 +2925,6 @@ char* urnet_crypto_wallet_suggestions(const char* asset);
 uint64_t urnet_decode_microsoft_sign_in_attempt(const char* encoded, char** out_error);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
-char* urnet_default_microsoft_sign_in_settings(void);
 char* urnet_default_performance_profile(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
@@ -5157,10 +5156,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* MicrosoftSignInResult (json):
  *   IdToken: string
- */
-
-/* MicrosoftSignInSettings (json):
- *   AttemptTimeout: number (ns)
  */
 
 /* MultiHopIdList (json):

@@ -77,15 +77,17 @@ const (
 	MicrosoftSignInErrorCodeNotThisAttempt = "not_this_attempt"
 )
 
-type MicrosoftSignInSettings struct {
+// Kept off the bound api: no app sets it, and gobind skips a time.Duration
+// field, which the Android build's mobileexports check rejects.
+type microsoftSignInSettings struct {
 	// how long an attempt waits for its return before it is stale. The
 	// server's authorization code and Microsoft's page outlive it; five
 	// minutes is the Apple and Google browser flows' timeout.
 	AttemptTimeout time.Duration
 }
 
-func DefaultMicrosoftSignInSettings() *MicrosoftSignInSettings {
-	return &MicrosoftSignInSettings{
+func defaultMicrosoftSignInSettings() *microsoftSignInSettings {
+	return &microsoftSignInSettings{
 		AttemptTimeout: 5 * time.Minute,
 	}
 }
@@ -96,7 +98,7 @@ type MicrosoftSignInAttempt struct {
 	state      string
 	nonce      string
 	createTime time.Time
-	settings   *MicrosoftSignInSettings
+	settings   *microsoftSignInSettings
 	now        func() time.Time
 }
 
@@ -118,10 +120,10 @@ type MicrosoftSignInResult struct {
 
 // A new attempt for the platform, one of the OAuthPlatform* values.
 func NewMicrosoftSignInAttempt(platform string) (*MicrosoftSignInAttempt, error) {
-	return newMicrosoftSignInAttempt(platform, DefaultMicrosoftSignInSettings(), time.Now)
+	return newMicrosoftSignInAttempt(platform, defaultMicrosoftSignInSettings(), time.Now)
 }
 
-func newMicrosoftSignInAttempt(platform string, settings *MicrosoftSignInSettings, now func() time.Time) (*MicrosoftSignInAttempt, error) {
+func newMicrosoftSignInAttempt(platform string, settings *microsoftSignInSettings, now func() time.Time) (*MicrosoftSignInAttempt, error) {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	if microsoftSignInReturnScheme(platform) == "" {
 		return nil, fmt.Errorf("unknown sign-in platform %q", platform)
@@ -193,10 +195,10 @@ func (self *MicrosoftSignInAttempt) Encode() string {
 
 // The attempt an app persisted with Encode.
 func DecodeMicrosoftSignInAttempt(encoded string) (*MicrosoftSignInAttempt, error) {
-	return decodeMicrosoftSignInAttempt(encoded, DefaultMicrosoftSignInSettings(), time.Now)
+	return decodeMicrosoftSignInAttempt(encoded, defaultMicrosoftSignInSettings(), time.Now)
 }
 
-func decodeMicrosoftSignInAttempt(encoded string, settings *MicrosoftSignInSettings, now func() time.Time) (*MicrosoftSignInAttempt, error) {
+func decodeMicrosoftSignInAttempt(encoded string, settings *microsoftSignInSettings, now func() time.Time) (*MicrosoftSignInAttempt, error) {
 	var decoded microsoftSignInAttemptJson
 	if err := json.Unmarshal([]byte(encoded), &decoded); err != nil {
 		return nil, err

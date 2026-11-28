@@ -1626,7 +1626,6 @@ public interface Raw extends Library {
   long urnet_decode_microsoft_sign_in_attempt(String a0, PointerByReference a1);
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
-  Pointer urnet_default_microsoft_sign_in_settings();
   Pointer urnet_default_performance_profile();
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();

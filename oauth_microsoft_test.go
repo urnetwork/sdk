@@ -42,7 +42,7 @@ func (self *microsoftTestClock) Now() time.Time {
 func newMicrosoftTestAttempt(t *testing.T, platform string) (*MicrosoftSignInAttempt, *microsoftTestClock) {
 	t.Helper()
 	clock := &microsoftTestClock{now: time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)}
-	attempt, err := newMicrosoftSignInAttempt(platform, DefaultMicrosoftSignInSettings(), clock.Now)
+	attempt, err := newMicrosoftSignInAttempt(platform, defaultMicrosoftSignInSettings(), clock.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestMicrosoftSignInAttemptRefusesUnusableReturns(t *testing.T) {
 // read back, with the same state, nonce and age.
 func TestMicrosoftSignInAttemptEncodeDecode(t *testing.T) {
 	attempt, clock := newMicrosoftTestAttempt(t, OAuthPlatformAndroid)
-	decoded, err := decodeMicrosoftSignInAttempt(attempt.Encode(), DefaultMicrosoftSignInSettings(), clock.Now)
+	decoded, err := decodeMicrosoftSignInAttempt(attempt.Encode(), defaultMicrosoftSignInSettings(), clock.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestMicrosoftSignInAttemptEncodeDecode(t *testing.T) {
 	}
 
 	clock.now = clock.now.Add(10 * time.Minute)
-	stale, err := decodeMicrosoftSignInAttempt(attempt.Encode(), DefaultMicrosoftSignInSettings(), clock.Now)
+	stale, err := decodeMicrosoftSignInAttempt(attempt.Encode(), defaultMicrosoftSignInSettings(), clock.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

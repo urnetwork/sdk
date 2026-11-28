@@ -10258,16 +10258,6 @@ func urnet_default_low_memory_device_local_settings() *C.char {
 	return cJson(r0, "urnet_default_low_memory_device_local_settings")
 }
 
-//export urnet_default_microsoft_sign_in_settings
-func urnet_default_microsoft_sign_in_settings() *C.char {
-	defer cgoGuard("urnet_default_microsoft_sign_in_settings")
-	r0 := sdk.DefaultMicrosoftSignInSettings()
-	if r0 == nil {
-		return nil
-	}
-	return cJson(r0, "urnet_default_microsoft_sign_in_settings")
-}
-
 //export urnet_default_performance_profile
 func urnet_default_performance_profile() *C.char {
 	defer cgoGuard("urnet_default_performance_profile")
