@@ -1613,6 +1613,7 @@ public interface Raw extends Library {
   Pointer urnet_encrypt_data(Pointer a0, int a1, String a2, String a3, PointerByReference a4);
   Pointer urnet_evm_mirror_ss58(String a0);
   Pointer urnet_export_diagnostic_bundle(String a0, String a1, PointerByReference a2);
+  Pointer urnet_export_upload_logs(String a0, PointerByReference a1);
   Pointer urnet_extender_dns_name(String a0, String a1);
   Pointer urnet_extender_hosts(String a0);
   Pointer urnet_extender_root_public_keys(String a0, String a1);
@@ -1671,6 +1672,7 @@ public interface Raw extends Library {
   void urnet_log_app_info(String a0, String a1);
   void urnet_log_google_sign_in_failure(String a0, String a1, long a2);
   Pointer urnet_log_inventory();
+  Pointer urnet_log_tails();
   Pointer urnet_low_data_warning_for_balance(long a0, String a1);
   Pointer urnet_memory_classes_json_for_diag();
   double urnet_monthly_equivalent_amount(double a0, long a1);

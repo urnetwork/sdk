@@ -16109,6 +16109,20 @@ func urnet_export_diagnostic_bundle(destPath *C.char, opts *C.char, outError **C
 	return cJson(r0, "urnet_export_diagnostic_bundle")
 }
 
+//export urnet_export_upload_logs
+func urnet_export_upload_logs(destPath *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_export_upload_logs")
+	r0, err := sdk.ExportUploadLogs(goString(destPath))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_export_upload_logs")
+}
+
 //export urnet_extender_dns_name
 func urnet_extender_dns_name(key *C.char, values *C.char) *C.char {
 	defer cgoGuard("urnet_extender_dns_name")
@@ -18588,6 +18602,16 @@ func urnet_log_inventory() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_log_inventory")
+}
+
+//export urnet_log_tails
+func urnet_log_tails() *C.char {
+	defer cgoGuard("urnet_log_tails")
+	r0 := sdk.LogTails()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_log_tails")
 }
 
 //export urnet_login_view_controller_close

@@ -68,16 +68,17 @@ func defaultLowDataWarningSettings() *lowDataWarningSettings {
 }
 
 // LowDataWarning is a warning to show now. Plain fields so gomobile and the
-// cgo bindings carry it as is.
+// cgo bindings carry it as is. Spell byte counts int64 so gomobile
+// generates primitive comparisons in Java.
 type LowDataWarning struct {
 	// LowDataWarningKindPercent or LowDataWarningKindByteCount: the threshold
 	// the warning is for. The percent kind says how much of the data is left,
 	// the byte count kind how many bytes.
 	Kind string
 	// The data still available, the amount the warning names.
-	AvailableByteCount ByteCount
+	AvailableByteCount int64
 	// The period's start balance, the whole of the data the percent is of.
-	StartBalanceByteCount ByteCount
+	StartBalanceByteCount int64
 	// The part of the start balance still available, in whole percent rounded
 	// up, so a warning never says 0% while some data is left: 1 to 100.
 	AvailablePercent int32

@@ -7,16 +7,16 @@ sources:
     repo: sdk
   - origin: maven
     repo: android
-    commit: 5e18e2deec8a06367650a856d11c0c32bf9ed7f6
+    commit: 427807c2e41463d8d2866e8f82da9610ebc839c0
   - origin: swiftpm
     repo: apple
-    commit: cd7ae6cce5e9429982f2e7a2ba8c9783206a4605
+    commit: d012a1f497683f11554aa95ed2d92872885b6e09
   - origin: npm-web
     repo: mmm
-    commit: 2a5c71cdd8eb848d2c708115b7c2f712ae0e96df
+    commit: 44f72cd1315e377d3cd49041619f29d0ce841d6c
   - origin: npm-extension
     repo: extension
-    commit: 9a6b76076153717a9a3b282dd2ac8b338e1cf1c8
+    commit: 16c86d6c35b0e6abba4403be48e2ab285c247ae2
 entries:
   - name: GeoLite2 by MaxMind
     kind: data
@@ -898,6 +898,24 @@ entries:
     origin: maven
     apps: [android]
     url: https://developer.android.com/jetpack/androidx/releases/core#1.0.0
+    spdx: Apache-2.0
+    copyright: Copyright (c) The Android Open Source Project
+    text: 074e6e32c86a
+  - name: androidx.credentials:credentials
+    version: 1.6.0
+    kind: software
+    origin: maven
+    apps: [android]
+    url: https://developer.android.com/jetpack/androidx/releases/credentials#1.6.0
+    spdx: Apache-2.0
+    copyright: Copyright (c) The Android Open Source Project
+    text: 074e6e32c86a
+  - name: androidx.credentials:credentials-play-services-auth
+    version: 1.6.0
+    kind: software
+    origin: maven
+    apps: [android]
+    url: https://developer.android.com/jetpack/androidx/releases/credentials#1.6.0
     spdx: Apache-2.0
     copyright: Copyright (c) The Android Open Source Project
     text: 074e6e32c86a
@@ -2019,6 +2037,13 @@ entries:
     apps: [android]
     spdx: LicenseRef-Android-SDK
     text: d1ccc4ca3d0d
+  - name: com.google.android.gms:play-services-auth-blockstore
+    version: 16.4.0
+    kind: software
+    origin: maven
+    apps: [android]
+    spdx: LicenseRef-Android-SDK
+    text: d1ccc4ca3d0d
   - name: com.google.android.gms:play-services-base
     version: 18.5.0
     kind: software
@@ -2042,6 +2067,13 @@ entries:
     text: d1ccc4ca3d0d
   - name: com.google.android.gms:play-services-identity
     version: 18.1.0
+    kind: software
+    origin: maven
+    apps: [android]
+    spdx: LicenseRef-Android-SDK
+    text: d1ccc4ca3d0d
+  - name: com.google.android.gms:play-services-identity-credentials
+    version: 16.0.0-alpha08
     kind: software
     origin: maven
     apps: [android]
@@ -2090,6 +2122,13 @@ entries:
     url: https://developer.android.com/topic/instant-apps/index.html
     spdx: LicenseRef-Android-SDK
     copyright: Copyright (c) Google, Inc.
+    text: d1ccc4ca3d0d
+  - name: com.google.android.libraries.identity.googleid:googleid
+    version: 1.2.1
+    kind: software
+    origin: maven
+    apps: [android]
+    spdx: LicenseRef-Android-SDK
     text: d1ccc4ca3d0d
   - name: com.google.android.material:material
     version: 1.13.0
@@ -4018,6 +4057,14 @@ entries:
     text: 074e6e32c86a
   - name: org.jetbrains.kotlin:kotlin-stdlib-jdk7
     version: 1.9.0
+    kind: software
+    origin: maven
+    apps: [android]
+    url: https://kotlinlang.org/
+    spdx: Apache-2.0
+    text: 074e6e32c86a
+  - name: org.jetbrains.kotlin:kotlin-stdlib-jdk8
+    version: 1.8.20
     kind: software
     origin: maven
     apps: [android]

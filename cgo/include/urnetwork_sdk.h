@@ -430,7 +430,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_SEED_SOURCE_IMPORT "import"
 #define URNET_EXTENDER_SEED_SOURCE_MIRROR "mirror"
 #define URNET_EXTENDER_SEED_SOURCE_STORE "store"
+#define URNET_GOOGLE_SIGN_IN_CREDENTIAL_PARSING_TYPE "TYPE_GOOGLE_ID_TOKEN_PARSING"
 #define URNET_GOOGLE_SIGN_IN_FAILURE_SOURCE_ANDROID "android"
+#define URNET_GOOGLE_SIGN_IN_FAILURE_SOURCE_ANDROID_CREDENTIAL "android_credential"
 #define URNET_GOOGLE_SIGN_IN_FAILURE_SOURCE_APPLE "apple"
 #define URNET_IP_FAMILY_DUALSTACK "dualstack"
 #define URNET_IP_FAMILY_FILTER_V4_CAPABLE "v4-capable"
@@ -2864,6 +2866,7 @@ char* urnet_encode_base58(const uint8_t* data, int32_t data_len);
 char* urnet_encrypt_data(const uint8_t* data, int32_t data_len, const char* nonce_base58, const char* shared_secret_base58, char** out_error);
 char* urnet_evm_mirror_ss58(const char* address);
 char* urnet_export_diagnostic_bundle(const char* dest_path, const char* opts_json, char** out_error);
+char* urnet_export_upload_logs(const char* dest_path, char** out_error);
 char* urnet_extender_dns_name(const char* key_json, const char* values_json);
 char* urnet_extender_hosts(const char* values_json);
 char* urnet_extender_root_public_keys(const char* key_json, const char* values_json);
@@ -2922,6 +2925,7 @@ bool urnet_is_valid_payment_reference(const char* s);
 void urnet_log_app_info(const char* tag, const char* message);
 void urnet_log_google_sign_in_failure(const char* source, const char* domain, int64_t code);
 char* urnet_log_inventory(void);
+char* urnet_log_tails(void);
 char* urnet_low_data_warning_for_balance(uint64_t local_state, const char* result_json);
 char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
@@ -4905,6 +4909,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* LogFileInfoList (json):
  *   = LogFileInfo | null[]
+ */
+
+/* LogTail (json):
+ *   Source: string
+ *   Name: string
+ *   Lines: StringList | null
+ *   Truncated: boolean
+ */
+
+/* LogTailList (json):
+ *   = LogTail | null[]
  */
 
 /* LowDataWarning (json):
