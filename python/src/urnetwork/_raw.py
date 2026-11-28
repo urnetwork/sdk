@@ -3068,6 +3068,8 @@ def bind(lib):
     lib.urnet_log_google_sign_in_failure.restype = None
     lib.urnet_log_inventory.argtypes = []
     lib.urnet_log_inventory.restype = c_void_p
+    lib.urnet_low_data_warning_for_balance.argtypes = [c_uint64, c_char_p]
+    lib.urnet_low_data_warning_for_balance.restype = c_void_p
     lib.urnet_memory_classes_json_for_diag.argtypes = []
     lib.urnet_memory_classes_json_for_diag.restype = c_void_p
     lib.urnet_monthly_equivalent_amount.argtypes = [c_double, c_int64]

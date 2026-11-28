@@ -18416,6 +18416,31 @@ func urnet_login_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_low_data_warning_for_balance
+func urnet_low_data_warning_for_balance(localState C.uint64_t, result *C.char) *C.char {
+	defer cgoGuard("urnet_low_data_warning_for_balance")
+	var localState_ *sdk.LocalState
+	if localState != 0 {
+		var ok bool
+		localState_, ok = resolveHandle[*sdk.LocalState](uint64(localState), "urnet_low_data_warning_for_balance")
+		if !ok {
+			return nil
+		}
+	}
+	var result_ *sdk.SubscriptionBalanceResult
+	if result != nil {
+		result_ = &sdk.SubscriptionBalanceResult{}
+		if !goJson(result, result_, "urnet_low_data_warning_for_balance") {
+			return nil
+		}
+	}
+	r0 := sdk.LowDataWarningForBalance(localState_, result_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_low_data_warning_for_balance")
+}
+
 //export urnet_manage_devices_view_controller_add_manage_devices_listener
 func urnet_manage_devices_view_controller_add_manage_devices_listener(self C.uint64_t, listener_manage_devices_changed C.urnet_manage_devices_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_manage_devices_view_controller_add_manage_devices_listener")

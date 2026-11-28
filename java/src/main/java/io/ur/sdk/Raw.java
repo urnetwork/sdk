@@ -1659,6 +1659,7 @@ public interface Raw extends Library {
   void urnet_log_app_info(String a0, String a1);
   void urnet_log_google_sign_in_failure(String a0, String a1, long a2);
   Pointer urnet_log_inventory();
+  Pointer urnet_low_data_warning_for_balance(long a0, String a1);
   Pointer urnet_memory_classes_json_for_diag();
   double urnet_monthly_equivalent_amount(double a0, long a1);
   double urnet_nano_cents_to_usd(long a0);
