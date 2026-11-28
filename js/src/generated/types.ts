@@ -762,6 +762,7 @@ export interface ConnectLocation {
   strong_privacy: boolean;
   network_peer?: boolean;
   extender_ip?: string;
+  exclude_location_ids?: string[] | null;
 }
 
 export interface ProxyDeviceState {

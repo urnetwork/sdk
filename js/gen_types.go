@@ -313,7 +313,7 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "ClientSessionAction[]"
 		case "sdk.ClientSessionGroupList":
 			return "ClientSessionGroup[]"
-		case "sdk.StringList":
+		case "sdk.StringList", "sdk.IdList":
 			return "string[]"
 		case "sdk.LocationResultList":
 			return "LocationResult[]"
