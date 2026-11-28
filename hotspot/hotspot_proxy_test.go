@@ -972,3 +972,23 @@ func TestHotspotProxyGeneratedCredentials(t *testing.T) {
 		seen[password] = true
 	}
 }
+
+// Both servers hold an idle relayed connection for the hotspot's read timeout,
+// longer than the hosted proxies', so idle sessions of a shared laptop stay up.
+func TestHotspotProxyServersUseTheHotspotReadTimeout(t *testing.T) {
+	hotspotProxy := newTestHotspotProxy(t, &testListenRecorder{}, &testTunnel{}, &memoryHotspotProxyStore{}, nil)
+	want := defaultHotspotProxySettings().proxyReadTimeout
+	if want <= proxyReadTimeoutOfTheHostedProxies() {
+		t.Fatalf("the hotspot read timeout %v is not longer than the hosted proxies' %v", want, proxyReadTimeoutOfTheHostedProxies())
+	}
+	if got := hotspotProxy.httpProxy.Settings().ProxyReadTimeout; got != want {
+		t.Fatalf("http read timeout %v, want %v", got, want)
+	}
+	if got := hotspotProxy.socksProxy.Settings().ProxyReadTimeout; got != want {
+		t.Fatalf("socks read timeout %v, want %v", got, want)
+	}
+}
+
+func proxyReadTimeoutOfTheHostedProxies() time.Duration {
+	return defaultHotspotProxySettings().httpProxySettings.ProxyReadTimeout
+}

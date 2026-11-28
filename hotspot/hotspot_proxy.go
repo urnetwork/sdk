@@ -44,6 +44,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/proxy"
@@ -81,7 +82,13 @@ type hotspotProxySettings struct {
 	// Binds one listener at exactly the address. Tests bind a loopback
 	// listener in its place.
 	listen func(ctx context.Context, address netip.AddrPort) (net.Listener, error)
-	// The proxy repo's server settings.
+	// How long a relayed connection may sit idle before it is closed, for
+	// the http and the socks proxy. Longer than the hosted proxies' 30 s: a
+	// shared laptop keeps idle sessions (chat, ssh) whose heartbeats are
+	// further apart, and maxConnectionCount bounds what idle ones hold.
+	proxyReadTimeout time.Duration
+	// The proxy repo's server settings. proxyReadTimeout replaces their read
+	// timeout.
 	httpProxySettings  *proxy.HttpProxySettings
 	socksProxySettings *proxy.SocksProxySettings
 }
@@ -94,6 +101,7 @@ func defaultHotspotProxySettings() *hotspotProxySettings {
 		usernameLength:     8,
 		passwordLength:     20,
 		listen:             listenTcp4,
+		proxyReadTimeout:   5 * time.Minute,
 		httpProxySettings:  proxy.DefaultHttpProxySettings(),
 		socksProxySettings: proxy.DefaultSocksProxySettings(),
 	}
@@ -280,11 +288,13 @@ func newHotspotProxy(
 
 	httpSettings := *settings.httpProxySettings
 	httpSettings.Log = log
+	httpSettings.ProxyReadTimeout = settings.proxyReadTimeout
 	self.httpProxy = proxy.NewHttpProxy(&httpSettings)
 	self.httpProxy.ConnectDialContextWithRequest = self.dialHttp
 
 	socksSettings := *settings.socksProxySettings
 	socksSettings.Log = log
+	socksSettings.ProxyReadTimeout = settings.proxyReadTimeout
 	self.socksProxy = proxy.NewSocksProxy(&socksSettings)
 	self.socksProxy.ValidUser = self.validSocksUser
 	self.socksProxy.ConnectDialWithRequest = self.dialSocks
