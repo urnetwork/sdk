@@ -32,6 +32,11 @@ func fillNonZero(t *testing.T, v reflect.Value, seed *int) {
 	case reflect.TypeOf(connect.Id{}):
 		v.Set(reflect.ValueOf(connect.NewId()))
 		return
+	case reflect.TypeOf((*IdList)(nil)):
+		ids := NewIdList()
+		ids.Add(NewId())
+		v.Set(reflect.ValueOf(ids))
+		return
 	}
 	switch v.Kind() {
 	case reflect.Pointer:

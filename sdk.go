@@ -1096,6 +1096,15 @@ type ConnectLocation struct {
 	// is no pin; a location without a client id never carries one. Set it only
 	// against a device that reports GetSupportsExtenderPin.
 	ExtenderIp string `json:"extender_ip,omitempty"`
+
+	// ExcludeLocationIds are the places this connection's picks avoid: the
+	// user's excluded exit locations as they stood when the connection was
+	// made (ConnectViewController.Connect sets them, LocalState holds the
+	// list). A provider located in one of them is not used, unless the pick
+	// is that place itself or lies inside it, since an explicit pick wins
+	// (exit_location_exclusion.go). nil or empty excludes nothing; a device
+	// older than the field drops it and uses every provider.
+	ExcludeLocationIds *IdList `json:"exclude_location_ids,omitempty"`
 }
 
 func (self *ConnectLocation) IsGroup() bool {

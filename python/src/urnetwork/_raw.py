@@ -970,6 +970,8 @@ def bind(lib):
     lib.urnet_connect_view_controller_connect_location_changed.restype = None
     lib.urnet_connect_view_controller_disconnect.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_disconnect.restype = None
+    lib.urnet_connect_view_controller_excluded_exit_locations_changed.argtypes = [c_uint64]
+    lib.urnet_connect_view_controller_excluded_exit_locations_changed.restype = None
     lib.urnet_connect_view_controller_get_connected.argtypes = [c_uint64]
     lib.urnet_connect_view_controller_get_connected.restype = c_bool
     lib.urnet_connect_view_controller_get_connection_status.argtypes = [c_uint64]
@@ -1990,6 +1992,10 @@ def bind(lib):
     lib.urnet_local_auth_state_snapshot_set_connect_location.restype = c_bool
     lib.urnet_local_auth_state_snapshot_set_default_location.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_local_auth_state_snapshot_set_default_location.restype = c_bool
+    lib.urnet_local_state_add_excluded_exit_location.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_local_state_add_excluded_exit_location.restype = c_bool
+    lib.urnet_local_state_add_favorite_location.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_local_state_add_favorite_location.restype = c_bool
     lib.urnet_local_state_close.argtypes = [c_uint64]
     lib.urnet_local_state_close.restype = None
     lib.urnet_local_state_get_allow_foreground.argtypes = [c_uint64]
@@ -2020,8 +2026,12 @@ def bind(lib):
     lib.urnet_local_state_get_device_local_key_material.restype = c_uint64
     lib.urnet_local_state_get_dns_resolver_settings.argtypes = [c_uint64]
     lib.urnet_local_state_get_dns_resolver_settings.restype = c_void_p
+    lib.urnet_local_state_get_excluded_exit_locations.argtypes = [c_uint64]
+    lib.urnet_local_state_get_excluded_exit_locations.restype = c_void_p
     lib.urnet_local_state_get_extender_gossip_mode.argtypes = [c_uint64]
     lib.urnet_local_state_get_extender_gossip_mode.restype = c_void_p
+    lib.urnet_local_state_get_favorite_locations.argtypes = [c_uint64]
+    lib.urnet_local_state_get_favorite_locations.restype = c_void_p
     lib.urnet_local_state_get_instance_id.argtypes = [c_uint64]
     lib.urnet_local_state_get_instance_id.restype = c_void_p
     lib.urnet_local_state_get_log_verbosity.argtypes = [c_uint64]
@@ -2056,6 +2066,10 @@ def bind(lib):
     lib.urnet_local_state_get_transport_settings.restype = c_void_p
     lib.urnet_local_state_get_vpn_interface_while_offline.argtypes = [c_uint64]
     lib.urnet_local_state_get_vpn_interface_while_offline.restype = c_bool
+    lib.urnet_local_state_is_excluded_exit_location.argtypes = [c_uint64, c_char_p]
+    lib.urnet_local_state_is_excluded_exit_location.restype = c_bool
+    lib.urnet_local_state_is_favorite_location.argtypes = [c_uint64, c_char_p]
+    lib.urnet_local_state_is_favorite_location.restype = c_bool
     lib.urnet_local_state_load_connect_location.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_local_state_load_connect_location.restype = c_void_p
     lib.urnet_local_state_load_default_location.argtypes = [c_uint64, POINTER(c_void_p)]
@@ -2074,6 +2088,10 @@ def bind(lib):
     lib.urnet_local_state_read_default_location.restype = c_uint64
     lib.urnet_local_state_read_device_local_key_material.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_local_state_read_device_local_key_material.restype = c_uint64
+    lib.urnet_local_state_remove_excluded_exit_location.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_local_state_remove_excluded_exit_location.restype = c_bool
+    lib.urnet_local_state_remove_favorite_location.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_local_state_remove_favorite_location.restype = c_bool
     lib.urnet_local_state_select_client_jwt_for_instance.argtypes = [c_uint64, c_char_p, c_char_p, POINTER(c_void_p)]
     lib.urnet_local_state_select_client_jwt_for_instance.restype = c_void_p
     lib.urnet_local_state_set_allow_foreground.argtypes = [c_uint64, c_bool, POINTER(c_void_p)]
@@ -2848,6 +2866,10 @@ def bind(lib):
     lib.urnet_build_inline_checkout_bridge_url.restype = c_void_p
     lib.urnet_build_solana_payment_url.argtypes = [c_char_p, POINTER(c_void_p)]
     lib.urnet_build_solana_payment_url.restype = c_void_p
+    lib.urnet_can_exclude_exit_location.argtypes = [c_char_p]
+    lib.urnet_can_exclude_exit_location.restype = c_bool
+    lib.urnet_can_favorite_location.argtypes = [c_char_p]
+    lib.urnet_can_favorite_location.restype = c_bool
     lib.urnet_cant_reach_on_stall.argtypes = [c_char_p, c_char_p]
     lib.urnet_cant_reach_on_stall.restype = c_bool
     lib.urnet_check_crypto_payment_uri.argtypes = [c_char_p, c_char_p, c_char_p]
@@ -3054,6 +3076,8 @@ def bind(lib):
     lib.urnet_is_cant_reach_error.restype = c_bool
     lib.urnet_is_checkout_redirect.argtypes = [c_char_p]
     lib.urnet_is_checkout_redirect.restype = c_bool
+    lib.urnet_is_favorite_exit.argtypes = [c_char_p]
+    lib.urnet_is_favorite_exit.restype = c_bool
     lib.urnet_is_points_leaderboard_sort.argtypes = [c_char_p]
     lib.urnet_is_points_leaderboard_sort.restype = c_bool
     lib.urnet_is_purchase_report_terminal.argtypes = [c_char_p]
