@@ -3308,10 +3308,13 @@ func connectLocationTransportEqual(a *ConnectLocation, b *ConnectLocation) bool 
 		return true
 	}
 	// NetworkPeer changes admission, receive-buffer sizing, and the provider
-	// mode used by this destination, and an extender pin changes how the
-	// destination is dialed (K10). The other descriptive location fields do not
-	// affect the installed transport.
-	return a.NetworkPeer == b.NetworkPeer && a.ExtenderIp == b.ExtenderIp
+	// mode used by this destination, an extender pin changes how the
+	// destination is dialed (K10), and the excluded locations change which
+	// providers it uses (exit_location_exclusion.go). The other descriptive
+	// location fields do not affect the installed transport.
+	return a.NetworkPeer == b.NetworkPeer &&
+		a.ExtenderIp == b.ExtenderIp &&
+		idListsEqual(a.ExcludeLocationIds, b.ExcludeLocationIds)
 }
 
 // The extender pin of a stayed-on exit (K10) as the transport hint of the
@@ -3370,7 +3373,8 @@ func connectLocationValuesEqual(a *ConnectLocation, b *ConnectLocation) bool {
 		a.Stable == b.Stable &&
 		a.StrongPrivacy == b.StrongPrivacy &&
 		a.NetworkPeer == b.NetworkPeer &&
-		a.ExtenderIp == b.ExtenderIp
+		a.ExtenderIp == b.ExtenderIp &&
+		idListsEqual(a.ExcludeLocationIds, b.ExcludeLocationIds)
 }
 
 func cloneId(id *Id) *Id {
@@ -3396,6 +3400,7 @@ func cloneConnectLocation(location *ConnectLocation) *ConnectLocation {
 	cloned.CityLocationId = cloneId(location.CityLocationId)
 	cloned.RegionLocationId = cloneId(location.RegionLocationId)
 	cloned.CountryLocationId = cloneId(location.CountryLocationId)
+	cloned.ExcludeLocationIds = cloneIdList(location.ExcludeLocationIds)
 	return &cloned
 }
 
@@ -5642,7 +5647,14 @@ func (self *DeviceLocal) applyDestination(
 				apiGeneratorSettings := connect.DefaultApiMultiClientGeneratorSettings()
 				apiGeneratorSettings.ClientCredentials = self.settings.ClientCredentials
 				apiGeneratorSettings.ClientControl = self.settings.ClientControl
-				apiGeneratorSettings.ProviderDiscovery = self.settings.ProviderDiscovery
+				// the user's excluded exit locations that apply to this
+				// destination leave their providers out of its window
+				apiGeneratorSettings.ProviderDiscovery = destinationProviderDiscovery(
+					location,
+					self.settings.ProviderDiscovery,
+					self.clientStrategy,
+					self.networkSpace.apiUrl,
+				)
 				apiGeneratorSettings.PlatformTransportSettingsGenerator = self.windowPlatformTransportSettings
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
