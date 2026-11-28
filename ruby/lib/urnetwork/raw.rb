@@ -1612,6 +1612,7 @@ module URnetwork
       attach_function :urnet_encrypt_data, [:pointer, :int32, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_evm_mirror_ss58, [:string], :pointer, blocking: true
       attach_function :urnet_export_diagnostic_bundle, [:string, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_export_upload_logs, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_extender_dns_name, [:string, :string], :pointer, blocking: true
       attach_function :urnet_extender_hosts, [:string], :pointer, blocking: true
       attach_function :urnet_extender_root_public_keys, [:string, :string], :pointer, blocking: true
@@ -1670,6 +1671,7 @@ module URnetwork
       attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
       attach_function :urnet_log_google_sign_in_failure, [:string, :string, :int64], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true
+      attach_function :urnet_log_tails, [], :pointer, blocking: true
       attach_function :urnet_low_data_warning_for_balance, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_memory_classes_json_for_diag, [], :pointer, blocking: true
       attach_function :urnet_monthly_equivalent_amount, [:double, :int64], :double, blocking: true

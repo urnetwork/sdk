@@ -1167,6 +1167,7 @@ struct LocationGroupResult;
 struct LocationMatch;
 struct LocationResult;
 struct LogFileInfo;
+struct LogTail;
 struct LowDataWarning;
 struct ProFeaturesStatus;
 struct ManageDevicesSnapshot;
@@ -1444,6 +1445,7 @@ using LocationDeviceResultList = std::vector<LocationDeviceResult>;
 using LocationGroupResultList = std::vector<LocationGroupResult>;
 using LocationResultList = std::vector<LocationResult>;
 using LogFileInfoList = std::vector<LogFileInfo>;
+using LogTailList = std::vector<LogTail>;
 using ManagedDeviceList = std::vector<ManagedDevice>;
 using MultiHopIdList = std::vector<IdList>;
 using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
@@ -3324,6 +3326,13 @@ struct LogFileInfo {
 	std::string Severity{};
 	int64_t ByteCount{};
 	int64_t ModifiedMillis{};
+};
+
+struct LogTail {
+	std::string Source{};
+	std::string Name{};
+	std::optional<StringList> Lines;
+	bool Truncated{};
 };
 
 struct LowDataWarning {
@@ -5690,6 +5699,8 @@ inline void to_json(nlohmann::json& j, const LocationResult& v);
 inline void from_json(const nlohmann::json& j, LocationResult& v);
 inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
+inline void to_json(nlohmann::json& j, const LogTail& v);
+inline void from_json(const nlohmann::json& j, LogTail& v);
 inline void to_json(nlohmann::json& j, const LowDataWarning& v);
 inline void from_json(const nlohmann::json& j, LowDataWarning& v);
 inline void to_json(nlohmann::json& j, const ProFeaturesStatus& v);
@@ -14582,6 +14593,35 @@ inline void from_json(const nlohmann::json& j, LogFileInfo& v) {
 	}
 	if (auto it = j.find("ModifiedMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ModifiedMillis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const LogTail& v) {
+	j = nlohmann::json::object();
+	j["Source"] = v.Source;
+	j["Name"] = v.Name;
+	if (v.Lines) {
+		j["Lines"] = *v.Lines;
+	}
+	j["Truncated"] = v.Truncated;
+}
+inline void from_json(const nlohmann::json& j, LogTail& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Lines"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.Lines = std::move(tmp);
+	}
+	if (auto it = j.find("Truncated"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Truncated);
 	}
 }
 
@@ -41071,6 +41111,18 @@ inline std::optional<ExportResult> exportDiagnosticBundle(const std::string& des
 	}
 	return detail::parseJson<ExportResult>(r_s->c_str());
 }
+inline std::optional<ExportResult> exportUploadLogs(const std::string& dest_path) {
+	char* err_c = nullptr;
+	char* r_c = urnet_export_upload_logs(dest_path.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExportResult>(r_s->c_str());
+}
 inline std::string extenderDnsName(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -41444,6 +41496,14 @@ inline std::optional<LogFileInfoList> logInventory() {
 		return std::nullopt;
 	}
 	return detail::parseJson<LogFileInfoList>(r_s->c_str());
+}
+inline std::optional<LogTailList> logTails() {
+	char* r_c = urnet_log_tails();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<LogTailList>(r_s->c_str());
 }
 inline std::optional<LowDataWarning> lowDataWarningForBalance(const LocalState& local_state, const std::optional<SubscriptionBalanceResult>& result) {
 	std::string result_json;
