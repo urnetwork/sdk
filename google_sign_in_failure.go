@@ -1,9 +1,12 @@
 // Why a Google sign-in failed before the app had an ID token, read the same
 // way on every app.
 //
-// Android signs in through Google Play services, whose
+// Android signed in through Google Play services, whose
 // GoogleSignIn.getSignedInAccountFromIntent fails with an ApiException and its
-// status code (CommonStatusCodes, GoogleSignInStatusCodes). iOS and macOS sign
+// status code (CommonStatusCodes, GoogleSignInStatusCodes). It signs in through
+// Credential Manager now (androidx.credentials with the Google ID library,
+// android#271), whose getCredential fails with a GetCredentialException that
+// carries a type string and no code. iOS and macOS sign
 // in through the GoogleSignIn SDK, which fails with an NSError, in the SDK's
 // com.google.GIDSignIn domain or in another one (a network error). The apps
 // dropped the code and showed one message for every failure, a cancel
@@ -21,6 +24,7 @@ package sdk
 
 import (
 	"strconv"
+	"strings"
 )
 
 // Where a failure's code comes from: the source argument of
@@ -31,7 +35,16 @@ const (
 	GoogleSignInFailureSourceAndroid = "android"
 	// the GoogleSignIn SDK on iOS and macOS: the NSError's domain and code
 	GoogleSignInFailureSourceApple = "apple"
+	// Credential Manager on Android: the GetCredentialException's type as the
+	// domain, with no code (0); or the type of a credential that is not a
+	// Google ID token, or the Google ID library's parsing error, the same way
+	GoogleSignInFailureSourceAndroidCredential = "android_credential"
 )
+
+// The domain an Android app passes with GoogleSignInFailureSourceAndroidCredential
+// when the Google ID library could not read the credential it got
+// (GoogleIdTokenParsingException).
+const GoogleSignInCredentialParsingType = "TYPE_GOOGLE_ID_TOKEN_PARSING"
 
 // The codes this reads.
 const (
@@ -41,6 +54,9 @@ const (
 	googleSignInAppleDomain = "com.google.GIDSignIn"
 	// kGIDSignInErrorCodeCanceled
 	googleSignInAppleCancelledCode = -5
+	// GetCredentialCancellationException's type: the user closed the account
+	// picker
+	googleSignInAndroidCredentialCancelledType = "android.credentials.GetCredentialException.TYPE_USER_CANCELED"
 	// the message when the app passes none
 	googleSignInDefaultMessage = "Error signing in with Google"
 )
@@ -100,6 +116,12 @@ func googleSignInFailureFor(source string, domain string, code int) googleSignIn
 			code:      codeText,
 			name:      googleSignInAndroidCodeNames[code],
 		}
+	case GoogleSignInFailureSourceAndroidCredential:
+		// the type names the cause, so it is the code; there is no number
+		return googleSignInFailure{
+			cancelled: domain == googleSignInAndroidCredentialCancelledType,
+			code:      googleSignInCredentialTypeCode(domain),
+		}
 	case GoogleSignInFailureSourceApple:
 		if domain == googleSignInAppleDomain {
 			return googleSignInFailure{
@@ -119,11 +141,31 @@ func googleSignInFailureFor(source string, domain string, code int) googleSignIn
 	}
 }
 
+// A Credential Manager type as a failure's code: its last part, after any "/"
+// and ".", without the TYPE_ prefix, in lower case, as in "no_credential" for
+// android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL; "unknown"
+// for none.
+func googleSignInCredentialTypeCode(credentialType string) string {
+	code := credentialType
+	if i := strings.LastIndex(code, "/"); 0 <= i {
+		code = code[i+1:]
+	}
+	if i := strings.LastIndex(code, "."); 0 <= i {
+		code = code[i+1:]
+	}
+	code = strings.ToLower(strings.TrimPrefix(code, "TYPE_"))
+	if code == "" {
+		return "unknown"
+	}
+	return code
+}
+
 // The message an app shows for a failed Google sign-in: "" for a cancel, which
 // shows nothing; otherwise `message`, the app's own localized text for a
 // failed Google sign-in, followed by the failure's code in parentheses, as in
-// "Error signing in with Google (10)". `domain` is the NSError's on Apple and
-// "" on Android.
+// "Error signing in with Google (10)". `domain` is the NSError's on Apple, the
+// exception's type with Credential Manager on Android, and "" for Google Play
+// services.
 // Exported to gomobile and the c abi.
 func GoogleSignInFailureMessage(source string, domain string, code int, message string) string {
 	failure := googleSignInFailureFor(source, domain, code)
