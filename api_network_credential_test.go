@@ -505,6 +505,47 @@ func apiCredentialCases() []apiCredentialCase {
 		{"RemoveAuth", "POST /auth/remove-auth", "/auth/remove-auth", sendsNetwork, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*RemoveAuthResult]) { api.RemoveAuth(&RemoveAuthArgs{}, cb) })
 		}},
+		// the account email change (api_email_change.go): network credential only
+		{"AuthEmailChange", "POST /auth/email-change", "/auth/email-change", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*AuthEmailChangeResult]) {
+				api.AuthEmailChange(&AuthEmailChangeArgs{NewEmail: "new@example.com"}, cb)
+			})
+		}},
+		{"AuthEmailChangeSyncWithContext", "POST /auth/email-change", "/auth/email-change", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.AuthEmailChangeSyncWithContext(ctx, &AuthEmailChangeArgs{NewEmail: "new@example.com"})
+			return err
+		}},
+		{"AuthEmailChangeStatus", "GET /auth/email-change", "/auth/email-change", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*AuthEmailChangeStatusResult]) { api.AuthEmailChangeStatus(cb) })
+		}},
+		{"AuthEmailChangeConfirm", "POST /auth/email-change/confirm", "/auth/email-change/confirm", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*AuthEmailChangeConfirmResult]) {
+				api.AuthEmailChangeConfirm(&AuthEmailChangeConfirmArgs{CurrentCode: "123456"}, cb)
+			})
+		}},
+		{"AuthEmailChangeConfirmSyncWithContext", "POST /auth/email-change/confirm", "/auth/email-change/confirm", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.AuthEmailChangeConfirmSyncWithContext(ctx, &AuthEmailChangeConfirmArgs{NewCode: "123456"})
+			return err
+		}},
+		{"AuthEmailChangeCancel", "POST /auth/email-change/cancel", "/auth/email-change/cancel", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*AuthEmailChangeCancelResult]) { api.AuthEmailChangeCancel(cb) })
+		}},
+		// the payout wallet disconnect (api_sn_wallet_disconnect.go): network
+		// credential only
+		{"SnWalletDisconnectCode", "POST /sn/wallet/disconnect-code", "/sn/wallet/disconnect-code", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnWalletDisconnectCodeResult]) { api.SnWalletDisconnectCode(cb) })
+		}},
+		{"SnWalletDisconnectCodeSyncWithContext", "POST /sn/wallet/disconnect-code", "/sn/wallet/disconnect-code", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.SnWalletDisconnectCodeSyncWithContext(ctx)
+			return err
+		}},
+		{"SnWalletDisconnect", "POST /sn/wallet/disconnect", "/sn/wallet/disconnect", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SnWalletDisconnectResult]) { api.SnWalletDisconnect("123456", cb) })
+		}},
+		{"SnWalletDisconnectSyncWithContext", "POST /sn/wallet/disconnect", "/sn/wallet/disconnect", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.SnWalletDisconnectSyncWithContext(ctx, "123456")
+			return err
+		}},
 		{"GenerateSeedphrase", "POST /auth/generate-seedphrase", "/auth/generate-seedphrase", sendsNetwork, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*GenerateSeedphraseResult]) {
 				api.GenerateSeedphrase(&GenerateSeedphraseArgs{}, cb)

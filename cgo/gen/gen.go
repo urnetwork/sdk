@@ -97,6 +97,8 @@ var behavioralTypes = map[string]bool{
 	// one wallet-connect proof: lock-guarded session state and methods
 	"BittensorWalletSession": true,
 	"BittensorLocalKeyFlow":  true,
+	// one Microsoft browser sign-in: its private state, nonce and clock
+	"MicrosoftSignInAttempt": true,
 	// the Top 200 claim, both halves: lock-guarded, with their stores behind them
 	"SnFleetClaim":  true,
 	"SnFleetDevice": true,

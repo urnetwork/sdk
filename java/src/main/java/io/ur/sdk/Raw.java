@@ -14,6 +14,10 @@ public interface Raw extends Library {
   interface urnet_allow_product_updates_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_auth_code_create_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_code_login_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_auth_email_change_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_auth_email_change_cancel_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_auth_email_change_confirm_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_auth_email_change_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_login_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_login_with_password_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_auth_logout_event_cb extends Callback { void invoke(Pointer a0, long a1, String a2); }
@@ -213,6 +217,8 @@ public interface Raw extends Library {
   interface urnet_sn_top_me_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_validate_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_wallet_change_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_sn_wallet_disconnect_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_wallet_disconnect_code_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_solana_payment_intent_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_stripe_create_checkout_session_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_stripe_create_customer_portal_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -306,6 +312,10 @@ public interface Raw extends Library {
   long urnet_api_add_network_sessions_change_listener(long a0, urnet_network_sessions_change_cb a1, Pointer a2);
   void urnet_api_auth_code_create(long a0, String a1, urnet_auth_code_create_cb a2, Pointer a3);
   void urnet_api_auth_code_login(long a0, String a1, urnet_auth_code_login_cb a2, Pointer a3);
+  void urnet_api_auth_email_change(long a0, String a1, urnet_auth_email_change_cb a2, Pointer a3);
+  void urnet_api_auth_email_change_cancel(long a0, urnet_auth_email_change_cancel_cb a1, Pointer a2);
+  void urnet_api_auth_email_change_confirm(long a0, String a1, urnet_auth_email_change_confirm_cb a2, Pointer a3);
+  void urnet_api_auth_email_change_status(long a0, urnet_auth_email_change_status_cb a1, Pointer a2);
   void urnet_api_auth_login(long a0, String a1, urnet_auth_login_cb a2, Pointer a3);
   void urnet_api_auth_login_with_password(long a0, String a1, urnet_auth_login_with_password_cb a2, Pointer a3);
   void urnet_api_auth_network_client(long a0, String a1, urnet_auth_network_client_cb a2, Pointer a3);
@@ -423,6 +433,8 @@ public interface Raw extends Library {
   void urnet_api_sn_top(long a0, String a1, urnet_sn_top_cb a2, Pointer a3);
   void urnet_api_sn_top_me(long a0, urnet_sn_top_me_cb a1, Pointer a2);
   void urnet_api_sn_validate_wallet(long a0, String a1, urnet_sn_validate_wallet_cb a2, Pointer a3);
+  void urnet_api_sn_wallet_disconnect(long a0, String a1, urnet_sn_wallet_disconnect_cb a2, Pointer a3);
+  void urnet_api_sn_wallet_disconnect_code(long a0, urnet_sn_wallet_disconnect_code_cb a1, Pointer a2);
   Pointer urnet_api_sn_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_start_jwt_refresh(long a0);
   void urnet_api_stripe_create_customer_portal(long a0, String a1, urnet_stripe_create_customer_portal_cb a2, Pointer a3);
@@ -1233,6 +1245,12 @@ public interface Raw extends Library {
   void urnet_manage_devices_view_controller_remove_device(long a0, String a1);
   void urnet_manage_devices_view_controller_start(long a0);
   void urnet_manage_devices_view_controller_stop(long a0);
+  Pointer urnet_microsoft_sign_in_attempt_encode(long a0);
+  Pointer urnet_microsoft_sign_in_attempt_finish(long a0, String a1, PointerByReference a2);
+  Pointer urnet_microsoft_sign_in_attempt_get_nonce(long a0);
+  Pointer urnet_microsoft_sign_in_attempt_get_return_scheme(long a0);
+  Pointer urnet_microsoft_sign_in_attempt_get_state(long a0);
+  Pointer urnet_microsoft_sign_in_attempt_start_url(long a0, String a1);
   void urnet_network_name_validation_view_controller_close(long a0);
   void urnet_network_name_validation_view_controller_network_check(long a0, String a1, urnet_network_check_cb a2, Pointer a3);
   void urnet_network_name_validation_view_controller_start(long a0);
@@ -1550,6 +1568,7 @@ public interface Raw extends Library {
   void urnet_wallet_view_controller_validate_address(long a0, String a1, String a2, urnet_validate_address_cb a3, Pointer a4);
   byte urnet_websocket_device_rpc_listener_close(long a0, PointerByReference a1);
   double urnet_alpha_from_rao(long a0);
+  byte urnet_auth_email_change_error_ends_request(String a0);
   void urnet_bittensor_convert_estimate(String a0, String a1, long a2, urnet_bittensor_convert_estimate_cb a3, Pointer a4);
   void urnet_bittensor_convert_estimate_for_burn(String a0, String a1, urnet_bittensor_convert_estimate_cb a2, Pointer a3);
   void urnet_bittensor_convert_submit(String a0, String a1, String a2, urnet_bittensor_convert_submit_cb a3, Pointer a4);
@@ -1602,8 +1621,10 @@ public interface Raw extends Library {
   Pointer urnet_crypto_payment_uri_scheme(String a0);
   byte urnet_crypto_term_notice_due(String a0);
   Pointer urnet_crypto_wallet_suggestions(String a0);
+  long urnet_decode_microsoft_sign_in_attempt(String a0, PointerByReference a1);
   Pointer urnet_default_device_local_settings();
   Pointer urnet_default_low_memory_device_local_settings();
+  Pointer urnet_default_microsoft_sign_in_settings();
   Pointer urnet_default_performance_profile();
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();
@@ -1674,6 +1695,7 @@ public interface Raw extends Library {
   byte urnet_is_checkout_redirect(String a0);
   byte urnet_is_favorite_exit(String a0);
   byte urnet_is_invalid_user_auth_phone(String a0);
+  byte urnet_is_microsoft_sign_in_return_url(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
   byte urnet_is_sandbox_purchase_refusal(String a0);
@@ -1685,10 +1707,12 @@ public interface Raw extends Library {
   Pointer urnet_log_tails();
   Pointer urnet_low_data_warning_for_balance(long a0, String a1);
   Pointer urnet_memory_classes_json_for_diag();
+  Pointer urnet_microsoft_sign_in_error_code_of(String a0);
   double urnet_monthly_equivalent_amount(double a0, long a1);
   double urnet_nano_cents_to_usd(long a0);
   double urnet_nano_points_to_points(long a0);
   void urnet_network_changed();
+  Pointer urnet_network_user_email_sign_in(String a0);
   long urnet_new_async_local_state(String a0);
   long urnet_new_bittensor_local_key_flow(long a0, String a1, urnet_bittensor_local_key_store_add_key_cb a2, urnet_bittensor_local_key_store_delete_key_cb a3, urnet_bittensor_local_key_store_key_address_cb a4, urnet_bittensor_local_key_store_key_phrase_cb a5, urnet_bittensor_local_key_store_read_note_cb a6, urnet_bittensor_local_key_store_write_note_cb a7, Pointer a8);
   long urnet_new_bittensor_wallet_session(String a0, String a1, String a2, String a3, PointerByReference a4);
@@ -1709,6 +1733,7 @@ public interface Raw extends Library {
   Pointer urnet_new_feedback_submitted_event(long a0, String a1, String a2);
   Pointer urnet_new_id();
   long urnet_new_login_view_controller(long a0);
+  long urnet_new_microsoft_sign_in_attempt(String a0, PointerByReference a1);
   long urnet_new_network_name_validation_view_controller(long a0);
   Pointer urnet_new_network_space_key(String a0, String a1);
   long urnet_new_network_space_manager(String a0);
@@ -1748,6 +1773,7 @@ public interface Raw extends Library {
   Pointer urnet_normal_extender_gossip_mode(String a0);
   Pointer urnet_normalize_bittensor_signature(String a0);
   Pointer urnet_normalize_dns_preset_personal_id(String a0, String a1);
+  Pointer urnet_normalize_email_change_code(String a0);
   Pointer urnet_order_connected_provider_locations(String a0);
   Pointer urnet_parse_bittensor_challenge_message(String a0, PointerByReference a1);
   Pointer urnet_parse_bittensor_wallet_return(String a0, String a1, PointerByReference a2);
@@ -1800,6 +1826,8 @@ public interface Raw extends Library {
   Pointer urnet_sn_ledger_claim_transactions_for_payer(String a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
+  byte urnet_sn_wallet_disconnectable(String a0);
+  byte urnet_sn_wallet_has_wallet(String a0);
   Pointer urnet_solana_wallet_failure_for(String a0, String a1, String a2);
   Pointer urnet_suggest_emoji_tag(long a0);
   Pointer urnet_transport_settings_auto_modes(String a0);
@@ -1812,6 +1840,7 @@ public interface Raw extends Library {
   long urnet_usd_to_nano_cents(double a0);
   Pointer urnet_validate_control_doh_url(String a0);
   Pointer urnet_validate_dns_preset_personal_id(String a0, String a1);
+  Pointer urnet_validate_email_change_address(String a0);
   Pointer urnet_validate_emoji_tag(String a0);
   byte urnet_validate_ss58(String a0);
   Pointer urnet_validate_vless_settings(String a0);

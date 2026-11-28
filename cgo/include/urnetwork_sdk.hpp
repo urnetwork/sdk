@@ -147,6 +147,18 @@ protected:
 inline constexpr const char* ErrorIdInternal = URNET_ERROR_ID_INTERNAL;
 
 inline constexpr int64_t AsyncQueueSize = 32;
+inline constexpr const char* AuthEmailChangeErrorCodeCodeInvalid = "code_invalid";
+inline constexpr const char* AuthEmailChangeErrorCodeEmailInUse = "email_in_use";
+inline constexpr const char* AuthEmailChangeErrorCodeEmailUnverified = "email_unverified";
+inline constexpr const char* AuthEmailChangeErrorCodeInvalidEmail = "invalid_email";
+inline constexpr const char* AuthEmailChangeErrorCodeNoChange = "no_change";
+inline constexpr const char* AuthEmailChangeErrorCodeNoEmail = "no_email";
+inline constexpr const char* AuthEmailChangeErrorCodeOwnerOnly = "owner_only";
+inline constexpr const char* AuthEmailChangeErrorCodeRateLimited = "rate_limited";
+inline constexpr const char* AuthEmailChangeErrorCodeSameEmail = "same_email";
+inline constexpr const char* AuthEmailChangeErrorCodeSendFailed = "send_failed";
+inline constexpr const char* AuthEmailChangeErrorCodeTooManyTries = "too_many_tries";
+inline constexpr const char* AuthJwtTypeMicrosoft = "microsoft";
 inline constexpr const char* AuthLogoutCauseSessionRevoked = "session_revoked";
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
 inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
@@ -533,7 +545,19 @@ inline constexpr const char* ManageDevicesErrorSignInRequired = "sign_in_require
 inline constexpr const char* ManagedDeviceKindDevice = "device";
 inline constexpr const char* ManagedDeviceKindProxy = "proxy";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
+inline constexpr const char* MicrosoftSignInErrorCodeCancelled = "cancelled";
+inline constexpr const char* MicrosoftSignInErrorCodeExpired = "expired";
+inline constexpr const char* MicrosoftSignInErrorCodeFailed = "failed";
+inline constexpr const char* MicrosoftSignInErrorCodeNoToken = "no_token";
+inline constexpr const char* MicrosoftSignInErrorCodeNonceMismatch = "nonce_mismatch";
+inline constexpr const char* MicrosoftSignInErrorCodeNotConfigured = "not_configured";
+inline constexpr const char* MicrosoftSignInErrorCodeNotThisAttempt = "not_this_attempt";
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
+inline constexpr const char* OAuthPlatformAndroid = "android";
+inline constexpr const char* OAuthPlatformIos = "ios";
+inline constexpr const char* OAuthPlatformLinux = "linux";
+inline constexpr const char* OAuthPlatformMacos = "macos";
+inline constexpr const char* OAuthPlatformWindows = "windows";
 inline constexpr const char* OfferDeclineControlBack = "back";
 inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
 inline constexpr const char* OfferDeclineControlSystemDismiss = "system_dismiss";
@@ -806,6 +830,14 @@ inline constexpr const char* SnTxTypeLegacy = "legacy";
 inline constexpr const char* SnWalletConsentScopeHotkey = "hotkey";
 inline constexpr const char* SnWalletConsentScopeNetwork = "network";
 inline constexpr const char* SnWalletConsentScopeProvider = "provider";
+inline constexpr const char* SnWalletDisconnectErrorCodeCodeExpired = "code_expired";
+inline constexpr const char* SnWalletDisconnectErrorCodeCodeInvalid = "code_invalid";
+inline constexpr const char* SnWalletDisconnectErrorCodeConsentInForce = "consent_in_force";
+inline constexpr const char* SnWalletDisconnectErrorCodeEmailRequired = "email_required";
+inline constexpr const char* SnWalletDisconnectErrorCodeNoWallet = "no_wallet";
+inline constexpr const char* SnWalletDisconnectErrorCodeOwnerOnly = "owner_only";
+inline constexpr const char* SnWalletDisconnectErrorCodeRateLimited = "rate_limited";
+inline constexpr const char* SnWalletDisconnectErrorCodeSendFailed = "send_failed";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
 inline constexpr const char* SolanaWalletBridgeErrorExtensionNotFound = "extension_not_found";
 inline constexpr const char* SolanaWalletBridgeErrorInvalidRequest = "invalid_request";
@@ -934,6 +966,7 @@ class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
 class ManageDevicesViewController;
+class MicrosoftSignInAttempt;
 class NetworkNameValidationViewController;
 class NetworkSessionInfo;
 class NetworkSessionInfoList;
@@ -993,6 +1026,13 @@ struct AuthCodeCreateError;
 struct AuthCodeCreateResult;
 struct AuthCodeLoginArgs;
 struct AuthCodeLoginResult;
+struct AuthEmailChangeArgs;
+struct AuthEmailChangeError;
+struct AuthEmailChangeCancelResult;
+struct AuthEmailChangeConfirmArgs;
+struct AuthEmailChangeConfirmResult;
+struct AuthEmailChangeResult;
+struct AuthEmailChangeStatusResult;
 struct AuthLoginArgs;
 struct AuthLoginResultError;
 struct AuthLoginResultNetwork;
@@ -1181,6 +1221,8 @@ struct ManageDevicesSnapshot;
 struct ManagedDevice;
 struct MemoryStats;
 struct MemoryTeardownObservation;
+struct MicrosoftSignInResult;
+struct MicrosoftSignInSettings;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -1338,6 +1380,9 @@ struct SnTopMeResult;
 struct SnTopResult;
 struct SnUnsignedTx;
 struct SnValidateWalletResult;
+struct SnWalletDisconnectError;
+struct SnWalletDisconnectCodeResult;
+struct SnWalletDisconnectResult;
 struct SnWalletMappingChallengeArgs;
 struct SnWalletMappingChallengeResult;
 struct SocketRead;
@@ -1661,6 +1706,51 @@ struct AuthCodeLoginArgs {
 struct AuthCodeLoginResult {
 	std::string by_jwt{};
 	std::optional<ApiError> error;
+};
+
+struct AuthEmailChangeArgs {
+	std::string new_email{};
+};
+
+struct AuthEmailChangeError {
+	std::string code{};
+	std::string message{};
+	std::optional<int64_t> retry_after_seconds;
+};
+
+struct AuthEmailChangeCancelResult {
+	std::optional<AuthEmailChangeError> error;
+};
+
+struct AuthEmailChangeConfirmArgs {
+	std::optional<std::string> current_code;
+	std::optional<std::string> new_code;
+};
+
+struct AuthEmailChangeConfirmResult {
+	bool current_confirmed{};
+	bool new_confirmed{};
+	bool complete{};
+	std::optional<std::string> email;
+	std::optional<bool> other_sessions_signed_out;
+	std::optional<AuthEmailChangeError> error;
+};
+
+struct AuthEmailChangeResult {
+	std::optional<std::string> current_email;
+	std::optional<std::string> new_email;
+	std::optional<int64_t> expires_at_millis;
+	std::optional<AuthEmailChangeError> error;
+};
+
+struct AuthEmailChangeStatusResult {
+	bool pending{};
+	std::optional<std::string> current_email;
+	std::optional<std::string> new_email;
+	std::optional<bool> current_confirmed;
+	std::optional<bool> new_confirmed;
+	std::optional<int64_t> expires_at_millis;
+	std::optional<AuthEmailChangeError> error;
 };
 
 struct AuthLoginArgs {
@@ -3451,6 +3541,14 @@ struct MemoryStats {
 struct MemoryTeardownObservation {
 };
 
+struct MicrosoftSignInResult {
+	std::string IdToken{};
+};
+
+struct MicrosoftSignInSettings {
+	int64_t AttemptTimeout{};
+};
+
 struct NetExtender {
 	std::string ip{};
 	std::string secret{};
@@ -4826,6 +4924,23 @@ struct SnValidateWalletResult {
 	std::optional<SnError> error;
 };
 
+struct SnWalletDisconnectError {
+	std::string code{};
+	std::string message{};
+	std::optional<int64_t> retry_after_seconds;
+};
+
+struct SnWalletDisconnectCodeResult {
+	std::optional<StringList> sent_to;
+	std::optional<int64_t> expires_at_millis;
+	std::optional<SnWalletDisconnectError> error;
+};
+
+struct SnWalletDisconnectResult {
+	bool disconnected{};
+	std::optional<SnWalletDisconnectError> error;
+};
+
 struct SnWalletMappingChallengeArgs {
 	std::optional<std::string> client_id;
 	std::string coldkey_ss58{};
@@ -5379,6 +5494,20 @@ inline void to_json(nlohmann::json& j, const AuthCodeLoginArgs& v);
 inline void from_json(const nlohmann::json& j, AuthCodeLoginArgs& v);
 inline void to_json(nlohmann::json& j, const AuthCodeLoginResult& v);
 inline void from_json(const nlohmann::json& j, AuthCodeLoginResult& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeArgs& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeArgs& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeError& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeError& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeCancelResult& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeCancelResult& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeConfirmArgs& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeConfirmArgs& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeConfirmResult& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeConfirmResult& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeResult& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeResult& v);
+inline void to_json(nlohmann::json& j, const AuthEmailChangeStatusResult& v);
+inline void from_json(const nlohmann::json& j, AuthEmailChangeStatusResult& v);
 inline void to_json(nlohmann::json& j, const AuthLoginArgs& v);
 inline void from_json(const nlohmann::json& j, AuthLoginArgs& v);
 inline void to_json(nlohmann::json& j, const AuthLoginResultError& v);
@@ -5755,6 +5884,10 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
 inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
+inline void to_json(nlohmann::json& j, const MicrosoftSignInResult& v);
+inline void from_json(const nlohmann::json& j, MicrosoftSignInResult& v);
+inline void to_json(nlohmann::json& j, const MicrosoftSignInSettings& v);
+inline void from_json(const nlohmann::json& j, MicrosoftSignInSettings& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -6069,6 +6202,12 @@ inline void to_json(nlohmann::json& j, const SnUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnUnsignedTx& v);
 inline void to_json(nlohmann::json& j, const SnValidateWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v);
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectError& v);
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectError& v);
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectCodeResult& v);
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectCodeResult& v);
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectResult& v);
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectResult& v);
 inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v);
 inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeArgs& v);
 inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeResult& v);
@@ -7043,6 +7182,233 @@ inline void from_json(const nlohmann::json& j, AuthCodeLoginResult& v) {
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		ApiError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeArgs& v) {
+	j = nlohmann::json::object();
+	j["new_email"] = v.new_email;
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("new_email"); it != j.end() && !it->is_null()) {
+		it->get_to(v.new_email);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeError& v) {
+	j = nlohmann::json::object();
+	j["code"] = v.code;
+	j["message"] = v.message;
+	if (v.retry_after_seconds) {
+		j["retry_after_seconds"] = *v.retry_after_seconds;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.code);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("retry_after_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_seconds = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeCancelResult& v) {
+	j = nlohmann::json::object();
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeCancelResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthEmailChangeError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeConfirmArgs& v) {
+	j = nlohmann::json::object();
+	if (v.current_code) {
+		j["current_code"] = *v.current_code;
+	}
+	if (v.new_code) {
+		j["new_code"] = *v.new_code;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeConfirmArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("current_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.current_code = std::move(tmp);
+	}
+	if (auto it = j.find("new_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.new_code = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeConfirmResult& v) {
+	j = nlohmann::json::object();
+	j["current_confirmed"] = v.current_confirmed;
+	j["new_confirmed"] = v.new_confirmed;
+	j["complete"] = v.complete;
+	if (v.email) {
+		j["email"] = *v.email;
+	}
+	if (v.other_sessions_signed_out) {
+		j["other_sessions_signed_out"] = *v.other_sessions_signed_out;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeConfirmResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("current_confirmed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.current_confirmed);
+	}
+	if (auto it = j.find("new_confirmed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.new_confirmed);
+	}
+	if (auto it = j.find("complete"); it != j.end() && !it->is_null()) {
+		it->get_to(v.complete);
+	}
+	if (auto it = j.find("email"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.email = std::move(tmp);
+	}
+	if (auto it = j.find("other_sessions_signed_out"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.other_sessions_signed_out = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthEmailChangeError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeResult& v) {
+	j = nlohmann::json::object();
+	if (v.current_email) {
+		j["current_email"] = *v.current_email;
+	}
+	if (v.new_email) {
+		j["new_email"] = *v.new_email;
+	}
+	if (v.expires_at_millis) {
+		j["expires_at_millis"] = *v.expires_at_millis;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("current_email"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.current_email = std::move(tmp);
+	}
+	if (auto it = j.find("new_email"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.new_email = std::move(tmp);
+	}
+	if (auto it = j.find("expires_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthEmailChangeError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthEmailChangeStatusResult& v) {
+	j = nlohmann::json::object();
+	j["pending"] = v.pending;
+	if (v.current_email) {
+		j["current_email"] = *v.current_email;
+	}
+	if (v.new_email) {
+		j["new_email"] = *v.new_email;
+	}
+	if (v.current_confirmed) {
+		j["current_confirmed"] = *v.current_confirmed;
+	}
+	if (v.new_confirmed) {
+		j["new_confirmed"] = *v.new_confirmed;
+	}
+	if (v.expires_at_millis) {
+		j["expires_at_millis"] = *v.expires_at_millis;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthEmailChangeStatusResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("pending"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending);
+	}
+	if (auto it = j.find("current_email"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.current_email = std::move(tmp);
+	}
+	if (auto it = j.find("new_email"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.new_email = std::move(tmp);
+	}
+	if (auto it = j.find("current_confirmed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.current_confirmed = std::move(tmp);
+	}
+	if (auto it = j.find("new_confirmed"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.new_confirmed = std::move(tmp);
+	}
+	if (auto it = j.find("expires_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthEmailChangeError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
 	}
@@ -15100,6 +15466,32 @@ inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const MicrosoftSignInResult& v) {
+	j = nlohmann::json::object();
+	j["IdToken"] = v.IdToken;
+}
+inline void from_json(const nlohmann::json& j, MicrosoftSignInResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("IdToken"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IdToken);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const MicrosoftSignInSettings& v) {
+	j = nlohmann::json::object();
+	j["AttemptTimeout"] = v.AttemptTimeout;
+}
+inline void from_json(const nlohmann::json& j, MicrosoftSignInSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("AttemptTimeout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AttemptTimeout);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const NetExtender& v) {
 	j = nlohmann::json::object();
 	j["ip"] = v.ip;
@@ -21569,6 +21961,85 @@ inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectError& v) {
+	j = nlohmann::json::object();
+	j["code"] = v.code;
+	j["message"] = v.message;
+	if (v.retry_after_seconds) {
+		j["retry_after_seconds"] = *v.retry_after_seconds;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.code);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("retry_after_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_seconds = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectCodeResult& v) {
+	j = nlohmann::json::object();
+	if (v.sent_to) {
+		j["sent_to"] = *v.sent_to;
+	}
+	if (v.expires_at_millis) {
+		j["expires_at_millis"] = *v.expires_at_millis;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectCodeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("sent_to"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.sent_to = std::move(tmp);
+	}
+	if (auto it = j.find("expires_at_millis"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_at_millis = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnWalletDisconnectError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletDisconnectResult& v) {
+	j = nlohmann::json::object();
+	j["disconnected"] = v.disconnected;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnWalletDisconnectResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("disconnected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.disconnected);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnWalletDisconnectError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v) {
 	j = nlohmann::json::object();
 	if (v.client_id) {
@@ -23900,6 +24371,10 @@ using AllowForegroundChangeListener = std::function<void(bool allow_foreground)>
 using AllowProductUpdatesListener = std::function<void(bool p0)>;
 using AuthCodeCreateCallback = std::function<void(std::optional<AuthCodeCreateResult> result, std::optional<std::string> err_param)>;
 using AuthCodeLoginCallback = std::function<void(std::optional<AuthCodeLoginResult> result, std::optional<std::string> err_param)>;
+using AuthEmailChangeCallback = std::function<void(std::optional<AuthEmailChangeResult> result, std::optional<std::string> err_param)>;
+using AuthEmailChangeCancelCallback = std::function<void(std::optional<AuthEmailChangeCancelResult> result, std::optional<std::string> err_param)>;
+using AuthEmailChangeConfirmCallback = std::function<void(std::optional<AuthEmailChangeConfirmResult> result, std::optional<std::string> err_param)>;
+using AuthEmailChangeStatusCallback = std::function<void(std::optional<AuthEmailChangeStatusResult> result, std::optional<std::string> err_param)>;
 using AuthLoginCallback = std::function<void(std::optional<AuthLoginResult> result, std::optional<std::string> err_param)>;
 using AuthLoginWithPasswordCallback = std::function<void(std::optional<AuthLoginWithPasswordResult> result, std::optional<std::string> err_param)>;
 using AuthLogoutEventListener = std::function<void(int64_t generation, std::string cause)>;
@@ -24109,6 +24584,8 @@ using SnTopCallback = std::function<void(std::optional<SnTopResult> result, std:
 using SnTopMeCallback = std::function<void(std::optional<SnTopMeResult> result, std::optional<std::string> err_param)>;
 using SnValidateWalletCallback = std::function<void(std::optional<SnValidateWalletResult> result, std::optional<std::string> err_param)>;
 using SnWalletChangeListener = std::function<void(std::optional<SnWallet> wallet)>;
+using SnWalletDisconnectCallback = std::function<void(std::optional<SnWalletDisconnectResult> result, std::optional<std::string> err_param)>;
+using SnWalletDisconnectCodeCallback = std::function<void(std::optional<SnWalletDisconnectCodeResult> result, std::optional<std::string> err_param)>;
 using SolanaPaymentIntentCallback = std::function<void(std::optional<SolanaPaymentIntentResult> result, std::optional<std::string> err_param)>;
 using StripeCreateCheckoutSessionCallback = std::function<void(std::optional<StripeCreateCheckoutSessionResult> result, std::optional<std::string> err_param)>;
 using StripeCreateCustomerPortalCallback = std::function<void(std::optional<StripeCreateCustomerPortalResult> result, std::optional<std::string> err_param)>;
@@ -24384,6 +24861,10 @@ public:
 	Sub addNetworkSessionsChangeListener(NetworkSessionsChangeListener listener) const;
 	void authCodeCreate(const std::optional<AuthCodeCreateArgs>& code_create_args, AuthCodeCreateCallback callback) const;
 	void authCodeLogin(const std::optional<AuthCodeLoginArgs>& args, AuthCodeLoginCallback callback) const;
+	void authEmailChange(const std::optional<AuthEmailChangeArgs>& args, AuthEmailChangeCallback callback) const;
+	void authEmailChangeCancel(AuthEmailChangeCancelCallback callback) const;
+	void authEmailChangeConfirm(const std::optional<AuthEmailChangeConfirmArgs>& args, AuthEmailChangeConfirmCallback callback) const;
+	void authEmailChangeStatus(AuthEmailChangeStatusCallback callback) const;
 	void authLogin(const std::optional<AuthLoginArgs>& auth_login, AuthLoginCallback callback) const;
 	void authLoginWithPassword(const std::optional<AuthLoginWithPasswordArgs>& auth_login_with_password, AuthLoginWithPasswordCallback callback) const;
 	void authNetworkClient(const std::optional<AuthNetworkClientArgs>& auth_network_client, AuthNetworkClientCallback callback) const;
@@ -24501,6 +24982,8 @@ public:
 	void snTop(const std::optional<SnTopArgs>& args, SnTopCallback callback) const;
 	void snTopMe(SnTopMeCallback callback) const;
 	void snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const;
+	void snWalletDisconnect(const std::string& code, SnWalletDisconnectCallback callback) const;
+	void snWalletDisconnectCode(SnWalletDisconnectCodeCallback callback) const;
 	std::optional<SnWalletMappingChallengeResult> snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const;
 	void startJwtRefresh() const;
 	void stripeCreateCustomerPortal(const std::optional<StripeCreateCustomerPortalArgs>& args, StripeCreateCustomerPortalCallback callback) const;
@@ -25391,6 +25874,18 @@ public:
 	void stop() const;
 };
 
+class MicrosoftSignInAttempt final : public detail::Handle {
+public:
+	MicrosoftSignInAttempt() = default;
+	explicit MicrosoftSignInAttempt(uint64_t h) : detail::Handle(h) {}
+	std::string encode() const;
+	std::optional<MicrosoftSignInResult> finish(const std::string& return_url) const;
+	std::string getNonce() const;
+	std::string getReturnScheme() const;
+	std::string getState() const;
+	std::string startUrl(const std::string& api_url) const;
+};
+
 class NetworkNameValidationViewController final : public detail::Handle {
 public:
 	NetworkNameValidationViewController() = default;
@@ -26203,6 +26698,150 @@ inline void oneshot_auth_code_login(void* user_data, const char* result_json, co
 		std::optional<AuthCodeLoginResult> result_v;
 		if (result_json) {
 			result_v = parseJson<AuthCodeLoginResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_auth_email_change(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_email_change(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_auth_email_change_cancel(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeCancelCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeCancelResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeCancelResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_email_change_cancel(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeCancelCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeCancelResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeCancelResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_auth_email_change_confirm(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeConfirmCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeConfirmResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeConfirmResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_email_change_confirm(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeConfirmCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeConfirmResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeConfirmResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_auth_email_change_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeStatusCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_email_change_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthEmailChangeStatusCallback*>(user_data);
+	try {
+		std::optional<AuthEmailChangeStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthEmailChangeStatusResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -31714,6 +32353,78 @@ inline void oneshot_sn_wallet_change(void* user_data, const char* wallet_json) {
 	delete f;
 }
 
+inline void retained_sn_wallet_disconnect(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnWalletDisconnectCallback*>(user_data);
+	try {
+		std::optional<SnWalletDisconnectResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnWalletDisconnectResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_wallet_disconnect(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnWalletDisconnectCallback*>(user_data);
+	try {
+		std::optional<SnWalletDisconnectResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnWalletDisconnectResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_wallet_disconnect_code(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnWalletDisconnectCodeCallback*>(user_data);
+	try {
+		std::optional<SnWalletDisconnectCodeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnWalletDisconnectCodeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_wallet_disconnect_code(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnWalletDisconnectCodeCallback*>(user_data);
+	try {
+		std::optional<SnWalletDisconnectCodeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnWalletDisconnectCodeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_solana_payment_intent(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SolanaPaymentIntentCallback*>(user_data);
 	try {
@@ -34220,6 +34931,34 @@ inline void Api::authCodeLogin(const std::optional<AuthCodeLoginArgs>& args, Aut
 	auto* callback_fn = callback ? new AuthCodeLoginCallback(std::move(callback)) : nullptr;
 	urnet_api_auth_code_login(handle(), args_c, callback_fn ? &detail::oneshot_auth_code_login : nullptr, callback_fn);
 }
+inline void Api::authEmailChange(const std::optional<AuthEmailChangeArgs>& args, AuthEmailChangeCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new AuthEmailChangeCallback(std::move(callback)) : nullptr;
+	urnet_api_auth_email_change(handle(), args_c, callback_fn ? &detail::oneshot_auth_email_change : nullptr, callback_fn);
+}
+inline void Api::authEmailChangeCancel(AuthEmailChangeCancelCallback callback) const {
+	auto* callback_fn = callback ? new AuthEmailChangeCancelCallback(std::move(callback)) : nullptr;
+	urnet_api_auth_email_change_cancel(handle(), callback_fn ? &detail::oneshot_auth_email_change_cancel : nullptr, callback_fn);
+}
+inline void Api::authEmailChangeConfirm(const std::optional<AuthEmailChangeConfirmArgs>& args, AuthEmailChangeConfirmCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new AuthEmailChangeConfirmCallback(std::move(callback)) : nullptr;
+	urnet_api_auth_email_change_confirm(handle(), args_c, callback_fn ? &detail::oneshot_auth_email_change_confirm : nullptr, callback_fn);
+}
+inline void Api::authEmailChangeStatus(AuthEmailChangeStatusCallback callback) const {
+	auto* callback_fn = callback ? new AuthEmailChangeStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_auth_email_change_status(handle(), callback_fn ? &detail::oneshot_auth_email_change_status : nullptr, callback_fn);
+}
 inline void Api::authLogin(const std::optional<AuthLoginArgs>& auth_login, AuthLoginCallback callback) const {
 	std::string auth_login_json;
 	const char* auth_login_c = nullptr;
@@ -35166,6 +35905,14 @@ inline void Api::snTopMe(SnTopMeCallback callback) const {
 inline void Api::snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const {
 	auto* callback_fn = callback ? new SnValidateWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_validate_wallet(handle(), address.c_str(), callback_fn ? &detail::oneshot_sn_validate_wallet : nullptr, callback_fn);
+}
+inline void Api::snWalletDisconnect(const std::string& code, SnWalletDisconnectCallback callback) const {
+	auto* callback_fn = callback ? new SnWalletDisconnectCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_wallet_disconnect(handle(), code.c_str(), callback_fn ? &detail::oneshot_sn_wallet_disconnect : nullptr, callback_fn);
+}
+inline void Api::snWalletDisconnectCode(SnWalletDisconnectCodeCallback callback) const {
+	auto* callback_fn = callback ? new SnWalletDisconnectCodeCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_wallet_disconnect_code(handle(), callback_fn ? &detail::oneshot_sn_wallet_disconnect_code : nullptr, callback_fn);
 }
 inline std::optional<SnWalletMappingChallengeResult> Api::snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const {
 	std::string args_json;
@@ -39086,6 +39833,38 @@ inline void ManageDevicesViewController::start() const {
 inline void ManageDevicesViewController::stop() const {
 	urnet_manage_devices_view_controller_stop(handle());
 }
+inline std::string MicrosoftSignInAttempt::encode() const {
+	char* r_c = urnet_microsoft_sign_in_attempt_encode(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<MicrosoftSignInResult> MicrosoftSignInAttempt::finish(const std::string& return_url) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_microsoft_sign_in_attempt_finish(handle(), return_url.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<MicrosoftSignInResult>(r_s->c_str());
+}
+inline std::string MicrosoftSignInAttempt::getNonce() const {
+	char* r_c = urnet_microsoft_sign_in_attempt_get_nonce(handle());
+	return detail::takeString(r_c);
+}
+inline std::string MicrosoftSignInAttempt::getReturnScheme() const {
+	char* r_c = urnet_microsoft_sign_in_attempt_get_return_scheme(handle());
+	return detail::takeString(r_c);
+}
+inline std::string MicrosoftSignInAttempt::getState() const {
+	char* r_c = urnet_microsoft_sign_in_attempt_get_state(handle());
+	return detail::takeString(r_c);
+}
+inline std::string MicrosoftSignInAttempt::startUrl(const std::string& api_url) const {
+	char* r_c = urnet_microsoft_sign_in_attempt_start_url(handle(), api_url.c_str());
+	return detail::takeString(r_c);
+}
 inline void NetworkNameValidationViewController::close() const {
 	urnet_network_name_validation_view_controller_close(handle());
 }
@@ -40750,6 +41529,16 @@ inline double alphaFromRao(int64_t rao) {
 	double r = urnet_alpha_from_rao(rao);
 	return r;
 }
+inline bool authEmailChangeErrorEndsRequest(const std::optional<AuthEmailChangeError>& err_param) {
+	std::string err_param_json;
+	const char* err_param_c = nullptr;
+	if (err_param) {
+		err_param_json = nlohmann::json(*err_param).dump();
+		err_param_c = err_param_json.c_str();
+	}
+	bool r = urnet_auth_email_change_error_ends_request(err_param_c);
+	return r;
+}
 inline void bittensorConvertEstimate(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, int64_t amount_rao, BittensorConvertEstimateCallback callback) {
 	std::string settings_json;
 	const char* settings_c = nullptr;
@@ -41181,6 +41970,14 @@ inline std::optional<StringList> cryptoWalletSuggestions(const std::string& asse
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline MicrosoftSignInAttempt decodeMicrosoftSignInAttempt(const std::string& encoded) {
+	char* err_c = nullptr;
+	MicrosoftSignInAttempt r(urnet_decode_microsoft_sign_in_attempt(encoded.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline std::optional<DeviceLocalSettings> defaultDeviceLocalSettings() {
 	char* r_c = urnet_default_device_local_settings();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -41196,6 +41993,14 @@ inline std::optional<DeviceLocalSettings> defaultLowMemoryDeviceLocalSettings() 
 		return std::nullopt;
 	}
 	return detail::parseJson<DeviceLocalSettings>(r_s->c_str());
+}
+inline std::optional<MicrosoftSignInSettings> defaultMicrosoftSignInSettings() {
+	char* r_c = urnet_default_microsoft_sign_in_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<MicrosoftSignInSettings>(r_s->c_str());
 }
 inline std::optional<PerformanceProfile> defaultPerformanceProfile() {
 	char* r_c = urnet_default_performance_profile();
@@ -41721,6 +42526,10 @@ inline bool isInvalidUserAuthPhone(const std::string& user_auth) {
 	bool r = urnet_is_invalid_user_auth_phone(user_auth.c_str());
 	return r;
 }
+inline bool isMicrosoftSignInReturnUrl(const std::string& return_url) {
+	bool r = urnet_is_microsoft_sign_in_return_url(return_url.c_str());
+	return r;
+}
 inline bool isPointsLeaderboardSort(const std::string& sort) {
 	bool r = urnet_is_points_leaderboard_sort(sort.c_str());
 	return r;
@@ -41787,6 +42596,10 @@ inline std::string memoryClassesJsonForDiag() {
 	char* r_c = urnet_memory_classes_json_for_diag();
 	return detail::takeString(r_c);
 }
+inline std::string microsoftSignInErrorCodeOf(const std::string& error_message) {
+	char* r_c = urnet_microsoft_sign_in_error_code_of(error_message.c_str());
+	return detail::takeString(r_c);
+}
 inline double monthlyEquivalentAmount(double yearly_amount, int64_t minor_unit_digits) {
 	double r = urnet_monthly_equivalent_amount(yearly_amount, minor_unit_digits);
 	return r;
@@ -41801,6 +42614,16 @@ inline double nanoPointsToPoints(int64_t nano_points) {
 }
 inline void networkChanged() {
 	urnet_network_changed();
+}
+inline std::string networkUserEmailSignIn(const std::optional<NetworkUser>& user) {
+	std::string user_json;
+	const char* user_c = nullptr;
+	if (user) {
+		user_json = nlohmann::json(*user).dump();
+		user_c = user_json.c_str();
+	}
+	char* r_c = urnet_network_user_email_sign_in(user_c);
+	return detail::takeString(r_c);
 }
 inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home) {
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
@@ -41954,6 +42777,14 @@ inline IoLoop newIoLoop(const DeviceLocal& device_local, int64_t fd, IoLoopDoneC
 #endif
 inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
+	return r;
+}
+inline MicrosoftSignInAttempt newMicrosoftSignInAttempt(const std::string& platform) {
+	char* err_c = nullptr;
+	MicrosoftSignInAttempt r(urnet_new_microsoft_sign_in_attempt(platform.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
 	return r;
 }
 inline NetworkNameValidationViewController newNetworkNameValidationViewController(const Api& api) {
@@ -42237,6 +43068,10 @@ inline std::string normalizeBittensorSignature(const std::string& signature) {
 }
 inline std::string normalizeDnsPresetPersonalId(const std::string& preset_id, const std::string& input) {
 	char* r_c = urnet_normalize_dns_preset_personal_id(preset_id.c_str(), input.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string normalizeEmailChangeCode(const std::string& code) {
+	char* r_c = urnet_normalize_email_change_code(code.c_str());
 	return detail::takeString(r_c);
 }
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
@@ -42699,6 +43534,26 @@ inline std::optional<SnChainSettings> snTestnetChainSettings() {
 	}
 	return detail::parseJson<SnChainSettings>(r_s->c_str());
 }
+inline bool snWalletDisconnectable(const std::optional<SnGetWalletResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	bool r = urnet_sn_wallet_disconnectable(result_c);
+	return r;
+}
+inline bool snWalletHasWallet(const std::optional<SnGetWalletResult>& result) {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	bool r = urnet_sn_wallet_has_wallet(result_c);
+	return r;
+}
 inline std::optional<SolanaWalletFailure> solanaWalletFailureFor(const std::string& source, const std::string& code, const std::string& wallet_name) {
 	char* r_c = urnet_solana_wallet_failure_for(source.c_str(), code.c_str(), wallet_name.c_str());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -42806,6 +43661,10 @@ inline std::string validateControlDohUrl(const std::string& doh_url) {
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateDnsPresetPersonalId(const std::string& preset_id, const std::string& personal_id) {
 	char* r_c = urnet_validate_dns_preset_personal_id(preset_id.c_str(), personal_id.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string validateEmailChangeAddress(const std::string& email) {
+	char* r_c = urnet_validate_email_change_address(email.c_str());
 	return detail::takeString(r_c);
 }
 inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {

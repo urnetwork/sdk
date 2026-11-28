@@ -13,6 +13,10 @@ module URnetwork
       callback :urnet_allow_product_updates_cb, [:pointer, :bool], :void
       callback :urnet_auth_code_create_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_code_login_cb, [:pointer, :string, :string], :void
+      callback :urnet_auth_email_change_cb, [:pointer, :string, :string], :void
+      callback :urnet_auth_email_change_cancel_cb, [:pointer, :string, :string], :void
+      callback :urnet_auth_email_change_confirm_cb, [:pointer, :string, :string], :void
+      callback :urnet_auth_email_change_status_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_login_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_login_with_password_cb, [:pointer, :string, :string], :void
       callback :urnet_auth_logout_event_cb, [:pointer, :int64, :string], :void
@@ -212,6 +216,8 @@ module URnetwork
       callback :urnet_sn_top_me_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_validate_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_wallet_change_cb, [:pointer, :string], :void
+      callback :urnet_sn_wallet_disconnect_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_wallet_disconnect_code_cb, [:pointer, :string, :string], :void
       callback :urnet_solana_payment_intent_cb, [:pointer, :string, :string], :void
       callback :urnet_stripe_create_checkout_session_cb, [:pointer, :string, :string], :void
       callback :urnet_stripe_create_customer_portal_cb, [:pointer, :string, :string], :void
@@ -305,6 +311,10 @@ module URnetwork
       attach_function :urnet_api_add_network_sessions_change_listener, [:uint64, :urnet_network_sessions_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_auth_code_create, [:uint64, :string, :urnet_auth_code_create_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_code_login, [:uint64, :string, :urnet_auth_code_login_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_auth_email_change, [:uint64, :string, :urnet_auth_email_change_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_auth_email_change_cancel, [:uint64, :urnet_auth_email_change_cancel_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_auth_email_change_confirm, [:uint64, :string, :urnet_auth_email_change_confirm_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_auth_email_change_status, [:uint64, :urnet_auth_email_change_status_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_login, [:uint64, :string, :urnet_auth_login_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_login_with_password, [:uint64, :string, :urnet_auth_login_with_password_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_network_client, [:uint64, :string, :urnet_auth_network_client_cb, :pointer], :void, blocking: true
@@ -422,6 +432,8 @@ module URnetwork
       attach_function :urnet_api_sn_top, [:uint64, :string, :urnet_sn_top_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_top_me, [:uint64, :urnet_sn_top_me_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_validate_wallet, [:uint64, :string, :urnet_sn_validate_wallet_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_wallet_disconnect, [:uint64, :string, :urnet_sn_wallet_disconnect_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_wallet_disconnect_code, [:uint64, :urnet_sn_wallet_disconnect_code_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_start_jwt_refresh, [:uint64], :void, blocking: true
       attach_function :urnet_api_stripe_create_customer_portal, [:uint64, :string, :urnet_stripe_create_customer_portal_cb, :pointer], :void, blocking: true
@@ -1232,6 +1244,12 @@ module URnetwork
       attach_function :urnet_manage_devices_view_controller_remove_device, [:uint64, :string], :void, blocking: true
       attach_function :urnet_manage_devices_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_manage_devices_view_controller_stop, [:uint64], :void, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_encode, [:uint64], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_finish, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_get_nonce, [:uint64], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_get_return_scheme, [:uint64], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_get_state, [:uint64], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_attempt_start_url, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_name_validation_view_controller_close, [:uint64], :void, blocking: true
       attach_function :urnet_network_name_validation_view_controller_network_check, [:uint64, :string, :urnet_network_check_cb, :pointer], :void, blocking: true
       attach_function :urnet_network_name_validation_view_controller_start, [:uint64], :void, blocking: true
@@ -1549,6 +1567,7 @@ module URnetwork
       attach_function :urnet_wallet_view_controller_validate_address, [:uint64, :string, :string, :urnet_validate_address_cb, :pointer], :void, blocking: true
       attach_function :urnet_websocket_device_rpc_listener_close, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_alpha_from_rao, [:int64], :double, blocking: true
+      attach_function :urnet_auth_email_change_error_ends_request, [:string], :bool, blocking: true
       attach_function :urnet_bittensor_convert_estimate, [:string, :string, :int64, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_convert_estimate_for_burn, [:string, :string, :urnet_bittensor_convert_estimate_cb, :pointer], :void, blocking: true
       attach_function :urnet_bittensor_convert_submit, [:string, :string, :string, :urnet_bittensor_convert_submit_cb, :pointer], :void, blocking: true
@@ -1601,8 +1620,10 @@ module URnetwork
       attach_function :urnet_crypto_payment_uri_scheme, [:string], :pointer, blocking: true
       attach_function :urnet_crypto_term_notice_due, [:string], :bool, blocking: true
       attach_function :urnet_crypto_wallet_suggestions, [:string], :pointer, blocking: true
+      attach_function :urnet_decode_microsoft_sign_in_attempt, [:string, :pointer], :uint64, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
+      attach_function :urnet_default_microsoft_sign_in_settings, [], :pointer, blocking: true
       attach_function :urnet_default_performance_profile, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true
@@ -1673,6 +1694,7 @@ module URnetwork
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
       attach_function :urnet_is_favorite_exit, [:string], :bool, blocking: true
       attach_function :urnet_is_invalid_user_auth_phone, [:string], :bool, blocking: true
+      attach_function :urnet_is_microsoft_sign_in_return_url, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true
       attach_function :urnet_is_sandbox_purchase_refusal, [:string], :bool, blocking: true
@@ -1684,10 +1706,12 @@ module URnetwork
       attach_function :urnet_log_tails, [], :pointer, blocking: true
       attach_function :urnet_low_data_warning_for_balance, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_memory_classes_json_for_diag, [], :pointer, blocking: true
+      attach_function :urnet_microsoft_sign_in_error_code_of, [:string], :pointer, blocking: true
       attach_function :urnet_monthly_equivalent_amount, [:double, :int64], :double, blocking: true
       attach_function :urnet_nano_cents_to_usd, [:int64], :double, blocking: true
       attach_function :urnet_nano_points_to_points, [:int64], :double, blocking: true
       attach_function :urnet_network_changed, [], :void, blocking: true
+      attach_function :urnet_network_user_email_sign_in, [:string], :pointer, blocking: true
       attach_function :urnet_new_async_local_state, [:string], :uint64, blocking: true
       attach_function :urnet_new_bittensor_local_key_flow, [:uint64, :string, :urnet_bittensor_local_key_store_add_key_cb, :urnet_bittensor_local_key_store_delete_key_cb, :urnet_bittensor_local_key_store_key_address_cb, :urnet_bittensor_local_key_store_key_phrase_cb, :urnet_bittensor_local_key_store_read_note_cb, :urnet_bittensor_local_key_store_write_note_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_new_bittensor_wallet_session, [:string, :string, :string, :string, :pointer], :uint64, blocking: true
@@ -1708,6 +1732,7 @@ module URnetwork
       attach_function :urnet_new_feedback_submitted_event, [:int64, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_id, [], :pointer, blocking: true
       attach_function :urnet_new_login_view_controller, [:uint64], :uint64, blocking: true
+      attach_function :urnet_new_microsoft_sign_in_attempt, [:string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_network_name_validation_view_controller, [:uint64], :uint64, blocking: true
       attach_function :urnet_new_network_space_key, [:string, :string], :pointer, blocking: true
       attach_function :urnet_new_network_space_manager, [:string], :uint64, blocking: true
@@ -1747,6 +1772,7 @@ module URnetwork
       attach_function :urnet_normal_extender_gossip_mode, [:string], :pointer, blocking: true
       attach_function :urnet_normalize_bittensor_signature, [:string], :pointer, blocking: true
       attach_function :urnet_normalize_dns_preset_personal_id, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_normalize_email_change_code, [:string], :pointer, blocking: true
       attach_function :urnet_order_connected_provider_locations, [:string], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_challenge_message, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_wallet_return, [:string, :string, :pointer], :pointer, blocking: true
@@ -1799,6 +1825,8 @@ module URnetwork
       attach_function :urnet_sn_ledger_claim_transactions_for_payer, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_payout_leaf_hex, [:string, :int64], :pointer, blocking: true
       attach_function :urnet_sn_testnet_chain_settings, [], :pointer, blocking: true
+      attach_function :urnet_sn_wallet_disconnectable, [:string], :bool, blocking: true
+      attach_function :urnet_sn_wallet_has_wallet, [:string], :bool, blocking: true
       attach_function :urnet_solana_wallet_failure_for, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_suggest_emoji_tag, [:int64], :pointer, blocking: true
       attach_function :urnet_transport_settings_auto_modes, [:string], :pointer, blocking: true
@@ -1811,6 +1839,7 @@ module URnetwork
       attach_function :urnet_usd_to_nano_cents, [:double], :int64, blocking: true
       attach_function :urnet_validate_control_doh_url, [:string], :pointer, blocking: true
       attach_function :urnet_validate_dns_preset_personal_id, [:string, :string], :pointer, blocking: true
+      attach_function :urnet_validate_email_change_address, [:string], :pointer, blocking: true
       attach_function :urnet_validate_emoji_tag, [:string], :pointer, blocking: true
       attach_function :urnet_validate_ss58, [:string], :bool, blocking: true
       attach_function :urnet_validate_vless_settings, [:string], :pointer, blocking: true

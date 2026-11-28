@@ -25,6 +25,10 @@ EXPORTS
 	urnet_api_add_network_sessions_change_listener
 	urnet_api_auth_code_create
 	urnet_api_auth_code_login
+	urnet_api_auth_email_change
+	urnet_api_auth_email_change_cancel
+	urnet_api_auth_email_change_confirm
+	urnet_api_auth_email_change_status
 	urnet_api_auth_login
 	urnet_api_auth_login_with_password
 	urnet_api_auth_network_client
@@ -142,6 +146,8 @@ EXPORTS
 	urnet_api_sn_top
 	urnet_api_sn_top_me
 	urnet_api_sn_validate_wallet
+	urnet_api_sn_wallet_disconnect
+	urnet_api_sn_wallet_disconnect_code
 	urnet_api_sn_wallet_mapping_challenge_sync
 	urnet_api_start_jwt_refresh
 	urnet_api_stripe_create_customer_portal
@@ -175,6 +181,7 @@ EXPORTS
 	urnet_async_local_state_parse_by_jwt
 	urnet_async_local_state_set_by_client_jwt
 	urnet_async_local_state_set_by_jwt
+	urnet_auth_email_change_error_ends_request
 	urnet_bittensor_convert_estimate
 	urnet_bittensor_convert_estimate_for_burn
 	urnet_bittensor_convert_submit
@@ -438,9 +445,11 @@ EXPORTS
 	urnet_crypto_term_notice_due
 	urnet_crypto_wallet_suggestions
 	urnet_decode_base58
+	urnet_decode_microsoft_sign_in_attempt
 	urnet_decrypt_data
 	urnet_default_device_local_settings
 	urnet_default_low_memory_device_local_settings
+	urnet_default_microsoft_sign_in_settings
 	urnet_default_performance_profile
 	urnet_default_provider_transport_settings
 	urnet_default_proxy_config
@@ -983,6 +992,7 @@ EXPORTS
 	urnet_is_checkout_redirect
 	urnet_is_favorite_exit
 	urnet_is_invalid_user_auth_phone
+	urnet_is_microsoft_sign_in_return_url
 	urnet_is_points_leaderboard_sort
 	urnet_is_purchase_report_terminal
 	urnet_is_sandbox_purchase_refusal
@@ -1114,6 +1124,13 @@ EXPORTS
 	urnet_manage_devices_view_controller_start
 	urnet_manage_devices_view_controller_stop
 	urnet_memory_classes_json_for_diag
+	urnet_microsoft_sign_in_attempt_encode
+	urnet_microsoft_sign_in_attempt_finish
+	urnet_microsoft_sign_in_attempt_get_nonce
+	urnet_microsoft_sign_in_attempt_get_return_scheme
+	urnet_microsoft_sign_in_attempt_get_state
+	urnet_microsoft_sign_in_attempt_start_url
+	urnet_microsoft_sign_in_error_code_of
 	urnet_monthly_equivalent_amount
 	urnet_nano_cents_to_usd
 	urnet_nano_points_to_points
@@ -1217,6 +1234,7 @@ EXPORTS
 	urnet_network_space_set_ingress_country_code
 	urnet_network_space_set_vless_settings
 	urnet_network_space_to_json
+	urnet_network_user_email_sign_in
 	urnet_network_user_view_controller_add_is_loading_listener
 	urnet_network_user_view_controller_add_is_updating_listener
 	urnet_network_user_view_controller_add_network_user_listener
@@ -1248,6 +1266,7 @@ EXPORTS
 	urnet_new_feedback_submitted_event
 	urnet_new_id
 	urnet_new_login_view_controller
+	urnet_new_microsoft_sign_in_attempt
 	urnet_new_network_name_validation_view_controller
 	urnet_new_network_space_key
 	urnet_new_network_space_manager
@@ -1287,6 +1306,7 @@ EXPORTS
 	urnet_normal_extender_gossip_mode
 	urnet_normalize_bittensor_signature
 	urnet_normalize_dns_preset_personal_id
+	urnet_normalize_email_change_code
 	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
@@ -1474,6 +1494,8 @@ EXPORTS
 	urnet_sn_ledger_claim_transactions_for_payer
 	urnet_sn_payout_leaf_hex
 	urnet_sn_testnet_chain_settings
+	urnet_sn_wallet_disconnectable
+	urnet_sn_wallet_has_wallet
 	urnet_socket_close
 	urnet_socket_close_read
 	urnet_socket_close_write
@@ -1542,6 +1564,7 @@ EXPORTS
 	urnet_usd_to_nano_cents
 	urnet_validate_control_doh_url
 	urnet_validate_dns_preset_personal_id
+	urnet_validate_email_change_address
 	urnet_validate_emoji_tag
 	urnet_validate_ss58
 	urnet_validate_vless_settings
