@@ -7957,6 +7957,34 @@ func urnet_build_solana_payment_url(args *C.char, outError **C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_can_exclude_exit_location
+func urnet_can_exclude_exit_location(location *C.char) C.bool {
+	defer cgoGuard("urnet_can_exclude_exit_location")
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_can_exclude_exit_location") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.CanExcludeExitLocation(location_)
+	return C.bool(r0)
+}
+
+//export urnet_can_favorite_location
+func urnet_can_favorite_location(location *C.char) C.bool {
+	defer cgoGuard("urnet_can_favorite_location")
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_can_favorite_location") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.CanFavoriteLocation(location_)
+	return C.bool(r0)
+}
+
 //export urnet_cant_reach_on_stall
 func urnet_cant_reach_on_stall(previousStallReason *C.char, stallReason *C.char) C.bool {
 	defer cgoGuard("urnet_cant_reach_on_stall")
@@ -9192,6 +9220,16 @@ func urnet_connect_view_controller_disconnect(self C.uint64_t) {
 		return
 	}
 	self_.Disconnect()
+}
+
+//export urnet_connect_view_controller_excluded_exit_locations_changed
+func urnet_connect_view_controller_excluded_exit_locations_changed(self C.uint64_t) {
+	defer cgoGuard("urnet_connect_view_controller_excluded_exit_locations_changed")
+	self_, ok := resolveHandle[*sdk.ConnectViewController](uint64(self), "urnet_connect_view_controller_excluded_exit_locations_changed")
+	if !ok {
+		return
+	}
+	self_.ExcludedExitLocationsChanged()
 }
 
 //export urnet_connect_view_controller_get_connected
@@ -16847,6 +16885,20 @@ func urnet_is_checkout_redirect(uri *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_is_favorite_exit
+func urnet_is_favorite_exit(location *C.char) C.bool {
+	defer cgoGuard("urnet_is_favorite_exit")
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_is_favorite_exit") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.IsFavoriteExit(location_)
+	return C.bool(r0)
+}
+
 //export urnet_is_points_leaderboard_sort
 func urnet_is_points_leaderboard_sort(sort *C.char) C.bool {
 	defer cgoGuard("urnet_is_points_leaderboard_sort")
@@ -17071,6 +17123,50 @@ func urnet_local_auth_state_snapshot_set_default_location(self C.uint64_t, locat
 	return C.bool(true)
 }
 
+//export urnet_local_state_add_excluded_exit_location
+func urnet_local_state_add_excluded_exit_location(self C.uint64_t, location *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_add_excluded_exit_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_add_excluded_exit_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_add_excluded_exit_location") {
+			return C.bool(false)
+		}
+	}
+	err := self_.AddExcludedExitLocation(location_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_add_favorite_location
+func urnet_local_state_add_favorite_location(self C.uint64_t, location *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_add_favorite_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_add_favorite_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_add_favorite_location") {
+			return C.bool(false)
+		}
+	}
+	err := self_.AddFavoriteLocation(location_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_local_state_close
 func urnet_local_state_close(self C.uint64_t) {
 	defer cgoGuard("urnet_local_state_close")
@@ -17257,6 +17353,20 @@ func urnet_local_state_get_dns_resolver_settings(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_local_state_get_dns_resolver_settings")
 }
 
+//export urnet_local_state_get_excluded_exit_locations
+func urnet_local_state_get_excluded_exit_locations(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_excluded_exit_locations")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_excluded_exit_locations")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExcludedExitLocations()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_local_state_get_excluded_exit_locations")
+}
+
 //export urnet_local_state_get_extender_gossip_mode
 func urnet_local_state_get_extender_gossip_mode(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_local_state_get_extender_gossip_mode")
@@ -17266,6 +17376,20 @@ func urnet_local_state_get_extender_gossip_mode(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetExtenderGossipMode()
 	return cString(string(r0))
+}
+
+//export urnet_local_state_get_favorite_locations
+func urnet_local_state_get_favorite_locations(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_favorite_locations")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_favorite_locations")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetFavoriteLocations()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_local_state_get_favorite_locations")
 }
 
 //export urnet_local_state_get_instance_id
@@ -17473,6 +17597,42 @@ func urnet_local_state_get_vpn_interface_while_offline(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_local_state_is_excluded_exit_location
+func urnet_local_state_is_excluded_exit_location(self C.uint64_t, location *C.char) C.bool {
+	defer cgoGuard("urnet_local_state_is_excluded_exit_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_is_excluded_exit_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_is_excluded_exit_location") {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.IsExcludedExitLocation(location_)
+	return C.bool(r0)
+}
+
+//export urnet_local_state_is_favorite_location
+func urnet_local_state_is_favorite_location(self C.uint64_t, location *C.char) C.bool {
+	defer cgoGuard("urnet_local_state_is_favorite_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_is_favorite_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_is_favorite_location") {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.IsFavoriteLocation(location_)
+	return C.bool(r0)
+}
+
 //export urnet_local_state_load_connect_location
 func urnet_local_state_load_connect_location(self C.uint64_t, outError **C.char) *C.char {
 	defer cgoGuard("urnet_local_state_load_connect_location")
@@ -17630,6 +17790,50 @@ func urnet_local_state_read_device_local_key_material(self C.uint64_t, outError 
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_local_state_remove_excluded_exit_location
+func urnet_local_state_remove_excluded_exit_location(self C.uint64_t, location *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_remove_excluded_exit_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_remove_excluded_exit_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_remove_excluded_exit_location") {
+			return C.bool(false)
+		}
+	}
+	err := self_.RemoveExcludedExitLocation(location_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_remove_favorite_location
+func urnet_local_state_remove_favorite_location(self C.uint64_t, location *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_remove_favorite_location")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_remove_favorite_location")
+	if !ok {
+		return C.bool(false)
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_local_state_remove_favorite_location") {
+			return C.bool(false)
+		}
+	}
+	err := self_.RemoveFavoriteLocation(location_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
 }
 
 //export urnet_local_state_select_client_jwt_for_instance

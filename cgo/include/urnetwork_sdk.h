@@ -1697,6 +1697,7 @@ void urnet_connect_view_controller_connect(uint64_t self, const char* location_j
 void urnet_connect_view_controller_connect_best_available(uint64_t self);
 void urnet_connect_view_controller_connect_location_changed(uint64_t self, const char* location_json);
 void urnet_connect_view_controller_disconnect(uint64_t self);
+void urnet_connect_view_controller_excluded_exit_locations_changed(uint64_t self);
 bool urnet_connect_view_controller_get_connected(uint64_t self);
 char* urnet_connect_view_controller_get_connection_status(uint64_t self);
 uint64_t urnet_connect_view_controller_get_grid(uint64_t self);
@@ -2255,6 +2256,8 @@ bool urnet_local_auth_state_snapshot_set_default_location(uint64_t self, const c
 
 /* ----- LocalState ----- */
 
+bool urnet_local_state_add_excluded_exit_location(uint64_t self, const char* location_json, char** out_error);
+bool urnet_local_state_add_favorite_location(uint64_t self, const char* location_json, char** out_error);
 void urnet_local_state_close(uint64_t self);
 bool urnet_local_state_get_allow_foreground(uint64_t self);
 uint64_t urnet_local_state_get_auth_state_snapshot(uint64_t self, char** out_error);
@@ -2270,7 +2273,9 @@ int64_t urnet_local_state_get_control_ip_family_policy(uint64_t self);
 char* urnet_local_state_get_default_location(uint64_t self);
 uint64_t urnet_local_state_get_device_local_key_material(uint64_t self);
 char* urnet_local_state_get_dns_resolver_settings(uint64_t self);
+char* urnet_local_state_get_excluded_exit_locations(uint64_t self);
 char* urnet_local_state_get_extender_gossip_mode(uint64_t self);
+char* urnet_local_state_get_favorite_locations(uint64_t self);
 char* urnet_local_state_get_instance_id(uint64_t self);
 int64_t urnet_local_state_get_log_verbosity(uint64_t self);
 bool urnet_local_state_get_measurements_enabled(uint64_t self);
@@ -2288,6 +2293,8 @@ char* urnet_local_state_get_sn_chain_settings(uint64_t self);
 char* urnet_local_state_get_sn_wallet(uint64_t self);
 char* urnet_local_state_get_transport_settings(uint64_t self);
 bool urnet_local_state_get_vpn_interface_while_offline(uint64_t self);
+bool urnet_local_state_is_excluded_exit_location(uint64_t self, const char* location_json);
+bool urnet_local_state_is_favorite_location(uint64_t self, const char* location_json);
 char* urnet_local_state_load_connect_location(uint64_t self, char** out_error);
 char* urnet_local_state_load_default_location(uint64_t self, char** out_error);
 uint64_t urnet_local_state_load_device_local_key_material(uint64_t self, char** out_error);
@@ -2297,6 +2304,8 @@ char* urnet_local_state_parse_by_jwt(uint64_t self, char** out_error);
 uint64_t urnet_local_state_read_connect_location(uint64_t self, char** out_error);
 uint64_t urnet_local_state_read_default_location(uint64_t self, char** out_error);
 uint64_t urnet_local_state_read_device_local_key_material(uint64_t self, char** out_error);
+bool urnet_local_state_remove_excluded_exit_location(uint64_t self, const char* location_json, char** out_error);
+bool urnet_local_state_remove_favorite_location(uint64_t self, const char* location_json, char** out_error);
 char* urnet_local_state_select_client_jwt_for_instance(uint64_t self, const char* by_client_jwt, const char* instance_id, char** out_error);
 bool urnet_local_state_set_allow_foreground(uint64_t self, bool allow_foreground, char** out_error);
 bool urnet_local_state_set_block_action_overrides(uint64_t self, const char* block_action_overrides_json, char** out_error);
@@ -2800,6 +2809,8 @@ char* urnet_build_checkout_bridge_url(const char* client_secret);
 char* urnet_build_checkout_bridge_url_with_redirect(const char* client_secret, const char* redirect_link);
 char* urnet_build_inline_checkout_bridge_url(const char* client_secret);
 char* urnet_build_solana_payment_url(const char* args_json, char** out_error);
+bool urnet_can_exclude_exit_location(const char* location_json);
+bool urnet_can_favorite_location(const char* location_json);
 bool urnet_cant_reach_on_stall(const char* previous_stall_reason, const char* stall_reason);
 bool urnet_check_crypto_payment_uri(const char* asset, const char* uri, const char* address);
 char* urnet_classify_balance_code_redeem(const char* result_json, const char* redeemed_codes_json, const char* secret);
@@ -2903,6 +2914,7 @@ char* urnet_ingress_plain_dns_servers(const char* country_code);
 bool urnet_is_balance_code_format_valid(const char* secret);
 bool urnet_is_cant_reach_error(const char* error_message);
 bool urnet_is_checkout_redirect(const char* uri);
+bool urnet_is_favorite_exit(const char* location_json);
 bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_sandbox_purchase_refusal(const char* result_json);
@@ -3730,6 +3742,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   strong_privacy: boolean
  *   network_peer?: boolean
  *   extender_ip?: string
+ *   exclude_location_ids?: IdList | null
  */
 
 /* ConnectLocationId (json):

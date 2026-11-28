@@ -1736,6 +1736,7 @@ struct ConnectLocation {
 	bool strong_privacy{};
 	std::optional<bool> network_peer;
 	std::optional<std::string> extender_ip;
+	std::optional<IdList> exclude_location_ids;
 };
 
 struct WindowSizeSettings {
@@ -7395,6 +7396,9 @@ inline void to_json(nlohmann::json& j, const ConnectLocation& v) {
 	if (v.extender_ip) {
 		j["extender_ip"] = *v.extender_ip;
 	}
+	if (v.exclude_location_ids) {
+		j["exclude_location_ids"] = *v.exclude_location_ids;
+	}
 }
 inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 	if (!j.is_object()) {
@@ -7480,6 +7484,11 @@ inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.extender_ip = std::move(tmp);
+	}
+	if (auto it = j.find("exclude_location_ids"); it != j.end() && !it->is_null()) {
+		IdList tmp{};
+		it->get_to(tmp);
+		v.exclude_location_ids = std::move(tmp);
 	}
 }
 
@@ -24563,6 +24572,7 @@ public:
 	void connectBestAvailable() const;
 	void connectLocationChanged(const std::optional<ConnectLocation>& location) const;
 	void disconnect() const;
+	void excludedExitLocationsChanged() const;
 	bool getConnected() const;
 	std::string getConnectionStatus() const;
 	ConnectGrid getGrid() const;
@@ -25023,6 +25033,8 @@ class LocalState final : public detail::Handle {
 public:
 	LocalState() = default;
 	explicit LocalState(uint64_t h) : detail::Handle(h) {}
+	void addExcludedExitLocation(const std::optional<ConnectLocation>& location) const;
+	void addFavoriteLocation(const std::optional<ConnectLocation>& location) const;
 	void close() const;
 	bool getAllowForeground() const;
 	LocalAuthStateSnapshot getAuthStateSnapshot() const;
@@ -25038,7 +25050,9 @@ public:
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
+	std::optional<ConnectLocationList> getExcludedExitLocations() const;
 	std::string getExtenderGossipMode() const;
+	std::optional<ConnectLocationList> getFavoriteLocations() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
 	bool getMeasurementsEnabled() const;
@@ -25056,6 +25070,8 @@ public:
 	std::optional<SnWallet> getSnWallet() const;
 	std::optional<TransportSettings> getTransportSettings() const;
 	bool getVpnInterfaceWhileOffline() const;
+	bool isExcludedExitLocation(const std::optional<ConnectLocation>& location) const;
+	bool isFavoriteLocation(const std::optional<ConnectLocation>& location) const;
 	std::optional<ConnectLocation> loadConnectLocation() const;
 	std::optional<ConnectLocation> loadDefaultLocation() const;
 	DeviceLocalKeyMaterial loadDeviceLocalKeyMaterial() const;
@@ -25065,6 +25081,8 @@ public:
 	LocalStateLocationReadResult readConnectLocation() const;
 	LocalStateLocationReadResult readDefaultLocation() const;
 	LocalStateKeyMaterialReadResult readDeviceLocalKeyMaterial() const;
+	void removeExcludedExitLocation(const std::optional<ConnectLocation>& location) const;
+	void removeFavoriteLocation(const std::optional<ConnectLocation>& location) const;
 	std::string selectClientJwtForInstance(const std::string& by_client_jwt, const std::string& instance_id) const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& block_action_overrides) const;
@@ -35912,6 +35930,9 @@ inline void ConnectViewController::connectLocationChanged(const std::optional<Co
 inline void ConnectViewController::disconnect() const {
 	urnet_connect_view_controller_disconnect(handle());
 }
+inline void ConnectViewController::excludedExitLocationsChanged() const {
+	urnet_connect_view_controller_excluded_exit_locations_changed(handle());
+}
 inline bool ConnectViewController::getConnected() const {
 	bool r = urnet_connect_view_controller_get_connected(handle());
 	return r;
@@ -37916,6 +37937,38 @@ inline void LocalAuthStateSnapshot::setDefaultLocation(const std::optional<Conne
 		throw Error("urnet: urnet_local_auth_state_snapshot_set_default_location failed");
 	}
 }
+inline void LocalState::addExcludedExitLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_add_excluded_exit_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_add_excluded_exit_location failed");
+	}
+}
+inline void LocalState::addFavoriteLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_add_favorite_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_add_favorite_location failed");
+	}
+}
 inline void LocalState::close() const {
 	urnet_local_state_close(handle());
 }
@@ -37995,9 +38048,25 @@ inline std::optional<DnsResolverSettings> LocalState::getDnsResolverSettings() c
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
+inline std::optional<ConnectLocationList> LocalState::getExcludedExitLocations() const {
+	char* r_c = urnet_local_state_get_excluded_exit_locations(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocationList>(r_s->c_str());
+}
 inline std::string LocalState::getExtenderGossipMode() const {
 	char* r_c = urnet_local_state_get_extender_gossip_mode(handle());
 	return detail::takeString(r_c);
+}
+inline std::optional<ConnectLocationList> LocalState::getFavoriteLocations() const {
+	char* r_c = urnet_local_state_get_favorite_locations(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocationList>(r_s->c_str());
 }
 inline std::string LocalState::getInstanceId() const {
 	char* r_c = urnet_local_state_get_instance_id(handle());
@@ -38091,6 +38160,26 @@ inline bool LocalState::getVpnInterfaceWhileOffline() const {
 	bool r = urnet_local_state_get_vpn_interface_while_offline(handle());
 	return r;
 }
+inline bool LocalState::isExcludedExitLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	bool r = urnet_local_state_is_excluded_exit_location(handle(), location_c);
+	return r;
+}
+inline bool LocalState::isFavoriteLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	bool r = urnet_local_state_is_favorite_location(handle(), location_c);
+	return r;
+}
 inline std::optional<ConnectLocation> LocalState::loadConnectLocation() const {
 	char* err_c = nullptr;
 	char* r_c = urnet_local_state_load_connect_location(handle(), &err_c);
@@ -38180,6 +38269,38 @@ inline LocalStateKeyMaterialReadResult LocalState::readDeviceLocalKeyMaterial() 
 		detail::throwError(err_c);
 	}
 	return r;
+}
+inline void LocalState::removeExcludedExitLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_remove_excluded_exit_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_remove_excluded_exit_location failed");
+	}
+}
+inline void LocalState::removeFavoriteLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_remove_favorite_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_remove_favorite_location failed");
+	}
 }
 inline std::string LocalState::selectClientJwtForInstance(const std::string& by_client_jwt, const std::string& instance_id) const {
 	char* err_c = nullptr;
@@ -40463,6 +40584,26 @@ inline std::string buildSolanaPaymentUrl(const std::optional<SolanaPaymentUrlArg
 	}
 	return detail::takeString(r_c);
 }
+inline bool canExcludeExitLocation(const std::optional<ConnectLocation>& location) {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	bool r = urnet_can_exclude_exit_location(location_c);
+	return r;
+}
+inline bool canFavoriteLocation(const std::optional<ConnectLocation>& location) {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	bool r = urnet_can_favorite_location(location_c);
+	return r;
+}
 inline bool cantReachOnStall(const std::string& previous_stall_reason, const std::string& stall_reason) {
 	bool r = urnet_cant_reach_on_stall(previous_stall_reason.c_str(), stall_reason.c_str());
 	return r;
@@ -41256,6 +41397,16 @@ inline bool isCantReachError(const std::string& error_message) {
 }
 inline bool isCheckoutRedirect(const std::string& uri) {
 	bool r = urnet_is_checkout_redirect(uri.c_str());
+	return r;
+}
+inline bool isFavoriteExit(const std::optional<ConnectLocation>& location) {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	bool r = urnet_is_favorite_exit(location_c);
 	return r;
 }
 inline bool isPointsLeaderboardSort(const std::string& sort) {

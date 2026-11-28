@@ -609,6 +609,7 @@ module URnetwork
       attach_function :urnet_connect_view_controller_connect_best_available, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_connect_location_changed, [:uint64, :string], :void, blocking: true
       attach_function :urnet_connect_view_controller_disconnect, [:uint64], :void, blocking: true
+      attach_function :urnet_connect_view_controller_excluded_exit_locations_changed, [:uint64], :void, blocking: true
       attach_function :urnet_connect_view_controller_get_connected, [:uint64], :bool, blocking: true
       attach_function :urnet_connect_view_controller_get_connection_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_connect_view_controller_get_grid, [:uint64], :uint64, blocking: true
@@ -1119,6 +1120,8 @@ module URnetwork
       attach_function :urnet_local_auth_state_snapshot_read_default_location, [:uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_local_auth_state_snapshot_set_connect_location, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_auth_state_snapshot_set_default_location, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_add_excluded_exit_location, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_add_favorite_location, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_close, [:uint64], :void, blocking: true
       attach_function :urnet_local_state_get_allow_foreground, [:uint64], :bool, blocking: true
       attach_function :urnet_local_state_get_auth_state_snapshot, [:uint64, :pointer], :uint64, blocking: true
@@ -1134,7 +1137,9 @@ module URnetwork
       attach_function :urnet_local_state_get_default_location, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_device_local_key_material, [:uint64], :uint64, blocking: true
       attach_function :urnet_local_state_get_dns_resolver_settings, [:uint64], :pointer, blocking: true
+      attach_function :urnet_local_state_get_excluded_exit_locations, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_extender_gossip_mode, [:uint64], :pointer, blocking: true
+      attach_function :urnet_local_state_get_favorite_locations, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_instance_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_log_verbosity, [:uint64], :int64, blocking: true
       attach_function :urnet_local_state_get_measurements_enabled, [:uint64], :bool, blocking: true
@@ -1152,6 +1157,8 @@ module URnetwork
       attach_function :urnet_local_state_get_sn_wallet, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_transport_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_vpn_interface_while_offline, [:uint64], :bool, blocking: true
+      attach_function :urnet_local_state_is_excluded_exit_location, [:uint64, :string], :bool, blocking: true
+      attach_function :urnet_local_state_is_favorite_location, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_local_state_load_connect_location, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_local_state_load_default_location, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_local_state_load_device_local_key_material, [:uint64, :pointer], :uint64, blocking: true
@@ -1161,6 +1168,8 @@ module URnetwork
       attach_function :urnet_local_state_read_connect_location, [:uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_local_state_read_default_location, [:uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_local_state_read_device_local_key_material, [:uint64, :pointer], :uint64, blocking: true
+      attach_function :urnet_local_state_remove_excluded_exit_location, [:uint64, :string, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_remove_favorite_location, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_select_client_jwt_for_instance, [:uint64, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_local_state_set_allow_foreground, [:uint64, :bool, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_block_action_overrides, [:uint64, :string, :pointer], :bool, blocking: true
@@ -1548,6 +1557,8 @@ module URnetwork
       attach_function :urnet_build_checkout_bridge_url_with_redirect, [:string, :string], :pointer, blocking: true
       attach_function :urnet_build_inline_checkout_bridge_url, [:string], :pointer, blocking: true
       attach_function :urnet_build_solana_payment_url, [:string, :pointer], :pointer, blocking: true
+      attach_function :urnet_can_exclude_exit_location, [:string], :bool, blocking: true
+      attach_function :urnet_can_favorite_location, [:string], :bool, blocking: true
       attach_function :urnet_cant_reach_on_stall, [:string, :string], :bool, blocking: true
       attach_function :urnet_check_crypto_payment_uri, [:string, :string, :string], :bool, blocking: true
       attach_function :urnet_classify_balance_code_redeem, [:string, :string, :string], :pointer, blocking: true
@@ -1651,6 +1662,7 @@ module URnetwork
       attach_function :urnet_is_balance_code_format_valid, [:string], :bool, blocking: true
       attach_function :urnet_is_cant_reach_error, [:string], :bool, blocking: true
       attach_function :urnet_is_checkout_redirect, [:string], :bool, blocking: true
+      attach_function :urnet_is_favorite_exit, [:string], :bool, blocking: true
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true
       attach_function :urnet_is_sandbox_purchase_refusal, [:string], :bool, blocking: true

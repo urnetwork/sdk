@@ -5,6 +5,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"maps"
 
 	// "fmt"
 	"math"
@@ -538,6 +539,10 @@ func (self *ConnectViewController) setConnectionForGeneration(
 }
 
 func (self *ConnectViewController) Connect(location *ConnectLocation) {
+	// the user's excluded exit locations as they stand now ride with the
+	// connection (exit_location_exclusion.go), and are saved with it
+	location = self.withExcludedExitLocations(location)
+
 	if local, ok := self.device.(*DeviceLocal); ok && local.GetAutoSave() {
 		generation, accepted := self.beginLocalPreferenceGesture()
 		if !accepted {
@@ -637,6 +642,52 @@ func (self *ConnectViewController) Disconnect() {
 
 	signIn.setConnectLocation(nil)
 	self.device.SetConnectLocation(nil)
+}
+
+// ExcludedExitLocationsChanged applies a change of the user's excluded exit
+// locations (LocalState.AddExcludedExitLocation, RemoveExcludedExitLocation)
+// to the connection in place: a connection whose picks the change affects
+// connects to its location again, now with the new list. Nothing while
+// disconnected, or for a connection the change does not affect (a pinned
+// exit, a pick inside the changed place): the next connect carries the list.
+func (self *ConnectViewController) ExcludedExitLocationsChanged() {
+	location := self.device.GetConnectLocation()
+	if location == nil {
+		return
+	}
+	updated := self.withExcludedExitLocations(location)
+	if maps.Equal(destinationExcludedLocationIds(location), destinationExcludedLocationIds(updated)) {
+		return
+	}
+	self.Connect(updated)
+}
+
+// The location with the user's excluded exit locations as they stand now; a
+// device without a local state keeps the location as it is.
+func (self *ConnectViewController) withExcludedExitLocations(location *ConnectLocation) *ConnectLocation {
+	if location == nil {
+		return nil
+	}
+	localState := self.localState()
+	if localState == nil {
+		return location
+	}
+	stamped := cloneConnectLocation(location)
+	stamped.ExcludeLocationIds = localState.excludedExitLocationIds()
+	return stamped
+}
+
+// The local state of the device's network space, nil when it has none.
+func (self *ConnectViewController) localState() *LocalState {
+	networkSpace := self.device.GetNetworkSpace()
+	if networkSpace == nil {
+		return nil
+	}
+	asyncLocalState := networkSpace.GetAsyncLocalState()
+	if asyncLocalState == nil {
+		return nil
+	}
+	return asyncLocalState.GetLocalState()
 }
 
 // The current sign-in of the device's network space, for this controller's own

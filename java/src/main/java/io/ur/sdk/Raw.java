@@ -610,6 +610,7 @@ public interface Raw extends Library {
   void urnet_connect_view_controller_connect_best_available(long a0);
   void urnet_connect_view_controller_connect_location_changed(long a0, String a1);
   void urnet_connect_view_controller_disconnect(long a0);
+  void urnet_connect_view_controller_excluded_exit_locations_changed(long a0);
   byte urnet_connect_view_controller_get_connected(long a0);
   Pointer urnet_connect_view_controller_get_connection_status(long a0);
   long urnet_connect_view_controller_get_grid(long a0);
@@ -1120,6 +1121,8 @@ public interface Raw extends Library {
   long urnet_local_auth_state_snapshot_read_default_location(long a0, PointerByReference a1);
   byte urnet_local_auth_state_snapshot_set_connect_location(long a0, String a1, PointerByReference a2);
   byte urnet_local_auth_state_snapshot_set_default_location(long a0, String a1, PointerByReference a2);
+  byte urnet_local_state_add_excluded_exit_location(long a0, String a1, PointerByReference a2);
+  byte urnet_local_state_add_favorite_location(long a0, String a1, PointerByReference a2);
   void urnet_local_state_close(long a0);
   byte urnet_local_state_get_allow_foreground(long a0);
   long urnet_local_state_get_auth_state_snapshot(long a0, PointerByReference a1);
@@ -1135,7 +1138,9 @@ public interface Raw extends Library {
   Pointer urnet_local_state_get_default_location(long a0);
   long urnet_local_state_get_device_local_key_material(long a0);
   Pointer urnet_local_state_get_dns_resolver_settings(long a0);
+  Pointer urnet_local_state_get_excluded_exit_locations(long a0);
   Pointer urnet_local_state_get_extender_gossip_mode(long a0);
+  Pointer urnet_local_state_get_favorite_locations(long a0);
   Pointer urnet_local_state_get_instance_id(long a0);
   long urnet_local_state_get_log_verbosity(long a0);
   byte urnet_local_state_get_measurements_enabled(long a0);
@@ -1153,6 +1158,8 @@ public interface Raw extends Library {
   Pointer urnet_local_state_get_sn_wallet(long a0);
   Pointer urnet_local_state_get_transport_settings(long a0);
   byte urnet_local_state_get_vpn_interface_while_offline(long a0);
+  byte urnet_local_state_is_excluded_exit_location(long a0, String a1);
+  byte urnet_local_state_is_favorite_location(long a0, String a1);
   Pointer urnet_local_state_load_connect_location(long a0, PointerByReference a1);
   Pointer urnet_local_state_load_default_location(long a0, PointerByReference a1);
   long urnet_local_state_load_device_local_key_material(long a0, PointerByReference a1);
@@ -1162,6 +1169,8 @@ public interface Raw extends Library {
   long urnet_local_state_read_connect_location(long a0, PointerByReference a1);
   long urnet_local_state_read_default_location(long a0, PointerByReference a1);
   long urnet_local_state_read_device_local_key_material(long a0, PointerByReference a1);
+  byte urnet_local_state_remove_excluded_exit_location(long a0, String a1, PointerByReference a2);
+  byte urnet_local_state_remove_favorite_location(long a0, String a1, PointerByReference a2);
   Pointer urnet_local_state_select_client_jwt_for_instance(long a0, String a1, String a2, PointerByReference a3);
   byte urnet_local_state_set_allow_foreground(long a0, byte a1, PointerByReference a2);
   byte urnet_local_state_set_block_action_overrides(long a0, String a1, PointerByReference a2);
@@ -1549,6 +1558,8 @@ public interface Raw extends Library {
   Pointer urnet_build_checkout_bridge_url_with_redirect(String a0, String a1);
   Pointer urnet_build_inline_checkout_bridge_url(String a0);
   Pointer urnet_build_solana_payment_url(String a0, PointerByReference a1);
+  byte urnet_can_exclude_exit_location(String a0);
+  byte urnet_can_favorite_location(String a0);
   byte urnet_cant_reach_on_stall(String a0, String a1);
   byte urnet_check_crypto_payment_uri(String a0, String a1, String a2);
   Pointer urnet_classify_balance_code_redeem(String a0, String a1, String a2);
@@ -1652,6 +1663,7 @@ public interface Raw extends Library {
   byte urnet_is_balance_code_format_valid(String a0);
   byte urnet_is_cant_reach_error(String a0);
   byte urnet_is_checkout_redirect(String a0);
+  byte urnet_is_favorite_exit(String a0);
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
   byte urnet_is_sandbox_purchase_refusal(String a0);

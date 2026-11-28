@@ -8388,6 +8388,11 @@ type DeviceRemoteConnectLocationValue struct {
 	// the stayed-on exit's extender pin (EXTENDER.md K10); an optional field a
 	// local without it drops, which `GetSupportsExtenderPin` gates
 	ExtenderIp string
+
+	// the excluded exit locations the connection avoids
+	// (exit_location_exclusion.go); an optional field a local without it drops,
+	// which then uses every provider
+	ExcludeLocationIds []connect.Id
 }
 
 func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *DeviceRemoteConnectLocationValue {
@@ -8414,6 +8419,15 @@ func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *Devi
 	}
 	if connectLocation.ConnectLocationId != nil {
 		deviceRemoteConnectLocationValue.ConnectLocationId = newDeviceRemoteConnectLocationId(connectLocation.ConnectLocationId)
+	}
+	if connectLocation.ExcludeLocationIds != nil {
+		excludeLocationIds := []connect.Id{}
+		for _, id := range connectLocation.ExcludeLocationIds.getAll() {
+			if id != nil {
+				excludeLocationIds = append(excludeLocationIds, id.toConnectId())
+			}
+		}
+		deviceRemoteConnectLocationValue.ExcludeLocationIds = excludeLocationIds
 	}
 	if connectLocation.CityLocationId != nil {
 		id := connectLocation.CityLocationId.toConnectId()
@@ -8454,6 +8468,13 @@ func (self *DeviceRemoteConnectLocationValue) toConnectLocation() *ConnectLocati
 	}
 	if self.ConnectLocationId != nil {
 		connectLocation.ConnectLocationId = self.ConnectLocationId.toConnectLocationId()
+	}
+	if 0 < len(self.ExcludeLocationIds) {
+		excludeLocationIds := NewIdList()
+		for _, id := range self.ExcludeLocationIds {
+			excludeLocationIds.Add(newId(id))
+		}
+		connectLocation.ExcludeLocationIds = excludeLocationIds
 	}
 	if self.CityLocationId != nil {
 		connectLocation.CityLocationId = newId(*self.CityLocationId)
