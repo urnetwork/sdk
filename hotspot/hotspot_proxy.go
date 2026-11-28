@@ -332,7 +332,8 @@ func (self *HotspotProxy) SetEnabled(enabled bool) {
 		preferences, closed := func() (sdk.HotspotProxyPreferences, bool) {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
-			return self.preferences, self.closed
+			// a context that ended is closing, before run marks it closed
+			return self.preferences, self.closed || self.ctx.Err() != nil
 		}()
 		if closed {
 			return false
@@ -376,7 +377,8 @@ func (self *HotspotProxy) RegenerateCredentials() {
 		preferences, closed := func() (sdk.HotspotProxyPreferences, bool) {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
-			return self.preferences, self.closed
+			// a context that ended is closing, before run marks it closed
+			return self.preferences, self.closed || self.ctx.Err() != nil
 		}()
 		if closed {
 			return false
@@ -409,7 +411,7 @@ func (self *HotspotProxy) SetInterfaces(interfaces *HotspotInterfaceList) {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 			self.interfaces = interfaceCopies
-			return self.closed
+			return self.closed || self.ctx.Err() != nil
 		}()
 		if closed {
 			return false

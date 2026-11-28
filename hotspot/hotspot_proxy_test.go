@@ -992,3 +992,26 @@ func TestHotspotProxyServersUseTheHotspotReadTimeout(t *testing.T) {
 func proxyReadTimeoutOfTheHostedProxies() time.Duration {
 	return defaultHotspotProxySettings().httpProxySettings.ProxyReadTimeout
 }
+
+// A proxy whose device closed never listens again, even when a change arrives
+// before its teardown has run.
+func TestHotspotProxyDoesNotListenOnceItsDeviceClosed(t *testing.T) {
+	recorder := &testListenRecorder{source: testHotspotSource}
+	settings := defaultHotspotProxySettings()
+	settings.listen = recorder.listen
+	deviceCtx, deviceCancel := context.WithCancel(context.Background())
+	hotspotProxy := newHotspotProxy(deviceCtx, settings, (&testTunnel{}).dial, &memoryHotspotProxyStore{}, connect.NewNoopLogger())
+	defer hotspotProxy.Close()
+
+	deviceCancel()
+	hotspotProxy.SetInterfaces(testHotspotInterfaces())
+	hotspotProxy.SetEnabled(true)
+	hotspotProxy.RegenerateCredentials()
+	if requested := recorder.requestedAddresses(); len(requested) != 0 {
+		t.Fatalf("a proxy whose device closed listened on %v", requested)
+	}
+	hotspotProxy.Close()
+	if status := hotspotProxy.GetStatus(); status.Listening || status.Enabled {
+		t.Fatalf("status of a proxy whose device closed = %+v", status)
+	}
+}
