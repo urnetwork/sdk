@@ -613,6 +613,10 @@ inline constexpr const char* ProviderStatusNumberTierSpeed = "tier_speed";
 inline constexpr const char* ProviderStatusNumberUrlChecks = "url_checks";
 inline constexpr const char* ProviderStatusNumberWeightQuality = "weight_quality";
 inline constexpr const char* ProviderStatusNumberWeightSpeed = "weight_speed";
+inline constexpr const char* ProviderStatusProvidedHead = "head";
+inline constexpr const char* ProviderStatusProvidedNone = "none";
+inline constexpr const char* ProviderStatusProvidedPaid = "paid";
+inline constexpr const char* ProviderStatusProvidedUnpaid = "unpaid";
 inline constexpr const char* ProviderStatusReasonEgressFailing = "egress_failing";
 inline constexpr const char* ProviderStatusReasonEgressUnprobed = "egress_unprobed";
 inline constexpr const char* ProviderStatusReasonLineIpv4 = "ipv4";
@@ -1154,6 +1158,7 @@ struct GetNetworkUserError;
 struct NetworkUser;
 struct GetNetworkUserResult;
 struct GetPointsLeaderboardArgs;
+struct ProviderStatusNetworkProvided;
 struct GetProviderStatusResult;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
@@ -1229,6 +1234,8 @@ struct ProFeaturesSnapshot;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
+struct ProvideShareLimits;
+struct ProvideShareStatus;
 struct ProviderAdmission;
 struct ProviderAppearanceHistogram;
 struct ProviderFamilyTransportStatus;
@@ -1237,6 +1244,7 @@ struct ProviderIdentity;
 struct ProviderRankingNumber;
 struct ProviderSpec;
 struct ProviderStatusCountry;
+struct ProviderStatusProvided;
 struct ProviderStatus;
 struct ProviderStatusReasonLine;
 struct ProxyDeviceSettings;
@@ -2614,6 +2622,7 @@ struct DeviceLocalSettings {
 	bool ProvideExtenderDnsPrivilegedPort{};
 	bool ProvideExtenderWebRtc{};
 	bool DefaultProvideExtenderPortMapping{};
+	std::string ProvideShareStorageDir{};
 	bool Verbose{};
 	bool MoveDeclineBackgroundOrMetered{};
 	bool EnableTransportDelay{};
@@ -3225,9 +3234,17 @@ struct GetPointsLeaderboardArgs {
 	std::optional<int64_t> limit;
 };
 
+struct ProviderStatusNetworkProvided {
+	int64_t epoch{};
+	int64_t usage_byte_count{};
+	int64_t unpaid_byte_count{};
+	std::optional<bool> truncated;
+};
+
 struct GetProviderStatusResult {
 	std::optional<ProviderStatusList> providers;
 	std::optional<bool> truncated;
+	std::optional<ProviderStatusNetworkProvided> provided;
 };
 
 struct GetReferralNetworkError {
@@ -3878,6 +3895,20 @@ struct ProvideSecretKey {
 	std::string provide_secret_key{};
 };
 
+struct ProvideShareLimits {
+	int64_t max_bytes_per_second{};
+	int64_t monthly_byte_count{};
+};
+
+struct ProvideShareStatus {
+	int64_t max_bytes_per_second{};
+	int64_t monthly_byte_count{};
+	int64_t byte_count{};
+	int64_t period_start_millis{};
+	int64_t period_end_millis{};
+	bool budget_reached{};
+};
+
 struct ProviderAdmission {
 	bool connected{};
 	bool location_valid{};
@@ -3953,6 +3984,12 @@ struct ProviderStatusCountry {
 	std::string explanation{};
 };
 
+struct ProviderStatusProvided {
+	int64_t epoch{};
+	int64_t usage_byte_count{};
+	std::string payout{};
+};
+
 struct ProviderStatus {
 	std::optional<std::string> client_id;
 	std::string reason{};
@@ -3962,6 +3999,7 @@ struct ProviderStatus {
 	std::optional<ProviderStatusCountry> country;
 	std::optional<std::string> evaluate_time;
 	std::optional<ProviderAppearanceHistogram> appearances;
+	std::optional<ProviderStatusProvided> provided;
 };
 
 struct ProviderStatusReasonLine {
@@ -5671,6 +5709,8 @@ inline void to_json(nlohmann::json& j, const GetNetworkUserResult& v);
 inline void from_json(const nlohmann::json& j, GetNetworkUserResult& v);
 inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v);
 inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusNetworkProvided& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusNetworkProvided& v);
 inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v);
 inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v);
@@ -5821,6 +5861,10 @@ inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
 inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v);
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
+inline void to_json(nlohmann::json& j, const ProvideShareLimits& v);
+inline void from_json(const nlohmann::json& j, ProvideShareLimits& v);
+inline void to_json(nlohmann::json& j, const ProvideShareStatus& v);
+inline void from_json(const nlohmann::json& j, ProvideShareStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderAdmission& v);
 inline void from_json(const nlohmann::json& j, ProviderAdmission& v);
 inline void to_json(nlohmann::json& j, const ProviderAppearanceHistogram& v);
@@ -5837,6 +5881,8 @@ inline void to_json(nlohmann::json& j, const ProviderSpec& v);
 inline void from_json(const nlohmann::json& j, ProviderSpec& v);
 inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v);
 inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusProvided& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusProvided& v);
 inline void to_json(nlohmann::json& j, const ProviderStatus& v);
 inline void from_json(const nlohmann::json& j, ProviderStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderStatusReasonLine& v);
@@ -11394,6 +11440,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["ProvideExtenderWebRtc"] = v.ProvideExtenderWebRtc;
 	j["DefaultProvideExtenderPortMapping"] = v.DefaultProvideExtenderPortMapping;
+	j["ProvideShareStorageDir"] = v.ProvideShareStorageDir;
 	j["Verbose"] = v.Verbose;
 	j["MoveDeclineBackgroundOrMetered"] = v.MoveDeclineBackgroundOrMetered;
 	j["EnableTransportDelay"] = v.EnableTransportDelay;
@@ -11508,6 +11555,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("DefaultProvideExtenderPortMapping"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultProvideExtenderPortMapping);
+	}
+	if (auto it = j.find("ProvideShareStorageDir"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideShareStorageDir);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -14123,6 +14173,35 @@ inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderStatusNetworkProvided& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["usage_byte_count"] = v.usage_byte_count;
+	j["unpaid_byte_count"] = v.unpaid_byte_count;
+	if (v.truncated) {
+		j["truncated"] = *v.truncated;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusNetworkProvided& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("usage_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.usage_byte_count);
+	}
+	if (auto it = j.find("unpaid_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.unpaid_byte_count);
+	}
+	if (auto it = j.find("truncated"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.truncated = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
 	j = nlohmann::json::object();
 	if (v.providers) {
@@ -14130,6 +14209,9 @@ inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
 	}
 	if (v.truncated) {
 		j["truncated"] = *v.truncated;
+	}
+	if (v.provided) {
+		j["provided"] = *v.provided;
 	}
 }
 inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
@@ -14145,6 +14227,11 @@ inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.truncated = std::move(tmp);
+	}
+	if (auto it = j.find("provided"); it != j.end() && !it->is_null()) {
+		ProviderStatusNetworkProvided tmp{};
+		it->get_to(tmp);
+		v.provided = std::move(tmp);
 	}
 }
 
@@ -17334,6 +17421,56 @@ inline void from_json(const nlohmann::json& j, ProvideSecretKey& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProvideShareLimits& v) {
+	j = nlohmann::json::object();
+	j["max_bytes_per_second"] = v.max_bytes_per_second;
+	j["monthly_byte_count"] = v.monthly_byte_count;
+}
+inline void from_json(const nlohmann::json& j, ProvideShareLimits& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("max_bytes_per_second"); it != j.end() && !it->is_null()) {
+		it->get_to(v.max_bytes_per_second);
+	}
+	if (auto it = j.find("monthly_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_byte_count);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProvideShareStatus& v) {
+	j = nlohmann::json::object();
+	j["max_bytes_per_second"] = v.max_bytes_per_second;
+	j["monthly_byte_count"] = v.monthly_byte_count;
+	j["byte_count"] = v.byte_count;
+	j["period_start_millis"] = v.period_start_millis;
+	j["period_end_millis"] = v.period_end_millis;
+	j["budget_reached"] = v.budget_reached;
+}
+inline void from_json(const nlohmann::json& j, ProvideShareStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("max_bytes_per_second"); it != j.end() && !it->is_null()) {
+		it->get_to(v.max_bytes_per_second);
+	}
+	if (auto it = j.find("monthly_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_byte_count);
+	}
+	if (auto it = j.find("byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.byte_count);
+	}
+	if (auto it = j.find("period_start_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.period_start_millis);
+	}
+	if (auto it = j.find("period_end_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.period_end_millis);
+	}
+	if (auto it = j.find("budget_reached"); it != j.end() && !it->is_null()) {
+		it->get_to(v.budget_reached);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderAdmission& v) {
 	j = nlohmann::json::object();
 	j["connected"] = v.connected;
@@ -17662,6 +17799,27 @@ inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderStatusProvided& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["usage_byte_count"] = v.usage_byte_count;
+	j["payout"] = v.payout;
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusProvided& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("usage_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.usage_byte_count);
+	}
+	if (auto it = j.find("payout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.payout);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
 	j = nlohmann::json::object();
 	if (v.client_id) {
@@ -17683,6 +17841,9 @@ inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
 	}
 	if (v.appearances) {
 		j["appearances"] = *v.appearances;
+	}
+	if (v.provided) {
+		j["provided"] = *v.provided;
 	}
 }
 inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
@@ -17724,6 +17885,11 @@ inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
 		ProviderAppearanceHistogram tmp{};
 		it->get_to(tmp);
 		v.appearances = std::move(tmp);
+	}
+	if (auto it = j.find("provided"); it != j.end() && !it->is_null()) {
+		ProviderStatusProvided tmp{};
+		it->get_to(tmp);
+		v.provided = std::move(tmp);
 	}
 }
 
@@ -23869,6 +24035,7 @@ using ProvideModeChangeListener = std::function<void(int64_t provide_mode)>;
 using ProvideNetworkModeChangeListener = std::function<void(std::string provide_network_mode)>;
 using ProvidePausedChangeListener = std::function<void(bool provide_paused)>;
 using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecretKeyList> provide_secret_key_list)>;
+using ProvideShareStatusChangeListener = std::function<void(std::optional<ProvideShareStatus> status)>;
 using ProviderIdentityChangeListener = std::function<void()>;
 using ProviderStatusListener = std::function<void()>;
 using ProviderTransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
@@ -24047,6 +24214,7 @@ public:
 	Sub addProvideNetworkModeChangeListener(ProvideNetworkModeChangeListener listener) const;
 	Sub addProvidePausedChangeListener(ProvidePausedChangeListener listener) const;
 	Sub addProvideSecretKeysListener(ProvideSecretKeysListener listener) const;
+	Sub addProvideShareStatusChangeListener(ProvideShareStatusChangeListener listener) const;
 	Sub addProviderEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addProviderEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addProviderIdentityChangeListener(ProviderIdentityChangeListener listener) const;
@@ -24114,6 +24282,8 @@ public:
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	bool getProvidePaused() const;
+	std::optional<ProvideShareLimits> getProvideShareLimits() const;
+	std::optional<ProvideShareStatus> getProvideShareStatus() const;
 	std::optional<ContractDetailsList> getProviderEgressContractDetails() const;
 	std::optional<ContractStats> getProviderEgressContractStats() const;
 	std::optional<ProviderFamilyTransportStatus> getProviderFamilyTransportStatus() const;
@@ -24166,6 +24336,7 @@ public:
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& mode) const;
 	void setProvidePaused(bool provide_paused) const;
+	void setProvideShareLimits(const std::optional<ProvideShareLimits>& limits) const;
 	void setProviderTransportSettings(const std::optional<TransportSettings>& transport_settings) const;
 	void setRouteLocal(bool route_local) const;
 	void setTransportSettings(const std::optional<TransportSettings>& transport_settings) const;
@@ -25512,12 +25683,15 @@ public:
 	bool getIsLoaded() const;
 	bool getIsLoading() const;
 	std::string getLastFetchError() const;
+	std::optional<ProviderStatusNetworkProvided> getNetworkProvided() const;
+	int64_t getProvidedEpoch() const;
 	std::optional<ProviderStatus> getProviderStatus() const;
 	std::optional<ProviderStatusList> getProviderStatuses() const;
 	std::optional<ProviderRankingNumberList> getRankingNumbers() const;
 	std::string getReason() const;
 	std::string getReasonText() const;
 	bool getTruncated() const;
+	int64_t getUnpaidByteCount() const;
 	void refresh() const;
 	void start() const;
 	void stop() const;
@@ -29711,6 +29885,34 @@ inline void oneshot_provide_secret_keys(void* user_data, const char* provide_sec
 	delete f;
 }
 
+inline void retained_provide_share_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ProvideShareStatusChangeListener*>(user_data);
+	try {
+		std::optional<ProvideShareStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ProvideShareStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_provide_share_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ProvideShareStatusChangeListener*>(user_data);
+	try {
+		std::optional<ProvideShareStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ProvideShareStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_provider_identity_change(void* user_data) {
 	auto* f = static_cast<ProviderIdentityChangeListener*>(user_data);
 	try {
@@ -33023,6 +33225,17 @@ inline Sub Device::addProvideSecretKeysListener(ProvideSecretKeysListener listen
 	}
 	return r;
 }
+inline Sub Device::addProvideShareStatusChangeListener(ProvideShareStatusChangeListener listener) const {
+	std::shared_ptr<ProvideShareStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProvideShareStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_provide_share_status_change_listener(handle(), listener_fn ? &detail::retained_provide_share_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addProviderEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -33485,6 +33698,22 @@ inline bool Device::getProvidePaused() const {
 	bool r = urnet_device_get_provide_paused(handle());
 	return r;
 }
+inline std::optional<ProvideShareLimits> Device::getProvideShareLimits() const {
+	char* r_c = urnet_device_get_provide_share_limits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProvideShareLimits>(r_s->c_str());
+}
+inline std::optional<ProvideShareStatus> Device::getProvideShareStatus() const {
+	char* r_c = urnet_device_get_provide_share_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProvideShareStatus>(r_s->c_str());
+}
 inline std::optional<ContractDetailsList> Device::getProviderEgressContractDetails() const {
 	char* r_c = urnet_device_get_provider_egress_contract_details(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -33786,6 +34015,15 @@ inline void Device::setProvideNetworkMode(const std::string& mode) const {
 }
 inline void Device::setProvidePaused(bool provide_paused) const {
 	urnet_device_set_provide_paused(handle(), provide_paused);
+}
+inline void Device::setProvideShareLimits(const std::optional<ProvideShareLimits>& limits) const {
+	std::string limits_json;
+	const char* limits_c = nullptr;
+	if (limits) {
+		limits_json = nlohmann::json(*limits).dump();
+		limits_c = limits_json.c_str();
+	}
+	urnet_device_set_provide_share_limits(handle(), limits_c);
 }
 inline void Device::setProviderTransportSettings(const std::optional<TransportSettings>& transport_settings) const {
 	std::string transport_settings_json;
@@ -39835,6 +40073,18 @@ inline std::string ProviderStatusViewController::getLastFetchError() const {
 	char* r_c = urnet_provider_status_view_controller_get_last_fetch_error(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<ProviderStatusNetworkProvided> ProviderStatusViewController::getNetworkProvided() const {
+	char* r_c = urnet_provider_status_view_controller_get_network_provided(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatusNetworkProvided>(r_s->c_str());
+}
+inline int64_t ProviderStatusViewController::getProvidedEpoch() const {
+	int64_t r = urnet_provider_status_view_controller_get_provided_epoch(handle());
+	return r;
+}
 inline std::optional<ProviderStatus> ProviderStatusViewController::getProviderStatus() const {
 	char* r_c = urnet_provider_status_view_controller_get_provider_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -39869,6 +40119,10 @@ inline std::string ProviderStatusViewController::getReasonText() const {
 }
 inline bool ProviderStatusViewController::getTruncated() const {
 	bool r = urnet_provider_status_view_controller_get_truncated(handle());
+	return r;
+}
+inline int64_t ProviderStatusViewController::getUnpaidByteCount() const {
+	int64_t r = urnet_provider_status_view_controller_get_unpaid_byte_count(handle());
 	return r;
 }
 inline void ProviderStatusViewController::refresh() const {
@@ -41785,6 +42039,14 @@ inline DeviceRemote newPlatformDeviceRemote(const NetworkSpace& network_space, c
 inline ProFeaturesNoticeTracker newProFeaturesNoticeTracker() {
 	ProFeaturesNoticeTracker r(urnet_new_pro_features_notice_tracker());
 	return r;
+}
+inline std::optional<ProvideShareLimits> newProvideShareLimits(int64_t max_bytes_per_second, int64_t monthly_byte_count) {
+	char* r_c = urnet_new_provide_share_limits(max_bytes_per_second, monthly_byte_count);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProvideShareLimits>(r_s->c_str());
 }
 inline ProxyDevice newProxyDeviceWithDefaults(const std::optional<ProxyConfig>& proxy_config, SetupNewDeviceCallback setup_new_device_callback) {
 	std::string proxy_config_json;

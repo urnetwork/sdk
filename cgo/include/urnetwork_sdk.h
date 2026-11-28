@@ -538,6 +538,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDER_STATUS_NUMBER_URL_CHECKS "url_checks"
 #define URNET_PROVIDER_STATUS_NUMBER_WEIGHT_QUALITY "weight_quality"
 #define URNET_PROVIDER_STATUS_NUMBER_WEIGHT_SPEED "weight_speed"
+#define URNET_PROVIDER_STATUS_PROVIDED_HEAD "head"
+#define URNET_PROVIDER_STATUS_PROVIDED_NONE "none"
+#define URNET_PROVIDER_STATUS_PROVIDED_PAID "paid"
+#define URNET_PROVIDER_STATUS_PROVIDED_UNPAID "unpaid"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_FAILING "egress_failing"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_UNPROBED "egress_unprobed"
 #define URNET_PROVIDER_STATUS_REASON_LINE_IPV4 "ipv4"
@@ -1120,6 +1124,8 @@ typedef void (*urnet_provide_network_mode_change_cb)(void* user_data, const char
 typedef void (*urnet_provide_paused_change_cb)(void* user_data, bool provide_paused);
 /* ProvideSecretKeysListener */
 typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provide_secret_key_list_json);
+/* ProvideShareStatusChangeListener */
+typedef void (*urnet_provide_share_status_change_cb)(void* user_data, const char* status_json);
 /* ProviderIdentityChangeListener */
 typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 /* ProviderStatusListener */
@@ -1791,6 +1797,7 @@ uint64_t urnet_device_add_provide_mode_change_listener(uint64_t self, urnet_prov
 uint64_t urnet_device_add_provide_network_mode_change_listener(uint64_t self, urnet_provide_network_mode_change_cb listener_provide_network_mode_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_paused_change_listener(uint64_t self, urnet_provide_paused_change_cb listener_provide_paused_changed, void* listener_user_data);
 uint64_t urnet_device_add_provide_secret_keys_listener(uint64_t self, urnet_provide_secret_keys_cb listener_provide_secret_keys_changed, void* listener_user_data);
+uint64_t urnet_device_add_provide_share_status_change_listener(uint64_t self, urnet_provide_share_status_change_cb listener_provide_share_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_egress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_egress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_identity_change_listener(uint64_t self, urnet_provider_identity_change_cb listener_provider_identities_changed, void* listener_user_data);
@@ -1858,6 +1865,8 @@ bool urnet_device_get_provide_extender_port_mapping(uint64_t self);
 int64_t urnet_device_get_provide_mode(uint64_t self);
 char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
+char* urnet_device_get_provide_share_limits(uint64_t self);
+char* urnet_device_get_provide_share_status(uint64_t self);
 char* urnet_device_get_provider_egress_contract_details(uint64_t self);
 char* urnet_device_get_provider_egress_contract_stats(uint64_t self);
 char* urnet_device_get_provider_family_transport_status(uint64_t self);
@@ -1910,6 +1919,7 @@ void urnet_device_set_provide_extender_port_mapping(uint64_t self, bool port_map
 void urnet_device_set_provide_mode(uint64_t self, int64_t provide_mode);
 void urnet_device_set_provide_network_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_paused(uint64_t self, bool provide_paused);
+void urnet_device_set_provide_share_limits(uint64_t self, const char* limits_json);
 void urnet_device_set_provider_transport_settings(uint64_t self, const char* transport_settings_json);
 void urnet_device_set_route_local(uint64_t self, bool route_local);
 void urnet_device_set_transport_settings(uint64_t self, const char* transport_settings_json);
@@ -2624,12 +2634,15 @@ char* urnet_provider_status_view_controller_get_appearances_per_minute(uint64_t 
 bool urnet_provider_status_view_controller_get_is_loaded(uint64_t self);
 bool urnet_provider_status_view_controller_get_is_loading(uint64_t self);
 char* urnet_provider_status_view_controller_get_last_fetch_error(uint64_t self);
+char* urnet_provider_status_view_controller_get_network_provided(uint64_t self);
+int64_t urnet_provider_status_view_controller_get_provided_epoch(uint64_t self);
 char* urnet_provider_status_view_controller_get_provider_status(uint64_t self);
 char* urnet_provider_status_view_controller_get_provider_statuses(uint64_t self);
 char* urnet_provider_status_view_controller_get_ranking_numbers(uint64_t self);
 char* urnet_provider_status_view_controller_get_reason(uint64_t self);
 char* urnet_provider_status_view_controller_get_reason_text(uint64_t self);
 bool urnet_provider_status_view_controller_get_truncated(uint64_t self);
+int64_t urnet_provider_status_view_controller_get_unpaid_byte_count(uint64_t self);
 void urnet_provider_status_view_controller_refresh(uint64_t self);
 void urnet_provider_status_view_controller_start(uint64_t self);
 void urnet_provider_status_view_controller_stop(uint64_t self);
@@ -2966,6 +2979,7 @@ char* urnet_new_onboarding_step_shown_event(const char* step, int64_t index, int
 char* urnet_new_onboarding_step_skipped_event(const char* step, int64_t index, int64_t elapsed_ms);
 uint64_t urnet_new_platform_device_remote(uint64_t network_space, const char* by_jwt, const char* proxy_url, const char* signed_proxy_id, const char* instance_id, char** out_error);
 uint64_t urnet_new_pro_features_notice_tracker(void);
+char* urnet_new_provide_share_limits(int64_t max_bytes_per_second, int64_t monthly_byte_count);
 uint64_t urnet_new_proxy_device_with_defaults(const char* proxy_config_json, urnet_setup_new_device_cb setup_new_device_callback_setup_new_device, void* setup_new_device_callback_user_data);
 char* urnet_new_purchase_cancelled_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
 char* urnet_new_purchase_completed_event(const char* store, const char* product, const char* plan, bool trial, double price, const char* currency);
@@ -4179,6 +4193,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProvideExtenderDnsPrivilegedPort: boolean
  *   ProvideExtenderWebRtc: boolean
  *   DefaultProvideExtenderPortMapping: boolean
+ *   ProvideShareStorageDir: string
  *   Verbose: boolean
  *   MoveDeclineBackgroundOrMetered: boolean
  *   EnableTransportDelay: boolean
@@ -4773,6 +4788,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* GetProviderStatusResult (json):
  *   providers: ProviderStatusList | null
  *   truncated?: boolean
+ *   provided?: ProviderStatusNetworkProvided | null
  */
 
 /* GetReferralNetworkError (json):
@@ -5482,6 +5498,20 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   = ProvideSecretKey | null[]
  */
 
+/* ProvideShareLimits (json):
+ *   max_bytes_per_second: number
+ *   monthly_byte_count: number
+ */
+
+/* ProvideShareStatus (json):
+ *   max_bytes_per_second: number
+ *   monthly_byte_count: number
+ *   byte_count: number
+ *   period_start_millis: number
+ *   period_end_millis: number
+ *   budget_reached: boolean
+ */
+
 /* ProviderAdmission (json):
  *   connected: boolean
  *   location_valid: boolean
@@ -5587,6 +5617,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   country?: ProviderStatusCountry | null
  *   evaluate_time: string (rfc3339) | null
  *   appearances?: ProviderAppearanceHistogram | null
+ *   provided?: ProviderStatusProvided | null
  */
 
 /* ProviderStatusCountry (json):
@@ -5598,6 +5629,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ProviderStatusList (json):
  *   = ProviderStatus | null[]
+ */
+
+/* ProviderStatusNetworkProvided (json):
+ *   epoch: number
+ *   usage_byte_count: number
+ *   unpaid_byte_count: number
+ *   truncated?: boolean
+ */
+
+/* ProviderStatusProvided (json):
+ *   epoch: number
+ *   usage_byte_count: number
+ *   payout: string
  */
 
 /* ProviderStatusReasonLine (json):

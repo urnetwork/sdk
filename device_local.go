@@ -867,6 +867,13 @@ type DeviceLocalSettings struct {
 	// maps nothing either way. A plain boolean, so gomobile binds it and the
 	// c abi settings json carries it.
 	DefaultProvideExtenderPortMapping bool
+	// ProvideShareStorageDir is the directory the provide share limits and
+	// this month's shared data are kept in (provide_share.go) on a space that
+	// keeps no local state: the sn miner's state directory. Empty keeps them
+	// for the life of the device. A space with local state keeps them there
+	// and ignores this. A plain string, so gomobile binds it and the c abi
+	// settings json carries it.
+	ProvideShareStorageDir string
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -1537,6 +1544,16 @@ type DeviceLocal struct {
 	// (provide disabled). the live provider user nat's stats are added on top
 	providerPacketStatsBase              connect.PacketStats
 	mobileMemoryProviderTrafficByteCount ByteCount
+	// the remote bytes of the provider packet stats last fed to the share
+	// meter, the data the device carried for others (provide_share.go)
+	provideShareRemoteByteCount ByteCount
+	// the share limits the provider runs under, nil without a provider
+	// (device_local_provide_share.go). Set at construction.
+	provideShare *deviceLocalProvideShare
+	// the pause the platform asked for (SetProvidePaused): the battery and
+	// power policy. The provider is paused while this or the share budget
+	// holds (applyProvidePaused).
+	platformProvidePaused bool
 	// contracts of the provider client, which lives as long as the device
 	providerContracts *deviceContractTracker
 	// shared by both trackers: signaled when an update leaves something for
@@ -2385,6 +2402,26 @@ func newDeviceLocalWithOverridesForPlatform(
 
 	// set up with nil destination
 	if provider != nil {
+		// the share limits are in force before the first provide change builds
+		// a provider (ensureRemoteUserNatProviderWithLock), and a month that
+		// already reached its budget pauses on the loop's first step
+		deviceLocal.provideShare = newDeviceLocalProvideShareWithoutRun(
+			ctx,
+			defaultDeviceLocalProvideShareSettings(),
+			deviceLocal.provideShareStoreForSettings(settings),
+			time.UTC,
+			deviceLocal.log,
+			func(bool) {
+				deviceLocal.applyProvidePaused()
+			},
+			time.Now,
+			time.After,
+		)
+		deviceLocal.lifecycleWorkers.Add(1)
+		go connect.HandleError(func() {
+			defer deviceLocal.lifecycleWorkers.Done()
+			deviceLocal.provideShare.run()
+		})
 		// the extender role is built on the first provide change, which is
 		// after this device exists, so its device setting and the test seam
 		// are installed here (G2, L2)
@@ -5284,23 +5321,41 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 // Without a provider there is nothing to pause, and the write is dropped with
 // no report; through the rpc it still answers success
 // (device_remote_setting_state.go).
+//
+// This is the platform's pause, the battery and power policy. The provider
+// also pauses while the month's shared data is at the owner's budget
+// (device_local_provide_share.go); the two compose (applyProvidePaused), and
+// this setter and its getter and listeners carry the platform's value alone,
+// so a round trip of the platform's value never carries the budget.
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 	if self.hostedIncompatibleGuarded("SetProvidePaused") {
 		return
 	}
-	if client := self.providerClientSnapshot(); client != nil {
-		if client.ContractManager().SetProvidePaused(providePaused) {
-			self.log.Infof("[device]provide paused = %t\n", providePaused)
-			self.providePausedChanged(self.GetProvidePaused())
+	if self.providerClientSnapshot() == nil {
+		return
+	}
+	changed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.platformProvidePaused == providePaused {
+			return false
 		}
+		self.platformProvidePaused = providePaused
+		return true
+	}()
+	self.applyProvidePaused()
+	if changed {
+		self.log.Infof("[device]provide paused = %t\n", providePaused)
+		self.providePausedChanged(providePaused)
 	}
 }
 
-func (self *DeviceLocal) GetProvidePaused() (providePaused bool) {
-	if client := self.providerClientSnapshot(); client != nil {
-		providePaused = client.ContractManager().IsProvidePaused()
-	}
-	return
+// The platform's pause (SetProvidePaused), false without a provider. Whether
+// the share budget pauses providing too is GetProvideShareStatus().BudgetReached.
+func (self *DeviceLocal) GetProvidePaused() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.providerClient() != nil && self.platformProvidePaused
 }
 
 func (self *DeviceLocal) SetOffline(offline bool) {
@@ -6982,6 +7037,11 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 	if self.providerSecurityPolicyGenerator != nil {
 		providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
 	}
+	// the owner's sharing speed, whose rate changes reach this provider in
+	// place (device_local_provide_share.go)
+	if self.provideShare != nil {
+		providerSettings.ShareLimiter = self.provideShare.limiter
+	}
 	generation := self.nextRemoteUserNatProviderGenerationWithLock()
 	providerSettings.SourceLifecycleSaturated = func() {
 		self.remoteUserNatProviderSourceLifecycleSaturated(generation)
@@ -7688,6 +7748,7 @@ func (self *DeviceLocal) updateProviderPacketStatsForGeneration(
 ) {
 	var netPacketStats *PacketStats
 	var trafficDelta ByteCount
+	var shareDelta ByteCount
 	accepted := false
 	func() {
 		self.stateLock.Lock()
@@ -7706,10 +7767,19 @@ func (self *DeviceLocal) updateProviderPacketStatsForGeneration(
 			trafficByteCount,
 		)
 		self.mobileMemoryProviderTrafficByteCount = trafficByteCount
+		// the data carried for others: the bytes from and to the clients
+		// the provider serves, its remote counts in both directions
+		shareByteCount := max(ByteCount(0), netPacketStats.RemoteEgressByteCount) +
+			max(ByteCount(0), netPacketStats.RemoteIngressByteCount)
+		shareDelta = packetStatsTrafficDelta(self.provideShareRemoteByteCount, shareByteCount)
+		self.provideShareRemoteByteCount = max(self.provideShareRemoteByteCount, shareByteCount)
 		accepted = true
 	}()
 	if !accepted {
 		return
+	}
+	if self.provideShare != nil {
+		self.provideShare.add(shareDelta)
 	}
 	self.providerPacketStatsChanged(netPacketStats)
 	noteMobileMemoryActivity(trafficDelta)

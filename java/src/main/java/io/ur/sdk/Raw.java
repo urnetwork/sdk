@@ -147,6 +147,7 @@ public interface Raw extends Library {
   interface urnet_provide_network_mode_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provide_paused_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_provide_secret_keys_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_provide_share_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_provider_identity_change_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_provider_status_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_provider_transport_settings_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -690,6 +691,7 @@ public interface Raw extends Library {
   long urnet_device_add_provide_network_mode_change_listener(long a0, urnet_provide_network_mode_change_cb a1, Pointer a2);
   long urnet_device_add_provide_paused_change_listener(long a0, urnet_provide_paused_change_cb a1, Pointer a2);
   long urnet_device_add_provide_secret_keys_listener(long a0, urnet_provide_secret_keys_cb a1, Pointer a2);
+  long urnet_device_add_provide_share_status_change_listener(long a0, urnet_provide_share_status_change_cb a1, Pointer a2);
   long urnet_device_add_provider_egress_contract_details_change_listener(long a0, urnet_contract_details_change_cb a1, Pointer a2);
   long urnet_device_add_provider_egress_contract_stats_change_listener(long a0, urnet_contract_stats_change_cb a1, Pointer a2);
   long urnet_device_add_provider_identity_change_listener(long a0, urnet_provider_identity_change_cb a1, Pointer a2);
@@ -757,6 +759,8 @@ public interface Raw extends Library {
   long urnet_device_get_provide_mode(long a0);
   Pointer urnet_device_get_provide_network_mode(long a0);
   byte urnet_device_get_provide_paused(long a0);
+  Pointer urnet_device_get_provide_share_limits(long a0);
+  Pointer urnet_device_get_provide_share_status(long a0);
   Pointer urnet_device_get_provider_egress_contract_details(long a0);
   Pointer urnet_device_get_provider_egress_contract_stats(long a0);
   Pointer urnet_device_get_provider_family_transport_status(long a0);
@@ -809,6 +813,7 @@ public interface Raw extends Library {
   void urnet_device_set_provide_mode(long a0, long a1);
   void urnet_device_set_provide_network_mode(long a0, String a1);
   void urnet_device_set_provide_paused(long a0, byte a1);
+  void urnet_device_set_provide_share_limits(long a0, String a1);
   void urnet_device_set_provider_transport_settings(long a0, String a1);
   void urnet_device_set_route_local(long a0, byte a1);
   void urnet_device_set_transport_settings(long a0, String a1);
@@ -1416,12 +1421,15 @@ public interface Raw extends Library {
   byte urnet_provider_status_view_controller_get_is_loaded(long a0);
   byte urnet_provider_status_view_controller_get_is_loading(long a0);
   Pointer urnet_provider_status_view_controller_get_last_fetch_error(long a0);
+  Pointer urnet_provider_status_view_controller_get_network_provided(long a0);
+  long urnet_provider_status_view_controller_get_provided_epoch(long a0);
   Pointer urnet_provider_status_view_controller_get_provider_status(long a0);
   Pointer urnet_provider_status_view_controller_get_provider_statuses(long a0);
   Pointer urnet_provider_status_view_controller_get_ranking_numbers(long a0);
   Pointer urnet_provider_status_view_controller_get_reason(long a0);
   Pointer urnet_provider_status_view_controller_get_reason_text(long a0);
   byte urnet_provider_status_view_controller_get_truncated(long a0);
+  long urnet_provider_status_view_controller_get_unpaid_byte_count(long a0);
   void urnet_provider_status_view_controller_refresh(long a0);
   void urnet_provider_status_view_controller_start(long a0);
   void urnet_provider_status_view_controller_stop(long a0);
@@ -1713,6 +1721,7 @@ public interface Raw extends Library {
   Pointer urnet_new_onboarding_step_skipped_event(String a0, long a1, long a2);
   long urnet_new_platform_device_remote(long a0, String a1, String a2, String a3, String a4, PointerByReference a5);
   long urnet_new_pro_features_notice_tracker();
+  Pointer urnet_new_provide_share_limits(long a0, long a1);
   long urnet_new_proxy_device_with_defaults(String a0, urnet_setup_new_device_cb a1, Pointer a2);
   Pointer urnet_new_purchase_cancelled_event(String a0, String a1, String a2, byte a3, double a4, String a5);
   Pointer urnet_new_purchase_completed_event(String a0, String a1, String a2, byte a3, double a4, String a5);
