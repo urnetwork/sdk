@@ -1659,6 +1659,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_log_app_info([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_log_google_sign_in_failure([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_log_inventory();
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_low_data_warning_for_balance(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_memory_classes_json_for_diag();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern double urnet_monthly_equivalent_amount(double a0, long a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern double urnet_nano_cents_to_usd(long a0);

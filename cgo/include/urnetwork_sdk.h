@@ -469,6 +469,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_DEFAULT 0
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
+#define URNET_LOW_DATA_WARNING_KIND_BYTE_COUNT "byte_count"
+#define URNET_LOW_DATA_WARNING_KIND_PERCENT "percent"
 #define URNET_LOW_MEMORY_DEVICE_TARGET_BYTE_COUNT 33554432
 #define URNET_MANAGED_DEVICE_KIND_DEVICE "device"
 #define URNET_MANAGED_DEVICE_KIND_PROXY "proxy"
@@ -2908,6 +2910,7 @@ bool urnet_is_valid_payment_reference(const char* s);
 void urnet_log_app_info(const char* tag, const char* message);
 void urnet_log_google_sign_in_failure(const char* source, const char* domain, int64_t code);
 char* urnet_log_inventory(void);
+char* urnet_low_data_warning_for_balance(uint64_t local_state, const char* result_json);
 char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
 double urnet_nano_cents_to_usd(int64_t nano_cents);
@@ -4889,6 +4892,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* LogFileInfoList (json):
  *   = LogFileInfo | null[]
+ */
+
+/* LowDataWarning (json):
+ *   Kind: string
+ *   AvailableByteCount: number
+ *   StartBalanceByteCount: number
+ *   AvailablePercent: number
  */
 
 /* ManageDevicesSnapshot (json):
