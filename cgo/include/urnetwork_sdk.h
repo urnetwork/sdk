@@ -96,6 +96,18 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_CODE_INVALID "code_invalid"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_EMAIL_IN_USE "email_in_use"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_EMAIL_UNVERIFIED "email_unverified"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_INVALID_EMAIL "invalid_email"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_NO_CHANGE "no_change"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_NO_EMAIL "no_email"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_OWNER_ONLY "owner_only"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_RATE_LIMITED "rate_limited"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_SAME_EMAIL "same_email"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_SEND_FAILED "send_failed"
+#define URNET_AUTH_EMAIL_CHANGE_ERROR_CODE_TOO_MANY_TRIES "too_many_tries"
+#define URNET_AUTH_JWT_TYPE_MICROSOFT "microsoft"
 #define URNET_AUTH_LOGOUT_CAUSE_SESSION_REVOKED "session_revoked"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_RATE_LIMITED "verify_rate_limited"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_SEND_FAILED "verify_send_failed"
@@ -478,6 +490,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_MANAGE_DEVICES_ERROR_SIGN_IN_REQUIRED "sign_in_required"
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_CANCELLED "cancelled"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_EXPIRED "expired"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_FAILED "failed"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_NONCE_MISMATCH "nonce_mismatch"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_NOT_CONFIGURED "not_configured"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_NOT_THIS_ATTEMPT "not_this_attempt"
+#define URNET_MICROSOFT_SIGN_IN_ERROR_CODE_NO_TOKEN "no_token"
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
 #define URNET_OFFER_DECLINE_CONTROL_BACK "back"
 #define URNET_OFFER_DECLINE_CONTROL_FREE_PLAN_LINK "free_plan_link"
@@ -493,6 +512,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_ONBOARDING_OFFER_STATE_ACTIVE "active"
 #define URNET_ONBOARDING_OFFER_STATE_EXPIRED "expired"
 #define URNET_ONBOARDING_OFFER_STATE_REDEEMED "redeemed"
+#define URNET_O_AUTH_PLATFORM_ANDROID "android"
+#define URNET_O_AUTH_PLATFORM_IOS "ios"
+#define URNET_O_AUTH_PLATFORM_LINUX "linux"
+#define URNET_O_AUTH_PLATFORM_MACOS "macos"
+#define URNET_O_AUTH_PLATFORM_WINDOWS "windows"
 #define URNET_PAYMENT_METHOD_CARD "card"
 #define URNET_PLAN_MONTHLY "monthly"
 #define URNET_PLAN_YEARLY "yearly"
@@ -746,6 +770,14 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_WALLET_CONSENT_SCOPE_HOTKEY "hotkey"
 #define URNET_SN_WALLET_CONSENT_SCOPE_NETWORK "network"
 #define URNET_SN_WALLET_CONSENT_SCOPE_PROVIDER "provider"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_CODE_EXPIRED "code_expired"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_CODE_INVALID "code_invalid"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_CONSENT_IN_FORCE "consent_in_force"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_EMAIL_REQUIRED "email_required"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_NO_WALLET "no_wallet"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_OWNER_ONLY "owner_only"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_RATE_LIMITED "rate_limited"
+#define URNET_SN_WALLET_DISCONNECT_ERROR_CODE_SEND_FAILED "send_failed"
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
@@ -855,6 +887,14 @@ typedef void (*urnet_allow_product_updates_cb)(void* user_data, bool p0);
 typedef void (*urnet_auth_code_create_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthCodeLoginCallback */
 typedef void (*urnet_auth_code_login_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthEmailChangeCallback */
+typedef void (*urnet_auth_email_change_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthEmailChangeCancelCallback */
+typedef void (*urnet_auth_email_change_cancel_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthEmailChangeConfirmCallback */
+typedef void (*urnet_auth_email_change_confirm_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthEmailChangeStatusCallback */
+typedef void (*urnet_auth_email_change_status_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthLoginCallback */
 typedef void (*urnet_auth_login_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthLoginWithPasswordCallback */
@@ -1237,6 +1277,10 @@ typedef void (*urnet_sn_top_me_cb)(void* user_data, const char* result_json, con
 typedef void (*urnet_sn_validate_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnWalletChangeListener */
 typedef void (*urnet_sn_wallet_change_cb)(void* user_data, const char* wallet_json);
+/* SnWalletDisconnectCallback */
+typedef void (*urnet_sn_wallet_disconnect_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnWalletDisconnectCodeCallback */
+typedef void (*urnet_sn_wallet_disconnect_code_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SolanaPaymentIntentCallback */
 typedef void (*urnet_solana_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
 /* StripeCreateCheckoutSessionCallback */
@@ -1342,6 +1386,10 @@ uint64_t urnet_api_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb 
 uint64_t urnet_api_add_network_sessions_change_listener(uint64_t self, urnet_network_sessions_change_cb listener_network_sessions_changed, void* listener_user_data);
 void urnet_api_auth_code_create(uint64_t self, const char* code_create_args_json, urnet_auth_code_create_cb callback_result, void* callback_user_data);
 void urnet_api_auth_code_login(uint64_t self, const char* args_json, urnet_auth_code_login_cb callback_result, void* callback_user_data);
+void urnet_api_auth_email_change(uint64_t self, const char* args_json, urnet_auth_email_change_cb callback_result, void* callback_user_data);
+void urnet_api_auth_email_change_cancel(uint64_t self, urnet_auth_email_change_cancel_cb callback_result, void* callback_user_data);
+void urnet_api_auth_email_change_confirm(uint64_t self, const char* args_json, urnet_auth_email_change_confirm_cb callback_result, void* callback_user_data);
+void urnet_api_auth_email_change_status(uint64_t self, urnet_auth_email_change_status_cb callback_result, void* callback_user_data);
 void urnet_api_auth_login(uint64_t self, const char* auth_login_json, urnet_auth_login_cb callback_result, void* callback_user_data);
 void urnet_api_auth_login_with_password(uint64_t self, const char* auth_login_with_password_json, urnet_auth_login_with_password_cb callback_result, void* callback_user_data);
 void urnet_api_auth_network_client(uint64_t self, const char* auth_network_client_json, urnet_auth_network_client_cb callback_result, void* callback_user_data);
@@ -1459,6 +1507,8 @@ char* urnet_api_sn_set_wallet_sync(uint64_t self, const char* args_json, char** 
 void urnet_api_sn_top(uint64_t self, const char* args_json, urnet_sn_top_cb callback_result, void* callback_user_data);
 void urnet_api_sn_top_me(uint64_t self, urnet_sn_top_me_cb callback_result, void* callback_user_data);
 void urnet_api_sn_validate_wallet(uint64_t self, const char* address, urnet_sn_validate_wallet_cb callback_result, void* callback_user_data);
+void urnet_api_sn_wallet_disconnect(uint64_t self, const char* code, urnet_sn_wallet_disconnect_cb callback_result, void* callback_user_data);
+void urnet_api_sn_wallet_disconnect_code(uint64_t self, urnet_sn_wallet_disconnect_code_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_start_jwt_refresh(uint64_t self);
 void urnet_api_stripe_create_customer_portal(uint64_t self, const char* args_json, urnet_stripe_create_customer_portal_cb callback_result, void* callback_user_data);
@@ -2371,6 +2421,15 @@ void urnet_manage_devices_view_controller_remove_device(uint64_t self, const cha
 void urnet_manage_devices_view_controller_start(uint64_t self);
 void urnet_manage_devices_view_controller_stop(uint64_t self);
 
+/* ----- MicrosoftSignInAttempt ----- */
+
+char* urnet_microsoft_sign_in_attempt_encode(uint64_t self);
+char* urnet_microsoft_sign_in_attempt_finish(uint64_t self, const char* return_url, char** out_error);
+char* urnet_microsoft_sign_in_attempt_get_nonce(uint64_t self);
+char* urnet_microsoft_sign_in_attempt_get_return_scheme(uint64_t self);
+char* urnet_microsoft_sign_in_attempt_get_state(uint64_t self);
+char* urnet_microsoft_sign_in_attempt_start_url(uint64_t self, const char* api_url);
+
 /* ----- NetworkNameValidationViewController ----- */
 
 void urnet_network_name_validation_view_controller_close(uint64_t self);
@@ -2782,6 +2841,7 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 /* ----- functions ----- */
 
 double urnet_alpha_from_rao(int64_t rao);
+bool urnet_auth_email_change_error_ends_request(const char* err_param_json);
 void urnet_bittensor_convert_estimate(const char* settings_json, const char* coldkey_ss58, int64_t amount_rao, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
 void urnet_bittensor_convert_estimate_for_burn(const char* settings_json, const char* coldkey_ss58, urnet_bittensor_convert_estimate_cb callback_result, void* callback_user_data);
 void urnet_bittensor_convert_submit(const char* settings_json, const char* mnemonic, const char* estimate_json, urnet_bittensor_convert_submit_cb callback_result, void* callback_user_data);
@@ -2832,8 +2892,10 @@ char* urnet_crypto_payment_tabs(const char* assets_json, const char* unavailable
 char* urnet_crypto_payment_uri_scheme(const char* asset);
 bool urnet_crypto_term_notice_due(const char* term_json);
 char* urnet_crypto_wallet_suggestions(const char* asset);
+uint64_t urnet_decode_microsoft_sign_in_attempt(const char* encoded, char** out_error);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_low_memory_device_local_settings(void);
+char* urnet_default_microsoft_sign_in_settings(void);
 char* urnet_default_performance_profile(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
@@ -2901,6 +2963,7 @@ char* urnet_ingress_plain_dns_servers(const char* country_code);
 bool urnet_is_balance_code_format_valid(const char* secret);
 bool urnet_is_cant_reach_error(const char* error_message);
 bool urnet_is_checkout_redirect(const char* uri);
+bool urnet_is_microsoft_sign_in_return_url(const char* return_url);
 bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_sandbox_purchase_refusal(const char* result_json);
@@ -2909,10 +2972,12 @@ void urnet_log_app_info(const char* tag, const char* message);
 void urnet_log_google_sign_in_failure(const char* source, const char* domain, int64_t code);
 char* urnet_log_inventory(void);
 char* urnet_memory_classes_json_for_diag(void);
+char* urnet_microsoft_sign_in_error_code_of(const char* error_message);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
 void urnet_network_changed(void);
+char* urnet_network_user_email_sign_in(const char* user_json);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
 uint64_t urnet_new_bittensor_local_key_flow(uint64_t api, const char* network_id, urnet_bittensor_local_key_store_add_key_cb store_add_key, urnet_bittensor_local_key_store_delete_key_cb store_delete_key, urnet_bittensor_local_key_store_key_address_cb store_key_address, urnet_bittensor_local_key_store_key_phrase_cb store_key_phrase, urnet_bittensor_local_key_store_read_note_cb store_read_note, urnet_bittensor_local_key_store_write_note_cb store_write_note, void* store_user_data);
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
@@ -2933,6 +2998,7 @@ char* urnet_new_export_options(void);
 char* urnet_new_feedback_submitted_event(int64_t rating, const char* reason, const char* text);
 char* urnet_new_id(void);
 uint64_t urnet_new_login_view_controller(uint64_t api);
+uint64_t urnet_new_microsoft_sign_in_attempt(const char* platform, char** out_error);
 uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
@@ -2971,6 +3037,7 @@ char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
 char* urnet_normalize_bittensor_signature(const char* signature);
 char* urnet_normalize_dns_preset_personal_id(const char* preset_id, const char* input);
+char* urnet_normalize_email_change_code(const char* code);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_bittensor_challenge_message(const char* message, char** out_error);
 char* urnet_parse_bittensor_wallet_return(const char* uri, const char* redirect_link, char** out_error);
@@ -3023,6 +3090,8 @@ char* urnet_sn_ledger_claim_transactions_for(const char* settings_json, const ch
 char* urnet_sn_ledger_claim_transactions_for_payer(const char* settings_json, const char* coldkey_ss58, const char* payer_address, char** out_error);
 char* urnet_sn_payout_leaf_hex(const char* coldkey_ss58, int64_t share_bps);
 char* urnet_sn_testnet_chain_settings(void);
+bool urnet_sn_wallet_disconnectable(const char* result_json);
+bool urnet_sn_wallet_has_wallet(const char* result_json);
 char* urnet_solana_wallet_failure_for(const char* source, const char* code, const char* wallet_name);
 char* urnet_suggest_emoji_tag(int64_t count);
 char* urnet_transport_settings_auto_modes(const char* settings_json);
@@ -3037,6 +3106,7 @@ int64_t urnet_usd_to_nano_cents(double usd);
 char* urnet_validate_control_doh_url(const char* doh_url);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_dns_preset_personal_id(const char* preset_id, const char* personal_id);
+char* urnet_validate_email_change_address(const char* email);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
@@ -3228,6 +3298,51 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthCodeLoginResult (json):
  *   by_jwt: string
  *   error?: ApiError | null
+ */
+
+/* AuthEmailChangeArgs (json):
+ *   new_email: string
+ */
+
+/* AuthEmailChangeCancelResult (json):
+ *   error?: AuthEmailChangeError | null
+ */
+
+/* AuthEmailChangeConfirmArgs (json):
+ *   current_code?: string
+ *   new_code?: string
+ */
+
+/* AuthEmailChangeConfirmResult (json):
+ *   current_confirmed: boolean
+ *   new_confirmed: boolean
+ *   complete: boolean
+ *   email?: string
+ *   other_sessions_signed_out?: boolean
+ *   error?: AuthEmailChangeError | null
+ */
+
+/* AuthEmailChangeError (json):
+ *   code: string
+ *   message: string
+ *   retry_after_seconds?: number
+ */
+
+/* AuthEmailChangeResult (json):
+ *   current_email?: string
+ *   new_email?: string
+ *   expires_at_millis?: number
+ *   error?: AuthEmailChangeError | null
+ */
+
+/* AuthEmailChangeStatusResult (json):
+ *   pending: boolean
+ *   current_email?: string
+ *   new_email?: string
+ *   current_confirmed?: boolean
+ *   new_confirmed?: boolean
+ *   expires_at_millis?: number
+ *   error?: AuthEmailChangeError | null
  */
 
 /* AuthLoginArgs (json):
@@ -4976,6 +5091,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* MemoryTeardownObservation (json):
  */
 
+/* MicrosoftSignInResult (json):
+ *   IdToken: string
+ */
+
+/* MicrosoftSignInSettings (json):
+ *   AttemptTimeout: number (ns)
+ */
+
 /* MultiHopIdList (json):
  *   = IdList | null[]
  */
@@ -6580,6 +6703,23 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   consent_generation?: number
  *   mapping_hash?: string
  *   mapping_generation?: number
+ */
+
+/* SnWalletDisconnectCodeResult (json):
+ *   sent_to?: StringList | null
+ *   expires_at_millis?: number
+ *   error?: SnWalletDisconnectError | null
+ */
+
+/* SnWalletDisconnectError (json):
+ *   code: string
+ *   message: string
+ *   retry_after_seconds?: number
+ */
+
+/* SnWalletDisconnectResult (json):
+ *   disconnected: boolean
+ *   error?: SnWalletDisconnectError | null
  */
 
 /* SnWalletList (json):

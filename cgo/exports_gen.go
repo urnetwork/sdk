@@ -197,6 +197,90 @@ func (self *cAdapterAuthCodeLoginCallback) Result(result *sdk.AuthCodeLoginResul
 	}
 }
 
+type cAdapterAuthEmailChangeCallback struct {
+	cbResult C.urnet_auth_email_change_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthEmailChangeCallback) Result(result *sdk.AuthEmailChangeResult, errParam error) {
+	defer cgoGuard("urnet_auth_email_change_cb")
+	result_ := cJson(result, "urnet_auth_email_change_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_email_change(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterAuthEmailChangeCancelCallback struct {
+	cbResult C.urnet_auth_email_change_cancel_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthEmailChangeCancelCallback) Result(result *sdk.AuthEmailChangeCancelResult, errParam error) {
+	defer cgoGuard("urnet_auth_email_change_cancel_cb")
+	result_ := cJson(result, "urnet_auth_email_change_cancel_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_email_change_cancel(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterAuthEmailChangeConfirmCallback struct {
+	cbResult C.urnet_auth_email_change_confirm_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthEmailChangeConfirmCallback) Result(result *sdk.AuthEmailChangeConfirmResult, errParam error) {
+	defer cgoGuard("urnet_auth_email_change_confirm_cb")
+	result_ := cJson(result, "urnet_auth_email_change_confirm_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_email_change_confirm(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterAuthEmailChangeStatusCallback struct {
+	cbResult C.urnet_auth_email_change_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthEmailChangeStatusCallback) Result(result *sdk.AuthEmailChangeStatusResult, errParam error) {
+	defer cgoGuard("urnet_auth_email_change_status_cb")
+	result_ := cJson(result, "urnet_auth_email_change_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_email_change_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterAuthLoginCallback struct {
 	cbResult C.urnet_auth_login_cb
 	userData unsafe.Pointer
@@ -3316,6 +3400,48 @@ func (self *cAdapterSnWalletChangeListener) SnWalletChanged(wallet *sdk.SnWallet
 	}
 }
 
+type cAdapterSnWalletDisconnectCallback struct {
+	cbResult C.urnet_sn_wallet_disconnect_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnWalletDisconnectCallback) Result(result *sdk.SnWalletDisconnectResult, errParam error) {
+	defer cgoGuard("urnet_sn_wallet_disconnect_cb")
+	result_ := cJson(result, "urnet_sn_wallet_disconnect_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_wallet_disconnect(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnWalletDisconnectCodeCallback struct {
+	cbResult C.urnet_sn_wallet_disconnect_code_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnWalletDisconnectCodeCallback) Result(result *sdk.SnWalletDisconnectCodeResult, errParam error) {
+	defer cgoGuard("urnet_sn_wallet_disconnect_code_cb")
+	result_ := cJson(result, "urnet_sn_wallet_disconnect_code_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_wallet_disconnect_code(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSolanaPaymentIntentCallback struct {
 	cbResult C.urnet_solana_payment_intent_cb
 	userData unsafe.Pointer
@@ -4266,6 +4392,76 @@ func urnet_api_auth_code_login(self C.uint64_t, args *C.char, callback_result C.
 		callback_ = &cAdapterAuthCodeLoginCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.AuthCodeLogin(args_, callback_)
+}
+
+//export urnet_api_auth_email_change
+func urnet_api_auth_email_change(self C.uint64_t, args *C.char, callback_result C.urnet_auth_email_change_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_email_change")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_email_change")
+	if !ok {
+		return
+	}
+	var args_ *sdk.AuthEmailChangeArgs
+	if args != nil {
+		args_ = &sdk.AuthEmailChangeArgs{}
+		if !goJson(args, args_, "urnet_api_auth_email_change") {
+			return
+		}
+	}
+	var callback_ sdk.AuthEmailChangeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthEmailChangeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthEmailChange(args_, callback_)
+}
+
+//export urnet_api_auth_email_change_cancel
+func urnet_api_auth_email_change_cancel(self C.uint64_t, callback_result C.urnet_auth_email_change_cancel_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_email_change_cancel")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_email_change_cancel")
+	if !ok {
+		return
+	}
+	var callback_ sdk.AuthEmailChangeCancelCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthEmailChangeCancelCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthEmailChangeCancel(callback_)
+}
+
+//export urnet_api_auth_email_change_confirm
+func urnet_api_auth_email_change_confirm(self C.uint64_t, args *C.char, callback_result C.urnet_auth_email_change_confirm_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_email_change_confirm")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_email_change_confirm")
+	if !ok {
+		return
+	}
+	var args_ *sdk.AuthEmailChangeConfirmArgs
+	if args != nil {
+		args_ = &sdk.AuthEmailChangeConfirmArgs{}
+		if !goJson(args, args_, "urnet_api_auth_email_change_confirm") {
+			return
+		}
+	}
+	var callback_ sdk.AuthEmailChangeConfirmCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthEmailChangeConfirmCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthEmailChangeConfirm(args_, callback_)
+}
+
+//export urnet_api_auth_email_change_status
+func urnet_api_auth_email_change_status(self C.uint64_t, callback_result C.urnet_auth_email_change_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_email_change_status")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_email_change_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.AuthEmailChangeStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthEmailChangeStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthEmailChangeStatus(callback_)
 }
 
 //export urnet_api_auth_login
@@ -6349,6 +6545,34 @@ func urnet_api_sn_validate_wallet(self C.uint64_t, address *C.char, callback_res
 	self_.SnValidateWallet(goString(address), callback_)
 }
 
+//export urnet_api_sn_wallet_disconnect
+func urnet_api_sn_wallet_disconnect(self C.uint64_t, code *C.char, callback_result C.urnet_sn_wallet_disconnect_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_wallet_disconnect")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_wallet_disconnect")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnWalletDisconnectCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnWalletDisconnectCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnWalletDisconnect(goString(code), callback_)
+}
+
+//export urnet_api_sn_wallet_disconnect_code
+func urnet_api_sn_wallet_disconnect_code(self C.uint64_t, callback_result C.urnet_sn_wallet_disconnect_code_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_wallet_disconnect_code")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_wallet_disconnect_code")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnWalletDisconnectCodeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnWalletDisconnectCodeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnWalletDisconnectCode(callback_)
+}
+
 //export urnet_api_sn_wallet_mapping_challenge_sync
 func urnet_api_sn_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_api_sn_wallet_mapping_challenge_sync")
@@ -6927,6 +7151,20 @@ func urnet_async_local_state_set_by_jwt(self C.uint64_t, byJwt *C.char, callback
 		callback_ = &cAdapterCommitCallback{cbComplete: callback_complete, userData: callback_user_data}
 	}
 	self_.SetByJwt(goString(byJwt), callback_)
+}
+
+//export urnet_auth_email_change_error_ends_request
+func urnet_auth_email_change_error_ends_request(errParam *C.char) C.bool {
+	defer cgoGuard("urnet_auth_email_change_error_ends_request")
+	var errParam_ *sdk.AuthEmailChangeError
+	if errParam != nil {
+		errParam_ = &sdk.AuthEmailChangeError{}
+		if !goJson(errParam, errParam_, "urnet_auth_email_change_error_ends_request") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.AuthEmailChangeErrorEndsRequest(errParam_)
+	return C.bool(r0)
 }
 
 //export urnet_bittensor_convert_estimate
@@ -9934,6 +10172,20 @@ func urnet_crypto_wallet_suggestions(asset *C.char) *C.char {
 	return cJson(r0, "urnet_crypto_wallet_suggestions")
 }
 
+//export urnet_decode_microsoft_sign_in_attempt
+func urnet_decode_microsoft_sign_in_attempt(encoded *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_decode_microsoft_sign_in_attempt")
+	r0, err := sdk.DecodeMicrosoftSignInAttempt(goString(encoded))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_default_device_local_settings
 func urnet_default_device_local_settings() *C.char {
 	defer cgoGuard("urnet_default_device_local_settings")
@@ -9952,6 +10204,16 @@ func urnet_default_low_memory_device_local_settings() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_default_low_memory_device_local_settings")
+}
+
+//export urnet_default_microsoft_sign_in_settings
+func urnet_default_microsoft_sign_in_settings() *C.char {
+	defer cgoGuard("urnet_default_microsoft_sign_in_settings")
+	r0 := sdk.DefaultMicrosoftSignInSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_microsoft_sign_in_settings")
 }
 
 //export urnet_default_performance_profile
@@ -16847,6 +17109,13 @@ func urnet_is_checkout_redirect(uri *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_is_microsoft_sign_in_return_url
+func urnet_is_microsoft_sign_in_return_url(returnUrl *C.char) C.bool {
+	defer cgoGuard("urnet_is_microsoft_sign_in_return_url")
+	r0 := sdk.IsMicrosoftSignInReturnUrl(goString(returnUrl))
+	return C.bool(r0)
+}
+
 //export urnet_is_points_leaderboard_sort
 func urnet_is_points_leaderboard_sort(sort *C.char) C.bool {
 	defer cgoGuard("urnet_is_points_leaderboard_sort")
@@ -18513,6 +18782,86 @@ func urnet_memory_classes_json_for_diag() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_microsoft_sign_in_attempt_encode
+func urnet_microsoft_sign_in_attempt_encode(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_encode")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_encode")
+	if !ok {
+		return nil
+	}
+	r0 := self_.Encode()
+	return cString(string(r0))
+}
+
+//export urnet_microsoft_sign_in_attempt_finish
+func urnet_microsoft_sign_in_attempt_finish(self C.uint64_t, returnUrl *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_finish")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_finish")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Finish(goString(returnUrl))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_microsoft_sign_in_attempt_finish")
+}
+
+//export urnet_microsoft_sign_in_attempt_get_nonce
+func urnet_microsoft_sign_in_attempt_get_nonce(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_get_nonce")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_get_nonce")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetNonce()
+	return cString(string(r0))
+}
+
+//export urnet_microsoft_sign_in_attempt_get_return_scheme
+func urnet_microsoft_sign_in_attempt_get_return_scheme(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_get_return_scheme")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_get_return_scheme")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReturnScheme()
+	return cString(string(r0))
+}
+
+//export urnet_microsoft_sign_in_attempt_get_state
+func urnet_microsoft_sign_in_attempt_get_state(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_get_state")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_get_state")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetState()
+	return cString(string(r0))
+}
+
+//export urnet_microsoft_sign_in_attempt_start_url
+func urnet_microsoft_sign_in_attempt_start_url(self C.uint64_t, apiUrl *C.char) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_attempt_start_url")
+	self_, ok := resolveHandle[*sdk.MicrosoftSignInAttempt](uint64(self), "urnet_microsoft_sign_in_attempt_start_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.StartUrl(goString(apiUrl))
+	return cString(string(r0))
+}
+
+//export urnet_microsoft_sign_in_error_code_of
+func urnet_microsoft_sign_in_error_code_of(errorMessage *C.char) *C.char {
+	defer cgoGuard("urnet_microsoft_sign_in_error_code_of")
+	r0 := sdk.MicrosoftSignInErrorCodeOf(goString(errorMessage))
+	return cString(string(r0))
+}
+
 //export urnet_monthly_equivalent_amount
 func urnet_monthly_equivalent_amount(yearlyAmount C.double, minorUnitDigits C.int64_t) C.double {
 	defer cgoGuard("urnet_monthly_equivalent_amount")
@@ -19851,6 +20200,20 @@ func urnet_network_space_manager_update_network_space_values(self C.uint64_t, ke
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_network_user_email_sign_in
+func urnet_network_user_email_sign_in(user *C.char) *C.char {
+	defer cgoGuard("urnet_network_user_email_sign_in")
+	var user_ *sdk.NetworkUser
+	if user != nil {
+		user_ = &sdk.NetworkUser{}
+		if !goJson(user, user_, "urnet_network_user_email_sign_in") {
+			return nil
+		}
+	}
+	r0 := sdk.NetworkUserEmailSignIn(user_)
+	return cString(string(r0))
+}
+
 //export urnet_network_user_view_controller_add_is_loading_listener
 func urnet_network_user_view_controller_add_is_loading_listener(self C.uint64_t, listener_state_changed C.urnet_is_network_user_loading_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_network_user_view_controller_add_is_loading_listener")
@@ -20321,6 +20684,20 @@ func urnet_new_login_view_controller(api C.uint64_t) C.uint64_t {
 		}
 	}
 	r0 := sdk.NewLoginViewController(api_)
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_microsoft_sign_in_attempt
+func urnet_new_microsoft_sign_in_attempt(platform *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_microsoft_sign_in_attempt")
+	r0, err := sdk.NewMicrosoftSignInAttempt(goString(platform))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
 	if r0 == nil {
 		return 0
 	}
@@ -20799,6 +21176,13 @@ func urnet_normalize_bittensor_signature(signature *C.char) *C.char {
 func urnet_normalize_dns_preset_personal_id(presetId *C.char, input *C.char) *C.char {
 	defer cgoGuard("urnet_normalize_dns_preset_personal_id")
 	r0 := sdk.NormalizeDnsPresetPersonalId(goString(presetId), goString(input))
+	return cString(string(r0))
+}
+
+//export urnet_normalize_email_change_code
+func urnet_normalize_email_change_code(code *C.char) *C.char {
+	defer cgoGuard("urnet_normalize_email_change_code")
+	r0 := sdk.NormalizeEmailChangeCode(goString(code))
 	return cString(string(r0))
 }
 
@@ -22919,6 +23303,34 @@ func urnet_sn_testnet_chain_settings() *C.char {
 	return cJson(r0, "urnet_sn_testnet_chain_settings")
 }
 
+//export urnet_sn_wallet_disconnectable
+func urnet_sn_wallet_disconnectable(result *C.char) C.bool {
+	defer cgoGuard("urnet_sn_wallet_disconnectable")
+	var result_ *sdk.SnGetWalletResult
+	if result != nil {
+		result_ = &sdk.SnGetWalletResult{}
+		if !goJson(result, result_, "urnet_sn_wallet_disconnectable") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.SnWalletDisconnectable(result_)
+	return C.bool(r0)
+}
+
+//export urnet_sn_wallet_has_wallet
+func urnet_sn_wallet_has_wallet(result *C.char) C.bool {
+	defer cgoGuard("urnet_sn_wallet_has_wallet")
+	var result_ *sdk.SnGetWalletResult
+	if result != nil {
+		result_ = &sdk.SnGetWalletResult{}
+		if !goJson(result, result_, "urnet_sn_wallet_has_wallet") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.SnWalletHasWallet(result_)
+	return C.bool(r0)
+}
+
 //export urnet_socket_close
 func urnet_socket_close(self C.uint64_t, outError **C.char) C.bool {
 	defer cgoGuard("urnet_socket_close")
@@ -23729,6 +24141,13 @@ func urnet_validate_dns_preset_personal_id(presetId *C.char, personalId *C.char)
 		}
 	}()
 	r0 := sdk.ValidateDnsPresetPersonalId(goString(presetId), goString(personalId))
+	return cString(string(r0))
+}
+
+//export urnet_validate_email_change_address
+func urnet_validate_email_change_address(email *C.char) *C.char {
+	defer cgoGuard("urnet_validate_email_change_address")
+	r0 := sdk.ValidateEmailChangeAddress(goString(email))
 	return cString(string(r0))
 }
 
