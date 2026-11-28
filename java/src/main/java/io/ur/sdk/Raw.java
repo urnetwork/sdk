@@ -1412,12 +1412,15 @@ public interface Raw extends Library {
   byte urnet_provider_status_view_controller_get_is_loaded(long a0);
   byte urnet_provider_status_view_controller_get_is_loading(long a0);
   Pointer urnet_provider_status_view_controller_get_last_fetch_error(long a0);
+  Pointer urnet_provider_status_view_controller_get_network_provided(long a0);
+  long urnet_provider_status_view_controller_get_provided_epoch(long a0);
   Pointer urnet_provider_status_view_controller_get_provider_status(long a0);
   Pointer urnet_provider_status_view_controller_get_provider_statuses(long a0);
   Pointer urnet_provider_status_view_controller_get_ranking_numbers(long a0);
   Pointer urnet_provider_status_view_controller_get_reason(long a0);
   Pointer urnet_provider_status_view_controller_get_reason_text(long a0);
   byte urnet_provider_status_view_controller_get_truncated(long a0);
+  long urnet_provider_status_view_controller_get_unpaid_byte_count(long a0);
   void urnet_provider_status_view_controller_refresh(long a0);
   void urnet_provider_status_view_controller_start(long a0);
   void urnet_provider_status_view_controller_stop(long a0);

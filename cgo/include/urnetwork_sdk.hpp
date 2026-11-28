@@ -609,6 +609,10 @@ inline constexpr const char* ProviderStatusNumberTierSpeed = "tier_speed";
 inline constexpr const char* ProviderStatusNumberUrlChecks = "url_checks";
 inline constexpr const char* ProviderStatusNumberWeightQuality = "weight_quality";
 inline constexpr const char* ProviderStatusNumberWeightSpeed = "weight_speed";
+inline constexpr const char* ProviderStatusProvidedHead = "head";
+inline constexpr const char* ProviderStatusProvidedNone = "none";
+inline constexpr const char* ProviderStatusProvidedPaid = "paid";
+inline constexpr const char* ProviderStatusProvidedUnpaid = "unpaid";
 inline constexpr const char* ProviderStatusReasonEgressFailing = "egress_failing";
 inline constexpr const char* ProviderStatusReasonEgressUnprobed = "egress_unprobed";
 inline constexpr const char* ProviderStatusReasonLineIpv4 = "ipv4";
@@ -1150,6 +1154,7 @@ struct GetNetworkUserError;
 struct NetworkUser;
 struct GetNetworkUserResult;
 struct GetPointsLeaderboardArgs;
+struct ProviderStatusNetworkProvided;
 struct GetProviderStatusResult;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
@@ -1233,6 +1238,7 @@ struct ProviderIdentity;
 struct ProviderRankingNumber;
 struct ProviderSpec;
 struct ProviderStatusCountry;
+struct ProviderStatusProvided;
 struct ProviderStatus;
 struct ProviderStatusReasonLine;
 struct ProxyDeviceSettings;
@@ -3220,9 +3226,17 @@ struct GetPointsLeaderboardArgs {
 	std::optional<int64_t> limit;
 };
 
+struct ProviderStatusNetworkProvided {
+	int64_t epoch{};
+	int64_t usage_byte_count{};
+	int64_t unpaid_byte_count{};
+	std::optional<bool> truncated;
+};
+
 struct GetProviderStatusResult {
 	std::optional<ProviderStatusList> providers;
 	std::optional<bool> truncated;
+	std::optional<ProviderStatusNetworkProvided> provided;
 };
 
 struct GetReferralNetworkError {
@@ -3948,6 +3962,12 @@ struct ProviderStatusCountry {
 	std::string explanation{};
 };
 
+struct ProviderStatusProvided {
+	int64_t epoch{};
+	int64_t usage_byte_count{};
+	std::string payout{};
+};
+
 struct ProviderStatus {
 	std::optional<std::string> client_id;
 	std::string reason{};
@@ -3957,6 +3977,7 @@ struct ProviderStatus {
 	std::optional<ProviderStatusCountry> country;
 	std::optional<std::string> evaluate_time;
 	std::optional<ProviderAppearanceHistogram> appearances;
+	std::optional<ProviderStatusProvided> provided;
 };
 
 struct ProviderStatusReasonLine {
@@ -5666,6 +5687,8 @@ inline void to_json(nlohmann::json& j, const GetNetworkUserResult& v);
 inline void from_json(const nlohmann::json& j, GetNetworkUserResult& v);
 inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v);
 inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusNetworkProvided& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusNetworkProvided& v);
 inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v);
 inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v);
@@ -5832,6 +5855,8 @@ inline void to_json(nlohmann::json& j, const ProviderSpec& v);
 inline void from_json(const nlohmann::json& j, ProviderSpec& v);
 inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v);
 inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusProvided& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusProvided& v);
 inline void to_json(nlohmann::json& j, const ProviderStatus& v);
 inline void from_json(const nlohmann::json& j, ProviderStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderStatusReasonLine& v);
@@ -14114,6 +14139,35 @@ inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderStatusNetworkProvided& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["usage_byte_count"] = v.usage_byte_count;
+	j["unpaid_byte_count"] = v.unpaid_byte_count;
+	if (v.truncated) {
+		j["truncated"] = *v.truncated;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusNetworkProvided& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("usage_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.usage_byte_count);
+	}
+	if (auto it = j.find("unpaid_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.unpaid_byte_count);
+	}
+	if (auto it = j.find("truncated"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.truncated = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
 	j = nlohmann::json::object();
 	if (v.providers) {
@@ -14121,6 +14175,9 @@ inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
 	}
 	if (v.truncated) {
 		j["truncated"] = *v.truncated;
+	}
+	if (v.provided) {
+		j["provided"] = *v.provided;
 	}
 }
 inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
@@ -14136,6 +14193,11 @@ inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.truncated = std::move(tmp);
+	}
+	if (auto it = j.find("provided"); it != j.end() && !it->is_null()) {
+		ProviderStatusNetworkProvided tmp{};
+		it->get_to(tmp);
+		v.provided = std::move(tmp);
 	}
 }
 
@@ -17649,6 +17711,27 @@ inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderStatusProvided& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["usage_byte_count"] = v.usage_byte_count;
+	j["payout"] = v.payout;
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusProvided& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("usage_byte_count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.usage_byte_count);
+	}
+	if (auto it = j.find("payout"); it != j.end() && !it->is_null()) {
+		it->get_to(v.payout);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
 	j = nlohmann::json::object();
 	if (v.client_id) {
@@ -17670,6 +17753,9 @@ inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
 	}
 	if (v.appearances) {
 		j["appearances"] = *v.appearances;
+	}
+	if (v.provided) {
+		j["provided"] = *v.provided;
 	}
 }
 inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
@@ -17711,6 +17797,11 @@ inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
 		ProviderAppearanceHistogram tmp{};
 		it->get_to(tmp);
 		v.appearances = std::move(tmp);
+	}
+	if (auto it = j.find("provided"); it != j.end() && !it->is_null()) {
+		ProviderStatusProvided tmp{};
+		it->get_to(tmp);
+		v.provided = std::move(tmp);
 	}
 }
 
@@ -25495,12 +25586,15 @@ public:
 	bool getIsLoaded() const;
 	bool getIsLoading() const;
 	std::string getLastFetchError() const;
+	std::optional<ProviderStatusNetworkProvided> getNetworkProvided() const;
+	int64_t getProvidedEpoch() const;
 	std::optional<ProviderStatus> getProviderStatus() const;
 	std::optional<ProviderStatusList> getProviderStatuses() const;
 	std::optional<ProviderRankingNumberList> getRankingNumbers() const;
 	std::string getReason() const;
 	std::string getReasonText() const;
 	bool getTruncated() const;
+	int64_t getUnpaidByteCount() const;
 	void refresh() const;
 	void start() const;
 	void stop() const;
@@ -39779,6 +39873,18 @@ inline std::string ProviderStatusViewController::getLastFetchError() const {
 	char* r_c = urnet_provider_status_view_controller_get_last_fetch_error(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<ProviderStatusNetworkProvided> ProviderStatusViewController::getNetworkProvided() const {
+	char* r_c = urnet_provider_status_view_controller_get_network_provided(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatusNetworkProvided>(r_s->c_str());
+}
+inline int64_t ProviderStatusViewController::getProvidedEpoch() const {
+	int64_t r = urnet_provider_status_view_controller_get_provided_epoch(handle());
+	return r;
+}
 inline std::optional<ProviderStatus> ProviderStatusViewController::getProviderStatus() const {
 	char* r_c = urnet_provider_status_view_controller_get_provider_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -39813,6 +39919,10 @@ inline std::string ProviderStatusViewController::getReasonText() const {
 }
 inline bool ProviderStatusViewController::getTruncated() const {
 	bool r = urnet_provider_status_view_controller_get_truncated(handle());
+	return r;
+}
+inline int64_t ProviderStatusViewController::getUnpaidByteCount() const {
+	int64_t r = urnet_provider_status_view_controller_get_unpaid_byte_count(handle());
 	return r;
 }
 inline void ProviderStatusViewController::refresh() const {

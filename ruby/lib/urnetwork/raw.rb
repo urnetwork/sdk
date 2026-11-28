@@ -1411,12 +1411,15 @@ module URnetwork
       attach_function :urnet_provider_status_view_controller_get_is_loaded, [:uint64], :bool, blocking: true
       attach_function :urnet_provider_status_view_controller_get_is_loading, [:uint64], :bool, blocking: true
       attach_function :urnet_provider_status_view_controller_get_last_fetch_error, [:uint64], :pointer, blocking: true
+      attach_function :urnet_provider_status_view_controller_get_network_provided, [:uint64], :pointer, blocking: true
+      attach_function :urnet_provider_status_view_controller_get_provided_epoch, [:uint64], :int64, blocking: true
       attach_function :urnet_provider_status_view_controller_get_provider_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_provider_status_view_controller_get_provider_statuses, [:uint64], :pointer, blocking: true
       attach_function :urnet_provider_status_view_controller_get_ranking_numbers, [:uint64], :pointer, blocking: true
       attach_function :urnet_provider_status_view_controller_get_reason, [:uint64], :pointer, blocking: true
       attach_function :urnet_provider_status_view_controller_get_reason_text, [:uint64], :pointer, blocking: true
       attach_function :urnet_provider_status_view_controller_get_truncated, [:uint64], :bool, blocking: true
+      attach_function :urnet_provider_status_view_controller_get_unpaid_byte_count, [:uint64], :int64, blocking: true
       attach_function :urnet_provider_status_view_controller_refresh, [:uint64], :void, blocking: true
       attach_function :urnet_provider_status_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_provider_status_view_controller_stop, [:uint64], :void, blocking: true

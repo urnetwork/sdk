@@ -76,6 +76,8 @@ type ProviderStatusViewController struct {
 	statuses  *ProviderStatusList
 	status    *ProviderStatus
 	truncated bool
+	// the network's data in the newest settled SN25 epoch, nil for none
+	networkProvided *ProviderStatusNetworkProvided
 	// the last failed poll's error, "" once a poll succeeds
 	lastFetchError string
 
@@ -249,6 +251,11 @@ func (self *ProviderStatusViewController) fetchDone(generation int, result *GetP
 			self.lastFetchError = ""
 			self.loaded = true
 			self.truncated = result.Truncated
+			self.networkProvided = nil
+			if result.Provided != nil {
+				networkProvided := *result.Provided
+				self.networkProvided = &networkProvided
+			}
 			self.statuses = NewProviderStatusList()
 			self.status = nil
 			if result.Providers != nil {
@@ -325,6 +332,41 @@ func (self *ProviderStatusViewController) GetProviderStatuses() *ProviderStatusL
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.statuses
+}
+
+// The network's data in the newest settled SN25 epoch, over all its devices,
+// nil while the server has read no settled epoch. Each device's own share is
+// its status's Provided.
+func (self *ProviderStatusViewController) GetNetworkProvided() *ProviderStatusNetworkProvided {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.networkProvided == nil {
+		return nil
+	}
+	networkProvided := *self.networkProvided
+	return &networkProvided
+}
+
+// The unpaid data provided: the network's data in the newest settled SN25
+// epoch that SN25 did not pay, because the device had no payout wallet. Data,
+// not money owed. 0 without a settled epoch (GetProvidedEpoch 0).
+func (self *ProviderStatusViewController) GetUnpaidByteCount() ByteCount {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.networkProvided == nil {
+		return 0
+	}
+	return self.networkProvided.UnpaidByteCount
+}
+
+// The epoch GetNetworkProvided and GetUnpaidByteCount are for, 0 for none.
+func (self *ProviderStatusViewController) GetProvidedEpoch() int64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.networkProvided == nil {
+		return 0
+	}
+	return self.networkProvided.Epoch
 }
 
 // True when the network has more provider clients than one answer covers.

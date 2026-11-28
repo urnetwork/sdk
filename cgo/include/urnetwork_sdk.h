@@ -534,6 +534,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDER_STATUS_NUMBER_URL_CHECKS "url_checks"
 #define URNET_PROVIDER_STATUS_NUMBER_WEIGHT_QUALITY "weight_quality"
 #define URNET_PROVIDER_STATUS_NUMBER_WEIGHT_SPEED "weight_speed"
+#define URNET_PROVIDER_STATUS_PROVIDED_HEAD "head"
+#define URNET_PROVIDER_STATUS_PROVIDED_NONE "none"
+#define URNET_PROVIDER_STATUS_PROVIDED_PAID "paid"
+#define URNET_PROVIDER_STATUS_PROVIDED_UNPAID "unpaid"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_FAILING "egress_failing"
 #define URNET_PROVIDER_STATUS_REASON_EGRESS_UNPROBED "egress_unprobed"
 #define URNET_PROVIDER_STATUS_REASON_LINE_IPV4 "ipv4"
@@ -2617,12 +2621,15 @@ char* urnet_provider_status_view_controller_get_appearances_per_minute(uint64_t 
 bool urnet_provider_status_view_controller_get_is_loaded(uint64_t self);
 bool urnet_provider_status_view_controller_get_is_loading(uint64_t self);
 char* urnet_provider_status_view_controller_get_last_fetch_error(uint64_t self);
+char* urnet_provider_status_view_controller_get_network_provided(uint64_t self);
+int64_t urnet_provider_status_view_controller_get_provided_epoch(uint64_t self);
 char* urnet_provider_status_view_controller_get_provider_status(uint64_t self);
 char* urnet_provider_status_view_controller_get_provider_statuses(uint64_t self);
 char* urnet_provider_status_view_controller_get_ranking_numbers(uint64_t self);
 char* urnet_provider_status_view_controller_get_reason(uint64_t self);
 char* urnet_provider_status_view_controller_get_reason_text(uint64_t self);
 bool urnet_provider_status_view_controller_get_truncated(uint64_t self);
+int64_t urnet_provider_status_view_controller_get_unpaid_byte_count(uint64_t self);
 void urnet_provider_status_view_controller_refresh(uint64_t self);
 void urnet_provider_status_view_controller_start(uint64_t self);
 void urnet_provider_status_view_controller_stop(uint64_t self);
@@ -4761,6 +4768,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* GetProviderStatusResult (json):
  *   providers: ProviderStatusList | null
  *   truncated?: boolean
+ *   provided?: ProviderStatusNetworkProvided | null
  */
 
 /* GetReferralNetworkError (json):
@@ -5571,6 +5579,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   country?: ProviderStatusCountry | null
  *   evaluate_time: string (rfc3339) | null
  *   appearances?: ProviderAppearanceHistogram | null
+ *   provided?: ProviderStatusProvided | null
  */
 
 /* ProviderStatusCountry (json):
@@ -5582,6 +5591,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ProviderStatusList (json):
  *   = ProviderStatus | null[]
+ */
+
+/* ProviderStatusNetworkProvided (json):
+ *   epoch: number
+ *   usage_byte_count: number
+ *   unpaid_byte_count: number
+ *   truncated?: boolean
+ */
+
+/* ProviderStatusProvided (json):
+ *   epoch: number
+ *   usage_byte_count: number
+ *   payout: string
  */
 
 /* ProviderStatusReasonLine (json):

@@ -21956,6 +21956,31 @@ func urnet_provider_status_view_controller_get_last_fetch_error(self C.uint64_t)
 	return cString(string(r0))
 }
 
+//export urnet_provider_status_view_controller_get_network_provided
+func urnet_provider_status_view_controller_get_network_provided(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_network_provided")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_network_provided")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetNetworkProvided()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_network_provided")
+}
+
+//export urnet_provider_status_view_controller_get_provided_epoch
+func urnet_provider_status_view_controller_get_provided_epoch(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_provided_epoch")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_provided_epoch")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetProvidedEpoch()
+	return C.int64_t(r0)
+}
+
 //export urnet_provider_status_view_controller_get_provider_status
 func urnet_provider_status_view_controller_get_provider_status(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_provider_status_view_controller_get_provider_status")
@@ -22029,6 +22054,17 @@ func urnet_provider_status_view_controller_get_truncated(self C.uint64_t) C.bool
 	}
 	r0 := self_.GetTruncated()
 	return C.bool(r0)
+}
+
+//export urnet_provider_status_view_controller_get_unpaid_byte_count
+func urnet_provider_status_view_controller_get_unpaid_byte_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_unpaid_byte_count")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_unpaid_byte_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetUnpaidByteCount()
+	return C.int64_t(r0)
 }
 
 //export urnet_provider_status_view_controller_refresh

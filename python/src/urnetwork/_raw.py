@@ -2573,6 +2573,10 @@ def bind(lib):
     lib.urnet_provider_status_view_controller_get_is_loading.restype = c_bool
     lib.urnet_provider_status_view_controller_get_last_fetch_error.argtypes = [c_uint64]
     lib.urnet_provider_status_view_controller_get_last_fetch_error.restype = c_void_p
+    lib.urnet_provider_status_view_controller_get_network_provided.argtypes = [c_uint64]
+    lib.urnet_provider_status_view_controller_get_network_provided.restype = c_void_p
+    lib.urnet_provider_status_view_controller_get_provided_epoch.argtypes = [c_uint64]
+    lib.urnet_provider_status_view_controller_get_provided_epoch.restype = c_int64
     lib.urnet_provider_status_view_controller_get_provider_status.argtypes = [c_uint64]
     lib.urnet_provider_status_view_controller_get_provider_status.restype = c_void_p
     lib.urnet_provider_status_view_controller_get_provider_statuses.argtypes = [c_uint64]
@@ -2585,6 +2589,8 @@ def bind(lib):
     lib.urnet_provider_status_view_controller_get_reason_text.restype = c_void_p
     lib.urnet_provider_status_view_controller_get_truncated.argtypes = [c_uint64]
     lib.urnet_provider_status_view_controller_get_truncated.restype = c_bool
+    lib.urnet_provider_status_view_controller_get_unpaid_byte_count.argtypes = [c_uint64]
+    lib.urnet_provider_status_view_controller_get_unpaid_byte_count.restype = c_int64
     lib.urnet_provider_status_view_controller_refresh.argtypes = [c_uint64]
     lib.urnet_provider_status_view_controller_refresh.restype = None
     lib.urnet_provider_status_view_controller_start.argtypes = [c_uint64]
