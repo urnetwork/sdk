@@ -141,6 +141,14 @@ var sdkApiUrlsPlannedOnServer = map[string]bool{
 	"/sn/fleet/device/signature":  true,
 	"/sn/fleet/hotkey-signatures": true,
 	"/sn/fleet/top-up":            true,
+	// the payout wallet disconnect, the account email change and the
+	// Microsoft sign-in start, on server branches until they deploy
+	"/sn/wallet/disconnect-code": true,
+	"/sn/wallet/disconnect":      true,
+	"/auth/email-change":         true,
+	"/auth/email-change/confirm": true,
+	"/auth/email-change/cancel":  true,
+	"/auth/microsoft/start":      true,
 }
 
 // splitPlannedSdkApiUrls separates the unrouted urls that are planned on the
