@@ -32,15 +32,17 @@ import (
 	"time"
 )
 
-// The owner's limits on how much this device shares. Zero is no limit.
+// The owner's limits on how much this device shares. Zero is no limit. The
+// byte counts are spelled int64, not ByteCount, so gobind binds them as
+// primitives (build/cmd/mobileexports type_alias_test.go).
 type ProvideShareLimits struct {
 	// the fastest this device shares, in bytes per second
-	MaxBytesPerSecond ByteCount `json:"max_bytes_per_second"`
+	MaxBytesPerSecond int64 `json:"max_bytes_per_second"`
 	// the most data this device shares in a calendar month, in bytes
-	MonthlyByteCount ByteCount `json:"monthly_byte_count"`
+	MonthlyByteCount int64 `json:"monthly_byte_count"`
 }
 
-func NewProvideShareLimits(maxBytesPerSecond ByteCount, monthlyByteCount ByteCount) *ProvideShareLimits {
+func NewProvideShareLimits(maxBytesPerSecond int64, monthlyByteCount int64) *ProvideShareLimits {
 	return &ProvideShareLimits{
 		MaxBytesPerSecond: maxBytesPerSecond,
 		MonthlyByteCount:  monthlyByteCount,
@@ -60,11 +62,12 @@ func normalProvideShareLimits(limits *ProvideShareLimits) ProvideShareLimits {
 
 // The month of sharing as it stands: the limits in force, the data this
 // device shared in the current month and whether that reached the budget.
+// The byte counts are int64 for gobind, as ProvideShareLimits's are.
 type ProvideShareStatus struct {
-	MaxBytesPerSecond ByteCount `json:"max_bytes_per_second"`
-	MonthlyByteCount  ByteCount `json:"monthly_byte_count"`
+	MaxBytesPerSecond int64 `json:"max_bytes_per_second"`
+	MonthlyByteCount  int64 `json:"monthly_byte_count"`
 	// the data this device shared in the current month, in bytes
-	ByteCount ByteCount `json:"byte_count"`
+	ByteCount int64 `json:"byte_count"`
 	// the current month in the device's time zone, unix milliseconds: its
 	// first instant, and the first instant of the next month, when the data
 	// starts again from zero
