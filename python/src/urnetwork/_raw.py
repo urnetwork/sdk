@@ -3095,6 +3095,8 @@ def bind(lib):
     lib.urnet_is_checkout_redirect.restype = c_bool
     lib.urnet_is_favorite_exit.argtypes = [c_char_p]
     lib.urnet_is_favorite_exit.restype = c_bool
+    lib.urnet_is_invalid_user_auth_phone.argtypes = [c_char_p]
+    lib.urnet_is_invalid_user_auth_phone.restype = c_bool
     lib.urnet_is_points_leaderboard_sort.argtypes = [c_char_p]
     lib.urnet_is_points_leaderboard_sort.restype = c_bool
     lib.urnet_is_purchase_report_terminal.argtypes = [c_char_p]
@@ -3103,6 +3105,8 @@ def bind(lib):
     lib.urnet_is_sandbox_purchase_refusal.restype = c_bool
     lib.urnet_is_valid_payment_reference.argtypes = [c_char_p]
     lib.urnet_is_valid_payment_reference.restype = c_bool
+    lib.urnet_is_valid_user_auth_phone.argtypes = [c_char_p]
+    lib.urnet_is_valid_user_auth_phone.restype = c_bool
     lib.urnet_log_app_info.argtypes = [c_char_p, c_char_p]
     lib.urnet_log_app_info.restype = None
     lib.urnet_log_google_sign_in_failure.argtypes = [c_char_p, c_char_p, c_int64]
