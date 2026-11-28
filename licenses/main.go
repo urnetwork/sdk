@@ -351,8 +351,10 @@ func (target goTarget) moduleDir() string {
 	return filepath.Join(sdkRepoDir, target.dir)
 }
 
+// The android binding also binds ./hotspot, the hotspot proxy (sdk/build
+// build_android), which carries the proxy repo.
 var goTargets = []goTarget{
-	{".", []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind", []string{".", "golang.org/x/mobile/bind/java", "golang.org/x/mobile/bind/seq"}, []string{"android"}},
+	{".", []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind", []string{".", "./hotspot", "golang.org/x/mobile/bind/java", "golang.org/x/mobile/bind/seq"}, []string{"android"}},
 	{".", []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind", []string{".", "golang.org/x/mobile/bind/objc", "golang.org/x/mobile/bind/seq"}, []string{"apple"}},
 	{".", []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind,ios_extension", []string{".", "golang.org/x/mobile/bind/objc", "golang.org/x/mobile/bind/seq"}, []string{"apple"}},
 	{".", []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind", []string{".", "golang.org/x/mobile/bind/objc", "golang.org/x/mobile/bind/seq"}, []string{"apple"}},

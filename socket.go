@@ -91,10 +91,17 @@ func (s *deviceSockets) close() {
 }
 
 func (d *DeviceLocal) socketTun() (*connect.Tun, error) {
+	return d.privateSocketTun(&d.sockets, d.sendPacketsNoCopy)
+}
+
+// One private TUN per socket owner, created on first use. Its outbound pump
+// hands each burst to send, which takes the pooled packets. The developer
+// sockets send with the device's route; the tunnel-only sockets
+// (socket_tunnel_only.go) send through the remote route alone.
+func (d *DeviceLocal) privateSocketTun(s *deviceSockets, send func(packets [][]byte) int) (*connect.Tun, error) {
 	// Use the same lock order as live resolver updates: device, then sockets.
 	d.stateLock.Lock()
 	defer d.stateLock.Unlock()
-	s := &d.sockets
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || d.ctx.Err() != nil {
@@ -138,7 +145,7 @@ func (d *DeviceLocal) socketTun() (*connect.Tun, error) {
 			if err != nil {
 				return
 			}
-			d.sendPacketsNoCopy(packets[:n])
+			send(packets[:n])
 			clear(packets[:n])
 		}
 	}()
@@ -195,13 +202,25 @@ func (d *DeviceLocal) Dial(network, address string) (net.Conn, error) {
 
 //gomobile:noexport
 func (d *DeviceLocal) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return d.dialSocket(ctx, &d.sockets, d.socketTun, network, address)
+}
+
+// Dials through the private TUN of the socket owner s, which socketTun
+// returns, and tracks the connection in s so closing the device closes it.
+func (d *DeviceLocal) dialSocket(
+	ctx context.Context,
+	s *deviceSockets,
+	socketTun func() (*connect.Tun, error),
+	network string,
+	address string,
+) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := socketNetwork(network); err != nil {
 		return nil, err
 	}
-	tun, err := d.socketTun()
+	tun, err := socketTun()
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +235,6 @@ func (d *DeviceLocal) DialContext(ctx context.Context, network, address string) 
 	if err != nil {
 		return nil, err
 	}
-	s := &d.sockets
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || d.ctx.Err() != nil || ctx.Err() != nil {

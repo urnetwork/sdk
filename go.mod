@@ -16,6 +16,7 @@ require (
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/goidenticons v0.0.0
+	github.com/urnetwork/proxy v0.0.0
 	github.com/urnetwork/quic-go v0.0.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.63.0
@@ -90,6 +91,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
+	github.com/urnetwork/userwireguard v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/exp v0.0.0-20261121134650-e1094eeca1b5 // indirect
 	golang.org/x/image v0.48.0 // indirect
@@ -99,6 +101,7 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.53.0 // indirect
+	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.5.3 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
@@ -120,5 +123,14 @@ replace github.com/urnetwork/quic-go => ../quic-go
 replace github.com/urnetwork/goidenticons => ../goidenticons
 
 replace gvisor.dev/gvisor => ../gvisor
+
+// The proxy repo's HTTP and SOCKS servers, for the android hotspot proxy
+// (hotspot/). Only that child package imports it, and only the android
+// binding builds it. The proxy package also holds the hosted WireGuard server,
+// so its userwireguard requirement comes along; the linker drops that code
+// from the binding, since nothing reaches it.
+replace github.com/urnetwork/proxy => ../proxy
+
+replace github.com/urnetwork/userwireguard => ../userwireguard
 
 tool golang.org/x/mobile/cmd/gobind

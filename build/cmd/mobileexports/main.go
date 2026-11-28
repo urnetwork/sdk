@@ -124,6 +124,11 @@ func allowedMobileOmission(identifier string) bool {
 		(memberName == "Dial" || memberName == "DialContext" || memberName == "DialTls" || memberName == "DialTlsContext") {
 		return true
 	}
+	// The tunnel-only dial is the Go side of the hotspot proxy (sdk/hotspot),
+	// which apps drive through its own bound api.
+	if identifier == "DeviceLocal.DialTunnelOnlyContext" {
+		return true
+	}
 
 	if typeName == "DeviceLocalRpc" || typeName == "DeviceProviderIdentities" ||
 		strings.HasPrefix(typeName, "DeviceRemote") ||

@@ -79,6 +79,8 @@ _build_android:
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
+	# note the android binding also binds the hotspot proxy (../hotspot, java package
+	# com.bringyour.hotspot), the only package that links the proxy repo; apple binds the sdk alone
 	set -e; \
 	BUILD_OWNER="$${URNETWORK_ANDROID_SDK_BUILD_OWNER:-unattributed}"; \
 	case "$$BUILD_OWNER" in ''|*[!A-Za-z0-9._:-]*) \
@@ -98,7 +100,8 @@ _build_android:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk" \
+		"github.com/urnetwork/sdk/hotspot"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
 	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
